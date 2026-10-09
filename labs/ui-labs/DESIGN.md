@@ -52,7 +52,7 @@ Conversation           Split                          Workbench focus
 - **`← Conversation` steps aside; it does not close.** The Workbench stays open while the chat
   takes the area, the header's Workbench button brings it back, and the split returns by itself
   once the window has room for it.
-- **Dragged widths are kept, not overwritten.** The rail drags between `RAIL_W` and `RAIL_MAX_W`;
+- **Dragged widths are kept, not overwritten.** The rail opens at `RAIL_W` and drags between `RAIL_MIN_W` and `RAIL_MAX_W`;
   the Workbench opens at `DOCK_PREF` and drags from `DOCK_MIN` up to wherever the chat would drop
   under `CHAT_MIN`. When the window narrows, the Workbench is *drawn* narrower, down to
   `DOCK_MIN`, and the dragged width returns as soon as there is room again.
@@ -64,7 +64,8 @@ Conversation           Split                          Workbench focus
   Docks are continuous surfaces on `panel`; there are no inset frames or gutters around them.
 - **Bars line up.** The agent header, the Workbench mode strip, every page header and the rail's
   workspace row and the terminal's tabs are `BAR_H` tall. A detail header inside a dock
-  (`← Files`) is `SUBBAR_H`.
+  (`← Files`) is `SUBBAR_H`. The agent header draws no rule under it; the transcript runs up to it on the
+  same surface.
 - **A transition never loses state.** Changing presentation keeps the draft, the open file, the
   selection and scroll positions, and never writes a narrow size over the saved wide layout.
   Streaming output never changes the presentation; focus never stays on something unmounted. The
@@ -79,15 +80,81 @@ Conversation           Split                          Workbench focus
 
 ## Rail
 
-- The workspace row, then the page rows (overview, Tasks with its count, Issues), then
-  *New session*, the only filled control in the rail, then a hairline and the tree.
-- **A one-line row is `ROW_H`.** A session row is two lines when it has something to say: its name,
-  then a muted footnote (agent, or project under *All sessions*), `py_1` above and below. Its text starts `RAIL_INDENT` in,
-  under the project's name.
-- **State sits in a stable column** of `DOT_COLUMN` at the row's end, so names never shift
-  beside a dot.
-- The selected project's branch and change count take a line of their own under its name, so a
-  short name never truncates at `RAIL_W`.
+Top to bottom; only the list scrolls, so the header, the pages and the foot stay put. The blocks
+breathe: `px_3` on the header rows, `pb_3` under the search and the pages, `pt_2` over
+the list, `gap_0p5` between rows, and `h_2` of air between projects.
+
+- **The workspace row** (`BAR_H`): a letter tile (the workspace's initial on `chip_on`), its
+  name, a `ChevronsUpDown` button opening the workspace menu (the recent workspaces with the
+  current one checked, *Open workspace…*, *New workspace…*) and *Hide the rail*.
+- **Search and New:** a small borderless field (its fill shows it), *Search…* (short, so it never truncates), with its `Ctrl+K` key cap,
+  filters the list as it is typed: a title or a project's name, ignoring case. A search opens
+  every project so no match hides behind a fold. Beside it *New* and its caret are one ghost
+  group without an edge (the library's `DropdownButton`): *New* starts a session in the cursor's project, else the
+  chat's, with the default agent; the caret chooses *Start in* another project or *With agent*
+  another agent. With no such project *New* is disabled and the caret is the way in.
+- **The page rows:** *Overview*, *Tasks* with its count in a pill, *Issues*, *Workflows*, marked
+  with `selected` while their page shows; each says what it holds in a tooltip.
+- **Sessions,** with a hairline under it that the list scrolls beneath: the word, *N need
+  attention* in `warning`, and a `list-filter` menu: *By project*, *All sessions*, *Needs
+  attention*, *Newest first*, the chosen one checked. Its glyph is `text` while a filter other
+  than *By project* is on. *N need attention* is also a switch: a click shows only the sessions
+  that need attention, a second click restores the filter it replaced. While on it sits on
+  `chip_on` in medium weight and stays even at none; off and at none it is hidden.
+- **A session row** is two lines at `py_1`: its status in a `DOT_COLUMN` on the title's line,
+  then the title (fading at its room's end, in full on hover; medium weight when selected or done unread), and
+  under the title, past the status's column, a `text_xs` line: `<status> · <agent> · <time>`
+  muted, in that order for every status, and the diff, when there is one, at the line's end:
+  `+N` in `success`, `−N` in `danger`. The time is how long the session has been in its status,
+  said `waiting 4m` for one that needs input. In a flat list the project takes the agent's
+  place. Under a project it starts `RAIL_INDENT` in. Its `⋯` shows on hover, and always on the
+  selected row.
+- **Hover actions on a session** cover the end of its metadata line, on the row's own fill:
+  *Stop* (`square`) while it runs, *Retry* (`Redo`) once it failed, *Archive* (`archive`) always.
+  The lab carries them out: Stop makes it idle, Retry running, Archive takes it off the list.
+- **A project row** (`ROW_H`): the fold chevron, its folder, the name fading at its room's end, then its branch and only the git parts that are not zero, muted: a `DOT`
+  and the count of uncommitted changes, `ArrowUp` and the commits ahead of the remote,
+  `ArrowDown` and those behind. Each part names itself in full on hover (*3 uncommitted
+  changes*). The name's tooltip says the full name, branch, changes, pinned, the unattended run
+  and the path. Clicking the row folds it. On hover, `+` starts a session there and `⋯` opens
+  its menu. A folded project shows a badge, the status mark of its most urgent session that
+  needs attention (Failed before Needs input), else the Running mark while any session runs, else
+  nothing; it goes when the project opens. An open project with no sessions says *Empty*. Pinned projects come
+  first. A project opens with the rail only when something in it needs attention; after that
+  folding is the person's.
+- ***Add project…*** is the list's last row.
+- **Menus:** `⋯` and right-click open the same menu on a row. A project's menu has *Pin to top* or
+  *Unpin*, *Work labelled issues* (checked while an unattended run works), *Work an issue…*,
+  *New session*, *New worktree…*, *Open terminal*, *Copy project path*, *Refresh Git status*, then
+  *Remove from workspace* in `danger`. A session's menu has *Rename…*, *Restart the agent*,
+  *Export as Markdown…*, then *Close session* in `danger`. The lab carries out pin, new session,
+  open terminal, copy, remove and close; the other entries are there to be seen.
+- **The foot** is one row: *Labs*, muted, opens the lab's own pages (*Composer cards*), which are
+  not part of the proposal; the Settings button at its end is `selected` while its page shows.
+
+**Status.** One per session, a shape and a colour each, so none is told by colour alone; each
+says its word in a tooltip. Every mark is still: nothing in the rail turns.
+
+| Status | Mark | Ink |
+|---|---|---|
+| Needs input | `hand` | `warning` |
+| Running | `LoaderCircle`, still | `accent` |
+| Failed | `TriangleAlert` | `danger` |
+| Done (unread) | `CircleCheck` | `success` |
+| Idle | `circle` | `muted` |
+
+Needs input and Failed need attention: they are what the count, the filter and a folded
+project's badge report, the most urgent first (Failed, then Needs input).
+
+**Accessible names.** A status mark, a badge and a git part carry the image role and their words
+(a badge: *atlas-api: Failed*). An icon-only button's name is the same as its tooltip, set on a
+wrapper: gpui-component's button takes its accessible name only from a text label, so a setter
+for an icon-only button belongs upstream.
+
+**Keys** (Ctrl where the app's other keys are): `Ctrl+K` searches, `Ctrl+N` starts a session as
+*New* does, `Alt+↑` / `Alt+↓` open the session before or after in the list's order. While the
+list holds the focus (a click on a row gives it), Enter opens the cursor's row or folds its
+project, and `←` / `→` fold and unfold the cursor's project. The cursor's row takes `selected`.
 
 ## Chat and composer
 
@@ -188,7 +255,7 @@ Conversation           Split                          Workbench focus
 
 ## Pages
 
-- The overview, Tasks and Issues take the content area and put the docks away. A page column is at
+- The overview, Tasks, Issues and Workflows take the content area and put the docks away. A page column is at
   most `PAGE_MAX`, inset `px_4`, its sections `gap_6` apart.
 - **A section** is a heading at `text_sm`, weight 500, an optional control at its end, then its rows in one
   hairline box divided by hairlines. A section that holds work or states (*Waiting on you*,
@@ -213,6 +280,8 @@ Conversation           Split                          Workbench focus
   auto`), never pills. The issue: its title, then one line of facts (`Open · atlas-api #42 ·
   opened … · bug`), where *Open* is a plain fact and not a coloured badge; *Where it stands* with
   one primary; the body; *What the work left*.
+- **Workflows:** one section of the workspace's workflows, each with *Run*, and *New workflow* at
+  its head. The lab draws the list only; running or writing one is the app's.
 
 ## Type, spacing and shape
 
@@ -256,7 +325,7 @@ Conversation           Split                          Workbench focus
   state it leads to.
 - **Focus** on a field darkens its edge to `muted` (for the composer, the card's edge). Controls
   draw no ring of their own here.
-- **Motion** is limited to what a state change needs: the running spinner turns, and the activity
+- **Motion** is limited to what a state change needs: the running spinner in the chat turns (the rail's marks are still), and the activity
   line's chevron turns as it opens. Everything else changes at once.
 
 ## Colour
@@ -278,6 +347,10 @@ hierarchy are identical in both.
 | `scrim` | under a dialog |
 
 - Solid fills only. Shadows only on what floats: popups, menus, dialogs.
+- **One exception to solid fills: the fade.** A name too long for its room in the rail fades
+  out over `FADE_W` at the room's edge instead of ending on an ellipsis (`controls::faded`). The
+  band is painted in the row's own opaque fill (the rail, or `selected` over it while hovered or
+  chosen), so it is invisible where a name already ended; the whole name shows on hover.
 - **One exception to colour meaning state: a diff.** Added lines are `success` and removed lines
   `danger`, because that is how every diff reads; the `+` and `−` signs stay, so the colour is
   never the only difference.
@@ -303,8 +376,8 @@ hierarchy are identical in both.
   pale pill with its word, in a stable column at the end of a row or line: `warning` on
   `warning_bg` (waits on the person), `accent` on `accent_bg` (running), `success` on `success_bg`
   (done), `danger` for a failure.
-- **State dot:** `DOT` in its `DOT_COLUMN`: `warning` waits on the person, `accent` is running,
-  `success` is done and idle. The lab also marks a failed turn in `danger`.
+- **Status mark:** an icon in its `DOT_COLUMN`, a shape and an ink per status (the rail's table).
+  A page row's state dot is `DOT` in the same column.
 - **Segmented control:** two or three short labels; the chosen one takes the `selected` fill.
 - **Field:** a hairline `control` edge at `h_6`, its placeholder in sentence case.
 - **Form row:** a label (and its description, wrapping) with the control at its end, a hairline
@@ -331,6 +404,11 @@ hierarchy are identical in both.
 | Settings is a page in the content area | Settings is a large dialog |
 | One primary per region, so a list and its detail side by side may each have one | one primary per view |
 | The composer is a panel card with no shadow | the composer card floats over the transcript with a shadow |
+| A session's status is an icon on the left of its row, a shape and an ink each: `warning` needs input, `accent` runs, `danger` failed, `success` done unread, `muted` idle | the primary colour waits, `warning` is working, a dot at the row's end |
+| The rail has a search over sessions and projects, and a filter menu in place of a *Projects* \| *All sessions* switch | no search; the switch |
+| A project's actions and a session's `⋯` show on hover; a folded project rolls up only what needs attention | they sit in the row |
+| Sessions start `RAIL_INDENT` in, under the project's name | sessions are indented behind a hairline guide |
+| *New* is a ghost button group beside the search | *New session* is the secondary fill |
 
 ## Backlog
 
@@ -354,7 +432,7 @@ window too, so a horizontal change never leaves an unreachable vertical stack.
 | Resizing across a presentation threshold | no lost draft, buffer, selection, scroll position or keyboard route; no flicker back and forth at the threshold |
 | Dragging the Workbench wider | the chat keeps `CHAT_MIN`; a list or a reader never overflows its container |
 | Editor, Markdown and Issues in a narrow dock | every item can be picked and read at a useful width, and the list stays reachable |
-| Long project, session, branch and document names | a controlled ellipsis or wrap; state and primary actions stay visible |
+| Long project, session, branch and document names | a fade in the rail, elsewhere a controlled ellipsis or wrap; state and primary actions stay visible |
 | The composer narrow and at an enlarged reading size | *Send*/*Stop* stays reachable; the branch and the mode never overlap |
 | A long permission command, a question with several fields | the content is bounded; the footer's actions and the answer field stay reachable |
 | `Ctrl+=` twice, then `Ctrl+0` | the reading content scales and comes back; bars keep their height |

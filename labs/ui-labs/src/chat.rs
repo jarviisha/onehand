@@ -36,8 +36,8 @@ impl Labs {
             .flex_none()
             .px_4()
             .gap_2()
-            .border_b_1()
-            .border_color(p.hairline)
+            // No rule under it: the transcript scrolls straight up to the
+            // header on the same surface.
             .when(self.rail_hidden, |d| {
                 d.child(
                     self.icon_button("show-rail", IconName::PanelLeftOpen, "Show the rail", cx)

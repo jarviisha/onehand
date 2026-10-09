@@ -58,13 +58,18 @@ pub const SEAM_DRAG_PX: f32 = 2.0;
 
 // ---- marks ----------------------------------------------------------------
 
-/// A state dot, in a stable 1rem column so names never shift beside it.
+/// A state dot.
 pub const DOT: f32 = 0.4375;
+/// The stable column a status mark or a row's icon sits in, so names never
+/// shift beside it.
 pub const DOT_COLUMN: f32 = 1.0;
 /// The dot on a header button saying something behind it is alive: smaller
 /// than a row's, because it sits on a glyph, and inset from the corner so it
 /// stays inside the button.
 pub const BADGE_DOT: f32 = DOT * 0.75;
+/// The band at the end of a name too long for its room, where the text fades
+/// into the row instead of ending on an ellipsis.
+pub const FADE_W: f32 = 1.25;
 /// A session row's text starts under its project's name: icon plus gap.
 pub const RAIL_INDENT: f32 = 1.75;
 /// Each level of a file tree steps in this far: half a rail session's indent,
@@ -75,9 +80,12 @@ pub const TREE_INDENT: f32 = 0.875;
 
 /// How wide a seam is to grab. The line drawn in it stays a hairline.
 pub const SEAM_GRAB_W: f32 = 0.375;
-/// The rail resizes between these; it hides completely, never to icons.
-pub const RAIL_W: f32 = 14.5;
-pub const RAIL_MAX_W: f32 = 20.0;
+/// The rail opens at `RAIL_W`, room for a session's two lines beside its
+/// status and actions, and resizes between the other two; it hides
+/// completely, never to icons.
+pub const RAIL_W: f32 = 20.0;
+pub const RAIL_MIN_W: f32 = 14.5;
+pub const RAIL_MAX_W: f32 = 28.0;
 /// The chat's minimum beside a dock, times the reading zoom. Below it the
 /// Workbench takes the content area instead of leaving a thin chat strip.
 pub const CHAT_MIN: f32 = 30.0;

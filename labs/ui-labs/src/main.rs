@@ -10,6 +10,9 @@
 //!   library's own buttons follow.
 //! - The rail opens the overview, Tasks, Issues, the composer cards and
 //!   Settings; a session returns to the chat; a project's `⋯` asks to delete.
+//! - `Ctrl+K` searches the rail, `Ctrl+N` starts a session, `Alt+↑` / `Alt+↓`
+//!   open the session before or after; in the rail's list, Enter opens the
+//!   row and `←` / `→` fold and unfold its project.
 use gpui::{
     App, AppContext, Context, FocusHandle, Hsla, InteractiveElement, IntoElement, KeyBinding,
     MouseButton, MouseMoveEvent, ParentElement, Render, SharedString, StatefulInteractiveElement,
@@ -57,7 +60,14 @@ actions!(
         ZoomOut,
         ZoomReset,
         PopupUp,
-        PopupDown
+        PopupDown,
+        FocusRailSearch,
+        NewSession,
+        PrevSession,
+        NextSession,
+        OpenCursor,
+        FoldCursor,
+        UnfoldCursor
     ]
 );
 
@@ -77,6 +87,15 @@ fn bind_keys(cx: &mut App) {
         // field's own, so it wins there and nowhere else.
         KeyBinding::new("up", PopupUp, Some("LabsPopup > Input")),
         KeyBinding::new("down", PopupDown, Some("LabsPopup > Input")),
+        KeyBinding::new("ctrl-k", FocusRailSearch, Some("Labs")),
+        KeyBinding::new("ctrl-n", NewSession, Some("Labs")),
+        KeyBinding::new("alt-up", PrevSession, Some("Labs")),
+        KeyBinding::new("alt-down", NextSession, Some("Labs")),
+        // The rail's list takes these only while it holds the focus, so a
+        // field keeps its own Enter and arrows.
+        KeyBinding::new("enter", OpenCursor, Some("LabsRail")),
+        KeyBinding::new("left", FoldCursor, Some("LabsRail")),
+        KeyBinding::new("right", UnfoldCursor, Some("LabsRail")),
     ]);
 }
 
@@ -86,6 +105,7 @@ enum Page {
     Overview,
     Tasks,
     Issues,
+    Workflows,
     Composer,
     Settings,
 }
@@ -116,6 +136,7 @@ struct Labs {
     hovered: Option<&'static str>,
     /// Projects deleted through the dialog.
     removed: Vec<&'static str>,
+    rail: rail::Rail,
     live: live::Live,
     wb: workbench::Wb,
     term: terminal::Term,
@@ -145,6 +166,7 @@ impl Labs {
             zoom: 1.0,
             hovered: None,
             removed: Vec::new(),
+            rail: rail::Rail::new(window, cx),
             live: live::Live::new(window, cx),
             wb: workbench::Wb::new(window, cx),
             term: terminal::Term::new(),
@@ -224,6 +246,13 @@ impl Render for Labs {
                 cx.listener(|this, _: &ZoomOut, _, cx| this.set_zoom(this.zoom - ZOOM_STEP, cx)),
             )
             .on_action(cx.listener(|this, _: &ZoomReset, _, cx| this.set_zoom(1.0, cx)))
+            .on_action(cx.listener(|this, _: &FocusRailSearch, window, cx| {
+                this.rail_hidden = false;
+                this.focus_rail_search(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &NewSession, _, cx| this.new_session_here(cx)))
+            .on_action(cx.listener(|this, _: &PrevSession, _, cx| this.step_session(false, cx)))
+            .on_action(cx.listener(|this, _: &NextSession, _, cx| this.step_session(true, cx)))
             .when_some(self.drag, |d, seam| {
                 if seam == Seam::Term {
                     d.cursor_row_resize()
@@ -251,7 +280,7 @@ impl Render for Labs {
                 }),
             )
             .when(rail_on, |d| {
-                d.child(self.rail(&p, cx))
+                d.child(self.rail(&p, window, cx))
                     .child(self.seam(&p, Seam::Rail, cx))
             })
             .when(!chat, |d| d.child(self.page_view(&p, avail, cx)))
