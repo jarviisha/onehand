@@ -254,7 +254,7 @@ fn every_other_move_is_a_switch() {
 #[test]
 fn a_calm_session_carries_no_signal() {
     assert_eq!(
-        SessionSignal::pick(Link::Connected, false, false, false),
+        SessionSignal::pick(Link::Connected, false, false, false, false),
         None
     );
 }
@@ -265,7 +265,7 @@ fn a_calm_session_carries_no_signal() {
 #[test]
 fn coming_up_is_not_a_signal() {
     assert_eq!(
-        SessionSignal::pick(Link::Connecting, false, false, false),
+        SessionSignal::pick(Link::Connecting, false, false, false, false),
         None
     );
 }
@@ -274,20 +274,24 @@ fn coming_up_is_not_a_signal() {
 fn each_state_shows_when_it_is_the_only_one() {
     use SessionSignal::*;
     assert_eq!(
-        SessionSignal::pick(Link::Lost, false, false, false),
+        SessionSignal::pick(Link::Lost, false, false, false, false),
         Some(Lost)
     );
     assert_eq!(
-        SessionSignal::pick(Link::Connected, true, false, false),
+        SessionSignal::pick(Link::Connected, false, true, false, false),
         Some(AwaitingUser)
     );
     assert_eq!(
-        SessionSignal::pick(Link::Connected, false, true, false),
+        SessionSignal::pick(Link::Connected, false, false, true, false),
         Some(Busy)
     );
     assert_eq!(
-        SessionSignal::pick(Link::Connected, false, false, true),
+        SessionSignal::pick(Link::Connected, false, false, false, true),
         Some(UnseenTurn)
+    );
+    assert_eq!(
+        SessionSignal::pick(Link::Connected, true, false, false, false),
+        Some(Failed)
     );
 }
 
@@ -299,17 +303,27 @@ fn each_state_shows_when_it_is_the_only_one() {
 fn the_more_urgent_state_wins() {
     use SessionSignal::*;
     assert_eq!(
-        SessionSignal::pick(Link::Lost, true, false, true),
+        SessionSignal::pick(Link::Lost, false, true, false, true),
         Some(Lost),
         "a dead adapter outranks a question nobody can answer any more"
     );
     assert_eq!(
-        SessionSignal::pick(Link::Connected, true, true, true),
+        SessionSignal::pick(Link::Lost, true, false, false, false),
+        Some(Lost),
+        "a dead adapter outranks the error it may have died on"
+    );
+    assert_eq!(
+        SessionSignal::pick(Link::Connected, true, true, true, true),
+        Some(Failed),
+        "a broken turn outranks a question and a run"
+    );
+    assert_eq!(
+        SessionSignal::pick(Link::Connected, false, true, true, true),
         Some(AwaitingUser),
         "a parked question outranks busy: only one of them moves on its own"
     );
     assert_eq!(
-        SessionSignal::pick(Link::Connected, false, true, true),
+        SessionSignal::pick(Link::Connected, false, false, true, true),
         Some(Busy),
         "what is happening now outranks what happened last turn"
     );
@@ -356,7 +370,7 @@ fn one_session_and_one_project_agree() {
             unseen.then_some(UnseenTurn),
         ];
         assert_eq!(
-            SessionSignal::pick(link, awaiting, busy, unseen),
+            SessionSignal::pick(link, false, awaiting, busy, unseen),
             SessionSignal::most_urgent(parts.into_iter().flatten()),
         );
     }

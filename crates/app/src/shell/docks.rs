@@ -459,6 +459,25 @@ impl Shell {
         cx.notify();
     }
 
+    /// Whether the rail is on screen.
+    pub(crate) fn rail_shown(&self) -> bool {
+        !self.rail_hidden && self.app_maximized.is_none()
+    }
+
+    pub(crate) fn rail_state(&self) -> &crate::rail::RailState {
+        &self.rail
+    }
+
+    pub(crate) fn rail_state_mut(&mut self) -> &mut crate::rail::RailState {
+        &mut self.rail
+    }
+
+    /// The window's workspace and what is known about its projects, for the
+    /// rail to draw.
+    pub(crate) fn workspace_window(&self) -> &crate::state::WorkspaceWindow {
+        &self.window
+    }
+
     /// Show or hide the rail.
     ///
     /// The chat pane is told, because it is what offers the way back: with the
@@ -473,7 +492,7 @@ impl Shell {
     }
 
     /// Bring the rail back, whatever asked for it.
-    pub(super) fn show_rail(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn show_rail(&mut self, cx: &mut Context<Self>) {
         if !self.rail_hidden {
             return;
         }

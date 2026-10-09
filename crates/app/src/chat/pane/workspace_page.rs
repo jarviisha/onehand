@@ -408,6 +408,7 @@ impl ChatPane {
                 match signal {
                     SessionSignal::Busy => working.push(row),
                     SessionSignal::Lost
+                    | SessionSignal::Failed
                     | SessionSignal::AwaitingUser
                     | SessionSignal::UnseenTurn => waiting.push(row),
                 }

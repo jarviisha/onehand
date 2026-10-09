@@ -1,44 +1,35 @@
 use super::row::{
-    DragGhost, MAX_BRANCH_W, ProjectDrag, RailRow, Row, hover_fill, menu_button, project_key,
-    rail_control,
+    DragGhost, MAX_BRANCH_W, ProjectDrag, faded, hover_fill, labelled, menu_button, project_key,
+    rail_control, row_surfaces,
 };
-use super::session::{Note, session_row, signal_mark};
+use super::session::{signal_hint, status_mark};
 use crate::chat::pane::{ProjectFacts, SessionSignal};
 use crate::shell::Shell;
 use crate::state::WorkspaceWindow;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, AppContext as _, ClickEvent, Context, InteractiveElement, IntoElement, ParentElement,
-    SharedString, StatefulInteractiveElement, Styled, WeakEntity, Window, div,
+    AnyElement, App, AppContext as _, ClickEvent, Context, InteractiveElement, IntoElement,
+    ParentElement, SharedString, StatefulInteractiveElement, Styled, WeakEntity, Window, div, rems,
 };
-use gpui_component::menu::{PopupMenu, PopupMenuItem};
-use gpui_component::{ActiveTheme, Icon, IconName, StyledExt};
-use onehand_core::agent::Session;
+use gpui_component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
+use gpui_component::tooltip::Tooltip;
+use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 
 /// What a project row says on hover: the whole of everything the row cuts.
 ///
-/// The full name first, then the branch, the count in words, and the root's
+/// The full name first, then the branch, the counts in words, and the root's
 /// path -- the last because the label is a folder name and two projects can
-/// share one. This used to hang off the git suffix alone, which meant a
-/// project that was neither a repository nor had changes drew no suffix and so
-/// had nothing to hover; the row is its own hover target now, so every project
-/// answers.
+/// share one.
 pub(super) fn project_hint(
     label: &str,
-    branch: Option<&SharedString>,
-    changed: usize,
+    git: Option<&GitLine>,
     auto: Option<&SharedString>,
     path: &SharedString,
 ) -> Vec<SharedString> {
     let mut hint = vec![SharedString::from(label.to_string())];
-    if let Some(branch) = branch {
-        hint.push(SharedString::from(format!("Branch: {branch}")));
-    }
-    if changed > 0 {
-        hint.push(SharedString::from(format!(
-            "{changed} changed {}",
-            if changed == 1 { "file" } else { "files" }
-        )));
+    if let Some(git) = git {
+        hint.push(SharedString::from(format!("Branch: {}", git.branch)));
+        hint.extend(git.parts().into_iter().map(|(_, _, words)| words));
     }
     if let Some(auto) = auto {
         hint.push(auto.clone());
@@ -303,351 +294,340 @@ fn project_menu(
     }
 }
 
-/// Whether naming the agent on a project's session rows tells the reader
-/// anything.
-///
-/// It does exactly when the sessions disagree about it. Configured agents are
-/// the wrong count and were the one this used: a second entry in the settings
-/// file put the same word — truncated, since it shares the row with the
-/// conversation's title — on every session of every project, including all the
-/// projects running one agent apiece. What the footnote is for is telling two
-/// rows apart, so the question it answers has to be asked of the rows.
-pub(super) fn runs_more_than_one_agent<'a>(agents: impl Iterator<Item = &'a str>) -> bool {
-    let mut seen: Option<&str> = None;
-    for agent in agents {
-        match seen {
-            Some(first) if first != agent => return true,
-            Some(_) => {}
-            None => seen = Some(agent),
-        }
-    }
-    false
+/// A project's git state as its row says it.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct GitLine {
+    pub(super) branch: SharedString,
+    pub(super) changed: usize,
+    pub(super) ahead: usize,
+    pub(super) behind: usize,
 }
 
-/// One folder row, with its sessions nested beneath it.
-pub(super) fn folder_row(
-    shell: &Shell,
+/// Which part of the git line a count is.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) enum GitPart {
+    Changed,
+    Ahead,
+    Behind,
+}
+
+impl GitLine {
+    pub(super) fn of(status: &onehand_core::gitstat::GitStatus) -> Self {
+        Self {
+            branch: status.branch.clone().into(),
+            changed: status.changed,
+            ahead: status.ahead,
+            behind: status.behind,
+        }
+    }
+
+    /// The counts that are not zero, each with its full words.
+    pub(super) fn parts(&self) -> Vec<(GitPart, usize, SharedString)> {
+        fn count(n: usize, one: &str, many: &str) -> String {
+            format!("{n} {}", if n == 1 { one } else { many })
+        }
+        [
+            (
+                GitPart::Changed,
+                self.changed,
+                count(self.changed, "uncommitted change", "uncommitted changes"),
+            ),
+            (
+                GitPart::Ahead,
+                self.ahead,
+                count(self.ahead, "commit", "commits") + " ahead of the remote",
+            ),
+            (
+                GitPart::Behind,
+                self.behind,
+                count(self.behind, "commit", "commits") + " behind the remote",
+            ),
+        ]
+        .into_iter()
+        .filter(|(_, n, _)| *n > 0)
+        .map(|(part, n, words)| (part, n, words.into()))
+        .collect()
+    }
+}
+
+/// The dot before a project's change count: a count of what, said on hover.
+const CHANGE_DOT: gpui::Rems = rems(0.375);
+
+/// One part of a project's git line: a mark and its count, named in full on
+/// hover and to assistive technology.
+fn git_part(
+    id: gpui::ElementId,
+    part: GitPart,
+    n: usize,
+    words: SharedString,
+    cx: &App,
+) -> impl IntoElement + use<> {
+    let mark = match part {
+        GitPart::Changed => div()
+            .size(CHANGE_DOT)
+            .rounded_full()
+            .bg(cx.theme().muted_foreground)
+            .into_any_element(),
+        GitPart::Ahead => Icon::new(IconName::ArrowUp).xsmall().into_any_element(),
+        GitPart::Behind => Icon::new(IconName::ArrowDown).xsmall().into_any_element(),
+    };
+    div()
+        .id(id)
+        .h_flex()
+        .items_center()
+        .flex_none()
+        .gap_0p5()
+        .role(gpui::accesskit::Role::Image)
+        .aria_label(words.clone())
+        .tooltip(move |window, cx| Tooltip::new(words.clone()).build(window, cx))
+        .child(mark)
+        .child(n.to_string())
+}
+
+/// How a project row stands in the list.
+pub(super) struct Place {
+    /// Where the row is drawn, which is what a drag hands back.
+    pub(super) at: usize,
+    pub(super) open: bool,
+    /// The keyboard's row, while the list has focus.
+    pub(super) cursor: bool,
+    /// What its sessions roll up to, drawn only while folded.
+    pub(super) badge: Option<SessionSignal>,
+}
+
+/// A project: the fold chevron, its folder, its name fading where its room
+/// ends, its git line, the pin and the unattended pill, and while folded the
+/// most urgent state of its sessions. Under the pointer, over the row's end:
+/// a new session here, and `⋯`.
+///
+/// A click puts the keyboard on it and folds or unfolds it; it does not
+/// change the session on screen.
+pub(super) fn project_row(
     window_state: &WorkspaceWindow,
     root_idx: usize,
-    // Where this row is *drawn*, which is not `root_idx`: pinned projects come
-    // first. It is what a drag hands back, since a drop means "put it where
-    // this row is" and that is a place in the list rather than a place in
-    // `roots`.
-    at: usize,
+    place: Place,
     cx: &mut Context<Shell>,
-) -> Row {
+) -> AnyElement {
     let root = &window_state.workspace.roots[root_idx];
-    let is_active = window_state.workspace.active_root == root_idx;
-    // The workspace page is about no one project, so while it shows, no project
-    // or session row is drawn as the one on screen.
-    let marked = is_active && !shell.page_shown(cx);
-    let active_session = root.active_session;
+    let Place {
+        at,
+        open,
+        cursor,
+        badge,
+    } = place;
     let pinned = root.pinned;
-    let unattended = root.unattended;
-    // The issue a run is working on in this project right now, if one is. The
-    // run's own session sits under a worktree's row of its own, so without this
-    // the project the issue belongs to would say nothing about it.
-    // A working run is named ahead of a waiting one, since a project can hold
-    // both and the older, usually the waiting one, would otherwise hide it.
+    // The issue a run is working on in this project right now, if one is; the
+    // working one ahead of a waiting one, since a project can hold both.
     let runs = crate::task::live_issues(cx);
     let run = run_on(
         runs.iter()
             .map(|run| (run.repo.as_path(), run.name.as_str(), run.waiting.is_some())),
         &root.path,
     );
-    // The kept issue of the run the pill names, which pressing it opens on
-    // the Issues page; a forge's own issue has no page to open on.
+    // The kept issue of the run the pill names, which pressing it opens on the
+    // Issues page; a forge's own issue has no page to open on.
     let pill_issue = run.and_then(|(name, waiting)| {
         runs.iter()
             .find(|r| r.repo == root.path && r.name == name && r.waiting.is_some() == waiting)?
             .kept
     });
-    let pill_root = root.path.clone();
     let auto = auto_status(
-        unattended,
+        root.unattended,
         run,
         &crate::unattended::label(cx),
         // What stops every run outranks what stops this project's.
         crate::unattended::blocked(cx).or_else(|| crate::unattended::problem(&root.path, cx)),
     );
-    // Only the selected project shows what is in it until somebody says
-    // otherwise, or a workspace of ten roots is a rail nobody can see the
-    // bottom of. The answer is the window's rather than the row's: the row is
-    // not drawn at all while the flat list shows, and a fold kept inside it
-    // died every time the user looked at the other tab.
-    let unfolded = shell.project_unfolded(&root.path);
-    let fold_path = root.path.clone();
-
-    // Branch and count are read as two fields rather than through
-    // `GitStatus::label()`: the label is one string, and one string can only
-    // shrink as a unit -- which is how the count, the more valuable half, ended
-    // up being the part that got clipped off the right edge.
-    let git = window_state.git.get(&root.path);
-    // A status at all is the answer to "is this a git repository": the sweep
-    // only records a root `git status` succeeded in.
-    let is_repo = git.is_some();
-    let facts = ProjectFacts::of(root, is_repo);
-    let branch = git.map(|status| SharedString::from(status.branch.clone()));
-    let changed = git.map(|status| status.changed).unwrap_or(0);
+    let status = window_state.git.get(&root.path);
+    let facts = ProjectFacts::of(root, status.is_some());
+    let git = status.map(GitLine::of);
     let path = SharedString::from(root.path.display().to_string());
-    // What the sessions inside add up to. A collapsed project used to be silent
-    // about everything in it: an agent could be waiting on an answer, or dead,
-    // and nothing said so until someone thought to expand that row.
-    let rollup = SessionSignal::most_urgent(
-        root.sessions
-            .iter()
-            .filter_map(|session| shell.session_row(session.uid, cx).signal),
+    let mut hint = project_hint(
+        &root.label,
+        git.as_ref(),
+        auto.as_ref().map(|auto| &auto.line),
+        &path,
     );
-    // Whether the agent is worth naming on the rows below, answered by this
-    // project's own sessions rather than by the length of the agent menu.
-    let among_many = runs_more_than_one_agent(root.sessions.iter().map(Session::title));
-    let mut children = match unfolded {
-        // Folded is not "drawn and hidden": a closed project builds no rows at
-        // all, which is what keeps a workspace of ten roots cheap to draw.
-        false => Vec::new(),
-        true => root
-            .sessions
-            .iter()
-            .enumerate()
-            .map(|(i, session)| {
-                session_row(
-                    shell,
-                    root_idx,
-                    i,
-                    session,
-                    marked && active_session == i,
-                    Note::Agent { among_many },
-                    cx,
-                )
-            })
-            .collect::<Vec<_>>(),
-    };
-
-    // A project with nothing running expands into the one thing to do about
-    // it. Before this it expanded into nothing at all while the centre of the
-    // window asked the user to pick a session -- from a list that was empty,
-    // which is the state every freshly added project starts in.
-    //
-    // The offer alone, with no "No sessions yet" above it: that line said what
-    // the empty list already said.
-    if unfolded && children.is_empty() {
-        children.push(
-            RailRow::new(
-                format!("rail-start-{root_idx}"),
-                "Start a session",
-                cx.listener(move |shell: &mut Shell, _: &ClickEvent, window, cx| {
-                    shell.new_session_in(root_idx, window, cx);
-                }),
-            )
-            .icon(IconName::Plus),
-        );
+    if pinned {
+        hint.insert(1, "Pinned to the top".into());
     }
-
-    // A weak handle because both menu closures outlive this frame.
-    let menu_target = cx.entity().downgrade();
-    let suffix_target = menu_target.clone();
     let key = project_key(&root.path);
+    let (rest, hovered) = row_surfaces(cursor, cx);
+    let (shell, hover) = (cx.entity().downgrade(), hover_fill(cx));
+    let muted = cx.theme().muted_foreground;
+    let (radius, chip, chip_ink) = (
+        cx.theme().radius,
+        cx.theme().secondary,
+        cx.theme().secondary_foreground,
+    );
+    let warning = crate::theme::status_ink(cx).warning;
+    let (fold_path, pill_root, ghost) = (root.path.clone(), root.path.clone(), root.label.clone());
+    let label = root.label.clone();
 
-    // A weak handle for the caret, which outlives this frame as the menus do.
-    let fold_target = cx.entity().downgrade();
-    let drag_target = cx.entity().downgrade();
-    let drag_label = root.label.clone();
-
-    Row {
-        item: RailRow::new(
-            key,
-            root.label.clone(),
+    div()
+        .id(gpui::ElementId::Name(key.clone()))
+        .group(key.clone())
+        .h_flex()
+        .items_center()
+        .relative()
+        .h(super::ROW_H)
+        .pl_1p5()
+        .pr_1()
+        .gap_1p5()
+        .rounded(radius)
+        .cursor_pointer()
+        .when(cursor, |d| d.bg(cx.theme().sidebar_accent))
+        .when(!cursor, |d| d.hover(move |d| d.bg(hover)))
+        .text_color(cx.theme().foreground)
+        .font_medium()
+        .on_click(
             cx.listener(move |shell: &mut Shell, _: &ClickEvent, window, cx| {
-                shell.select_root(root_idx, window, cx);
+                shell.rail_click_project(fold_path.clone(), window, cx);
             }),
         )
-        .icon(IconName::Folder)
-        // The full name, the branch, the count in words and the root's path,
-        // on the row itself: every part the row draws is cut to keep the
-        // name first, so the hover is where the whole of each lives.
-        .hint(project_hint(
-            &root.label,
-            branch.as_ref(),
-            changed,
-            auto.as_ref().map(|auto| &auto.line),
-            &path,
-        ))
-        // The selected project is marked whether or not it has sessions. While
-        // this was `is_active && sessions.is_empty()`, a project holding the
-        // conversation on screen was the one project in the rail with no mark
-        // at all -- the highlight moved to its session row and the row naming
-        // the *project* went plain, so nothing on screen said which project the
-        // user was in.
-        .active(marked)
-        // **Selecting a project and folding it away are two different
-        // intentions, so they are two different targets.** While the whole
-        // row toggled, every click on a project both switched to it and
-        // snapped its sessions shut -- so reaching a session in the project
-        // you had just arrived at meant clicking the row a second time to
-        // undo what the first click did.
-        //
-        // Open and never toggle, which is not the same as leaving the fold
-        // alone: a row that only selected would hide the sessions of every
-        // project the user had ever folded, and arriving at one would mean
-        // hunting the caret to see what is in it -- the same extra click,
-        // in mirror image. Going to a project is asking what is in it, so
-        // `Shell::select_root` reveals; only the caret puts it away again.
-        // (The click handler rides in `RailRow::new` above.)
-        .menu(project_menu(root_idx, facts, menu_target))
-        // Dragged and dropped by display position: `Workspace::move_root`
-        // writes the permutation back into `roots`, so the order the row was
-        // dropped into is the order the workspace file keeps. Crossing the pin
-        // line is clamped there rather than refused here, since the row has no
-        // way to know which side of it a drop landed on.
-        .reorder(move |row| {
-            let (target, ghost) = (drag_target.clone(), drag_label.clone());
-            row.on_drag(ProjectDrag { from: at }, move |_, _, _, cx| {
-                let ghost = ghost.clone();
-                cx.new(|_| DragGhost(SharedString::from(ghost)))
+        .child(
+            Icon::new(match open {
+                true => IconName::ChevronDown,
+                false => IconName::ChevronRight,
             })
-            .drag_over::<ProjectDrag>(|style, _, _, cx| style.bg(hover_fill(cx)))
-            .on_drop(move |drag: &ProjectDrag, window, cx| {
-                let from = drag.from;
-                let _ = target.update(cx, |shell: &mut Shell, cx| {
-                    shell.move_root(from, at, window, cx);
-                });
+            .xsmall()
+            .text_color(muted),
+        )
+        .child(
+            Icon::new(match open {
+                true => IconName::FolderOpen,
+                false => IconName::Folder,
             })
-        })
-        .suffix(move |_, cx: &mut App| {
-            let auto_badge = auto.as_ref().map(|auto| (auto.badge.clone(), auto.stuck));
-            let warning = crate::theme::status_ink(cx).warning;
-            let (suffix_target, fold_target) = (suffix_target.clone(), fold_target.clone());
-            let (pill_target, pill_root) = (suffix_target.clone(), pill_root.clone());
-            let fold_path = fold_path.clone();
-            let radius = cx.theme().radius;
-            let (badge_bg, badge_fg) = (cx.theme().secondary, cx.theme().secondary_foreground);
+            .small(),
+        )
+        .child(
+            faded(
+                ("project-name", root_idx),
+                label.clone(),
+                key.clone(),
+                rest,
+                hovered,
+            )
+            .tooltip(move |window, cx| {
+                let hint = hint.clone();
+                Tooltip::element(move |_, _| div().v_flex().gap_0p5().children(hint.clone()))
+                    .build(window, cx)
+            }),
+        )
+        .child(
             div()
                 .h_flex()
                 .items_center()
-                .flex_shrink(1.)
-                .min_w_0()
-                .gap_1()
+                .flex_none()
+                .gap_1p5()
                 .text_xs()
-                .text_color(cx.theme().muted_foreground)
-                // A pinned project must say so on the row. Position alone does
-                // not: "first in the list" is where a project can also be by
-                // accident, so a pinned row and an ordinary top row would look
-                // identical and the order would read as the app rearranging
-                // things on its own.
-                .when(pinned, |row| {
-                    row.child(Icon::new(IconName::Star).size_3().flex_none())
-                })
-                // The branch, written out on the selected row alone. It is
-                // what you read while you are working *in* a project, and on
-                // the ten rows you are not in it is ten strings cut short --
-                // where `feat/consol` and `feat/codoh` say nothing to tell
-                // their projects apart and every one is taking width from the
-                // name that would. The row's hover carries it whole for every
-                // repository either way.
-                // Ellipsized and not faded, for the reason a session row's
-                // footnote is: this box is sized by the branch name itself, so
-                // a fade at its right edge would eat the tail of `main` as
-                // readily as the tail of a name that overran. The row's hover
-                // carries the whole branch either way.
-                .when_some(branch.clone().filter(|_| is_active), |row, branch| {
-                    row.child(div().max_w(MAX_BRANCH_W).truncate().child(branch))
-                })
-                // The count on every row, and as a **badge**, not a coloured
-                // number: as a bare figure in the warning tint its colour was
-                // the whole message, and a colour is a message only to someone
-                // who already knows the code -- a project with a lot of
-                // ordinary work in it read as a project in trouble. The pill
-                // says "this is a count"; the hover says a count of what.
-                //
-                // `flex_none`: the count is a signal, not detail. It is the
-                // one thing here that must survive any width.
-                .when(changed > 0, |row| {
+                .font_normal()
+                .text_color(muted)
+                .when_some(git, |row, git| {
                     row.child(
                         div()
-                            .flex_none()
-                            .px_1()
-                            .rounded(radius)
-                            .bg(badge_bg)
-                            .text_color(badge_fg)
-                            .child(format!("{changed}")),
+                            .max_w(MAX_BRANCH_W)
+                            .truncate()
+                            .child(git.branch.clone()),
                     )
+                    .children(git.parts().into_iter().map(
+                        |(part, n, words)| {
+                            let id = SharedString::from(format!("{key}-{part:?}"));
+                            git_part(gpui::ElementId::Name(id), part, n, words, cx)
+                        },
+                    ))
                 })
-                // Whether this project's labelled issues are worked unattended,
-                // and the issue a run is on right now. A **word** in the same
-                // pill as the count rather than an icon: the pill already reads
-                // as "a fact about this project", and a glyph would be one more
-                // shape to learn. `flex_none` for the count's reason — a
-                // permission to push that is quietly cut off the row is the
-                // worst thing this row could hide.
-                // Stuck takes the warning ink and keeps the word: the colour
-                // says "look here", and the hover says what is wrong.
-                // A run's pill opens its issue on the Issues page: the way
-                // back from the run to what it works.
-                .when_some(auto_badge, |row, (badge, stuck)| {
+                // Position alone does not say a project is pinned: first in
+                // the list is where a project can also be by accident.
+                .when(pinned, |row| row.child(Icon::new(IconName::Star).xsmall()))
+                // Whether its labelled issues are worked unattended, and the
+                // issue a run is on. Stuck takes the warning ink; the hover
+                // says why. A run's pill opens its issue on the Issues page.
+                .when_some(auto, |row, auto| {
+                    let target = shell.clone();
                     row.child(
                         div()
                             .id(("project-auto", root_idx))
                             .flex_none()
                             .px_1()
                             .rounded(radius)
-                            .bg(badge_bg)
-                            .text_color(if stuck { warning } else { badge_fg })
-                            .child(badge)
+                            .bg(chip)
+                            .text_color(if auto.stuck { warning } else { chip_ink })
+                            .child(auto.badge)
                             .when_some(pill_issue, |pill, number| {
-                                pill.occlude().cursor_pointer().on_click(
-                                    move |_, window, cx: &mut App| {
+                                pill.cursor_pointer()
+                                    .on_mouse_up(gpui::MouseButton::Left, |_, _, cx| {
+                                        cx.stop_propagation()
+                                    })
+                                    .on_click(move |_, window, cx: &mut App| {
                                         let root = pill_root.clone();
-                                        pill_target
+                                        target
                                             .update(cx, |shell: &mut Shell, cx| {
                                                 shell.open_issue_on_page(&root, number, window, cx)
                                             })
                                             .ok();
-                                    },
-                                )
+                                    })
                             }),
                     )
-                })
-                .when_some(rollup, |row, signal| row.child(signal_mark(signal, cx)))
-                .when(is_active, |row| {
-                    row.child(menu_button(
-                        rail_control(("project-menu", root_idx), IconName::Ellipsis),
+                }),
+        )
+        .children(badge.filter(|_| !open).map(|signal| {
+            let label = format!("{}: {}", root.label, signal_hint(Some(signal)));
+            status_mark(("badge", root_idx).into(), Some(signal), label.into(), cx)
+        }))
+        // Over the end of the row, on its hover fill, so they take no room
+        // from the name while hidden.
+        .child(
+            div()
+                .h_flex()
+                .items_center()
+                .absolute()
+                .top_0()
+                .bottom_0()
+                .right_0()
+                .px_1()
+                .rounded(radius)
+                .bg(hovered)
+                .invisible()
+                .group_hover(key.clone(), |s| s.visible())
+                .child(labelled(
+                    ("project-new-name", root_idx),
+                    "New session in this project",
+                    rail_control(("project-new", root_idx), IconName::Plus, cx)
+                        .tooltip("New session in this project")
+                        .on_click(cx.listener(move |shell: &mut Shell, _, window, cx| {
+                            shell.new_session_in(root_idx, window, cx);
+                        })),
+                ))
+                .child(labelled(
+                    ("project-menu-name", root_idx),
+                    "Project actions",
+                    menu_button(
+                        rail_control(("project-menu", root_idx), IconName::Ellipsis, cx),
                         "What can be done with this project",
-                        project_menu(root_idx, facts, suffix_target),
-                    ))
-                })
-                // Last, so it is in the same place on every row whatever
-                // else the row happens to be carrying -- a control the eye
-                // has to find is not a target, and this is the one the
-                // whole click-reveals rule sends people to.
-                //
-                // `occlude`, as the ••• beside it is: the row's own click
-                // selects the project, and putting its sessions away must
-                // not do that on the way past.
-                .child(
-                    div().flex_none().occlude().child(
-                        rail_control(
-                            ("project-fold", root_idx),
-                            match unfolded {
-                                true => IconName::ChevronDown,
-                                false => IconName::ChevronRight,
-                            },
-                        )
-                        .tooltip(match unfolded {
-                            true => "Hide this project's sessions",
-                            false => "Show this project's sessions",
-                        })
-                        .on_click(move |_, _, cx: &mut App| {
-                            let fold_path = fold_path.clone();
-                            fold_target
-                                .update(cx, |shell: &mut Shell, cx| {
-                                    shell.toggle_fold(fold_path, cx);
-                                })
-                                .ok();
-                        }),
+                        project_menu(root_idx, facts, shell.clone()),
                     ),
-                )
-                .into_any_element()
-        }),
-        children,
-    }
+                )),
+        )
+        // Dropped by display position: `Workspace::move_root` writes the
+        // permutation back into the roots, and clamps a drop across the pin
+        // line rather than refusing it.
+        .on_drag(ProjectDrag { from: at }, move |_, _, _, cx| {
+            let ghost = ghost.clone();
+            cx.new(|_| DragGhost(SharedString::from(ghost)))
+        })
+        .drag_over::<ProjectDrag>(|style, _, _, cx| style.bg(hover_fill(cx)))
+        .on_drop({
+            let target = shell.clone();
+            move |drag: &ProjectDrag, window, cx| {
+                let from = drag.from;
+                let _ = target.update(cx, |shell: &mut Shell, cx| {
+                    shell.move_root(from, at, window, cx);
+                });
+            }
+        })
+        .context_menu(move |menu, window, cx| {
+            project_menu(root_idx, facts, shell.clone())(menu, window, cx)
+        })
+        .into_any_element()
 }

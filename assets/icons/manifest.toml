@@ -105,3 +105,14 @@ keyboard = "lucide:keyboard"
 # something passed, and `inbox`, which the *Tasks* row right above it already
 # wears.
 circle-dot = "lucide:circle-dot"
+# The rail's status marks and row actions. The bundled set draws no hand, no
+# bare circle, no archive box, no stop square and no filter of any kind: its
+# nearest shapes are `circle-check` and `circle-x`, which already mean done and
+# dismiss; `pause`, which says the turn would resume; and `inbox`, which the
+# Tasks row wears. Needs input is a raised hand, idle an empty circle, Stop a
+# square, Archive a box, and the sessions filter the filter lines.
+hand = "lucide:hand"
+circle = "lucide:circle"
+archive = "lucide:archive"
+square = "lucide:square"
+list-filter = "lucide:list-filter"

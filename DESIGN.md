@@ -22,7 +22,8 @@ when it looks right, because a theme switch cannot reach it.
    transcript (the composer card, the cards pinned above it, the attachment tray and the
    to-bottom button).
 3. **Colour means state.** One accent, from the theme. Danger, warning and success ink mark
-   failure, in-flight and done. Anything else is `muted_foreground`, or the transcript's
+   failure, in-flight and done; in the rail, warning is what waits on the person and the accent
+   what runs. Anything else is `muted_foreground`, or the transcript's
    `meta_ink`, one step nearer full ink.
 4. **Mono for machines, sans for people.** Code, paths, terminal output and diffs use
    `mono_font_family`. Anything a person wrote uses the default family.
@@ -40,52 +41,53 @@ monospace font.
 
 ```
 ┌──────────────────┬────────────────────────────────────┬──────────────────┐
-│ Workspace name   │ Title (...)    past close term wb  │ modes   max hide │
-│ Add project...   │                                    │                  │
+│ W Workspace   v <│ Title (...)    past close term wb  │ modes   max hide │
+│ Search...  New v │                                    │                  │
 │ Overview         │ workflow > step > step   Stop      │                  │
 │ Tasks         2  │                                    │                  │
 │ Issues           │                                    │                  │
 │ Workflows        │                                    │                  │
-│ [+ New session v]│                                    │    Workbench     │
+│ Sessions  2 need │                                    │    Workbench     │
 │ ──────────────── │          agent pane                │  (right dock,    │
-│ Projects | All   │        (centre, flexes)            │   full height)   │
-│ > project  main  │                                    │                  │
-│     session      │  ┌──────────── composer ──────┐    │                  │
-│     session      │  │ +  Fast  model        Send │    │                  │
+│ v project  main  │        (centre, flexes)            │   full height)   │
+│   o session      │                                    │                  │
+│     Idle . agent │  ┌──────────── composer ──────┐    │                  │
+│ + Add project... │  │ +  Fast  model        Send │    │                  │
 │                  │  └────────────────────────────┘    │                  │
 │                  │    branch                mode      │                  │
 │                  ├────────────────────────────────────┤                  │
 │                  │ shell tabs  +                      │                  │
-│ Settings         │ terminal (bottom dock)             │                  │
+│         Settings │ terminal (bottom dock)             │                  │
 └──────────────────┴────────────────────────────────────┴──────────────────┘
         rail                     DockArea
 ```
 
-- **Rail.** App chrome outside the dock, so a layout restore cannot lose it. Top to bottom:
-  - the workspace row, which opens the workspace switcher;
-  - *Add project…*;
-  - *Workspace overview*, highlighted while that page shows;
-  - *Tasks*, highlighted the same way, with a count pill of the tasks that need attention (no pill
-    at zero);
-  - *Issues* and *Workflows*, highlighted the same way, with no count (*Tasks* already counts
-    what needs a person);
-  - *New session*, a filled split button whose caret picks the project and agent (shown only when
-    there is a choice);
-  - a hairline;
-  - a *Projects | All sessions* switch;
-  - the scrolling tree, or under *All sessions* every session in the order it was made: rows
-    that cannot be dragged, each with its project as a muted footnote;
-  - *Settings* in the footer.
+- **Rail.** App chrome outside the dock, so a layout restore cannot lose it. Top to bottom: the
+  workspace bar (letter tile, name, switcher, *Hide the rail*); the search over session titles and
+  project names (`Ctrl+K` outside a terminal, showing a hidden rail) beside *New*, which starts in
+  the keyboard's project, else the one on screen, its caret picking *Start in* or *With agent*;
+  *Overview*, *Tasks* (a pill counting tasks that need attention, none at zero), *Issues* and
+  *Workflows*, each filled while its page shows; *Sessions* with a warning-ink *N need attention*
+  chip (shown above zero or while on, toggling that filter and back) and the filter menu (*By
+  project*, *All sessions*, *Needs attention*, *Recent activity*) over a hairline; the scrolling
+  list, ending on *Add project…*; a foot with *Settings*, marked while it shows.
 
-  A project row carries its folder icon and name, then any of: a pin, the branch (selected row
-  only), the change count, an unattended-run pill (*auto*, *auto · N*, *auto · N waiting*), the
-  most urgent session mark (a run's pill opens its issue on the Issues page), the ellipsis menu
-  (selected row only; every row has it on right-click) and the fold chevron, which alone folds. A
-  session row carries its name, its mark only when it has one, and a muted agent footnote only
-  when the project's sessions use different agents and the conversation has a title. The tree's
-  order is the user's, set by dragging; pinned projects stay on top, and sessions never leave
-  their project. `Ctrl+Shift+B` hides the rail completely, never to an icon column. It resizes
-  between 232 and 320px, and is the one panel on the ramp's lifted surface.
+  *By project* lists pinned projects first, a gap between projects. A project row: the fold
+  chevron, folder and name, its git line (branch, uncommitted changes, commits ahead and behind,
+  each only above zero and named in full on hover), the pin, the unattended pill (*auto*, *auto ·
+  N*, *auto · N waiting*; a run's pill opens its issue on the Issues page), and while folded its
+  sessions' most urgent state. A click folds it (not during a search) and leaves the session on
+  screen; `+` and `⋯` show on hover, right-click opens the same menu. A session row, indented under
+  its project: its state mark, title and `⋯` (on hover, always on the one shown), and under them
+  `state · agent · age` (*waiting Nm* while it needs input), over which hovering lays *Stop*
+  (running), *Send the last prompt again* (failed) and *Close*. The other filters are flat, the
+  project in place of the agent. A group lists six sessions, then *N more*; an open project with
+  none says *Empty*, a search or filter with none *No sessions match*. Each state has its own icon
+  and ink, none animated: failed or disconnected danger, needs input warning, running the accent,
+  done unread success, idle muted. `Enter` and `←`/`→` act on the list's row, `Alt+↑`/`↓` step
+  through sessions in its order. The tree's order is the user's, set by dragging; pinned projects
+  stay on top and sessions never leave their project. `Ctrl+Shift+B` hides the rail completely,
+  never to an icon column. It resizes between 232 and 448px, on the ramp's lifted surface.
 - **Agent pane header**, left to right:
   - the show-rail button, only while the rail is hidden;
   - the conversation's name, semibold, full ink;

@@ -497,7 +497,7 @@ impl Shell {
             rail_sessions: Vec::new(),
             live_conversations: Vec::new(),
             issue_works: (Vec::new(), Vec::new()),
-            rail_tab: crate::rail::RailTab::Projects,
+            rail: crate::rail::RailState::new(window, cx),
             folds: HashMap::new(),
             last_panel: FocusedPanel::Chat,
             terminal_open: seed_root

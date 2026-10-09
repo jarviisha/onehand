@@ -402,6 +402,7 @@ impl Chat {
         }
         self.prompts_sent += 1;
         self.cancelled = false;
+        self.failed = false;
 
         self.push_user(
             text.to_string(),

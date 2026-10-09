@@ -305,7 +305,11 @@ impl Chat {
                 // a conversation that has finished closing the previous one.
                 self.flush_queued();
             }
-            AcpEvent::Error(e) => self.items.push(ChatItem::error(format!("Error: {e}"))),
+            AcpEvent::Error(e) => {
+                // An error mid-turn is the prompt's answer: the turn ends on it.
+                self.failed |= self.busy;
+                self.items.push(ChatItem::error(format!("Error: {e}")));
+            }
             AcpEvent::Disconnected(e) => {
                 self.tx = None;
                 self.link = Link::Lost;

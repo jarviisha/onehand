@@ -20,9 +20,18 @@ impl Shell {
     /// whether a rebuild is worth it.
     pub fn session_row(&self, uid: u64, cx: &App) -> RailSession {
         let pane = self.chat.read(cx);
+        let signal = pane.signal(uid, cx);
+        // The clock runs on from the last repaint while the signal holds, and
+        // starts again when it changes.
+        let since = self
+            .rail_sessions
+            .iter()
+            .find(|(at, row)| *at == uid && row.signal == signal)
+            .map_or_else(std::time::Instant::now, |(_, row)| row.since);
         RailSession {
-            signal: pane.signal(uid, cx),
+            signal,
             title: pane.title_for(uid, cx).map(SharedString::from),
+            since,
         }
     }
 
@@ -77,7 +86,7 @@ impl Shell {
     }
 
     /// The session on screen, if there is one.
-    fn active_session_uid(&self) -> Option<u64> {
+    pub(crate) fn active_session_uid(&self) -> Option<u64> {
         self.window
             .workspace
             .active_root()
@@ -397,15 +406,15 @@ impl Shell {
         cx.notify();
     }
 
-    /// Which of the rail's two lists is showing.
-    pub fn rail_tab(&self) -> crate::rail::RailTab {
-        self.rail_tab
+    /// Stop session `uid`'s turn.
+    pub(crate) fn stop_turn(&mut self, uid: u64, cx: &mut Context<Self>) {
+        self.chat.update(cx, |pane, cx| pane.stop_turn(uid, cx));
     }
 
-    /// Show the other list.
-    pub fn set_rail_tab(&mut self, tab: crate::rail::RailTab, cx: &mut Context<Self>) {
-        self.rail_tab = tab;
-        cx.notify();
+    /// Send session `uid`'s last prompt again, after a turn that failed.
+    pub(crate) fn resend_last_prompt(&mut self, uid: u64, cx: &mut Context<Self>) {
+        self.chat
+            .update(cx, |pane, cx| pane.resend_last_prompt(uid, cx));
     }
 
     /// Add a session on the active root using the default agent, and show it.
@@ -425,8 +434,19 @@ impl Shell {
     /// whole life, and starting one on a root the rail is not showing would be
     /// a prompt sent into a project nobody has open.
     pub fn new_session_in(&mut self, root_idx: usize, window: &mut Window, cx: &mut Context<Self>) {
+        self.new_session_at(root_idx, 0, window, cx);
+    }
+
+    /// Add a session on a *named* root running `agents[agent]`.
+    pub fn new_session_at(
+        &mut self,
+        root_idx: usize,
+        agent: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.window.workspace.select_root(root_idx);
-        self.new_session(window, cx);
+        self.new_session_with(agent, window, cx);
     }
 
     /// Drop a session at another place under its project.

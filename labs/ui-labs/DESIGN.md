@@ -417,11 +417,8 @@ hierarchy are identical in both.
 | Settings is a page in the content area | Settings is a large dialog |
 | One primary per region, so a list and its detail side by side may each have one | one primary per view |
 | The composer is a panel card with no shadow | the composer card floats over the transcript with a shadow |
-| A session's status is an icon on the left of its row, a shape and an ink each: `warning` needs input, `accent` runs, `danger` failed, `success` done unread, `muted` idle | the primary colour waits, `warning` is working, a dot at the row's end |
-| The rail has a search over sessions and projects, and a filter menu in place of a *Projects* \| *All sessions* switch | no search; the switch |
-| A project's actions and a session's `⋯` show on hover; a folded project rolls up only what needs attention | they sit in the row |
-| Sessions start `RAIL_INDENT` in, under the project's name | sessions are indented behind a hairline guide |
-| *New* is a ghost button group beside the search | *New session* is the secondary fill |
+| A session's meta line ends on its diff, `+N −N` | no diff: nothing reports one per session |
+| A failed session's hover action is *Retry*, and every session's *Archive* | *Send the last prompt again* and *Close*: Retry is a task's word, and closing keeps the conversation |
 
 ## Backlog
 

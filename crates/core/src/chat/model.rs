@@ -136,6 +136,9 @@ pub struct Chat {
     /// rather than finished by the agent: asked for during it, or said by
     /// its stop reason. Holds until the next prompt goes out.
     pub cancelled: bool,
+    /// The last turn ended on an error from the agent rather than an answer.
+    /// Holds until the next prompt goes out.
+    pub failed: bool,
     pub(crate) resumed: bool,
 
     // ── composer sources (Phase 3B) ──

@@ -8,7 +8,7 @@ engine and the driver, and [unattended.md](unattended.md) the issue a task can w
 One page that answers three questions about the work onehand does on their behalf: what is
 running, what needs me, and what has finished.
 
-- **The Tasks page** opens in the agent pane, from a rail row beside *Workspace overview*. The row
+- **The Tasks page** opens in the agent pane, from a rail row beside *Overview*. The row
   shows how many tasks need attention, and shows nothing at zero. A keymap command opens it too, with
   no default key.
 - **It covers the window's workspace** and can be filtered by project.

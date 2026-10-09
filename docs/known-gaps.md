@@ -17,12 +17,15 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   button cannot be given one through this component. Every control on the row carries a tooltip
   instead. The menu used to be the name itself, drawn as a child so it could ellipsize, which was
   the same gap in a worse place; moving the menu onto the vertical-dots mark made the name plain
-  prose and left one uniform row of tooltipped icon buttons. **The route out is
-  `controls::MenuTrigger`**, which exists already for the rail's rows: `Stateful<Div>` does
-  implement gpui's `StatefulInteractiveElement`, so `aria_label` reaches it, and what that costs is
-  rebuilding by hand what the component gives for free — the ghost hover fill, the icon sizing and
-  the selected-while-open state. Recorded rather than done, because it is the same rebuild at every
-  one of the row's controls.
+  prose and left one uniform row of tooltipped icon buttons. **The route out is the rail's
+  `row::labelled`**: a `Stateful<Div>` around the button implements gpui's
+  `StatefulInteractiveElement`, so `aria_label` reaches it and the button inside stays the
+  library's. Recorded rather than done here.
+- **A session's age on the rail starts again at every launch.** It counts from when the session
+  took its present state, and that moment is kept in memory only: an archive records when a
+  conversation last changed, not when it last changed state.
+- **A rail session row says nothing about the lines it changed.** No source reports a diff per
+  session: the git status is the project's, shared by every session working in it.
 - **There is no search in the transcript**, and the removal was deliberate rather than pending. It
   matched whole *items* and never occurrences, so a word said ten times in one answer was one hit
   with no mark on the word itself, and a hit in text a block had truncated was counted, scrolled to
