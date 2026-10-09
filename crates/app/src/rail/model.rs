@@ -48,7 +48,9 @@ pub(super) struct Item {
     pub(super) title: String,
     pub(super) agent: String,
     pub(super) signal: Option<SessionSignal>,
-    /// Minutes since it took its signal.
+    /// When it took its signal, which the latest-first list sorts by.
+    pub(super) since: std::time::Instant,
+    /// Whole minutes since then, as the row says it.
     pub(super) age: u64,
 }
 
@@ -112,7 +114,7 @@ pub(super) fn visible(
         Filter::ByProject => {}
         // `uid` is the workspace-wide creation counter.
         Filter::All | Filter::NeedsAttention => out.sort_by_key(|i| items[*i].uid),
-        Filter::Recent => out.sort_by_key(|i| items[*i].age),
+        Filter::Recent => out.sort_by_key(|i| std::cmp::Reverse(items[*i].since)),
     }
     out
 }

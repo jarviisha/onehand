@@ -570,6 +570,19 @@ impl Chat {
         self.queued.is_some() || self.prompts_sent > sent
     }
 
+    /// What sending the last prompt again sends: its text, once a turn has
+    /// failed. The files staged with it were a snapshot and do not go again.
+    /// `None` while nothing failed, or nothing was prompted.
+    pub fn resend_text(&self) -> Option<&str> {
+        if !self.failed {
+            return None;
+        }
+        self.items.iter().rev().find_map(|item| match item {
+            ChatItem::User(prompt) => Some(prompt.text.as_str()),
+            _ => None,
+        })
+    }
+
     /// A parked permission prompt is waiting for the user's answer (it blocks
     /// the turn until they click an option). Also drives the rail session
     /// row's status dot.

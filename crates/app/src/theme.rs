@@ -893,6 +893,26 @@ mod tests {
         }
     }
 
+    /// The accent is ink as well as a link: it marks a running session in the
+    /// rail, on the well and on the rail's marked fill. A mark is a graphic,
+    /// so it is held to the 3:1 a control's parts are.
+    #[test]
+    fn the_accent_reads_as_a_mark_in_the_rail() {
+        for (name, ramp, mode) in [
+            ("light", &LIGHT, ThemeMode::Light),
+            ("dark", &DARK, ThemeMode::Dark),
+        ] {
+            let theme = resolve(ramp, mode);
+            for (surface, fill) in [("well", theme.muted), ("marked row", theme.sidebar_accent)] {
+                let ratio = contrast(theme.link, fill);
+                assert!(
+                    ratio >= 3.,
+                    "{name}: the accent on the {surface} is {ratio:.2}"
+                );
+            }
+        }
+    }
+
     /// The middle ink step has to read, and has to be *in the middle*.
     ///
     /// Both halves are the whole of what it is for. A completion row spends the

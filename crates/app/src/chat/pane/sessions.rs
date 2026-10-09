@@ -561,18 +561,19 @@ impl ChatPane {
         });
     }
 
-    /// Send session `uid`'s last prompt again, after a turn that failed. Its
-    /// text only: the files staged with it were a snapshot and are not resent.
+    /// Whether session `uid` has a failed turn whose prompt can go again.
+    pub fn can_resend(&self, uid: u64, cx: &App) -> bool {
+        self.session_of(uid)
+            .is_some_and(|session| session.read(cx).chat.resend_text().is_some())
+    }
+
+    /// Send session `uid`'s last prompt again, after a turn that failed.
     pub fn resend_last_prompt(&mut self, uid: u64, cx: &mut Context<Self>) {
         let Some(session) = self.session_of(uid).cloned() else {
             return;
         };
         session.update(cx, |session, cx| {
-            let last = session.chat.items.iter().rev().find_map(|item| match item {
-                onehand_core::chat::ChatItem::User(prompt) => Some(prompt.text.clone()),
-                _ => None,
-            });
-            if let Some(text) = last {
+            if let Some(text) = session.chat.resend_text().map(str::to_string) {
                 session.submit(&text, &[], cx);
             }
         });

@@ -55,7 +55,7 @@ pub(super) fn status_icon(signal: Option<SessionSignal>, cx: &App) -> Icon {
             (Icon::new(IconName::TriangleAlert), ink.danger)
         }
         Some(SessionSignal::AwaitingUser) => (Icon::new(crate::icons::Icon::Hand), ink.warning),
-        Some(SessionSignal::Busy) => (Icon::new(IconName::LoaderCircle), cx.theme().info),
+        Some(SessionSignal::Busy) => (Icon::new(IconName::LoaderCircle), cx.theme().link),
         Some(SessionSignal::UnseenTurn) => (Icon::new(IconName::CircleCheck), ink.success),
         None => (
             Icon::new(crate::icons::Icon::Circle),
@@ -117,13 +117,32 @@ fn session_menu(
     root_idx: usize,
     session_idx: usize,
     uid: u64,
+    resend: bool,
     shell: WeakEntity<Shell>,
 ) -> impl Fn(PopupMenu, &mut Window, &mut App) -> PopupMenu + use<> {
     move |menu, _, cx: &mut App| {
         let danger = crate::theme::status_ink(cx).danger;
-        let (rename, restart, export, close) =
-            (shell.clone(), shell.clone(), shell.clone(), shell.clone());
-        menu.item(
+        let (again, rename, restart, export, close) = (
+            shell.clone(),
+            shell.clone(),
+            shell.clone(),
+            shell.clone(),
+            shell.clone(),
+        );
+        menu.when(resend, |menu| {
+            menu.item(
+                crate::controls::menu_item(RESEND)
+                    .icon(Icon::new(IconName::Redo))
+                    .on_click(move |_, _, cx: &mut App| {
+                        again
+                            .update(cx, |shell: &mut Shell, cx| {
+                                shell.resend_last_prompt(uid, cx)
+                            })
+                            .ok();
+                    }),
+            )
+        })
+        .item(
             crate::controls::menu_item("Rename…")
                 .icon(Icon::new(crate::icons::Icon::SquarePen))
                 .on_click(move |_, window, cx: &mut App| {
@@ -171,12 +190,17 @@ fn session_menu(
     }
 }
 
+/// The words of the action that sends a failed turn's prompt again.
+const RESEND: &str = "Send the last prompt again";
+
 /// How a session row stands: the one on screen, the one the keyboard is on.
 pub(super) struct Mark {
     /// The session the conversation shows.
     pub(super) shown: bool,
     /// The keyboard's row, while the list has focus.
     pub(super) at: bool,
+    /// Its turn failed and its last prompt can go again.
+    pub(super) resend: bool,
 }
 
 /// A session: its mark, its title and `⋯`, and under the title
@@ -251,7 +275,7 @@ pub(super) fn session_row(
                         menu_button(
                             rail_control(("session-menu", uid), IconName::Ellipsis, cx),
                             "What can be done with this session",
-                            session_menu(root, session, uid, shell.clone()),
+                            session_menu(root, session, uid, mark.resend, shell.clone()),
                         ),
                     ),
                 )),
@@ -271,7 +295,7 @@ pub(super) fn session_row(
                             Tooltip::new(meta_tip.clone()).build(window, cx)
                         }),
                 )
-                .child(actions(root, session, uid, signal, &group, hovered, cx)),
+                .child(actions(item, mark.resend, &group, hovered, cx)),
         )
         .when(!flat, |row| {
             let (target, ghost) = (shell.clone(), SharedString::from(item.title.clone()));
@@ -302,7 +326,7 @@ pub(super) fn session_row(
             })
         })
         .context_menu(move |menu, window, cx| {
-            session_menu(root, session, uid, shell.clone())(menu, window, cx)
+            session_menu(root, session, uid, mark.resend, shell.clone())(menu, window, cx)
         })
         .into_any_element()
 }
@@ -311,14 +335,13 @@ pub(super) fn session_row(
 /// is on the row, on the row's own hover fill so what is under them does not
 /// show through.
 fn actions(
-    root: usize,
-    session: usize,
-    uid: u64,
-    signal: Option<SessionSignal>,
+    item: &Item,
+    resend: bool,
     group: &SharedString,
     fill: gpui::Hsla,
     cx: &mut Context<Shell>,
-) -> impl IntoElement {
+) -> impl IntoElement + use<> {
+    let (root, session, uid, signal) = (item.root, item.session, item.uid, item.signal);
     let button = |id: &'static str, icon: Icon, tip: &'static str, cx: &App| {
         rail_control((id, uid), icon, cx).tooltip(tip)
     };
@@ -334,11 +357,11 @@ fn actions(
         .when(signal == Some(SessionSignal::Busy), |d| {
             d.child(labelled(
                 ("session-stop-name", uid),
-                "Stop the agent",
+                "Stop the turn",
                 button(
                     "session-stop",
                     Icon::new(crate::icons::Icon::Square),
-                    "Stop the agent",
+                    "Stop the turn",
                     cx,
                 )
                 .on_click(cx.listener(move |shell: &mut Shell, _, _, cx| {
@@ -346,19 +369,15 @@ fn actions(
                 })),
             ))
         })
-        .when(signal == Some(SessionSignal::Failed), |d| {
+        .when(resend, |d| {
             d.child(labelled(
                 ("session-again-name", uid),
-                "Send the last prompt again",
-                button(
-                    "session-again",
-                    Icon::new(IconName::Redo),
-                    "Send the last prompt again",
-                    cx,
-                )
-                .on_click(cx.listener(move |shell: &mut Shell, _, _, cx| {
-                    shell.resend_last_prompt(uid, cx);
-                })),
+                RESEND,
+                button("session-again", Icon::new(IconName::Redo), RESEND, cx).on_click(
+                    cx.listener(move |shell: &mut Shell, _, _, cx| {
+                        shell.resend_last_prompt(uid, cx);
+                    }),
+                ),
             ))
         })
         .child(labelled(

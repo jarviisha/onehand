@@ -23,6 +23,7 @@ fn seed() -> Vec<Item> {
         title: title.into(),
         agent: "claude".into(),
         signal,
+        since: since(age),
         age,
     };
     vec![
@@ -33,6 +34,13 @@ fn seed() -> Vec<Item> {
         s(1, 0, 4, "Reconcile ledger totals", Some(UnseenTurn), 90),
         s(1, 1, 5, "Backfill ledger exports", Some(Busy), 12),
     ]
+}
+
+/// A moment `age` minutes before a fixed one, ahead of now so no
+/// subtraction can run past the clock's start.
+fn since(age: u64) -> std::time::Instant {
+    let base = std::time::Instant::now() + std::time::Duration::from_secs(60 * 60 * 24 * 7);
+    base - std::time::Duration::from_secs(age * 60)
 }
 
 fn shape<'a>(
@@ -72,6 +80,10 @@ fn a_filter_keeps_what_it_says() {
         visible(&s, &PROJECTS, Filter::Recent, ""),
         vec![1, 0, 5, 2, 4, 3]
     );
+    // Within one minute the later moment still comes first.
+    let mut s = s;
+    s[3].since = s[1].since + std::time::Duration::from_secs(1);
+    assert_eq!(visible(&s, &PROJECTS, Filter::Recent, "")[0], 3);
 }
 
 #[test]
@@ -261,6 +273,7 @@ fn a_group_past_the_cap_says_how_many_more_until_shown_whole() {
             title: format!("session {i}"),
             agent: "claude".into(),
             signal: None,
+            since: since(0),
             age: 0,
         })
         .collect();

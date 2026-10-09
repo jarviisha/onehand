@@ -6,15 +6,11 @@ use super::model::{Filter, toggle_attention};
 use super::row::labelled;
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
-use gpui::{
-    Anchor, Context, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement,
-    Styled, div,
-};
+use gpui::{Anchor, Context, IntoElement, ParentElement, Styled, div};
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::Input;
 use gpui_component::menu::DropdownMenu as _;
-use gpui_component::tooltip::Tooltip;
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, Sizable as _, StyledExt};
 
 /// The search field: borderless, with the key that reaches it from anywhere.
 pub(super) fn search_field(state: &RailState, cx: &Context<Shell>) -> impl IntoElement + use<> {
@@ -49,7 +45,6 @@ pub(super) fn sessions_header(
         cx.theme().muted_foreground,
         cx.theme().foreground,
     );
-    let hover = super::row::hover_fill(cx);
     div()
         .h_flex()
         .items_center()
@@ -66,30 +61,21 @@ pub(super) fn sessions_header(
         .when(waiting > 0 || attention, |d| {
             let verb = if waiting == 1 { "needs" } else { "need" };
             d.child(
-                div()
-                    .id("rail-attention")
-                    .px_1()
-                    .rounded(cx.theme().radius)
-                    .cursor_pointer()
+                crate::controls::action("rail-attention")
+                    .ghost()
+                    .xsmall()
+                    .label(format!("{waiting} {verb} attention"))
                     .text_color(warning)
-                    .hover(move |d| d.bg(hover))
-                    .when(attention, |d| d.bg(cx.theme().accent).font_medium())
-                    .tooltip(move |window, cx| {
-                        Tooltip::new(match attention {
-                            true => "Show every session again",
-                            false => "Show only the sessions waiting on you",
-                        })
-                        .build(window, cx)
+                    .selected(attention)
+                    .tooltip(match attention {
+                        true => "Show every session again",
+                        false => "Show only the sessions waiting on you",
                     })
                     .on_click(cx.listener(|shell: &mut Shell, _, _, cx| {
                         let rail = shell.rail_state_mut();
-                        if rail.filter != Filter::NeedsAttention {
-                            rail.filter_before = rail.filter;
-                        }
-                        rail.filter = toggle_attention(rail.filter, rail.filter_before);
+                        rail.set_filter(toggle_attention(rail.filter, rail.filter_before));
                         cx.notify();
-                    }))
-                    .child(format!("{waiting} {verb} attention")),
+                    })),
             )
         })
         .child(div().flex_1())
@@ -115,11 +101,7 @@ pub(super) fn sessions_header(
                                 .on_click(move |_, _, cx| {
                                     shell
                                         .update(cx, |shell: &mut Shell, cx| {
-                                            let rail = shell.rail_state_mut();
-                                            rail.filter = f;
-                                            if f != Filter::NeedsAttention {
-                                                rail.filter_before = f;
-                                            }
+                                            shell.rail_state_mut().set_filter(f);
                                             cx.notify();
                                         })
                                         .ok();

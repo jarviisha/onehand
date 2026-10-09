@@ -1850,6 +1850,12 @@ fn a_turn_that_ends_on_an_error_marks_the_chat_failed() {
         stop_reason: "end_turn".into(),
     });
     assert!(chat.failed);
+    assert_eq!(chat.resend_text(), Some("go"));
     assert!(chat.submit("again", &[]));
+    assert_eq!(
+        chat.resend_text(),
+        None,
+        "nothing to resend while nothing failed"
+    );
     assert!(!chat.failed, "a new turn clears it");
 }

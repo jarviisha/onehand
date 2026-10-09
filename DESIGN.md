@@ -84,8 +84,8 @@ monospace font.
   project in place of the agent. A group lists six sessions, then *N more*; an open project with
   none says *Empty*, a search or filter with none *No sessions match*. Each state has its own icon
   and ink, none animated: failed or disconnected danger, needs input warning, running the accent,
-  done unread success, idle muted. `Enter` and `←`/`→` act on the list's row, `Alt+↑`/`↓` step
-  through sessions in its order. The tree's order is the user's, set by dragging; pinned projects
+  done unread success, idle muted. `↑`/`↓` move the list's row, `Enter` and `←`/`→` act on it,
+  `Alt+↑`/`↓` step through sessions in its order. The tree's order is the user's, set by dragging; pinned projects
   stay on top and sessions never leave their project. `Ctrl+Shift+B` hides the rail completely,
   never to an icon column. It resizes between 232 and 448px, on the ramp's lifted surface.
 - **Agent pane header**, left to right:

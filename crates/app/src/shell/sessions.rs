@@ -411,6 +411,11 @@ impl Shell {
         self.chat.update(cx, |pane, cx| pane.stop_turn(uid, cx));
     }
 
+    /// Whether session `uid` has a failed turn whose prompt can go again.
+    pub(crate) fn can_resend(&self, uid: u64, cx: &App) -> bool {
+        self.chat.read(cx).can_resend(uid, cx)
+    }
+
     /// Send session `uid`'s last prompt again, after a turn that failed.
     pub(crate) fn resend_last_prompt(&mut self, uid: u64, cx: &mut Context<Self>) {
         self.chat

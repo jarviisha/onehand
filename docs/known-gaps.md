@@ -9,8 +9,8 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   be the active one with its tab off the end of the list: the grid is right, the strip is behind.
   Fixing it means a `ScrollHandle` on the panel, and `scroll_to_item` on a tab that has never been
   painted needs deferring past the frame that first draws it.
-- **Dragging a rail row has no edge autoscroll.** A project past the bottom of a full rail has to be
-  scrolled to first.
+- **Dragging a rail row has no edge autoscroll**, and the keyboard's row in the rail is not
+  scrolled into view. A project past the bottom of a full rail has to be scrolled to first.
 - **The header's icon buttons have no accessible names, the conversation menu's dots included.**
   The library builds a button's accessible name out of `label` and nothing else, and the only
   setter is an inherent method on the base button it keeps in a private field — so an icon-only

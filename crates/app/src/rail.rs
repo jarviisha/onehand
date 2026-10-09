@@ -107,6 +107,18 @@ impl RailState {
         }
     }
 
+    /// Shows `filter`, remembering the one it replaced for the attention
+    /// chip to come back to, unless that was the chip's own.
+    fn set_filter(&mut self, filter: Filter) {
+        if self.filter != Filter::NeedsAttention {
+            self.filter_before = self.filter;
+        }
+        if filter != Filter::NeedsAttention {
+            self.filter_before = filter;
+        }
+        self.filter = filter;
+    }
+
     fn searching(&self, cx: &App) -> bool {
         !self.search.read(cx).value().trim().is_empty()
     }
@@ -142,6 +154,7 @@ impl List {
                     title: session::session_label(row.title.as_deref(), s.title()).to_string(),
                     agent: s.title().to_string(),
                     signal: row.signal,
+                    since: row.since,
                     age: row.since.elapsed().as_secs() / 60,
                 }
             })
@@ -183,7 +196,7 @@ pub fn rail(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> impl Int
     let list = List::of(shell, cx);
     let window_state = shell.workspace_window();
     let workspace = &window_state.workspace;
-    let target = shell.rail_target(&list);
+    let target = shell.rail_target(&list, focused);
     let page = shell.page_shown(cx);
     let shown = workspace
         .active_root()
@@ -221,6 +234,7 @@ pub fn rail(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> impl Int
                     session::Mark {
                         shown: shown == Some((it.root, it.session)),
                         at: focused && state.cursor == Some(Cursor::Session(it.uid)),
+                        resend: shell.can_resend(it.uid, cx),
                     },
                     cx,
                 )
@@ -273,6 +287,12 @@ pub fn rail(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> impl Int
                 .key_context("Rail")
                 .on_action(cx.listener(|shell: &mut Shell, _: &RailOpen, window, cx| {
                     shell.rail_open_cursor(window, cx);
+                }))
+                .on_action(cx.listener(|shell: &mut Shell, _: &RailUp, _, cx| {
+                    shell.rail_move(false, cx);
+                }))
+                .on_action(cx.listener(|shell: &mut Shell, _: &RailDown, _, cx| {
+                    shell.rail_move(true, cx);
                 }))
                 .on_action(cx.listener(|shell: &mut Shell, _: &RailFold, _, cx| {
                     shell.rail_fold_cursor(true, cx);
@@ -430,28 +450,27 @@ fn note(text: &'static str, cx: &App) -> AnyElement {
 
 /// The row a cap leaves: how many it left out, and the way to show them.
 fn more(group: Option<PathBuf>, hidden: usize, cx: &mut Context<Shell>) -> AnyElement {
-    let hover = row::hover_fill(cx);
     let id = SharedString::from(match &group {
         Some(path) => format!("rail-more-{}", path.display()),
         None => "rail-more".into(),
     });
     div()
-        .id(gpui::ElementId::Name(id))
         .h_flex()
         .items_center()
         .h(ROW_H)
         .when(group.is_some(), |d| d.pl_7())
         .when(group.is_none(), |d| d.pl_1p5())
-        .rounded(cx.theme().radius)
-        .cursor_pointer()
-        .hover(move |d| d.bg(hover))
-        .text_xs()
-        .text_color(cx.theme().muted_foreground)
-        .on_click(cx.listener(move |shell: &mut Shell, _, _, cx| {
-            shell.rail_state_mut().uncapped.push(group.clone());
-            cx.notify();
-        }))
-        .child(format!("{hidden} more"))
+        .child(
+            crate::controls::action(gpui::ElementId::Name(id))
+                .ghost()
+                .xsmall()
+                .label(format!("{hidden} more"))
+                .text_color(cx.theme().muted_foreground)
+                .on_click(cx.listener(move |shell: &mut Shell, _, _, cx| {
+                    shell.rail_state_mut().uncapped.push(group.clone());
+                    cx.notify();
+                })),
+        )
         .into_any_element()
 }
 
@@ -486,6 +505,8 @@ fn add_project(cx: &mut Context<Shell>) -> AnyElement {
 gpui::actions!(
     rail,
     [
+        RailUp,
+        RailDown,
         FocusRailSearch,
         RailOpen,
         RailFold,
@@ -496,10 +517,11 @@ gpui::actions!(
 );
 
 impl Shell {
-    /// Where *New* starts: the keyboard's project, else the one on screen.
-    fn rail_target(&self, list: &List) -> Option<usize> {
+    /// Where *New* starts: the keyboard's project while the list has the
+    /// keyboard, else the one on screen.
+    fn rail_target(&self, list: &List, focused: bool) -> Option<usize> {
         let workspace = &self.workspace_window().workspace;
-        match &self.rail_state().cursor {
+        match self.rail_state().cursor.as_ref().filter(|_| focused) {
             Some(Cursor::Project(path)) => workspace.roots.iter().position(|r| &r.path == path),
             Some(Cursor::Session(uid)) => list
                 .items
@@ -576,6 +598,37 @@ impl Shell {
         self.rail_fold(path.clone(), fold, cx);
         if fold {
             self.rail_state_mut().cursor = Some(Cursor::Project(path));
+        }
+    }
+
+    /// Moves the keyboard's row to the project or session drawn above or
+    /// below it, from the first or last when it is on none.
+    fn rail_move(&mut self, down: bool, cx: &mut Context<Self>) {
+        let list = List::of(self, cx);
+        let roots = &self.workspace_window().workspace.roots;
+        let rows: Vec<Cursor> = list
+            .rows
+            .iter()
+            .filter_map(|row| match *row {
+                Row::Project { root, .. } => Some(Cursor::Project(roots[root].path.clone())),
+                Row::Session { item, .. } => Some(Cursor::Session(list.items[item].uid)),
+                Row::Gap | Row::Empty | Row::More { .. } | Row::NoMatch | Row::AddProject => None,
+            })
+            .collect();
+        let at = self
+            .rail_state()
+            .cursor
+            .as_ref()
+            .and_then(|cursor| rows.iter().position(|row| row == cursor));
+        let next = match (at, down) {
+            (Some(at), true) => rows.get(at + 1).or(rows.last()),
+            (Some(at), false) => rows.get(at.saturating_sub(1)),
+            (None, true) => rows.first(),
+            (None, false) => rows.last(),
+        };
+        if let Some(next) = next.cloned() {
+            self.rail_state_mut().cursor = Some(next);
+            cx.notify();
         }
     }
 

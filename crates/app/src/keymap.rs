@@ -246,6 +246,22 @@ pub const COMMANDS: &[Command] = &[
         "Rail list"
     ),
     command!(
+        "rail_up",
+        "Move to the row above",
+        ["up"],
+        crate::rail::RailUp,
+        "Rail",
+        "Rail list"
+    ),
+    command!(
+        "rail_down",
+        "Move to the row below",
+        ["down"],
+        crate::rail::RailDown,
+        "Rail",
+        "Rail list"
+    ),
+    command!(
         "rail_fold",
         "Fold the project",
         ["left"],
@@ -402,13 +418,23 @@ fn validate(overrides: &Overrides) -> Result<(), String> {
             return Err(format!("Unknown command: {id}"));
         }
     }
-    let mut seen: Vec<(Keystroke, &str)> = Vec::new();
+    let mut seen: Vec<(Keystroke, &str, &str)> = Vec::new();
     for command in COMMANDS {
         for raw in command.keys(overrides) {
             let key = parse_key(&raw)?;
-            // All current editable scopes overlap in the composer. Disallow
-            // ambiguous duplicates rather than relying on registration order.
-            if let Some((_, other)) = seen.iter().find(|(k, _)| *k == key) {
+            // A key may serve two commands only in two places that are never
+            // in one focus stack: a window command is everywhere, and the
+            // rail's list holds no field. Anything else would rest on
+            // registration order.
+            let overlap = |context: &str| {
+                context == command.context
+                    || context.starts_with("Shell")
+                    || command.context.starts_with("Shell")
+            };
+            if let Some((_, other, _)) = seen
+                .iter()
+                .find(|(k, _, context)| *k == key && overlap(context))
+            {
                 return Err(format!(
                     "{raw} conflicts between {other} and {}",
                     command.label
@@ -434,7 +460,7 @@ fn validate(overrides: &Overrides) -> Result<(), String> {
                     "{raw} is reserved for clipboard or closing dialogs"
                 ));
             }
-            seen.push((key, command.label));
+            seen.push((key, command.label, command.context));
         }
     }
     Ok(())
@@ -674,6 +700,12 @@ mod tests {
         assert_eq!(
             action_at(&map, "shift-tab", &["Shell", "ChatComposerCard", "Input"]),
             Some(CycleMode.name().into())
+        );
+        // The rail's list and the composer's suggestions share the arrows,
+        // each only where it has focus.
+        assert_eq!(
+            action_at(&map, "down", &["Shell", "Rail"]),
+            Some(crate::rail::RailDown.name().into())
         );
     }
 
