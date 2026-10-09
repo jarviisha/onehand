@@ -4,7 +4,7 @@
 //! queued behind it. The agent's answers are canned.
 use super::composer::Act;
 use super::*;
-use gpui::{AnyElement, Entity, Focusable as _, Subscription, Task};
+use gpui::{AnyElement, ElementId, Entity, ScrollHandle, Subscription, Task};
 use gpui_component::Disableable as _;
 use gpui_component::input::{Escape, InputEvent, Textarea, TextareaState};
 use std::{rc::Rc, time::Duration};
@@ -69,7 +69,8 @@ pub(super) enum Menu {
 
 /// What this session added to the transcript.
 pub(super) enum Said {
-    User(String, usize),
+    /// The prompt and the indices of what was attached, into `ATTACHABLE`.
+    User(String, Vec<usize>),
     Agent(&'static str),
     Notice(&'static str),
 }
@@ -92,6 +93,11 @@ pub(super) struct Live {
     /// The running turn; dropping it is what Stop does.
     pub(super) turn: Option<Task<()>>,
     pub(super) replies: usize,
+    /// The transcript's scroll, so what is sent or answered comes into view.
+    pub(super) scroll: ScrollHandle,
+    /// The canned conversation's last turn is still running. It never ends
+    /// on its own, so the lab opens on a running chat until Stop.
+    pub(super) canned_running: bool,
     pub(super) _sub: Subscription,
 }
 
@@ -104,15 +110,16 @@ impl Live {
                 .submit_on_enter(true)
                 .placeholder(super::composer::PLACEHOLDER)
         });
+        // Open on the running turn and the composer under it.
+        let scroll = ScrollHandle::new();
+        scroll.scroll_to_bottom();
         let _sub = cx.subscribe_in(
             &input,
             window,
             |this: &mut Labs, _, event: &InputEvent, window, cx| match event {
                 InputEvent::Change => this.retrigger(cx),
                 InputEvent::PressEnter { shift: false, .. } => this.enter(window, cx),
-                // The card's edge says where the caret is.
-                InputEvent::Focus | InputEvent::Blur => cx.notify(),
-                InputEvent::PressEnter { .. } => {}
+                InputEvent::Focus | InputEvent::Blur | InputEvent::PressEnter { .. } => {}
             },
         );
         Self {
@@ -130,12 +137,15 @@ impl Live {
             said: Vec::new(),
             turn: None,
             replies: 0,
+            scroll,
+            canned_running: true,
             _sub,
         }
     }
 
+    /// A turn runs: one sent here, or the canned one not yet stopped.
     pub(super) fn running(&self) -> bool {
-        self.turn.is_some()
+        self.turn.is_some() || self.canned_running
     }
 }
 
@@ -283,12 +293,13 @@ impl Labs {
         }
         self.live.open = None;
         self.set_text("", window, cx);
-        let files = std::mem::take(&mut self.live.tray).len();
+        let files = std::mem::take(&mut self.live.tray);
         self.start_turn(text, files, cx);
     }
 
-    fn start_turn(&mut self, text: String, files: usize, cx: &mut Context<Self>) {
+    fn start_turn(&mut self, text: String, files: Vec<usize>, cx: &mut Context<Self>) {
         self.live.said.push(Said::User(text, files));
+        self.live.scroll.scroll_to_bottom();
         self.live.turn = Some(cx.spawn(async move |this, cx| {
             cx.background_executor().timer(TURN).await;
             this.update(cx, |this, cx| this.end_turn(cx)).ok();
@@ -300,6 +311,7 @@ impl Labs {
         let reply = REPLIES[self.live.replies % REPLIES.len()];
         self.live.replies += 1;
         self.live.said.push(Said::Agent(reply));
+        self.live.scroll.scroll_to_bottom();
         self.live.turn = None;
         self.next_queued(cx);
         cx.notify();
@@ -307,9 +319,11 @@ impl Labs {
 
     pub(super) fn stop(&mut self, cx: &mut Context<Self>) {
         self.live.turn = None;
+        self.live.canned_running = false;
         self.live
             .said
             .push(Said::Notice("Stopped. The agent did not finish this turn."));
+        self.live.scroll.scroll_to_bottom();
         // Stopping holds the queue too: what was queued waits to be sent or
         // removed by hand, rather than starting the moment the person stopped.
         cx.notify();
@@ -318,54 +332,44 @@ impl Labs {
     fn next_queued(&mut self, cx: &mut Context<Self>) {
         if !self.live.queued.is_empty() {
             let text = self.live.queued.remove(0);
-            self.start_turn(text, 0, cx);
+            self.start_turn(text, Vec::new(), cx);
         }
     }
 
     // ---- drawing -----------------------------------------------------------
 
     /// What this session added, below the canned transcript.
-    pub(super) fn said(&self, p: &Palette, cx: &App) -> Vec<AnyElement> {
+    pub(super) fn said(&self, p: &Palette, window: &Window, cx: &App) -> Vec<AnyElement> {
         let mut out: Vec<AnyElement> = self
             .live
             .said
             .iter()
-            .map(|s| match s {
-                Said::User(text, files) => h_flex()
-                    .justify_end()
-                    .child(
-                        v_flex()
-                            .max_w(rems(BUBBLE_MAX))
-                            .px_3()
-                            .py_2()
-                            .rounded(cx.theme().radius_lg)
-                            .bg(p.sunken)
-                            .child(if text.is_empty() {
-                                "(attachments only)".to_string()
-                            } else {
-                                text.clone()
-                            })
-                            .when(*files > 0, |d| {
-                                d.child(
-                                    div()
-                                        .text_xs()
-                                        .text_color(p.muted)
-                                        .child(format!("{files} attached")),
-                                )
-                            }),
+            .enumerate()
+            .map(|(i, s)| match s {
+                Said::User(text, files) => {
+                    let names: Vec<&str> = files.iter().map(|&i| ATTACHABLE[i].1).collect();
+                    let text = if text.is_empty() {
+                        "(attachments only)".to_string()
+                    } else {
+                        text.clone()
+                    };
+                    self.bubble(p, text, &names, cx).into_any_element()
+                }
+                Said::Agent(text) => self
+                    .md(
+                        p,
+                        ElementId::NamedInteger("said".into(), i as u64),
+                        *text,
+                        window,
+                        cx,
                     )
                     .into_any_element(),
-                Said::Agent(text) => div().child(*text).into_any_element(),
-                Said::Notice(text) => h_flex()
-                    .gap_2()
-                    .text_size(self.read(TEXT_READ_SM))
-                    .text_color(p.muted)
-                    .child(Icon::new(IconName::Info).xsmall())
-                    .child(*text)
-                    .into_any_element(),
+                Said::Notice(text) => self.notice(p, text).into_any_element(),
             })
             .collect();
-        if self.live.running() {
+        // The canned turn draws its own running blocks; this line is only
+        // for a turn sent here.
+        if self.live.turn.is_some() {
             out.push(
                 h_flex()
                     .gap_2()
@@ -385,15 +389,8 @@ impl Labs {
         &self,
         p: &Palette,
         narrow: bool,
-        window: &Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let focused = self
-            .live
-            .input
-            .read(cx)
-            .focus_handle(cx)
-            .contains_focused(window, cx);
         let mono = cx.theme().mono_font_family.clone();
         let live = &self.live;
         let running = live.running();
@@ -514,7 +511,7 @@ impl Labs {
         };
         let is_open = |menu: Menu| live.open == Some(menu);
 
-        let card = super::composer::card(p, cx, focused)
+        let card = super::composer::card(p, cx)
             .children(tray)
             .child(
                 // The whole field area takes the caret, not only its first line.

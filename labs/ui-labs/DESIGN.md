@@ -174,10 +174,43 @@ project, and `←` / `→` fold and unfold the cursor's project. The cursor's ro
 - **The transcript** is a column of at most `READ_MAX`, centred with equal gutters. The user's
   prompt is the one filled bubble, against the right edge, at most `BUBBLE_MAX`. Everything the
   agent says starts on a shared left axis. Code and output sit in a `sunken` well with no border.
-- **Activity is a summary line** (`Ran 2 commands · 1 failed`): a failure inside it is named in the
-  summary in danger ink, not only when it is opened. A click opens it: its chevron turns down and
-  each command shows with its outcome (`failed` in danger ink) and the tail of its output in a
-  well.
+- **The canned conversation** is three turns that between them hold every block: prose (three
+  heading levels, bulleted and numbered lists, a table, a quote, inline code, a link, a fenced
+  block), thoughts, activity, a
+  plan, answered permissions and questions (one denied), the turn footer, notices (a workflow step
+  among them) and an error. The last turn is still running, and the composer says so: the lab
+  opens on *Stop* (and *Queue* once something is typed), scrolled to the bottom. Stop ends that
+  turn as it ends one sent here: a notice, and what was running reads *stopped* in muted ink.
+- **The agent's prose is markdown that can be selected**, drawn by the library's text view as the
+  app draws an answer, the thoughts' too: drag to select, `Ctrl+C` copies. Its headings are
+  `TEXT_READ_H1` and `TEXT_READ_H2` at the reading zoom, then weight alone; inline code is accent
+  ink with nothing behind it; a fenced block sits in the same `sunken` well as a tool's output,
+  its language in the corner. Prompts, labels and tool output stay plain text.
+- **Folding blocks open from one line**: a chevron that turns, what the block says about itself in
+  `text2`, lit to `text` under the pointer; what opens is inset to the line's words. Something
+  running starts open, everything else closed except the plan.
+- **A thought** reads *Thought for Ns*, or a spinner and *Thinking…* in `accent` while it runs, and
+  opens the reasoning in muted ink.
+- **Activity is a summary line**: each kind of tool counted in the order it first ran (`Read 2
+  files, searched 1 time, ran 2 commands`), what is running named first, then the failures in
+  danger ink, the lines changed (`+N` / `−N`) and the time taken. Opened, a row per tool: its
+  kind's glyph (a spinner while it runs), the verb, its object in mono (struck through when
+  deleted), the lines it changed and its failure (`exit 101`) in danger ink.
+- **A tool opens to what it did**: what it read or found in a well; a command's output in a well,
+  only the last `OUTPUT_TAIL` lines until *Show N earlier lines*, a line reporting a failure in
+  danger ink (not a passing count such as `0 failed`); a diff in a well, a muted line number, then
+  the sign, added and removed lines on their state's ink at `STATE_TINT`; a diff too large to draw
+  says so and offers *Load diff*, which draws its first rows and says how many changed lines it
+  leaves out.
+- **A plan** reads *Plan* with *done/total*, its steps a check in `success` and struck through
+  when done, a spinner glyph in `accent` while running, a dash in `muted` while pending.
+- **An answered permission or question** is one unfolding line: the user glyph, *Allowed*,
+  *Denied* or *Asked*, what was asked (a command in mono), then the answer after a muted `·`. A
+  denial strikes the command and says *deny* in danger ink.
+- **A prompt's attachments** are listed under its words in the bubble, muted. **A finished turn**
+  ends on a footer: a button that copies its last words and *Processed in …*, muted.
+- **A notice** is a centred `text_xs` muted line. **An error** is a banner: a `danger` edge, a
+  `danger` fill at `STATE_TINT`, danger ink, the alert glyph on its first line.
 - **The composer stack** is at most `COMPOSER_MAX` wide and reads as one object: the pinned cards,
   then the composer, `gap_2p5` apart.
 - **The composer** is the app's: a card of two rows, then a strip under it. The card holds the
@@ -190,7 +223,8 @@ project, and `←` / `→` fold and unfold the cursor's project. The cursor's ro
   full ink and their glyphs muted: `+` (its glyph `size_5`), Fast (the bolt and *On* or *Off*),
   the model (its name, then the effort in muted ink, and a caret), the branch (the branch glyph)
   and the mode (the shield).
-- **The card is the field's edge:** it darkens to `muted` while the field has the caret.
+- **The card has no edge:** its `raised` fill and its lift (two shadows of its own, `LIFT_*`) set
+  it apart, and the caret alone shows focus.
 - **Fast** is Lucide's `zap`, embedded by the lab because gpui-component's set has none, beside
   the word for its state.
 - **Send and Stop.** *Send* is the region's primary: filled once there is something to send, spent
@@ -336,7 +370,7 @@ project, and `←` / `→` fold and unfold the cursor's project. The cursor's ro
   `text` under the pointer (`icon_button`).
 - **Press** changes nothing on its own: no shrink, no colour shift. What was pressed shows in the
   state it leads to.
-- **Focus** on a field darkens its edge to `muted` (for the composer, the card's edge). Controls
+- **Focus** on a field darkens its edge to `muted` (the composer's card has no edge, so shows none). Controls
   draw no ring of their own here.
 - **Motion** is limited to what a state change needs: the running spinner in the chat turns (the rail's marks are still), and the activity
   line's chevron turns as it opens. Everything else changes at once.
@@ -348,7 +382,8 @@ hierarchy are identical in both.
 
 | Role | Use |
 |---|---|
-| `page` / `sunken` / `panel` | reading surface / rail, wells, bubble / docks, composer, cards, dialogs |
+| `page` / `sunken` / `panel` | reading surface / rail, wells, bubble / docks, cards, dialogs |
+| `raised` / `lift_edge` / `lift` | the composer card, which has no edge: white in light, a clear step above `sunken` in dark; its lift, a tight shadow where an edge would be and a soft one under it |
 | `text` / `text2` / `muted` | prose / secondary / metadata |
 | `hairline` / `control` | dividers / a control's edge |
 | `selected` / `chip_on` | a selected or hovered row / the control whose popup is open |
@@ -359,7 +394,7 @@ hierarchy are identical in both.
 | `primary_bg` / `primary_fg` | the one primary action in a region |
 | `scrim` | under a dialog |
 
-- Solid fills only. Shadows only on what floats: popups, menus, dialogs.
+- Solid fills only. Shadows only on what floats: the composer card, popups, menus, dialogs.
 - **One exception to solid fills: the fade.** A name too long for its room in the rail fades
   out over `FADE_W` at the room's edge instead of ending on an ellipsis (`controls::faded`). The
   band is painted in the row's own opaque fill (the rail, or `selected` over it while hovered or
@@ -416,7 +451,7 @@ hierarchy are identical in both.
 | A question's description is said once | the description is repeated as the field's placeholder |
 | Settings is a page in the content area | Settings is a large dialog |
 | One primary per region, so a list and its detail side by side may each have one | one primary per view |
-| The composer is a panel card with no shadow | the composer card floats over the transcript with a shadow |
+| The composer card has no edge | the composer card is bordered |
 | A session's meta line ends on its diff, `+N −N` | no diff: nothing reports one per session |
 | A failed session's hover action is *Retry*, and every session's *Archive* | *Send the last prompt again* and *Close*: Retry is a task's word, and closing keeps the conversation |
 | Clicking a project row folds it | it goes to the project; only its chevron, a button of its own, folds it |

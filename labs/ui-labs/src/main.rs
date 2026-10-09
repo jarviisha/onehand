@@ -41,6 +41,7 @@ mod rail;
 mod settings;
 mod terminal;
 mod theme;
+mod transcript;
 mod workbench;
 
 #[cfg(test)]
@@ -129,7 +130,8 @@ struct Labs {
     /// beside it; it is still open.
     chat_over_workbench: bool,
     rail_hidden: bool,
-    activity_open: bool,
+    /// The transcript's blocks folded the other way from how they start.
+    flipped: std::collections::HashSet<String>,
     /// The reading zoom: the transcript, the composer, documents.
     zoom: f32,
     /// The icon-only button under the pointer, whose glyph is lit.
@@ -162,7 +164,7 @@ impl Labs {
             was_split: true,
             chat_over_workbench: false,
             rail_hidden: false,
-            activity_open: false,
+            flipped: Default::default(),
             zoom: 1.0,
             hovered: None,
             removed: Vec::new(),
