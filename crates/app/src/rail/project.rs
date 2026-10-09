@@ -155,11 +155,10 @@ pub(super) fn auto_status(
 /// tint. The other four entries are things that were either buried or reachable
 /// only by first selecting the project.
 ///
-/// The button is offered on the **active** row only, for the same reason the ✕
-/// was: a rail where every row carries a control is a rail of controls, and the
-/// user selects a project to see what is in it before acting on it anyway.
-/// Every other row still reaches the same entries by right-click, exactly as a
-/// session row does — that parity is the point. While this menu existed only as
+/// The button shows on the row under the pointer, over the row's end, so a
+/// rail at rest is a rail of names rather than of controls; right-click
+/// reaches the same entries, exactly as on a session row — that parity is the
+/// point. While this menu existed only as
 /// a dropdown, *Remove from workspace* and *New worktree…* could be reached on
 /// one row in the rail and nowhere else, so acting on a project always meant
 /// selecting it first and tearing down whatever was on screen on the way.
@@ -400,8 +399,9 @@ pub(super) struct Place {
 /// most urgent state of its sessions. Under the pointer, over the row's end:
 /// a new session here, and `⋯`.
 ///
-/// A click puts the keyboard on it and folds or unfolds it; it does not
-/// change the session on screen.
+/// A click goes to the project: its last session shows, or its page when it
+/// has none, and the keyboard's row moves there. Only the chevron, a button
+/// of its own, folds it.
 pub(super) fn project_row(
     window_state: &WorkspaceWindow,
     root_idx: usize,

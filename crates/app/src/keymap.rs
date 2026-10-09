@@ -422,14 +422,16 @@ fn validate(overrides: &Overrides) -> Result<(), String> {
     for command in COMMANDS {
         for raw in command.keys(overrides) {
             let key = parse_key(&raw)?;
-            // A key may serve two commands only in two places that are never
-            // in one focus stack: a window command is everywhere, and the
-            // rail's list holds no field. Anything else would rest on
+            // A key may serve two commands only when one is the rail list's and
+            // the other a field's: the list holds no field, so the two are never
+            // in one focus stack. A window command is everywhere, and the
+            // composer's scopes nest in each other; anything else would rest on
             // registration order.
             let overlap = |context: &str| {
                 context == command.context
                     || context.starts_with("Shell")
                     || command.context.starts_with("Shell")
+                    || (context != "Rail" && command.context != "Rail")
             };
             if let Some((_, other, _)) = seen
                 .iter()
@@ -765,6 +767,22 @@ mod tests {
             vec!["alt-j".into(), "alt-k".into()],
         )]);
         assert!(validate(&overrides).is_ok());
+    }
+
+    /// The composer's scopes nest while a suggestion list is open, so one key
+    /// in two of them would be decided by registration order; the rail's list
+    /// holds no field, so its keys may repeat a field's.
+    #[test]
+    fn only_the_rail_list_shares_a_key_with_a_field() {
+        let overrides = Overrides::from([("cycle_mode".into(), vec!["tab".into()])]);
+        assert!(
+            validate(&overrides).is_err(),
+            "two composer scopes shared tab"
+        );
+        assert!(
+            validate(&Overrides::new()).is_ok(),
+            "enter and the arrows clash"
+        );
     }
 
     #[test]

@@ -357,20 +357,22 @@ fn a_project_rolls_up_to_its_most_urgent_session() {
 #[test]
 fn one_session_and_one_project_agree() {
     use SessionSignal::*;
-    for (link, awaiting, busy, unseen) in [
-        (Link::Lost, true, false, true),
-        (Link::Connected, true, true, true),
-        (Link::Connected, false, true, true),
-        (Link::Connected, false, false, true),
+    for (link, failed, awaiting, busy, unseen) in [
+        (Link::Lost, true, true, false, true),
+        (Link::Connected, true, true, true, true),
+        (Link::Connected, false, true, true, true),
+        (Link::Connected, false, false, true, true),
+        (Link::Connected, false, false, false, true),
     ] {
         let parts = [
             (link == Link::Lost).then_some(Lost),
+            failed.then_some(Failed),
             awaiting.then_some(AwaitingUser),
             busy.then_some(Busy),
             unseen.then_some(UnseenTurn),
         ];
         assert_eq!(
-            SessionSignal::pick(link, false, awaiting, busy, unseen),
+            SessionSignal::pick(link, failed, awaiting, busy, unseen),
             SessionSignal::most_urgent(parts.into_iter().flatten()),
         );
     }

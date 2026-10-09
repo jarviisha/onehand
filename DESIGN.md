@@ -83,8 +83,8 @@ monospace font.
   needs input), over which hovering lays *Stop* (running), *Send the last prompt again* (failed)
   and *Close*. The other filters are flat, the project in place of the agent. A group lists six
   sessions, then *N more*; an open project with none says *Empty*, a search or filter with none *No
-  sessions match*. Each state has its own mark and ink, none animated (running is a filled dot):
-  failed or disconnected danger, needs input warning, running the accent, done unread success, idle
+  sessions match*. Each state has its own ink and, but for failed and disconnected, its own
+  mark, none animated (running is a filled dot): failed or disconnected danger, needs input warning, running the accent, done unread success, idle
   muted. `↑`/`↓` move the list's row, `Enter` and `←`/`→` act on it, `Alt+↑`/`↓` step through
   sessions in its order. The tree's order is the user's, set by dragging; pinned projects stay on
   top and sessions never leave their project. `Ctrl+Shift+B` hides the rail completely, never to an

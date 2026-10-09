@@ -76,8 +76,8 @@ impl Render for Shell {
                     shell.toggle_workbench(window, cx);
                 },
             ))
-            .on_action(cx.listener(|shell: &mut Self, _: &ToggleRail, _, cx| {
-                shell.toggle_rail(cx);
+            .on_action(cx.listener(|shell: &mut Self, _: &ToggleRail, window, cx| {
+                shell.toggle_rail(window, cx);
             }))
             .on_action(
                 cx.listener(|shell: &mut Self, _: &ToggleMarkdown, window, cx| {

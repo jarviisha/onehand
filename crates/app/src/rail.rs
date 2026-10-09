@@ -117,6 +117,17 @@ impl RailState {
             self.filter_before = filter;
         }
         self.filter = filter;
+        // A list shown in full stays so for the filter it was asked under;
+        // the next one starts at the cap again.
+        self.uncapped.clear();
+    }
+
+    /// Whether the caret is in the rail: its search or its list. Whoever takes
+    /// the rail off screen has to move it first, or the window is left
+    /// pointing at an element no frame draws and no shortcut reaches.
+    pub(crate) fn holds_focus(&self, window: &Window, cx: &App) -> bool {
+        self.focus.contains_focused(window, cx)
+            || self.search.read(cx).focus_handle(cx).is_focused(window)
     }
 
     fn searching(&self, cx: &App) -> bool {
@@ -640,9 +651,13 @@ impl Shell {
     }
 
     /// Shows the session before or after the current one in the rail's order.
+    /// The keyboard's row counts only while the list has the keyboard: it
+    /// stays where the rail last left it, while Ctrl+Tab and the number keys
+    /// move what is on screen.
     pub(crate) fn rail_step(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
         let order = List::of(self, cx).order();
-        let from = match &self.rail_state().cursor {
+        let focused = self.rail_state().focus.is_focused(window);
+        let from = match self.rail_state().cursor.as_ref().filter(|_| focused) {
             Some(Cursor::Session(uid)) => Some(*uid),
             Some(Cursor::Project(_)) | None => self.active_session_uid(),
         };
@@ -656,9 +671,10 @@ impl Shell {
         }
     }
 
-    /// Brings the rail back if it is hidden, and puts the caret in its search.
+    /// Brings the rail back if it is off screen, and puts the caret in its
+    /// search.
     pub(crate) fn focus_rail_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.show_rail(cx);
+        self.show_rail(window, cx);
         let search = self.rail_state().search.clone();
         search.read(cx).focus_handle(cx).focus(window, cx);
     }

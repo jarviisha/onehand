@@ -69,7 +69,9 @@ pub(super) fn workspace_bar(
                 .small()
                 .icon(Icon::new(IconName::PanelLeftClose).text_color(cx.theme().muted_foreground))
                 .tooltip("Hide the rail")
-                .on_click(cx.listener(|shell: &mut Shell, _, _, cx| shell.toggle_rail(cx))),
+                .on_click(
+                    cx.listener(|shell: &mut Shell, _, window, cx| shell.toggle_rail(window, cx)),
+                ),
         )
 }
 

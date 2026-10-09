@@ -198,6 +198,7 @@ impl Render for Editor {
         // Two groups, by where a command works: the window's own commands reach
         // over any panel, the rest only while the composer holds the caret.
         let mut window_rows = Vec::new();
+        let mut rail_rows = Vec::new();
         let mut composer_rows = Vec::new();
         for (index, command) in COMMANDS.iter().enumerate() {
             let bound = command.keys(&overrides);
@@ -231,9 +232,10 @@ impl Render for Editor {
                 cx,
             )
             .into_any_element();
-            match command.context.starts_with("Shell") {
-                true => window_rows.push(row),
-                false => composer_rows.push(row),
+            match command.context {
+                context if context.starts_with("Shell") => window_rows.push(row),
+                "Rail" => rail_rows.push(row),
+                _ => composer_rows.push(row),
             }
         }
 
@@ -259,6 +261,14 @@ impl Render for Editor {
                     .map(|error| div().text_sm().text_color(danger).child(error.clone())),
             )
             .child(section(Some("Window"), None, cx).children(window_rows))
+            .child(
+                section(
+                    Some("Rail"),
+                    Some("While the rail's list has the keyboard.".into()),
+                    cx,
+                )
+                .children(rail_rows),
+            )
             .child(section(Some("Composer"), None, cx).children(composer_rows))
             .child(
                 section(

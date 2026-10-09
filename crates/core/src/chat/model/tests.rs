@@ -1859,3 +1859,17 @@ fn a_turn_that_ends_on_an_error_marks_the_chat_failed() {
     );
     assert!(!chat.failed, "a new turn clears it");
 }
+
+/// Some adapters answer a cancel with an error; the turn was stopped, not
+/// failed, so the rail must not offer to send it again.
+#[test]
+fn a_stopped_turn_answered_with_an_error_is_not_failed() {
+    let (mut chat, _rx) = chat_with_tx();
+    assert!(chat.submit("go", &[]));
+    chat.cancel_turn();
+    chat.apply(AcpEvent::Error("cancelled by client".into()));
+    chat.apply(AcpEvent::TurnEnded {
+        stop_reason: "end_turn".into(),
+    });
+    assert!(!chat.failed);
+}

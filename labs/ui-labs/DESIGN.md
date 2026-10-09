@@ -419,6 +419,13 @@ hierarchy are identical in both.
 | The composer is a panel card with no shadow | the composer card floats over the transcript with a shadow |
 | A session's meta line ends on its diff, `+N −N` | no diff: nothing reports one per session |
 | A failed session's hover action is *Retry*, and every session's *Archive* | *Send the last prompt again* and *Close*: Retry is a task's word, and closing keeps the conversation |
+| Clicking a project row folds it | it goes to the project; only its chevron, a button of its own, folds it |
+| Running is a still `LoaderCircle`, marks at `xsmall` | running is a filled accent dot, marks a step smaller |
+| A hovered row and the keyboard's row both take `selected`, across the whole row | hover takes the rail's own step, the chosen row the step past it, and a session's fill starts at its indent |
+| Clicking a session gives the list the keyboard | the caret goes to the composer |
+| `Ctrl+N` starts a session | `Ctrl+Shift+O`, as before |
+| *New* is the library's `DropdownButton` | two buttons of the app's own, drawn alike |
+| A project opens at launch when something in it needs attention | projects start folded, but for the one on screen |
 
 ## Backlog
 
