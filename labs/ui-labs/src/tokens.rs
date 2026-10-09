@@ -269,8 +269,11 @@ pub fn dark() -> Palette {
         // page; an open chip near #3E3E3E.
         selected: ca(0xECECEC16),
         chip_on: ca(0xECECEC26),
-        accent: c(0xC9B974),
-        accent_bg: ca(0xC9B9742E),
+        // Blue in both modes, the light set's hue lifted to read on near-black:
+        // the reference's yellow sat beside the waiting amber, and running and
+        // waiting must never be told apart by a shade.
+        accent: c(0x3794FF),
+        accent_bg: ca(0x3794FF2E),
         // No waiting or danger state in the reference set: these keep the
         // previous hues.
         warning: c(0xFAC775),
