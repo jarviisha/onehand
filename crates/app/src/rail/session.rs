@@ -244,7 +244,7 @@ pub(super) fn session_row(
         .pr_1()
         .rounded(cx.theme().radius)
         .cursor_pointer()
-        .when(chosen, |d| d.bg(cx.theme().sidebar_accent))
+        .when(chosen, |d| d.bg(super::row::chosen_fill(cx)))
         .when(!chosen, |d| d.hover(move |d| d.bg(hover)))
         .on_click(
             cx.listener(move |shell: &mut Shell, _: &ClickEvent, window, cx| {

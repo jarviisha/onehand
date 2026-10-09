@@ -381,8 +381,8 @@ fn page_row<F: Fn(&mut Shell, &mut Window, &mut Context<Shell>) + 'static>(
         .rounded(cx.theme().radius)
         .cursor_pointer()
         .when(on, |d| {
-            d.bg(cx.theme().sidebar_accent)
-                .text_color(cx.theme().sidebar_accent_foreground)
+            d.bg(row::chosen_fill(cx))
+                .text_color(cx.theme().accent_foreground)
         })
         .when(!on, |d| {
             d.hover(move |d| d.bg(hover))

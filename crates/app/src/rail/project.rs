@@ -476,7 +476,7 @@ pub(super) fn project_row(
         .gap_1p5()
         .rounded(radius)
         .cursor_pointer()
-        .when(cursor, |d| d.bg(cx.theme().sidebar_accent))
+        .when(cursor, |d| d.bg(super::row::chosen_fill(cx)))
         .when(!cursor, |d| d.hover(move |d| d.bg(hover)))
         .text_color(cx.theme().foreground)
         .font_medium()

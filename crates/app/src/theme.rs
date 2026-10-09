@@ -903,13 +903,25 @@ mod tests {
             ("dark", &DARK, ThemeMode::Dark),
         ] {
             let theme = resolve(ramp, mode);
-            for (surface, fill) in [("well", theme.muted), ("marked row", theme.sidebar_accent)] {
+            for (surface, fill) in [
+                ("well", theme.muted),
+                ("hovered row", theme.sidebar_accent),
+                ("chosen row", theme.accent),
+            ] {
                 let ratio = contrast(theme.link, fill);
                 assert!(
                     ratio >= 3.,
                     "{name}: the accent on the {surface} is {ratio:.2}"
                 );
             }
+            // The rail's chosen row: its text reads, and the row stands off
+            // the well at least as far as a hovered one does.
+            let ink = contrast(theme.accent_foreground, theme.accent);
+            assert!(ink >= AA, "{name}: ink on the chosen row is {ink:.2}");
+            assert!(
+                contrast(theme.accent, theme.muted) >= contrast(theme.sidebar_accent, theme.muted),
+                "{name}: the chosen row is fainter than a hovered one"
+            );
         }
     }
 

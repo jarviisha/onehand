@@ -25,28 +25,26 @@ const FADE_W: Rems = rems(1.25);
 /// cost the project's name its space, so it is capped.
 pub(super) const MAX_BRANCH_W: Rems = rems(4.5);
 
-/// The fill a hovered rail row takes: the selected fill at eight tenths, the
-/// component library's own convention for a hovered sidebar row, so a hovered
-/// row and the selected one stay apart without a second token.
-///
-/// One function because the rows *paint* this over the well and
-/// [`row_surfaces`] *composites* it to know what is then on screen; the fade
-/// at the end of a name is invisible only while those two agree.
+/// The fill a hovered rail row takes: the ramp's step the rail owns, whole.
+/// Thinned, as the library thins its hovered sidebar rows, it sank into the
+/// well it lies on.
 pub(super) fn hover_fill(cx: &App) -> Hsla {
-    cx.theme().sidebar_accent.opacity(0.8)
+    cx.theme().sidebar_accent
+}
+
+/// The fill of the row that is chosen, the one on screen or the keyboard's:
+/// the selected step, one past the hover, so the two stay apart.
+pub(super) fn chosen_fill(cx: &App) -> Hsla {
+    cx.theme().accent
 }
 
 /// The two opaque fills a rail row can be showing: at rest, and under the
 /// pointer. A chosen row's fill does not move under the pointer, so its pair
 /// is one colour twice. The fade and every overlay on a row paint in these.
 pub(super) fn row_surfaces(chosen: bool, cx: &App) -> (Hsla, Hsla) {
-    let well = cx.theme().muted;
     match chosen {
-        true => {
-            let lit = well.blend(cx.theme().sidebar_accent);
-            (lit, lit)
-        }
-        false => (well, well.blend(hover_fill(cx))),
+        true => (chosen_fill(cx), chosen_fill(cx)),
+        false => (cx.theme().muted, hover_fill(cx)),
     }
 }
 
@@ -185,9 +183,9 @@ impl Render for DragGhost {
             .px_2()
             .py_0p5()
             .rounded(cx.theme().radius)
-            .bg(cx.theme().sidebar_accent)
+            .bg(chosen_fill(cx))
             .text_sm()
-            .text_color(cx.theme().sidebar_accent_foreground)
+            .text_color(cx.theme().accent_foreground)
             .child(self.0.clone())
     }
 }
