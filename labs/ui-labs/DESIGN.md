@@ -89,7 +89,8 @@ the list, `gap_0p5` between rows, and `h_2` of air between projects.
   current one checked, *Open workspace…*, *New workspace…*) and *Hide the rail*.
 - **Search and New:** a small borderless field (its fill shows it), *Search…* (short, so it never truncates), with its `Ctrl+K` key cap,
   filters the list as it is typed: a title or a project's name, ignoring case. A search opens
-  every project so no match hides behind a fold. Beside it *New* and its caret are one ghost
+  every project so no match hides behind a fold; while it is on, a click on a project's row
+  only moves the cursor there, and folding waits until the search is cleared. Beside it *New* and its caret are one ghost
   group without an edge (the library's `DropdownButton`): *New* starts a session in the cursor's project, else the
   chat's, with the default agent; the caret chooses *Start in* another project or *With agent*
   another agent. With no such project *New* is disabled and the caret is the way in.
@@ -97,7 +98,7 @@ the list, `gap_0p5` between rows, and `h_2` of air between projects.
   with `selected` while their page shows; each says what it holds in a tooltip.
 - **Sessions,** with a hairline under it that the list scrolls beneath: the word, *N need
   attention* in `warning`, and a `list-filter` menu: *By project*, *All sessions*, *Needs
-  attention*, *Newest first*, the chosen one checked. Its glyph is `text` while a filter other
+  attention*, *Recent activity* (the session whose status changed last first), the chosen one checked. Its glyph is `text` while a filter other
   than *By project* is on. *N need attention* is also a switch: a click shows only the sessions
   that need attention, a second click restores the filter it replaced. While on it sits on
   `chip_on` in medium weight and stays even at none; off and at none it is hidden.
@@ -109,15 +110,22 @@ the list, `gap_0p5` between rows, and `h_2` of air between projects.
   said `waiting 4m` for one that needs input. In a flat list the project takes the agent's
   place. Under a project it starts `RAIL_INDENT` in. Its `⋯` shows on hover, and always on the
   selected row.
-- **Hover actions on a session** cover the end of its metadata line, on the row's own fill:
+- **Hover actions on a session** always cover the end of its metadata line, on the row's own
+  fill, whether or not the line is full, so they are in one place on every row:
   *Stop* (`square`) while it runs, *Retry* (`Redo`) once it failed, *Archive* (`archive`) always.
   The lab carries them out: Stop makes it idle, Retry running, Archive takes it off the list.
+- **Closing or archiving the session on screen** hands the chat to the row drawn below it, or
+  above it at the end of the list, never to a row the person cannot see; the cursor follows. With
+  no session left the overview shows.
+- **A capped list.** A project shows at most `SESSION_CAP` sessions, a flat list the same; past
+  it a muted *N more* row shows how many it left out, and a click on it shows them all.
 - **A project row** (`ROW_H`): the fold chevron, its folder, the name fading at its room's end, then its branch and only the git parts that are not zero, muted: a `DOT`
   and the count of uncommitted changes, `ArrowUp` and the commits ahead of the remote,
   `ArrowDown` and those behind. Each part names itself in full on hover (*3 uncommitted
   changes*). The name's tooltip says the full name, branch, changes, pinned, the unattended run
   and the path. Clicking the row folds it. On hover, `+` starts a session there and `⋯` opens
-  its menu. A folded project shows a badge, the status mark of its most urgent session that
+  its menu; they lie over the end of the row on its hover fill, so they take no room from the
+  name while hidden. A folded project shows a badge, the status mark of its most urgent session that
   needs attention (Failed before Needs input), else the Running mark while any session runs, else
   nothing; it goes when the project opens. An open project with no sessions says *Empty*. Pinned projects come
   first. A project opens with the rail only when something in it needs attention; after that
@@ -146,13 +154,18 @@ says its word in a tooltip. Every mark is still: nothing in the rail turns.
 Needs input and Failed need attention: they are what the count, the filter and a folded
 project's badge report, the most urgent first (Failed, then Needs input).
 
+**Words on a session.** The rail uses three words the glossary gives to tasks; here they mean:
+*Needs attention*, a session that needs input or failed; *Retry the last turn*, send the turn
+that failed again; *Restart the agent*, start the session's agent process again. The glossary
+is unchanged: the lab is not the app.
+
 **Accessible names.** A status mark, a badge and a git part carry the image role and their words
 (a badge: *atlas-api: Failed*). An icon-only button's name is the same as its tooltip, set on a
 wrapper: gpui-component's button takes its accessible name only from a text label, so a setter
 for an icon-only button belongs upstream.
 
 **Keys** (Ctrl where the app's other keys are): `Ctrl+K` searches, `Ctrl+N` starts a session as
-*New* does, `Alt+↑` / `Alt+↓` open the session before or after in the list's order. While the
+*New* does, from anywhere in the window, a field included, `Alt+↑` / `Alt+↓` open the session before or after in the list's order. While the
 list holds the focus (a click on a row gives it), Enter opens the cursor's row or folds its
 project, and `←` / `→` fold and unfold the cursor's project. The cursor's row takes `selected`.
 
@@ -308,8 +321,8 @@ project, and `←` / `→` fold and unfold the cursor's project. The cursor's ro
 - **Radii come from the theme:** `radius` for controls and rows, `radius_lg` for wells, list
   boxes, popups, the composer and the cards pinned on it, the bubble and a dialog.
   A pill is only for a status badge.
-- **Truncation** is one line with an ellipsis and the full text on hover (names in the rail, the
-  Workbench's lists and the terminal's tabs); state and primary actions always stay visible. A long name in a dialog wraps.
+- **Truncation** is one line and the full text on hover: names in the rail fade at their room's
+  end, the Workbench's lists and the terminal's tabs end on an ellipsis; state and primary actions always stay visible. A long name in a dialog wraps.
 - **Lines are hairlines:** `hairline` divides regions and rows, `control` edges a control. No
   thick borders, and no coloured bar down a card's side to mark it. A seam and the rail's rule are
   `HAIRLINE_PX`, the one length in pixels; an element's edge is one pixel.

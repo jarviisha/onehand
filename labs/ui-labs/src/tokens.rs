@@ -143,6 +143,9 @@ pub const GALLERY_MAX: f32 = 48.0;
 /// A popup opening from a chip, rather than spanning the composer.
 pub const MENU_W: f32 = 17.0;
 pub const MENU_WIDE_W: f32 = 20.0;
+/// Sessions a project, or a flat list in the rail, shows before it says how
+/// many more there are: about half a rail's height of two-line rows.
+pub const SESSION_CAP: usize = 6;
 /// Rows a popup shows before it says how many more there are.
 pub const POPUP_LIST_CAP: usize = 6;
 

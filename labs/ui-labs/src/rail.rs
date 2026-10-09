@@ -50,6 +50,9 @@ pub(super) struct Rail {
     /// The session the chat shows, by index into `sessions`.
     session: Option<usize>,
     cursor: Option<Cursor>,
+    /// Groups the person showed in full past `SESSION_CAP`: a project, or
+    /// `None` for the flat list.
+    uncapped: Vec<Option<usize>>,
     search: Entity<InputState>,
     /// The list's own focus, so Enter and the arrows reach it and not a field.
     focus: FocusHandle,
@@ -78,6 +81,7 @@ impl Rail {
             pinned: vec![0],
             session: Some(0),
             cursor: None,
+            uncapped: Vec::new(),
             search,
             focus: cx.focus_handle(),
             _search,
@@ -522,8 +526,8 @@ impl Labs {
     }
 
     /// Drops the sessions `gone` picks, keeping the selection and the cursor
-    /// on the sessions they were on. A dropped selection moves to the first
-    /// session left.
+    /// on the sessions they were on. A dropped selection leaves nothing
+    /// chosen, and the chat it showed gives way to the overview.
     fn drop_sessions(&mut self, gone: impl Fn(usize, &Session) -> bool) {
         let keep: Vec<bool> = self
             .rail
@@ -538,15 +542,38 @@ impl Labs {
             at += 1;
             keep[at - 1]
         });
-        let left = !self.rail.sessions.is_empty();
-        self.rail.session = self
-            .rail
-            .session
-            .and_then(|s| moved(s).or(left.then_some(0)));
+        self.rail.session = self.rail.session.and_then(moved);
+        if self.rail.session.is_none() && self.page == Page::Chat {
+            self.page = Page::Overview;
+        }
         self.rail.cursor = match self.rail.cursor {
             Some(Cursor::Session(s)) => moved(s).map(Cursor::Session),
             other => other,
         };
+    }
+
+    /// Archive and Close: the session leaves the list. The one on screen
+    /// hands over to the row drawn below it, or above it at the end, so the
+    /// chat never jumps to a row the person cannot see.
+    pub(super) fn close_session(&mut self, i: usize, cx: &mut Context<Self>) {
+        let order = self.order(cx);
+        let next = order.iter().position(|s| *s == i).and_then(|at| {
+            order
+                .get(at + 1)
+                .or_else(|| at.checked_sub(1).and_then(|b| order.get(b)))
+                .copied()
+        });
+        let shown = self.rail.session == Some(i) && self.page == Page::Chat;
+        let cursor_on = self.rail.cursor == Some(Cursor::Session(i));
+        self.drop_sessions(|at, _| at == i);
+        // Indices after the dropped one move up by one.
+        let next = next.map(|n| if n > i { n - 1 } else { n });
+        match next {
+            Some(n) if shown => self.open_session(n, cx),
+            Some(n) if cursor_on => self.rail.cursor = Some(Cursor::Session(n)),
+            Some(_) | None => {}
+        }
+        cx.notify();
     }
 
     /// The project leaves the workspace, and its sessions with it.
@@ -592,8 +619,7 @@ impl Labs {
             Some(Cursor::Session(s)) => self.open_session(s, cx),
             Some(Cursor::Project(p)) => {
                 let fold = !self.rail.folded.contains(&p);
-                self.set_folded(p, fold);
-                cx.notify();
+                self.fold(p, fold, cx);
             }
             None => {}
         }
@@ -607,9 +633,18 @@ impl Labs {
             Some(Cursor::Session(s)) => self.rail.sessions[s].project,
             None => return,
         };
-        self.set_folded(project, fold);
+        self.fold(project, fold, cx);
         if fold {
             self.rail.cursor = Some(Cursor::Project(project));
+        }
+    }
+
+    /// The person folding a project. While a search is on every project
+    /// stays open, so a fold would change nothing on screen and then land
+    /// unasked when the search clears; it waits instead.
+    pub(super) fn fold(&mut self, project: usize, fold: bool, cx: &mut Context<Self>) {
+        if !self.searching(cx) {
+            self.set_folded(project, fold);
         }
         cx.notify();
     }

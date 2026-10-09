@@ -272,8 +272,7 @@ impl Labs {
                             "Archive the session",
                         )
                         .on_click(cx.listener(move |this, _, _, cx| {
-                            this.drop_sessions(|at, _| at == i);
-                            cx.notify();
+                            this.close_session(i, cx);
                         })),
                     )),
             )
@@ -302,6 +301,7 @@ impl Labs {
         h_flex()
             .id(("project", i))
             .group(group.clone())
+            .relative()
             .h(rems(ROW_H))
             .pl_1p5()
             .pr_1()
@@ -314,9 +314,8 @@ impl Labs {
             .font_medium()
             .on_click(cx.listener(move |this, _, window, cx| {
                 this.rail.cursor = Some(Cursor::Project(i));
-                this.set_folded(i, open);
+                this.fold(i, open, cx);
                 this.rail.focus.focus(window, cx);
-                cx.notify();
             }))
             .child(
                 Icon::new(if open {
@@ -399,10 +398,19 @@ impl Labs {
                     format!("{}: {}", project.name, s.label()),
                 )
             }))
-            .child(on_hover(
-                &group,
-                false,
+            // Over the end of the row, on the row's hover fill, so they take
+            // no room from the name while hidden.
+            .child(
                 h_flex()
+                    .absolute()
+                    .top_0()
+                    .bottom_0()
+                    .right_0()
+                    .px_1()
+                    .rounded(cx.theme().radius)
+                    .bg(hovered)
+                    .invisible()
+                    .group_hover(group.clone(), |s| s.visible())
                     .child(labelled(
                         ("project-new-name", i),
                         "New session in this project",
@@ -428,7 +436,7 @@ impl Labs {
                                 move |menu, _, _| project_menu(menu, i, pinned, this.clone(), pal)
                             }),
                     )),
-            ))
+            )
             .context_menu(move |menu, _, _| project_menu(menu, i, pinned, this.clone(), pal))
             .into_any_element()
     }

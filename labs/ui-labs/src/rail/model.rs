@@ -166,7 +166,7 @@ pub(super) enum Filter {
     ByProject,
     All,
     NeedsAttention,
-    Newest,
+    Recent,
 }
 
 impl Filter {
@@ -174,7 +174,7 @@ impl Filter {
         Filter::ByProject,
         Filter::All,
         Filter::NeedsAttention,
-        Filter::Newest,
+        Filter::Recent,
     ];
 
     pub(super) fn label(self) -> &'static str {
@@ -182,7 +182,7 @@ impl Filter {
             Filter::ByProject => "By project",
             Filter::All => "All sessions",
             Filter::NeedsAttention => "Needs attention",
-            Filter::Newest => "Newest first",
+            Filter::Recent => "Recent activity",
         }
     }
 }
@@ -200,7 +200,7 @@ pub(super) fn visible(sessions: &[Session], filter: Filter, query: &str) -> Vec<
                 && (filter != Filter::NeedsAttention || s.status.needs_attention())
         })
         .collect();
-    if filter == Filter::Newest {
+    if filter == Filter::Recent {
         out.sort_by_key(|i| sessions[*i].age);
     }
     out

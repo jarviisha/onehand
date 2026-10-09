@@ -6,8 +6,8 @@ fn a_filter_keeps_what_it_says() {
     assert_eq!(visible(&s, Filter::All, ""), vec![0, 1, 2, 3, 4, 5]);
     assert_eq!(visible(&s, Filter::ByProject, ""), vec![0, 1, 2, 3, 4, 5]);
     assert_eq!(visible(&s, Filter::NeedsAttention, ""), vec![0, 2]);
-    // Youngest first: 1m, 4m, 12m, 25m, 90m, two days.
-    assert_eq!(visible(&s, Filter::Newest, ""), vec![1, 0, 5, 2, 4, 3]);
+    // Most recent status change first: 1m, 4m, 12m, 25m, 90m, two days.
+    assert_eq!(visible(&s, Filter::Recent, ""), vec![1, 0, 5, 2, 4, 3]);
 }
 
 #[test]
@@ -57,11 +57,11 @@ fn a_folded_project_shows_its_most_urgent_state() {
 #[test]
 fn the_attention_chip_toggles_back_to_the_filter_it_replaced() {
     assert_eq!(
-        toggle_attention(Filter::Newest, Filter::Newest),
+        toggle_attention(Filter::Recent, Filter::Recent),
         Filter::NeedsAttention
     );
     assert_eq!(
-        toggle_attention(Filter::NeedsAttention, Filter::Newest),
-        Filter::Newest
+        toggle_attention(Filter::NeedsAttention, Filter::Recent),
+        Filter::Recent
     );
 }
