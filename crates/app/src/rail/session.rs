@@ -14,7 +14,7 @@ use gpui::{
 };
 use gpui_component::menu::{ContextMenuExt as _, PopupMenu};
 use gpui_component::tooltip::Tooltip;
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, StyledExt};
 
 /// What a state says on hover: what it means, and what to do about it.
 ///
@@ -46,23 +46,31 @@ pub(crate) fn signal_word(signal: SessionSignal) -> &'static str {
 
 /// A state's mark: a shape of its own for each, as well as an ink, so none is
 /// told by colour alone. None of them moves: a list of turning glyphs pulls
-/// the eye from what waits on the person. A lost agent is the failure shape,
-/// and its word says which failure.
-pub(super) fn status_icon(signal: Option<SessionSignal>, cx: &App) -> Icon {
+/// the eye from what waits on the person, so running is a filled dot, the one
+/// solid shape among outlines. A lost agent is the failure shape, and its word
+/// says which failure. Smaller than the row's text, so the mark reads as a
+/// mark and the title as the thing.
+pub(super) fn status_icon(signal: Option<SessionSignal>, cx: &App) -> gpui::AnyElement {
     let ink = crate::theme::status_ink(cx);
     let (icon, color) = match signal {
+        Some(SessionSignal::Busy) => {
+            return div()
+                .size_2()
+                .rounded_full()
+                .bg(cx.theme().link)
+                .into_any_element();
+        }
         Some(SessionSignal::Lost | SessionSignal::Failed) => {
             (Icon::new(IconName::TriangleAlert), ink.danger)
         }
         Some(SessionSignal::AwaitingUser) => (Icon::new(crate::icons::Icon::Hand), ink.warning),
-        Some(SessionSignal::Busy) => (Icon::new(IconName::LoaderCircle), cx.theme().link),
         Some(SessionSignal::UnseenTurn) => (Icon::new(IconName::CircleCheck), ink.success),
         None => (
             Icon::new(crate::icons::Icon::Circle),
             cx.theme().muted_foreground,
         ),
     };
-    icon.xsmall().text_color(color)
+    icon.size_2p5().text_color(color).into_any_element()
 }
 
 /// A state's mark in its stable column, so titles never shift beside it,
@@ -78,6 +86,7 @@ pub(super) fn status_mark(
         .flex_none()
         .w_4()
         .flex()
+        .items_center()
         .justify_center()
         .role(gpui::accesskit::Role::Image)
         .aria_label(label.clone())
@@ -238,9 +247,10 @@ pub(super) fn session_row(
         .v_flex()
         .py_1()
         .when(flat, |d| d.pl_1p5())
-        // A session's text starts under its project's name: the project's
-        // fold chevron and folder, and the gap after them.
-        .when(!flat, |d| d.pl_7())
+        // A session's text starts under its project's name. The row's fill
+        // starts there too, past the fold chevron's column, so a chosen row
+        // carries no empty band on its left.
+        .when(!flat, |d| d.ml_5().pl_2())
         .pr_1()
         .rounded(cx.theme().radius)
         .cursor_pointer()
