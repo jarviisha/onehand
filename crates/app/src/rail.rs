@@ -548,14 +548,13 @@ impl Shell {
         self.rail_state_mut().cursor = Some(Cursor::Session(uid));
     }
 
-    /// A project row's click: the keyboard goes there, and it folds or
-    /// unfolds. The session on screen stays.
-    fn rail_click_project(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
-        let fold = self.project_unfolded(&path);
-        self.rail_fold(path.clone(), fold, cx);
-        let rail = self.rail_state_mut();
-        rail.cursor = Some(Cursor::Project(path));
-        rail.focus.focus(window, cx);
+    /// A project row's click: the project's last session shows, or its page
+    /// when it has none, and the keyboard's row goes there. Going to a project
+    /// opens it; only its chevron folds it.
+    fn rail_click_project(&mut self, root: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let path = self.workspace_window().workspace.roots[root].path.clone();
+        self.select_root(root, window, cx);
+        self.rail_state_mut().cursor = Some(Cursor::Project(path));
     }
 
     /// The person folding a project. While a search is on every project

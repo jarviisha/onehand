@@ -482,17 +482,30 @@ pub(super) fn project_row(
         .font_medium()
         .on_click(
             cx.listener(move |shell: &mut Shell, _: &ClickEvent, window, cx| {
-                shell.rail_click_project(fold_path.clone(), window, cx);
+                shell.rail_click_project(root_idx, window, cx);
             }),
         )
-        .child(
-            Icon::new(match open {
-                true => IconName::ChevronDown,
-                false => IconName::ChevronRight,
+        // Folding and going to a project are two intentions, so the fold is
+        // a target of its own and the row's click never folds.
+        .child(labelled(
+            ("project-fold-name", root_idx),
+            "Fold or unfold this project",
+            rail_control(
+                ("project-fold", root_idx),
+                match open {
+                    true => IconName::ChevronDown,
+                    false => IconName::ChevronRight,
+                },
+                cx,
+            )
+            .tooltip(match open {
+                true => "Hide this project's sessions",
+                false => "Show this project's sessions",
             })
-            .xsmall()
-            .text_color(muted),
-        )
+            .on_click(cx.listener(move |shell: &mut Shell, _, _, cx| {
+                shell.rail_fold(fold_path.clone(), open, cx);
+            })),
+        ))
         .child(
             Icon::new(match open {
                 true => IconName::FolderOpen,

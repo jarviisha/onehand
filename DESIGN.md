@@ -76,18 +76,19 @@ monospace font.
   chevron, folder and name, its git line (branch, uncommitted changes, commits ahead and behind,
   each only above zero and named in full on hover), the pin, the unattended pill (*auto*, *auto ·
   N*, *auto · N waiting*; a run's pill opens its issue on the Issues page), and while folded its
-  sessions' most urgent state. A click folds it (not during a search) and leaves the session on
-  screen; `+` and `⋯` show on hover, right-click opens the same menu. A session row, indented under
-  its project: its state mark, title and `⋯` (on hover, always on the one shown), and under them
-  `state · agent · age` (*waiting Nm* while it needs input), over which hovering lays *Stop*
-  (running), *Send the last prompt again* (failed) and *Close*. The other filters are flat, the
-  project in place of the agent. A group lists six sessions, then *N more*; an open project with
-  none says *Empty*, a search or filter with none *No sessions match*. Each state has its own icon
-  and ink, none animated: failed or disconnected danger, needs input warning, running the accent,
-  done unread success, idle muted. `↑`/`↓` move the list's row, `Enter` and `←`/`→` act on it,
-  `Alt+↑`/`↓` step through sessions in its order. The tree's order is the user's, set by dragging; pinned projects
-  stay on top and sessions never leave their project. `Ctrl+Shift+B` hides the rail completely,
-  never to an icon column. It resizes between 232 and 448px, on the ramp's lifted surface.
+  sessions' most urgent state. Its chevron alone folds it (not during a search); the rest of the
+  row shows the project's last session, or its page. `+` and `⋯` show on hover, right-click opens
+  the same menu. A session row, indented under its project: its state mark, title and `⋯` (on
+  hover, always on the one shown), and under them `state · agent · age` (*waiting Nm* while it
+  needs input), over which hovering lays *Stop* (running), *Send the last prompt again* (failed)
+  and *Close*. The other filters are flat, the project in place of the agent. A group lists six
+  sessions, then *N more*; an open project with none says *Empty*, a search or filter with none *No
+  sessions match*. Each state has its own icon and ink, none animated: failed or disconnected
+  danger, needs input warning, running the accent, done unread success, idle muted. `↑`/`↓` move
+  the list's row, `Enter` and `←`/`→` act on it, `Alt+↑`/`↓` step through sessions in its order.
+  The tree's order is the user's, set by dragging; pinned projects stay on top and sessions never
+  leave their project. `Ctrl+Shift+B` hides the rail completely, never to an icon column. It
+  resizes between 232 and 448px, on the ramp's lifted surface.
 - **Agent pane header**, left to right:
   - the show-rail button, only while the rail is hidden;
   - the conversation's name, semibold, full ink;
