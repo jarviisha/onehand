@@ -364,7 +364,7 @@ impl Labs {
                                 .on_click(move |_, window, cx| {
                                     delete
                                         .update(cx, |labs, cx| {
-                                            labs.removed.push(name);
+                                            labs.remove_project(name);
                                             cx.notify();
                                         })
                                         .ok();
@@ -406,7 +406,7 @@ fn form_row(
 }
 
 /// Two or three short choices; the chosen one takes the `selected` fill.
-fn segmented(
+pub(super) fn segmented(
     p: &Palette,
     id: &'static str,
     options: &[(&'static str, bool)],

@@ -87,11 +87,6 @@ impl IconButton {
         self.button = self.button.selected(selected);
         self
     }
-
-    pub(super) fn xsmall(mut self) -> Self {
-        self.button = self.button.xsmall();
-        self
-    }
 }
 
 impl RenderOnce for IconButton {
@@ -103,6 +98,46 @@ impl RenderOnce for IconButton {
             .on_hover(move |inside, window, cx| on_hover(inside, window, cx))
             .child(self.button)
     }
+}
+
+/// One line of text that fades out at the end of its room instead of ending
+/// on an ellipsis. The box stretches, so the band lies on the room's edge and
+/// a name that fits ends on empty track rather than under it. The band is
+/// painted in the row's own opaque fill, `rest`, and `hovered` while the
+/// pointer is on the `group`; it is invisible wherever the text already ended.
+/// The caller says the whole text on hover.
+pub(super) fn faded(
+    id: impl Into<gpui::ElementId>,
+    text: impl Into<SharedString>,
+    group: SharedString,
+    rest: Hsla,
+    hovered: Hsla,
+) -> Stateful<gpui::Div> {
+    fn toward(surface: Hsla) -> gpui::Background {
+        gpui::linear_gradient(
+            90.,
+            gpui::linear_color_stop(surface.alpha(0.), 0.),
+            gpui::linear_color_stop(surface, 1.),
+        )
+    }
+    div()
+        .id(id)
+        .relative()
+        .flex_1()
+        .min_w_0()
+        .overflow_hidden()
+        .whitespace_nowrap()
+        .child(text.into())
+        .child(
+            div()
+                .absolute()
+                .top_0()
+                .bottom_0()
+                .right_0()
+                .w(rems(FADE_W))
+                .bg(toward(rest))
+                .group_hover(group, move |fade| fade.bg(toward(hovered))),
+        )
 }
 
 /// One line of text that truncates, and says the whole of itself on hover.

@@ -29,6 +29,7 @@ impl Labs {
             Page::Tasks if self.task_open => ("Tasks", self.task_detail(p, cx).into_any_element()),
             Page::Tasks => ("Tasks", self.tasks(p, cx).into_any_element()),
             Page::Issues => ("Issues", self.issues(p, avail, cx).into_any_element()),
+            Page::Workflows => ("Workflows", self.workflows(p, cx).into_any_element()),
             Page::Composer => (
                 "Composer cards",
                 self.composer_gallery(p, cx).into_any_element(),
@@ -280,6 +281,39 @@ impl Labs {
                     ),
                 )),
         )
+    }
+
+    /// The workflows the workspace can run, and where a new one starts.
+    fn workflows(&self, p: &Palette, cx: &mut Context<Self>) -> impl IntoElement {
+        let new = action("new-workflow")
+            .ghost()
+            .small()
+            .icon(IconName::Plus)
+            .label("New workflow")
+            .into_any_element();
+        let row = |id, title, meta| Row {
+            id,
+            title,
+            meta,
+            dot: None,
+            end: Some(Self::action(id, "Run")),
+        };
+        Self::column("workflows").child(Self::inner(p).child(Self::section(
+            p,
+            "Workflows",
+            None,
+            Some(new),
+            Self::rows(
+                p,
+                cx,
+                vec![
+                    row("w1", "Fix an issue", "plan · implement · check · 3 steps"),
+                    row("w2", "Review a pull request", "read · comment · 2 steps"),
+                    row("w3", "Release notes", "collect · write · 2 steps"),
+                ],
+                "No workflows yet. Write one to run the same steps on any project.",
+            ),
+        )))
     }
 
     fn tasks(&self, p: &Palette, cx: &mut Context<Self>) -> impl IntoElement {

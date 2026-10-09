@@ -10,11 +10,37 @@ pub const ZAP: &str = "labs/icons/zap.svg";
 pub const GIT_BRANCH: &str = "labs/icons/git-branch.svg";
 /// Lucide `shield`: the permission mode in the composer's toolbar.
 pub const SHIELD: &str = "labs/icons/shield.svg";
+/// Lucide `square-pen`: Rename in a session's menu.
+pub const SQUARE_PEN: &str = "labs/icons/square-pen.svg";
+/// Lucide `circle-dot`: the Issues page in the rail.
+pub const CIRCLE_DOT: &str = "labs/icons/circle-dot.svg";
 
-const EMBEDDED: [(&str, &[u8]); 3] = [
+/// Lucide `hand`: a session that needs input.
+pub const HAND: &str = "labs/icons/hand.svg";
+/// Lucide `circle`: an idle session.
+pub const CIRCLE: &str = "labs/icons/circle.svg";
+/// Lucide `list-filter`: the rail's session filter.
+pub const LIST_FILTER: &str = "labs/icons/list-filter.svg";
+
+/// Lucide `square`: Stop on a running session.
+pub const SQUARE: &str = "labs/icons/square.svg";
+/// Lucide `archive`: Archive on a session.
+pub const ARCHIVE: &str = "labs/icons/archive.svg";
+
+const EMBEDDED: [(&str, &[u8]); 10] = [
     (ZAP, include_bytes!("../assets/icons/zap.svg")),
     (GIT_BRANCH, include_bytes!("../assets/icons/git-branch.svg")),
     (SHIELD, include_bytes!("../assets/icons/shield.svg")),
+    (SQUARE_PEN, include_bytes!("../assets/icons/square-pen.svg")),
+    (CIRCLE_DOT, include_bytes!("../assets/icons/circle-dot.svg")),
+    (HAND, include_bytes!("../assets/icons/hand.svg")),
+    (CIRCLE, include_bytes!("../assets/icons/circle.svg")),
+    (
+        LIST_FILTER,
+        include_bytes!("../assets/icons/list-filter.svg"),
+    ),
+    (SQUARE, include_bytes!("../assets/icons/square.svg")),
+    (ARCHIVE, include_bytes!("../assets/icons/archive.svg")),
 ];
 
 pub struct Assets;

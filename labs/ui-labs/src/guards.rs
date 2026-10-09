@@ -8,24 +8,35 @@ use std::path::Path;
 /// Every source file but the ones allowed to hold what is scanned for, with
 /// its test module cut off. Only `mod tests` is cut: `main.rs` declares this
 /// module behind the same attribute, and the window's code follows it.
+/// Submodules (`rail/tree.rs`) are scanned too.
 fn sources(skip: &[&str]) -> Vec<(String, String)> {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut out = Vec::new();
-    for entry in std::fs::read_dir(&dir).expect("src/") {
-        let path = entry.expect("an entry").path();
-        let name = path.file_name().unwrap().to_string_lossy().into_owned();
-        if !name.ends_with(".rs") || name == "guards.rs" || skip.contains(&name.as_str()) {
-            continue;
+    let mut dirs = vec![Path::new(env!("CARGO_MANIFEST_DIR")).join("src")];
+    while let Some(dir) = dirs.pop() {
+        for entry in std::fs::read_dir(&dir).expect("a source dir") {
+            let path = entry.expect("an entry").path();
+            if path.is_dir() {
+                dirs.push(path);
+                continue;
+            }
+            scan(&path, skip, &mut out);
         }
-        let text = std::fs::read_to_string(&path).expect("a source file");
-        let code = text
-            .split("#[cfg(test)]\nmod tests")
-            .next()
-            .unwrap_or("")
-            .to_string();
-        out.push((name, code));
     }
     out
+}
+
+fn scan(path: &Path, skip: &[&str], out: &mut Vec<(String, String)>) {
+    let name = path.file_name().unwrap().to_string_lossy().into_owned();
+    if !name.ends_with(".rs") || name == "guards.rs" || skip.contains(&name.as_str()) {
+        return;
+    }
+    let text = std::fs::read_to_string(path).expect("a source file");
+    let code = text
+        .split("#[cfg(test)]\nmod tests")
+        .next()
+        .unwrap_or("")
+        .to_string();
+    out.push((name, code));
 }
 
 /// The arguments of every `call(` in `code`, up to its matching parenthesis.

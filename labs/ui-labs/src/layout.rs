@@ -99,7 +99,7 @@ impl Labs {
     /// Follow the pointer, in rems from the window's top-left.
     pub(super) fn drag_to(&mut self, x: f32, y: f32, window_w: f32, window_h: f32) {
         match self.drag {
-            Some(Seam::Rail) => self.rail_w = x.clamp(RAIL_W, RAIL_MAX_W),
+            Some(Seam::Rail) => self.rail_w = x.clamp(RAIL_MIN_W, RAIL_MAX_W),
             Some(Seam::Dock) => {
                 let room = window_w - self.rail_w - SEAM_GRAB_W * 2.0 - CHAT_MIN * self.zoom;
                 self.dock_w = (window_w - x).clamp(DOCK_MIN, room.max(DOCK_MIN));
