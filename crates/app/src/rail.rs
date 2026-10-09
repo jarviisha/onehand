@@ -382,7 +382,7 @@ fn page_row<F: Fn(&mut Shell, &mut Window, &mut Context<Shell>) + 'static>(
         .cursor_pointer()
         .when(on, |d| {
             d.bg(row::chosen_fill(cx))
-                .text_color(cx.theme().accent_foreground)
+                .text_color(cx.theme().sidebar_accent_foreground)
         })
         .when(!on, |d| {
             d.hover(move |d| d.bg(hover))

@@ -32,10 +32,10 @@ pub(super) fn hover_fill(cx: &App) -> Hsla {
     cx.theme().sidebar_accent
 }
 
-/// The fill of the row that is chosen, the one on screen or the keyboard's:
-/// the selected step, one past the hover, so the two stay apart.
+/// The fill of the row that is chosen, the one on screen or the keyboard's,
+/// one step past the hover.
 pub(super) fn chosen_fill(cx: &App) -> Hsla {
-    cx.theme().accent
+    crate::theme::rail_chosen(cx)
 }
 
 /// The two opaque fills a rail row can be showing: at rest, and under the
@@ -185,7 +185,7 @@ impl Render for DragGhost {
             .rounded(cx.theme().radius)
             .bg(chosen_fill(cx))
             .text_sm()
-            .text_color(cx.theme().accent_foreground)
+            .text_color(cx.theme().sidebar_accent_foreground)
             .child(self.0.clone())
     }
 }
