@@ -148,6 +148,9 @@ pub struct RailSession {
     pub signal: Option<crate::chat::pane::SessionSignal>,
     /// The conversation's own name, `None` until its first prompt.
     pub title: Option<SharedString>,
+    /// When the session took its signal, which the row says as an age. In
+    /// memory only: a launch starts every clock again.
+    pub since: std::time::Instant,
 }
 
 /// Which panel a panel-scoped command addresses.
@@ -281,13 +284,8 @@ pub struct Shell {
     /// What the Workbench was last told of the tasks working issues.
     /// And of the projects a run may be started on.
     issue_works: (Vec<onehand_core::task::work::IssueWork>, Vec<PathBuf>),
-    /// Which of the rail's two lists is showing.
-    ///
-    /// Not persisted: it is where the user is looking right now, and a launch
-    /// that came up on the flat list would be one where the project tree — the
-    /// thing that says what a workspace *is* — had to be found before anything
-    /// else could be read.
-    rail_tab: crate::rail::RailTab,
+    /// The rail's filter, search and keyboard row, which no launch keeps.
+    rail: crate::rail::RailState,
     /// Whether each project's sessions are showing under it in the rail.
     ///
     /// **Here and not in the row, because the row does not live long enough.**

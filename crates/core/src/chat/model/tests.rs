@@ -1836,3 +1836,40 @@ fn the_modes_an_agent_offers_are_reported_when_it_says_them() {
     assert!(offered.modes_offered);
     assert_eq!(chat.modes[0].id, "default");
 }
+
+/// A prompt answered with an error leaves the session failed until the next
+/// prompt goes out; an error outside a turn says nothing about one.
+#[test]
+fn a_turn_that_ends_on_an_error_marks_the_chat_failed() {
+    let (mut chat, _rx) = chat_with_tx();
+    chat.apply(AcpEvent::Error("not now".into()));
+    assert!(!chat.failed, "no turn was running");
+    assert!(chat.submit("go", &[]));
+    chat.apply(AcpEvent::Error("rate limited".into()));
+    chat.apply(AcpEvent::TurnEnded {
+        stop_reason: "end_turn".into(),
+    });
+    assert!(chat.failed);
+    assert_eq!(chat.resend_text(), Some("go"));
+    assert!(chat.submit("again", &[]));
+    assert_eq!(
+        chat.resend_text(),
+        None,
+        "nothing to resend while nothing failed"
+    );
+    assert!(!chat.failed, "a new turn clears it");
+}
+
+/// Some adapters answer a cancel with an error; the turn was stopped, not
+/// failed, so the rail must not offer to send it again.
+#[test]
+fn a_stopped_turn_answered_with_an_error_is_not_failed() {
+    let (mut chat, _rx) = chat_with_tx();
+    assert!(chat.submit("go", &[]));
+    chat.cancel_turn();
+    chat.apply(AcpEvent::Error("cancelled by client".into()));
+    chat.apply(AcpEvent::TurnEnded {
+        stop_reason: "end_turn".into(),
+    });
+    assert!(!chat.failed);
+}

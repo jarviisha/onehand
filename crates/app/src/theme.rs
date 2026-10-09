@@ -172,7 +172,9 @@ const DARK: Ramp = Ramp {
     hover: "#2a2a2a",
     selected: "#3e3e3e",
     selected_ink: "#ececec",
-    marked: "#393939",
+    // Past the light palette's step: at the same 1.12 from the well a hovered
+    // rail row did not show on a dark screen at all.
+    marked: "#404040",
     hairline: "#404040",
     // The well's grey: the lab's panel sits too close to the surface for a
     // card that has no visible shadow to stand on.
@@ -268,9 +270,8 @@ fn paint(colors: &mut ThemeConfigColors, ramp: &Ramp) {
     //   surface and 1.04 from the well once the rail moved onto it; then the
     //   reading surface, which reads at 1.19 in the dark palette and punches a
     //   near-black hole through the panel rather than lifting a row out of it.
-    //   `marked` is 1.12 either way and lifts in both. The library draws a
-    //   hovered row at 0.8 of this token and a selected one at full, so the two
-    //   stay apart without a second token.
+    //   `marked` lifts in both, and is what a hovered rail row takes whole; the
+    //   chosen row is that step pulled toward its ink ([`rail_chosen`]).
     // - The guide line down an expanded project is the same hairline as any
     //   other.
     //
@@ -390,6 +391,22 @@ pub(crate) fn hue_ink(base: Hsla, cx: &App) -> Hsla {
 
 fn temper(base: Hsla, neutral: Hsla) -> Hsla {
     base.mix_oklab(neutral, 0.70)
+}
+
+/// The fill of the rail's chosen row: the row on screen, or the keyboard's.
+///
+/// One step past the hovered row's `marked`, so the two stay apart, and
+/// derived rather than named for the reason [`meta_ink`] is: both palettes get
+/// it from values they already hold.
+pub(crate) fn rail_chosen(cx: &App) -> Hsla {
+    chosen_over(
+        cx.theme().sidebar_accent,
+        cx.theme().sidebar_accent_foreground,
+    )
+}
+
+fn chosen_over(marked: Hsla, ink: Hsla) -> Hsla {
+    marked.mix_oklab(ink, 0.95)
 }
 
 /// The step between prose and meta ink.
@@ -890,6 +907,49 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    /// The accent is ink as well as a link: it marks a running session in the
+    /// rail, on the well and on the rail's marked fill. A mark is a graphic,
+    /// so it is held to the 3:1 a control's parts are.
+    #[test]
+    fn the_accent_reads_as_a_mark_in_the_rail() {
+        // The step a hovered row needs to show. A dark screen needs the wider
+        // one: at the light palette's ratio a hovered row there did not show.
+        for (name, ramp, mode, floor) in [
+            ("light", &LIGHT, ThemeMode::Light, 1.15),
+            ("dark", &DARK, ThemeMode::Dark, 1.35),
+        ] {
+            let theme = resolve(ramp, mode);
+            let chosen = chosen_over(theme.sidebar_accent, theme.sidebar_accent_foreground);
+            for (surface, fill) in [
+                ("well", theme.muted),
+                ("hovered row", theme.sidebar_accent),
+                ("chosen row", chosen),
+            ] {
+                let ratio = contrast(theme.link, fill);
+                assert!(
+                    ratio >= 3.,
+                    "{name}: the accent on the {surface} is {ratio:.2}"
+                );
+            }
+            // The rail's chosen row: its text reads, and it stands off the
+            // well further than a hovered one does.
+            let ink = contrast(theme.sidebar_accent_foreground, chosen);
+            assert!(ink >= AA, "{name}: ink on the chosen row is {ink:.2}");
+            let (hovered, picked) = (
+                contrast(theme.sidebar_accent, theme.muted),
+                contrast(chosen, theme.muted),
+            );
+            assert!(
+                hovered >= floor,
+                "{name}: a hovered row is {hovered:.2} from the rail, too faint to see"
+            );
+            assert!(
+                picked > hovered + 0.1,
+                "{name}: the chosen row ({picked:.2}) is not past a hovered one ({hovered:.2})"
+            );
         }
     }
 

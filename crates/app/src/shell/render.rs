@@ -19,7 +19,7 @@ impl Render for Shell {
         // is not rendered at all rather than rendered at zero width, so
         // nothing of it can catch a click along the edge.
         let rail = (self.app_maximized.is_none() && !self.rail_hidden)
-            .then(|| crate::rail::rail(self, &self.window, cx));
+            .then(|| crate::rail::rail(self, window, cx));
         let dock = div().size_full().child(self.dock.clone());
         // With no rail there is no split to drag, so there is no split: an
         // `h_resizable` holding one panel would draw a handle against the
@@ -76,8 +76,8 @@ impl Render for Shell {
                     shell.toggle_workbench(window, cx);
                 },
             ))
-            .on_action(cx.listener(|shell: &mut Self, _: &ToggleRail, _, cx| {
-                shell.toggle_rail(cx);
+            .on_action(cx.listener(|shell: &mut Self, _: &ToggleRail, window, cx| {
+                shell.toggle_rail(window, cx);
             }))
             .on_action(
                 cx.listener(|shell: &mut Self, _: &ToggleMarkdown, window, cx| {
@@ -165,6 +165,21 @@ impl Render for Shell {
             .on_action(
                 cx.listener(|shell: &mut Self, _: &RunWorkflow, window, cx| {
                     shell.begin_workflow(window, cx);
+                }),
+            )
+            .on_action(cx.listener(
+                |shell: &mut Self, _: &crate::rail::FocusRailSearch, window, cx| {
+                    shell.focus_rail_search(window, cx);
+                },
+            ))
+            .on_action(
+                cx.listener(|shell: &mut Self, _: &crate::rail::RailNext, window, cx| {
+                    shell.rail_step(true, window, cx);
+                }),
+            )
+            .on_action(
+                cx.listener(|shell: &mut Self, _: &crate::rail::RailPrev, window, cx| {
+                    shell.rail_step(false, window, cx);
                 }),
             )
             .on_action(cx.listener(|shell: &mut Self, _: &ShowTasks, window, cx| {

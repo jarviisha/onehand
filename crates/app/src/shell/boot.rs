@@ -146,7 +146,7 @@ impl Shell {
                     }
                     E::WorkTreeTouched => shell.refresh_worktree(cx),
                     E::AgentStarted => shell.sync_agent_started(cx),
-                    E::ShowRail => shell.show_rail(cx),
+                    E::ShowRail => shell.show_rail(window, cx),
                     // The visibility button and its shortcut preserve the selected mode.
                     E::ToggleWorkbench => shell.toggle_workbench(window, cx),
                     // The dock having a shell in it is the same condition
@@ -497,7 +497,7 @@ impl Shell {
             rail_sessions: Vec::new(),
             live_conversations: Vec::new(),
             issue_works: (Vec::new(), Vec::new()),
-            rail_tab: crate::rail::RailTab::Projects,
+            rail: crate::rail::RailState::new(window, cx),
             folds: HashMap::new(),
             last_panel: FocusedPanel::Chat,
             terminal_open: seed_root

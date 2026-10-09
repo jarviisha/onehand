@@ -15,6 +15,8 @@ use std::path::PathBuf;
 pub enum SessionSignal {
     /// The adapter went away. `Ctrl+Shift+R` brings it back.
     Lost,
+    /// The last turn ended on an error rather than an answer.
+    Failed,
     /// A parked permission or question. The only signal that is about *the
     /// user*: nothing moves until they answer.
     AwaitingUser,
@@ -37,18 +39,21 @@ impl SessionSignal {
         match self {
             // A dead adapter outranks a question nobody can answer any more.
             Self::Lost => 0,
+            // A turn that broke waits on the person as a question does, and
+            // nothing else will move it.
+            Self::Failed => 1,
             // A parked question outranks busy: only one of them moves on its
             // own.
-            Self::AwaitingUser => 1,
+            Self::AwaitingUser => 2,
             // What is happening now outranks what happened last turn.
-            Self::Busy => 2,
-            // The calmest of the four, and the only one about the past rather
-            // than about now.
-            Self::UnseenTurn => 3,
+            Self::Busy => 3,
+            // The calmest, and the only one about the past rather than about
+            // now.
+            Self::UnseenTurn => 4,
         }
     }
 
-    /// Reduce a session's four independent facts to the one thing the rail
+    /// Reduce a session's five independent facts to the one thing the rail
     /// draws.
     ///
     /// One mark, not one per condition: two marks side by side on a rail row
@@ -58,10 +63,17 @@ impl SessionSignal {
     /// Pure, and separate from the lookup, so the order is testable without a
     /// window: it is a rule about attention, and rules about attention are
     /// exactly what regresses silently.
-    pub fn pick(link: Link, awaiting_user: bool, busy: bool, unseen: bool) -> Option<Self> {
+    pub fn pick(
+        link: Link,
+        failed: bool,
+        awaiting_user: bool,
+        busy: bool,
+        unseen: bool,
+    ) -> Option<Self> {
         Self::most_urgent(
             [
                 (link == Link::Lost).then_some(Self::Lost),
+                failed.then_some(Self::Failed),
                 awaiting_user.then_some(Self::AwaitingUser),
                 busy.then_some(Self::Busy),
                 unseen.then_some(Self::UnseenTurn),

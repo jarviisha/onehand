@@ -611,7 +611,7 @@ impl Default for PanelLayout {
             workbench_open: false,
             terminal_h: 240.0,
             terminal_open: false,
-            rail_w: 255.0,
+            rail_w: 320.0,
         }
     }
 }
@@ -636,9 +636,9 @@ impl PanelLayout {
     /// The widest it may be dragged.
     ///
     /// Past this the rail stops being chrome and starts competing with the
-    /// conversation for the window, and everything in it is capped well before
-    /// this point anyway -- the extra width would go to empty space.
-    pub const RAIL_MAX: f32 = 320.0;
+    /// conversation for the window. Wide enough that a long session title and
+    /// a project's git line both read whole.
+    pub const RAIL_MAX: f32 = 448.0;
 
     /// The sizes, clamped into a range that is certainly usable.
     ///

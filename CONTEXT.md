@@ -68,7 +68,8 @@ is live again. Unlike Resume, which carries the same run on.
 _Avoid_: rerun, restart
 
 **Needs attention**:
-A task a person should act on, of two kinds: one **waiting** on a person (an approval, or a card its
+A session whose turn failed, whose agent went away or waits on a person, as the rail counts it; or
+a task a person should act on, of two kinds: one **waiting** on a person (an approval, or a card its
 agent parked), and one **ended** on something nobody chose (cut off, exhausted, failed, timed out,
 or its agent or session gone). Done, stopped by a person and dismissed tasks are finished instead.
 _Avoid_: failed (one kind only), errors, inbox

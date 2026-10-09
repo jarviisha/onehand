@@ -38,7 +38,7 @@ impl ChatPane {
         if let Entry::Vacant(slot) = self.conversations.entry(uid) {
             slot.insert(Conversation::opening(root.clone(), spec.clone()));
             // **A new session connects; it does not ask.** Every session in this
-            // app is minted by an explicit action -- the rail's *New session*, a
+            // app is minted by an explicit action -- the rail's *New*, a
             // project's menu, the project page -- and each of those is a request
             // for a session, not a question about which conversation to have.
             // This used to scan for past conversations first and put the resume
@@ -542,12 +542,40 @@ impl ChatPane {
     }
 
     pub(super) fn stop(&mut self, cx: &mut Context<Self>) {
-        let Some(session) = self.session() else {
-            return;
-        };
+        if let Some(session) = self.session() {
+            Self::cancel(&session, cx);
+        }
+    }
+
+    /// Stop session `uid`'s turn, from its row in the rail.
+    pub fn stop_turn(&mut self, uid: u64, cx: &mut Context<Self>) {
+        if let Some(session) = self.session_of(uid).cloned() {
+            Self::cancel(&session, cx);
+        }
+    }
+
+    fn cancel(session: &Entity<ChatSession>, cx: &mut Context<Self>) {
         session.update(cx, |session, cx| {
             session.chat.cancel_turn();
             cx.notify();
+        });
+    }
+
+    /// Whether session `uid` has a failed turn whose prompt can go again.
+    pub fn can_resend(&self, uid: u64, cx: &App) -> bool {
+        self.session_of(uid)
+            .is_some_and(|session| session.read(cx).chat.resend_text().is_some())
+    }
+
+    /// Send session `uid`'s last prompt again, after a turn that failed.
+    pub fn resend_last_prompt(&mut self, uid: u64, cx: &mut Context<Self>) {
+        let Some(session) = self.session_of(uid).cloned() else {
+            return;
+        };
+        session.update(cx, |session, cx| {
+            if let Some(text) = session.chat.resend_text().map(str::to_string) {
+                session.submit(&text, &[], cx);
+            }
         });
     }
 
@@ -572,6 +600,7 @@ impl ChatPane {
         let chat = &conv.session()?.read(cx).chat;
         SessionSignal::pick(
             chat.link,
+            chat.failed,
             chat.awaiting_permission(),
             chat.busy,
             conv.unseen,

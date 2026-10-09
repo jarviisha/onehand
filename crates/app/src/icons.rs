@@ -98,15 +98,20 @@ impl IconNamed for Icon {
 }
 
 icons! {
+    Archive => "archive",
     ArrowUpLight => "arrow-up-light",
     AtSign => "at-sign",
+    Circle => "circle",
     CircleDot => "circle-dot",
     GitBranch => "git-branch",
+    Hand => "hand",
     Keyboard => "keyboard",
+    ListFilter => "list-filter",
     LogOut => "log-out",
     Paperclip => "paperclip",
     PlusLight => "plus-light",
     Shield => "shield",
+    Square => "square",
     SquarePen => "square-pen",
     SquareSlash => "square-slash",
     Zap => "zap",

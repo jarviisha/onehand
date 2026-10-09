@@ -395,11 +395,23 @@ impl Shell {
             cx.notify();
             return;
         }
+        // The rail goes with everything else but the panel, so a caret in it
+        // moves into the panel that stays.
+        let rail_had_focus = self.rail.holds_focus(window, cx);
         self.dock.update(cx, |dock, cx| match panel {
             FocusedPanel::Chat => dock.set_zoomed_in(self.chat.clone(), window, cx),
             FocusedPanel::Workbench => dock.set_zoomed_in(self.workbench.clone(), window, cx),
             FocusedPanel::Terminal => dock.set_zoomed_in(self.terminal.clone(), window, cx),
         });
+        if rail_had_focus {
+            match panel {
+                FocusedPanel::Chat => self
+                    .chat
+                    .update(cx, |pane, cx| pane.reclaim_focus(window, cx)),
+                FocusedPanel::Workbench => self.workbench.focus_handle(cx).focus(window, cx),
+                FocusedPanel::Terminal => self.terminal.focus_handle(cx).focus(window, cx),
+            }
+        }
         self.set_app_maximized(Some(panel), cx);
         cx.notify();
     }
@@ -459,25 +471,52 @@ impl Shell {
         cx.notify();
     }
 
+    /// Whether the rail is on screen.
+    pub(crate) fn rail_shown(&self) -> bool {
+        !self.rail_hidden && self.app_maximized.is_none()
+    }
+
+    pub(crate) fn rail_state(&self) -> &crate::rail::RailState {
+        &self.rail
+    }
+
+    pub(crate) fn rail_state_mut(&mut self) -> &mut crate::rail::RailState {
+        &mut self.rail
+    }
+
+    /// The window's workspace and what is known about its projects, for the
+    /// rail to draw.
+    pub(crate) fn workspace_window(&self) -> &crate::state::WorkspaceWindow {
+        &self.window
+    }
+
     /// Show or hide the rail.
     ///
     /// The chat pane is told, because it is what offers the way back: with the
     /// rail gone the key is the only route to it, and a key nobody has been
     /// told about is not a route.
-    pub fn toggle_rail(&mut self, cx: &mut Context<Self>) {
+    pub fn toggle_rail(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let hidden = !self.rail_hidden;
+        if hidden && self.rail.holds_focus(window, cx) {
+            self.chat
+                .update(cx, |pane, cx| pane.reclaim_focus(window, cx));
+        }
         self.rail_hidden = hidden;
         self.chat
             .update(cx, |pane, cx| pane.set_rail_hidden(hidden, cx));
         cx.notify();
     }
 
-    /// Bring the rail back, whatever asked for it.
-    pub(super) fn show_rail(&mut self, cx: &mut Context<Self>) {
+    /// Bring the rail back, whatever asked for it: a panel filling the window
+    /// hides it as surely as hiding it does.
+    pub(crate) fn show_rail(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.app_maximized.is_some() {
+            self.toggle_maximize(window, cx);
+        }
         if !self.rail_hidden {
             return;
         }
-        self.toggle_rail(cx);
+        self.toggle_rail(window, cx);
     }
 
     /// Open issue `number` of the project at `root`: that project selected,

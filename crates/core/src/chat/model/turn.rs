@@ -402,6 +402,7 @@ impl Chat {
         }
         self.prompts_sent += 1;
         self.cancelled = false;
+        self.failed = false;
 
         self.push_user(
             text.to_string(),
@@ -567,6 +568,19 @@ impl Chat {
     /// transcript: an adapter delivers user chunks of its own mid-turn.
     pub fn prompted_beyond(&self, sent: usize) -> bool {
         self.queued.is_some() || self.prompts_sent > sent
+    }
+
+    /// What sending the last prompt again sends: its text, once a turn has
+    /// failed. The files staged with it were a snapshot and do not go again.
+    /// `None` while nothing failed, or nothing was prompted.
+    pub fn resend_text(&self) -> Option<&str> {
+        if !self.failed {
+            return None;
+        }
+        self.items.iter().rev().find_map(|item| match item {
+            ChatItem::User(prompt) => Some(prompt.text.as_str()),
+            _ => None,
+        })
     }
 
     /// A parked permission prompt is waiting for the user's answer (it blocks

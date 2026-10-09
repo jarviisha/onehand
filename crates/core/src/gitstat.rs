@@ -51,6 +51,10 @@ pub struct GitStatus {
     pub branch: String,
     /// Changed entries: tracked changes, renames, unmerged, and untracked.
     pub changed: usize,
+    /// Commits the branch is ahead of and behind its upstream, from
+    /// `branch.ab`; both zero when there is no upstream.
+    pub ahead: usize,
+    pub behind: usize,
     /// Per-path change state, keyed by repo-relative path.
     pub entries: HashMap<PathBuf, FileChange>,
 }
@@ -109,11 +113,23 @@ fn path_tail(line: &str, fields: usize) -> Option<&str> {
 pub(crate) fn parse_porcelain(out: &str) -> GitStatus {
     let mut branch = String::new();
     let mut changed = 0;
+    let (mut ahead, mut behind) = (0, 0);
     let mut entries = HashMap::new();
     let mut records = out.split('\0');
     while let Some(line) = records.next() {
         if let Some(head) = line.strip_prefix("# branch.head ") {
             branch = head.trim().to_string();
+            continue;
+        }
+        if let Some(ab) = line.strip_prefix("# branch.ab ") {
+            for part in ab.split_whitespace() {
+                let n = || part[1..].parse().unwrap_or(0);
+                match part.as_bytes().first() {
+                    Some(b'+') => ahead = n(),
+                    Some(b'-') => behind = n(),
+                    _ => {}
+                }
+            }
             continue;
         }
         // Entry lines: `1` ordinary change, `2` rename/copy, `u` unmerged,
@@ -142,6 +158,8 @@ pub(crate) fn parse_porcelain(out: &str) -> GitStatus {
     GitStatus {
         branch,
         changed,
+        ahead,
+        behind,
         entries,
     }
 }
@@ -163,11 +181,11 @@ pub(crate) fn rebase_to_root(status: GitStatus, prefix: &str) -> GitStatus {
         .filter_map(|(p, c)| p.strip_prefix(prefix).ok().map(|r| (r.to_path_buf(), c)))
         .collect();
     GitStatus {
-        branch: status.branch,
         // Scope the rail count to this root's subtree too — a count that
         // includes changes the panel can't show would read as a bug.
         changed: entries.len(),
         entries,
+        ..status
     }
 }
 
@@ -228,6 +246,9 @@ u UU N... 100644 100644 100644 100644 abc def ghi conflict.rs\0\
         assert_eq!(st.branch, "main");
         assert_eq!(st.changed, 4);
         assert_eq!(st.label(), "main · 4 changed");
+        assert_eq!((st.ahead, st.behind), (1, 0));
+        let st = parse_porcelain("# branch.head main\0# branch.ab +0 -3\0");
+        assert_eq!((st.ahead, st.behind), (0, 3));
     }
 
     #[test]
@@ -238,6 +259,7 @@ u UU N... 100644 100644 100644 100644 abc def ghi conflict.rs\0\
         assert_eq!(st.changed, 0);
         assert!(st.entries.is_empty());
         assert_eq!(st.label(), "trunk");
+        assert_eq!((st.ahead, st.behind), (0, 0));
     }
 
     #[test]

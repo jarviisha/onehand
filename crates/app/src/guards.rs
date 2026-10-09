@@ -654,8 +654,6 @@ mod tests {
         ("crates/app/src/chat/viewport.rs", 2),
         ("crates/app/src/dialogs.rs", 4),
         ("crates/app/src/dialogs/issue.rs", 2),
-        ("crates/app/src/rail/session.rs", 1),
-        ("crates/app/src/rail/workspace.rs", 1),
         ("crates/app/src/settings.rs", 9),
         ("crates/app/src/settings/pages.rs", 1),
         ("crates/app/src/terminal.rs", 1),
