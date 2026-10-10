@@ -552,6 +552,13 @@ impl ChatSession {
         cx: &mut Context<Self>,
     ) {
         self.chat.resume_from(snapshot);
+        // Folds are keyed by position, and the transcript is numbered afresh,
+        // so a choice kept from before would land on an unrelated step.
+        self.activity_open.clear();
+        self.section_open.clear();
+        self.turn_open.clear();
+        self.file_open.clear();
+        self.folds_revision = self.folds_revision.wrapping_add(1);
         self.sync_md(cx);
         cx.notify();
     }

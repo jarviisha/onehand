@@ -317,6 +317,13 @@ with where it works, its timeout, its misses and its version; a line per step
 (`StepSpec::summary`); and the first prompt as the agent would receive it
 (`workflow::first_prompt`), filled with the brief as it is typed, in a scrolling box.
 
+The launcher reads, top to bottom: the workflow menu, what it does and where, the collapsed
+*Preview*, *Title*, *Details* and *Instructions*, then what the preflight found (blocks in the
+danger ink) above *Run*, spent while a block remains; it scrolls so its footer stays. An issue's
+*Run workflow…* opens a start form of its own, with no row to pick: the workflow and where it
+works, *Before it starts* (the findings, limits included), *Instructions for this run* and the
+*Preview*; once the run starts, the person stays on the issue.
+
 **A start is preflighted before anything of its own** (`onehand_core::preflight`): one pure
 function, given the kind of start and the facts the app holds, returns findings, each blocking
 the start or only saying something, with where it is changed. It never claims, cuts or starts;

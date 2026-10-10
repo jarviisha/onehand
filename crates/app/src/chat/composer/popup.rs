@@ -287,10 +287,20 @@ impl Composer {
             .child(element)
             .child(
                 gpui::canvas(
-                    move |bounds, _, _| {
+                    move |bounds, window, cx| {
                         let mut anchors = anchors.borrow_mut();
+                        let moved = anchors
+                            .iter()
+                            .find(|(o, _)| *o == overlay)
+                            .is_some_and(|(_, was)| *was != bounds);
                         anchors.retain(|(o, _)| *o != overlay);
                         anchors.push((overlay, bounds));
+                        // A control that moved (a resize, a dock) takes its open
+                        // menu with it on the next frame rather than whenever
+                        // something else redraws.
+                        if moved {
+                            window.defer(cx, |window, _| window.refresh());
+                        }
                     },
                     |_, _, _, _| {},
                 )

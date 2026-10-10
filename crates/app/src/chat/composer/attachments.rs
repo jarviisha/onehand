@@ -501,7 +501,8 @@ fn attachment_shape<E: Styled>(
 /// A ghost control at a small button's height, its words lettered at
 /// `text_xs` by each chip on the child that carries them, in full ink, while
 /// its glyphs and its caret take the chip's muted ink. The chip whose popup is
-/// open takes the selected fill, and keeps it under the pointer.
+/// open takes the selected fill, and keeps it under the pointer; its caller
+/// leaves its tooltip off meanwhile, since the menu opens where it would show.
 pub(super) fn chip(id: impl Into<gpui::ElementId>, open: bool, cx: &App) -> Button {
     let (open_fill, fg, radius) = (
         cx.theme().accent,

@@ -69,7 +69,9 @@ impl Composer {
             let session = session.clone();
             chip("add", add_open, cx)
                 .child(Icon::new(crate::icons::Icon::PlusLight).size(ACTION_ICON))
-                .tooltip("Attach a file, mention one, run a slash command or a workflow")
+                .when(!add_open, |chip| {
+                    chip.tooltip("Attach a file, mention one, run a slash command or a workflow")
+                })
                 .on_click(cx.listener(move |composer: &mut Self, _, window, cx| {
                     composer.toggle_picker(Overlay::Add, &session, window, cx);
                 }))
@@ -272,7 +274,9 @@ impl Composer {
                 .min_w_0()
                 .child(Icon::new(crate::icons::Icon::GitBranch).xsmall())
                 .child(chip_text(line, cx))
-                .tooltip("The branch checked out here")
+                .when(!branch_open, |chip| {
+                    chip.tooltip("The branch checked out here")
+                })
                 .on_click(cx.listener(move |composer: &mut Self, _, window, cx| {
                     composer.toggle_picker(Overlay::Branch, &session, window, cx);
                 }))
@@ -338,7 +342,7 @@ fn status_action(
         .min_w_0()
         .child(Icon::new(icon).xsmall())
         .child(chip_text(label, cx))
-        .tooltip(hint)
+        .when(!open, |chip| chip.tooltip(hint))
         .on_click(cx.listener(move |composer: &mut Composer, _, window, cx| {
             composer.toggle_picker(target.clone(), &session, window, cx);
         }))
@@ -360,7 +364,9 @@ fn option_action(
         // `flex_none`: against the cap it would push the caret past the clip.
         .child(chip_text(label, cx))
         .dropdown_caret(true)
-        .tooltip("Choose the model and other options")
+        .when(!open, |chip| {
+            chip.tooltip("Choose the model and other options")
+        })
         .on_click(cx.listener(move |composer: &mut Composer, _, window, cx| {
             composer.toggle_picker(Overlay::Options, &session, window, cx);
         }))
@@ -384,7 +390,9 @@ fn effort_chip(
                 .child(label),
         )
         .dropdown_caret(true)
-        .tooltip("Choose how hard the model thinks")
+        .when(!open, |chip| {
+            chip.tooltip("Choose how hard the model thinks")
+        })
         .on_click(cx.listener(move |composer: &mut Composer, _, window, cx| {
             composer.toggle_picker(Overlay::Effort, &session, window, cx);
         }))
