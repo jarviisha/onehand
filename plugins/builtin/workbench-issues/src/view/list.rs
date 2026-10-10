@@ -155,8 +155,8 @@ impl IssuesView {
             .gap_1()
             .w_full()
             .flex_none()
-            .px_2()
-            .py_1()
+            .px_3()
+            .py_2()
             .border_b_1()
             .border_color(cx.theme().border)
             .child(
@@ -218,8 +218,8 @@ impl IssuesView {
             .gap_1()
             .w_full()
             .flex_none()
-            .px_2()
-            .py_1()
+            .px_3()
+            .py_1p5()
             .border_b_1()
             .border_color(cx.theme().border)
             .child(div().flex_1().min_w_0().child(switch(
@@ -276,8 +276,8 @@ impl IssuesView {
                     .flex_1()
                     .min_h_0()
                     .v_flex()
-                    .gap_0p5()
-                    .p_1()
+                    .gap_1()
+                    .p_2()
                     .overflow_y_scroll()
                     .children(
                         empty.map(|empty| {
@@ -555,7 +555,7 @@ impl IssuesView {
             .gap_0p5()
             .w_full()
             .px_2()
-            .py_1()
+            .py_1p5()
             .rounded(theme.radius)
             .cursor_pointer()
             // A selection is a fill and only a fill: the selected step, which

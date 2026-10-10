@@ -30,8 +30,8 @@ impl Workbench {
             // The height of the conversation's header beside it, so the two
             // bars line up across the seam.
             .h(crate::controls::BAR_H)
-            .gap_1()
-            .px_2()
+            .gap_1p5()
+            .px_3()
             .border_b_1()
             .border_color(cx.theme().border)
             // The way back to the conversation, while this panel has taken the
@@ -58,7 +58,7 @@ impl Workbench {
                 div()
                     .h_flex()
                     .items_center()
-                    .gap_1()
+                    .gap_1p5()
                     .flex_1()
                     .min_w_0()
                     .overflow_hidden()

@@ -532,8 +532,8 @@ impl PluginsView {
             .flex_1()
             .min_h_0()
             .v_flex()
-            .gap_3()
-            .p_3()
+            .gap_4()
+            .p_4()
             .child(tabs)
             // What is happening, while it happens — only then, so an idle
             // panel carries no line above its list.

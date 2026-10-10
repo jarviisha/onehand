@@ -22,11 +22,11 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::rc::Rc;
 
-/// A tab's height, and its line's: a little over its `text_xs` glyphs, so the
-/// chip is no taller than what it says.
-const TAB_H: Rems = rems(1.125);
+/// A tab's height, and its line's: a control's height, so the chip has room
+/// around its `text_xs` glyphs.
+const TAB_H: Rems = rems(1.5);
 /// The room between two tabs on the strip, in rems.
-const TAB_GAP: f32 = 0.25;
+const TAB_GAP: f32 = 0.5;
 /// The unsaved-edits mark on a tab.
 const DIRTY_DOT: Rems = rems(0.375);
 
@@ -301,10 +301,10 @@ pub(crate) fn tab_strip<T: 'static>(
     div()
         .h_flex()
         .items_center()
-        .gap_1()
+        .gap_2()
         .w_full()
-        .px_2()
-        .py_1()
+        .px_3()
+        .py_1p5()
         .border_b_1()
         .border_color(cx.theme().border)
         .child(lead)

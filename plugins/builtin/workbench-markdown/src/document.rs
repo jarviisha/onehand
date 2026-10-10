@@ -29,6 +29,13 @@ const DOC_MEASURE: Rems = rems(34.);
 /// the conversation's, because a document is read in long stretches.
 const LEADING_DOC: f32 = 1.65;
 
+/// A row of the tree: a little over a control's height, so a long list of
+/// names reads as rows with air between them rather than a block of text.
+const ROW_H: gpui::Rems = gpui::rems(1.875);
+/// Where a row's content starts, and how far each level of the tree steps in.
+const ROW_INSET: f32 = 0.5;
+const TREE_INDENT: f32 = 0.875;
+
 /// One project root's document view: what was found, what is folded away, and
 /// what is being read.
 ///
@@ -165,7 +172,8 @@ pub(crate) fn list(
         .id("markdown-list")
         .v_flex()
         .size_full()
-        .p_1()
+        .p_2()
+        .gap_0p5()
         .overflow_y_scroll()
         .children(
             rows.into_iter()
@@ -217,9 +225,9 @@ fn doc_row(
         .id(("markdown-row", i))
         .h_flex()
         .items_center()
-        .gap_1()
+        .gap_2()
         .w_full()
-        .h_6()
+        .h(ROW_H)
         .px_1()
         .rounded(cx.theme().radius)
         .text_sm()
@@ -235,7 +243,7 @@ fn doc_row(
         // Indent by depth rather than by nested containers, for the same reason
         // the file tree does: the cap here is 400 documents, and that many
         // nested elements is that many wasted.
-        .pl(rems(0.25 + row.depth as f32 * 0.75))
+        .pl(rems(ROW_INSET + row.depth as f32 * TREE_INDENT))
         .child(
             Icon::new(if is_dir {
                 if shut {
@@ -306,8 +314,8 @@ pub(crate) fn reader(
                 .gap_2()
                 .w_full()
                 .flex_none()
-                .px_2()
-                .py_1()
+                .px_3()
+                .py_1p5()
                 .border_b_1()
                 .border_color(cx.theme().border)
                 .child(lead)
@@ -342,7 +350,8 @@ pub(crate) fn reader(
             Some(doc) => div()
                 .flex_1()
                 .min_h_0()
-                .p_3()
+                .px_4()
+                .py_4()
                 .child(
                     div()
                         .h_full()

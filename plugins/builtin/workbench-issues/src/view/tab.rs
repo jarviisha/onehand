@@ -90,8 +90,8 @@ impl IssuesView {
                         .h_flex()
                         .flex_none()
                         .items_center()
-                        .px_2()
-                        .py_1()
+                        .px_3()
+                        .py_1p5()
                         .border_b_1()
                         .border_color(cx.theme().border)
                         .child(back),
