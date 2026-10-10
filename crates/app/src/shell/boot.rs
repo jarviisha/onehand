@@ -512,6 +512,7 @@ impl Shell {
             app_maximized: None,
             presentation: super::presentation::Presentation::Conversation,
             workbench_drawn: None,
+            terminal_drawn: None,
             stepped_aside: false,
         }
     }

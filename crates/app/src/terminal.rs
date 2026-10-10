@@ -21,7 +21,6 @@ use gpui::{
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::dock::{Panel, PanelControl, PanelEvent};
-use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_terminal_ui::{Program, PtyTab, TerminalThemeKey, spawn_pty, terminal_palette};
 use std::collections::HashMap;
@@ -499,61 +498,36 @@ impl TerminalPanel {
                             .min_w_0()
                             .overflow_x_scroll()
                             .children(labels.into_iter().enumerate().map(|(i, label)| {
-                                let on = i == active;
-                                div()
-                                    .id(("terminal-tab", i))
-                                    .h_flex()
-                                    .items_center()
-                                    .flex_none()
-                                    .max_w(onehand_plugin_host::TAB_MAX_W)
-                                    .h_6()
-                                    .pl_2()
-                                    .gap_1()
-                                    .rounded(cx.theme().radius)
-                                    .cursor_pointer()
-                                    .text_color(match on {
-                                        true => cx.theme().foreground,
-                                        false => cx.theme().muted_foreground,
-                                    })
-                                    .when(on, |tab| tab.bg(cx.theme().accent))
-                                    .when(!on, |tab| {
-                                        tab.hover(|tab| tab.bg(cx.theme().list_hover))
-                                    })
-                                    .tooltip({
-                                        let label = label.clone();
-                                        move |window, cx| {
-                                            Tooltip::new(label.clone()).build(window, cx)
-                                        }
-                                    })
-                                    // `min_w_0` lets the name shrink far enough
-                                    // to ellipsize at all.
-                                    .child(div().min_w_0().truncate().child(label))
-                                    .on_click(cx.listener(move |panel: &mut Self, _, _, cx| {
-                                        panel.select_tab(i, cx);
-                                    }))
-                                    // Inside the tab, so `stop_propagation` is
-                                    // what keeps the press that closes a shell
-                                    // from also selecting the one it closed.
-                                    .child(
-                                        crate::controls::action(("close-shell", i))
-                                            .ghost()
-                                            .xsmall()
-                                            .flex_none()
-                                            .icon(
-                                                Icon::new(IconName::Close)
-                                                    .text_color(cx.theme().muted_foreground),
-                                            )
-                                            .tooltip("Close this shell")
-                                            .on_click(cx.listener(
-                                                move |panel: &mut Self,
-                                                      _,
-                                                      window: &mut Window,
-                                                      cx: &mut Context<Self>| {
-                                                    cx.stop_propagation();
-                                                    panel.close_tab(i, window, cx);
-                                                },
-                                            )),
+                                onehand_plugin_host::tab_chip(
+                                    ("terminal-tab", i),
+                                    label.clone(),
+                                    label,
+                                    i == active,
+                                    cx,
+                                )
+                                .max_w(onehand_plugin_host::TAB_MAX_W)
+                                .on_click(cx.listener(move |panel: &mut Self, _, _, cx| {
+                                    panel.select_tab(i, cx);
+                                }))
+                                // Inside the tab, so `stop_propagation` is what
+                                // keeps the press that closes a shell from also
+                                // selecting the one it closed.
+                                .child(
+                                    onehand_plugin_host::tab_close(
+                                        ("close-shell", i),
+                                        "Close this shell",
+                                        cx,
                                     )
+                                    .on_click(cx.listener(
+                                        move |panel: &mut Self,
+                                              _,
+                                              window: &mut Window,
+                                              cx: &mut Context<Self>| {
+                                            cx.stop_propagation();
+                                            panel.close_tab(i, window, cx);
+                                        },
+                                    )),
+                                )
                             })),
                     )
                     // Muted, like the conversation header's own controls: a

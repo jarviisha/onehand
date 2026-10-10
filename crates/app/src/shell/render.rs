@@ -16,6 +16,7 @@ use onehand_core::config::PanelLayout;
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.apply_presentation(window, cx);
+        self.apply_terminal_height(window, cx);
         self.sync_docks_open(cx);
         // A panel maximized in the app direction is the whole window: the rail
         // is not rendered at all rather than rendered at zero width, so

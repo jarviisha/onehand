@@ -4,32 +4,39 @@
 //! The conversation never drops under [`CHAT_MIN`] beside a dock. When the
 //! window cannot hold it beside the narrowest useful Workbench, the Workbench
 //! takes the whole area under a way back, rather than leaving a thin strip of
-//! chat that nobody can read.
+//! chat that nobody can read. Under it, the terminal is never drawn so tall
+//! that the conversation above it drops under a readable height.
 
 use super::{FocusedPanel, Shell};
-use gpui::{Context, Focusable as _, Window, px};
+use crate::controls::BAR_H;
+use gpui::{Context, Focusable as _, Rems, Window, px, rems};
 use gpui_component::dock::DockPlacement;
 
-/// The conversation's minimum beside a dock, in rems before its zoom.
-const CHAT_MIN: f32 = 30.;
-/// The narrowest useful Workbench, in rems.
-const DOCK_MIN: f32 = 24.;
+/// The conversation's minimum beside a dock, before its zoom.
+const CHAT_MIN: Rems = rems(30.);
+/// The narrowest useful Workbench.
+const DOCK_MIN: Rems = rems(24.);
 /// How much more room a split needs to come back than to hold, so a window
 /// resting on the threshold does not flicker between the two.
-const SPLIT_SLACK: f32 = 1.;
+const SPLIT_SLACK: Rems = rems(1.);
+/// The least the terminal is drawn at, and the least of the conversation it
+/// leaves above it under the header: enough to read a few lines and reach the
+/// composer.
+const TERM_MIN_H: Rems = rems(6.);
+const READING_MIN_H: Rems = rems(16.);
 
 /// How the area beside the rail is shown.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum Presentation {
     /// The Workbench is closed or stepped aside; the conversation has it all.
     Conversation,
-    /// Side by side, the Workbench drawn this many rems wide.
-    Split(f32),
+    /// Side by side, the Workbench drawn this wide.
+    Split(Rems),
     /// The Workbench takes the whole area.
     WorkbenchFocus,
 }
 
-/// Choose the presentation for `avail` rems beside the rail.
+/// Choose the presentation for `avail` beside the rail.
 ///
 /// `dock` is the width the person dragged the Workbench to. It is only ever
 /// *read* here: when the window is too narrow for it the dock is drawn
@@ -43,24 +50,37 @@ pub(super) enum Presentation {
 /// until the dock would drop under [`DOCK_MIN`], one coming back needs
 /// [`SPLIT_SLACK`] more.
 fn presentation(
-    avail: f32,
-    dock: f32,
+    avail: Rems,
+    dock: Rems,
     workbench_open: bool,
     zoom: f32,
     was_split: bool,
 ) -> Presentation {
-    let room = avail - CHAT_MIN * zoom;
+    let room = avail.0 - CHAT_MIN.0 * zoom;
     let needed = match was_split {
-        true => DOCK_MIN,
-        false => DOCK_MIN + SPLIT_SLACK,
+        true => DOCK_MIN.0,
+        false => DOCK_MIN.0 + SPLIT_SLACK.0,
     };
     if !workbench_open {
         Presentation::Conversation
     } else if room >= needed {
-        Presentation::Split(dock.clamp(DOCK_MIN, room))
+        Presentation::Split(rems(dock.0.clamp(DOCK_MIN.0, room)))
     } else {
         Presentation::WorkbenchFocus
     }
+}
+
+/// How tall to draw the terminal in an area `area` high: the height dragged
+/// to, cut where the conversation above it would drop under
+/// [`READING_MIN_H`], never under [`TERM_MIN_H`]. Like the Workbench's width,
+/// the dragged height is only read, so a short window never overwrites it.
+fn terminal_height(wanted: Rems, area: Rems) -> Rems {
+    rems(
+        wanted
+            .0
+            .min(area.0 - BAR_H.0 - READING_MIN_H.0)
+            .max(TERM_MIN_H.0),
+    )
 }
 
 impl Shell {
@@ -81,9 +101,9 @@ impl Shell {
         }
         let rem = f32::from(window.rem_size());
         let dock = self.dock.read(cx);
-        let avail = f32::from(dock.bounds().size.width) / rem;
+        let avail = rems(f32::from(dock.bounds().size.width) / rem);
         // Nothing measured yet: the first frame has no bounds to share.
-        if avail <= 0. {
+        if avail.0 <= 0. {
             return;
         }
         let Some(right) = dock.right_dock().cloned() else {
@@ -105,10 +125,10 @@ impl Shell {
             && let Some(drawn) = self.workbench_drawn
             && drawn != size
         {
-            let most = (avail - CHAT_MIN * zoom).max(DOCK_MIN) * rem;
+            let most = (avail.0 - CHAT_MIN.0 * zoom).max(DOCK_MIN.0) * rem;
             self.window.workspace.layout.workbench_w = f32::from(size).min(most);
         }
-        let wanted = self.window.workspace.layout.workbench_w / rem;
+        let wanted = rems(self.window.workspace.layout.workbench_w / rem);
         let was_split = matches!(self.presentation, Presentation::Split(_));
         // A page puts the docks away and takes the conversation's place.
         let page = self.page_shown(cx);
@@ -141,7 +161,7 @@ impl Shell {
         let next = presentation(avail, wanted, open && !page, zoom, was_split);
         let focus_before = self.presentation == Presentation::WorkbenchFocus;
         if let Presentation::Split(width) = next {
-            let width = px(width * rem);
+            let width = px(width.0 * rem);
             if size != width {
                 right.update(cx, |right, cx| right.set_size(width, window, cx));
             }
@@ -173,6 +193,42 @@ impl Shell {
         self.workbench
             .update(cx, |panel, cx| panel.set_fills_area(focus_now, cx));
         self.presentation = next;
+    }
+
+    /// Draw the terminal no taller than leaves the conversation above it
+    /// readable, from the height the dock area measured on the last frame.
+    ///
+    /// The dragged height is tracked as the Workbench's width is: a height the
+    /// dock reports that is not the one this last drew is a drag.
+    pub(super) fn apply_terminal_height(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let dock = self.dock.read(cx);
+        let Some(bottom) = dock.bottom_dock().cloned() else {
+            // Unmounted: the next mount starts from the height wanted.
+            self.terminal_drawn = None;
+            return;
+        };
+        let rem = f32::from(window.rem_size());
+        let area = rems(f32::from(dock.bounds().size.height) / rem);
+        // Nothing measured yet, or the terminal filling the window.
+        if area.0 <= 0. || self.app_maximized.is_some() {
+            return;
+        }
+        let size = bottom.read(cx).size();
+        // A drag past the conversation's minimum is drawn at the most the
+        // rule allows, and kept as that, so the height wanted is one the
+        // person saw.
+        if let Some(drawn) = self.terminal_drawn
+            && drawn != size
+        {
+            let most = (area.0 - BAR_H.0 - READING_MIN_H.0).max(TERM_MIN_H.0) * rem;
+            self.window.workspace.layout.terminal_h = f32::from(size).min(most);
+        }
+        let wanted = rems(self.window.workspace.layout.terminal_h / rem);
+        let height = px(terminal_height(wanted, area).0 * rem);
+        if size != height {
+            bottom.update(cx, |bottom, cx| bottom.set_size(height, window, cx));
+        }
+        self.terminal_drawn = Some(height);
     }
 
     /// The Workbench steps aside so the conversation can be read: the dock

@@ -346,6 +346,9 @@ pub struct Shell {
     /// dock reports that differs from it is a drag, and becomes the width the
     /// person wants.
     workbench_drawn: Option<gpui::Pixels>,
+    /// The terminal height this shell last drew the dock at, for the same
+    /// reason: a height the dock reports that differs from it is a drag.
+    terminal_drawn: Option<gpui::Pixels>,
     /// The Workbench stepped aside from taking the whole area, so the
     /// conversation could be read: still open as far as the person is
     /// concerned, and back as a split once the window has room for one.

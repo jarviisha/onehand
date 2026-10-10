@@ -13,7 +13,7 @@ use onehand_plugin_api::{PluginId, WorkbenchModeSpec};
 /// fold into one control naming the showing mode and opening the others,
 /// rather than letting clipping decide which survive. The Workbench opens wider
 /// than this, so the modes start side by side.
-const MODES_MIN_W: f32 = 30.;
+const MODES_MIN_W: gpui::Rems = gpui::rems(30.);
 
 impl Workbench {
     pub(super) fn strip(
@@ -23,7 +23,7 @@ impl Workbench {
     ) -> impl IntoElement + use<> {
         let showing = self.showing();
         let full = self.maximized;
-        let compact = self.width.get() < MODES_MIN_W;
+        let compact = self.width.get().0 < MODES_MIN_W.0;
         div()
             .h_flex()
             .flex_none()

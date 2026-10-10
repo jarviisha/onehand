@@ -3,7 +3,7 @@
 //! no room for both.
 
 use super::IssuesView;
-use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, Window, div, rems};
+use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, Window, div};
 use gpui_component::{ActiveTheme, StyledExt, h_resizable, resizable_panel};
 use onehand_core::issues::Issues;
 use onehand_plugin_host::{ListWidths, back_link, list_detail};
@@ -25,7 +25,7 @@ impl IssuesView {
         let layout = list_detail(
             self.split.read(cx),
             &LIST,
-            rems(self.width.get()),
+            self.width.get(),
             window.rem_size(),
         );
         let search = self.search_bar(window, cx);

@@ -6,52 +6,68 @@
 //! becomes one control naming the current tab and opening the others, so no
 //! tab is ever pushed out of reach.
 
-use gpui::{ParentElement as _, Styled as _};
-use gpui_component::button::ButtonVariants as _;
-use gpui_component::{ActiveTheme as _, Icon, IconName, StyledExt as _};
+use gpui::prelude::FluentBuilder as _;
+use gpui::{
+    App, ElementId, InteractiveElement as _, ParentElement as _, Rems, SharedString,
+    StatefulInteractiveElement as _, Styled as _, rems,
+};
+use gpui_component::button::{Button, ButtonVariants as _};
+use gpui_component::tooltip::Tooltip;
+use gpui_component::{ActiveTheme as _, Icon, IconName, Sizable as _, StyledExt as _};
+use std::cell::Cell;
+use std::rc::Rc;
 
 /// A tab never grows past this; a longer name truncates and says itself in
 /// full on hover.
-pub const TAB_MAX_W: gpui::Rems = gpui::rems(TAB_MAX);
-const TAB_MAX: f32 = 10.;
+pub const TAB_MAX_W: Rems = rems(10.);
 /// Below this a tab's name is too short to tell one from another, so the strip
 /// gives up tabs for a select.
-const TAB_MIN: f32 = 5.;
+const TAB_MIN_W: Rems = rems(5.);
 
 /// How a strip is drawn.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum TabStrip {
-    /// Every tab side by side, each this wide at most, in rems.
-    Tabs(f32),
+    /// Every tab side by side, each this wide at most.
+    Tabs(Rems),
     /// One control naming the current tab and opening the others.
     Select,
 }
 
-/// Lay out `count` tabs, `gap` rems apart, in `avail` rems.
-pub fn tab_strip(count: usize, avail: f32, gap: f32) -> TabStrip {
+/// Lay out `count` tabs, `gap` apart, in `avail`.
+pub fn tab_strip(count: usize, avail: Rems, gap: Rems) -> TabStrip {
     if count == 0 {
-        return TabStrip::Tabs(TAB_MAX);
+        return TabStrip::Tabs(TAB_MAX_W);
     }
-    let gaps = gap * (count - 1) as f32;
-    let each = ((avail - gaps).max(0.) / count as f32).min(TAB_MAX);
-    if each < TAB_MIN {
+    let gaps = gap.0 * (count - 1) as f32;
+    let each = ((avail.0 - gaps).max(0.) / count as f32).min(TAB_MAX_W.0);
+    if each < TAB_MIN_W.0 {
         TabStrip::Select
     } else {
-        TabStrip::Tabs(each)
+        TabStrip::Tabs(rems(each))
     }
 }
 
-/// Measure the width of the box this is put in, in rems, into `into`, and
-/// redraw `view` when it changes: the strip reads it on the next frame. Put it
-/// in a `relative` box that takes its width from its parent, never from what
-/// it holds, or the measurement feeds itself.
+/// A width a view measures of one of its boxes, as last laid out, and reads on
+/// the next frame.
+pub type Measured = Rc<Cell<Rems>>;
+
+/// A width not measured yet: wider than anything, so the first frame draws as
+/// though there were room.
+pub fn unmeasured() -> Measured {
+    Rc::new(Cell::new(rems(f32::INFINITY)))
+}
+
+/// Measure the width of the box this is put in into `into`, and redraw `view`
+/// when it changes: the view reads it on the next frame. Put it in a
+/// `relative` box that takes its width from its parent, never from what it
+/// holds, or the measurement feeds itself.
 pub fn measure_width<T: 'static>(
-    into: std::rc::Rc<std::cell::Cell<f32>>,
+    into: Measured,
     view: gpui::WeakEntity<T>,
 ) -> impl gpui::IntoElement {
     gpui::canvas(
         move |bounds, window, cx| {
-            let width = bounds.size.width / window.rem_size();
+            let width = rems(bounds.size.width / window.rem_size());
             if into.replace(width) != width {
                 // Prepaint runs inside the view's own frame; notifying from it
                 // directly would update an entity already being updated.
@@ -107,6 +123,50 @@ pub fn tab_select(
         )
 }
 
+/// One tab: a flat label, the chosen one on the selected fill and in full ink,
+/// the rest muted and taking the row hover, truncating with its full `hint` on
+/// hover. The caller caps its width, says what a press does, and adds what
+/// follows the name: a mark, then [`tab_close`].
+pub fn tab_chip(
+    id: impl Into<ElementId>,
+    label: SharedString,
+    hint: SharedString,
+    chosen: bool,
+    cx: &App,
+) -> gpui::Stateful<gpui::Div> {
+    let theme = cx.theme();
+    gpui::div()
+        .id(id)
+        .h_flex()
+        .items_center()
+        .flex_none()
+        .h_6()
+        .pl_2()
+        .gap_1()
+        .rounded(theme.radius)
+        .cursor_pointer()
+        .text_color(match chosen {
+            true => theme.foreground,
+            false => theme.muted_foreground,
+        })
+        .when(chosen, |tab| tab.bg(theme.accent))
+        .when(!chosen, |tab| tab.hover(|tab| tab.bg(theme.list_hover)))
+        .tooltip(move |window, cx| Tooltip::new(hint.clone()).build(window, cx))
+        // `min_w_0` lets the name shrink far enough to ellipsize at all.
+        .child(gpui::div().min_w_0().truncate().child(label))
+}
+
+/// The cross closing a tab, always shown, its glyph muted. The caller's press
+/// should stop the click there, or it also picks the tab it closes.
+pub fn tab_close(id: impl Into<ElementId>, hint: &'static str, cx: &App) -> Button {
+    crate::action(id)
+        .ghost()
+        .xsmall()
+        .flex_none()
+        .icon(Icon::new(IconName::Close).text_color(cx.theme().muted_foreground))
+        .tooltip(hint)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -119,24 +179,28 @@ mod tests {
         assert_eq!(tab_menu_rows(100, 99), (70..100, 70));
     }
 
+    fn strip(count: usize, avail: f32, gap: f32) -> TabStrip {
+        tab_strip(count, rems(avail), rems(gap))
+    }
+
     #[test]
     fn a_roomy_strip_draws_each_tab_at_its_cap() {
-        assert_eq!(tab_strip(3, 60., 0.5), TabStrip::Tabs(TAB_MAX));
-        assert_eq!(tab_strip(0, 0., 0.5), TabStrip::Tabs(TAB_MAX));
+        assert_eq!(strip(3, 60., 0.5), TabStrip::Tabs(TAB_MAX_W));
+        assert_eq!(strip(0, 0., 0.5), TabStrip::Tabs(TAB_MAX_W));
     }
 
     #[test]
     fn tabs_share_a_tighter_strip_and_truncate() {
-        assert_eq!(tab_strip(4, 24., 0.), TabStrip::Tabs(6.));
-        assert_eq!(tab_strip(2, 10., 0.), TabStrip::Tabs(TAB_MIN));
+        assert_eq!(strip(4, 24., 0.), TabStrip::Tabs(rems(6.)));
+        assert_eq!(strip(2, 10., 0.), TabStrip::Tabs(TAB_MIN_W));
         // The gaps between tabs come out of the room before it is shared.
-        assert_eq!(tab_strip(4, 25.5, 0.5), TabStrip::Tabs(6.));
+        assert_eq!(strip(4, 25.5, 0.5), TabStrip::Tabs(rems(6.)));
     }
 
     #[test]
     fn a_strip_that_cannot_hold_its_tabs_becomes_a_select() {
-        assert_eq!(tab_strip(5, 24., 0.), TabStrip::Select);
-        assert_eq!(tab_strip(1, 4., 0.), TabStrip::Select);
-        assert_eq!(tab_strip(4, 20.5, 0.5), TabStrip::Select);
+        assert_eq!(strip(5, 24., 0.), TabStrip::Select);
+        assert_eq!(strip(1, 4., 0.), TabStrip::Select);
+        assert_eq!(strip(4, 20.5, 0.5), TabStrip::Select);
     }
 }

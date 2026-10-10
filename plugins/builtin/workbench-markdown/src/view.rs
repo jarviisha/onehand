@@ -12,10 +12,8 @@ use gpui_component::{
 use onehand_plugin_host::{
     Ask, ListWidths, Request, back_link, hint, list_detail, measure_width, status_line,
 };
-use std::cell::Cell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 use std::time::Duration;
 
 /// How often the open document's file is asked whether it has changed.
@@ -51,7 +49,7 @@ pub(crate) struct MarkdownView {
     detail: bool,
     /// The mode's width in rems as last laid out. Infinite until measured, so
     /// the first frame draws the two side by side.
-    width: Rc<Cell<f32>>,
+    width: onehand_plugin_host::Measured,
     /// Where the drag between the list and the document sits.
     ///
     /// Held here rather than left to the element, for the reason the window's
@@ -101,7 +99,7 @@ impl MarkdownView {
             docs: HashMap::new(),
             list_shown: true,
             detail: false,
-            width: Rc::new(Cell::new(f32::INFINITY)),
+            width: onehand_plugin_host::unmeasured(),
             split: cx.new(|_| gpui_component::ResizableState::default()),
             stale: false,
             _scan: None,
@@ -381,12 +379,7 @@ impl MarkdownView {
         };
 
         let rem = window.rem_size();
-        let layout = list_detail(
-            self.split.read(cx),
-            &DOC_LIST,
-            gpui::rems(self.width.get()),
-            rem,
-        );
+        let layout = list_detail(self.split.read(cx), &DOC_LIST, self.width.get(), rem);
         let alone = !layout.side_by_side;
 
         // What leads the reader's header: the way back to the list while the

@@ -22,12 +22,10 @@ use crate::view::EditorView;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyView, App, AppContext as _, Context, Entity, IntoElement, ParentElement, Render, Styled,
-    Subscription, Window, div, rems,
+    Subscription, Window, div,
 };
 use gpui_component::{ActiveTheme, ResizableState, StyledExt, h_resizable, resizable_panel};
-use onehand_plugin_host::{ListWidths, list_detail, measure_width};
-use std::cell::Cell;
-use std::rc::Rc;
+use onehand_plugin_host::{ListWidths, Measured, list_detail, measure_width};
 
 /// Where the divider starts, and how far it can be dragged.
 ///
@@ -47,7 +45,7 @@ pub(crate) struct CodeView {
     divider: Entity<ResizableState>,
     /// The pair's width in rems as last laid out. Infinite until measured, so
     /// the first frame draws the two side by side.
-    width: Rc<Cell<f32>>,
+    width: Measured,
     /// Redraws the pair when the buffers' view flips the tree, since what that
     /// view renders is its own and this one reads the flag.
     _tree: Subscription,
@@ -60,7 +58,7 @@ impl CodeView {
             _tree: cx.observe(&editor, |_, _, cx| cx.notify()),
             editor,
             divider: cx.new(|_| ResizableState::default()),
-            width: Rc::new(Cell::new(f32::INFINITY)),
+            width: onehand_plugin_host::unmeasured(),
         })
     }
 }
@@ -70,7 +68,7 @@ impl Render for CodeView {
         let layout = list_detail(
             self.divider.read(cx),
             &TREE,
-            rems(self.width.get()),
+            self.width.get(),
             window.rem_size(),
         );
         let alone = !layout.side_by_side;

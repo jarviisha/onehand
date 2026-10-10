@@ -19,7 +19,6 @@ use onehand_core::connector::{Connector, PullRequest};
 use onehand_core::issues::{self, IssueKey, Issues, LocalIssue};
 use onehand_core::task::work::{IssueWork, Reading};
 use onehand_plugin_host::{Ask, Request, hint, measure_width, status_line};
-use std::cell::Cell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -91,7 +90,7 @@ pub(crate) struct IssuesView {
     detail: bool,
     /// The tab's width in rems as last laid out. Infinite until measured, so
     /// the first frame draws the two side by side.
-    width: std::rc::Rc<Cell<f32>>,
+    width: onehand_plugin_host::Measured,
     /// A read or a write that could not be done, as a standing line under the
     /// body. Cleared by the next one that works.
     status: Option<String>,
@@ -175,7 +174,7 @@ impl IssuesView {
             roots: HashMap::new(),
             split: cx.new(|_| gpui_component::ResizableState::default()),
             detail: false,
-            width: std::rc::Rc::new(Cell::new(f32::INFINITY)),
+            width: onehand_plugin_host::unmeasured(),
             status: None,
             connectors,
             query: None,

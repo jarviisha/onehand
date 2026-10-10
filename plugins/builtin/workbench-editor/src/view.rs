@@ -13,7 +13,6 @@ use gpui_component::input::InputEvent;
 use gpui_component::{StyledExt, WindowExt as _};
 use onehand_core::editor::SaveOutcome;
 use onehand_plugin_host::{hint, status_line};
-use std::cell::Cell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -41,7 +40,7 @@ pub(crate) struct EditorView {
     saving: HashMap<u64, bool>,
     /// The width the strip leaves its tabs, in rems, as last laid out.
     /// Infinite until measured, so the first frame draws tabs, not a select.
-    tabs_w: Rc<Cell<f32>>,
+    tabs_w: onehand_plugin_host::Measured,
     /// Whether the file tree beside the buffers is showing.
     ///
     /// Held here rather than on the split that draws the tree, because the
@@ -67,7 +66,7 @@ impl EditorView {
             buffers: HashMap::new(),
             status: None,
             saving: HashMap::new(),
-            tabs_w: Rc::new(Cell::new(f32::INFINITY)),
+            tabs_w: onehand_plugin_host::unmeasured(),
             tree_shown: true,
             detail: false,
             alone: false,

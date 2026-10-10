@@ -28,7 +28,6 @@ use onehand_core::gitstat::GitStatus;
 use onehand_core::task::Approval;
 use onehand_plugin_api::{PluginId, WorkbenchModeSpec};
 use onehand_plugin_host::{Ask, Request, WorkbenchMode};
-use std::cell::Cell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -78,7 +77,7 @@ pub struct Workbench {
     /// The panel's width in rems as last laid out, which the strip reads to
     /// decide whether its modes fit side by side. Infinite until measured, so
     /// the first frame draws them side by side.
-    width: Rc<Cell<f32>>,
+    width: onehand_plugin_host::Measured,
 }
 
 impl Workbench {
@@ -103,7 +102,7 @@ impl Workbench {
                 zoom,
                 maximized: false,
                 fills_area: false,
-                width: Rc::new(Cell::new(f32::INFINITY)),
+                width: onehand_plugin_host::unmeasured(),
             }
         })
     }

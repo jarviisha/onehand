@@ -8,25 +8,19 @@
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, AppContext, Entity, InteractiveElement, IntoElement, ParentElement, Rems, SharedString,
+    App, AppContext, Entity, IntoElement, ParentElement, Rems, SharedString,
     StatefulInteractiveElement, Styled, WeakEntity, Window, div, rems,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{Editor, EditorState};
-use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::editor::{RootEditors, SaveOutcome};
-use onehand_plugin_host::{TabStrip, menu_below, menu_row, tab_strip as tab_strip_rule};
-use std::cell::Cell;
+use onehand_plugin_host::{Measured, TabStrip, menu_below, menu_row, tab_strip as tab_strip_rule};
 use std::collections::HashMap;
 use std::path::Path;
-use std::rc::Rc;
 
-/// A tab's height, and its line's: a control's height, so the chip has room
-/// around its `text_xs` glyphs.
-const TAB_H: Rems = rems(1.5);
-/// The room between two tabs on the strip, in rems.
-const TAB_GAP: f32 = 0.5;
+/// The room between two tabs on the strip.
+const TAB_GAP: Rems = rems(0.25);
 /// The unsaved-edits mark on a tab.
 const DIRTY_DOT: Rems = rems(0.375);
 
@@ -138,7 +132,7 @@ pub(crate) enum Lead {
 pub(crate) fn tab_strip<T: 'static>(
     root: &Path,
     buffers: &RootBuffers,
-    measured: &Rc<Cell<f32>>,
+    measured: &Measured,
     view: WeakEntity<T>,
     lead: Lead,
     on: StripHandlers,
@@ -192,52 +186,22 @@ pub(crate) fn tab_strip<T: 'static>(
         TabStrip::Tabs(each) => div()
             .h_flex()
             .items_center()
-            .gap(rems(TAB_GAP))
+            .gap(TAB_GAP)
             .children(files.iter().enumerate().map(|(i, file)| {
                 let (select, close) = (on_select.clone(), on_close.clone());
-                // One group per tab: a name shared by the strip would light
-                // every tab's cross the moment the pointer entered any of them.
-                let hovered = SharedString::from(format!("editor-tab-{i}"));
-                let hint = hint_of(file);
-                div()
-                    .id(("editor-tab", i))
-                    .group(hovered.clone())
-                    .h_flex()
-                    .items_center()
-                    .gap_1()
-                    .min_w_0()
-                    .max_w(rems(each))
-                    .px_2()
-                    // A height of its own rather than padding around the line.
-                    // `text_xs` sets the font size alone, and gpui's default line
-                    // is 1.618 times that, so padded, the chip stood nearly twice
-                    // as tall as its letters. The line comes down with the box,
-                    // or the label's own line would hold the tab open.
-                    .h(TAB_H)
-                    .line_height(TAB_H)
-                    .rounded(cx.theme().radius)
-                    .text_xs()
-                    .cursor_pointer()
-                    .when(i == active, |tab| {
-                        tab.bg(cx.theme().accent)
-                            .text_color(cx.theme().accent_foreground)
-                    })
-                    .when(i != active, |tab| {
-                        tab.hover(|tab| tab.bg(cx.theme().list_hover))
-                    })
-                    .tooltip(move |window, cx| Tooltip::new(hint.clone()).build(window, cx))
-                    .child(div().min_w_0().truncate().child(file.label.clone()))
-                    // The dirty dot, not a modified-name convention: the label
-                    // truncates, and a marker inside it would go first.
-                    .when(file.dirty, |tab| tab.child(dirty_dot(cx)))
-                    .on_click(move |_, window, cx: &mut App| select(&i, window, cx))
-                    // Shown on hover alone, `invisible` rather than absent so a
-                    // tab keeps its width under the pointer.
-                    .child(
-                        close_button(i, close)
-                            .invisible()
-                            .group_hover(hovered, |style| style.visible()),
-                    )
+                onehand_plugin_host::tab_chip(
+                    ("editor-tab", i),
+                    file.label.clone().into(),
+                    hint_of(file),
+                    i == active,
+                    cx,
+                )
+                .max_w(each)
+                // The dirty dot, not a modified-name convention: the label
+                // truncates, and a marker inside it would go first.
+                .when(file.dirty, |tab| tab.child(dirty_dot(cx)))
+                .on_click(move |_, window, cx: &mut App| select(&i, window, cx))
+                .child(close_button(i, close, cx))
             }))
             .into_any_element(),
         TabStrip::Select => {
@@ -289,10 +253,10 @@ pub(crate) fn tab_strip<T: 'static>(
             div()
                 .h_flex()
                 .items_center()
-                .gap(rems(TAB_GAP))
+                .gap(TAB_GAP)
                 .child(div().min_w_0().overflow_hidden().child(menu))
                 .when(current.is_some(), |strip| {
-                    strip.child(close_button(active, on_close.clone()).flex_none())
+                    strip.child(close_button(active, on_close.clone(), cx))
                 })
                 .into_any_element()
         }
@@ -339,24 +303,15 @@ pub(crate) fn tab_strip<T: 'static>(
         .into_any_element()
 }
 
-/// The cross that closes tab `i`.
-///
-/// `stop_propagation` keeps the press that closes a tab from also selecting
-/// whatever slid into its place. `size_4`: `xsmall` gives an icon button a box
-/// taller than the tab, and the library applies a caller's style after its
-/// size preset, so this takes the box down while the glyph keeps its `xsmall`
-/// size.
-fn close_button(i: usize, close: OnTab) -> gpui_component::button::Button {
-    onehand_plugin_host::action(("editor-tab-close", i))
-        .ghost()
-        .xsmall()
-        .size_4()
-        .icon(Icon::new(IconName::Close))
-        .tooltip("Close this file")
-        .on_click(move |_, window, cx: &mut App| {
+/// The cross that closes tab `i`. `stop_propagation` keeps the press that
+/// closes a tab from also selecting whatever slid into its place.
+fn close_button(i: usize, close: OnTab, cx: &App) -> gpui_component::button::Button {
+    onehand_plugin_host::tab_close(("editor-tab-close", i), "Close this file", cx).on_click(
+        move |_, window, cx: &mut App| {
             cx.stop_propagation();
             close(&i, window, cx);
-        })
+        },
+    )
 }
 
 /// A tab's unsaved-edits mark: a status *fill*, the theme's `warning`, where

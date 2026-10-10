@@ -68,7 +68,8 @@ impl Shell {
             // The width the person wants, never one a narrow window drew.
             workbench_w: fallback.workbench_w,
             workbench_open: right.is_some_and(|d| d.is_open()) || self.stepped_aside,
-            terminal_h: bottom.map_or(fallback.terminal_h, |d| f32::from(d.size())),
+            // The height the person wants, never one a short window drew.
+            terminal_h: fallback.terminal_h,
             terminal_open: bottom.is_some_and(|d| d.is_open()),
             rail_w: self.rail_width(cx),
         }
@@ -277,18 +278,6 @@ impl Shell {
             });
             cx.notify();
             return;
-        }
-        // The height has to be read back before the dock holding it goes, or
-        // every reopen comes up at the built-in default and the drag is lost.
-        // It lands in the workspace's own layout, which is what the saved
-        // arrangement falls back to while there is no dock to ask.
-        if let Some(height) = self
-            .dock
-            .read(cx)
-            .bottom_dock()
-            .map(|dock| f32::from(dock.read(cx).size()))
-        {
-            self.window.workspace.layout.terminal_h = height;
         }
         // A maximized panel cannot be unmounted out from under the zoom: the
         // dock area would be left blown up over something that is no longer
