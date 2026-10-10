@@ -5,9 +5,8 @@
 //! modes and agent config groups are stored separately.
 
 use super::super::session::ChatSession;
-use gpui::{App, Entity, ParentElement, SharedString, Styled, div};
-use gpui_component::{Icon, IconName, StyledExt};
-use onehand_core::chat::SubmitBlock;
+use gpui::{App, Entity, SharedString};
+use gpui_component::{Icon, IconName};
 
 #[derive(Default)]
 pub(super) struct Row {
@@ -499,25 +498,6 @@ fn config_rank(option: &onehand_core::acp::ConfigOption, index: usize) -> (u8, u
         2
     };
     (rank, index)
-}
-
-pub(super) fn composer_status(blocked: Option<SubmitBlock>, cx: &App) -> Option<gpui::Div> {
-    let reason = match blocked? {
-        SubmitBlock::UnreadableAttachment(name) => {
-            format!("{name} could not be read — remove it before sending")
-        }
-        SubmitBlock::NotConnected => "Agent disconnected — waiting to reconnect".to_string(),
-        SubmitBlock::Empty | SubmitBlock::Busy => return None,
-    };
-    Some(
-        div()
-            .h_flex()
-            .gap_1()
-            .text_xs()
-            .text_color(crate::theme::status_ink(cx).danger)
-            .child(Icon::new(IconName::Info).size_3())
-            .child(reason),
-    )
 }
 
 #[cfg(test)]

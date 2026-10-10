@@ -1,7 +1,5 @@
 use super::attachments::chip;
-use super::presentation::{
-    composer_status, effort_action, fast_action, fast_toggle, mode_action, options_action,
-};
+use super::presentation::{effort_action, fast_action, fast_toggle, mode_action, options_action};
 use super::rows::OPTION_MAX_W;
 use super::{CHIP_TEXT, Composer, ComposerEvent, Overlay};
 use crate::chat::session::ChatSession;
@@ -12,7 +10,7 @@ use gpui::{
 };
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::input::Textarea;
-use gpui_component::{ActiveTheme, Disableable as _, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Disableable as _, Icon, Sizable as _, StyledExt};
 use onehand_core::attachment::AttachmentSource;
 
 /// How big the `+` glyph is drawn: a step over the chips' glyphs, because it is
@@ -206,17 +204,6 @@ impl Composer {
                         .flex_none(),
                     ),
             )
-            .children(composer_status(blocked, cx).map(IntoElement::into_any_element))
-            .children(self.feedback.clone().map(|message| {
-                div()
-                    .h_flex()
-                    .gap_1()
-                    .text_xs()
-                    .text_color(crate::theme::status_ink(cx).danger)
-                    .child(Icon::new(IconName::Info).size_3())
-                    .child(message)
-                    .into_any_element()
-            }))
     }
 
     /// Fast mode on the card's row: a switch where the agent's two values say

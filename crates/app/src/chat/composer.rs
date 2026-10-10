@@ -26,8 +26,7 @@
 
 use super::session::ChatSession;
 use gpui::{
-    App, AppContext, Context, Entity, IntoElement, Rems, Render, SharedString, Subscription,
-    Window, div, rems,
+    App, AppContext, Context, Entity, IntoElement, Rems, Render, Subscription, Window, div, rems,
 };
 use gpui_component::input::{InputEvent, TextareaState};
 use onehand_core::attachment::StagedAttachment;
@@ -238,9 +237,6 @@ pub struct Composer {
     rows_scroll: gpui::ScrollHandle,
     /// The attachment manager's scroll, for its scrollbar.
     attachments_scroll: gpui::ScrollHandle,
-    /// A recoverable composer-side failure that has no chat-model blocker of
-    /// its own, such as failing to persist an image from the clipboard.
-    feedback: Option<SharedString>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -288,7 +284,6 @@ impl Composer {
             attachments: Vec::new(),
             rows_scroll: gpui::ScrollHandle::new(),
             attachments_scroll: gpui::ScrollHandle::new(),
-            feedback: None,
             _subscriptions: vec![subscription],
         }
     }
@@ -304,7 +299,6 @@ impl Composer {
         self.set_overlay(None);
         self.selected = 0;
         self.attachments.clear();
-        self.feedback = None;
     }
 
     /// Lift out what is unsent and leave the composer empty.

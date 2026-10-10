@@ -31,7 +31,6 @@ impl Composer {
         if paths.is_empty() {
             return;
         }
-        self.feedback = None;
         self.attachments.extend(
             paths
                 .into_iter()
@@ -92,9 +91,21 @@ impl Composer {
                 })
                 .await;
             let Ok(path) = written else {
-                let _ = composer.update(cx, |composer: &mut Self, cx| {
-                    composer.feedback = Some("Could not attach the pasted image".into());
-                    cx.notify();
+                // A toast and not a line in the card: nothing said about the
+                // composer may move it.
+                let _ = cx.update(|cx| {
+                    let window = cx.active_window()?;
+                    window
+                        .update(cx, |_, window, cx| {
+                            gpui_component::WindowExt::push_notification(
+                                window,
+                                gpui_component::notification::Notification::warning(
+                                    "Could not attach the pasted image",
+                                ),
+                                cx,
+                            );
+                        })
+                        .ok()
                 });
                 return;
             };
@@ -119,7 +130,6 @@ impl Composer {
                 return;
             };
             let _ = composer.update(cx, |composer: &mut Self, cx| {
-                composer.feedback = None;
                 composer.attachments.extend(
                     paths
                         .into_iter()

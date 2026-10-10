@@ -111,7 +111,8 @@ monospace font.
   refuses an empty note; a press the run no longer waits at shows the new answer, in the warning
   ink, rather than approving it unread.
 - **Composer.** A card at the foot of the transcript with no edge, set off by its raised fill and
-  its lift; the caret alone shows focus. The field, then one row: the `+` menu, *Fast* (a toggle
+  its lift; the caret alone shows focus. No line is ever added to it: why Send refuses is its
+  tooltip, and a failure is a toast. The field, then one row: the `+` menu, *Fast* (a toggle
   when the agent offers two choices, else a picker), the model chip and the effort chip beside it,
   each opening its own menu (when offered), then *Send*; while a turn runs, *Stop* (solid danger, with its word) and, over a
   draft, *Queue*. Under it, a strip: the branch left, the permission mode right, each opening a
