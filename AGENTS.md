@@ -10,4 +10,3 @@ to the terminal rules. Read those files even when your host does not discover
 
 Keep repository rules in the shared guide and its linked documents. This entrypoint
 only supplies discovery for agents that load `AGENTS.md`.
-làm sao tôi có thể biết được rằng nó k phải lạ sư thật bây giờ nhỉ ???
