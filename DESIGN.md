@@ -118,7 +118,8 @@ monospace font.
   draft, *Queue*. Under it, a strip: the branch left, the permission mode right, each opening a
   menu (not drawn when neither exists), the branch over the mode when narrow. One permission or
   question card is pinned at a time, the oldest, over a line saying how many more wait; the next
-  takes its place, and the caret, once it is answered. The queue and a reconnect are plain lines. *Run a workflow…*, the `+` menu's last entry, the keymap command and the
+  takes its place, and the caret, once it is answered. The queue and a reconnect are plain lines, and what is staged to send rests
+  just above the card as one row of chips, a file and an image alike. *Run a workflow…*, the `+` menu's last entry, the keymap command and the
   Workflows page's *Run…* open one launcher: a workflow menu, what it does and where, a collapsed
   *Preview* (steps, limits, the first prompt), *Title*, *Details*, *Instructions*, then what the
   preflight found (blocks in the danger ink), *Run* spent while a block remains; it scrolls so the

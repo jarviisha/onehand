@@ -156,12 +156,11 @@ impl Composer {
     /// hundred chips is two hundred elements laid out on every keystroke. What
     /// is over the bound is counted rather than dropped silently.
     ///
-    /// **A chip names a staged file; it does not show it.** The picture is
-    /// previewed once the prompt is sent, in the transcript, where the
-    /// attachment is a block of the conversation rather than a strip along the
-    /// top of the card holding what is being typed — a tray of thumbnails takes
-    /// that room from the prompt itself, and it is the prompt the card is for.
-    pub(super) fn tray(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
+    /// **A chip names a staged file; it does not show it**, an image no more
+    /// than a file. The picture is previewed once the prompt is sent, in the
+    /// transcript. The tray rests above the composer card, not in it, so
+    /// staging a file never moves the field being typed in.
+    pub(in crate::chat) fn tray(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         if self.attachments.is_empty() {
             return None;
         }
@@ -173,6 +172,7 @@ impl Composer {
             cx.theme().radius,
             cx.theme().muted,
         );
+        let hover = cx.theme().list_hover;
         Some(
             div()
                 .h_flex()
@@ -237,32 +237,33 @@ impl Composer {
                                 }))
                                 .into_any_element();
 
-                            match openable(a) {
-                                Some(path) => attachment_shape(
-                                    crate::controls::action(("attachment", i)).ghost(),
-                                    unavailable,
-                                    (border, danger_border, well),
-                                    radius,
-                                )
-                                .children(parts)
-                                .children(size)
-                                .child(unstage)
-                                .tooltip("Open this file in the Workbench")
-                                .on_click(cx.listener(move |_: &mut Self, _, _, cx| {
-                                    cx.emit(ComposerEvent::OpenFile(path.clone()));
-                                }))
-                                .into_any_element(),
-                                None => attachment_shape(
-                                    div(),
-                                    unavailable,
-                                    (border, danger_border, well),
-                                    radius,
-                                )
-                                .children(parts)
-                                .children(size)
-                                .child(unstage)
-                                .into_any_element(),
-                            }
+                            // **One chip for a file and an image alike**, the
+                            // same element either way: only a file that opens
+                            // adds the pointer, a hover and a press.
+                            let open = openable(a);
+                            attachment_shape(
+                                div().id(("attachment", i)),
+                                unavailable,
+                                (border, danger_border, well),
+                                radius,
+                            )
+                            .children(parts)
+                            .children(size)
+                            .child(unstage)
+                            .when_some(open, |chip, path| {
+                                chip.cursor_pointer()
+                                    .hover(move |chip| chip.bg(hover))
+                                    .tooltip(|window, cx| {
+                                        gpui_component::tooltip::Tooltip::new(
+                                            "Open this file in the Workbench",
+                                        )
+                                        .build(window, cx)
+                                    })
+                                    .on_click(cx.listener(move |_: &mut Self, _, _, cx| {
+                                        cx.emit(ComposerEvent::OpenFile(path.clone()));
+                                    }))
+                            })
+                            .into_any_element()
                         }),
                 )
                 // Past the chip cap, the way to the files the tray no longer
@@ -281,7 +282,8 @@ impl Composer {
                                 composer.toggle_attachments(window, cx);
                             })),
                     )
-                }),
+                })
+                .into_any_element(),
         )
     }
 

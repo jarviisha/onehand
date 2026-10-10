@@ -31,8 +31,8 @@ const DROP_RING_PX: f32 = 1.;
 pub(in crate::chat) const COMPOSER_SPLIT: Rems = rems(36.);
 
 impl Composer {
-    /// The card: the attachment tray, the field, and the row of controls under
-    /// it. One card holding the text and everything done to it.
+    /// The card: the field and the row of controls under it. What is staged
+    /// to go with the text waits above the card, in the tray.
     ///
     /// **No edge.** Its raised fill and its own lift set it apart from the
     /// transcript it floats over, and the caret alone shows focus.
@@ -43,7 +43,6 @@ impl Composer {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let (step_down, step_up, take_row) = (session.clone(), session.clone(), session.clone());
-        let tray = self.tray(cx).map(IntoElement::into_any_element);
         let fast = self.fast_control(session, cx);
         let options_open = self.overlay == Some(Overlay::Options);
         let effort_open = self.overlay == Some(Overlay::Effort);
@@ -123,7 +122,6 @@ impl Composer {
                 });
                 card.shadow(shadows)
             })
-            .children(tray)
             .child(
                 div()
                     .id("composer-field")

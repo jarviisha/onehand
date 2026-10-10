@@ -94,6 +94,10 @@ impl ChatPane {
         // if the queue is cancelled.
         pinned.extend(self.connecting_strip(cx).map(IntoElement::into_any_element));
         pinned.extend(self.queued_strip(cx).map(IntoElement::into_any_element));
+        // Last, so it rests on the composer it belongs to: what is staged
+        // waits above the card rather than inside it, where every file added
+        // or taken off moved the field being typed in.
+        pinned.extend(self.composer.update(cx, |composer, cx| composer.tray(cx)));
         pinned
     }
 
