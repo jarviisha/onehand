@@ -43,13 +43,19 @@ impl Composer {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let (step_down, step_up, take_row) = (session.clone(), session.clone(), session.clone());
-        let fast = self.fast_control(session, cx);
+        let fast = self
+            .fast_control(session, cx)
+            .map(|fast| self.opens_menu(Overlay::Fast, fast));
         let options_open = self.overlay == Some(Overlay::Options);
         let effort_open = self.overlay == Some(Overlay::Effort);
-        let model = options_action(session, cx)
-            .map(|label| option_action(label, options_open, session, cx).into_any_element());
-        let effort = effort_action(session, cx)
-            .map(|label| effort_chip(label, effort_open, session, cx).into_any_element());
+        let model = options_action(session, cx).map(|label| {
+            let chip = option_action(label, options_open, session, cx);
+            self.opens_menu(Overlay::Options, chip)
+        });
+        let effort = effort_action(session, cx).map(|label| {
+            let chip = effort_chip(label, effort_open, session, cx);
+            self.opens_menu(Overlay::Effort, chip)
+        });
         // The model and what it runs at sit side by side, each opening its own
         // short menu: one popup holding both outgrew any width a menu can take.
         let options_control = (model.is_some() || effort.is_some()).then(|| {
@@ -72,6 +78,7 @@ impl Composer {
                     composer.toggle_picker(Overlay::Add, &session, window, cx);
                 }))
         };
+        let add = self.opens_menu(Overlay::Add, add);
         let lift = crate::theme::composer_lift(cx);
         let drop_ring = cx.theme().ring;
 
@@ -256,7 +263,8 @@ impl Composer {
     ) -> Option<impl IntoElement + use<>> {
         let mode_open = self.overlay == Some(Overlay::Mode);
         let mode = mode_action(session, cx).map(|label| {
-            status_action(Overlay::Mode, label, mode_open, session, cx).into_any_element()
+            let chip = status_action(Overlay::Mode, label, mode_open, session, cx);
+            self.opens_menu(Overlay::Mode, chip)
         });
         let branch_open = self.overlay == Some(Overlay::Branch);
         let branch = git.map(|line| {
@@ -270,8 +278,8 @@ impl Composer {
                 .on_click(cx.listener(move |composer: &mut Self, _, window, cx| {
                     composer.toggle_picker(Overlay::Branch, &session, window, cx);
                 }))
-                .into_any_element()
         });
+        let branch = branch.map(|chip| self.opens_menu(Overlay::Branch, chip));
         if branch.is_none() && mode.is_none() {
             return None;
         }

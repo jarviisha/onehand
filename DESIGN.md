@@ -256,7 +256,7 @@ the app's action wrapper, which sets the pointer cursor; a control that refuses 
 transcript renderers, the icon registry, the terminal panel, per-panel zoom, and the composer
 popup (one shell for `@`, `/`, the pickers, the `+` and branch menus and the attachment tray, with
 a pinned title and no key hints, at most six rows, grouped, then how many more; a menu
-opens under its chip).
+opens just above the control that opened it).
 
 Scope: the Workbench editor is a quick editor (tree-sitter, no LSP). Neovim is a Workbench mode with a
 PTY of its own per project, through the shared terminal crate. Files lives inside Editor, not as a

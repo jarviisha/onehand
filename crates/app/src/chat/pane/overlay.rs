@@ -49,12 +49,21 @@ impl ChatPane {
             // a click on a chip, a row or the field -- every one of which is a
             // click *outside* the list -- still reaches the control it was
             // aimed at.
-            .on_mouse_down_out(cx.listener(|pane: &mut Self, _, _, cx| {
-                if pane.composer.read(cx).overlay_open() {
-                    pane.composer
-                        .update(cx, |composer, cx| composer.close_overlay(cx));
-                }
-            }))
+            .on_mouse_down_out(cx.listener(
+                |pane: &mut Self, event: &gpui::MouseDownEvent, _, cx| {
+                    // A menu floats on its control, outside this block, so a press
+                    // on one of its rows is "outside" too and must not close it.
+                    let composer = pane.composer.read(cx);
+                    let on_menu = composer
+                        .menu_bounds
+                        .get()
+                        .is_some_and(|bounds| bounds.contains(&event.position));
+                    if composer.overlay_open() && !on_menu {
+                        pane.composer
+                            .update(cx, |composer, cx| composer.close_overlay(cx));
+                    }
+                },
+            ))
             // The popup sits *above* the input, so a long candidate list grows
             // away from the text being typed rather than over it -- and it sits
             // outside the measured box below, which is the whole point.
@@ -90,25 +99,18 @@ impl ChatPane {
             // opened the picker and can see they did. A card that *arrives*
             // while one is open is the case that would be silent, and that is
             // answered at the event instead: parking an ask closes the popup.
+            .children(self.composer.update(cx, |composer, cx| {
+                composer.anchored_menu(session, room.popup, window.rem_size(), cx)
+            }))
             .children({
                 let popup = self
                     .composer
                     .update(cx, |composer, cx| {
                         composer.detached_popup(session, room.popup, window.rem_size(), cx)
                     })
-                    // **Every overlay is the same card, in the same place.** The
-                    // option lists used to hang off the chip that opened them,
-                    // on the reasoning that keeping a compact surface against
-                    // its trigger says which control it belongs to. What it
-                    // cost is the thing a list of choices is for: sized to its
-                    // own rows and pinned to one end of the card, a model list
-                    // had no room for the sentence the agent sends about each
-                    // choice, and the rows it did fit were narrower than the
-                    // words in them. The card above the composer is the width
-                    // of the reading column, which is what every choice here
-                    // needs -- and the chip stays lit underneath for as long as
-                    // its list is open, which is what actually says where the
-                    // list came from.
+                    // **What spans the stack**: a completion, the attachments,
+                    // and a menu whose control is not on screen. A menu opened
+                    // from a control is drawn on that control instead, above.
                     .map(|popup| {
                         div()
                             .w_full()

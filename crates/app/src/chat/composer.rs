@@ -28,9 +28,12 @@ use super::session::ChatSession;
 use gpui::{
     App, AppContext, Context, Entity, IntoElement, Rems, Render, Subscription, Window, div, rems,
 };
+use gpui::{Bounds, Pixels};
 use gpui_component::input::{InputEvent, TextareaState};
 use onehand_core::attachment::StagedAttachment;
 use onehand_core::completion::ActiveTrigger;
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 
 mod presentation;
 
@@ -96,6 +99,12 @@ pub(super) const CHIP_H: Rems = rems(1.5);
 /// What is showing above the composer. Mutually exclusive **by construction**:
 /// one `Option` makes that structural, where a flag per overlay needs a
 /// "close the others" call on every path that opens one.
+/// Where each control that opens a menu was drawn, shared with the probe that
+/// measures it.
+type Anchors = Rc<RefCell<Vec<(Overlay, Bounds<Pixels>)>>>;
+/// Where the open menu was drawn, shared with the probe that measures it.
+type MenuBounds = Rc<Cell<Option<Bounds<Pixels>>>>;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Overlay {
     /// The `@`/`/` candidate list.
@@ -239,6 +248,12 @@ pub struct Composer {
     attachments_scroll: gpui::ScrollHandle,
     /// The tray's row, measured to tell whether it was cut.
     tray_scroll: gpui::ScrollHandle,
+    /// Where each control that opens a menu was drawn last frame, in window
+    /// coordinates, so its menu opens on it.
+    anchors: Anchors,
+    /// Where the open menu was drawn last frame. It floats outside the block
+    /// that closes it on a press elsewhere, so that press asks this first.
+    pub(in crate::chat) menu_bounds: MenuBounds,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -287,6 +302,8 @@ impl Composer {
             rows_scroll: gpui::ScrollHandle::new(),
             attachments_scroll: gpui::ScrollHandle::new(),
             tray_scroll: gpui::ScrollHandle::new(),
+            anchors: Default::default(),
+            menu_bounds: Default::default(),
             _subscriptions: vec![subscription],
         }
     }

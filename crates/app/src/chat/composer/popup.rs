@@ -3,6 +3,7 @@ use super::presentation::Row;
 use super::rows::{candidate_row, choice_row};
 use super::{Composer, Overlay, highlight};
 use crate::chat::session::ChatSession;
+use gpui::IntoElement as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, Context, Entity, InteractiveElement, ParentElement, Rems, SharedString,
@@ -56,6 +57,8 @@ const POPUP_INSET_H: Rems = rems(0.75);
 /// the wider one holds a model's or a mode's name beside the agent's words
 /// about it. A completion spans the stack instead.
 const MENU_W: Rems = rems(17.);
+/// The air between a menu and the control it opened from.
+const MENU_GAP: Rems = rems(0.25);
 const MENU_WIDE_W: Rems = rems(20.);
 
 /// How tall a list may grow, given the panel it is opening inside.
@@ -127,17 +130,16 @@ const GROUP_LABEL_H: Rems = rems(1.75);
 enum Anchor {
     /// Across the whole stack: a completion, the attachments.
     Span,
-    /// A menu at this width, under a control at the card's left end.
+    /// A menu at this width, starting at its control's left edge.
     Left(Rems),
-    /// A menu at this width, under the mode chip at the strip's right end.
+    /// A menu at this width, ending at its control's right edge: the mode
+    /// chip, at the strip's right end.
     Right(Rems),
 }
 
 fn anchor(overlay: &Overlay) -> Anchor {
     match overlay {
         Overlay::Completion | Overlay::Attachments => Anchor::Span,
-        // The model chip sits past Fast, whose word changes width, so its menu
-        // starts at the inset too rather than chasing the chip.
         Overlay::Add | Overlay::Branch | Overlay::Fast | Overlay::Effort => Anchor::Left(MENU_W),
         Overlay::Options => Anchor::Left(MENU_WIDE_W),
         Overlay::Mode => Anchor::Right(MENU_WIDE_W),
@@ -180,21 +182,95 @@ impl Composer {
         cx: &mut Context<Self>,
     ) -> Option<gpui::Div> {
         let overlay = self.overlay.clone()?;
+        // A menu goes on its control; only one whose control is not on screen
+        // falls back to here, over the stack, rather than opening nowhere.
+        if !matches!(anchor(&overlay), Anchor::Span) && self.anchor_of(&overlay).is_some() {
+            return None;
+        }
         let popup = self.popup(session, room, rem, cx)?;
-        Some(match anchor(&overlay) {
-            Anchor::Span => div().w_full().child(popup),
-            Anchor::Left(w) => div()
-                .w_full()
-                .h_flex()
-                .pl_1p5()
-                .child(div().w(w).max_w_full().child(popup)),
-            Anchor::Right(w) => div()
-                .w_full()
-                .h_flex()
-                .justify_end()
-                .pr_1p5()
-                .child(div().w(w).max_w_full().child(popup)),
-        })
+        Some(div().w_full().child(popup))
+    }
+
+    /// A menu opened from a control, drawn on that control: its bottom edge
+    /// just over the control's top, starting at its left edge (the mode's,
+    /// at the strip's right end, ending at its right). Floated above
+    /// everything and kept inside the window.
+    pub fn anchored_menu(
+        &mut self,
+        session: &Entity<ChatSession>,
+        room: gpui::Pixels,
+        rem: gpui::Pixels,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::AnyElement> {
+        let overlay = self.overlay.clone()?;
+        let (width, corner) = match anchor(&overlay) {
+            Anchor::Span => return None,
+            Anchor::Left(w) => (w, gpui::Anchor::BottomLeft),
+            Anchor::Right(w) => (w, gpui::Anchor::BottomRight),
+        };
+        let on = self.anchor_of(&overlay)?;
+        let popup = self.popup(session, room, rem, cx)?;
+        let gap = MENU_GAP.to_pixels(rem);
+        let at = match corner {
+            gpui::Anchor::BottomRight => gpui::point(on.right(), on.top() - gap),
+            _ => gpui::point(on.left(), on.top() - gap),
+        };
+        let menu_bounds = self.menu_bounds.clone();
+        Some(
+            gpui::deferred(
+                gpui::anchored()
+                    .position(at)
+                    .anchor(corner)
+                    .snap_to_window_with_margin(gap)
+                    .child(
+                        div().w(width).occlude().child(popup).child(
+                            gpui::canvas(
+                                move |bounds, _, _| menu_bounds.set(Some(bounds)),
+                                |_, _, _, _| {},
+                            )
+                            .absolute()
+                            .size_full(),
+                        ),
+                    ),
+            )
+            .into_any_element(),
+        )
+    }
+
+    fn anchor_of(&self, overlay: &Overlay) -> Option<gpui::Bounds<gpui::Pixels>> {
+        self.anchors
+            .borrow()
+            .iter()
+            .find(|(o, _)| o == overlay)
+            .map(|(_, bounds)| *bounds)
+    }
+
+    /// `element`, measured where it is drawn as the control `overlay`'s menu
+    /// opens from.
+    pub(super) fn opens_menu(
+        &self,
+        overlay: Overlay,
+        element: impl gpui::IntoElement,
+    ) -> gpui::AnyElement {
+        let anchors = self.anchors.clone();
+        div()
+            .relative()
+            .h_flex()
+            .min_w_0()
+            .child(element)
+            .child(
+                gpui::canvas(
+                    move |bounds, _, _| {
+                        let mut anchors = anchors.borrow_mut();
+                        anchors.retain(|(o, _)| *o != overlay);
+                        anchors.push((overlay, bounds));
+                    },
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .size_full(),
+            )
+            .into_any_element()
     }
 
     /// The open completion, settings, menu or attachment surface.
