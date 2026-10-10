@@ -108,6 +108,7 @@ pub(crate) fn language_for(path: &Path) -> &'static str {
 /// What a press on the strip does, each handed a tab's index where it has one.
 pub(crate) struct StripHandlers {
     pub(crate) toggle_tree: OnPress,
+    pub(crate) back: OnPress,
     pub(crate) select: OnTab,
     pub(crate) close: OnTab,
     pub(crate) close_all: OnPress,
@@ -117,7 +118,17 @@ pub(crate) type OnPress = Box<dyn Fn(&gpui::ClickEvent, &mut Window, &mut App)>;
 /// Shared, because every tab's closure holds one.
 pub(crate) type OnTab = std::rc::Rc<dyn Fn(&usize, &mut Window, &mut App)>;
 
-/// The file-tab strip: the tree's toggle, the tabs, and a trailing close-all.
+/// What leads the strip, at the end nearest the tree.
+pub(crate) enum Lead {
+    /// The toggle that hides the tree beside the buffers, or brings it back:
+    /// whether it is showing.
+    Toggle(bool),
+    /// The way back to the tree, while the two are shown one at a time.
+    Back,
+}
+
+/// The file-tab strip: the tree's toggle or the way back to it, the tabs, and a
+/// trailing close-all.
 ///
 /// The tabs share the width actually left to them, `measured` last frame (in
 /// rems) by the box they sit in, which asks `view` to draw again when it
@@ -129,21 +140,41 @@ pub(crate) fn tab_strip<T: 'static>(
     buffers: &RootBuffers,
     measured: &Rc<Cell<f32>>,
     view: WeakEntity<T>,
-    tree_shown: bool,
+    lead: Lead,
     on: StripHandlers,
     cx: &App,
 ) -> gpui::AnyElement {
     let active = buffers.tabs.active;
     let StripHandlers {
         toggle_tree: on_toggle_tree,
+        back: on_back,
         select: on_select,
         close: on_close,
         close_all: on_close_all,
     } = on;
 
-    let (toggle_icon, toggle_hint) = match tree_shown {
-        true => (IconName::PanelLeftClose, "Hide the file tree"),
-        false => (IconName::PanelLeftOpen, "Show the file tree"),
+    // At the end nearest the tree. The toggle's icon is the panel's *state*,
+    // open or shut, and the tooltip says what a press does -- so the two never
+    // disagree about which way round it is.
+    let lead = match lead {
+        Lead::Back => onehand_plugin_host::back_link("editor-back", "Files")
+            .on_click(on_back)
+            .into_any_element(),
+        Lead::Toggle(shown) => {
+            let (icon, hint) = match shown {
+                true => (IconName::PanelLeftClose, "Hide the file tree"),
+                false => (IconName::PanelLeftOpen, "Show the file tree"),
+            };
+            onehand_plugin_host::action("toggle-file-tree")
+                .ghost()
+                .xsmall()
+                .flex_none()
+                .text_color(cx.theme().muted_foreground)
+                .icon(Icon::new(icon))
+                .tooltip(hint)
+                .on_click(on_toggle_tree)
+                .into_any_element()
+        }
     };
     // The label is the file name alone, so three `mod.rs` tabs read the same;
     // the path relative to the project tells them apart, on hover. The dirty
@@ -276,19 +307,7 @@ pub(crate) fn tab_strip<T: 'static>(
         .py_1()
         .border_b_1()
         .border_color(cx.theme().border)
-        // The tree's toggle, at the end nearest the tree. The icon is the
-        // panel's *state*, open or shut, and the tooltip says what a press
-        // does -- so the two never disagree about which way round it is.
-        .child(
-            onehand_plugin_host::action("toggle-file-tree")
-                .ghost()
-                .xsmall()
-                .flex_none()
-                .text_color(cx.theme().muted_foreground)
-                .icon(Icon::new(toggle_icon))
-                .tooltip(toggle_hint)
-                .on_click(on_toggle_tree),
-        )
+        .child(lead)
         // The one part of the row that gives way, and the box the tabs are
         // laid out to: `flex_1` + `min_w_0`, so its width is what is left
         // after the controls, never its content.

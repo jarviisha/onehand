@@ -133,6 +133,7 @@ impl IssuesView {
         if let Some(state) = self.state_mut() {
             state.selected = Some(number);
         }
+        self.detail = true;
         self.showing = if open { Showing::Open } else { Showing::Closed };
         if self
             .label
@@ -143,8 +144,43 @@ impl IssuesView {
         }
     }
 
-    /// The list: the search and the way to start a new issue, the filters,
-    /// then a row per issue, and the sync footer.
+    /// The search and the way to start a new issue, over the list and the
+    /// issue both, so they stay in reach while the two show one at a time.
+    pub(super) fn search_bar(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let query = self.query(window, cx);
+        let muted = cx.theme().muted_foreground;
+        div()
+            .h_flex()
+            .items_center()
+            .gap_1()
+            .w_full()
+            .flex_none()
+            .px_2()
+            .py_1()
+            .border_b_1()
+            .border_color(cx.theme().border)
+            .child(
+                div().flex_1().min_w_0().child(
+                    Input::new(&query)
+                        .small()
+                        .prefix(Icon::new(IconName::Search).xsmall().text_color(muted))
+                        .cleanable(true),
+                ),
+            )
+            .child(
+                action("issues-new")
+                    .small()
+                    .ghost()
+                    .icon(Icon::new(IconName::Plus))
+                    .tooltip("New issue")
+                    .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
+                        view.open_form(None, window, cx)
+                    })),
+            )
+            .into_any_element()
+    }
+
+    /// The list: the filters, then a row per issue, and the sync footer.
     pub(super) fn list(
         &mut self,
         issues: &Issues,
@@ -174,33 +210,6 @@ impl IssuesView {
             .and_then(|root| self.roots.get(root))
             .and_then(|state| state.selected);
         let muted = cx.theme().muted_foreground;
-
-        let search = div()
-            .h_flex()
-            .items_center()
-            .gap_1()
-            .w_full()
-            .flex_none()
-            .px_2()
-            .pt_2()
-            .child(
-                div().flex_1().min_w_0().child(
-                    Input::new(&query)
-                        .small()
-                        .prefix(Icon::new(IconName::Search).xsmall().text_color(muted))
-                        .cleanable(true),
-                ),
-            )
-            .child(
-                action("issues-new")
-                    .small()
-                    .ghost()
-                    .icon(Icon::new(IconName::Plus))
-                    .tooltip("New issue")
-                    .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
-                        view.open_form(None, window, cx)
-                    })),
-            );
 
         let view = cx.entity();
         let filters = div()
@@ -260,9 +269,6 @@ impl IssuesView {
         div()
             .size_full()
             .v_flex()
-            .border_r_1()
-            .border_color(cx.theme().border)
-            .child(search)
             .child(filters)
             .child(
                 div()

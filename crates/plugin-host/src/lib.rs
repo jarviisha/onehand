@@ -9,9 +9,11 @@
 // a working feature.
 #![warn(unreachable_pub)]
 
+mod list_detail;
 mod menu;
 mod tabs;
 mod workbench;
+pub use list_detail::{DETAIL_MIN, back_link, side_by_side};
 pub use menu::{menu_below, menu_item, menu_row};
 pub use onehand_core::worktree::removal::Process;
 pub use tabs::{TAB_MAX_W, TabStrip, measure_width, tab_menu_rows, tab_select, tab_strip};

@@ -1,7 +1,7 @@
 //! The Editor mode's own state: the open buffers per project root, and the
 //! rules that keep a save from clobbering somebody else's write.
 
-use crate::buffers::{RootBuffers, StripHandlers, body, new_buffer, save_status, tab_strip};
+use crate::buffers::{Lead, RootBuffers, StripHandlers, body, new_buffer, save_status, tab_strip};
 
 use gpui::{
     App, AppContext as _, Context, Entity, Focusable as _, IntoElement, ParentElement, Render,
@@ -50,6 +50,14 @@ pub(crate) struct EditorView {
     /// flag for every project, not per root, and not persisted — the same
     /// answer as the divider's position, for the same reason.
     tree_shown: bool,
+    /// Whether the file shows rather than the tree, while the two are too
+    /// narrow to sit side by side. Opening a file sets it and the way back
+    /// clears it; what is open is kept either way.
+    detail: bool,
+    /// Whether the tree and the buffers are shown one at a time, as the split
+    /// last measured: the strip leads with the way back to the tree then,
+    /// rather than the toggle that hides it.
+    alone: bool,
 }
 
 impl EditorView {
@@ -61,6 +69,8 @@ impl EditorView {
             saving: HashMap::new(),
             tabs_w: Rc::new(Cell::new(f32::INFINITY)),
             tree_shown: true,
+            detail: false,
+            alone: false,
         })
     }
 
@@ -124,6 +134,7 @@ impl EditorView {
         let Some(root) = self.root.clone() else {
             return false;
         };
+        self.detail = true;
         let path = path.to_path_buf();
 
         if let Some(buffers) = self.buffers.get(&root)
@@ -302,6 +313,29 @@ impl EditorView {
 
     pub(crate) fn tree_shown(&self) -> bool {
         self.tree_shown
+    }
+
+    /// Whether a file is what shows while the halves are one at a time: one
+    /// asked for, and one there to show.
+    pub(crate) fn showing_file(&self) -> bool {
+        self.detail
+            && self
+                .current()
+                .is_some_and(|buffers| buffers.tabs.active_file().is_some())
+    }
+
+    /// Say whether the halves are shown one at a time. Guarded, because the
+    /// split says it on every frame.
+    pub(crate) fn set_alone(&mut self, alone: bool, cx: &mut Context<Self>) {
+        if self.alone != alone {
+            self.alone = alone;
+            cx.notify();
+        }
+    }
+
+    fn back_to_tree(&mut self, cx: &mut Context<Self>) {
+        self.detail = false;
+        cx.notify();
     }
 
     fn toggle_tree(&mut self, cx: &mut Context<Self>) {
@@ -484,11 +518,15 @@ impl Render for EditorView {
             buffers,
             &self.tabs_w,
             cx.entity().downgrade(),
-            self.tree_shown,
+            match self.alone {
+                true => Lead::Back,
+                false => Lead::Toggle(self.tree_shown),
+            },
             StripHandlers {
                 toggle_tree: Box::new(
                     cx.listener(|view: &mut Self, _, _, cx| view.toggle_tree(cx)),
                 ),
+                back: Box::new(cx.listener(|view: &mut Self, _, _, cx| view.back_to_tree(cx))),
                 select: Rc::new(
                     cx.listener(|view: &mut Self, idx: &usize, _, cx| view.select_tab(*idx, cx)),
                 ),

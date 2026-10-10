@@ -10,15 +10,16 @@ use gpui::{
     AnyElement, App, AppContext as _, Context, Entity, IntoElement, ParentElement, Render, Styled,
     Subscription, Task, Window, div,
 };
+use gpui_component::StyledExt;
 use gpui_component::WindowExt as _;
 use gpui_component::dialog::DialogButtonProps;
 use gpui_component::input::InputState;
 use gpui_component::text::TextViewState;
-use gpui_component::{StyledExt, h_resizable, resizable_panel};
 use onehand_core::connector::{Connector, PullRequest};
 use onehand_core::issues::{self, IssueKey, Issues, LocalIssue};
 use onehand_core::task::work::{IssueWork, Reading};
-use onehand_plugin_host::{Ask, Request, hint, status_line};
+use onehand_plugin_host::{Ask, Request, hint, measure_width, status_line};
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -33,6 +34,7 @@ mod page;
 mod reads;
 mod review;
 mod store;
+mod tab;
 mod work;
 use detail::{Doing, issue_view};
 use form::{Form, form_view};
@@ -52,14 +54,6 @@ const SYNC_GAP: Duration = Duration::from_secs(60);
 /// footer's "synced 3m ago" keeps telling the time. A multiple of it is
 /// [`SYNC_EVERY`].
 const TICK: Duration = Duration::from_secs(60);
-
-/// The list's width before anybody drags it, and the range a drag may take it
-/// through — pixels, because that is the only thing the split accepts. A
-/// row's title wraps to two lines, so the floor is what the search box and the
-/// filters above the rows need.
-const LIST_W: f32 = 240.;
-const LIST_MIN: f32 = 160.;
-const LIST_MAX: f32 = 420.;
 
 /// How many rows the list draws. A project with more than this many issues is
 /// said to have them, and the rest are not built: every row is an element, and
@@ -91,6 +85,13 @@ pub(crate) struct IssuesView {
     /// Each project's issues file, and what is open in it.
     roots: HashMap<PathBuf, RootIssues>,
     split: Entity<gpui_component::ResizableState>,
+    /// Whether the issue or the form shows rather than the list, while the
+    /// tab is too narrow for the two side by side. Opening an issue or the
+    /// form sets it and the way back clears it; what is picked is kept.
+    detail: bool,
+    /// The tab's width in rems as last laid out. Infinite until measured, so
+    /// the first frame draws the two side by side.
+    width: std::rc::Rc<Cell<f32>>,
     /// A read or a write that could not be done, as a standing line under the
     /// body. Cleared by the next one that works.
     status: Option<String>,
@@ -173,6 +174,8 @@ impl IssuesView {
             storage: None,
             roots: HashMap::new(),
             split: cx.new(|_| gpui_component::ResizableState::default()),
+            detail: false,
+            width: std::rc::Rc::new(Cell::new(f32::INFINITY)),
             status: None,
             connectors,
             query: None,
@@ -324,6 +327,7 @@ impl IssuesView {
                 state.selected = Some(number);
                 state.form = None;
             }
+            view.detail = true;
             cx.notify();
         });
     }
@@ -380,6 +384,7 @@ impl IssuesView {
         if let Some(state) = self.state_for(&root, cx) {
             state.selected = Some(number);
         }
+        self.detail = true;
         cx.notify();
     }
 
@@ -509,6 +514,8 @@ impl Render for IssuesView {
             .flex_1()
             .min_h_0()
             .v_flex()
+            .relative()
+            .child(measure_width(self.width.clone(), cx.entity().downgrade()))
             .child(body)
             .children(self.standing(cx).map(|status| status_line(status, cx)))
     }
@@ -541,27 +548,7 @@ impl IssuesView {
             return hint("Reading issues…", cx);
         };
 
-        let list = self.list(&issues, window, cx);
-        let detail = self.detail(&root, &issues, window, cx);
-        div()
-            .flex_1()
-            .min_h_0()
-            .child(
-                h_resizable("issues-split")
-                    .with_state(&self.split)
-                    .child(
-                        // `flex_none`, as the Markdown mode's list is: a panel
-                        // in the group grows by default, and a list that grows
-                        // takes the room the issue was opened to be read in.
-                        resizable_panel()
-                            .size(gpui::px(LIST_W))
-                            .size_range(gpui::px(LIST_MIN)..gpui::px(LIST_MAX))
-                            .flex_none()
-                            .child(list),
-                    )
-                    .child(resizable_panel().child(detail)),
-            )
-            .into_any_element()
+        self.tab_body(&root, &issues, window, cx)
     }
 
     /// The right-hand side: the form while one is open, else the selected

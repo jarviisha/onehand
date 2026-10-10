@@ -5,10 +5,17 @@ use crate::document::{RootDocs, list, reader};
 use gpui::{
     App, AppContext as _, Context, Entity, IntoElement, ParentElement, Render, Styled, Window, div,
 };
-use gpui_component::{ActiveTheme, StyledExt, h_resizable, resizable_panel};
-use onehand_plugin_host::{Ask, Request, hint, status_line};
+use gpui_component::button::ButtonVariants as _;
+use gpui_component::{
+    ActiveTheme, IconName, Sizable as _, StyledExt, h_resizable, resizable_panel,
+};
+use onehand_plugin_host::{
+    Ask, DETAIL_MIN, Request, back_link, hint, measure_width, side_by_side, status_line,
+};
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::time::Duration;
 
 /// How often the open document's file is asked whether it has changed.
@@ -43,6 +50,13 @@ pub(crate) struct MarkdownView {
     /// persisted either, for the reason the rail's own visibility is not: a
     /// panel that came back with its list gone reads as one that lost it.
     list_shown: bool,
+    /// Whether the document shows rather than the list, while the two are too
+    /// narrow to sit side by side. Opening a document sets it and the way back
+    /// clears it; what is open is kept either way.
+    detail: bool,
+    /// The mode's width in rems as last laid out. Infinite until measured, so
+    /// the first frame draws the two side by side.
+    width: Rc<Cell<f32>>,
     /// Where the drag between the list and the document sits.
     ///
     /// Held here rather than left to the element, for the reason the window's
@@ -91,6 +105,8 @@ impl MarkdownView {
             root: None,
             docs: HashMap::new(),
             list_shown: true,
+            detail: false,
+            width: Rc::new(Cell::new(f32::INFINITY)),
             split: cx.new(|_| gpui_component::ResizableState::default()),
             stale: false,
             _scan: None,
@@ -336,11 +352,8 @@ impl MarkdownView {
 }
 
 impl Render for MarkdownView {
-    /// The document list beside the document, which is the whole mode.
-    ///
-    /// The list keeps a third of the panel and the document the rest: the rows
-    /// are file names and the document is prose, so the two do not want the
-    /// same share of a dock the user has already sized for reading.
+    /// The document list beside the document, which is the whole mode, or one
+    /// of the two at a time where there is no room for both.
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // Being drawn is what says the walk is worth its cost, so it is started
         // here rather than at the moment the index went stale.
@@ -354,6 +367,8 @@ impl Render for MarkdownView {
             .flex_1()
             .min_h_0()
             .v_flex()
+            .relative()
+            .child(measure_width(self.width.clone(), cx.entity().downgrade()))
             .child(body)
             .children(self.status.clone().map(|status| status_line(status, cx)))
     }
@@ -370,19 +385,58 @@ impl MarkdownView {
             return hint("Looking for documents…", cx);
         };
 
+        let rem = window.rem_size();
+        // The list's width as dragged, read off the split; a size outside the
+        // range is the split seeding its panels before anything was measured.
+        let list_w = self
+            .split
+            .read(cx)
+            .sizes()
+            .first()
+            .map(|w| f32::from(*w))
+            .filter(|w| (DOC_LIST_MIN..=DOC_LIST_MAX).contains(w))
+            .unwrap_or(DOC_LIST_W);
+        let width = self.width.get();
+        let alone = !side_by_side(width, list_w / f32::from(rem));
+
+        // What leads the reader's header: the way back to the list while the
+        // two are one at a time, else the toggle hiding the list beside it.
+        // The toggle's icon says which way the press goes rather than which
+        // state is in force: a panel drawn open beside a list that is open is
+        // a control that looks like a reading.
+        let lead = match alone {
+            true => back_link("markdown-back", "Documents")
+                .on_click(cx.listener(|view: &mut Self, _, _, cx| {
+                    view.detail = false;
+                    cx.notify();
+                }))
+                .into_any_element(),
+            false => onehand_plugin_host::action("markdown-toggle-list")
+                .xsmall()
+                .ghost()
+                .icon(match self.list_shown {
+                    true => IconName::PanelLeftClose,
+                    false => IconName::PanelLeftOpen,
+                })
+                .tooltip(match self.list_shown {
+                    true => "Hide the document list",
+                    false => "Show the document list",
+                })
+                .on_click(cx.listener(|view: &mut Self, _, _, cx| view.toggle_list(cx)))
+                .into_any_element(),
+        };
         let reader = {
             let path = docs.open.as_ref().map(|doc| doc.path.clone());
             let ask = self.ask.clone();
             reader(
                 docs.open.as_ref(),
-                self.list_shown,
+                lead,
                 // The rem base in force, which is the panel's zoom: this body
                 // is drawn inside the override, so the window is already
                 // answering with the zoomed value. The renderer sizes its
                 // headings from an absolute pixel value, which is the one thing
                 // that override cannot reach by itself.
-                window.rem_size(),
-                cx.listener(|view: &mut Self, _, _, cx| view.toggle_list(cx)),
+                rem,
                 move |_, window, cx: &mut App| {
                     // Handing it to the editor switches the mode, which is the
                     // honest answer: this one does not edit.
@@ -393,40 +447,41 @@ impl MarkdownView {
                 cx,
             )
         };
-
-        if !self.list_shown {
-            // No list, so no split: a group holding one panel draws a handle
-            // against the panel's own edge that resizes nothing. The same
-            // reason the window's rail split is skipped while the rail is
-            // hidden.
-            return div()
+        // A row, but deliberately not the shared `h_flex`: that one centres
+        // its children, which leaves each column as tall as its own content
+        // instead of as tall as the panel. The document's body is sized by what
+        // is left over, so centred it is given nothing and the header floats in
+        // the middle of an empty panel.
+        let alone_with = |half: gpui::AnyElement| {
+            div()
                 .flex_1()
                 .min_h_0()
-                // A row, but deliberately not the shared `h_flex`: that one
-                // centres its children, which leaves each column as tall as its
-                // own content instead of as tall as the panel. The document's
-                // body is sized by what is left over, so centred it is given
-                // nothing and the header floats in the middle of an empty panel.
                 .flex()
                 .flex_row()
-                .child(reader)
-                .into_any_element();
+                .child(half)
+                .into_any_element()
+        };
+
+        if alone && !(self.detail && docs.open.is_some()) {
+            return alone_with(self.list(&root, cx));
+        }
+        // No list, so no split: a group holding one panel draws a handle
+        // against the panel's own edge that resizes nothing. The same reason
+        // the window's rail split is skipped while the rail is hidden.
+        if alone || !self.list_shown {
+            return alone_with(reader);
         }
 
+        // No drag takes the document under its least readable width, so
+        // dragging the list never flips the two into one at a time by itself.
+        let list_max = (width - DETAIL_MIN) * f32::from(rem);
         let list = div()
             .size_full()
+            // The one hairline between the halves, on the divider: its grip
+            // draws a line only while it is dragged.
             .border_r_1()
             .border_color(cx.theme().border)
-            .child(list(
-                &root,
-                docs,
-                cx.listener(|view: &mut Self, dir: &PathBuf, _, cx| view.toggle_dir(dir, cx)),
-                cx.listener(|view: &mut Self, path: &PathBuf, _, cx| {
-                    view.open_doc(path.clone(), cx)
-                }),
-                cx,
-            ));
-
+            .child(self.list(&root, cx));
         div()
             .flex_1()
             .min_h_0()
@@ -442,12 +497,32 @@ impl MarkdownView {
                         // what answers.
                         resizable_panel()
                             .size(gpui::px(DOC_LIST_W))
-                            .size_range(gpui::px(DOC_LIST_MIN)..gpui::px(DOC_LIST_MAX))
+                            .size_range(
+                                gpui::px(DOC_LIST_MIN)
+                                    ..gpui::px(list_max.clamp(DOC_LIST_MIN, DOC_LIST_MAX)),
+                            )
                             .flex_none()
                             .child(list),
                     )
                     .child(resizable_panel().child(reader)),
             )
             .into_any_element()
+    }
+
+    /// The document list, a click on a document opening it in front.
+    fn list(&self, root: &std::path::Path, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let Some(docs) = self.docs.get(root) else {
+            return hint("Looking for documents…", cx);
+        };
+        list(
+            root,
+            docs,
+            cx.listener(|view: &mut Self, dir: &PathBuf, _, cx| view.toggle_dir(dir, cx)),
+            cx.listener(|view: &mut Self, path: &PathBuf, _, cx| {
+                view.detail = true;
+                view.open_doc(path.clone(), cx)
+            }),
+            cx,
+        )
     }
 }

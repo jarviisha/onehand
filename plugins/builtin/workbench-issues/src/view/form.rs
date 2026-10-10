@@ -94,6 +94,7 @@ impl IssuesView {
         if let Some(state) = self.state_mut() {
             state.form = Some(form);
         }
+        self.detail = true;
         self.status = None;
         cx.notify();
     }

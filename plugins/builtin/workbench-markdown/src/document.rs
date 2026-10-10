@@ -11,15 +11,23 @@
 use crate::index::{DocIndex, DocRow};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, AppContext as _, Entity, InteractiveElement, IntoElement, ParentElement,
-    StatefulInteractiveElement, Styled, Window, div, rems,
+    App, AppContext as _, Entity, InteractiveElement, IntoElement, ParentElement, Rems,
+    StatefulInteractiveElement, Styled, Window, div, relative, rems,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::text::{TextView, TextViewState, TextViewStyle};
+use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
+
+/// The widest a document's column runs: a comfortable line of prose, so a
+/// wide dock does not stretch a paragraph into lines too long to follow.
+const DOC_MEASURE: Rems = rems(34.);
+/// A document's line height as a multiple of its size: a shade more open than
+/// the conversation's, because a document is read in long stretches.
+const LEADING_DOC: f32 = 1.65;
 
 /// One project root's document view: what was found, what is folded away, and
 /// what is being read.
@@ -217,7 +225,13 @@ fn doc_row(
         .text_sm()
         .cursor_pointer()
         .when(selected, |row| row.bg(cx.theme().accent))
-        .hover(|row| row.bg(cx.theme().accent.opacity(0.5)))
+        .when(!selected, |row| {
+            row.hover(|row| row.bg(cx.theme().list_hover))
+        })
+        .tooltip({
+            let name = row.name.clone();
+            move |window, cx| Tooltip::new(name.clone()).build(window, cx)
+        })
         // Indent by depth rather than by nested containers, for the same reason
         // the file tree does: the cap here is 400 documents, and that many
         // nested elements is that many wasted.
@@ -255,7 +269,9 @@ fn doc_row(
         .into_any_element()
 }
 
-/// The reading side: the document, under a header that is always drawn.
+/// The reading side: the document, under a header that is always drawn,
+/// led by `lead`: the toggle that hides the list beside it, or the way back to
+/// the list while the two show one at a time.
 ///
 /// **Always**, and that is what makes the list hideable at all. The control
 /// that brings the list back lives in this header, so a header that appeared
@@ -269,9 +285,8 @@ fn doc_row(
 /// inside the same override. Handed one, the caller has to say which it means.
 pub(crate) fn reader(
     doc: Option<&OpenDoc>,
-    list_shown: bool,
+    lead: gpui::AnyElement,
     rem: gpui::Pixels,
-    on_toggle_list: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
     on_edit: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
     cx: &App,
 ) -> gpui::AnyElement {
@@ -295,25 +310,7 @@ pub(crate) fn reader(
                 .py_1()
                 .border_b_1()
                 .border_color(cx.theme().border)
-                // The icon says which way the press goes rather than which
-                // state is in force: a panel drawn open beside a list that is
-                // open is a control that looks like a reading.
-                .child(
-                    onehand_plugin_host::action("markdown-toggle-list")
-                        .xsmall()
-                        .ghost()
-                        .icon(if list_shown {
-                            IconName::PanelLeftClose
-                        } else {
-                            IconName::PanelLeftOpen
-                        })
-                        .tooltip(if list_shown {
-                            "Hide the document list"
-                        } else {
-                            "Show the document list"
-                        })
-                        .on_click(on_toggle_list),
-                )
+                .child(lead)
                 .child(
                     div()
                         .flex_1()
@@ -340,17 +337,26 @@ pub(crate) fn reader(
                 })),
         )
         .child(match doc {
+            // The column at the app's reading size, a step over its chrome,
+            // since a document is read the way the conversation is.
             Some(doc) => div()
                 .flex_1()
                 .min_h_0()
                 .p_3()
                 .child(
-                    TextView::new(&doc.state)
-                        .selectable(true)
-                        // Virtualized: a long document draws the rows on screen
-                        // rather than all of it.
-                        .scrollable(true)
-                        .style(doc_style(rem, cx)),
+                    div()
+                        .h_full()
+                        .max_w(DOC_MEASURE)
+                        .text_base()
+                        .line_height(relative(LEADING_DOC))
+                        .child(
+                            TextView::new(&doc.state)
+                                .selectable(true)
+                                // Virtualized: a long document draws the rows
+                                // on screen rather than all of it.
+                                .scrollable(true)
+                                .style(doc_style(rem, cx)),
+                        ),
                 )
                 .into_any_element(),
             None => div()
@@ -377,15 +383,12 @@ fn doc_style(rem: gpui::Pixels, cx: &App) -> TextViewStyle {
         gpui::StyleRefinement::default()
             .p(rems(0.75))
             .text_size(rems(0.8125))
-            // **The fill is named here rather than left to the library**, which
-            // would be the same value -- but only for as long as the panel
-            // around this document stays on the reading surface. It was drawn in
-            // the well for a while, and a block that borrowed the library's
-            // default then came out invisible with only its padding to say it
-            // was there; the sunk thing had to be the reading surface instead.
-            // Written out, a panel that changes surface again is one edit in one
-            // place rather than a block that quietly disappears.
-            .bg(cx.theme().muted),
+            // **The fill is named here rather than left to the library**, and
+            // it is the step past the well: the dock this document is read on
+            // sits so near the well that a block filled with it showed only its
+            // padding. Written out, a panel that changes surface again is one
+            // edit in one place rather than a block that quietly disappears.
+            .bg(cx.theme().secondary),
     );
     style.heading_base_font_size = rem;
     style

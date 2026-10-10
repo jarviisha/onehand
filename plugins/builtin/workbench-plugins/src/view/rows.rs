@@ -43,12 +43,7 @@ impl PluginsView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let theme = cx.theme();
-        let (muted, radius, ring, hover) = (
-            theme.muted_foreground,
-            theme.radius,
-            theme.ring,
-            theme.accent.opacity(0.5),
-        );
+        let (muted, ring, hover) = (theme.muted_foreground, theme.ring, theme.list_hover);
         let on_here = plugin.in_force(Scope::Local);
         let busy = self.busy.is_some();
         let here = plugin.flip(Scope::Local);
@@ -166,7 +161,6 @@ impl PluginsView {
             .w_full()
             .px_2()
             .py_2()
-            .rounded(radius)
             .border_1()
             .border_color(gpui::transparent_black())
             .cursor_pointer()

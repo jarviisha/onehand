@@ -12,33 +12,32 @@
 //! number per window, restored to the same starting width on every launch, and
 //! the alternative is another key in the workspace file for something a drag
 //! re-answers in a second.
+//!
+//! **Side by side only while there is room for both.** Narrower, the tree and
+//! the file show one at a time: opening a file shows it, and the strip over it
+//! leads with the way back to the tree.
 
 use crate::view::EditorView;
 
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyView, App, AppContext as _, Context, Entity, IntoElement, ParentElement, Render, Styled,
     Subscription, Window, div, px,
 };
 use gpui_component::{ActiveTheme, ResizableState, StyledExt, h_resizable, resizable_panel};
+use onehand_plugin_host::{DETAIL_MIN, measure_width, side_by_side};
+use std::cell::Cell;
+use std::rc::Rc;
 
 /// Where the divider starts, and how far it can be dragged.
 ///
-/// **The floor is a budget, not a preference.** A dock clamps its own width at
-/// `gpui_base::PANEL_MIN_SIZE` — 100px, with no per-panel hook to raise it — so
-/// whatever floors the two halves declare have to *fit inside that*, minus the
-/// card's inset and border. They did not: 140px of tree against the library's
-/// default 100px floor for the other half is 240px of minimum inside a box that
-/// can be 82px wide, and the card clips what will not fit — so dragging the dock
-/// to its narrowest pushed the editor off the end and left the tree alone on
-/// screen, with nothing to say where the other half had gone.
-///
-/// 40px each is what fits. It is well under what either half is usable at, and
-/// that is the point: nothing stops at this number on the way to anywhere, and
-/// a drag that reaches it has already made the dock too narrow to read. The
-/// ceiling is the one that is a preference — the half being squeezed by a wide
-/// tree is the one with the long lines in it.
+/// The floor is what a file name needs to be told apart at; under it, the
+/// pair is too narrow to share and shows one half at a time instead. The
+/// ceiling is a preference: the half being squeezed by a wide tree is the one
+/// with the long lines in it, and a drag never takes the file under its own
+/// least useful width.
 const TREE_W: f32 = 200.;
-const TREE_MIN: f32 = 40.;
+const TREE_MIN: f32 = 140.;
 const TREE_MAX: f32 = 420.;
 
 pub(crate) struct CodeView {
@@ -48,6 +47,9 @@ pub(crate) struct CodeView {
     files: AnyView,
     editor: Entity<EditorView>,
     divider: Entity<ResizableState>,
+    /// The pair's width in rems as last laid out. Infinite until measured, so
+    /// the first frame draws the two side by side.
+    width: Rc<Cell<f32>>,
     /// Redraws the pair when the buffers' view flips the tree, since what that
     /// view renders is its own and this one reads the flag.
     _tree: Subscription,
@@ -60,56 +62,84 @@ impl CodeView {
             _tree: cx.observe(&editor, |_, _, cx| cx.notify()),
             editor,
             divider: cx.new(|_| ResizableState::default()),
+            width: Rc::new(Cell::new(f32::INFINITY)),
         })
     }
 }
 
 impl Render for CodeView {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let rem = f32::from(window.rem_size());
+        // The tree's width as dragged, read off the split; a size outside the
+        // range is the split seeding its panels before anything was measured.
+        let tree = self
+            .divider
+            .read(cx)
+            .sizes()
+            .first()
+            .map(|w| f32::from(*w))
+            .filter(|w| (TREE_MIN..=TREE_MAX).contains(w))
+            .unwrap_or(TREE_W);
+        let width = self.width.get();
+        let alone = !side_by_side(width, tree / rem);
+        self.editor
+            .update(cx, |editor, cx| editor.set_alone(alone, cx));
+        let (tree_shown, showing_file) = {
+            let editor = self.editor.read(cx);
+            (editor.tree_shown(), editor.showing_file())
+        };
+        let frame = div()
+            .size_full()
+            .relative()
+            .child(measure_width(self.width.clone(), cx.entity().downgrade()));
+        // `flex` and not `h_flex`: that one also centres its children across
+        // the row, which drew a half at its content's height in the middle of
+        // the panel instead of stretched down it.
+        if alone {
+            return frame
+                .flex()
+                .map(|frame| match showing_file {
+                    true => frame.child(self.editor.clone()),
+                    false => frame.child(div().size_full().v_flex().child(self.files.clone())),
+                })
+                .into_any_element();
+        }
         // Hidden, the buffers are drawn alone rather than beside a panel marked
         // invisible: the group still draws the divider's grip on the second
         // panel, which would leave a drag handle along the left edge moving
         // nothing. The divider's state is untouched, so the tree comes back at
         // the width it was dragged to.
-        if !self.editor.read(cx).tree_shown() {
-            // `flex` and not `h_flex`: that one also centres its children
-            // across the row, which drew the buffers at their content's height
-            // in the middle of the panel instead of stretched down it.
-            return div()
-                .size_full()
-                .flex()
-                .child(self.editor.clone())
-                .into_any_element();
+        if !tree_shown {
+            return frame.flex().child(self.editor.clone()).into_any_element();
         }
-        h_resizable("workbench-code")
-            .with_state(&self.divider)
+        // No drag takes the file under its least useful width, so dragging the
+        // tree never flips the pair into one at a time by itself.
+        let tree_max = (width * rem - DETAIL_MIN * rem).clamp(TREE_MIN, TREE_MAX);
+        frame
             .child(
-                // `flex_none`: the panel sets `flex_grow: 1` on itself, and a
-                // tree that grows is a tree taking whatever the editor is not
-                // using, which is most of the panel.
-                resizable_panel()
-                    .size(px(TREE_W))
-                    .size_range(px(TREE_MIN)..px(TREE_MAX))
-                    .flex_none()
+                h_resizable("workbench-code")
+                    .with_state(&self.divider)
                     .child(
-                        div()
-                            .size_full()
-                            .v_flex()
-                            // The handle draws a line only under the pointer, so
-                            // without this the tree and the code it opened run
-                            // into each other whenever nobody is dragging.
-                            .border_r_1()
-                            .border_color(cx.theme().border)
-                            .child(self.files.clone()),
-                    ),
-            )
-            // The floor is named rather than left at the library's default,
-            // which is `PANEL_MIN_SIZE` — the dock's whole minimum width, spent
-            // by one half of what is inside it.
-            .child(
-                resizable_panel()
-                    .size_range(px(TREE_MIN)..px(f32::MAX))
-                    .child(self.editor.clone()),
+                        // `flex_none`: the panel sets `flex_grow: 1` on itself,
+                        // and a tree that grows is a tree taking whatever the
+                        // editor is not using, which is most of the panel.
+                        resizable_panel()
+                            .size(px(TREE_W))
+                            .size_range(px(TREE_MIN)..px(tree_max))
+                            .flex_none()
+                            .child(
+                                div()
+                                    .size_full()
+                                    .v_flex()
+                                    // The one hairline between the halves, on
+                                    // the divider: its grip draws a line only
+                                    // while it is dragged.
+                                    .border_r_1()
+                                    .border_color(cx.theme().border)
+                                    .child(self.files.clone()),
+                            ),
+                    )
+                    .child(resizable_panel().child(self.editor.clone())),
             )
             .into_any_element()
     }
