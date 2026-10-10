@@ -2,7 +2,7 @@
 //! nobody offered, the strip of questions on a form with several, and the keys
 //! that answer it.
 
-use super::pinned::{CARD_INSET, Footer, Keys, Pinned, key_cap, pinned_card};
+use super::pinned::{CARD_INSET, Footer, Pinned, key_cap, pinned_card};
 use crate::chat::session::ChatSession;
 use crate::chat::transcript::parts::BlockingBody;
 use gpui::Focusable as _;
@@ -428,21 +428,13 @@ impl AskForm<'_> {
         )
     }
 
-    /// The footer: the keys at the left, then Skip and the forward button.
+    /// The footer: Skip, then the forward button.
     fn footer(&self) -> Footer {
         let (session, idx, active, quick) = (self.session, self.idx, self.active, self.quick);
         // The forward button is about *this* question: arming Submit off an
         // answer three tabs back would offer to send a blank one.
         let can_advance = self.a.field_answered(active);
         let last = self.a.is_last(active);
-        let keys: Keys = match quick {
-            true => &[(&["enter"], "choose")],
-            false => &[
-                (&["up", "down"], "move"),
-                (&["enter"], "choose"),
-                (&["escape"], "skip"),
-            ],
-        };
         let skip = (!quick).then(|| {
             let session = session.clone();
             crate::controls::action(("ask-skip", idx))
@@ -475,7 +467,6 @@ impl AskForm<'_> {
                 .into_any_element()
         };
         Footer {
-            keys,
             actions: skip.into_iter().chain(Some(forward)).collect(),
         }
     }
