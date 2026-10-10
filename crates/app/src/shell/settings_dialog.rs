@@ -400,8 +400,8 @@ pub(super) fn apply_appearance(choice: Appearance, window: Option<&mut Window>, 
     // The library paints a permanent 1px rule in the hairline colour down the
     // seam of every resizable split — between the rail and the docks, and
     // between the conversation and each dock. Every panel on the other side of
-    // one of those seams already marks it: the two docks are cards with four
-    // borders each, and the rail is a change of surface — the reading surface
+    // one of those seams already marks it: each dock draws a hairline on the
+    // edge it is dragged by, and the rail is a change of surface — the reading surface
     // against the well, a pair the ramp's own tests hold at 1.14 or better in
     // either palette, which is what makes a fill an edge rather than a tint. So
     // the rule was a second line beside a first, which reads as a seam that
@@ -415,5 +415,14 @@ pub(super) fn apply_appearance(choice: Appearance, window: Option<&mut Window>, 
     // beforehand is thrown away. This is the single place a mode is applied, at
     // boot and on every change, which is what keeps one write enough.
     gpui_base::Theme::global_mut(cx).resizable.handle = gpui::transparent_black();
+    // The code editor paints its line numbers on an opaque gutter, in the
+    // field's own background when the syntax theme names none: the reading
+    // surface, a dark band down a dock that is a step lighter. The only editor
+    // with line numbers is the Workbench's, so the gutter takes the dock's
+    // surface. Written here for the reason the handle is.
+    let theme = gpui_component::Theme::global_mut(cx);
+    let mut highlight = (*theme.highlight_theme).clone();
+    highlight.style.editor_gutter_background = Some(theme.tiles);
+    theme.highlight_theme = std::sync::Arc::new(highlight);
     cx.refresh_windows();
 }
