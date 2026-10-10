@@ -97,9 +97,14 @@ struct Ramp {
     marked: &'static str,
     /// Every hairline and card border.
     hairline: &'static str,
-    /// A control floating over the transcript: the composer, the completion
-    /// popup, the jump-to-latest pill.
+    /// A control floating over the transcript: the completion popup, the
+    /// cards pinned above the composer, the jump-to-latest pill.
     floating: &'static str,
+    /// The composer card, which draws no edge: its fill and its own lift are
+    /// all that stand it off the page and off the wells beside it. White in the
+    /// light palette, where the lift carries it; in the dark one a clear step
+    /// above the well, because a shadow barely shows on near-black.
+    raised: &'static str,
     /// A control's edge, and the scrollbar thumb.
     control: &'static str,
     /// The border marking where the keyboard is.
@@ -143,6 +148,7 @@ const LIGHT: Ramp = Ramp {
     marked: "#dedede",
     hairline: "#d4d4d4",
     floating: "#ffffff",
+    raised: "#ffffff",
     control: "#c7c7c7",
     ring: "#888888",
     // A shade under the lab's `#007acc`, which inline code tempered toward the
@@ -179,6 +185,7 @@ const DARK: Ramp = Ramp {
     // The well's grey: the lab's panel sits too close to the surface for a
     // card that has no visible shadow to stand on.
     floating: "#282828",
+    raised: "#303030",
     control: "#404040",
     ring: "#767676",
     // Blue in both modes, lifted to read on near-black: running and waiting
@@ -480,6 +487,57 @@ pub(crate) fn lift(cx: &App) -> Vec<gpui::BoxShadow> {
         shadow(2., 4., -1., alpha),
         shadow(10., 20., -4., alpha * 0.8),
     ]
+}
+
+/// The composer card's fill. No library token holds it, so it is read off the
+/// ramp by mode, the way [`lift`] chooses its alpha.
+pub(crate) fn raised(cx: &App) -> Hsla {
+    let ramp = match cx.theme().mode.is_dark() {
+        true => &DARK,
+        false => &LIGHT,
+    };
+    Hsla::parse_hex(ramp.raised).unwrap_or(cx.theme().popover)
+}
+
+/// The composer's lift, in pixels as a hairline is: the tight shadow's blur,
+/// then the soft one's drop and blur.
+const COMPOSER_EDGE_BLUR: f32 = 1.5;
+const COMPOSER_DROP: f32 = 4.;
+const COMPOSER_BLUR: f32 = 16.;
+
+/// The composer card's lift: a tight shadow drawn where an edge would be, and a
+/// soft one under it.
+///
+/// **Its own rather than [`lift`]**, because the card has no border: the tight
+/// shadow is the whole of its outline on a white page, so it has to be dark
+/// enough to read as one, where the floating cards keep a hairline and only
+/// need the elevation.
+pub(crate) fn composer_lift(cx: &App) -> Vec<gpui::BoxShadow> {
+    let (edge, soft) = composer_shades(cx.theme().mode.is_dark());
+    let shadow = |color: Hsla, y: f32, blur: f32| gpui::BoxShadow {
+        color,
+        offset: gpui::point(gpui::px(0.), gpui::px(y)),
+        blur_radius: gpui::px(blur),
+        spread_radius: gpui::px(0.),
+        inset: false,
+    };
+    vec![
+        shadow(edge, 0., COMPOSER_EDGE_BLUR),
+        shadow(soft, COMPOSER_DROP, COMPOSER_BLUR),
+    ]
+}
+
+/// The two shadows' colours. Near-black prose ink on the light page, where
+/// pure black reads as a smudge; pure black on the dark one, which needs far
+/// more of it to show at all.
+fn composer_shades(dark: bool) -> (Hsla, Hsla) {
+    match dark {
+        true => (gpui::hsla(0., 0., 0., 0.6), gpui::hsla(0., 0., 0., 0.4)),
+        false => {
+            let ink = Hsla::parse_hex(LIGHT.foreground).unwrap_or(gpui::black());
+            (ink.alpha(0.18), ink.alpha(0.10))
+        }
+    }
 }
 
 fn lift_alpha(dark: bool) -> f32 {
@@ -1094,6 +1152,75 @@ mod tests {
             assert!(
                 mode == ThemeMode::Light || shipped < ROW,
                 "dark: the component ladder's shadow is visible after all, so this is not needed"
+            );
+        }
+    }
+
+    /// The composer card has no edge, so its fill has to stand off what lies
+    /// beside it: the page in the dark palette, where its lift barely shows,
+    /// and the well in both. And everything written on it has to read.
+    #[test]
+    fn the_raised_card_stands_off_the_page_and_the_well() {
+        for (name, ramp, mode) in [
+            ("light", &LIGHT, ThemeMode::Light),
+            ("dark", &DARK, ThemeMode::Dark),
+        ] {
+            let theme = resolve(ramp, mode);
+            let raised = Hsla::parse_hex(ramp.raised).unwrap();
+            if mode == ThemeMode::Dark {
+                let ratio = contrast(raised, theme.background);
+                assert!(
+                    ratio >= STEP,
+                    "{name}: the card is {ratio:.2} from the page"
+                );
+            }
+            // A notch under a surface step: the card's lift draws the edge a
+            // fill would otherwise have to, so the fill only has to differ.
+            const CARD_STEP: f32 = 1.1;
+            let ratio = contrast(raised, theme.muted);
+            assert!(
+                ratio >= CARD_STEP,
+                "{name}: the card is {ratio:.2} from the well"
+            );
+            for (label, ink) in [
+                ("prose", theme.foreground),
+                ("meta ink", theme.muted_foreground),
+            ] {
+                let ratio = contrast(ink, raised);
+                assert!(ratio >= AA, "{name}: {label} on the card is {ratio:.2}");
+            }
+        }
+    }
+
+    /// The tight shadow is the card's whole outline, so composited onto the
+    /// page under it, it has to be a difference a reader can see.
+    #[test]
+    fn the_composer_lift_outlines_the_card_on_both_palettes() {
+        fn over(fill: Hsla, under: Hsla) -> Hsla {
+            let (f, u) = (gpui::Rgba::from(fill), gpui::Rgba::from(under));
+            let mix = |a: f32, b: f32| b + (a - b) * f.a;
+            gpui::Rgba {
+                r: mix(f.r, u.r),
+                g: mix(f.g, u.g),
+                b: mix(f.b, u.b),
+                a: 1.,
+            }
+            .into()
+        }
+        for (name, ramp, mode) in [
+            ("light", &LIGHT, ThemeMode::Light),
+            ("dark", &DARK, ThemeMode::Dark),
+        ] {
+            let theme = resolve(ramp, mode);
+            let (edge, soft) = composer_shades(mode == ThemeMode::Dark);
+            let ratio = contrast(over(edge, theme.background), theme.background);
+            assert!(
+                ratio >= ROW,
+                "{name}: the card's edge is {ratio:.2} on the page"
+            );
+            assert!(
+                soft.a < edge.a,
+                "{name}: the soft shadow outweighs the edge"
             );
         }
     }

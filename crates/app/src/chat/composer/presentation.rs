@@ -24,7 +24,7 @@ pub(super) struct Row {
     /// choice leaves it empty, because there the rows are all the same kind of
     /// thing and an icon per row would be a second alphabet for a column of
     /// four words.
-    pub(super) mark: Option<IconName>,
+    pub(super) mark: Option<Icon>,
     /// Where the query matched the label, and the detail.
     ///
     /// **The whole of how a row says why it is in the list**, drawn as the two
@@ -62,6 +62,8 @@ pub(super) enum Pick {
         config_id: String,
         value: String,
     },
+    /// Something done to the branch, carried out by the pane.
+    Branch(super::BranchAct),
     /// Open one of the composer's own controls rather than putting anything in
     /// the buffer. What the row named is a way *to* a control, so taking it has
     /// to leave the field as it found it.
@@ -88,6 +90,10 @@ pub(super) enum Act {
     Attach,
     /// Type an `@` into the field, so the mention list opens on it.
     Mention,
+    /// Put a `/` at the front of the field, so the command list opens on it.
+    Command,
+    /// Open the workflow launcher, which the window owns.
+    Workflow,
 }
 
 impl Act {
@@ -102,7 +108,7 @@ impl Act {
             Self::Options => Some(super::Overlay::Options),
             Self::Mode => Some(super::Overlay::Mode),
             Self::Fast => Some(super::Overlay::Fast),
-            Self::Attach | Self::Mention => None,
+            Self::Attach | Self::Mention | Self::Command | Self::Workflow => None,
         }
     }
 }
@@ -306,19 +312,13 @@ fn rows_of(option: &onehand_core::acp::ConfigOption) -> Vec<Row> {
 
 /// The model in force, as the chip says it.
 ///
-/// **The model alone.** Effort used to ride here in the quieter ink, and it has
-/// its own control in the row now — the same setting said twice an inch apart
-/// is two places to read one fact and one of them will be a frame behind.
-///
 /// `None` where there is nothing for the chip's popup to hold at all.
 ///
 /// **The rail counts as something to open.** Effort is drawn at the foot of
 /// that popup and nowhere else, so a chip withheld because the *list* above the
 /// rail is empty is effort made unreachable — which is exactly the shape an
 /// agent advertising effort and fast mode and nothing else has, since both of
-/// those are promoted out of the list and neither leaves a row behind. The
-/// popup itself already draws a rail with no rows above it; this is the control
-/// that opens it agreeing about when there is something to see.
+/// those are promoted out of the list and neither leaves a row behind.
 pub(super) fn options_action(session: &Entity<ChatSession>, cx: &App) -> Option<SharedString> {
     let options = &session.read(cx).chat.config_options;
     if !opens_onto_something(options) {
@@ -330,6 +330,145 @@ pub(super) fn options_action(session: &Entity<ChatSession>, cx: &App) -> Option<
         .and_then(in_force)
         .map(|choice| SharedString::from(choice.name.clone()));
     Some(model.unwrap_or_else(|| SharedString::from("Model")))
+}
+
+/// The effort in force, as the model chip says it after the model's name: the
+/// qualifier in lower case, so the two read as a name and what it is run at.
+pub(super) fn effort_action(session: &Entity<ChatSession>, cx: &App) -> Option<SharedString> {
+    let options = &session.read(cx).chat.config_options;
+    options
+        .iter()
+        .find(|option| names(option, SEGMENTED_GROUP))
+        .and_then(in_force)
+        .map(|choice| SharedString::from(choice.name.to_lowercase()))
+}
+
+/// Fast mode as a switch: which way it stands, and the value a press sends.
+pub(super) struct FastToggle {
+    pub(super) on: bool,
+    pub(super) config_id: String,
+    pub(super) flip_to: String,
+}
+
+/// Words that name a choice as the *on* side of a fast group, and as the off.
+const ON_WORDS: [&str; 5] = ["on", "true", "enabled", "yes", "fast"];
+const OFF_WORDS: [&str; 7] = [
+    "off", "false", "disabled", "no", "normal", "standard", "default",
+];
+
+/// The fast group as a switch, where it is unmistakably one.
+///
+/// **Exactly two choices, and one of them named as on or off** by its value or
+/// its label. Anything else stays a picker: a switch that guessed which of two
+/// agent-chosen words meant *on* would show a position nobody can check, where
+/// the picker names both values and ticks the one in force.
+fn toggle_of(option: &onehand_core::acp::ConfigOption) -> Option<FastToggle> {
+    let [a, b] = option.choices.as_slice() else {
+        return None;
+    };
+    let says = |choice: &onehand_core::acp::ConfigChoice, words: &[&str]| {
+        [&choice.value, &choice.name]
+            .iter()
+            .any(|word| words.contains(&word.trim().to_lowercase().as_str()))
+    };
+    let (on, off) = match (
+        says(a, &ON_WORDS) || says(b, &OFF_WORDS),
+        says(b, &ON_WORDS) || says(a, &OFF_WORDS),
+    ) {
+        (true, false) => (a, b),
+        (false, true) => (b, a),
+        _ => return None,
+    };
+    let is_on = option.current.as_deref() == Some(on.value.as_str());
+    Some(FastToggle {
+        on: is_on,
+        config_id: option.id.clone(),
+        flip_to: match is_on {
+            true => off.value.clone(),
+            false => on.value.clone(),
+        },
+    })
+}
+
+/// The fast group as a switch, where the agent offers one that reads as one.
+pub(super) fn fast_toggle(session: &Entity<ChatSession>, cx: &App) -> Option<FastToggle> {
+    chip_group(&session.read(cx).chat.config_options, CHIP_GROUP).and_then(toggle_of)
+}
+
+/// The `+` menu's rows.
+///
+/// **Each row names the mark it stands for**, in its glyph and its detail. With
+/// a Vietnamese input method on Linux a typed `@` or `/` can be swallowed before
+/// it reaches the composer, so these rows are the only route to either trigger.
+pub(super) fn add_rows() -> Vec<Row> {
+    [
+        (
+            "Attach files…",
+            None,
+            Icon::new(crate::icons::Icon::Paperclip),
+            Act::Attach,
+        ),
+        (
+            "Mention a file",
+            Some("@"),
+            Icon::new(crate::icons::Icon::AtSign),
+            Act::Mention,
+        ),
+        (
+            "Run a slash command",
+            Some("/"),
+            Icon::new(crate::icons::Icon::SquareSlash),
+            Act::Command,
+        ),
+        // Not something put into this prompt but a run of prompts, so it goes
+        // up to the window, which owns runs, as its key does.
+        (
+            "Run a workflow…",
+            None,
+            Icon::new(IconName::Play),
+            Act::Workflow,
+        ),
+    ]
+    .into_iter()
+    .map(|(label, detail, mark, act)| Row {
+        label: label.into(),
+        detail: detail.map(SharedString::from),
+        mark: Some(mark),
+        pick: Pick::Act(act),
+        ..Row::default()
+    })
+    .collect()
+}
+
+/// The branch chip's rows: everything the shell already does about the branch
+/// a reader is looking at, without leaving for the rail.
+pub(super) fn branch_rows() -> Vec<Row> {
+    use super::BranchAct;
+    [
+        (
+            "Rename branch…",
+            Icon::new(crate::icons::Icon::SquarePen),
+            BranchAct::Rename,
+        ),
+        (
+            "New worktree…",
+            Icon::new(crate::icons::Icon::GitBranch),
+            BranchAct::Worktree,
+        ),
+        (
+            "Refresh Git status",
+            Icon::new(IconName::Redo),
+            BranchAct::Refresh,
+        ),
+    ]
+    .into_iter()
+    .map(|(label, mark, act)| Row {
+        label: label.into(),
+        mark: Some(mark),
+        pick: Pick::Branch(act),
+        ..Row::default()
+    })
+    .collect()
 }
 
 pub(super) fn mode_rows(session: &Entity<ChatSession>, cx: &App) -> Vec<Row> {
@@ -445,6 +584,7 @@ pub(super) fn composer_status(blocked: Option<SubmitBlock>, cx: &App) -> Option<
 mod tests {
     use super::{
         CHIP_GROUP, SEGMENTED_GROUP, config_rank, listed, names, opens_onto_something, segments_of,
+        toggle_of,
     };
     use onehand_core::acp::{ConfigChoice, ConfigOption};
 
@@ -537,6 +677,33 @@ mod tests {
         assert!(
             !opens_onto_something(&[effort("fast", "Fast mode", &["on", "off"], Some("on"))]),
             "the chip draws fast mode itself, so its popup would open onto nothing"
+        );
+    }
+
+    #[test]
+    fn fast_is_a_switch_only_when_its_two_values_say_which_is_on() {
+        let on = toggle_of(&effort("fast", "Fast", &["on", "off"], Some("on"))).expect("a switch");
+        assert!(on.on);
+        assert_eq!(on.flip_to, "off");
+        let off = toggle_of(&effort("fast", "Fast", &["normal", "fast"], Some("normal")))
+            .expect("one side named is enough");
+        assert!(!off.on);
+        assert_eq!(off.flip_to, "fast");
+        assert!(
+            toggle_of(&effort("fast", "Fast", &["on", "off"], None)).is_some_and(|t| !t.on),
+            "nothing in force reads as off, and a press turns it on"
+        );
+        assert!(
+            toggle_of(&effort("fast", "Fast", &["turbo", "eco"], Some("eco"))).is_none(),
+            "two words neither of which says on or off stay a picker"
+        );
+        assert!(
+            toggle_of(&effort("fast", "Fast", &["on", "off", "auto"], Some("on"))).is_none(),
+            "a third value is no switch"
+        );
+        assert!(
+            toggle_of(&effort("fast", "Fast", &["on", "yes"], Some("on"))).is_none(),
+            "two values both saying on is no switch"
         );
     }
 

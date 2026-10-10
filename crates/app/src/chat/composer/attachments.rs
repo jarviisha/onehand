@@ -1,4 +1,4 @@
-use super::popup::{POPUP_INSET, edge_scrolled, popup_footer, popup_header};
+use super::popup::{edge_scrolled, more_text, popup_footer, popup_header, popup_surface};
 use super::{CHIP_H, Composer, ComposerEvent, Overlay};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -139,7 +139,7 @@ impl Composer {
         cx.notify();
     }
 
-    /// The staged files, as a horizontally scrolling tray.
+    /// The staged files, as a tray of chips that wraps.
     ///
     /// Bounded like everything else that grows with what the user did: a folder
     /// dropped on the card is however many files it held, and a tray of two
@@ -155,20 +155,20 @@ impl Composer {
         if self.attachments.is_empty() {
             return None;
         }
-        let (border, muted, danger_border, danger_text, radius) = (
+        let (border, muted, danger_border, danger_text, radius, well) = (
             cx.theme().border,
             cx.theme().muted_foreground,
             cx.theme().danger,
             crate::theme::status_ink(cx).danger,
             cx.theme().radius,
+            cx.theme().muted,
         );
         Some(
             div()
-                .id("attachments")
                 .h_flex()
-                .gap_2()
+                .flex_wrap()
+                .gap_1()
                 .w_full()
-                .overflow_x_scroll()
                 .children(
                     self.attachments
                         .iter()
@@ -185,11 +185,13 @@ impl Composer {
                                     AttachmentKind::Image => IconName::Frame,
                                     AttachmentKind::File => IconName::File,
                                 })
-                                .size_3()
+                                .xsmall()
+                                .text_color(muted)
                                 .into_any_element(),
                                 div()
                                     .max_w(ATTACHMENT_MAX_W)
                                     .truncate()
+                                    .text_color(cx.theme().foreground)
                                     .when(unavailable, |el| el.text_color(danger_text))
                                     .child(a.name.clone())
                                     .into_any_element(),
@@ -229,8 +231,7 @@ impl Composer {
                                 Some(path) => attachment_shape(
                                     crate::controls::action(("attachment", i)).ghost(),
                                     unavailable,
-                                    border,
-                                    danger_border,
+                                    (border, danger_border, well),
                                     radius,
                                 )
                                 .children(parts)
@@ -244,8 +245,7 @@ impl Composer {
                                 None => attachment_shape(
                                     div(),
                                     unavailable,
-                                    border,
-                                    danger_border,
+                                    (border, danger_border, well),
                                     radius,
                                 )
                                 .children(parts)
@@ -255,15 +255,11 @@ impl Composer {
                             }
                         }),
                 )
-                // **Offered from the second attachment, not from the
-                // thirteenth.** The tray scrolls sideways, so two long names on
-                // a narrow panel already push a chip past the edge — and the
-                // list this opens is the one place a chip out there can still be
-                // found and taken off. Gated on the tray's own *chip cap*, the
-                // way back to a staged file nobody can see was itself invisible
-                // until there were twelve of them. One attachment needs nothing:
-                // the single chip beside the button is already the whole list.
-                .when(self.attachments.len() > 1, |tray| {
+                // Past the chip cap, the way to the files the tray no longer
+                // draws: the list this opens is the one place they can still be
+                // found and taken off. Under it the tray wraps and every chip is
+                // already on screen.
+                .when(self.attachments.len() > MAX_TRAY_CHIPS, |tray| {
                     tray.child(
                         crate::controls::action("all-attachments")
                             .ghost()
@@ -359,47 +355,22 @@ impl Composer {
                     }),
             );
 
-        div()
-            .v_flex()
-            .w_full()
-            .rounded(cx.theme().radius_lg)
-            .border_1()
-            // A step up rather than the hairline every other edge takes, for
-            // the reason the option lists carry the same colour: this opens
-            // from inside the composer, which is floating too, so its surface
-            // and the one behind it are the same and only the edge can say
-            // where one ends.
-            .border_color(cx.theme().accent)
-            .bg(cx.theme().popover.alpha(1.))
-            .shadow(crate::theme::lift(cx))
-            // The conversation behind must not move because of this card
-            // either; see the reason on the list above.
-            .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
-            .p(POPUP_INSET)
-            // The same pinned row every other popup carries. This one is built
-            // by its own function rather than through `popup`, so leaving it
-            // out here would make the header a property of which overlay
-            // happened to be open rather than of the card they all share.
+        popup_surface(cx)
             // The count rides in the pinned title rather than in a row of its
-            // own at the top of the list. That row said "Staged attachments"
-            // directly under a header already reading "Attachments" — one name
-            // twice within an inch — and it scrolled, so the half of it that
-            // was not a duplicate went away the moment the list was long enough
-            // to need it.
+            // own, which scrolled away once the list was long enough to need it.
             .child(popup_header(
                 format!("Attachments · {}", self.attachments.len()).into(),
                 cx,
             ))
             .child(edge_scrolled(&self.attachments_scroll, list))
-            // Pinned under the list and behind the same rule the completion
-            // popup's footer takes. Held among the rows it was scrolled out of
-            // sight in exactly the case that produced it: it only exists once
-            // there are more attachments than the manager draws.
+            // Under the list, where the rows it stands for would be: it only
+            // exists once there are more attachments than the manager draws.
             .when(hidden > 0, |popup| {
-                popup.child(popup_footer(cx).child(format!(
+                popup.child(more_text(cx).child(format!(
                     "{hidden} more — remove visible items to reveal them"
                 )))
             })
+            .child(popup_footer(&[(&["escape"], "close")], cx))
     }
 }
 
@@ -432,20 +403,20 @@ fn openable(attachment: &StagedAttachment) -> Option<std::path::PathBuf> {
 fn attachment_shape<E: Styled>(
     el: E,
     unavailable: bool,
-    border: gpui::Hsla,
-    danger: gpui::Hsla,
+    (border, danger, well): (gpui::Hsla, gpui::Hsla, gpui::Hsla),
     radius: gpui::Pixels,
 ) -> E {
     el.h_flex()
         .items_center()
-        .gap_1()
+        .gap_2()
         .flex_none()
+        .h(CHIP_H)
         .pl_2()
         .pr_1()
-        .py_1()
         .rounded(radius)
         .border_1()
         .border_color(if unavailable { danger } else { border })
+        .bg(well)
         .text_xs()
 }
 
@@ -459,11 +430,10 @@ fn attachment_shape<E: Styled>(
 /// shell makes them one family structurally rather than by two sets of style
 /// rules kept in step by hand.
 ///
-/// Two fills and no rules. Hover is the fainter step and an open popup the
-/// stronger one, which is the whole of the difference between "the pointer is
-/// here" and "this is the control you are editing" -- and it costs the row no
-/// width, where a border would have had to be carried by every control at rest
-/// to keep the row from shifting.
+/// A ghost control at a small button's height, its words lettered at
+/// `text_xs` by each chip on the child that carries them, in full ink, while
+/// its glyphs and its caret take the chip's muted ink. The chip whose popup is
+/// open takes the selected fill, and keeps it under the pointer.
 pub(super) fn chip(id: impl Into<gpui::ElementId>, open: bool, cx: &App) -> Button {
     let (open_fill, fg, radius) = (
         cx.theme().accent,

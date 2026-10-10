@@ -1,14 +1,11 @@
 //! The composer's overlay: the card that floats over the transcript, with
 //! whatever is pinned above it and the popups that open from it.
 
-use super::body::branch_control;
 use super::{COMPOSER_COLUMN, ChatPane, OverlayRoom};
 use crate::chat::session::ChatSession;
 use crate::chat::transcript::{self};
 use gpui::prelude::FluentBuilder as _;
-use gpui::{
-    Context, Entity, Focusable, InteractiveElement, IntoElement, ParentElement, Styled, Window, div,
-};
+use gpui::{Context, Entity, InteractiveElement, IntoElement, ParentElement, Styled, Window, div};
 use gpui_component::StyledExt;
 
 impl ChatPane {
@@ -33,24 +30,8 @@ impl ChatPane {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let pinned = self.pinned(session, room.well, window, cx);
-        let git = self
-            .git
-            .clone()
-            .map(|line| branch_control(line, cx.entity(), cx).into_any_element());
+        let git = self.git.clone();
         let pane = cx.entity();
-        // The field draws no ring of its own once the card is its border, so
-        // the card has to answer "does typing go here" -- with an app keymap
-        // that reaches over the terminal and a rail that can take focus, an
-        // input with no focused state is one the user has to test by typing.
-        //
-        // Asked here rather than handed in: it is a question about a window,
-        // and this is the innermost place holding one.
-        let typing_here = self
-            .composer
-            .read(cx)
-            .state
-            .focus_handle(cx)
-            .contains_focused(window, cx);
 
         div()
             .absolute()
@@ -192,7 +173,9 @@ impl ChatPane {
                         .child(
                             div()
                                 .v_flex()
-                                .gap_2()
+                                // The same gap the composer keeps from the cards,
+                                // so the whole stack reads as one rhythm.
+                                .gap_2p5()
                                 .w_full()
                                 .max_w(COMPOSER_COLUMN)
                                 .mx_auto()
@@ -293,7 +276,7 @@ impl ChatPane {
                             // transcript keeps painting through it; only the
                             // surfaces below cover what sits directly behind
                             // them.
-                            .pb_4()
+                            .pb_3()
                             .child(
                                 div()
                                     .v_flex()
@@ -301,7 +284,7 @@ impl ChatPane {
                                     .max_w(COMPOSER_COLUMN)
                                     .mx_auto()
                                     .child(self.composer.update(cx, |composer, cx| {
-                                        composer.card(session, blocked, typing_here, cx)
+                                        composer.card(session, blocked, cx)
                                     }))
                                     // Under the card and inside the measured
                                     // box, so the transcript ends above the
@@ -310,7 +293,7 @@ impl ChatPane {
                                     // whole overlay comes to, and the strip
                                     // appears and disappears with the project.
                                     .children(self.composer.update(cx, |composer, cx| {
-                                        composer.status_row(session, git, cx)
+                                        composer.status_row(session, git, room.narrow_strip, cx)
                                     })),
                             ),
                     ),

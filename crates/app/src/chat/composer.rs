@@ -34,13 +34,13 @@ use onehand_core::attachment::StagedAttachment;
 use onehand_core::completion::ActiveTrigger;
 
 mod presentation;
-use presentation::{fast_rows, mode_rows, options_rows};
 
 mod attachments;
 mod card;
 mod complete;
 mod popup;
 mod rows;
+pub(in crate::chat) use card::COMPOSER_SPLIT;
 pub(in crate::chat) use popup::POPUP_STACK_PEEK;
 pub use popup::popup_room;
 
@@ -64,6 +64,7 @@ pub use popup::popup_room;
 /// holds it, blending the fill the way the compositor does rather than
 /// asserting on the token it came from.
 pub(crate) const SELECTED_ALPHA: f32 = 0.75;
+
 /// The size the composer's own controls are lettered at.
 ///
 /// The smallest named reading size. These controls should remain quieter than
@@ -105,13 +106,14 @@ pub enum Overlay {
     /// Model, effort, and every other agent-advertised config choice in one
     /// directly selectable list.
     Options,
-    /// The one config group given a chip of its own on the strip below the
-    /// card. A picker like the two above and not a switch: two rows name both
-    /// values and tick the one in force, where a switch shows a position and
-    /// leaves the reader to work out which way round it is -- and the agent's
-    /// own sentence about each value, which is where a setting that refuses to
-    /// stay put says why, has somewhere to go.
+    /// The fast group's choices, where they are not a plain switch: the chip
+    /// toggles a group whose two values say which is on, and opens this for
+    /// anything else, so both values are named and the one in force ticked.
     Fast,
+    /// The `+` menu: what can be put into the prompt from a control.
+    Add,
+    /// What can be done about the branch on the strip under the card.
+    Branch,
     /// All staged attachments, including the entries hidden by the compact
     /// tray's rendering bound.
     Attachments,
@@ -170,6 +172,17 @@ pub enum ComposerEvent {
     /// rather than done here: which dock the Workbench lives in and whether it
     /// has to be opened first are the shell's business, not the composer's.
     OpenFile(std::path::PathBuf),
+    /// Something done to the project's branch from its chip. The pane owns the
+    /// way to the shell, which carries it out.
+    Branch(BranchAct),
+}
+
+/// What the branch chip's menu offers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BranchAct {
+    Rename,
+    Worktree,
+    Refresh,
 }
 
 impl gpui::EventEmitter<ComposerEvent> for Composer {}
@@ -369,28 +382,14 @@ impl Composer {
                 };
                 self.apply_pick(&pick, session, window, cx)
             }
-            Some(Overlay::Fast) => {
-                let rows = fast_rows(session, cx);
-                let Some(row) =
-                    highlight(self.selected, rows.len()).and_then(|row| rows.into_iter().nth(row))
-                else {
-                    self.close_overlay(cx);
-                    return true;
-                };
-                self.apply_pick(&row.pick, session, window, cx)
-            }
-            Some(Overlay::Mode) => {
-                let rows = mode_rows(session, cx);
-                let Some(row) =
-                    highlight(self.selected, rows.len()).and_then(|row| rows.into_iter().nth(row))
-                else {
-                    self.close_overlay(cx);
-                    return true;
-                };
-                self.apply_pick(&row.pick, session, window, cx)
-            }
-            Some(Overlay::Options) => {
-                let rows = options_rows(session, cx);
+            Some(
+                picker @ (Overlay::Fast
+                | Overlay::Mode
+                | Overlay::Options
+                | Overlay::Add
+                | Overlay::Branch),
+            ) => {
+                let rows = complete::picker_rows(&picker, session, cx).unwrap_or_default();
                 let Some(row) =
                     highlight(self.selected, rows.len()).and_then(|row| rows.into_iter().nth(row))
                 else {

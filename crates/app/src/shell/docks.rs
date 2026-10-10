@@ -32,6 +32,19 @@ impl Shell {
             .update(cx, |pane, cx| pane.set_terminal_live(live, cx));
     }
 
+    /// Tell the conversation header which docks are open, so their buttons can
+    /// show it. Guarded on the pane's side; run on every frame the window draws,
+    /// because a dock opens from more places than any one hook sees.
+    pub(super) fn sync_docks_open(&mut self, cx: &mut Context<Self>) {
+        let dock = self.dock.read(cx);
+        let open = (
+            dock.is_dock_open(DockPlacement::Bottom, cx),
+            dock.is_dock_open(DockPlacement::Right, cx),
+        );
+        self.chat
+            .update(cx, |pane, cx| pane.set_docks_open(open, cx));
+    }
+
     /// Read the dock's current geometry back out.
     ///
     /// Four facts, not `DockArea::dump`. `dump` produces a whole

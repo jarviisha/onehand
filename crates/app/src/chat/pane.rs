@@ -9,7 +9,7 @@
 //! window handle — plus the one question the pane alone can answer, which is
 //! which conversation the user is looking at.
 
-use super::composer::{Composer, ComposerEvent};
+use super::composer::{BranchAct, Composer, ComposerEvent};
 use super::conversation::Conversation;
 use super::session::ChatSession;
 use super::transcript;
@@ -77,11 +77,13 @@ const COMPOSER_REST: Rems = rems(transcript::TURN_GAP.0 * 1.5);
 /// The resting composer is about this tall; using zero until prepaint is what
 /// lets the initial transcript tail land behind it.
 const COMPOSER_MIN_H: Rems = rems(6.5);
-/// The air between the column and the edge of the panel.
+/// The reading column's own inset, inside its cap: the air between the text
+/// and the column's edge, which is the panel's edge once the panel is narrower
+/// than the cap.
 ///
 /// The narrow figure is for a panel too short to spare the wide one: below that
 /// width the margin is taking room from the line itself rather than framing it.
-const SIDE_MARGIN: Rems = rems(1.25);
+const SIDE_MARGIN: Rems = rems(1.);
 const SIDE_MARGIN_NARROW: Rems = rems(0.75);
 /// Where a panel stops being wide enough to hold the column off its edges.
 const NARROW_PANEL: Rems = rems(30.);
@@ -131,6 +133,9 @@ struct OverlayRoom {
     /// The panel's own height, for a card bounding itself against the space it
     /// has. `None` before the list has measured itself once.
     well: Option<gpui::Pixels>,
+    /// Whether the composer stack is narrower than the strip under it can hold
+    /// on one line, measured on the panel rather than the window.
+    narrow_strip: bool,
 }
 
 /// The space between two ordinary blocks of one turn, and the step every other
@@ -282,6 +287,9 @@ pub struct ChatPane {
     /// dock that may well be closed, which is the one thing the terminal button
     /// cannot say by being a button.
     terminal_live: bool,
+    /// Whether the terminal and the Workbench docks are open, so their header
+    /// buttons can show it. Pushed by the shell, which owns the docks.
+    docks_open: (bool, bool),
     /// The active project's branch and change count, as one line.
     ///
     /// Pushed by the shell like the two flags above, and for the same reason:
@@ -379,6 +387,13 @@ impl ChatPane {
                     // is already absolute -- everything staged here arrives
                     // from the picker, the clipboard or a drop.
                     ComposerEvent::OpenFile(path) => cx.emit(ChatPaneEvent::OpenFile(path.clone())),
+                    // The branch chip's menu, carried out by the shell as the
+                    // rail's own entries are.
+                    ComposerEvent::Branch(act) => cx.emit(ChatPaneEvent::Project(match act {
+                        BranchAct::Rename => ProjectAction::RenameBranch,
+                        BranchAct::Worktree => ProjectAction::Worktree,
+                        BranchAct::Refresh => ProjectAction::RefreshGit,
+                    })),
                 },
             )
             .detach();
@@ -397,6 +412,7 @@ impl ChatPane {
                 pending_resume: None,
                 rail_hidden: false,
                 terminal_live: false,
+                docks_open: (false, false),
                 git: None,
                 composer_h: Default::default(),
                 composer_drawn: false,
@@ -504,6 +520,15 @@ impl ChatPane {
             return;
         }
         self.terminal_live = live;
+        cx.notify();
+    }
+
+    /// Whether the terminal and the Workbench docks are open, in that order.
+    pub fn set_docks_open(&mut self, open: (bool, bool), cx: &mut Context<Self>) {
+        if self.docks_open == open {
+            return;
+        }
+        self.docks_open = open;
         cx.notify();
     }
 
