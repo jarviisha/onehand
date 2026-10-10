@@ -412,8 +412,6 @@ impl Render for TerminalPanel {
                 div()
                     .size_full()
                     .v_flex()
-                    .border_1()
-                    .border_color(cx.theme().border)
                     .rounded(cx.theme().radius_lg)
                     .overflow_hidden()
                     .bg(crate::theme::dock_surface(cx))
