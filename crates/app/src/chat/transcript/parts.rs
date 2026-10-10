@@ -1,6 +1,7 @@
 use super::fold_key;
 use super::metrics::{
-    BUTTON_H, CONTROL_ROW, DETAIL_OPEN_H, LEADING, MARK_SIZE, TEXT_SM, TIGHT_GAP,
+    BUTTON_H, CONTROL_ROW, DETAIL_OPEN_H, LEADING, MARK_SIZE, PART_GAP, PILL_H, TEXT_SM, TIGHT_GAP,
+    radius_control,
 };
 use crate::chat::session::ChatSession;
 use gpui::prelude::FluentBuilder as _;
@@ -383,6 +384,41 @@ pub(super) fn grows(button: Button) -> Button {
 
 // ── permission — blocking; the agent parks until answered ───────────────────
 
+/// The surface every card and strip that floats over the composer is built on.
+///
+/// **One function because there are four of them** — a parked permission, a
+/// parked question, an adapter still connecting, a prompt waiting its turn —
+/// and they arrive in one column, stacked, directly above the composer. Written
+/// out four times they came apart exactly where four copies do: two sat on the
+/// reading surface with a hairline and a single radius while the other two
+/// floated on the raised one with a shadow and a doubled radius, so a
+/// permission parked above a queued prompt read as two unrelated things rather
+/// than as the same kind of interruption twice.
+///
+/// It is the **composer's own treatment**, and has to be: these are the boxes
+/// that stack on top of that card and are read as one object with it. The
+/// radius is the theme's named card step for the same reason the composer takes
+/// it — one window drawing its floating surfaces at two corners is a difference
+/// nobody chose.
+///
+/// The shadow stays on a card **drawn back in the transcript once it has been
+/// answered**, which is deliberate and not an oversight. The same element is
+/// used in both places by design — one card that changed on being answered
+/// would read as two different cards — and what it carries into the history is
+/// the mark of the one block that stopped everything until somebody replied.
+pub(in crate::chat) fn floating_card(cx: &App) -> gpui::Div {
+    div()
+        .w_full()
+        .rounded(cx.theme().radius_lg)
+        .border_1()
+        .border_color(cx.theme().border)
+        // Opaque, and not the reading surface: the transcript runs underneath
+        // these and text showing through a box that is asking a question is the
+        // one place in the app that cannot afford it.
+        .bg(cx.theme().popover.alpha(1.))
+        .shadow_lg()
+}
+
 // ── shared bits ─────────────────────────────────────────────────────────────
 
 /// What the fixed slot at the head of an activity row holds.
@@ -406,6 +442,10 @@ pub enum RowMark {
     /// other end of the row.
     Recovered,
     Failed,
+    /// A step somebody refused. Not a failure — nothing went wrong, a decision
+    /// was taken — so it reads like any settled step and says the rest in
+    /// words.
+    Refused,
 }
 
 impl RowMark {
@@ -435,11 +475,13 @@ impl RowMark {
     fn draw(self, kind: SharedString, cx: &App) -> gpui::AnyElement {
         match self {
             Self::Running => Spinner::new().xsmall().color(accent(cx)).into_any_element(),
-            Self::Waiting | Self::Done | Self::Recovered | Self::Failed => Icon::empty()
-                .path(kind)
-                .xsmall()
-                .text_color(cx.theme().muted_foreground)
-                .into_any_element(),
+            Self::Waiting | Self::Done | Self::Recovered | Self::Failed | Self::Refused => {
+                Icon::empty()
+                    .path(kind)
+                    .xsmall()
+                    .text_color(cx.theme().muted_foreground)
+                    .into_any_element()
+            }
         }
     }
 }
@@ -689,4 +731,22 @@ pub(super) fn tool_label(kind: ToolKind) -> &'static str {
         ToolKind::Move => "Move",
         ToolKind::Other => "Tool",
     }
+}
+
+/// A word in a ring: the one shape a state takes wherever one is named.
+pub(super) fn pill(label: impl Into<SharedString>, ink: gpui::Hsla, cx: &App) -> gpui::Div {
+    div()
+        .flex_none()
+        .h(PILL_H)
+        .px(PART_GAP)
+        .h_flex()
+        .items_center()
+        .whitespace_nowrap()
+        .overflow_hidden()
+        .rounded(radius_control(cx))
+        .border_1()
+        .border_color(cx.theme().border)
+        .text_xs()
+        .text_color(ink)
+        .child(div().min_w_0().truncate().child(label.into()))
 }

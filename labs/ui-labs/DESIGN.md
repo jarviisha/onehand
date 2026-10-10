@@ -448,6 +448,8 @@ hierarchy are identical in both.
 | Hover and selected share `selected` | the app's palette keeps the two a step apart, its other values the lab's |
 | A popup's footer names its keys | a popup has no footer of keys |
 | Effort is a group of rows in the model's menu | effort has a chip and a menu of its own beside the model's |
+| Pinned cards ask in their title, say who asks, and name their keys as key caps | the app keeps its own permission and question cards: a generic title, bordered choice rows and numbered tabs, keys in words |
+| A question's description is said once | the description is repeated as the field's placeholder |
 | Fast is a toggle | a toggle when the agent offers two choices, else a picker of them |
 | The branch chip lists branches to switch to | it renames the branch, starts a worktree or refreshes the status; nothing switches branches |
 | A prompt's attachments are listed under its words in the bubble | they are thumbnails above the bubble, one that never went out marked *not sent* |

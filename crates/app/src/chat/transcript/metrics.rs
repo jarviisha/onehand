@@ -212,3 +212,67 @@ pub(super) const MONO_ADVANCE: f32 = 0.62;
 /// shape its text is, and the control that opens it is offered on the same
 /// terms.
 pub(super) const FOLD_H: Rems = rems(TEXT_SM.0 * LEADING * COMMAND_FOLD_LINES as f32);
+
+// The question and permission cards pinned above the composer.
+/// The question card's side padding, which its choices' scroll frame reaches
+/// back through to put the thumb on the card's edge.
+pub(super) const ASK_INSET: Rems = rems(1.);
+/// The transcript's second voice: the record of how an answer got made.
+///
+/// A tool card, a plan and a blocking card's secondary line are *about* the
+/// work rather than part of it, and size is what tells the two voices apart.
+/// That distinction is the one thing the reading size above cost: it used to be
+/// a step under the app's base, which the reading size then dropped to as well,
+/// so an answer and the tool card beside it came out identical. This is the
+/// step put back, under the new reading size rather than under the old one.
+///
+/// It lands on the same number as the wells of machine text and stays a
+/// separate decision from them: a card's header is chrome around output, not
+/// output, and the two are free to move apart. Nothing else marks them the
+/// same — a well is mono, tinted and padded, a card header is none of those.
+pub(super) const WORK_TEXT: Rems = rems(0.8125);
+/// Left and right inside a frame that lays its contents out in columns.
+pub(super) const FRAME_PAD: Rems = rems(0.75);
+/// A status pill: as tall as the words in it and no taller.
+pub(super) const PILL_H: Rems = rems(1.125);
+/// Width a question's tab label is elided at. Only a *tab* is ever elided.
+pub(super) const ASK_TAB_W: Rems = rems(8.75);
+/// The numbered circle at the head of a question's tab.
+///
+/// Sized to the digit rather than to the row: a strip of four tabs carries four
+/// of these, and a circle as tall as the label beside it is a bullet the eye
+/// reads before the word it belongs to.
+pub(super) const ASK_TAB_MARK: Rems = rems(1.125);
+/// The radio or checkbox at the head of a choice row, and the mark inside it
+/// once the choice is taken.
+///
+/// Two numbers because the inner one is not a fraction of the outer: the ring
+/// has a border of its own, and a dot derived from the outside measurement
+/// would grow into it at one size and float inside it at another.
+pub(super) const ASK_CHOICE_MARK: Rems = rems(1.0);
+pub(super) const ASK_CHOICE_DOT: Rems = rems(0.5);
+/// The ring around that mark, in pixels and not rems: it is a hairline's job
+/// done a touch heavier, and a hairline is the one measurement in the window
+/// that must not scale with a panel's zoom — doubled, it stops being a line.
+pub(super) const ASK_MARK_RING: gpui::Pixels = gpui::px(1.5);
+/// The key-hint chip at the end of a choice row: a floor rather than a size, so
+/// a two-digit hint grows sideways instead of overrunning its border.
+pub(super) const ASK_HINT_SIZE: Rems = rems(1.25);
+pub(super) const ASK_HINT_PAD: Rems = rems(0.3125);
+/// The height a choice row stands at whatever it holds.
+///
+/// A floor, not a height. The label and the description under it are the
+/// agent's sentences, so the row grows with them; what this answers is the
+/// other end — a row whose label is one word, which shrink-wrapped is a target
+/// half the size of the one below it.
+pub(super) const ASK_ROW_MIN: Rems = rems(3.25);
+/// The same floor for the free-text row, a step under it: that row is one line
+/// by construction, and standing it at a two-line height would leave a band of
+/// empty surface under an input that is nowhere near filling it.
+pub(super) const ASK_CUSTOM_ROW_MIN: Rems = rems(2.75);
+/// The height of one tab, which is also the strip's.
+pub(super) const ASK_TAB_H: Rems = rems(2.25);
+/// Leading for the question itself — looser than a control's and tighter than
+/// prose, because it is one sentence that has to be read once and is as long as
+/// the agent made it.
+pub(super) const ASK_PROMPT_LEADING: f32 = 1.4;
