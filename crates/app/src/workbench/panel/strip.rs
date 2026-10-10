@@ -130,6 +130,10 @@ fn mode_tab(
         .small()
         .max_w(onehand_plugin_host::TAB_MAX_W)
         .selected(which == active)
+        // The rest in muted ink, so the showing mode is the one that reads.
+        .when(which != active, |tab| {
+            tab.text_color(cx.theme().muted_foreground)
+        })
         .child(div().min_w_0().truncate().child(label))
         .on_click(cx.listener(move |panel: &mut Workbench, _, _, cx| {
             panel.set_mode(which, cx);
