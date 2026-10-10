@@ -52,20 +52,18 @@ pub struct PermItem {
 /// Eight is what leaves the header, the buttons and enough of a script to
 /// recognise it on one screen together.
 ///
-/// Named outside this crate by the block that draws the fold: the collapsed
-/// box is this many rows tall, so a command of one very long line is held to
-/// the same height as one of eight short ones rather than filling the card. The
-/// rules below apply it to the agent's newlines; the height is the only thing
-/// that has to know the number itself.
+/// How many rows a permission's command box shows before it scrolls, so a
+/// command of one very long line is held to the same height as one of eight
+/// short ones rather than filling the card.
 pub const COMMAND_FOLD_LINES: usize = 8;
 
 impl PermItem {
-    /// The exact command, whatever the fold is doing to what is drawn.
+    /// The exact command, whatever the box is showing of it.
     ///
-    /// **Never the visible part.** Copy is offered on a collapsed block on
-    /// purpose -- reading a long command elsewhere is the reason somebody
-    /// reaches for it -- so a copy that stopped where the fold does would hand
-    /// back a script that runs to a different end than the one approved.
+    /// **Never the visible part.** Reading a long command elsewhere is the
+    /// reason somebody reaches for Copy, so a copy that stopped where the box
+    /// does would hand back a script that runs to a different end than the one
+    /// approved.
     ///
     /// It is also the one place that says *which field of the request is the
     /// command*. The protocol calls it a title, which is a word for a heading
@@ -79,22 +77,6 @@ impl PermItem {
     /// The command's own lines, in the agent's order and wording.
     pub fn command_lines(&self) -> Vec<&str> {
         self.command().lines().collect()
-    }
-
-    /// Whether there is more command than the block draws unopened.
-    pub fn is_long(&self) -> bool {
-        self.command().lines().count() > COMMAND_FOLD_LINES
-    }
-
-    /// The lines the block draws now, and how many are held back behind the
-    /// fold. A short command is always whole and has nothing to open.
-    pub fn shown_lines(&self) -> (Vec<&str>, usize) {
-        let lines = self.command_lines();
-        if self.expanded || lines.len() <= COMMAND_FOLD_LINES {
-            return (lines, 0);
-        }
-        let hidden = lines.len() - COMMAND_FOLD_LINES;
-        (lines[..COMMAND_FOLD_LINES].to_vec(), hidden)
     }
 }
 

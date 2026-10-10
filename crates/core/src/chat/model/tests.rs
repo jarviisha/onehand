@@ -1451,31 +1451,6 @@ fn answering_a_permission_replies_and_records_the_choice() {
     assert!(!chat.awaiting_permission());
 }
 
-/// **The fold is a count of the agent's own newlines.** A command at the
-/// threshold is drawn whole and offers nothing to open: a control that
-/// reveals the one line it was already hiding is a control that reads as
-/// broken.
-#[test]
-fn a_command_folds_only_past_the_threshold() {
-    let at = PermItem {
-        req: permission(&"echo\n".repeat(COMMAND_FOLD_LINES)),
-        resolved: None,
-        expanded: false,
-    };
-    assert!(!at.is_long());
-    assert_eq!(at.shown_lines(), (vec!["echo"; COMMAND_FOLD_LINES], 0));
-
-    let over = PermItem {
-        req: permission(&"echo\n".repeat(COMMAND_FOLD_LINES + 3)),
-        resolved: None,
-        expanded: false,
-    };
-    assert!(over.is_long());
-    let (shown, hidden) = over.shown_lines();
-    assert_eq!(shown.len(), COMMAND_FOLD_LINES);
-    assert_eq!(hidden, 3);
-}
-
 /// **Copy hands back the whole command, fold or no fold.** It is offered on
 /// a collapsed block precisely so a long script can be read somewhere
 /// else, and one that stopped where the block does would hand back
@@ -1495,7 +1470,6 @@ fn copying_a_collapsed_command_takes_all_of_it() {
     };
 
     assert_eq!(item.command(), script);
-    assert_eq!(item.shown_lines().0.len(), COMMAND_FOLD_LINES);
 
     let long_line = "A".repeat(2_000);
     let one = PermItem {
@@ -1503,9 +1477,6 @@ fn copying_a_collapsed_command_takes_all_of_it() {
         resolved: None,
         expanded: false,
     };
-    // One real line however wide: wrapping is the view's problem and must
-    // not become a fold.
-    assert!(!one.is_long());
     assert_eq!(one.command(), long_line);
 }
 
@@ -1525,7 +1496,6 @@ fn opening_a_command_block_survives_in_the_item() {
         panic!("the permission is gone");
     };
     assert!(p.expanded);
-    assert_eq!(p.shown_lines(), (vec!["echo"; 20], 0));
 }
 
 /// A second click on an answered card would echo an rpc id the adapter has

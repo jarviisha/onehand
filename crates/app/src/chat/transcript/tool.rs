@@ -716,33 +716,21 @@ fn path_for_display(root: &Path, value: &str) -> String {
 /// a command approved in one form and run in another.
 #[derive(IntoElement)]
 pub(super) struct CommandBlock {
-    pub(super) session: Entity<ChatSession>,
     pub(super) target: TranscriptItemId,
-    /// The whole command, which is what Copy hands back whether or not the
-    /// block is folded.
+    /// The whole command, which is what Copy hands back.
     pub(super) command: SharedString,
+    /// Every line of it: the box scrolls rather than holding lines back.
     pub(super) lines: Vec<SharedString>,
-    /// Real lines behind the fold; zero when the block is whole.
-    pub(super) hidden: usize,
     /// How tall the panel this is drawn in was last frame, which is what the
-    /// opened block is bounded against. `None` before the list has measured
-    /// itself, where the window is the only answer there is.
+    /// box is bounded against. `None` before the list has measured itself,
+    /// where the window is the only answer there is.
     pub(super) well: Option<gpui::Pixels>,
-    /// Whether the command has more lines than the block draws unopened, which
-    /// stays true once it has been opened and `hidden` has gone back to zero.
-    /// Asked of the model rather than worked out from `hidden` here: where the
-    /// fold falls is a rule about the command, and a second spelling of it at
-    /// this call site is a second place for it to move.
-    pub(super) long: bool,
     pub(super) total: usize,
-    pub(super) expanded: bool,
 }
 
 impl RenderOnce for CommandBlock {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let key = fold_key(self.target);
-        let folded = self.hidden > 0;
-        let long = self.long;
         // **Always a gutter, on every command.** It was drawn only past the
         // second line, on the reasoning that a single line has nothing to be
         // told apart from -- which is true of the numbering and false of
@@ -774,25 +762,11 @@ impl RenderOnce for CommandBlock {
             })
             .read(cx)
             .clone();
-        // **Whether the *box* ran out of height, which is not the question the
-        // fold asks.** The fold counts the newlines the agent wrote, and that
-        // is right for a fold: measured in drawn rows instead it would close a
-        // two-line command on a narrow pane and leave a ten-line one open on a
-        // wide one, which is a fold nobody can predict. But a single line three
-        // thousand characters long answers *no* to that question and fills the
-        // well anyway -- so every affordance hung off the fold went away in the
-        // one case where the text runs past the bottom edge with nothing
-        // holding it back. One line, one `curl`, no gutter to number, no lines
-        // held back to unfold, and the reader with no way to tell that what
-        // they can see is not all of it.
-        //
         // Last frame's, like everything else measured here. The first frame of
         // a command draws without these and the second has them, which is a
         // frame nobody can see.
         let overflows = scroll.max_offset().y > gpui::px(0.);
-        // Text out of sight *below what is drawn*, by either route: lines the
-        // fold is holding back, or a box scrolled somewhere above its own end.
-        let more_below = folded || scroll.max_offset().y - scroll.offset().y.abs() > gpui::px(1.);
+        let more_below = scroll.max_offset().y - scroll.offset().y.abs() > gpui::px(1.);
 
         plain_box(cx)
             .relative()
@@ -810,16 +784,11 @@ impl RenderOnce for CommandBlock {
                     .id(("perm-command-scroll", key))
                     .v_flex()
                     .w_full()
-                    // **Folded, it is a height; opened, it is a share of the
-                    // panel.** Both are bounds on drawn rows rather than on the
-                    // agent's newlines, which is the only kind of bound that
-                    // holds for a command of one very long line -- eight real
-                    // lines of a base64 blob is still a screenful of wrapped
-                    // rows, and one line of it is too.
-                    .max_h(match self.expanded {
-                        true => ceiling,
-                        false => FOLD_H.to_pixels(window.rem_size()).min(ceiling),
-                    })
+                    // **A bound on drawn rows rather than on the agent's
+                    // newlines**, which is the only kind that holds for a
+                    // command of one very long line: one line of a base64 blob
+                    // is a screenful of wrapped rows. Past it the box scrolls.
+                    .max_h(FOLD_H.to_pixels(window.rem_size()).min(ceiling))
                     .overflow_y_scroll()
                     .track_scroll(&scroll)
                     .children(self.lines.into_iter().enumerate().map(|(n, line)| {
@@ -881,13 +850,8 @@ impl RenderOnce for CommandBlock {
                         ));
                     }),
             )
-            // **What says the command does not end where the box does**, and it
-            // answers that question rather than the fold's. Lines held back
-            // behind a fold and a box scrolled short of its own end are the
-            // same fact to a reader, and the second of them used to draw
-            // nothing at all -- the justification being that a scrollbar was
-            // already saying it, which was true of the blocking body beside
-            // this and never of this. It goes as soon as the end is reached, so
+            // **What says the command does not end where the box does.** It goes
+            // as soon as the end is reached, so
             // it is never a gradient laid over the last line of a command
             // somebody is being asked to approve.
             .when(more_below, |block| {
@@ -905,60 +869,11 @@ impl RenderOnce for CommandBlock {
                         )),
                 )
             })
-            // Drawn over the fade rather than under it, and **only once the
-            // block has been opened**. Folded, the way to the rest of the
-            // command is the control at the corner and the scrollbar would be a
-            // second, quieter answer to the same question -- one that moves the
-            // text without ever saying how much there is. Opened, it is the only
-            // thing that says how far this runs.
-            .when(overflows && self.expanded, |block| {
+            // Over the fade: the one thing that says how far the command runs
+            // now that nothing holds lines back to be opened.
+            .when(overflows, |block| {
                 block.child(Scrollbar::vertical(&scroll).mode(ScrollbarMode::Always))
             })
-            // **Offered wherever anything is out of sight, by either route.**
-            // Lines the fold is holding back and a box that has run out of
-            // height are the same fact to a reader, and gating this on the line
-            // count alone left a command of one very long line with no way to
-            // open it at all. Where nothing is hidden there is still no control,
-            // for the reason there never was: a fold that reveals nothing is a
-            // button that has to be pressed to learn it does nothing.
-            .when(
-                more_below || self.expanded && (long || overflows),
-                |block| {
-                    block.child(
-                        crate::controls::action(("perm-fold", key))
-                            .ghost()
-                            .absolute()
-                            .bottom(BLOCK_INSET)
-                            .right(BLOCK_INSET)
-                            .h(FOLD_ROW)
-                            .px_2()
-                            .rounded(cx.theme().radius)
-                            // On its own plate, because it sits over the end of
-                            // the command: the fade underneath it is the text
-                            // it would otherwise be read against.
-                            .bg(cx.theme().muted)
-                            // The count is what there is more *of*, so it is
-                            // said only where lines are what is being held
-                            // back. A single line that wraps to a screenful has
-                            // no second line to promise, and *Show all · 1
-                            // lines* counts the wrong thing and miscounts it.
-                            .label(match (self.expanded, self.total > 1) {
-                                (true, _) => "Show less".to_string(),
-                                (false, true) => format!("Show all · {} lines", self.total),
-                                (false, false) => "Show all".to_string(),
-                            })
-                            .on_click({
-                                let (session, target) = (self.session, self.target);
-                                move |_, _, cx: &mut App| {
-                                    session.update(cx, |s, cx| {
-                                        s.chat.toggle_permission(target);
-                                        cx.notify();
-                                    });
-                                }
-                            }),
-                    )
-                },
-            )
     }
 }
 
