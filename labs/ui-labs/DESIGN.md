@@ -445,13 +445,13 @@ hierarchy are identical in both.
 |---|---|
 | Docks are continuous surfaces divided by one hairline | each dock is a card inset on three sides |
 | The Workbench takes the content area when the chat would drop under `CHAT_MIN` | docks never crowd the conversation, with no rule for when they would |
-| Bubble and well share `sunken`; hover and selected share `selected` | the app's palette keeps each pair a step apart, its other values the lab's |
+| Hover and selected share `selected` | the app's palette keeps the two a step apart, its other values the lab's |
+| Fast is a toggle | a toggle when the agent offers two choices, else a picker of them |
+| The branch chip lists branches to switch to | it renames the branch, starts a worktree or refreshes the status; nothing switches branches |
+| A prompt's attachments are listed under its words in the bubble | they are thumbnails above the bubble, one that never went out marked *not sent* |
 | Weights 400 and 500 only | titles are semibold |
-| *Stop* is a solid danger button with its word | Send and Stop share an icon button |
-| A question's description is said once | the description is repeated as the field's placeholder |
 | Settings is a page in the content area | Settings is a large dialog |
 | One primary per region, so a list and its detail side by side may each have one | one primary per view |
-| The composer card has no edge | the composer card is bordered |
 | A session's meta line ends on its diff, `+N −N` | no diff: nothing reports one per session |
 | A failed session's hover action is *Retry*, and every session's *Archive* | *Send the last prompt again* and *Close*: Retry is a task's word, and closing keeps the conversation |
 | Clicking a project row folds it | it goes to the project; only its chevron, a button of its own, folds it |

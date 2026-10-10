@@ -91,14 +91,14 @@ monospace font.
   icon column. It resizes between 232 and 448px, on the ramp's lifted surface.
 - **Agent pane header**, left to right:
   - the show-rail button, only while the rail is hidden;
-  - the conversation's name, semibold, full ink;
+  - the conversation's name, medium weight, full ink;
   - a dots menu: *Rename…* and *Export as Markdown…*; then *Resume in this session…* (refused
     mid-turn) and *Restart the agent*; then *Delete conversation* in the danger tint (refused
     until the first turn has ended);
   - a spacer;
   - past conversations and *Close session*, only while a session shows;
-  - the terminal, with a dot while a shell is alive;
-  - always last, the Workbench.
+  - the terminal, with an accent dot while its dock is closed over a live shell;
+  - always last, the Workbench. Each of the two is filled while its dock is open.
 
   On the overview, the Tasks, Issues and Workflows pages it reads the page's name, with no dots
   menu and no dock buttons. When the pane narrows, the name gives way first, down to a minimum
@@ -110,10 +110,14 @@ monospace font.
   *Stop* always. Only the step labels clip. *Review…* reads the answer from the run; *Revise…*
   refuses an empty note; a press the run no longer waits at shows the new answer, in the warning
   ink, rather than approving it unread.
-- **Composer.** A card at the foot of the transcript, one row: the `+` menu, *Fast* and the model
-  chip (when offered), *Send* or *Stop*, and *Queue* beside *Stop* while a turn runs over a draft.
-  Under it, a strip: the branch left, the permission mode right, each opening a menu (not drawn
-  when neither exists). *Run a workflow…*, the `+` menu's last entry, the keymap command and the
+- **Composer.** A card at the foot of the transcript with no edge, set off by its raised fill and
+  its lift; the caret alone shows focus. The field, then one row: the `+` menu, *Fast* (a toggle
+  when the agent offers two choices, else a picker) and the model chip with its effort (when
+  offered), then *Send*; while a turn runs, *Stop* (solid danger, with its word) and, over a
+  draft, *Queue*. Under it, a strip: the branch left, the permission mode right, each opening a
+  menu (not drawn when neither exists), the branch over the mode when narrow. Pinned cards share
+  one shape: what is asked as the title, who asks, the body, then the keys left and the answers
+  right. A question's description is said once. The queue and a reconnect are plain lines. *Run a workflow…*, the `+` menu's last entry, the keymap command and the
   Workflows page's *Run…* open one launcher: a workflow menu, what it does and where, a collapsed
   *Preview* (steps, limits, the first prompt), *Title*, *Details*, *Instructions*, then what the
   preflight found (blocks in the danger ink), *Run* spent while a block remains; it scrolls so the
@@ -183,13 +187,16 @@ monospace font.
 
 - **Two sides.** The user's prompt is the one filled bubble, against the right edge. Everything
   the agent produces starts on a shared left axis and runs bare. Nothing else is right-aligned.
-- **A centred reading column**, sized so 100 mono columns of a diff fit inside a card, and
-  narrowed on small panels. The composer, and anything pinned above it (permission, question,
+- **A centred reading column**, narrowed on small panels, read a step over the chrome. Content
+  wider than the column scrolls inside its well. The composer, and anything pinned above it (permission, question,
   queued prompt, an adapter still connecting), are capped narrower and read as one stack.
-- **One turn, many blocks**: prose, thoughts, plans, activity rows and clusters, commands,
-  diffs, permission and question cards, notices and errors. A workflow's steps reach the
-  transcript as notices. Long output folds and is capped. Content
-  wider than its well scrolls inside the well.
+- **One turn, many blocks**: prose, thoughts, plans, activity clusters, commands, diffs,
+  answered permissions and questions, notices and errors. A cluster holds tools only; a thought
+  and an answer are lines of their own. A workflow's steps reach the transcript as notices.
+- **Folding blocks open from one line**, the chevron first. What runs starts open and closes
+  when done, the plan stays open, and a reader's fold wins. Long output folds and is capped.
+- **Wells** (code, output, diffs) are filled, with no edge. A finished turn ends on a footer:
+  copy its closing paragraph, and how long it took.
 - **Destructive actions are words in the danger tint**, confirmed through a modal that names the
   thing being removed, never through a button that arms on first press.
 
@@ -221,18 +228,17 @@ monospace font.
 | Token | Use |
 |---|---|
 | `background` / `foreground` | surface and text |
-| `muted` / `muted_foreground` | quiet fills, meta text |
+| `muted` / `muted_foreground` | quiet fills (the prompt bubble, every well), meta text |
 | `theme::meta_ink` | the transcript's meta text, contrast-tested |
 | `border` | every hairline |
-| `ring` | a border marking where the keyboard is: the composer while typing there, a question card's row under the arrow keys |
-| `secondary` | the user's prompt bubble |
+| `ring` | the composer while a file is dragged over it |
 | `accent` | the one item selected among several |
 | `list_hover` | hover on a pickable row |
 | `primary` | the single primary action in a view |
 | `status_ink()` | danger, warning and success text |
 | `popover` | floating surfaces |
 
-- Cards are borders, not fills.
+- Cards are borders; wells and the bubble are fills.
 - No control gets a focus ring: hover and selection are fills, at distinct steps of the ramp.
 - One primary per view.
 - If a surface is missing, add it to the ramp with its contrast asserted. Never add it in the one
@@ -245,8 +251,9 @@ Reuse gpui-component before building anything: `Root`, `DockArea`, `Sidebar`, `D
 the app's action wrapper, which sets the pointer cursor; a control that refuses says so
 (`resting()` or `.refuses()`) and goes back to the arrow. The app owns only what is its own: the
 transcript renderers, the icon registry, the terminal panel, per-panel zoom, and the composer
-popup (one shell for `@`, `/`, the pickers and the attachment tray, with a pinned title and footer,
-at most twelve rows, grouped, with its own scrollbar).
+popup (one shell for `@`, `/`, the pickers, the `+` and branch menus and the attachment tray, with
+a pinned title and a footer of key caps, at most six rows, grouped, then how many more; a menu
+opens under its chip).
 
 Scope: the Workbench editor is a quick editor (tree-sitter, no LSP). Neovim is a Workbench mode with a
 PTY of its own per project, through the shared terminal crate. Files lives inside Editor, not as a
