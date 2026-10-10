@@ -1915,3 +1915,27 @@ fn an_interruption_marker_is_a_notice_and_not_a_prompt() {
             if text == "Interrupted" && u.text == "read the whole project"
     ));
 }
+
+/// A fence of the other kind inside a code block is code, not the block's end,
+/// so the closing paragraph is still the whole block.
+#[test]
+fn the_closing_paragraph_keeps_a_block_whole_across_another_fence() {
+    let md = "Intro.\n\n```\n~~~\n\nstill code\n```";
+    assert_eq!(
+        super::turn::last_paragraph(md),
+        "```\n~~~\n\nstill code\n```"
+    );
+}
+
+/// A thought live when the adapter dies is over, so it stops reading as
+/// running and closes like any finished one.
+#[test]
+fn a_thought_cut_off_by_a_disconnect_is_finished() {
+    let mut chat = Chat::default();
+    chat.apply(AcpEvent::ThoughtChunk("weighing it".into()));
+    chat.apply(AcpEvent::Disconnected("gone".into()));
+    let Some(ChatItem::Thought(th)) = chat.items.first() else {
+        panic!("the thought is gone");
+    };
+    assert!(!th.is_running());
+}

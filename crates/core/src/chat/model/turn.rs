@@ -770,17 +770,24 @@ impl Chat {
 /// blank line inside a fenced block not counting, so an answer ending on code
 /// hands back the whole block rather than its last few lines.
 pub(super) fn last_paragraph(markdown: &str) -> &str {
-    let mut fenced = false;
+    // The fence that opened the block, which only the same fence closes.
+    let mut fence: Option<&str> = None;
     let mut start = 0;
     let mut last = "";
     let mut at = 0;
     for line in markdown.split_inclusive('\n') {
         let trimmed = line.trim();
-        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
-            fenced = !fenced;
+        for mark in ["```", "~~~"] {
+            if trimmed.starts_with(mark) {
+                match fence {
+                    None => fence = Some(mark),
+                    Some(open) if open == mark => fence = None,
+                    Some(_) => {}
+                }
+            }
         }
         let end = at + line.len();
-        if trimmed.is_empty() && !fenced {
+        if trimmed.is_empty() && fence.is_none() {
             let paragraph = markdown[start..at].trim();
             if !paragraph.is_empty() {
                 last = paragraph;

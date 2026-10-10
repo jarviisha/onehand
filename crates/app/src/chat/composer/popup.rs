@@ -237,13 +237,20 @@ impl Composer {
                                 // reports where it was laid out, before it is
                                 // moved onto its control, so where it ends up
                                 // is worked out from the point it hangs from.
-                                move |bounds, _, _| {
+                                move |bounds, window, _| {
                                     let size = bounds.size;
+                                    let room = window.viewport_size();
                                     let left = match from_right {
                                         true => at.x - size.width,
                                         false => at.x,
                                     };
-                                    let origin = gpui::point(left, at.y - size.height);
+                                    // Kept inside the window as the snap keeps
+                                    // the menu itself.
+                                    let origin = gpui::point(
+                                        left.clamp(gap, (room.width - size.width - gap).max(gap)),
+                                        (at.y - size.height)
+                                            .clamp(gap, (room.height - size.height - gap).max(gap)),
+                                    );
                                     menu_bounds.set(Some(gpui::Bounds { origin, size }))
                                 },
                                 |_, _, _, _| {},

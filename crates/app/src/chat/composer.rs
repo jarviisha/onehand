@@ -445,6 +445,8 @@ impl Composer {
         }
         self.overlay = next;
         self.opened_rows = None;
+        // The last menu's place, or a press there would still count as on it.
+        self.menu_bounds.set(None);
     }
 
     /// Keep the highlighted row on screen.

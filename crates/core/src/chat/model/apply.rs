@@ -319,6 +319,8 @@ impl Chat {
                 self.items.push(ChatItem::error(format!("Error: {e}")));
             }
             AcpEvent::Disconnected(e) => {
+                // A thought cut off with the adapter is over, not still running.
+                self.finalize_thought();
                 self.tx = None;
                 self.link = Link::Lost;
                 self.busy = false;

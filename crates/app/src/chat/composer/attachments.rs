@@ -59,7 +59,7 @@ impl Composer {
                 match entry {
                     gpui::ClipboardEntry::Image(image) => {
                         mine = true;
-                        self.stage_pasted_image(image, cx);
+                        self.stage_pasted_image(image, window.window_handle(), cx);
                     }
                     gpui::ClipboardEntry::ExternalPaths(paths) => {
                         mine = true;
@@ -80,7 +80,12 @@ impl Composer {
     /// The write is a real one and goes to the background executor; the id is
     /// the clipboard's own content hash, so pasting the same image twice
     /// rewrites one file instead of littering the temp directory.
-    fn stage_pasted_image(&mut self, image: gpui::Image, cx: &mut Context<Self>) {
+    fn stage_pasted_image(
+        &mut self,
+        image: gpui::Image,
+        window: gpui::AnyWindowHandle,
+        cx: &mut Context<Self>,
+    ) {
         cx.spawn(async move |composer, cx| {
             let written = cx
                 .background_executor()
@@ -96,7 +101,6 @@ impl Composer {
                 // A toast and not a line in the card: nothing said about the
                 // composer may move it.
                 let _ = cx.update(|cx| {
-                    let window = cx.active_window()?;
                     window
                         .update(cx, |_, window, cx| {
                             gpui_component::WindowExt::push_notification(
@@ -189,9 +193,11 @@ impl Composer {
         let remeasure = {
             let scroll = scroll.clone();
             gpui::canvas(
-                move |_, window, _| {
+                move |_, window, cx| {
                     if (scroll.max_offset().x > gpui::px(0.)) != overflowed {
-                        window.refresh();
+                        // After this frame: a refresh asked for mid-draw is
+                        // dropped.
+                        window.defer(cx, |window, _| window.refresh());
                     }
                 },
                 |_, _, _, _| {},
