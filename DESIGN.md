@@ -111,11 +111,12 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   faded where cut beside *Show all N*. *Run a workflow…* (the `+` menu, the keymap, the Workflows
   page's *Run…*) opens the launcher, and an issue's *Run workflow…* its start form; both are
   drawn as `docs/workflows.md` describes.
-- **Docks.** Bare panels on the dock surface, each meeting the conversation at one hairline that
-  is also its grip, with strips of their own and no library tab bars.
+- **Docks.** Bare panels on the dock surface, with strips of their own and no library tab bars;
+  the Workbench meets the conversation by its surface alone, the terminal under a hairline.
   - The Workbench strip, as tall as the header: *← Conversation* while it has the area, the modes
     (Editor, Markdown, Issues, Plugins, Neovim; one select when narrow), maximize, hide. The
-    terminal strip: its shell tabs and `+`, maximize, hide. File tabs too many to name are a select.
+    terminal strip, as tall: shell tabs (capped, scrolling sideways), `+`, maximize, hide. File
+    tabs too many to name are a select.
   - A list beside its detail (files, documents, issues) only while the dock holds both; else one at
     a time, the detail under a link back naming the list. Picking shows it; going back keeps it.
   - The Issues tab's issue is drawn in one fixed order, what it waits on before what it says: the

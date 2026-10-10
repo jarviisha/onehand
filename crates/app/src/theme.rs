@@ -54,8 +54,8 @@ struct Ramp {
     background: &'static str,
     foreground: &'static str,
     /// The docks: the Workbench and the terminal, one step off the reading
-    /// surface, so each meets the conversation at a hairline as a surface of its
-    /// own rather than as a card inset in it.
+    /// surface, so each reads as a surface of its own beside the conversation
+    /// rather than as a card inset in it.
     panel: &'static str,
     /// A well sunk into the surface: quoted commands, output, diffs, a folded
     /// thought. Every one of them is small text, so the ink is chosen against

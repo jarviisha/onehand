@@ -22,8 +22,8 @@ use gpui::{
     App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement,
     IntoElement, ParentElement, Render, SharedString, Styled, Window, div,
 };
+use gpui_component::StyledExt;
 use gpui_component::dock::{Panel, PanelControl, PanelEvent};
-use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::gitstat::GitStatus;
 use onehand_core::task::Approval;
 use onehand_plugin_api::{PluginId, WorkbenchModeSpec};
@@ -544,13 +544,8 @@ impl Render for Workbench {
                 self.width.clone(),
                 cx.entity().downgrade(),
             ))
-            // A surface of its own, meeting the conversation at one hairline.
-            // That line is on the seam the dock is dragged by: the dock's grip
-            // is a fixed band either side of the dock's edge and draws nothing
-            // itself, so the border is what a user aims at and where the drag
-            // is taken.
-            .border_l_1()
-            .border_color(cx.theme().border)
+            // A surface of its own, set off from the conversation by its fill
+            // alone; the dock's grip runs along that edge.
             .bg(crate::theme::dock_surface(cx))
             // Mounted bare, so nothing else tracks this handle. A `TabPanel`
             // calls `track_focus` on the panel it holds, which is what normally

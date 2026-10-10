@@ -57,8 +57,8 @@ pub fn action(id: impl Into<ElementId>) -> Button {
 }
 
 /// The surface a dock draws on: the palette's panel step, one off the reading
-/// surface the conversation sits on, so a dock meets the conversation at one
-/// hairline as a surface of its own rather than as a card inset in it. The app
+/// surface the conversation sits on, so a dock reads as a surface of its own
+/// beside the conversation rather than as a card inset in it. The app
 /// writes that step into the theme slot read here, with its contrast tested
 /// beside the rest of its ramp.
 ///

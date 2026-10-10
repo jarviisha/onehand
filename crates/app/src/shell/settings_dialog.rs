@@ -400,10 +400,11 @@ pub(super) fn apply_appearance(choice: Appearance, window: Option<&mut Window>, 
     // The library paints a permanent 1px rule in the hairline colour down the
     // seam of every resizable split — between the rail and the docks, and
     // between the conversation and each dock. Every panel on the other side of
-    // one of those seams already marks it: each dock draws a hairline on the
-    // edge it is dragged by, and the rail is a change of surface — the reading surface
-    // against the well, a pair the ramp's own tests hold at 1.14 or better in
-    // either palette, which is what makes a fill an edge rather than a tint. So
+    // one of those seams already marks it: the Workbench is a change of surface,
+    // the terminal draws a hairline along its top, and the rail is a change of
+    // surface too — the reading surface against the well, a pair the ramp's own
+    // tests hold at 1.14 or better in either palette, which is what makes a
+    // fill an edge rather than a tint. So
     // the rule was a second line beside a first, which reads as a seam that
     // could not decide where it was.
     //

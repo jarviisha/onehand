@@ -470,7 +470,7 @@ hierarchy are identical in both.
 | Markdown lists its documents flat, each with its title | a folder tree of the documents, each by its file name |
 | The Files tree has a search reaching into closed folders | Files has no search yet |
 | `CHAT_MIN` scales with the reading zoom | it scales with the conversation's own zoom, since the app zooms per panel |
-| The terminal's tabs follow the tab rule | they keep their own strip, which scrolls sideways |
+| Regions meet at one hairline | the Workbench meets the conversation by its surface alone, with no line |
 
 ## Backlog
 
