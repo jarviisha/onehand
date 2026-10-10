@@ -2,18 +2,24 @@
 //!
 //! The things a plugin needs that it cannot reach into the binary for — a
 //! button that answers the pointer, the derivation of status ink, and the
-//! surface a dock panel's card is drawn on — plus the Workbench mode contract
-//! itself.
+//! surface a dock is drawn on — plus the Workbench mode contract itself.
 
 // Nothing here is `pub` unless the binary names it: `dead_code` stops at a
 // `pub` item in a library, so one that lost its last caller looks exactly like
 // a working feature.
 #![warn(unreachable_pub)]
 
+mod list_detail;
 mod menu;
+mod tabs;
 mod workbench;
+pub use list_detail::{ListDetail, ListWidths, back_link, list_detail};
 pub use menu::{menu_below, menu_item, menu_row};
 pub use onehand_core::worktree::removal::Process;
+pub use tabs::{
+    Measured, TAB_MAX_W, TabStrip, measure_width, tab_chip, tab_close, tab_menu_rows, tab_select,
+    tab_strip, unmeasured,
+};
 pub use workbench::{Ask, Request, WorkbenchMode};
 
 use gpui::prelude::FluentBuilder as _;
@@ -53,38 +59,11 @@ pub fn action(id: impl Into<ElementId>) -> Button {
     Button::new(id).cursor_pointer()
 }
 
-/// The surface a dock panel's card draws on.
-///
-/// **It is the reading surface, the same one the conversation is on**, and the
-/// card's border is the whole of what says where the panel begins. That is a
-/// reversal: the two cards used to be filled a step off the conversation, so in
-/// the dark palette they were the *lighter* regions on screen with the
-/// conversation as the dark gap between them. Lighter reads as nearer, so two
-/// panels that are about the work were drawn in front of the work — and with
-/// both docks open the conversation was the one thing on screen not being
-/// lifted toward the reader.
-///
-/// **A step in the other direction is not available**, which is why it is no
-/// step at all rather than a smaller one. The fill was the ramp's well step,
-/// one notch up from the reading surface; going *down* instead would need a
-/// value below a near-black surface, and there is none. Halving the step was
-/// tried in that same spot and measured 1.07 against the reading surface in
-/// both palettes, under the 1.14 floor the ramp's own tests hold every surface
-/// pair to — and the light palette has only 1.15 between white and the well to
-/// divide in the first place, so no value between them can clear that floor
-/// twice.
-///
-/// **The rail keeps the well and is now the only thing in the window that has
-/// it.** It is the one panel that is not about the work at all — a workspace,
-/// its projects, its sessions — so it stays lifted while the docks lie flat,
-/// and what used to be a code shared by three panels is now a code carried by
-/// one.
-///
-/// What flipping this costs is the well *inside* a panel. While the card was
-/// the well, anything sunk into it had to borrow the reading surface to be
-/// seen; with the card on the reading surface those go back to being the well —
-/// the two strips' hover fills and the Markdown mode's code blocks. `accent` is
-/// still what a *selected* thing takes.
+/// The surface a dock draws on: the palette's panel step, one off the reading
+/// surface the conversation sits on, so a dock reads as a surface of its own
+/// beside the conversation rather than as a card inset in it. The app
+/// writes that step into the theme slot read here, with its contrast tested
+/// beside the rest of its ramp.
 ///
 /// Here rather than in the app for the reason [`action`] is: the Neovim mode
 /// draws a terminal grid and has to hand it the surface it is sitting on, and
@@ -93,7 +72,7 @@ pub fn action(id: impl Into<ElementId>) -> Button {
 /// second copy of this answer is visible as a rectangle of the wrong shade
 /// behind a running program.
 pub fn dock_surface(cx: &App) -> Hsla {
-    cx.theme().background
+    cx.theme().tiles
 }
 
 /// Status colours used as ink on the app's normal surfaces.
@@ -190,7 +169,7 @@ pub fn status_line(message: String, cx: &App) -> AnyElement {
 /// and the halves are `flex_1`; the fills and the radius are the theme's.
 ///
 /// **The selected half is `accent`**, which is the app's own "this one, among
-/// several" — what the terminal's tabs and the Workbench's mode chips use, so
+/// several" — what the terminal's tabs and the Workbench's modes take, so
 /// one condition keeps one spelling. It is not the reading surface: on a panel
 /// drawn in the well, a plate in the reading surface is a step *below* what it
 /// sits on, a hole rather than a plate. And there is no shadow under it: a fill

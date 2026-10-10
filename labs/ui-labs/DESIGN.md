@@ -443,8 +443,6 @@ hierarchy are identical in both.
 
 | Here | In the app |
 |---|---|
-| Docks are continuous surfaces divided by one hairline | each dock is a card inset on three sides |
-| The Workbench takes the content area when the chat would drop under `CHAT_MIN` | docks never crowd the conversation, with no rule for when they would |
 | Hover and selected share `selected` | the app's palette keeps the two a step apart, its other values the lab's |
 | A popup's footer names its keys | a popup has no footer of keys |
 | Effort is a group of rows in the model's menu | effort has a chip and a menu of its own beside the model's |
@@ -467,6 +465,12 @@ hierarchy are identical in both.
 | `Ctrl+N` starts a session | `Ctrl+Shift+O`, as before |
 | *New* is the library's `DropdownButton` | two buttons of the app's own, drawn alike |
 | A project opens at launch when something in it needs attention | projects start folded, but for the one on screen |
+| A list beside its detail is `LIST_W` wide | the list drags, and while beside its detail a button hides it |
+| The Workbench hides with `Close` | it hides with `Minus`: the dock is put down, not closed |
+| Markdown lists its documents flat, each with its title | a folder tree of the documents, each by its file name |
+| The Files tree has a search reaching into closed folders | Files has no search yet |
+| `CHAT_MIN` scales with the reading zoom | it scales with the conversation's own zoom, since the app zooms per panel |
+| Regions meet at one hairline | the Workbench meets the conversation by its surface alone, with no line; the terminal is a block on its surface, held off its neighbours by a gap |
 
 ## Backlog
 

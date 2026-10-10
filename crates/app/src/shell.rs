@@ -24,6 +24,7 @@ mod docks;
 mod drafts;
 mod issue_work;
 mod issues_page;
+mod presentation;
 mod remote_runs;
 mod render;
 mod retry;
@@ -326,7 +327,7 @@ pub struct Shell {
     terminal_root: Option<PathBuf>,
     /// Whether the Workbench was open when the workspace page put it away, so
     /// leaving the page puts it back.
-    workbench_aside: bool,
+    page_hid_workbench: bool,
     /// Session uids per root, most recently viewed first. What `Ctrl+Tab`
     /// walks.
     mru: HashMap<PathBuf, Vec<u64>>,
@@ -339,6 +340,19 @@ pub struct Shell {
     /// own zoom, driven by the button in each panel's tab bar, and the rail is
     /// what tells the two apart.
     app_maximized: Option<FocusedPanel>,
+    /// How the area beside the rail was shown on the last frame.
+    presentation: presentation::Presentation,
+    /// The Workbench width this shell last drew the dock at, so a width the
+    /// dock reports that differs from it is a drag, and becomes the width the
+    /// person wants.
+    workbench_drawn: Option<gpui::Pixels>,
+    /// The terminal height this shell last drew the dock at, for the same
+    /// reason: a height the dock reports that differs from it is a drag.
+    terminal_drawn: Option<gpui::Pixels>,
+    /// The Workbench stepped aside from taking the whole area, so the
+    /// conversation could be read: still open as far as the person is
+    /// concerned, and back as a split once the window has room for one.
+    stepped_aside: bool,
     /// The three dockable regions. The rail is deliberately *not* in here --
     /// it is app chrome, not a panel (see [`crate::panels`]).
     dock: Entity<DockArea>,
