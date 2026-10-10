@@ -16,9 +16,9 @@ hex literal in the render layer is a bug even when it looks right, as no theme s
    start closed and open on demand. Beside the Workbench it keeps a minimum, times its zoom; too
    narrow for both, the Workbench takes the area under *← Conversation*, which steps it aside. Pages
    take the agent pane and put the docks away; a page opens over a session only when picked.
-2. **Separate by hairline, not shadow.** A 1px `border` separates panels. Shadows are only for
-   what really floats: dialogs, popovers, the composer's menus, and over the transcript the
-   composer card, the cards pinned above it and the to-bottom button.
+2. **Separate by surface and hairline, not shadow.** Docks part from the conversation by their
+   surface, rows and cards by a 1px `border`. Shadows only for what floats: dialogs, popovers,
+   menus, and over the transcript the composer card, the cards pinned above it, the to-bottom pill.
 3. **Colour means state.** One accent, from the theme. Danger, warning and success ink mark
    failure, in-flight and done; in the rail, warning waits on the person and the accent runs.
    Anything else is `muted_foreground`, or the transcript's `meta_ink`, a step nearer full ink.
@@ -111,22 +111,20 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   faded where cut beside *Show all N*. *Run a workflow…* (the `+` menu, the keymap, the Workflows
   page's *Run…*) opens the launcher, and an issue's *Run workflow…* its start form; both are
   drawn as `docs/workflows.md` describes.
-- **Docks.** Bare panels on the dock surface, with strips of their own and no library tab bars;
-  the Workbench meets the conversation by its surface alone; the terminal is a block held off
-  its neighbours by a gap.
-  - The Workbench strip, as tall as the header: *← Conversation* while it has the area, the modes
-    (Editor, Markdown, Issues, Plugins, Neovim; one select when narrow), maximize, hide. The
-    terminal strip, as tall: shell tabs (capped, scrolling sideways), `+`, maximize, hide. File
-    tabs too many to name are a select.
+- **Docks.** Bare panels on the dock surface with strips of their own, no library tab bars; the
+  terminal is a block held off its neighbours by a gap.
+  - Strips as tall as the header. The Workbench's: *← Conversation* while it has the area, the
+    modes (Editor, Markdown, Issues, Plugins, Neovim; a select when narrow), maximize, hide. The
+    terminal's: shell tabs (capped, scrolling), `+`, maximize, hide. Crowded file tabs: a select.
   - A list beside its detail (files, documents, issues) only while the dock holds both; else one at
     a time, the detail under a link back naming the list. Picking shows it; going back keeps it.
   - The Issues tab's issue is drawn in one fixed order, what it waits on before what it says: the
     title over its facts, *Open* or *Closed* first; where its work stands (progress with
     *step N of M*, the next action in a sentence, at most one primary, the rest in a place that
     does not move, then ⋯); the body; what the work left (the branch, and the pull request's state
-    with *read 2m ago* and *Refresh*); *Before* (capped); its history. Those lines keep their
-    height while a step ends. The tab is a glance: ⋯ ▸ *Open in Issues* and its *Review…* open the
-    issue on the Issues page, the latter with the review block open.
+    with *read 2m ago* and *Refresh*); *Before* (capped); its history, each line keeping its height
+    while a step ends. ⋯ ▸ *Open in Issues* and *Review…* open it on the Issues page, the latter
+    with its review block open.
   - Hiding a dock keeps its buffers and processes; the terminal's open state follows the project.
 - **Pages without a session.**
   - A project with no session shows *New session*, *Run check* when the project has a check
@@ -229,8 +227,7 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
 - Cards are borders, the composer aside; wells and the bubble are fills.
 - No control gets a focus ring: hover and selection are fills, at distinct steps of the ramp.
 - One primary per view.
-- If a surface is missing, add it to the ramp with its contrast asserted. Never add it in the one
-  view that needed it.
+- A missing surface goes into the ramp with its contrast asserted, never into one view.
 
 ## Components
 

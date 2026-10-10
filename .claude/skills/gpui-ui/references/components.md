@@ -27,7 +27,7 @@ spelled in text.
 | A dock's surface | `dock_surface` | `crates/plugin-host/src/lib.rs` |
 | A bar along the top of a region | `BAR_H` | `crates/app/src/controls.rs` |
 | Tabs that fit their strip, or one select | `tab_strip`, `tab_select`, `tab_menu_rows`, `measure_width` | `crates/plugin-host/src/tabs.rs` |
-| A list beside its detail, or one at a time | `side_by_side`, `back_link`, `DETAIL_MIN` | `crates/plugin-host/src/list_detail.rs` |
+| A list beside its detail, or one at a time | `list_detail`, `ListWidths`, `back_link` | `crates/plugin-host/src/list_detail.rs` |
 | Chat or Workbench | `presentation` | `crates/app/src/shell/presentation.rs` |
 | A hint, a one-line status | `hint`, `status_line` | `crates/plugin-host/src/lib.rs` |
 | Transcript meta ink, a tempered hue, a floating shadow | `meta_ink`, `hue_ink`, `lift` | `crates/app/src/theme.rs` |

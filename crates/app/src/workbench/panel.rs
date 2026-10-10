@@ -74,7 +74,7 @@ pub struct Workbench {
     /// the window cannot hold it beside the conversation. Pushed down from the
     /// shell, which decides it; the strip leads with the way back while it
     /// holds.
-    focused_area: bool,
+    fills_area: bool,
     /// The panel's width in rems as last laid out, which the strip reads to
     /// decide whether its modes fit side by side. Infinite until measured, so
     /// the first frame draws them side by side.
@@ -102,7 +102,7 @@ impl Workbench {
                 root: None,
                 zoom,
                 maximized: false,
-                focused_area: false,
+                fills_area: false,
                 width: Rc::new(Cell::new(f32::INFINITY)),
             }
         })
@@ -244,11 +244,11 @@ impl Workbench {
     ///
     /// Guarded for the reason [`Self::set_maximized`] is: the shell pushes it
     /// on every frame.
-    pub fn set_focused_area(&mut self, focused: bool, cx: &mut Context<Self>) {
-        if self.focused_area == focused {
+    pub fn set_fills_area(&mut self, fills: bool, cx: &mut Context<Self>) {
+        if self.fills_area == fills {
             return;
         }
-        self.focused_area = focused;
+        self.fills_area = fills;
         cx.notify();
     }
 

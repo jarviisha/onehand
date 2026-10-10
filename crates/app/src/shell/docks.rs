@@ -192,7 +192,7 @@ impl Shell {
         // The terminal sits under the conversation, so while the Workbench has
         // the area, asking for it brings the conversation back first -- and
         // the press then opens the terminal, never closes it.
-        let stepped = self.workbench_focused();
+        let stepped = self.workbench_fills_area();
         if stepped {
             self.step_aside(window, cx);
         }

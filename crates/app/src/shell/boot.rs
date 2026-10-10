@@ -506,7 +506,7 @@ impl Shell {
                 .into_iter()
                 .collect(),
             terminal_root: seed_root,
-            workbench_aside: false,
+            page_hid_workbench: false,
             mru: HashMap::new(),
             tab_cycle: None,
             app_maximized: None,

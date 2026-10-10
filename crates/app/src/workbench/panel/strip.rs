@@ -8,11 +8,12 @@ use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, Sizable as _, StyledExt};
 use onehand_plugin_api::{PluginId, WorkbenchModeSpec};
 
-/// The width the Workbench opens at, in rems. Narrower, the modes cannot each
-/// keep their name beside the controls at the strip's end, so they fold into
-/// one control naming the showing mode and opening the others, rather than
-/// letting clipping decide which survive.
-const DOCK_PREF: f32 = 30.;
+/// The least width, in rems, at which the modes sit side by side: under it they
+/// cannot each keep their name beside the controls at the strip's end, so they
+/// fold into one control naming the showing mode and opening the others,
+/// rather than letting clipping decide which survive. The Workbench opens wider
+/// than this, so the modes start side by side.
+const MODES_MIN_W: f32 = 30.;
 
 impl Workbench {
     pub(super) fn strip(
@@ -22,7 +23,7 @@ impl Workbench {
     ) -> impl IntoElement + use<> {
         let showing = self.showing();
         let full = self.maximized;
-        let compact = self.width.get() < DOCK_PREF;
+        let compact = self.width.get() < MODES_MIN_W;
         div()
             .h_flex()
             .flex_none()
@@ -37,18 +38,14 @@ impl Workbench {
             // The way back to the conversation, while this panel has taken the
             // area because the window cannot hold the two side by side. A
             // maximized panel has its own way back at the other end.
-            .when(self.focused_area && !full, |strip| {
+            .when(self.fills_area && !full, |strip| {
                 strip
                     .child(
-                        crate::controls::action("step-aside")
-                            .ghost()
-                            .small()
-                            .flex_none()
-                            .icon(Icon::new(IconName::ArrowLeft))
-                            .label("Conversation")
-                            .on_click(cx.listener(|_: &mut Self, _, _, cx| {
+                        onehand_plugin_host::back_link("step-aside", "Conversation").on_click(
+                            cx.listener(|_: &mut Self, _, _, cx| {
                                 cx.emit(WorkbenchEvent::StepAside);
-                            })),
+                            }),
+                        ),
                     )
                     .child(div().flex_none().w_px().h_3p5().bg(cx.theme().border))
             })

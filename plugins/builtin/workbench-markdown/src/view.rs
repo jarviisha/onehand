@@ -10,7 +10,7 @@ use gpui_component::{
     ActiveTheme, IconName, Sizable as _, StyledExt, h_resizable, resizable_panel,
 };
 use onehand_plugin_host::{
-    Ask, DETAIL_MIN, Request, back_link, hint, measure_width, side_by_side, status_line,
+    Ask, ListWidths, Request, back_link, hint, list_detail, measure_width, status_line,
 };
 use std::cell::Cell;
 use std::collections::HashMap;
@@ -27,16 +27,11 @@ use std::time::Duration;
 const DOC_POLL: Duration = Duration::from_millis(750);
 
 /// The document list's width before anybody drags it, and the range a drag may
-/// take it through.
-///
-/// Pixels rather than rems because that is the only thing the split accepts,
-/// the same as the rail's own range. Its own numbers and not the rail's: this
-/// column holds file names inside a dock the user has already sized, so the
-/// floor is what a name needs to be readable at and the ceiling is the point
-/// past which the list is taking the room the document was opened for.
-const DOC_LIST_W: f32 = 220.;
-const DOC_LIST_MIN: f32 = 140.;
-const DOC_LIST_MAX: f32 = 420.;
+/// take it through, in rems so they follow the panel's zoom. This column holds
+/// file names inside a dock the user has already sized, so the floor is what a
+/// name needs to be readable at and the ceiling is the point past which the
+/// list is taking the room the document was opened for.
+const DOC_LIST: ListWidths = ListWidths::new(13.75, 8.75, 26.25);
 
 pub(crate) struct MarkdownView {
     root: Option<PathBuf>,
@@ -386,18 +381,13 @@ impl MarkdownView {
         };
 
         let rem = window.rem_size();
-        // The list's width as dragged, read off the split; a size outside the
-        // range is the split seeding its panels before anything was measured.
-        let list_w = self
-            .split
-            .read(cx)
-            .sizes()
-            .first()
-            .map(|w| f32::from(*w))
-            .filter(|w| (DOC_LIST_MIN..=DOC_LIST_MAX).contains(w))
-            .unwrap_or(DOC_LIST_W);
-        let width = self.width.get();
-        let alone = !side_by_side(width, list_w / f32::from(rem));
+        let layout = list_detail(
+            self.split.read(cx),
+            &DOC_LIST,
+            gpui::rems(self.width.get()),
+            rem,
+        );
+        let alone = !layout.side_by_side;
 
         // What leads the reader's header: the way back to the list while the
         // two are one at a time, else the toggle hiding the list beside it.
@@ -472,9 +462,6 @@ impl MarkdownView {
             return alone_with(reader);
         }
 
-        // No drag takes the document under its least readable width, so
-        // dragging the list never flips the two into one at a time by itself.
-        let list_max = (width - DETAIL_MIN) * f32::from(rem);
         let list = div()
             .size_full()
             // The one hairline between the halves, on the divider: its grip
@@ -496,11 +483,8 @@ impl MarkdownView {
                         // starts at; once dragged, the split's own state is
                         // what answers.
                         resizable_panel()
-                            .size(gpui::px(DOC_LIST_W))
-                            .size_range(
-                                gpui::px(DOC_LIST_MIN)
-                                    ..gpui::px(list_max.clamp(DOC_LIST_MIN, DOC_LIST_MAX)),
-                            )
+                            .size(layout.start)
+                            .size_range(layout.range)
                             .flex_none()
                             .child(list),
                     )

@@ -3,19 +3,16 @@
 //! no room for both.
 
 use super::IssuesView;
-use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, Window, div, px};
+use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, Window, div, rems};
 use gpui_component::{ActiveTheme, StyledExt, h_resizable, resizable_panel};
 use onehand_core::issues::Issues;
-use onehand_plugin_host::{DETAIL_MIN, back_link, side_by_side};
+use onehand_plugin_host::{ListWidths, back_link, list_detail};
 use std::path::Path;
 
 /// The list's width before anybody drags it, and the range a drag may take it
-/// through — pixels, because that is the only thing the split accepts. A
-/// row's title wraps to two lines, so the floor is what the filters above the
-/// rows need.
-const LIST_W: f32 = 240.;
-const LIST_MIN: f32 = 160.;
-const LIST_MAX: f32 = 420.;
+/// through, in rems so they follow the panel's zoom. A row's title wraps to two
+/// lines, so the floor is what the filters above the rows need.
+const LIST: ListWidths = ListWidths::new(15., 10., 26.25);
 
 impl IssuesView {
     pub(super) fn tab_body(
@@ -25,29 +22,20 @@ impl IssuesView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let rem = f32::from(window.rem_size());
-        // The list's width as dragged, read off the split; a size outside the
-        // range is the split seeding its panels before anything was measured.
-        let list_w = self
-            .split
-            .read(cx)
-            .sizes()
-            .first()
-            .map(|w| f32::from(*w))
-            .filter(|w| (LIST_MIN..=LIST_MAX).contains(w))
-            .unwrap_or(LIST_W);
-        let width = self.width.get();
+        let layout = list_detail(
+            self.split.read(cx),
+            &LIST,
+            rems(self.width.get()),
+            window.rem_size(),
+        );
         let search = self.search_bar(window, cx);
         // `flex` and not `v_flex` around a half: each half is a column that
         // takes the height it is given, which a row hands down whole.
         let half = |element: AnyElement| div().flex_1().min_h_0().flex().child(element);
 
-        let halves = if side_by_side(width, list_w / rem) {
+        let halves = if layout.side_by_side {
             let list = self.list(issues, window, cx);
             let detail = self.detail(root, issues, window, cx);
-            // No drag takes the issue under its least readable width, so
-            // dragging the list never flips the two into one at a time.
-            let list_max = ((width - DETAIL_MIN) * rem).clamp(LIST_MIN, LIST_MAX);
             div().flex_1().min_h_0().child(
                 h_resizable("issues-split")
                     .with_state(&self.split)
@@ -57,8 +45,8 @@ impl IssuesView {
                         // that grows takes the room the issue was opened
                         // to be read in.
                         resizable_panel()
-                            .size(px(LIST_W))
-                            .size_range(px(LIST_MIN)..px(list_max))
+                            .size(layout.start)
+                            .size_range(layout.range)
                             .flex_none()
                             .child(
                                 div()

@@ -111,7 +111,7 @@ impl Shell {
         // the caret: the arrival has just given it to the conversation, and
         // whoever left the page for a session wants to type there.
         if !self.page_shown(cx)
-            && std::mem::take(&mut self.workbench_aside)
+            && std::mem::take(&mut self.page_hid_workbench)
             && !self.dock.read(cx).is_dock_open(DockPlacement::Right, cx)
         {
             self.dock.update(cx, |dock, cx| {

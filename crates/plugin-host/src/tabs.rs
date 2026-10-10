@@ -1,10 +1,10 @@
 //! How a strip of tabs fits the width it is given.
 //!
-//! One rule for every strip that adopts it, the Workbench's modes and the
-//! editor's files alike: a tab is at most [`TAB_MAX_W`] and truncates, the
-//! tabs share what room there is, and a strip that cannot give each tab
-//! [`TAB_MIN`] becomes one control naming the current tab and opening the
-//! others, so no tab is ever pushed out of reach and nothing scrolls sideways.
+//! The rule a strip of tabs that must never scroll follows, the editor's files
+//! among them: a tab is at most [`TAB_MAX_W`] and truncates, the tabs share
+//! what room there is, and a strip that cannot give each tab [`TAB_MIN`]
+//! becomes one control naming the current tab and opening the others, so no
+//! tab is ever pushed out of reach.
 
 use gpui::{ParentElement as _, Styled as _};
 use gpui_component::button::ButtonVariants as _;

@@ -76,7 +76,7 @@ impl Shell {
         if self.app_maximized.is_some() {
             self.presentation = Presentation::Conversation;
             self.workbench
-                .update(cx, |panel, cx| panel.set_focused_area(false, cx));
+                .update(cx, |panel, cx| panel.set_fills_area(false, cx));
             return;
         }
         let rem = f32::from(window.rem_size());
@@ -171,7 +171,7 @@ impl Shell {
         // Every frame, guarded inside: a flag pushed only on a change goes
         // stale across a maximize that restored straight into a split.
         self.workbench
-            .update(cx, |panel, cx| panel.set_focused_area(focus_now, cx));
+            .update(cx, |panel, cx| panel.set_fills_area(focus_now, cx));
         self.presentation = next;
     }
 
@@ -187,7 +187,7 @@ impl Shell {
     }
 
     /// Whether the Workbench has the area beside the rail.
-    pub(super) fn workbench_focused(&self) -> bool {
+    pub(super) fn workbench_fills_area(&self) -> bool {
         self.presentation == Presentation::WorkbenchFocus
     }
 

@@ -22,10 +22,10 @@ use crate::view::EditorView;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyView, App, AppContext as _, Context, Entity, IntoElement, ParentElement, Render, Styled,
-    Subscription, Window, div, px,
+    Subscription, Window, div, rems,
 };
 use gpui_component::{ActiveTheme, ResizableState, StyledExt, h_resizable, resizable_panel};
-use onehand_plugin_host::{DETAIL_MIN, measure_width, side_by_side};
+use onehand_plugin_host::{ListWidths, list_detail, measure_width};
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -35,10 +35,8 @@ use std::rc::Rc;
 /// pair is too narrow to share and shows one half at a time instead. The
 /// ceiling is a preference: the half being squeezed by a wide tree is the one
 /// with the long lines in it, and a drag never takes the file under its own
-/// least useful width.
-const TREE_W: f32 = 200.;
-const TREE_MIN: f32 = 140.;
-const TREE_MAX: f32 = 420.;
+/// least useful width. In rems, so they follow the panel's zoom.
+const TREE: ListWidths = ListWidths::new(12.5, 8.75, 26.25);
 
 pub(crate) struct CodeView {
     /// Held as the view rather than the mode: it is the same entity on every
@@ -69,19 +67,13 @@ impl CodeView {
 
 impl Render for CodeView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let rem = f32::from(window.rem_size());
-        // The tree's width as dragged, read off the split; a size outside the
-        // range is the split seeding its panels before anything was measured.
-        let tree = self
-            .divider
-            .read(cx)
-            .sizes()
-            .first()
-            .map(|w| f32::from(*w))
-            .filter(|w| (TREE_MIN..=TREE_MAX).contains(w))
-            .unwrap_or(TREE_W);
-        let width = self.width.get();
-        let alone = !side_by_side(width, tree / rem);
+        let layout = list_detail(
+            self.divider.read(cx),
+            &TREE,
+            rems(self.width.get()),
+            window.rem_size(),
+        );
+        let alone = !layout.side_by_side;
         self.editor
             .update(cx, |editor, cx| editor.set_alone(alone, cx));
         let (tree_shown, showing_file) = {
@@ -112,9 +104,6 @@ impl Render for CodeView {
         if !tree_shown {
             return frame.flex().child(self.editor.clone()).into_any_element();
         }
-        // No drag takes the file under its least useful width, so dragging the
-        // tree never flips the pair into one at a time by itself.
-        let tree_max = (width * rem - DETAIL_MIN * rem).clamp(TREE_MIN, TREE_MAX);
         frame
             .child(
                 h_resizable("workbench-code")
@@ -124,8 +113,8 @@ impl Render for CodeView {
                         // and a tree that grows is a tree taking whatever the
                         // editor is not using, which is most of the panel.
                         resizable_panel()
-                            .size(px(TREE_W))
-                            .size_range(px(TREE_MIN)..px(tree_max))
+                            .size(layout.start)
+                            .size_range(layout.range)
                             .flex_none()
                             .child(
                                 div()

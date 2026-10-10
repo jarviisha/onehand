@@ -327,7 +327,7 @@ pub struct Shell {
     terminal_root: Option<PathBuf>,
     /// Whether the Workbench was open when the workspace page put it away, so
     /// leaving the page puts it back.
-    workbench_aside: bool,
+    page_hid_workbench: bool,
     /// Session uids per root, most recently viewed first. What `Ctrl+Tab`
     /// walks.
     mru: HashMap<PathBuf, Vec<u64>>,
