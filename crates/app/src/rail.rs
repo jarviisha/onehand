@@ -40,10 +40,6 @@ pub use project::{pick_item, unattended_item};
 pub(crate) use session::{signal_mark, signal_word};
 pub(crate) use workspace::ellipsize_front;
 
-/// The workspace bar and the foot: the height of the conversation's header
-/// beside them, so the bars line up across the window.
-const BAR_H: Rems = rems(2.75);
-
 /// A single-line rail row: a page, a project, a note.
 const ROW_H: Rems = rems(1.875);
 
@@ -428,7 +424,7 @@ fn foot(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
         .h_flex()
         .items_center()
         .flex_none()
-        .h(BAR_H)
+        .h(crate::controls::BAR_H)
         .px_2()
         .border_t_1()
         .border_color(cx.theme().border)

@@ -10,9 +10,11 @@
 #![warn(unreachable_pub)]
 
 mod menu;
+mod tabs;
 mod workbench;
 pub use menu::{menu_below, menu_item, menu_row};
 pub use onehand_core::worktree::removal::Process;
+pub use tabs::{TAB_MAX_W, TabStrip, measure_width, tab_menu_rows, tab_select, tab_strip};
 pub use workbench::{Ask, Request, WorkbenchMode};
 
 use gpui::prelude::FluentBuilder as _;

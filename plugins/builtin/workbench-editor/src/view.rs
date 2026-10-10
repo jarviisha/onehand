@@ -1,11 +1,11 @@
 //! The Editor mode's own state: the open buffers per project root, and the
 //! rules that keep a save from clobbering somebody else's write.
 
-use crate::buffers::{Fades, RootBuffers, StripHandlers, body, new_buffer, save_status, tab_strip};
+use crate::buffers::{RootBuffers, StripHandlers, body, new_buffer, save_status, tab_strip};
 
 use gpui::{
     App, AppContext as _, Context, Entity, Focusable as _, IntoElement, ParentElement, Render,
-    ScrollHandle, SharedString, Styled, Window, div,
+    SharedString, Styled, Window, div,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::dialog::{DialogClose, DialogFooter};
@@ -13,6 +13,7 @@ use gpui_component::input::InputEvent;
 use gpui_component::{StyledExt, WindowExt as _};
 use onehand_core::editor::SaveOutcome;
 use onehand_plugin_host::{hint, status_line};
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -38,12 +39,9 @@ pub(crate) struct EditorView {
     /// dropped either — it is remembered here and re-run once the first lands,
     /// which is what makes it pick up the keystrokes that prompted it.
     saving: HashMap<u64, bool>,
-    /// The tab strip's scroll, so the active tab can be brought into view.
-    tabs_scroll: ScrollHandle,
-    /// The tab last brought into view. The strip is scrolled only when the
-    /// active tab *changes*: asked on every frame, it would pull the strip back
-    /// under a wheel somebody was using to look at the other tabs.
-    revealed: Option<u64>,
+    /// The width the strip leaves its tabs, in rems, as last laid out.
+    /// Infinite until measured, so the first frame draws tabs, not a select.
+    tabs_w: Rc<Cell<f32>>,
     /// Whether the file tree beside the buffers is showing.
     ///
     /// Held here rather than on the split that draws the tree, because the
@@ -61,8 +59,7 @@ impl EditorView {
             buffers: HashMap::new(),
             status: None,
             saving: HashMap::new(),
-            tabs_scroll: ScrollHandle::new(),
-            revealed: None,
+            tabs_w: Rc::new(Cell::new(f32::INFINITY)),
             tree_shown: true,
         })
     }
@@ -466,39 +463,7 @@ fn next_buffer_uid() -> u64 {
 }
 
 impl Render for EditorView {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // The strip's fades are decided from the last frame's layout. A wheel
-        // re-renders this view, so that lag is one frame and invisible — but a
-        // change of *width* (the tree hidden, the dock dragged) re-lays the
-        // strip without asking this view again, and a fade left over from the
-        // narrower strip then stays on a tab that is no longer cut. So the
-        // answer is checked once more after the frame, and a view drawn on a
-        // stale one is asked for again; it settles as soon as they agree.
-        let drawn = Fades::of(&self.tabs_scroll);
-        let (handle, view) = (self.tabs_scroll.clone(), cx.entity().downgrade());
-        window.on_next_frame(move |_, cx| {
-            if Fades::of(&handle) != drawn {
-                let _ = view.update(cx, |_, cx| cx.notify());
-            }
-        });
-        // A file opened while the strip is full lands its tab past the end, so
-        // the file on screen would be the one whose tab nobody can see. The
-        // handle waits for the frame that lays the tab out, so a tab being drawn
-        // for the first time is found too.
-        let active = self.current().map(|buffers| {
-            (
-                buffers.tabs.active,
-                buffers.tabs.active_file().map(|f| f.uid),
-            )
-        });
-        if let Some((idx, uid)) = active
-            && uid.is_some()
-            && uid != self.revealed
-        {
-            self.tabs_scroll.scroll_to_item(idx);
-            self.revealed = uid;
-        }
-
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let Some(root) = self.root.as_ref() else {
             return div()
                 .flex_1()
@@ -517,7 +482,8 @@ impl Render for EditorView {
         let strip = tab_strip(
             root,
             buffers,
-            &self.tabs_scroll,
+            &self.tabs_w,
+            cx.entity().downgrade(),
             self.tree_shown,
             StripHandlers {
                 toggle_tree: Box::new(
@@ -545,10 +511,8 @@ impl Render for EditorView {
         };
 
         // `min_w_0`: the resizable panel holding this is a flex *row*, and a flex
-        // item's floor is otherwise its content's width — here the sum of every
-        // tab, since tabs never narrow. The view grew with the strip instead of
-        // the strip's box overflowing, so it never scrolled and the card clipped
-        // whatever passed its edge.
+        // item's floor is otherwise its content's width, so the strip's measure
+        // would follow its tabs rather than the room the panel has.
         div()
             .flex_1()
             .min_w_0()

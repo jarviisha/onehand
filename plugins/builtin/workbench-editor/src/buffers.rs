@@ -8,16 +8,27 @@
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, AppContext, Entity, InteractiveElement, IntoElement, ParentElement, ScrollHandle,
-    SharedString, StatefulInteractiveElement, Styled, Window, div, px, rems,
+    App, AppContext, Entity, InteractiveElement, IntoElement, ParentElement, Rems, SharedString,
+    StatefulInteractiveElement, Styled, WeakEntity, Window, div, rems,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{Editor, EditorState};
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::editor::{RootEditors, SaveOutcome};
+use onehand_plugin_host::{TabStrip, menu_below, menu_row, tab_strip as tab_strip_rule};
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::path::Path;
+use std::rc::Rc;
+
+/// A tab's height, and its line's: a little over its `text_xs` glyphs, so the
+/// chip is no taller than what it says.
+const TAB_H: Rems = rems(1.125);
+/// The room between two tabs on the strip, in rems.
+const TAB_GAP: f32 = 0.25;
+/// The unsaved-edits mark on a tab.
+const DIRTY_DOT: Rems = rems(0.375);
 
 /// Editor state for one project root: the tab set from core, plus this front
 /// end's buffers.
@@ -106,18 +117,18 @@ pub(crate) type OnPress = Box<dyn Fn(&gpui::ClickEvent, &mut Window, &mut App)>;
 /// Shared, because every tab's closure holds one.
 pub(crate) type OnTab = std::rc::Rc<dyn Fn(&usize, &mut Window, &mut App)>;
 
-/// The file-tab strip: the tabs in a box of their own that scrolls, and a
-/// trailing close-all that stays put.
+/// The file-tab strip: the tree's toggle, the tabs, and a trailing close-all.
 ///
-/// **The tabs' box is the only part of the row that gives way.** The close-all
-/// used to sit inside the scrolling box, so enough open files pushed it past the
-/// panel's edge — the one control wanted precisely when there are too many tabs
-/// was the one the tabs took away. `flex_1` + `min_w_0` on the box and
-/// `flex_none` on the control is what keeps it on screen at any count.
-pub(crate) fn tab_strip(
+/// The tabs share the width actually left to them, `measured` last frame (in
+/// rems) by the box they sit in, which asks `view` to draw again when it
+/// changes: side by side, each capped and truncating, or one select when they
+/// cannot each keep a readable name. Nothing scrolls, so the active file's tab
+/// is always in reach and the controls at the ends never move.
+pub(crate) fn tab_strip<T: 'static>(
     root: &Path,
     buffers: &RootBuffers,
-    scroll: &ScrollHandle,
+    measured: &Rc<Cell<f32>>,
+    view: WeakEntity<T>,
     tree_shown: bool,
     on: StripHandlers,
     cx: &App,
@@ -130,106 +141,131 @@ pub(crate) fn tab_strip(
         close_all: on_close_all,
     } = on;
 
-    let fades = Fades::of(scroll);
     let (toggle_icon, toggle_hint) = match tree_shown {
         true => (IconName::PanelLeftClose, "Hide the file tree"),
         false => (IconName::PanelLeftOpen, "Show the file tree"),
     };
+    // The label is the file name alone, so three `mod.rs` tabs read the same;
+    // the path relative to the project tells them apart, on hover. The dirty
+    // dot is named there too, since a colour is a code somebody has to learn.
+    let hint_of = |file: &onehand_core::editor::EditorFile| {
+        let rel = file.path.strip_prefix(root).unwrap_or(&file.path);
+        SharedString::from(match file.dirty {
+            true => format!("{} — unsaved changes", rel.display()),
+            false => rel.display().to_string(),
+        })
+    };
+    let files = &buffers.tabs.files;
 
-    let tab_list = div()
-        .id("editor-tabs")
-        .track_scroll(scroll)
-        .h_flex()
-        .items_center()
-        .gap_1()
-        .w_full()
-        .overflow_x_scroll()
-        .children(buffers.tabs.files.iter().enumerate().map(|(i, file)| {
-            let (select, close) = (on_select.clone(), on_close.clone());
-            // One group per tab: a name shared by the strip would light
-            // every tab's cross the moment the pointer entered any of
-            // them.
-            let hovered = SharedString::from(format!("editor-tab-{i}"));
-            // The label is the file name alone, so three `mod.rs` tabs
-            // read the same; the path relative to the project is what
-            // tells them apart, and the hover is where it goes. The
-            // dirty dot is named there too, since a colour is a code
-            // somebody has to have learnt first.
-            let rel = file.path.strip_prefix(root).unwrap_or(&file.path);
-            let hint = SharedString::from(match file.dirty {
-                true => format!("{} — unsaved changes", rel.display()),
-                false => rel.display().to_string(),
-            });
+    let tab_list = match tab_strip_rule(files.len(), measured.get(), TAB_GAP) {
+        TabStrip::Tabs(each) => div()
+            .h_flex()
+            .items_center()
+            .gap(rems(TAB_GAP))
+            .children(files.iter().enumerate().map(|(i, file)| {
+                let (select, close) = (on_select.clone(), on_close.clone());
+                // One group per tab: a name shared by the strip would light
+                // every tab's cross the moment the pointer entered any of them.
+                let hovered = SharedString::from(format!("editor-tab-{i}"));
+                let hint = hint_of(file);
+                div()
+                    .id(("editor-tab", i))
+                    .group(hovered.clone())
+                    .h_flex()
+                    .items_center()
+                    .gap_1()
+                    .min_w_0()
+                    .max_w(rems(each))
+                    .px_2()
+                    // A height of its own rather than padding around the line.
+                    // `text_xs` sets the font size alone, and gpui's default line
+                    // is 1.618 times that, so padded, the chip stood nearly twice
+                    // as tall as its letters. The line comes down with the box,
+                    // or the label's own line would hold the tab open.
+                    .h(TAB_H)
+                    .line_height(TAB_H)
+                    .rounded(cx.theme().radius)
+                    .text_xs()
+                    .cursor_pointer()
+                    .when(i == active, |tab| {
+                        tab.bg(cx.theme().accent)
+                            .text_color(cx.theme().accent_foreground)
+                    })
+                    .when(i != active, |tab| {
+                        tab.hover(|tab| tab.bg(cx.theme().list_hover))
+                    })
+                    .tooltip(move |window, cx| Tooltip::new(hint.clone()).build(window, cx))
+                    .child(div().min_w_0().truncate().child(file.label.clone()))
+                    // The dirty dot, not a modified-name convention: the label
+                    // truncates, and a marker inside it would go first.
+                    .when(file.dirty, |tab| tab.child(dirty_dot(cx)))
+                    .on_click(move |_, window, cx: &mut App| select(&i, window, cx))
+                    // Shown on hover alone, `invisible` rather than absent so a
+                    // tab keeps its width under the pointer.
+                    .child(
+                        close_button(i, close)
+                            .invisible()
+                            .group_hover(hovered, |style| style.visible()),
+                    )
+            }))
+            .into_any_element(),
+        TabStrip::Select => {
+            let current = files.get(active);
+            let label = SharedString::from(current.map(|f| f.label.clone()).unwrap_or_default());
+            let hint = current.map(hint_of).unwrap_or_default();
+            let rows: Vec<(SharedString, bool)> = files
+                .iter()
+                .map(|f| (SharedString::from(f.label.clone()), f.dirty))
+                .collect();
+            // Keyed by the project and the count, so a menu left open over a
+            // strip that changed under it is dropped rather than kept with rows
+            // aimed at tabs that moved.
+            let menu_id = SharedString::from(format!(
+                "editor-tab-menu-{}-{}",
+                root.display(),
+                files.len()
+            ));
+            let select = on_select.clone();
+            let menu = menu_below(
+                menu_id,
+                onehand_plugin_host::tab_select("editor-tab-select", label, hint, cx).xsmall(),
+                move |mut menu, _, _| {
+                    let (shown, left_out) = onehand_plugin_host::tab_menu_rows(rows.len(), active);
+                    for i in shown {
+                        let (label, dirty) = rows[i].clone();
+                        let select = select.clone();
+                        menu = menu.item(
+                            menu_row(move |_, cx| {
+                                div()
+                                    .h_flex()
+                                    .items_center()
+                                    .gap_1()
+                                    .child(label.clone())
+                                    .when(dirty, |row| row.child(dirty_dot(cx)))
+                            })
+                            .checked(i == active)
+                            .on_click(move |_, window, cx: &mut App| select(&i, window, cx)),
+                        );
+                    }
+                    if left_out > 0 {
+                        menu = menu.label(format!("{left_out} more files not listed"));
+                    }
+                    menu
+                },
+            );
+            // The close stays beside the current file, always shown: the
+            // menu's rows only pick.
             div()
-                .id(("editor-tab", i))
-                .group(hovered.clone())
                 .h_flex()
                 .items_center()
-                .gap_1()
-                .flex_none()
-                .max_w(rems(13.75))
-                .px_2()
-                // A height of its own rather than padding around the line.
-                // `text_xs` sets the font size alone, and gpui's default line
-                // is 1.618 times that — about 1.2rem for 0.75rem glyphs — so
-                // padded, the chip stood nearly twice as tall as its letters.
-                // The line comes down with the box, or the label's own line
-                // would hold the tab open; the font size does not move.
-                .h(rems(1.125))
-                .line_height(rems(1.125))
-                .rounded(cx.theme().radius)
-                .text_xs()
-                .cursor_pointer()
-                .when(i == active, |tab| {
-                    tab.bg(cx.theme().accent)
-                        .text_color(cx.theme().accent_foreground)
+                .gap(rems(TAB_GAP))
+                .child(div().min_w_0().overflow_hidden().child(menu))
+                .when(current.is_some(), |strip| {
+                    strip.child(close_button(active, on_close.clone()).flex_none())
                 })
-                // The well, the same hover the terminal's tabs and the
-                // mode strip take, so one strip does not answer the
-                // pointer differently from the two beside it.
-                .when(i != active, |tab| tab.hover(|tab| tab.bg(cx.theme().muted)))
-                .tooltip(move |window, cx| Tooltip::new(hint.clone()).build(window, cx))
-                .child(div().min_w_0().truncate().child(file.label.clone()))
-                // The dirty dot, not a modified-name convention: the
-                // label is already truncated, and a marker inside it
-                // would be the first thing to disappear. A status *fill*: the
-                // theme's `warning`, where `status_ink` is for text.
-                .when(file.dirty, |tab| {
-                    tab.child(
-                        div()
-                            .size(gpui::rems(0.375))
-                            .flex_none()
-                            .rounded_full()
-                            .bg(cx.theme().warning),
-                    )
-                })
-                .on_click(move |_, window, cx: &mut App| select(&i, window, cx))
-                // **Shown on hover alone**, `invisible` rather than
-                // absent so a tab does not change width under the
-                // pointer. `stop_propagation` is what keeps the press
-                // that closes a tab from also selecting whatever slid
-                // into its place — which switched the file on screen
-                // when a background tab was closed.
-                //
-                // `size_4`: `xsmall` gives an icon button a 1.25rem box, taller
-                // than the tab's own height, and a child that tall would hold
-                // the tab open whatever the tab asks for. The library applies a
-                // caller's style after its size preset, so this takes the box
-                // down while the glyph keeps its `xsmall` size.
-                .child(
-                    onehand_plugin_host::action(("editor-tab-close", i))
-                        .ghost()
-                        .xsmall()
-                        .size_4()
-                        .icon(Icon::new(IconName::Close))
-                        .invisible()
-                        .group_hover(hovered, |style| style.visible())
-                        .on_click(move |_, window, cx: &mut App| {
-                            cx.stop_propagation();
-                            close(&i, window, cx);
-                        }),
-                )
-        }));
+                .into_any_element()
+        }
+    };
 
     div()
         .h_flex()
@@ -253,27 +289,23 @@ pub(crate) fn tab_strip(
                 .tooltip(toggle_hint)
                 .on_click(on_toggle_tree),
         )
+        // The one part of the row that gives way, and the box the tabs are
+        // laid out to: `flex_1` + `min_w_0`, so its width is what is left
+        // after the controls, never its content.
         .child(
-            // **Each end fades while there is more past it**, into the surface
-            // the strip sits on. A hard clip cuts a tab mid-letter, which reads
-            // as a label that was drawn wrong rather than as a row that goes on;
-            // a fade says the row goes on. Shown only on a side with something
-            // scrolled out, so a strip that fits looks exactly as it did. Read
-            // off the handle, which holds the last frame's layout — a wheel
-            // notifies the view, so the next frame has the new offset.
             div()
                 .relative()
                 .flex_1()
                 .min_w_0()
-                .child(tab_list)
-                .when(fades.start, |list| list.child(fade(Side::Start, cx)))
-                .when(fades.end, |list| list.child(fade(Side::End, cx))),
+                .overflow_hidden()
+                .child(onehand_plugin_host::measure_width(measured.clone(), view))
+                .child(tab_list),
         )
         // Muted like the other strips' controls: a ghost button in full ink is
         // the brightest thing on the row, out-shouting the file names beside it.
         // Its tooltip is what tells it from a tab's own cross, which is the
         // same glyph.
-        .when(!buffers.tabs.files.is_empty(), |strip| {
+        .when(!files.is_empty(), |strip| {
             strip.child(
                 onehand_plugin_host::action("close-all-files")
                     .ghost()
@@ -288,71 +320,42 @@ pub(crate) fn tab_strip(
         .into_any_element()
 }
 
-/// Whether each end of the tab list has tabs scrolled past it.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct Fades {
-    pub(crate) start: bool,
-    pub(crate) end: bool,
-}
-
-impl Fades {
-    /// From a scroll offset (zero or negative, as gpui keeps it) and the
-    /// furthest it can go.
-    ///
-    /// **Compared against half a pixel, never against zero.** `Pixels` orders
-    /// by `f32::total_cmp`, which puts `-0.0` below `0.0` — so a strip that fits
-    /// (`max` zero, `-max` negative zero) read as having more past its end, and
-    /// drew that fade on every strip that did not need one. The half pixel also
-    /// absorbs the sub-pixel remainder a scroll can stop on.
-    pub(crate) fn at(offset: gpui::Pixels, max: gpui::Pixels) -> Self {
-        Self {
-            start: offset < px(-0.5),
-            end: offset + max > px(0.5),
-        }
-    }
-
-    /// Read off the handle, which holds the *last* frame's layout, so the
-    /// answer can be one frame stale — see `EditorView::render`, which checks
-    /// it again after the frame is drawn.
-    pub(crate) fn of(scroll: &ScrollHandle) -> Self {
-        Self::at(scroll.offset().x, scroll.max_offset().x)
-    }
-}
-
-/// Which end of the tab list a fade sits on.
-#[derive(Debug, Clone, Copy)]
-enum Side {
-    Start,
-    End,
-}
-
-/// A band at one end of the tab list, from the dock's surface to nothing.
+/// The cross that closes tab `i`.
 ///
-/// Carries no handler, so it takes no hitbox: a tab under it still answers the
-/// pointer, its hover and its tooltip included.
-fn fade(side: Side, cx: &App) -> gpui::Div {
-    let surface = onehand_plugin_host::dock_surface(cx);
-    let (band, from, to) = match side {
-        Side::Start => (div().left_0(), surface, surface.alpha(0.)),
-        Side::End => (div().right_0(), surface.alpha(0.), surface),
-    };
-    band.absolute()
-        .top_0()
-        .bottom_0()
-        .w(rems(1.5))
-        .bg(gpui::linear_gradient(
-            90.,
-            gpui::linear_color_stop(from, 0.),
-            gpui::linear_color_stop(to, 1.),
-        ))
+/// `stop_propagation` keeps the press that closes a tab from also selecting
+/// whatever slid into its place. `size_4`: `xsmall` gives an icon button a box
+/// taller than the tab, and the library applies a caller's style after its
+/// size preset, so this takes the box down while the glyph keeps its `xsmall`
+/// size.
+fn close_button(i: usize, close: OnTab) -> gpui_component::button::Button {
+    onehand_plugin_host::action(("editor-tab-close", i))
+        .ghost()
+        .xsmall()
+        .size_4()
+        .icon(Icon::new(IconName::Close))
+        .tooltip("Close this file")
+        .on_click(move |_, window, cx: &mut App| {
+            cx.stop_propagation();
+            close(&i, window, cx);
+        })
+}
+
+/// A tab's unsaved-edits mark: a status *fill*, the theme's `warning`, where
+/// `status_ink` is for text.
+fn dirty_dot(cx: &App) -> gpui::Div {
+    div()
+        .size(DIRTY_DOT)
+        .flex_none()
+        .rounded_full()
+        .bg(cx.theme().warning)
 }
 
 /// The editor body for the active tab.
 ///
 /// `appearance(false)`: by default the component draws itself as a form field —
-/// its own fill, border and radius — which inside the Workbench card is a
-/// second, smaller rounded box nested in the first. The card is the frame; the
-/// code sits on its surface the way the file tree beside it does.
+/// its own fill, border and radius — which inside the Workbench is a rounded
+/// box laid on the dock. The dock is the frame; the code sits on its surface
+/// the way the file tree beside it does.
 pub(crate) fn body(state: &Entity<EditorState>) -> impl IntoElement + use<> {
     Editor::new(state).appearance(false).h_full()
 }
@@ -400,8 +403,7 @@ pub(crate) fn save_status(outcome: &SaveOutcome, label: &str) -> Option<String> 
 
 #[cfg(test)]
 mod tests {
-    use super::{Fades, RootBuffers};
-    use gpui::px;
+    use super::RootBuffers;
     use std::path::PathBuf;
 
     #[test]
@@ -414,28 +416,5 @@ mod tests {
         buffers.tabs.files[0].dirty = true;
         buffers.tabs.files[2].dirty = true;
         assert_eq!(buffers.dirty_count(), 2);
-    }
-
-    #[test]
-    fn a_strip_that_fits_fades_at_neither_end() {
-        assert_eq!(Fades::at(px(0.), px(0.)), Fades::default());
-    }
-
-    #[test]
-    fn a_negative_zero_offset_is_not_scrolled() {
-        assert_eq!(Fades::at(px(-0.), px(0.)), Fades::default());
-    }
-
-    #[test]
-    fn an_overflowing_strip_fades_toward_what_is_scrolled_past() {
-        // At the start: more to the right only.
-        let start = Fades::at(px(0.), px(120.));
-        assert_eq!((start.start, start.end), (false, true));
-        // Partway: both.
-        let middle = Fades::at(px(-40.), px(120.));
-        assert_eq!((middle.start, middle.end), (true, true));
-        // At the end: more to the left only.
-        let end = Fades::at(px(-120.), px(120.));
-        assert_eq!((end.start, end.end), (true, false));
     }
 }
