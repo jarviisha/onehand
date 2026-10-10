@@ -166,7 +166,7 @@ pub fn status_line(message: String, cx: &App) -> AnyElement {
 /// and the halves are `flex_1`; the fills and the radius are the theme's.
 ///
 /// **The selected half is `accent`**, which is the app's own "this one, among
-/// several" — what the terminal's tabs and the Workbench's mode chips use, so
+/// several" — what the terminal's tabs and the Workbench's modes take, so
 /// one condition keeps one spelling. It is not the reading surface: on a panel
 /// drawn in the well, a plate in the reading surface is a step *below* what it
 /// sits on, a hole rather than a plate. And there is no shadow under it: a fill

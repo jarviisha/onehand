@@ -1,4 +1,4 @@
-//! The Workbench dock panel: Editor, Markdown, Neovim, Issues and Plugins, one at a time.
+//! The Workbench dock panel: Editor, Markdown, Issues, Plugins and Neovim, one at a time.
 //!
 //! **The panel owns no mode's state and draws no mode's body.** It keeps the
 //! list, remembers which one is showing, draws the strip that switches between
