@@ -32,30 +32,14 @@ pub struct PermItem {
     pub req: PermissionRequest,
     /// The chosen option's name once answered (buttons then disable).
     pub resolved: Option<String>,
-    /// Whether the command block is open past the lines it folds at.
+    /// Whether the record an answered permission leaves is open to the whole
+    /// command and where it ran.
     ///
-    /// Held on the item and not on the card that draws it, for the reason
-    /// every other fold in this conversation is: the card is rebuilt from
-    /// scratch on every frame, and what changes while a permission is parked
-    /// is the agent still streaming underneath it.
+    /// Held on the item and not on the row that draws it, for the reason every
+    /// other fold in this conversation is: the row is rebuilt from scratch on
+    /// every frame.
     pub expanded: bool,
 }
-
-/// Real lines of a command a permission card draws before it folds.
-///
-/// **Real lines, never wrapped ones.** A command is the text a grant is given
-/// on the strength of, so the count is over the newlines the agent wrote and
-/// nothing else -- a bound measured in drawn rows would fold a two-line
-/// command on a narrow pane and leave a ten-line one whole on a wide one,
-/// which is a fold the user cannot predict.
-///
-/// Eight is what leaves the header, the buttons and enough of a script to
-/// recognise it on one screen together.
-///
-/// How many rows a permission's command box shows before it scrolls, so a
-/// command of one very long line is held to the same height as one of eight
-/// short ones rather than filling the card.
-pub const COMMAND_FOLD_LINES: usize = 8;
 
 impl PermItem {
     /// The exact command, whatever the box is showing of it.

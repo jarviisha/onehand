@@ -1,6 +1,6 @@
 use super::fold_key;
 use super::metrics::{
-    BLOCK_INSET, COMMAND_OPEN_SHARE, COPY_ICON, COPY_SIZE, FOLD_H, FOLD_ROW, LARGE_DIFF,
+    BLOCK_INSET, COMMAND_FADE, COMMAND_H, COMMAND_SHARE, COPY_ICON, COPY_SIZE, LARGE_DIFF,
     MONO_ADVANCE, PREVIEW_DIFF, PREVIEW_OUT, STATE_TINT, TEXT_SM, TIGHT_GAP, radius_control,
 };
 use super::parts::{
@@ -725,7 +725,6 @@ pub(super) struct CommandBlock {
     /// box is bounded against. `None` before the list has measured itself,
     /// where the window is the only answer there is.
     pub(super) well: Option<gpui::Pixels>,
-    pub(super) total: usize,
 }
 
 impl RenderOnce for CommandBlock {
@@ -740,7 +739,8 @@ impl RenderOnce for CommandBlock {
         // inch apart in one transcript, drawn as two kinds of thing, neither of
         // them the reader's doing. The width is the digits of the count, so the
         // one-line case costs a single character.
-        let gutter = rems(MONO_ADVANCE * TEXT_SM.0 * self.total.to_string().len() as f32);
+        let total = self.lines.len().max(1);
+        let gutter = rems(MONO_ADVANCE * TEXT_SM.0 * total.to_string().len() as f32);
         // **A share of the panel this is drawn in, not of the window.** What
         // the bound is for is the card's own heading staying on screen with the
         // command it belongs to, and the card is in the conversation -- so with
@@ -749,8 +749,7 @@ impl RenderOnce for CommandBlock {
         // one thing the share was put here to stop. The window is the fallback
         // for the frame before the list has measured itself, where it is the
         // only answer there is.
-        let ceiling =
-            self.well.unwrap_or_else(|| window.viewport_size().height) * COMMAND_OPEN_SHARE;
+        let ceiling = self.well.unwrap_or_else(|| window.viewport_size().height) * COMMAND_SHARE;
         // The command scrolls inside a `gpui::list` row, so it needs a handle
         // of its own and a mask over it: a bubble listener runs too late there,
         // the transcript having already spent the same wheel delta scrolling
@@ -788,7 +787,7 @@ impl RenderOnce for CommandBlock {
                     // newlines**, which is the only kind that holds for a
                     // command of one very long line: one line of a base64 blob
                     // is a screenful of wrapped rows. Past it the box scrolls.
-                    .max_h(FOLD_H.to_pixels(window.rem_size()).min(ceiling))
+                    .max_h(COMMAND_H.to_pixels(window.rem_size()).min(ceiling))
                     .overflow_y_scroll()
                     .track_scroll(&scroll)
                     .children(self.lines.into_iter().enumerate().map(|(n, line)| {
@@ -861,7 +860,7 @@ impl RenderOnce for CommandBlock {
                         .bottom_0()
                         .left_0()
                         .right_0()
-                        .h(FOLD_ROW + FOLD_ROW)
+                        .h(COMMAND_FADE)
                         .bg(gpui::linear_gradient(
                             180.,
                             gpui::linear_color_stop(cx.theme().muted.alpha(0.), 0.),
@@ -869,8 +868,7 @@ impl RenderOnce for CommandBlock {
                         )),
                 )
             })
-            // Over the fade: the one thing that says how far the command runs
-            // now that nothing holds lines back to be opened.
+            // Over the fade: the one thing that says how far the command runs.
             .when(overflows, |block| {
                 block.child(Scrollbar::vertical(&scroll).mode(ScrollbarMode::Always))
             })

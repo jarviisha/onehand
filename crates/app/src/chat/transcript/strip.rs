@@ -1,7 +1,7 @@
 use super::fold_key;
 use super::metrics::{TEXT_SM, radius_tag};
 use super::parts::{
-    ActivityRow, Object, RowMark, accent, activity_row, chevron, detail_well, elapsed, fold_line,
+    ActivityRow, Object, RowMark, accent, activity_row, chevron, detail_well, fold_line,
     line_counts, plain_box, sideways,
 };
 use super::tool::diff_rows;
@@ -174,7 +174,7 @@ fn cluster_line(
                 .flex_none()
                 .whitespace_nowrap()
                 .font_family(cx.theme().mono_font_family.clone())
-                .child(elapsed(summary.seconds))
+                .child(onehand_core::duration(summary.seconds))
         }))
         .into_any_element()
 }

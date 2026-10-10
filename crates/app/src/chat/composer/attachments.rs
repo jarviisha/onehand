@@ -327,11 +327,8 @@ impl Composer {
                             .ghost()
                             .xsmall()
                             .flex_none()
-                            .label("Show all")
-                            .tooltip(format!(
-                                "Review or remove all {} staged attachments",
-                                self.attachments.len()
-                            ))
+                            .label(format!("Show all {}", self.attachments.len()))
+                            .tooltip("Review or remove staged attachments")
                             .on_click(cx.listener(|composer: &mut Self, _, window, cx| {
                                 composer.toggle_attachments(window, cx);
                             })),

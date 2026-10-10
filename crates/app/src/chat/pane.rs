@@ -226,6 +226,13 @@ impl ProjectFacts {
     }
 }
 
+/// Which of the window's docks are open.
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub struct DocksOpen {
+    pub terminal: bool,
+    pub workbench: bool,
+}
+
 pub struct ChatPane {
     focus_handle: FocusHandle,
     /// Every session the user has opened, in whatever phase it has reached.
@@ -287,9 +294,9 @@ pub struct ChatPane {
     /// dock that may well be closed, which is the one thing the terminal button
     /// cannot say by being a button.
     terminal_live: bool,
-    /// Whether the terminal and the Workbench docks are open, so their header
-    /// buttons can show it. Pushed by the shell, which owns the docks.
-    docks_open: (bool, bool),
+    /// Which docks are open, so their header buttons can show it. Pushed by
+    /// the shell, which owns the docks.
+    docks_open: DocksOpen,
     /// The active project's branch and change count, as one line.
     ///
     /// Pushed by the shell like the two flags above, and for the same reason:
@@ -412,7 +419,7 @@ impl ChatPane {
                 pending_resume: None,
                 rail_hidden: false,
                 terminal_live: false,
-                docks_open: (false, false),
+                docks_open: DocksOpen::default(),
                 git: None,
                 composer_h: Default::default(),
                 composer_drawn: false,
@@ -523,8 +530,8 @@ impl ChatPane {
         cx.notify();
     }
 
-    /// Whether the terminal and the Workbench docks are open, in that order.
-    pub fn set_docks_open(&mut self, open: (bool, bool), cx: &mut Context<Self>) {
+    /// Which docks are open.
+    pub fn set_docks_open(&mut self, open: DocksOpen, cx: &mut Context<Self>) {
         if self.docks_open == open {
             return;
         }

@@ -145,7 +145,6 @@ pub(in crate::chat) fn permission(
     let block = CommandBlock {
         target,
         command: SharedString::from(p.command().to_string()),
-        total: lines.len().max(1),
         lines: lines
             .into_iter()
             .map(|l| SharedString::from(l.to_string()))

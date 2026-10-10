@@ -1,6 +1,5 @@
 use gpui::{App, Rems, rems};
 use gpui_component::ActiveTheme;
-use onehand_core::chat::COMMAND_FOLD_LINES;
 
 /// The transcript's reading size: what the agent and the person say.
 ///
@@ -182,36 +181,27 @@ pub(super) const BUBBLE_TAIL_GAP: Rems = rems(0.1875);
 /// also need the biggest buttons on screen.
 pub(super) const CONTROL_ROW: Rems = rems(1.5);
 
-/// How much of the window an opened command block may take before it scrolls
-/// inside itself.
-///
-/// **A share of the viewport and not a fixed height**, unlike every other
-/// bound in this file: the two things that must stay on screen whatever the
-/// command does are the heading that says what is being asked and the buttons
-/// that answer it, and what is left between them is whatever the window
-/// happens to be tall. A fixed rem bound picked for a laptop leaves half a
-/// large screen unused and pushes the buttons off a small one.
-pub(super) const COMMAND_OPEN_SHARE: f32 = 0.5;
+/// How much of the panel a permission's command box may take, on a panel too
+/// short for [`COMMAND_H`]: the heading that says what is asked and the
+/// buttons that answer it have to stay on screen with it.
+pub(super) const COMMAND_SHARE: f32 = 0.5;
 /// The block's copy button, and the inset it keeps from the block's corner.
 pub(super) const COPY_SIZE: Rems = rems(1.75);
 pub(super) const COPY_ICON: Rems = rems(0.875);
 pub(super) const BLOCK_INSET: Rems = rems(0.375);
-/// The fold control at the foot of a block, and the fade it sits on.
-pub(super) const FOLD_ROW: Rems = rems(1.5);
+/// The fade over the foot of a command box that scrolls on past it.
+pub(super) const COMMAND_FADE: Rems = rems(3.);
 /// Roughly one mono character at the well's own size — what a line number's
 /// column is measured in, since the gutter has to be as wide as the largest
 /// number and no wider.
 pub(super) const MONO_ADVANCE: f32 = 0.62;
-/// How tall the command block stands while it is folded.
-///
-/// **The fold is a height, and only then a line count.** Slicing the agent's
-/// newlines is what decides *which* lines are drawn, and it is the predictable
-/// rule for that -- but it cannot bound one line three thousand characters
-/// long, which wraps to a screenful and is still one line. Given the same
-/// height as eight short ones, every command folds to the same box whatever
-/// shape its text is, and the control that opens it is offered on the same
-/// terms.
-pub(super) const FOLD_H: Rems = rems(TEXT_SM.0 * LEADING * COMMAND_FOLD_LINES as f32);
+/// One line of the secondary size, at the reading leading.
+pub(super) const LINE_SM: Rems = rems(TEXT_SM.0 * LEADING);
+/// How tall a permission's command box stands before it scrolls: eight lines,
+/// which leaves the heading, the buttons and enough of a script to recognise
+/// on one screen. A height and not a line count, so one line three thousand
+/// characters long is held to the same box as eight short ones.
+pub(super) const COMMAND_H: Rems = rems(LINE_SM.0 * 8.);
 
 // The question and permission cards pinned above the composer.
 /// The question card's side padding, which its choices' scroll frame reaches

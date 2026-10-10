@@ -230,7 +230,7 @@ impl ChatPane {
                     header_control("workbench", IconName::PanelRight, cx)
                         // Lit while its dock is open, so the button says which
                         // way the next press goes.
-                        .selected(self.docks_open.1)
+                        .selected(self.docks_open.workbench)
                         // **Both directions, because the button does both.** It
                         // said "Show the Workbench" while it was a three-state
                         // control that could only ever open from here, and kept
@@ -263,7 +263,7 @@ impl ChatPane {
     /// terminal shows the shell itself.
     fn terminal_control(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let live = self.terminal_live;
-        let open = self.docks_open.0;
+        let open = self.docks_open.terminal;
         let running = cx.theme().link;
 
         div()

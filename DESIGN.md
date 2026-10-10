@@ -113,7 +113,7 @@ monospace font.
 - **Composer.** A card at the foot of the transcript with no edge, set off by its raised fill and
   its lift; the caret alone shows focus. No line is ever added to it: why Send refuses is its
   tooltip, and a failure is a toast. The field, then one row: the `+` menu, *Fast* (a toggle
-  when the agent offers two choices, else a picker), the model chip and the effort chip beside it,
+  when its two choices read as on and off, else a picker), the model chip and the effort chip beside it,
   each opening its own menu (when offered), then *Send*; while a turn runs, *Stop* (solid danger, with its word) and, over a
   draft, *Queue*. Under it, a strip: the branch left, the permission mode right, each opening a
   menu (not drawn when neither exists), the branch over the mode when narrow. One permission or
@@ -195,7 +195,9 @@ monospace font.
   queued prompt, an adapter still connecting), are capped narrower and read as one stack.
 - **One turn, many blocks**: prose, thoughts, plans, activity clusters, commands, diffs,
   answered permissions and questions, notices and errors. A cluster holds tools only; a thought
-  and an answer are lines of their own. A workflow's steps reach the transcript as notices.
+  and an answer are lines of their own. A workflow's steps reach the transcript as notices, and
+  so does the agent's own note that a turn was interrupted, never as a prompt. The transcript
+  has a scrollbar on the panel's edge, ending where the conversation does.
 - **Folding blocks open from one line**, the chevron first. What runs starts open and closes
   when done, the plan stays open, and a reader's fold wins. Long output folds and is capped.
 - **Wells** (code, output, diffs) are filled, with no edge. A finished turn ends on a footer:
@@ -207,7 +209,7 @@ monospace font.
 
 | Role | How to write it |
 |---|---|
-| Body | the inherited size, never set; the transcript reads one step under it |
+| Body | the inherited size, never set; the transcript and the composer's field read a step over it |
 | Chrome (a panel's rows, cards, controls) | `.text_sm()` |
 | Titles | `.font_semibold()` (or `.font_medium()` for a page title) at the size of what they title |
 | Meta, hints | `.text_xs()` + `muted_foreground` |
@@ -218,9 +220,9 @@ monospace font.
   machine. `[font].monospace` can still name another installed mono family.
 
 - **Sizes are rems, never pixels**, because per-panel zoom overrides the rem base. Fixed chrome
-  heights stay outside the zoom wrapper. Two exceptions are pixels on purpose: the settings
-  dialog's bounds, which are measured against the window, and a menu row's inset, which cancels
-  one the library draws in pixels.
+  heights stay outside the zoom wrapper. Three exceptions are pixels on purpose: the settings
+  dialog's bounds, which are measured against the window, a menu row's inset, which cancels
+  one the library draws in pixels, and the composer's drop ring, which is a line and not a size.
 - Spacing uses gpui's base-4 scale. Radius comes from `cx.theme().radius` (`radius_lg` for
   cards); `rounded_full` is only for dots and pills. A size neither gives is a named constant
   beside the code using it, its reason in its doc comment, never a number at the call site.
@@ -240,8 +242,10 @@ monospace font.
 | `primary` | the single primary action in a view |
 | `status_ink()` | danger, warning and success text |
 | `popover` | floating surfaces |
+| `theme::raised` | the composer card, which stands on its fill and lift instead of an edge |
+| `secondary` | inline code in the prompt bubble, a step off its fill |
 
-- Cards are borders; wells and the bubble are fills.
+- Cards are borders, the composer aside; wells and the bubble are fills.
 - No control gets a focus ring: hover and selection are fills, at distinct steps of the ramp.
 - One primary per view.
 - If a surface is missing, add it to the ramp with its contrast asserted. Never add it in the one

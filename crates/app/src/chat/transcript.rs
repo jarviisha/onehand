@@ -12,7 +12,7 @@
 //! The caps below are correctness, not tuning.
 
 use super::session::ChatSession;
-use gpui::{App, Entity, IntoElement, ParentElement, Styled, Window, div, rems};
+use gpui::{App, Entity, IntoElement, ParentElement, Styled, Window, div};
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::chat::{ChatItem, NoticeLevel, TranscriptItemId};
 
@@ -30,7 +30,7 @@ pub(in crate::chat) use metrics::{
     BLOCK_GAP, CONTENT_COLUMN, LEADING, TEXT, TEXT_SM, TIGHT_GAP, TURN_GAP,
 };
 use metrics::{LINE_H, STATE_TINT};
-pub(in crate::chat) use parts::{accent, elapsed, line_counts};
+pub(in crate::chat) use parts::{accent, line_counts};
 pub(in crate::chat) use permission::permission;
 use plan::plan;
 use prose::{agent, thought};
@@ -155,7 +155,7 @@ fn notice(text: &str, level: NoticeLevel, cx: &App) -> impl IntoElement + use<> 
             // The glyph is held to the first line's height, so a message that
             // wraps keeps it beside its first words.
             div()
-                .h(rems(TEXT_SM.0 * LEADING))
+                .h(metrics::LINE_SM)
                 .flex_none()
                 .h_flex()
                 .items_center()

@@ -693,15 +693,6 @@ pub(in crate::chat) fn line_counts(added: usize, removed: usize, cx: &App) -> Op
     )
 }
 
-/// A duration, at the coarseness somebody reads it at.
-///
-/// **Seconds up to a minute, then minutes.** A step that took four hundred and
-/// twelve seconds is a step that took seven minutes, and the extra two digits
-/// are two digits the eye has to divide before it means anything.
-pub(in crate::chat) fn elapsed(secs: u64) -> String {
-    onehand_core::duration(secs)
-}
-
 /// A word at the end of a row, in the quiet ink or in one that means something.
 pub(super) fn row_note(text: impl Into<SharedString>, ink: gpui::Hsla) -> gpui::AnyElement {
     div()

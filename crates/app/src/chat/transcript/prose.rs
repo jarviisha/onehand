@@ -52,7 +52,7 @@ pub(super) fn agent(
                 .gap_2()
                 .text_xs()
                 .text_color(cx.theme().muted_foreground)
-                .child(copy_turn_button(session, target).tooltip("Copy this answer"))
+                .child(copy_turn_button(session, target).tooltip("Copy the closing paragraph"))
                 .children(
                     elapsed.map(|secs| format!("Processed in {}", onehand_core::duration(secs))),
                 )

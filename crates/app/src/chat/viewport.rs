@@ -264,7 +264,9 @@ impl Viewport {
         &mut self,
         chat: &Chat,
         folds: u64,
-        is_open: impl Fn(TranscriptItemId) -> bool,
+        // Asked with the default in hand, open while anything in the run is
+        // running, and answered with the reader's own choice once they made one.
+        is_open: impl Fn(TranscriptItemId, bool) -> bool,
         // Asked with the default in hand, since what "untouched" means for a
         // turn summary changes as the conversation grows. See `close_turns`.
         turn_open: impl Fn(TranscriptItemId, bool) -> bool,
@@ -306,10 +308,8 @@ impl Viewport {
 
                     let summary = cluster_summary(&bodies);
                     // **Open while anything in it runs, closed once it is
-                    // done**, and a fold the reader made flips whichever of
-                    // the two it is: the set holds where they disagreed with
-                    // the default, which is all a toggle can say.
-                    let open = is_open(anchor) != summary.running.is_some();
+                    // done**, until the reader opens or closes it themselves.
+                    let open = is_open(anchor, summary.running.is_some());
                     RunPlan {
                         strip: Some(ActivityPlan {
                             summary,

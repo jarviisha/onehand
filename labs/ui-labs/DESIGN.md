@@ -450,7 +450,9 @@ hierarchy are identical in both.
 | Effort is a group of rows in the model's menu | effort has a chip and a menu of its own beside the model's |
 | Pinned cards ask in their title, say who asks, and name their keys as key caps | the app keeps its own permission and question cards: a generic title, bordered choice rows and numbered tabs, keys in words |
 | A question's description is said once | the description is repeated as the field's placeholder |
-| Fast is a toggle | a toggle when the agent offers two choices, else a picker of them |
+| Fast is a toggle | a toggle when its two choices read as on and off, else a picker of them |
+| Staged files are a tray inside the card | they rest above the card in one row, cut with a fade beside *Show all N*; a file and an image share one chip |
+| A menu opened from a control starts under it, over the field | it opens just above the control that opened it |
 | The branch chip lists branches to switch to | it renames the branch, starts a worktree or refreshes the status; nothing switches branches |
 | A prompt's attachments are listed under its words in the bubble | they are thumbnails above the bubble, one that never went out marked *not sent* |
 | Weights 400 and 500 only | titles are semibold |

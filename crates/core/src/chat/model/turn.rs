@@ -504,12 +504,8 @@ impl Chat {
         })
     }
 
-    /// Every agent block of `target`'s turn, joined — what Copy puts on the
-    /// clipboard, so it grabs the whole reply rather than the fragment the
-    /// button happens to sit under.
-    ///
-    /// Asked for at the click and not before: the answer is proportional to the
-    /// turn, and a redraw is not a reason to build it.
+    /// Every agent block of `target`'s turn, joined: what the turn's closing
+    /// paragraph is looked for in.
     pub(super) fn turn_prose(&self, target: TranscriptItemId) -> String {
         let items = self.list(target);
         let idx = target.index();

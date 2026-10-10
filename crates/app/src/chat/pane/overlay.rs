@@ -114,7 +114,7 @@ impl ChatPane {
                     .map(|popup| {
                         div()
                             .w_full()
-                            .px_4()
+                            .px(super::body::STACK_GUTTER)
                             // **Lifted off whatever is under it, and only when
                             // something is.** Flush, the popup and a parked
                             // card have the same width, nearly the same
@@ -156,7 +156,7 @@ impl ChatPane {
                 let cards = (!pinned.is_empty()).then(|| {
                     div()
                         .w_full()
-                        .px_4()
+                        .px(super::body::STACK_GUTTER)
                         // **A card covering the conversation must not move it.**
                         // The same leak the popup above has: gpui's handler for
                         // a scrolling box adjusts its own offset and never
@@ -272,7 +272,7 @@ impl ChatPane {
                         div()
                             .v_flex()
                             .w_full()
-                            .px_4()
+                            .px(super::body::STACK_GUTTER)
                             // Transparent spacing around the cards is what makes
                             // this read as an overlay rather than a footer. The
                             // transcript keeps painting through it; only the

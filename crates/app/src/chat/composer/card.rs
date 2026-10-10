@@ -17,10 +17,6 @@ use onehand_core::attachment::AttachmentSource;
 /// aimed at by its shape alone, and still under the chip's height so the row's
 /// height stays the chips'.
 const ACTION_ICON: Rems = rems(1.25);
-/// The field's text: the reading size, a step over the controls' `text_sm`, at
-/// the prose leading. A rem, so panel zoom carries it.
-const FIELD_TEXT: Rems = rems(1.);
-const FIELD_LEADING: f32 = 1.6;
 /// The ring a file dragged over the card draws, in pixels as a hairline is. A
 /// shadow rather than a border, so the card does not shift by its width while
 /// the file is held over it.
@@ -134,8 +130,10 @@ impl Composer {
                     .id("composer-field")
                     .min_h_10()
                     .cursor_text()
-                    .text_size(FIELD_TEXT)
-                    .line_height(relative(FIELD_LEADING))
+                    // The reading size and leading, as the transcript: what is typed
+                    // reads as what it will be once sent.
+                    .text_size(crate::chat::transcript::TEXT)
+                    .line_height(relative(crate::chat::transcript::LEADING))
                     // The whole field's area takes the caret, not only its
                     // first line.
                     .on_click(cx.listener(|composer: &mut Self, _, window, cx| {

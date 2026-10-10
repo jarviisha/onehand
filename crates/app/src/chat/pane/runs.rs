@@ -92,7 +92,7 @@ impl ChatPane {
                     .flex_none()
                     .w(Self::CLOCK_W)
                     .whitespace_nowrap()
-                    .child(transcript::elapsed(elapsed)),
+                    .child(onehand_core::duration(elapsed)),
             );
         for (n, part) in parts.into_iter().enumerate() {
             if n > 0 {
@@ -174,7 +174,7 @@ impl ChatPane {
         conv.viewport.replan(
             &session.chat,
             session.folds_revision(),
-            |anchor| session.activity_is_open(anchor),
+            |anchor, default| session.activity_is_open(anchor, default),
             |anchor, default| session.turn_is_open(anchor, default),
         );
         let state = conv.viewport.list_state(session.chat.busy, room);
@@ -321,15 +321,16 @@ impl ChatPane {
                 .collect(),
         };
 
+        let open = plan.open;
         column(
             lead,
             margin,
             vec![transcript::cluster(
                 &strip,
-                plan.open,
+                open,
                 move |_, _, cx: &mut App| {
                     folded.update(cx, |session, cx| {
-                        session.toggle_activity(anchor);
+                        session.set_activity_open(anchor, !open);
                         cx.notify();
                     });
                     // The pane owns the run layout the list reads back, so it

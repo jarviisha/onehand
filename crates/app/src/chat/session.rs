@@ -208,7 +208,7 @@ pub struct ChatSession {
     /// Keyed by the run's *first item*, not by the run's ordinal: a new step
     /// joining the run ahead of it renumbers every run below and would silently
     /// move the fold.
-    activity_open: HashSet<TranscriptItemId>,
+    activity_open: HashMap<TranscriptItemId, bool>,
     /// Sections the user opened inside an opened cluster.
     ///
     /// **A third set, because a cluster and its first section share a key.**
@@ -310,7 +310,7 @@ impl ChatSession {
                 ask_inputs: HashMap::new(),
                 ask_focus: HashMap::new(),
                 perm_focus: HashMap::new(),
-                activity_open: HashSet::new(),
+                activity_open: HashMap::new(),
                 section_open: HashSet::new(),
                 turn_open: HashMap::new(),
                 file_open: HashMap::new(),
@@ -370,16 +370,16 @@ impl ChatSession {
         })
     }
 
-    /// Whether the activity run anchored at `anchor` is showing its steps.
-    pub fn activity_is_open(&self, anchor: TranscriptItemId) -> bool {
-        self.activity_open.contains(&anchor)
+    /// Whether the activity run anchored at `anchor` is showing its steps:
+    /// the reader's choice once they made one, else `default`.
+    pub fn activity_is_open(&self, anchor: TranscriptItemId, default: bool) -> bool {
+        self.activity_open.get(&anchor).copied().unwrap_or(default)
     }
 
-    /// Fold or unfold the activity run anchored at `anchor`.
-    pub fn toggle_activity(&mut self, anchor: TranscriptItemId) {
-        if !self.activity_open.remove(&anchor) {
-            self.activity_open.insert(anchor);
-        }
+    /// Hold the activity run anchored at `anchor` open or closed, whatever
+    /// it goes on to do.
+    pub fn set_activity_open(&mut self, anchor: TranscriptItemId, open: bool) {
+        self.activity_open.insert(anchor, open);
         self.folds_revision = self.folds_revision.wrapping_add(1);
     }
 

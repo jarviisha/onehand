@@ -47,13 +47,12 @@ pub(in crate::chat) const POPUP_STACK_PEEK: Rems = rems(0.375);
 /// the box is offered, and being generous there costs at most a row on a
 /// squeezed panel.
 ///
-/// The parts: the pinned header, the line counting what is out of view, the
-/// the surface's own
-/// inset top and bottom.
+/// The parts: the pinned header, the line counting what is out of view, and
+/// the surface's own inset top and bottom.
 const POPUP_HEADER_H: Rems = rems(1.75);
 const POPUP_MORE_H: Rems = rems(1.5);
 const POPUP_INSET_H: Rems = rems(0.75);
-/// A menu opened from a control is this wide, and starts under that control;
+/// A menu opened from a control is this wide, and opens on that control;
 /// the wider one holds a model's or a mode's name beside the agent's words
 /// about it. A completion spans the stack instead.
 const MENU_W: Rems = rems(17.);
@@ -150,9 +149,10 @@ fn anchor(overlay: &Overlay) -> Anchor {
 /// the app's lift, and the wheel held so the conversation behind does not move
 /// with the list.
 ///
-/// **The wheel is claimed on the surface**, so the header and the inset swallow it too: gpui's handler for a scrolling box never claims the
-/// event, so the transcript underneath used to scroll with the list. The inner
-/// list still scrolls, because the deeper listener runs first.
+/// **The wheel is claimed on the surface**, so the header and the inset swallow
+/// it too: gpui's handler for a scrolling box never claims the event, and the
+/// transcript underneath would scroll with the list. The inner list still
+/// scrolls, because the deeper listener runs first.
 pub(super) fn popup_surface(cx: &App) -> gpui::Div {
     div()
         .v_flex()
@@ -203,18 +203,26 @@ impl Composer {
         cx: &mut Context<Self>,
     ) -> Option<gpui::AnyElement> {
         let overlay = self.overlay.clone()?;
-        let (width, corner) = match anchor(&overlay) {
-            Anchor::Span => return None,
-            Anchor::Left(w) => (w, gpui::Anchor::BottomLeft),
-            Anchor::Right(w) => (w, gpui::Anchor::BottomRight),
-        };
         let on = self.anchor_of(&overlay)?;
-        let popup = self.popup(session, room, rem, cx)?;
         let gap = MENU_GAP.to_pixels(rem);
-        let at = match corner {
-            gpui::Anchor::BottomRight => gpui::point(on.right(), on.top() - gap),
-            _ => gpui::point(on.left(), on.top() - gap),
+        // Where the menu hangs from, and which way it runs from there: left
+        // edges together, or (at the strip's right end) right edges.
+        let (width, corner, at, from_right) = match anchor(&overlay) {
+            Anchor::Span => return None,
+            Anchor::Left(w) => (
+                w,
+                gpui::Anchor::BottomLeft,
+                gpui::point(on.left(), on.top() - gap),
+                false,
+            ),
+            Anchor::Right(w) => (
+                w,
+                gpui::Anchor::BottomRight,
+                gpui::point(on.right(), on.top() - gap),
+                true,
+            ),
         };
+        let popup = self.popup(session, room, rem, cx)?;
         let menu_bounds = self.menu_bounds.clone();
         Some(
             gpui::deferred(
@@ -231,12 +239,11 @@ impl Composer {
                                 // is worked out from the point it hangs from.
                                 move |bounds, _, _| {
                                     let size = bounds.size;
-                                    let origin = match corner {
-                                        gpui::Anchor::BottomRight => {
-                                            gpui::point(at.x - size.width, at.y - size.height)
-                                        }
-                                        _ => gpui::point(at.x, at.y - size.height),
+                                    let left = match from_right {
+                                        true => at.x - size.width,
+                                        false => at.x,
                                     };
+                                    let origin = gpui::point(left, at.y - size.height);
                                     menu_bounds.set(Some(gpui::Bounds { origin, size }))
                                 },
                                 |_, _, _, _| {},

@@ -540,8 +540,8 @@ impl ChatPane {
 }
 
 /// The inset the overlay holds the composer stack off each side of the panel
-/// by: its `px_4`.
-const STACK_GUTTER: gpui::Rems = gpui::rems(1.);
+/// by, read by the strip's split as well.
+pub(super) const STACK_GUTTER: gpui::Rems = gpui::rems(1.);
 
 /// Shown while no session is on screen.
 ///
