@@ -1,24 +1,21 @@
 use super::fold_key;
 use super::metrics::{
-    BLOCK_INSET, CODE_LH, CODE_TEXT, COMMAND_OPEN_SHARE, COPY_ICON, COPY_SIZE, DETAIL_INSET,
-    DIFF_NUM_PAD, DIFF_NUM_W, DIFF_SIGN_W, DIFF_TEXT_PAD, FOLD_H, FOLD_ROW, FRAME_PAD, LARGE_DIFF,
-    MONO_ADVANCE, OBJECT_TEXT, PILL_PAD_X, PILL_PAD_Y, PREVIEW_DIFF, PREVIEW_OUT, ROW_PAD_X,
-    SMOKE_DIFF, SMOKE_OUT, STACK_GAP, TIGHT_GAP, radius_block, radius_control,
+    BLOCK_INSET, COMMAND_OPEN_SHARE, COPY_ICON, COPY_SIZE, FOLD_H, FOLD_ROW, LARGE_DIFF,
+    MONO_ADVANCE, PREVIEW_DIFF, PREVIEW_OUT, STATE_TINT, TEXT_SM, TIGHT_GAP, radius_control,
 };
 use super::parts::{
-    ActivityRow, Object, RowMark, activity_row, copy_button, line_counts, plain_box, row_note,
-    scrolled,
+    ActivityRow, Object, RowMark, accent, activity_row, copy_button, detail_well, line_counts,
+    plain_box, row_note, scrolled, sideways,
 };
-use super::strip::group_icon;
 use crate::chat::session::ChatSession;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, Axis, ClickEvent, Entity, InteractiveElement, IntoElement, ParentElement, RenderOnce,
-    ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Window, div, relative, rems,
+    ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Window, div, rems,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::scroll::{ScrollableMask, Scrollbar, ScrollbarMode};
-use gpui_component::{ActiveTheme, Icon, IconName, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, IconNamed as _, Sizable as _, StyledExt};
 use onehand_core::acp::{ToolContent, ToolKind, ToolStatus};
 use onehand_core::chat::activity;
 use onehand_core::chat::{ToolItem, TranscriptItemId};
@@ -34,12 +31,27 @@ const MAX_MONO_LINES: usize = 60;
 
 // ── tool call ───────────────────────────────────────────────────────────────
 
+/// The drawing for a tool's kind, at the head of its row.
+fn kind_icon(kind: ToolKind) -> SharedString {
+    match kind {
+        ToolKind::Read => IconName::File.path(),
+        ToolKind::Search => IconName::Search.path(),
+        // A pencil on a page: the bundled set has no pencil of any kind.
+        ToolKind::Edit => crate::icons::Icon::SquarePen.path(),
+        ToolKind::Delete => IconName::Delete.path(),
+        ToolKind::Move => IconName::ArrowRight.path(),
+        ToolKind::Execute => IconName::SquareTerminal.path(),
+        ToolKind::Fetch => IconName::Globe.path(),
+        ToolKind::Think => IconName::Info.path(),
+        ToolKind::Other => IconName::Settings2.path(),
+    }
+}
+
 /// A tool step: one activity row, and what it opens into.
 ///
-/// **One geometry for every kind and every status.** A status is what the disc
-/// at the head of the row says and what the column at its end says; it is never
-/// what the row *is*. What differs between a read and a command is only the
-/// shape of the thing underneath, once somebody has asked for it.
+/// **One geometry for every kind and every status.** What differs between a
+/// read and a command is only the shape of the thing underneath, once somebody
+/// has asked for it.
 pub(super) fn tool(
     session: &Entity<ChatSession>,
     t: &ToolItem,
@@ -74,7 +86,6 @@ pub(super) fn tool(
         .diff_summary
         .iter()
         .fold((0, 0), |(a, r), (_, plus, minus)| (a + plus, r + minus));
-    let deleted = t.call.kind == ToolKind::Delete;
     let object = match t.call.kind {
         // A command is not a path and must not be split at its last slash.
         ToolKind::Execute => Some(Object::plain(activity::first_line_trunc(
@@ -85,36 +96,40 @@ pub(super) fn tool(
         _ => Some(Object::path(path_for_display(&root, &presented.subject))),
     };
 
-    let meta = match (t.call.status, deleted) {
-        // **The code where there is one, the word where there is not.** Only a
-        // command run through the terminal extension reports a status, so a
-        // failure arriving as a plain tool call has nothing but the word --
-        // and printing `failed` over a step that told us it exited 101 throws
-        // away the one thing that says *what* went wrong.
-        (ToolStatus::Failed, _) => Some(row_note(
+    // **The code where there is one, the word where there is not.** Only a
+    // command run through the terminal extension reports a status, so a
+    // failure arriving as a plain tool call has nothing but the word -- and
+    // printing `failed` over a step that told us it exited 101 throws away the
+    // one thing that says *what* went wrong.
+    let failure = (t.call.status == ToolStatus::Failed).then(|| {
+        row_note(
             match t.exit_code {
                 Some(code) => format!("exit {code}"),
                 None => "failed".to_string(),
             },
             crate::theme::status_ink(cx).danger,
-            cx,
-        )),
-        (ToolStatus::InProgress, _) | (ToolStatus::Pending, _) => None,
-        (_, true) => Some(row_note("deleted", cx.theme().muted_foreground, cx)),
-        _ => line_counts(added, removed, cx)
-            .map(|pair| pair.text_size(OBJECT_TEXT).into_any_element()),
-    };
+        )
+    });
+    let meta = div()
+        .flex_none()
+        .h_flex()
+        .items_center()
+        .gap_2()
+        .children(line_counts(added, removed, cx))
+        .children(failure)
+        .into_any_element();
 
     let mut row = ActivityRow::new(
         ("tool", fold_key(target)).into(),
         RowMark::of(t.call.status),
-        group_icon(presented.kind.into()),
+        kind_icon(t.call.kind),
         presented.action,
     )
     .object(object)
-    .meta(meta)
+    .meta(Some(meta))
     .fold(detail.is_some().then_some(open));
-    row.struck = deleted;
+    // A file that is gone strikes its own name out.
+    row.struck = t.call.kind == ToolKind::Delete;
 
     div()
         .v_flex()
@@ -124,7 +139,7 @@ pub(super) fn tool(
         .children(
             open.then_some(())
                 .and(detail)
-                .map(|detail| detail_frame(session, t, target, detail, cx)),
+                .map(|detail| detail_well(detail_frame(session, t, target, detail, cx))),
         )
 }
 
@@ -249,8 +264,8 @@ fn tool_detail(
     }
 }
 
-/// The box a row opens into: set in to the row's own words, one step off the
-/// frame it sits in, and carrying nothing but the text.
+/// The well a row opens into, carrying nothing but the text and a way to copy
+/// it.
 fn detail_frame(
     session: &Entity<ChatSession>,
     t: &ToolItem,
@@ -259,87 +274,52 @@ fn detail_frame(
     cx: &App,
 ) -> gpui::Div {
     let copy = detail.text(&diff_text(t));
-    div()
-        .w_full()
-        .min_w_0()
-        .pl(DETAIL_INSET)
-        .pr(ROW_PAD_X)
-        .pb(FRAME_PAD)
-        .child(
-            div()
-                .relative()
-                .w_full()
-                .min_w_0()
-                .overflow_hidden()
-                .rounded(radius_block(cx))
-                .border_1()
-                .border_color(cx.theme().border)
-                // **A step off the frame and no more.** It has to read as a
-                // layer rather than as a card somebody dropped in, and the
-                // frame it sits in is already on the reading surface — so the
-                // whole of the difference is one step of the ramp.
-                .bg(cx.theme().muted.opacity(0.4))
-                .font_family(cx.theme().mono_font_family.clone())
-                .text_size(OBJECT_TEXT)
-                .line_height(relative(CODE_LH))
-                .map(|box_| match detail {
-                    Detail::Command { command, output } => {
-                        command_detail(session, t, target, &command, &output, box_, cx)
-                    }
-                    Detail::Diffs => diff_detail(session, t, target, box_, cx),
-                    // An image has an edge of its own already -- the box it is
-                    // in -- so it fills it rather than sitting inside a second
-                    // one.
-                    Detail::Image(bytes) => box_.map(|box_| match session.read(cx).image(&bytes) {
-                        Some(handle) => box_.child(gpui::img(handle).max_w_full()),
-                        None => box_.child(
-                            div()
-                                .px(DIFF_TEXT_PAD)
-                                .text_color(cx.theme().muted_foreground)
-                                .child(format!("[unrecognized image, {} bytes]", bytes.len())),
-                        ),
-                    }),
-                    Detail::Lines { lines, hidden } => box_
-                        .children(lines.into_iter().map(|line| {
-                            div()
-                                .w_full()
-                                .min_w_0()
-                                .px(DIFF_TEXT_PAD)
-                                .text_color(cx.theme().muted_foreground)
-                                .child(line)
-                        }))
-                        .children((hidden > 0).then(|| {
-                            div()
-                                .w_full()
-                                .min_w_0()
-                                .px(DIFF_TEXT_PAD)
-                                .text_color(cx.theme().muted_foreground.opacity(0.7))
-                                .child(format!("and {hidden} more lines"))
-                        })),
-                })
-                // **Drawn always, never waiting to be hovered.** A control that
-                // appears under the pointer is one nobody finds who was not
-                // already reaching for it -- and this is the box whose text is
-                // most likely to be wanted somewhere else: pasted into a shell,
-                // quoted in a bug report, kept as the record of what ran.
-                //
-                // It covers the tail of the first line, which is the trade the
-                // column it would otherwise reserve costs every line below.
-                // What a first line carries is its opening, and that is the
-                // part it keeps.
-                .children(copy.map(|text| {
+    let key = fold_key(target);
+    plain_box(cx)
+        .relative()
+        .map(|well| match detail {
+            Detail::Command { command, output } => {
+                command_detail(session, t, target, &command, &output, well, cx)
+            }
+            Detail::Diffs => diff_detail(session, t, target, well, cx),
+            Detail::Image(bytes) => well.p_3().map(|well| match session.read(cx).image(&bytes) {
+                Some(handle) => well.child(gpui::img(handle).max_w_full()),
+                None => well
+                    .text_color(cx.theme().muted_foreground)
+                    .child(format!("[unrecognized image, {} bytes]", bytes.len())),
+            }),
+            Detail::Lines { lines, hidden } => well
+                .p_3()
+                .text_color(cx.theme().muted_foreground)
+                .child(sideways(
+                    ("detail-lines", key),
+                    div().v_flex().children(
+                        lines
+                            .into_iter()
+                            .map(|line| div().whitespace_nowrap().child(line)),
+                    ),
+                ))
+                // Bounded, and the bound is counted rather than swallowed.
+                .children((hidden > 0).then(|| {
                     div()
-                        .absolute()
-                        .top(TIGHT_GAP)
-                        .right(TIGHT_GAP)
-                        .rounded(radius_control(cx))
-                        .bg(cx.theme().muted)
-                        .child(
-                            copy_button(("detail-copy", fold_key(target)), text)
-                                .tooltip("Copy this"),
-                        )
+                        .text_xs()
+                        .font_family(cx.theme().font_family.clone())
+                        .child(format!("and {hidden} more lines"))
                 })),
-        )
+        })
+        // **Drawn always, never waiting to be hovered.** A control that appears
+        // under the pointer is one nobody finds who was not already reaching
+        // for it -- and this is the well whose text is most likely to be
+        // wanted somewhere else: pasted into a shell, quoted in a bug report.
+        .children(copy.map(|text| {
+            div()
+                .absolute()
+                .top(TIGHT_GAP)
+                .right(TIGHT_GAP)
+                .rounded(radius_control(cx))
+                .bg(cx.theme().muted)
+                .child(copy_button(("detail-copy", key), text).tooltip("Copy this"))
+        }))
 }
 
 /// A diff's rows as the lines they would be in a file.
@@ -361,141 +341,112 @@ fn diff_text(t: &ToolItem) -> Vec<String> {
     out
 }
 
-/// A command, then what it printed.
+/// A command, then the tail of what it printed.
 ///
-/// **No `IN` and no `OUT`.** The `$` says which is which, and the rule under it
-/// says where one ends — two labels in a fixed column were four characters of
-/// chrome per section and a column taken off the widest text in the transcript.
+/// **Always the tail, opened or closed.** An output says what happened at its
+/// end -- the error, the summary line, the prompt coming back -- so what is
+/// shown is the last lines, and what is held back is above them, which is
+/// where the way to them is offered.
 fn command_detail(
     session: &Entity<ChatSession>,
     t: &ToolItem,
     target: TranscriptItemId,
     command: &str,
     output: &str,
-    box_: gpui::Div,
+    well: gpui::Div,
     cx: &App,
 ) -> gpui::Div {
     let open = t.out_open.contains(&0);
     let lines: Vec<&str> = output.lines().collect();
-    // **Always the tail, opened or closed.** An output says what happened at
-    // its end -- the error, the summary line, the prompt coming back -- so the
-    // collapsed preview shows the last few. Opened from the *top* instead, as
-    // this did, a two-hundred-line build jumped from its last five lines to its
-    // first sixty and dropped the rest with nothing saying so: the one part
-    // somebody opened the box to read is the part that went away.
     let cap = match open {
         true => MAX_MONO_LINES,
         false => PREVIEW_OUT,
     };
     let hidden = lines.len().saturating_sub(cap);
-    let shown: Vec<SharedString> = lines
-        .iter()
-        .skip(hidden)
-        .map(|line| SharedString::from(line.to_string()))
-        .collect();
     let danger = crate::theme::status_ink(cx).danger;
+    let key = fold_key(target);
 
-    box_.v_flex()
-        .child(
+    well.p_3()
+        .v_flex()
+        .gap_1()
+        .child(sideways(
+            ("command-head", key),
             div()
-                .w_full()
-                .min_w_0()
                 .h_flex()
-                .items_start()
-                .gap(TIGHT_GAP)
-                .py(STACK_GAP)
-                .px(FRAME_PAD)
+                .gap_2()
+                .whitespace_nowrap()
+                .child(div().text_color(cx.theme().muted_foreground).child("$"))
                 .child(
                     div()
-                        .flex_none()
-                        .text_color(cx.theme().muted_foreground.opacity(0.7))
-                        .child("$"),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
                         .text_color(cx.theme().foreground)
                         .child(command.to_string()),
                 ),
-        )
-        .children((!shown.is_empty()).then(|| {
-            div()
-                .w_full()
-                .min_w_0()
-                .border_t_1()
-                .border_color(cx.theme().border)
-                .child(
-                    div()
-                        .relative()
-                        .w_full()
-                        .min_w_0()
-                        // **Collapsed it does not scroll at all.** A preview
-                        // short enough to read whole has nothing to scroll, and
-                        // a box that scrolled anyway would be a second scroller
-                        // under the reader's finger for no reason.
-                        .child(scrolled(
-                            open,
-                            fold_key(target),
-                            div().v_flex().w_full().min_w_0().py(STACK_GAP).children(
-                                shown.into_iter().map(|line| {
-                                    // A failure names itself in what it printed,
-                                    // so the ink follows the words rather than
-                                    // the row: an error in the middle of a
-                                    // hundred quiet lines is the one somebody
-                                    // is looking for.
-                                    let bad = is_error_line(&line);
-                                    div()
-                                        .w_full()
-                                        .min_w_0()
-                                        .px(FRAME_PAD)
-                                        .text_color(match bad {
-                                            true => danger,
-                                            false => cx.theme().muted_foreground,
-                                        })
-                                        .child(line)
-                                }),
-                            ),
-                        ))
-                        // **The cut fades at the top, because the tail is what
-                        // was kept.** A command's failure is the last thing it
-                        // printed, so the preview is its end and what is hidden
-                        // is above it.
-                        .when(hidden > 0, |body| {
-                            body.child(div().absolute().top_0().left_0().right_0().h(SMOKE_OUT).bg(
-                                gpui::linear_gradient(
-                                    180.,
-                                    gpui::linear_color_stop(cx.theme().muted, 0.15),
-                                    gpui::linear_color_stop(cx.theme().muted.alpha(0.), 1.),
-                                ),
-                            ))
-                        }),
-                )
-        }))
+        ))
+        // Opened, the well is still bounded, so the link says what is
+        // *still* cut rather than claiming the whole of it is on screen.
         .children((hidden > 0 || open).then(|| {
-            fold_pill(
+            fold_link(
                 session,
                 target,
-                // Opened, the box is still bounded -- so the control says
-                // what is *still* cut rather than claiming the whole of it is
-                // on screen.
                 match (open, hidden) {
                     (true, 0) => "Show less".to_string(),
                     (true, n) => format!("Show less · {n} earlier lines not shown"),
                     (false, n) => format!("Show {n} earlier lines"),
                 },
-                open,
                 cx,
+            )
+        }))
+        .children((lines.len() > hidden).then(|| {
+            scrolled(
+                open,
+                key,
+                div().child(sideways(
+                    ("command-out", key),
+                    div().v_flex().children(lines[hidden..].iter().map(|line| {
+                        // A failure names itself in what it printed, so the
+                        // ink follows the words rather than the row.
+                        div()
+                            .whitespace_nowrap()
+                            .text_color(match is_error_line(line) {
+                                true => danger,
+                                false => cx.theme().muted_foreground,
+                            })
+                            .child(line.to_string())
+                    })),
+                )),
             )
         }))
 }
 
-/// Whether a line of output is the part somebody went looking for.
+/// Whether a line of output reports a failure: one that starts with what a
+/// failure starts with, or a test marked `FAILED`. A count such as `0 failed`
+/// in a passing summary is not one.
 pub(super) fn is_error_line(line: &str) -> bool {
-    let lower = line.trim_start().to_ascii_lowercase();
-    ["error", "failed", "panic", "fatal", "assertion"]
+    let lower = line.trim_start().to_lowercase();
+    ["error", "failed", "fatal", "panic", "assertion", "thread '"]
         .iter()
         .any(|mark| lower.starts_with(mark))
+        || line.ends_with(" FAILED")
+        || line.contains("result: FAILED")
+}
+
+/// How many added and removed lines the drawn rows of `t` hold, walked under
+/// the same budget the rows are drawn with.
+fn changed_drawn(t: &ToolItem) -> usize {
+    let mut budget = MAX_DIFF_LINES;
+    let mut changed = 0;
+    for key in 0..t.call.content.len() {
+        for row in t.diff_rows.get(&key).map(Vec::as_slice).unwrap_or_default() {
+            if budget == 0 {
+                return changed;
+            }
+            budget -= 1;
+            if matches!(row, DiffRow::Added(_) | DiffRow::Removed(_)) {
+                changed += 1;
+            }
+        }
+    }
+    changed
 }
 
 /// Every edit the step made, one diff after another.
@@ -503,10 +454,11 @@ fn diff_detail(
     session: &Entity<ChatSession>,
     t: &ToolItem,
     target: TranscriptItemId,
-    box_: gpui::Div,
+    well: gpui::Div,
     cx: &App,
 ) -> gpui::Div {
     let open = t.out_open.contains(&0);
+    let key = fold_key(target);
     let changed: usize = t
         .diff_summary
         .iter()
@@ -516,16 +468,31 @@ fn diff_detail(
     // and every line of it is an element in a list that is already virtualising
     // rows for the same reason.
     if changed > LARGE_DIFF && !open {
-        return box_.child(
-            div()
-                .w_full()
-                .min_w_0()
-                .py(STACK_GAP)
-                .px(FRAME_PAD)
-                .text_color(cx.theme().muted_foreground)
-                .child(format!("Large diff · {changed} changed lines"))
-                .child(fold_pill(session, target, "Load diff", false, cx)),
-        );
+        let session = session.clone();
+        return well
+            .p_3()
+            .font_family(cx.theme().font_family.clone())
+            .child(
+                div()
+                    .h_flex()
+                    .items_center()
+                    .gap_2()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(format!("Large diff · {changed} changed lines, not drawn"))
+                    .child(div().flex_1())
+                    .child(
+                        crate::controls::action(("load-diff", key))
+                            .ghost()
+                            .xsmall()
+                            .label("Load diff")
+                            .on_click(move |_, _, cx: &mut App| {
+                                session.update(cx, |s, cx| {
+                                    s.chat.toggle_tool_output(target, 0);
+                                    cx.notify();
+                                });
+                            }),
+                    ),
+            );
     }
 
     let root = session.read(cx).chat.root.clone();
@@ -558,47 +525,36 @@ fn diff_detail(
     };
     let hidden = total - shown;
     rows.truncate(shown);
+    // What the budget left out, said after the rows rather than cut silently.
+    let left = changed.saturating_sub(changed_drawn(t));
 
-    box_.child(
-        div()
-            .relative()
-            .w_full()
-            .min_w_0()
-            .child(scrolled(
-                open,
-                fold_key(target),
-                div().v_flex().w_full().min_w_0().children(rows),
-            ))
-            // The cut fades at the foot: a diff opens on its change, so what is
-            // held back is what comes after.
-            .when(hidden > 0, |body| {
-                body.child(
-                    div()
-                        .absolute()
-                        .bottom_0()
-                        .left_0()
-                        .right_0()
-                        .h(SMOKE_DIFF)
-                        .bg(gpui::linear_gradient(
-                            0.,
-                            gpui::linear_color_stop(cx.theme().muted, 0.15),
-                            gpui::linear_color_stop(cx.theme().muted.alpha(0.), 1.),
-                        )),
-                )
-            }),
-    )
-    .children((hidden > 0 || open).then(|| {
-        fold_pill(
-            session,
-            target,
-            match open {
-                true => "Show less".to_string(),
-                false => format!("Show {hidden} more lines"),
-            },
+    well.py_3()
+        .v_flex()
+        .gap_1()
+        .child(scrolled(
             open,
-            cx,
-        )
-    }))
+            key,
+            div().child(sideways(("diff-rows", key), div().v_flex().children(rows))),
+        ))
+        .children((hidden > 0 || open).then(|| {
+            div().px_3().child(fold_link(
+                session,
+                target,
+                match open {
+                    true => "Show less".to_string(),
+                    false => format!("Show {hidden} more lines"),
+                },
+                cx,
+            ))
+        }))
+        .children((open && left > 0).then(|| {
+            div()
+                .px_3()
+                .text_xs()
+                .font_family(cx.theme().font_family.clone())
+                .text_color(cx.theme().muted_foreground)
+                .child(format!("{left} more changed lines not shown"))
+        }))
 }
 
 /// Which file the rows under it belong to, and the way into it.
@@ -621,10 +577,10 @@ fn diff_path(
         .min_w_0()
         .h_auto()
         .py(TIGHT_GAP)
-        .px(DIFF_TEXT_PAD)
+        .px_3()
         .rounded_none()
         .label(shown)
-        .text_color(crate::theme::hue_ink(cx.theme().blue, cx))
+        .text_color(accent(cx))
         .on_click(move |_, _, cx: &mut App| {
             session.update(cx, |_, cx| {
                 cx.emit(crate::chat::session::ChatEvent::OpenFile(full.clone()))
@@ -633,84 +589,76 @@ fn diff_path(
         .into_any_element()
 }
 
-/// One diff, as three columns that hold whatever the text does.
+/// One diff, a row per line: a muted line number, the sign, and the text,
+/// added and removed lines on their state's ink thinned to a fill.
+///
+/// The number is the line's in the file as it is now, so a removed line has
+/// none and a skipped run moves the count on by what it skipped.
 pub(in crate::chat) fn diff_rows(
     hunks: &[DiffRow],
     budget: &mut usize,
     cx: &App,
 ) -> Vec<gpui::AnyElement> {
     let status = crate::theme::status_ink(cx);
+    let muted = cx.theme().muted_foreground;
     let mut out = Vec::new();
-    let mut n = 0usize;
+    let mut number = 1usize;
     for line in hunks {
         if *budget == 0 {
             break;
         }
         *budget -= 1;
-        // **A skipped run is a line of its own, in the ink that means it can be
-        // opened.** Blue is the transcript's one word for "there is more behind
-        // this", and an elided run is exactly that -- left in the quiet ink it
-        // read as a remark about the file rather than as a way into it.
-        if let DiffRow::Skipped(count) = line {
-            out.push(
-                div()
-                    .w_full()
-                    .min_w_0()
-                    .px(DIFF_TEXT_PAD)
-                    .bg(crate::theme::hue_ink(cx.theme().blue, cx).alpha(0.06))
-                    .text_size(rems(0.71875))
-                    .text_color(crate::theme::hue_ink(cx.theme().blue, cx))
-                    .child(format!("{count} unchanged lines"))
-                    .into_any_element(),
-            );
-            n += count;
-            continue;
-        }
-        n += 1;
-        let (sign, ink, wash) = match line {
-            DiffRow::Added(_) => ("+", status.success, Some(status.success.alpha(0.08))),
-            DiffRow::Removed(_) => ("−", status.danger, Some(status.danger.alpha(0.08))),
-            _ => (" ", cx.theme().muted_foreground, None),
+        let (sign, ink, text) = match line {
+            // **A skipped run is a line of its own, in the ink that means it
+            // can be opened**, the transcript's word for "there is more
+            // behind this".
+            DiffRow::Skipped(count) => {
+                out.push(
+                    div()
+                        .px_3()
+                        .bg(accent(cx).opacity(STATE_TINT))
+                        .text_xs()
+                        .text_color(accent(cx))
+                        .child(format!("{count} unchanged lines"))
+                        .into_any_element(),
+                );
+                number += count;
+                continue;
+            }
+            DiffRow::Added(l) => ("+", Some(status.success), l),
+            DiffRow::Removed(l) => ("−", Some(status.danger), l),
+            DiffRow::Context(l) => (" ", None, l),
         };
-        let text = match line {
-            DiffRow::Context(l) | DiffRow::Added(l) | DiffRow::Removed(l) => l.clone(),
-            DiffRow::Skipped(_) => unreachable!(),
-        };
+        let shown = (sign != "−").then(|| {
+            number += 1;
+            (number - 1).to_string()
+        });
         out.push(
             div()
                 .h_flex()
-                // **Top, not centre.** A line that wraps has to keep its number
-                // and its sign level with its *first* row, or the column down
-                // the side stops being a ruler the moment anything is long.
-                .items_start()
-                .w_full()
-                .min_w_0()
-                .when_some(wash, |row, wash| row.bg(wash))
+                .px_3()
+                .when_some(ink, |row, ink| row.bg(ink.opacity(STATE_TINT)))
                 .child(
                     div()
+                        .w_12()
                         .flex_none()
-                        .w(DIFF_NUM_W)
-                        .px(DIFF_NUM_PAD)
+                        .pr_3()
                         .text_right()
-                        .whitespace_nowrap()
-                        .text_color(cx.theme().muted_foreground.opacity(0.6))
-                        .child(format!("{n}")),
+                        .text_color(muted)
+                        .child(shown.unwrap_or_default()),
                 )
                 .child(
                     div()
+                        .w_4()
                         .flex_none()
-                        .w(DIFF_SIGN_W)
-                        .text_center()
-                        .text_color(ink)
+                        .text_color(ink.unwrap_or(muted))
                         .child(sign),
                 )
                 .child(
                     div()
-                        .flex_1()
-                        .min_w_0()
-                        .pr(DIFF_TEXT_PAD)
+                        .whitespace_nowrap()
                         .text_color(cx.theme().foreground)
-                        .child(text),
+                        .child(text.clone()),
                 )
                 .into_any_element(),
         );
@@ -718,46 +666,30 @@ pub(in crate::chat) fn diff_rows(
     out
 }
 
-/// The control that opens a detail and the one that shuts it, which are one
-/// control.
-///
-/// A pill rather than a bare word: it sits *over* the fade at the cut, so it
-/// needs a plate of its own or it is read against the text it is covering.
-fn fold_pill(
+/// The link that shows what a well holds back and takes it away again: plain
+/// words in the quiet ink, lit under the pointer.
+fn fold_link(
     session: &Entity<ChatSession>,
     target: TranscriptItemId,
     label: impl Into<SharedString>,
-    open: bool,
     cx: &App,
-) -> gpui::Div {
+) -> gpui::Stateful<gpui::Div> {
     let session = session.clone();
+    let lit = cx.theme().foreground;
     div()
-        .w_full()
-        .h_flex()
-        .justify_center()
-        // Opened, the control is outside the scrolling box and needs the rule
-        // that says so; closed, it is floating over the fade and must not draw
-        // a second edge across it.
-        .when(open, |row| row.border_t_1().border_color(cx.theme().border))
-        .py(STACK_GAP)
-        .child(
-            crate::controls::action(("detail-fold", fold_key(target)))
-                .ghost()
-                .py(PILL_PAD_Y)
-                .px(PILL_PAD_X)
-                .h_auto()
-                .rounded_full()
-                .border_1()
-                .border_color(cx.theme().border)
-                .bg(cx.theme().muted)
-                .label(label.into())
-                .on_click(move |_, _, cx: &mut App| {
-                    session.update(cx, |s, cx| {
-                        s.chat.toggle_tool_output(target, 0);
-                        cx.notify();
-                    });
-                }),
-        )
+        .id(("detail-fold", fold_key(target)))
+        .cursor_pointer()
+        .font_family(cx.theme().font_family.clone())
+        .text_xs()
+        .text_color(cx.theme().muted_foreground)
+        .hover(move |link| link.text_color(lit))
+        .on_click(move |_, _, cx: &mut App| {
+            session.update(cx, |s, cx| {
+                s.chat.toggle_tool_output(target, 0);
+                cx.notify();
+            });
+        })
+        .child(label.into())
 }
 
 fn path_for_display(root: &Path, value: &str) -> String {
@@ -820,7 +752,7 @@ impl RenderOnce for CommandBlock {
         // inch apart in one transcript, drawn as two kinds of thing, neither of
         // them the reader's doing. The width is the digits of the count, so the
         // one-line case costs a single character.
-        let gutter = rems(MONO_ADVANCE * CODE_TEXT.0 * self.total.to_string().len() as f32);
+        let gutter = rems(MONO_ADVANCE * TEXT_SM.0 * self.total.to_string().len() as f32);
         // **A share of the panel this is drawn in, not of the window.** What
         // the bound is for is the card's own heading staying on screen with the
         // command it belongs to, and the card is in the conversation -- so with

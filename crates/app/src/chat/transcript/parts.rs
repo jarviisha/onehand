@@ -1,8 +1,6 @@
 use super::fold_key;
 use super::metrics::{
-    BUTTON_H, CHEVRON_MARK, CHEVRON_SLOT, CODE_LH, CONTROL_ROW, DETAIL_INSET, DETAIL_OPEN_H,
-    FRAME_PAD, GLYPH_DROP, KIND_ICON, MARK_SIZE, OBJECT_TEXT, PART_GAP, PILL_H, ROW_PAD_X,
-    ROW_PAD_Y, STATUS_DOT, TIGHT_GAP, VERB_TEXT, radius_block, radius_control,
+    BUTTON_H, CONTROL_ROW, DETAIL_OPEN_H, LEADING, MARK_SIZE, TEXT_SM, TIGHT_GAP,
 };
 use crate::chat::session::ChatSession;
 use gpui::prelude::FluentBuilder as _;
@@ -120,53 +118,70 @@ pub(super) fn copy_button(id: impl Into<gpui::ElementId>, text: impl Into<Shared
         })
 }
 
-/// Copy the whole turn `target` belongs to, gathered **when the button is
-/// clicked**.
-///
-/// The eager form above is right for a fenced block, whose text the caller
-/// already holds. A turn's prose is a join of every agent block in it — the
-/// length of the answer, built from scratch — and building that on every redraw
-/// is the length of the answer per frame, to have it ready in case a button is
-/// pressed.
+/// Copy the paragraph `target`'s turn closes on, gathered **when the button is
+/// clicked**: finding it walks the whole answer, and a redraw is not a reason
+/// to do that.
 pub(super) fn copy_turn_button(session: &Entity<ChatSession>, target: TranscriptItemId) -> Button {
     let session = session.clone();
     crate::controls::action("copy-answer")
         .ghost()
         .xsmall()
-        .size(BUTTON_H)
-        .icon(Icon::new(IconName::Copy).size(MARK_SIZE))
+        .icon(IconName::Copy)
         .on_click(move |_, _, cx: &mut App| {
-            let prose = session.read(cx).chat.turn_prose(target);
-            cx.write_to_clipboard(gpui::ClipboardItem::new_string(prose));
+            let closing = session.read(cx).chat.turn_closing(target);
+            cx.write_to_clipboard(gpui::ClipboardItem::new_string(closing));
         })
 }
 
-/// Where whatever a row opens into is set in to: the row's own words, with the
-/// frame's inset kept on the right and the foot.
+/// Where whatever a row opens into is set in to: under the row's glyph, past
+/// the chevron's column.
 pub(super) fn detail_well(body: impl IntoElement) -> gpui::Div {
-    div()
-        .w_full()
-        .min_w_0()
-        .pl(DETAIL_INSET)
-        .pr(ROW_PAD_X)
-        .pb(FRAME_PAD)
-        .child(body)
+    div().w_full().min_w_0().pl_5().pt_1().child(body)
 }
 
-/// The fixed box a mark sits in, dropped onto the line its neighbours read on.
-///
-/// One function because every row has two or three of them and they all need
-/// the same correction: written out per call site, the first one somebody added
-/// without it is a mark a pixel above the words beside it, which reads as the
-/// row having come apart rather than as anything measurable.
-pub(super) fn mark_slot(size: Rems) -> gpui::Div {
+/// The ink of what runs, and of a way into more: the theme's link hue, the
+/// one the rail marks a running session with.
+pub(in crate::chat) fn accent(cx: &App) -> gpui::Hsla {
+    cx.theme().link
+}
+
+/// A disclosure's arrow: one shape that turns as its block opens, so opening
+/// moves nothing beside it.
+pub(super) fn chevron(open: bool) -> Icon {
+    Icon::new(IconName::ChevronRight)
+        .xsmall()
+        .rotate(gpui::radians(match open {
+            true => std::f32::consts::FRAC_PI_2,
+            false => 0.,
+        }))
+}
+
+/// The arrow's column, kept whether or not a row has anything to open, so a
+/// list of rows keeps one left edge for its glyphs.
+pub(super) fn chevron_slot(fold: Option<bool>) -> gpui::Div {
+    div().w_3().flex_none().children(fold.map(chevron))
+}
+
+/// The line every folding block opens from: its arrow first, then what the
+/// block says about itself, in the quiet ink and lit to full ink under the
+/// pointer. The caller adds the words and what a press does.
+pub(super) fn fold_line(
+    id: impl Into<gpui::ElementId>,
+    open: bool,
+    cx: &App,
+) -> gpui::Stateful<gpui::Div> {
+    let lit = cx.theme().foreground;
     div()
-        .size(size)
-        .flex_none()
-        .mt(GLYPH_DROP)
+        .id(id)
         .h_flex()
         .items_center()
-        .justify_center()
+        .gap_2()
+        .min_w_0()
+        .cursor_pointer()
+        .text_size(TEXT_SM)
+        .text_color(cx.theme().muted_foreground)
+        .hover(move |line| line.text_color(lit))
+        .child(chevron(open))
 }
 
 /// A detail that has outgrown its box, scrolling inside it and nowhere else.
@@ -312,35 +327,33 @@ pub(super) fn scrolled(open: bool, key: usize, body: gpui::Div) -> gpui::AnyElem
     }
 }
 
-/// The arrow of a disclosure, in a slot it keeps whether or not it is drawn.
-///
-/// **Reserved, not conditional.** A row that grew one on gaining something to
-/// open would shift every word beside it, and a column of them down a block
-/// would come out ragged for a reason about the rows rather than the arrows.
-pub(super) fn chevron_slot(fold: Option<bool>, cx: &App) -> gpui::Div {
-    mark_slot(CHEVRON_SLOT).children(fold.map(|open| {
-        Icon::new(match open {
-            true => IconName::ChevronDown,
-            false => IconName::ChevronRight,
-        })
-        .size(CHEVRON_MARK)
-        .text_color(cx.theme().muted_foreground)
-    }))
-}
-
-/// The box a detail is drawn in, without the row wrapper around it.
+/// A well of machine text: the sunk fill, no edge, mono a step under the
+/// reading size. What a tool read, printed or changed sits in one, and so does
+/// an answer's fenced code, so the two read as the same kind of thing.
 pub(super) fn plain_box(cx: &App) -> gpui::Div {
     div()
         .w_full()
         .min_w_0()
         .overflow_hidden()
-        .rounded(radius_block(cx))
-        .border_1()
-        .border_color(cx.theme().border)
-        .bg(cx.theme().muted.opacity(0.4))
+        .rounded(cx.theme().radius_lg)
+        .bg(cx.theme().muted)
         .font_family(cx.theme().mono_font_family.clone())
-        .text_size(OBJECT_TEXT)
-        .line_height(relative(CODE_LH))
+        .text_size(TEXT_SM)
+        .line_height(relative(LEADING))
+}
+
+/// Lines wider than their well scroll sideways inside it, rather than
+/// wrapping a command or a diff line into something nobody typed.
+pub(super) fn sideways(
+    id: impl Into<gpui::ElementId>,
+    body: impl IntoElement,
+) -> gpui::Stateful<gpui::Div> {
+    div()
+        .id(id)
+        .w_full()
+        .min_w_0()
+        .overflow_x_scroll()
+        .child(body)
 }
 
 /// Let a control take the height its own text needs.
@@ -370,41 +383,6 @@ pub(super) fn grows(button: Button) -> Button {
 
 // ── permission — blocking; the agent parks until answered ───────────────────
 
-/// The surface every card and strip that floats over the composer is built on.
-///
-/// **One function because there are four of them** — a parked permission, a
-/// parked question, an adapter still connecting, a prompt waiting its turn —
-/// and they arrive in one column, stacked, directly above the composer. Written
-/// out four times they came apart exactly where four copies do: two sat on the
-/// reading surface with a hairline and a single radius while the other two
-/// floated on the raised one with a shadow and a doubled radius, so a
-/// permission parked above a queued prompt read as two unrelated things rather
-/// than as the same kind of interruption twice.
-///
-/// It is the **composer's own treatment**, and has to be: these are the boxes
-/// that stack on top of that card and are read as one object with it. The
-/// radius is the theme's named card step for the same reason the composer takes
-/// it — one window drawing its floating surfaces at two corners is a difference
-/// nobody chose.
-///
-/// The shadow stays on a card **drawn back in the transcript once it has been
-/// answered**, which is deliberate and not an oversight. The same element is
-/// used in both places by design — one card that changed on being answered
-/// would read as two different cards — and what it carries into the history is
-/// the mark of the one block that stopped everything until somebody replied.
-pub(in crate::chat) fn floating_card(cx: &App) -> gpui::Div {
-    div()
-        .w_full()
-        .rounded(cx.theme().radius_lg)
-        .border_1()
-        .border_color(cx.theme().border)
-        // Opaque, and not the reading surface: the transcript runs underneath
-        // these and text showing through a box that is asking a question is the
-        // one place in the app that cannot afford it.
-        .bg(cx.theme().popover.alpha(1.))
-        .shadow_lg()
-}
-
 // ── shared bits ─────────────────────────────────────────────────────────────
 
 /// What the fixed slot at the head of an activity row holds.
@@ -428,10 +406,6 @@ pub enum RowMark {
     /// other end of the row.
     Recovered,
     Failed,
-    /// A step somebody refused. Not a failure — nothing went wrong, a decision
-    /// was taken — so it is the one mark here that is neither the tick nor the
-    /// danger cross.
-    Refused,
 }
 
 impl RowMark {
@@ -455,37 +429,27 @@ impl RowMark {
         }
     }
 
-    /// Draw the mark into a slot the caller has already sized.
-    ///
-    /// **The slot is the caller's and the drawing is this.** A parent's slot
-    /// and a child's are two sizes on purpose — the difference is what tells
-    /// the levels apart before a word is read — so the box cannot be decided
-    /// here, and the glyph inside it takes whatever size the caller is drawing
-    /// at. Written as one function returning its own box, a child row got its
-    /// parent's mark and the two levels lined up exactly.
-    fn draw(self, cx: &App) -> gpui::Div {
-        let status = crate::theme::status_ink(cx);
-        let slot = mark_slot(KIND_ICON);
-        let ink = match self {
-            Self::Waiting => cx.theme().muted_foreground.opacity(0.5),
-            Self::Running => return slot.child(Spinner::new().xsmall()),
-            Self::Done => status.success,
-            Self::Recovered => status.warning,
-            Self::Failed => status.danger,
-            // Refused is not a failure -- nothing went wrong, somebody decided
-            // -- so it takes the quiet ink and says the rest in words.
-            Self::Refused => cx.theme().muted_foreground,
-        };
-        slot.child(div().size(STATUS_DOT).rounded_full().bg(ink))
+    /// The glyph at the head of a row: the kind of work it was, or a spinner
+    /// in the accent while it runs. How a settled step ended is said in words
+    /// at the row's end, so the glyph only ever says what the work was.
+    fn draw(self, kind: SharedString, cx: &App) -> gpui::AnyElement {
+        match self {
+            Self::Running => Spinner::new().xsmall().color(accent(cx)).into_any_element(),
+            Self::Waiting | Self::Done | Self::Recovered | Self::Failed => Icon::empty()
+                .path(kind)
+                .xsmall()
+                .text_color(cx.theme().muted_foreground)
+                .into_any_element(),
+        }
     }
 }
 
 /// One row of an activity block, and the one shape every step takes.
 ///
-/// **One anatomy, and every column holds its place on every row.** Left to
-/// right: how it went, what sort of work it was, what it did, what it did it to,
-/// whatever is worth saying at the end, and the arrow. Adding a kind of activity
-/// must not add a column; only what the row opens into differs.
+/// **One anatomy on every row.** Left to right: the arrow's column, the kind
+/// of work (a spinner while it runs), what was done, what it was done to, and
+/// whatever is worth saying at the end. Adding a kind of activity must not add
+/// a column; only what the row opens into differs.
 pub(super) struct ActivityRow {
     id: gpui::ElementId,
     mark: RowMark,
@@ -594,79 +558,58 @@ pub(super) fn activity_row(
     // colour cascades *down* -- so a wrapper that hovers over a child which has
     // already set its own colour changes nothing. Everything that should lift
     // therefore inherits, and the one thing that should not says so.
-    // Generic over the element, because the interactive row is a
-    // `Stateful<Div>` and the inert one is a plain `Div`: both are `Styled` and
-    // `ParentElement`, which is the whole of what dressing a row needs.
     fn dress<E>(row_div: E, row: ActivityRow, cx: &App) -> E
     where
         E: Styled + ParentElement,
     {
+        let muted = cx.theme().muted_foreground;
         row_div
             .h_flex()
             .items_center()
-            .gap(PART_GAP)
+            .gap_2()
             .w_full()
             .min_w_0()
-            .py(ROW_PAD_Y)
-            .px(ROW_PAD_X)
-            .text_color(cx.theme().muted_foreground)
-            // **A disc in the ink the state means, and nothing else in the
-            // slot.** A tick and a cross are two drawings to read at a size
-            // where both are a handful of strokes; a disc is one shape wherever
-            // it appears, so what the column carries is a colour -- and a
-            // colour is read without being looked at.
-            .child(row.mark.draw(cx))
-            .child(
-                mark_slot(KIND_ICON).child(Icon::new(Icon::empty().path(row.kind)).size(KIND_ICON)),
-            )
-            .child(
-                div()
-                    .flex_none()
-                    .whitespace_nowrap()
-                    .text_size(VERB_TEXT)
-                    // The one part held at the reading ink, so it does not lift
-                    // with the rest: it is already as bright as this row goes.
-                    .text_color(cx.theme().foreground)
-                    .child(row.verb),
-            )
+            .text_size(TEXT_SM)
+            .text_color(muted)
+            .child(chevron_slot(row.fold))
+            .child(row.mark.draw(row.kind, cx))
+            .child(div().flex_none().whitespace_nowrap().child(row.verb))
             .children(row.object.map(|object| {
                 div()
-                    .flex_1()
                     .min_w_0()
                     .h_flex()
                     .items_center()
                     .overflow_hidden()
                     .whitespace_nowrap()
                     .font_family(cx.theme().mono_font_family.clone())
-                    .text_size(OBJECT_TEXT)
+                    .text_color(match row.struck {
+                        true => muted,
+                        false => cx.theme().foreground,
+                    })
                     .when(row.struck, |o| o.line_through())
-                    .children(object.dir.map(|dir| {
-                        div()
-                            .flex_none()
-                            .text_color(cx.theme().muted_foreground.opacity(0.7))
-                            .child(dir)
-                    }))
+                    .children(
+                        object
+                            .dir
+                            .map(|dir| div().flex_none().text_color(muted).child(dir)),
+                    )
                     .child(div().min_w_0().truncate().child(object.name))
             }))
-            .child(div().flex_1().min_w_0())
             .children(row.meta)
-            .child(chevron_slot(row.fold, cx))
     }
 
     match interactive {
-        // **The same hover the cluster's line takes: ink, and no plate.** A
-        // fill behind a row is the row answering as a surface, and these rows
-        // are a list inside a frame that is already one. The weight is left
-        // alone here and only here: the verb is `flex_none`, so a heavier one
-        // would move where the object column starts, and a block of rows whose
-        // columns shift under the pointer is the one thing the frame is for.
-        true => div()
-            .id(id)
-            .cursor_pointer()
-            .hover(|row| row.text_color(crate::theme::meta_ink(cx)))
-            .on_click(on_click)
-            .map(|row_div| dress(row_div, row, cx))
-            .into_any_element(),
+        // **Ink, and no plate**: a fill behind a row is the row answering as a
+        // surface, and these are lines of a list rather than things on it.
+        true => {
+            let lit = cx.theme().foreground;
+            div()
+                .id(id)
+                .cursor_pointer()
+                .hover(move |row| row.text_color(lit))
+                .on_click(on_click)
+                .map(|row_div| dress(row_div, row, cx))
+                .into_any_element()
+        }
         // Nothing to open, so nothing to press: a pointer on a row that does
         // not answer is a promise the row cannot keep.
         false => dress(div(), row, cx).into_any_element(),
@@ -714,44 +657,17 @@ pub(in crate::chat) fn line_counts(added: usize, removed: usize, cx: &App) -> Op
 /// twelve seconds is a step that took seven minutes, and the extra two digits
 /// are two digits the eye has to divide before it means anything.
 pub(in crate::chat) fn elapsed(secs: u64) -> String {
-    match secs {
-        0..=59 => format!("{secs}s"),
-        _ => format!("{}m {}s", secs / 60, secs % 60),
-    }
+    onehand_core::duration(secs)
 }
 
 /// A word at the end of a row, in the quiet ink or in one that means something.
-pub(super) fn row_note(
-    text: impl Into<SharedString>,
-    ink: gpui::Hsla,
-    cx: &App,
-) -> gpui::AnyElement {
+pub(super) fn row_note(text: impl Into<SharedString>, ink: gpui::Hsla) -> gpui::AnyElement {
     div()
         .flex_none()
         .whitespace_nowrap()
-        .font_family(cx.theme().mono_font_family.clone())
-        .text_size(OBJECT_TEXT)
         .text_color(ink)
         .child(text.into())
         .into_any_element()
-}
-
-/// A word in a ring: the one shape a state takes wherever one is named.
-pub(super) fn pill(label: impl Into<SharedString>, ink: gpui::Hsla, cx: &App) -> gpui::Div {
-    div()
-        .flex_none()
-        .h(PILL_H)
-        .px(PART_GAP)
-        .h_flex()
-        .items_center()
-        .whitespace_nowrap()
-        .overflow_hidden()
-        .rounded(radius_control(cx))
-        .border_1()
-        .border_color(cx.theme().border)
-        .text_xs()
-        .text_color(ink)
-        .child(div().min_w_0().truncate().child(label.into()))
 }
 
 /// What sort of work a tool kind is, in a word.

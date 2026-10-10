@@ -514,7 +514,7 @@ fn restore_line(dir: &Path, line: &Line) -> ChatItem {
             md: Md::parse(text),
             started: None,
             elapsed_secs: *secs,
-            expanded: false,
+            fold: None,
         }),
         Line::Plan { entries } => ChatItem::Plan(PlanItem::new(
             entries

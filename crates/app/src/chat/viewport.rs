@@ -304,10 +304,15 @@ impl Viewport {
                         .filter_map(|t| item(chat, t))
                         .collect();
 
-                    let open = is_open(anchor);
+                    let summary = cluster_summary(&bodies);
+                    // **Open while anything in it runs, closed once it is
+                    // done**, and a fold the reader made flips whichever of
+                    // the two it is: the set holds where they disagreed with
+                    // the default, which is all a toggle can say.
+                    let open = is_open(anchor) != summary.running.is_some();
                     RunPlan {
                         strip: Some(ActivityPlan {
-                            summary: cluster_summary(&bodies),
+                            summary,
                             sections: sections(chat, &members),
                         }),
                         changes: None,
@@ -926,9 +931,10 @@ pub fn is_pinned(item: &ChatItem) -> bool {
 /// The cadence one un-folded item asks for.
 ///
 /// A settled step nobody has opened is the same index entry a folded strip is —
-/// it just happened to have no neighbour to fold with. Everything else is read
-/// rather than scanned, including a failed tool: its status is the reason to
-/// stop at it.
+/// it just happened to have no neighbour to fold with, and so is a closed
+/// thought or the one line a settled question or grant leaves. Everything else
+/// is read rather than scanned, including a failed tool: its status is the
+/// reason to stop at it.
 fn single_kind(item: &ChatItem) -> RunKind {
     match item {
         ChatItem::User(_) => RunKind::Prompt,
@@ -943,7 +949,9 @@ fn single_kind(item: &ChatItem) -> RunKind {
                 RunKind::Block
             }
         }
-        ChatItem::Thought(thought) if !thought.expanded => RunKind::Compact,
+        ChatItem::Thought(thought) if !thought.is_open() => RunKind::Compact,
+        ChatItem::Permission(p) if p.resolved.is_some() && !p.expanded => RunKind::Compact,
+        ChatItem::Ask(a) if a.resolved.is_some() && !a.expanded => RunKind::Compact,
         _ => RunKind::Block,
     }
 }

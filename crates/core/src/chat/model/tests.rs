@@ -147,6 +147,59 @@ fn only_running_tools_start_open() {
     assert!(!ToolItem::new(call(ToolStatus::Failed)).is_open());
 }
 
+/// A plan stays open until the user closes it; a thought opens while it
+/// runs and closes once done; a running step can be shut while it runs.
+#[test]
+fn what_runs_starts_open_and_the_plan_always_does() {
+    assert!(PlanItem::new(Vec::new()).is_open());
+
+    let mut chat = Chat::default();
+    chat.push_user("go".into(), Vec::new());
+    chat.apply(AcpEvent::ThoughtChunk("hm".into()));
+    let thinking = |chat: &Chat| match &chat.items[1] {
+        ChatItem::Thought(th) => (th.is_running(), th.is_open()),
+        _ => panic!(),
+    };
+    assert_eq!(thinking(&chat), (true, true), "a live thought is open");
+    chat.apply(AcpEvent::AgentChunk("done".into()));
+    assert_eq!(thinking(&chat), (false, false), "and closes once done");
+    chat.toggle_thought(TranscriptItemId::Live(1));
+    assert_eq!(thinking(&chat), (false, true), "the user's open wins");
+
+    chat.apply(AcpEvent::ToolCall(ToolCall {
+        id: "live".into(),
+        title: "cargo test".into(),
+        description: None,
+        kind: crate::acp::ToolKind::Execute,
+        status: ToolStatus::InProgress,
+        content: vec![],
+    }));
+    let at = chat.items.len() - 1;
+    chat.toggle_tool(TranscriptItemId::Live(at));
+    assert!(
+        matches!(&chat.items[at], ChatItem::Tool(t) if !t.is_open()),
+        "a running step shuts when told to"
+    );
+}
+
+/// The paragraph the footer copies is the turn's last, a blank line inside
+/// a fenced block not ending one.
+#[test]
+fn the_closing_paragraph_is_the_last_one() {
+    use super::turn::last_paragraph;
+    assert_eq!(last_paragraph("one\n\ntwo\nlines\n"), "two\nlines");
+    assert_eq!(last_paragraph("only"), "only");
+    assert_eq!(last_paragraph("a\n\nb\n\n\n"), "b");
+    assert_eq!(
+        last_paragraph("a\n\n```rust\nx\n\ny\n```"),
+        "```rust\nx\n\ny\n```"
+    );
+    let mut chat = Chat::default();
+    chat.push_user("go".into(), Vec::new());
+    chat.apply(AcpEvent::AgentChunk("First.\n\nThen this.".into()));
+    assert_eq!(chat.turn_closing(TranscriptItemId::Live(1)), "Then this.");
+}
+
 /// **A failure opens itself, and the user can still shut it.**
 ///
 /// The second half is the trap. Written as `is_open() = fold || Failed`,
@@ -234,7 +287,7 @@ fn plan_updates_replace_in_place_per_turn() {
     let mut chat = Chat::default();
     chat.push_user("go".into(), Vec::new());
     chat.apply(AcpEvent::Plan(vec![entry("a", PlanStatus::Pending)]));
-    chat.toggle_tool(TranscriptItemId::Live(1)); // user opens the card
+    chat.toggle_tool(TranscriptItemId::Live(1)); // user closes the card
     chat.apply(AcpEvent::Plan(vec![
         entry("a", PlanStatus::Completed),
         entry("b", PlanStatus::InProgress),
@@ -250,7 +303,10 @@ fn plan_updates_replace_in_place_per_turn() {
     assert_eq!(plans.len(), 1, "same turn replaces in place");
     assert_eq!(plans[0].entries.len(), 2);
     assert!(plans[0].fold, "user fold survives the update");
-    assert!(plans[0].is_open(), "in_progress force-opens");
+    assert!(
+        !plans[0].is_open(),
+        "the user's close wins over a running step"
+    );
 
     chat.push_user("next".into(), Vec::new());
     chat.apply(AcpEvent::Plan(vec![entry("c", PlanStatus::Pending)]));

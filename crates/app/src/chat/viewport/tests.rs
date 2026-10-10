@@ -263,19 +263,16 @@ fn a_step_in_flight_is_in_the_cluster_it_happened_in() {
         viewport.run(5).map(|r| r.members.as_slice()),
         Some([TranscriptItemId::Live(7), TranscriptItemId::Live(8)].as_slice())
     );
-    // **Collapsed, even while it is running.** A cluster that opened itself
-    // would push the answer above it up the panel every time a turn started
-    // work, and shut again when it stopped.
-    assert_eq!(viewport.run(5).map(|r| r.open), Some(false));
+    // **Open while it runs**, so the work in flight is in sight.
+    assert_eq!(viewport.run(5).map(|r| r.open), Some(true));
     // 6 is the line saying the turn is still going, which every live
     // plan ends on.
     assert_eq!(viewport.run(6).map(|r| r.members.is_empty()), Some(true));
     assert!(viewport.run(7).is_none(), "and nothing after it");
 
-    // They settle. **Nothing about the layout moves**: the same run, the
-    // same members, the same fold. What changes is the sentence that run's
-    // line says about itself, which is a row redrawn rather than a row
-    // appearing or going.
+    // They settle. **The rows stay where they are**: the same run, the same
+    // members. What changes is the sentence that run's line says about
+    // itself, and the cluster closes now that nothing in it runs.
     let before = viewport.run(5).map(|r| r.members.len());
     for item in &mut chat.items[7..=8] {
         let ChatItem::Tool(tool) = item else {

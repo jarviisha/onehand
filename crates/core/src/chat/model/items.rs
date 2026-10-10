@@ -1,6 +1,6 @@
 use crate::acp::{
-    ElicitKind, ElicitValue, Elicitation, PermissionRequest, PlanEntry, PlanStatus, ToolCall,
-    ToolContent, ToolStatus,
+    ElicitKind, ElicitValue, Elicitation, PermissionRequest, PlanEntry, ToolCall, ToolContent,
+    ToolStatus,
 };
 use crate::attachment::AttachmentSnapshot;
 use std::collections::{HashMap, HashSet};
@@ -431,8 +431,8 @@ pub struct Thought {
     pub started: Option<Instant>,
     /// Final duration once the thought is done (persisted); `None` while live.
     pub elapsed_secs: Option<u64>,
-    /// Whether the reasoning text is expanded in the transcript.
-    pub expanded: bool,
+    /// What the user chose by opening or closing it; `None` until they do.
+    pub fold: Option<bool>,
 }
 
 impl Thought {
@@ -441,8 +441,19 @@ impl Thought {
             md: Md::parse(s),
             started: Some(Instant::now()),
             elapsed_secs: None,
-            expanded: false,
+            fold: None,
         }
+    }
+
+    /// Still being written. A restored thought carries no start, so one saved
+    /// without a duration does not read as live for the rest of its life.
+    pub fn is_running(&self) -> bool {
+        self.elapsed_secs.is_none() && self.started.is_some()
+    }
+
+    /// Open while it runs and closed once done, unless the user said otherwise.
+    pub fn is_open(&self) -> bool {
+        self.fold.unwrap_or_else(|| self.is_running())
     }
 }
 
@@ -451,10 +462,10 @@ impl Thought {
 /// fragment), and whether the turn is still streaming (Copy stays hidden until
 /// it settles).
 ///
-/// **The prose itself is deliberately not here.** Copy wants every agent block
-/// of the turn joined together, and joining them is proportional to the whole
-/// answer — paid on every redraw, for a string that is only read if a button is
-/// clicked. [`Chat::turn_prose`](super::Chat::turn_prose) is that join, asked for at the click.
+/// **The prose itself is deliberately not here.** Copy wants the paragraph the
+/// turn closes on, and finding it walks the whole answer — paid on every
+/// redraw, for a string that is only read if a button is clicked.
+/// [`Chat::turn_closing`](super::Chat::turn_closing) is that walk, asked for at the click.
 pub struct TurnAnswer {
     pub is_last: bool,
     pub is_active: bool,
@@ -541,8 +552,9 @@ pub struct ToolItem {
     /// when the tool reports new content, which is exactly where this is
     /// filled.
     pub diff_rows: HashMap<usize, Vec<crate::diff::Row>>,
-    /// The user opened this card.
-    pub(crate) fold: bool,
+    /// What the user chose by opening or closing this card; `None` until
+    /// they do, or until a failure opens it for them.
+    pub(crate) fold: Option<bool>,
     /// Content sections whose OUT well is un-folded past the threshold,
     /// keyed by the section's index in `call.content`.
     pub out_open: HashSet<usize>,
@@ -586,7 +598,7 @@ impl ToolItem {
             call,
             diff_summary,
             diff_rows,
-            fold: false,
+            fold: None,
             out_open: HashSet::new(),
         }
     }
@@ -631,10 +643,11 @@ impl ToolItem {
         self.diff_summary = Self::summarize_diffs(&self.call);
         self.diff_rows = Self::hunks(&self.call);
     }
-    /// Live work stays open. Every settled state, including failure, follows
-    /// the user's fold choice and therefore starts collapsed.
+    /// Live work starts open and settled work closed; the user's choice,
+    /// once made, wins either way, while it runs too.
     pub fn is_open(&self) -> bool {
-        self.fold || matches!(self.call.status, ToolStatus::InProgress)
+        self.fold
+            .unwrap_or(matches!(self.call.status, ToolStatus::InProgress))
     }
 }
 
@@ -642,7 +655,7 @@ impl ToolItem {
 /// one card per turn, replaced in full on every `plan` update.
 pub struct PlanItem {
     pub entries: Vec<PlanEntry>,
-    /// The user opened this card.
+    /// The user closed this card.
     pub(crate) fold: bool,
 }
 
@@ -653,16 +666,10 @@ impl PlanItem {
             fold: false,
         }
     }
-    /// Force-open while work is mid-flight (an `in_progress` entry) — computed,
-    /// never stored, the same way a running tool card is. A second stored flag
-    /// for "open because it is busy" would have to be cleared by whatever ends
-    /// the work, and the day that is missed the card stays open forever.
+    /// Open until the user closes it: a plan is what the turn is working
+    /// through, so it stays in sight whether or not a step is running.
     pub fn is_open(&self) -> bool {
-        self.fold
-            || self
-                .entries
-                .iter()
-                .any(|e| matches!(e.status, PlanStatus::InProgress))
+        !self.fold
     }
 }
 

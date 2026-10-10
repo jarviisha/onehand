@@ -228,7 +228,7 @@ impl Chat {
                 let mut item = ToolItem::new(tc);
                 // The same rule for a step that arrives already failed, which
                 // is how an adapter reports one it never started.
-                item.fold = item.call.status == ToolStatus::Failed;
+                item.fold = (item.call.status == ToolStatus::Failed).then_some(true);
                 self.items.push(ChatItem::Tool(item));
             }
             AcpEvent::ToolUpdate(tu) => {
@@ -369,7 +369,7 @@ impl Chat {
                         // Running gets away with the OR because it stops being
                         // true on its own.
                         if status == ToolStatus::Failed && t.call.status != ToolStatus::Failed {
-                            t.fold = true;
+                            t.fold.get_or_insert(true);
                         }
                         t.call.status = status;
                     }

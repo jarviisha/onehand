@@ -212,7 +212,7 @@ impl Chat {
                 }
                 // The same seed a failure arriving as an update leaves, so a
                 // reader can see what the step had said before it stopped.
-                tool.fold = true;
+                tool.fold.get_or_insert(true);
             }
         }
     }
@@ -264,7 +264,7 @@ impl Chat {
     /// Toggle a whole tool/plan card's fold (typed, per item).
     pub fn toggle_tool(&mut self, target: TranscriptItemId) {
         match self.list_mut(target).get_mut(target.index()) {
-            Some(ChatItem::Tool(t)) => t.fold = !t.fold,
+            Some(ChatItem::Tool(t)) => t.fold = Some(!t.is_open()),
             Some(ChatItem::Plan(p)) => p.fold = !p.fold,
             _ => {}
         }
@@ -510,7 +510,7 @@ impl Chat {
     ///
     /// Asked for at the click and not before: the answer is proportional to the
     /// turn, and a redraw is not a reason to build it.
-    pub fn turn_prose(&self, target: TranscriptItemId) -> String {
+    pub(super) fn turn_prose(&self, target: TranscriptItemId) -> String {
         let items = self.list(target);
         let idx = target.index();
         let start = items[..idx.min(items.len())]
@@ -532,6 +532,13 @@ impl Chat {
             })
             .collect::<Vec<_>>()
             .join("\n\n")
+    }
+
+    /// The paragraph `target`'s turn closes on: what the footer's Copy hands
+    /// over. The last words of an answer are its conclusion, the part worth
+    /// pasting somewhere else; the whole reply is still there to select.
+    pub fn turn_closing(&self, target: TranscriptItemId) -> String {
+        last_paragraph(&self.turn_prose(target)).to_string()
     }
 
     /// What the agent said in the items from `from` on, joined: the answer to
@@ -557,7 +564,7 @@ impl Chat {
     /// resumed transcript's read-only history, in `history`.
     pub fn toggle_thought(&mut self, target: TranscriptItemId) {
         if let Some(ChatItem::Thought(th)) = self.list_mut(target).get_mut(target.index()) {
-            th.expanded = !th.expanded;
+            th.fold = Some(!th.is_open());
         }
     }
 
@@ -760,5 +767,34 @@ impl Chat {
             Some(ChatItem::Agent(_)) => Some("Responding…".to_string()),
             _ => Some("Working…".to_string()),
         }
+    }
+}
+
+/// The last paragraph of `markdown`: the text after its last blank line, a
+/// blank line inside a fenced block not counting, so an answer ending on code
+/// hands back the whole block rather than its last few lines.
+pub(super) fn last_paragraph(markdown: &str) -> &str {
+    let mut fenced = false;
+    let mut start = 0;
+    let mut last = "";
+    let mut at = 0;
+    for line in markdown.split_inclusive('\n') {
+        let trimmed = line.trim();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            fenced = !fenced;
+        }
+        let end = at + line.len();
+        if trimmed.is_empty() && !fenced {
+            let paragraph = markdown[start..at].trim();
+            if !paragraph.is_empty() {
+                last = paragraph;
+            }
+            start = end;
+        }
+        at = end;
+    }
+    match markdown[start..].trim() {
+        "" => last,
+        tail => tail,
     }
 }
