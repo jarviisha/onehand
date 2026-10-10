@@ -253,7 +253,7 @@ the app's action wrapper, which sets the pointer cursor; a control that refuses 
 (`resting()` or `.refuses()`) and goes back to the arrow. The app owns only what is its own: the
 transcript renderers, the icon registry, the terminal panel, per-panel zoom, and the composer
 popup (one shell for `@`, `/`, the pickers, the `+` and branch menus and the attachment tray, with
-a pinned title and a footer of key caps, at most six rows, grouped, then how many more; a menu
+a pinned title and no key hints, at most six rows, grouped, then how many more; a menu
 opens under its chip).
 
 Scope: the Workbench editor is a quick editor (tree-sitter, no LSP). Neovim is a Workbench mode with a

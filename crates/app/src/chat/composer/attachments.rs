@@ -1,4 +1,4 @@
-use super::popup::{edge_scrolled, more_text, popup_footer, popup_header, popup_surface};
+use super::popup::{edge_scrolled, more_text, popup_header, popup_surface};
 use super::{CHIP_H, Composer, ComposerEvent, Overlay};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -370,7 +370,6 @@ impl Composer {
                     "{hidden} more — remove visible items to reveal them"
                 )))
             })
-            .child(popup_footer(&[(&["escape"], "close")], cx))
     }
 }
 

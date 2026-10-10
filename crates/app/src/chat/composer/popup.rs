@@ -5,11 +5,10 @@ use super::{CHIP_H, Composer, Overlay, highlight};
 use crate::chat::session::ChatSession;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, Context, Entity, InteractiveElement, Keystroke, ParentElement, Rems, SharedString,
+    App, Context, Entity, InteractiveElement, ParentElement, Rems, SharedString,
     StatefulInteractiveElement, Styled, div, rems,
 };
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::kbd::Kbd;
 use gpui_component::scroll::{Scrollbar, ScrollbarMode};
 use gpui_component::{ActiveTheme, Selectable as _, Sizable as _, StyledExt};
 use onehand_core::completion::TriggerKind;
@@ -49,11 +48,10 @@ pub(in crate::chat) const POPUP_STACK_PEEK: Rems = rems(0.375);
 /// squeezed panel.
 ///
 /// The parts: the pinned header, the line counting what is out of view, the
-/// footer of keys, the segment rail where one is drawn, and the surface's own
+/// segment rail where one is drawn, and the surface's own
 /// inset top and bottom.
 const POPUP_HEADER_H: Rems = rems(1.75);
 const POPUP_MORE_H: Rems = rems(1.5);
-const POPUP_FOOTER_H: Rems = rems(2.5);
 const POPUP_RAIL_H: Rems = rems(3.);
 const POPUP_INSET_H: Rems = rems(0.75);
 /// A menu opened from a control is this wide, and starts under that control;
@@ -81,7 +79,7 @@ pub fn popup_room(panel: gpui::Pixels, reserved: gpui::Pixels, rem: gpui::Pixels
 /// Everything the popup draws above and below its scrolling box. The rail is
 /// asked for by name, because only the caller knows it is about to draw one.
 pub(super) fn popup_chrome(rail: bool) -> Rems {
-    let mut h = POPUP_HEADER_H.0 + POPUP_MORE_H.0 + POPUP_FOOTER_H.0 + POPUP_INSET_H.0;
+    let mut h = POPUP_HEADER_H.0 + POPUP_MORE_H.0 + POPUP_INSET_H.0;
     if rail {
         h += POPUP_RAIL_H.0;
     }
@@ -153,15 +151,11 @@ fn anchor(overlay: &Overlay) -> Anchor {
     }
 }
 
-/// The keys a popup's footer names, as key caps and the word for each.
-type Keys = &'static [(&'static [&'static str], &'static str)];
-
 /// The surface every popup is drawn on: the floating fill, a control's edge,
 /// the app's lift, and the wheel held so the conversation behind does not move
 /// with the list.
 ///
-/// **The wheel is claimed on the surface**, so the header, the footer and the
-/// inset swallow it too: gpui's handler for a scrolling box never claims the
+/// **The wheel is claimed on the surface**, so the header and the inset swallow it too: gpui's handler for a scrolling box never claims the
 /// event, so the transcript underneath used to scroll with the list. The inner
 /// list still scrolls, because the deeper listener runs first.
 pub(super) fn popup_surface(cx: &App) -> gpui::Div {
@@ -286,18 +280,6 @@ impl Composer {
         {
             first.group = None;
         }
-        let keys: Keys = match completion {
-            true => &[
-                (&["up", "down"], "move"),
-                (&["enter", "tab"], "insert"),
-                (&["escape"], "close"),
-            ],
-            false => &[
-                (&["up", "down"], "move"),
-                (&["enter"], "choose"),
-                (&["escape"], "close"),
-            ],
-        };
 
         Some(
             // The surface and the scrolling list are two boxes, and the inset
@@ -386,8 +368,7 @@ impl Composer {
                         false => format!("{more} more"),
                     })))
                 })
-                .children(segments.map(|segments| self.segment_rail(segments, session, cx)))
-                .child(popup_footer(keys, cx)),
+                .children(segments.map(|segments| self.segment_rail(segments, session, cx))),
         )
     }
 
@@ -474,36 +455,6 @@ impl Composer {
             )
             .child(rail)
     }
-}
-
-/// The popup's footer: the keys that work there, as key caps with the word for
-/// each, behind a rule because what is above it scrolls and it does not.
-pub(super) fn popup_footer(keys: Keys, cx: &App) -> gpui::Div {
-    div()
-        .h_flex()
-        .flex_wrap()
-        .items_center()
-        .flex_none()
-        .w_full()
-        .gap_3()
-        .px_2()
-        .mt_1()
-        .pt_2()
-        .border_t_1()
-        .border_color(cx.theme().border)
-        .text_xs()
-        .text_color(cx.theme().muted_foreground)
-        .children(keys.iter().map(|(caps, word)| {
-            div()
-                .h_flex()
-                .items_center()
-                .gap_1()
-                .children(
-                    caps.iter()
-                        .filter_map(|cap| Keystroke::parse(cap).ok().map(Kbd::new)),
-                )
-                .child(*word)
-        }))
 }
 
 /// The line under a list counting what is out of view.
