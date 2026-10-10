@@ -401,7 +401,7 @@ pub(super) fn apply_appearance(choice: Appearance, window: Option<&mut Window>, 
     // seam of every resizable split — between the rail and the docks, and
     // between the conversation and each dock. Every panel on the other side of
     // one of those seams already marks it: the Workbench is a change of surface,
-    // the terminal draws a hairline along its top, and the rail is a change of
+    // the terminal is a bordered block, and the rail is a change of
     // surface too — the reading surface against the well, a pair the ramp's own
     // tests hold at 1.14 or better in either palette, which is what makes a
     // fill an edge rather than a tint. So

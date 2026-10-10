@@ -389,14 +389,13 @@ impl Render for TerminalPanel {
         self.sync_theme(cx);
         div()
             .size_full()
-            .v_flex()
-            // A surface of its own, as the Workbench is, meeting the
-            // conversation above at one hairline on the seam it is dragged by.
-            // The grid below is handed the same surface as its background, so a
-            // shell is the dock rather than a plate laid on it.
-            .border_t_1()
-            .border_color(cx.theme().border)
-            .bg(crate::theme::dock_surface(cx))
+            // A block of its own, held off the conversation above, the
+            // Workbench beside it and the window's edges by a gap of the
+            // reading surface, so a shell never reads as the conversation
+            // running on. The gap belongs to the panel: a click in it is a
+            // click on the terminal, and the dock's grip runs along its top.
+            .p_2()
+            .bg(cx.theme().background)
             // Tracked here because this panel is mounted bare. A `TabPanel` calls
             // `track_focus` on the panel it holds, which is what normally puts
             // that handle in the focus tree; without a tab group nothing does,
@@ -405,7 +404,21 @@ impl Render for TerminalPanel {
             // every "which panel is this" question at some other panel.
             .track_focus(&self.focus_handle)
             .key_context("Terminal")
-            .child(self.body(window, cx))
+            .child(
+                // The grid inside is handed the same surface as its
+                // background, so a shell is the block rather than a plate
+                // laid on it. Clipped, or the strip's rule would run through
+                // the corners the radius cuts.
+                div()
+                    .size_full()
+                    .v_flex()
+                    .border_1()
+                    .border_color(cx.theme().border)
+                    .rounded(cx.theme().radius_lg)
+                    .overflow_hidden()
+                    .bg(crate::theme::dock_surface(cx))
+                    .child(self.body(window, cx)),
+            )
     }
 }
 

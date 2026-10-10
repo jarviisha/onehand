@@ -112,7 +112,8 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   page's *Run…*) opens the launcher, and an issue's *Run workflow…* its start form; both are
   drawn as `docs/workflows.md` describes.
 - **Docks.** Bare panels on the dock surface, with strips of their own and no library tab bars;
-  the Workbench meets the conversation by its surface alone, the terminal under a hairline.
+  the Workbench meets the conversation by its surface alone; the terminal is a block held off
+  its neighbours by a gap.
   - The Workbench strip, as tall as the header: *← Conversation* while it has the area, the modes
     (Editor, Markdown, Issues, Plugins, Neovim; one select when narrow), maximize, hide. The
     terminal strip, as tall: shell tabs (capped, scrolling sideways), `+`, maximize, hide. File
