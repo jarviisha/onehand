@@ -45,21 +45,12 @@ impl ChatSession {
         // to is a record now and draws no controls at all.
         self.ask_inputs.retain(|(idx, _), _| live.contains(idx));
         self.ask_focus.retain(|idx, _| live.contains(idx));
-        for idx in &live {
-            if self.ask_focus.contains_key(idx) {
-                continue;
-            }
-            let handle = cx.focus_handle();
-            // A card that has just stopped the turn is where the keyboard
-            // belongs -- but **only where the keyboard is nowhere**. Taking the
-            // caret out of a composer somebody is mid-sentence in is worse than
-            // a card that has to be clicked before its number keys work, and a
-            // question can park at any moment because the agent chose it, not
-            // because the user asked for it.
-            if window.focused(cx).is_none() {
-                window.focus(&handle, cx);
-            }
-            self.ask_focus.insert(*idx, handle);
+        // Handles only: which card takes the caret is settled once both
+        // kinds are known, in [`Self::sync_perm_focus`].
+        for &idx in &live {
+            self.ask_focus
+                .entry(idx)
+                .or_insert_with(|| cx.focus_handle());
         }
 
         for (idx, field, hint, typed) in wanted {
@@ -129,25 +120,30 @@ impl ChatSession {
             .into_iter()
             .map(|(idx, _)| idx)
             .collect();
-        if live.is_empty() && self.perm_focus.is_empty() {
-            return;
-        }
         self.perm_focus.retain(|idx, _| live.contains(idx));
-        for idx in live {
-            if self.perm_focus.contains_key(&idx) {
-                continue;
-            }
-            let handle = cx.focus_handle();
-            // The card and never a button on it, so Enter lands on the card's
-            // own listener rather than on whichever grant happened to be
-            // focused -- and **only where the keyboard is nowhere**, because a
-            // permission parks when the agent chose to, not when the user
-            // asked, and taking the caret out of a half-typed prompt is worse
-            // than a card that has to be clicked before its keys work.
-            if window.focused(cx).is_none() {
-                window.focus(&handle, cx);
-            }
-            self.perm_focus.insert(idx, handle);
+        for &idx in &live {
+            self.perm_focus
+                .entry(idx)
+                .or_insert_with(|| cx.focus_handle());
+        }
+        // Only the oldest card is pinned, whichever kind it is, so only it may
+        // take the caret, and it takes it again once the one before it is
+        // answered and gone. The card and never a button on it, so Enter lands
+        // on the card's own listener rather than on whichever grant happened to
+        // be focused -- and **only where the keyboard is nowhere**, because a
+        // card parks when the agent chose to, not when the user asked, and
+        // taking the caret out of a half-typed prompt is worse than a card that
+        // has to be clicked before its keys work.
+        let oldest = self
+            .perm_focus
+            .iter()
+            .chain(&self.ask_focus)
+            .min_by_key(|(idx, _)| **idx)
+            .map(|(_, handle)| handle.clone());
+        if let Some(handle) = oldest
+            && window.focused(cx).is_none()
+        {
+            window.focus(&handle, cx);
         }
     }
 

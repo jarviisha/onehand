@@ -67,8 +67,27 @@ impl ChatPane {
         // permission and a question at once, and the order they were asked in
         // is the only order that makes sense of them.
         out.sort_by_key(|(idx, _)| *idx);
-        let mut pinned: Vec<gpui::AnyElement> =
-            out.into_iter().map(|(_, element)| element).collect();
+        // **One card at a time, the oldest.** Each one stacked over the last
+        // took the conversation's whole height by the third, and every one
+        // offered Enter while only the focused one would take it. The next
+        // takes the same place once this one is answered.
+        let waiting = out.len().saturating_sub(1);
+        let mut pinned: Vec<gpui::AnyElement> = out
+            .into_iter()
+            .take(1)
+            .map(|(_, element)| element)
+            .collect();
+        pinned.extend((waiting > 0).then(|| {
+            div()
+                .px_3()
+                .text_xs()
+                .text_color(cx.theme().muted_foreground)
+                .child(match waiting {
+                    1 => "1 more request waits after this one".to_string(),
+                    n => format!("{n} more requests wait after this one"),
+                })
+                .into_any_element()
+        }));
         // Under the blocking cards and directly over the composer, because that
         // is where the prompt it holds was written and where it will reappear
         // if the queue is cancelled.
