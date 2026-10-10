@@ -237,6 +237,8 @@ pub struct Composer {
     rows_scroll: gpui::ScrollHandle,
     /// The attachment manager's scroll, for its scrollbar.
     attachments_scroll: gpui::ScrollHandle,
+    /// The tray's row, measured to tell whether it was cut.
+    tray_scroll: gpui::ScrollHandle,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -284,6 +286,7 @@ impl Composer {
             attachments: Vec::new(),
             rows_scroll: gpui::ScrollHandle::new(),
             attachments_scroll: gpui::ScrollHandle::new(),
+            tray_scroll: gpui::ScrollHandle::new(),
             _subscriptions: vec![subscription],
         }
     }
