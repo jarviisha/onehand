@@ -217,6 +217,12 @@ impl Chat {
                 self.consume_replay();
                 self.push_thought(&s);
             }
+            AcpEvent::UserChunk(s) if is_interruption(&s) => {
+                self.consume_replay();
+                self.finalize_thought();
+                self.user_chunk_open = false;
+                self.items.push(ChatItem::notice("Interrupted"));
+            }
             AcpEvent::UserChunk(s) => {
                 self.consume_replay();
                 self.finalize_thought();
@@ -493,4 +499,13 @@ impl Chat {
         }
         self.user_chunk_open = true;
     }
+}
+
+/// Whether a user chunk is the adapter's own marker for a turn the person cut
+/// short, which it sends in the person's voice: `[Request interrupted by
+/// user]`, or `... for tool use]` when a tool was refused. Drawn as a bubble it
+/// reads as something the person typed.
+fn is_interruption(chunk: &str) -> bool {
+    let chunk = chunk.trim();
+    chunk.starts_with("[Request interrupted by user") && chunk.ends_with(']')
 }

@@ -1899,3 +1899,19 @@ fn a_stopped_turn_answered_with_an_error_is_not_failed() {
     });
     assert!(!chat.failed);
 }
+
+/// The adapter's interruption marker arrives as a user chunk, and is a notice
+/// rather than a prompt the person never typed.
+#[test]
+fn an_interruption_marker_is_a_notice_and_not_a_prompt() {
+    let mut chat = Chat::default();
+    chat.apply(AcpEvent::UserChunk(
+        "[Request interrupted by user for tool use]".into(),
+    ));
+    chat.apply(AcpEvent::UserChunk("read the whole project".into()));
+    assert!(matches!(
+        chat.items.as_slice(),
+        [ChatItem::Notice { text, .. }, ChatItem::User(u)]
+            if text == "Interrupted" && u.text == "read the whole project"
+    ));
+}
