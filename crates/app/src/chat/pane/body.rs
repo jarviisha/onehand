@@ -11,6 +11,7 @@ use gpui::{
     list, px,
 };
 use gpui_component::button::ButtonVariants as _;
+use gpui_component::scroll::Scrollbar;
 use gpui_component::spinner::Spinner;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::chat::{Link, TranscriptItemId};
@@ -417,19 +418,26 @@ impl ChatPane {
                             .bottom(cut)
                             .overflow_hidden()
                             .child(
-                                list(list_state, move |ix, window: &mut Window, cx: &mut App| {
-                                    this.read(cx).run_element(
-                                        ix,
-                                        &for_render,
-                                        room.clone(),
-                                        window,
-                                        cx,
-                                    )
-                                })
+                                list(
+                                    list_state.clone(),
+                                    move |ix, window: &mut Window, cx: &mut App| {
+                                        this.read(cx).run_element(
+                                            ix,
+                                            &for_render,
+                                            room.clone(),
+                                            window,
+                                            cx,
+                                        )
+                                    },
+                                )
                                 .size_full()
                                 .pt(LIST_HEAD)
                                 .pb(tail_pad),
-                            ),
+                            )
+                            // On the panel's edge, over the clipped list, so
+                            // it ends where the conversation does and never
+                            // runs down behind the composer.
+                            .child(Scrollbar::vertical(&list_state)),
                     )
                     // The transcript dissolving into the surface it is drawn
                     // on, right down to the clip. Between the list and every
