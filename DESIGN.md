@@ -1,30 +1,26 @@
 # DESIGN.md: UI overview
 
 The whole-app UI contract for `onehand`: how the window is laid out and the rules every view
-follows. It describes structure and behaviour, not values. It is binding at the level written here;
-below it, the code and its tests decide. A feature's own document (`docs/tasks.md`,
-`docs/workflows.md`, `docs/unattended.md`) holds the detail of its screens. Code never cites this file; a comment gives its reason in its own words.
+follows, as structure and behaviour, not values. It binds at the level written here; below it,
+the code and its tests decide. A feature's own document (`docs/tasks.md`, `docs/workflows.md`,
+`docs/unattended.md`) holds its screens' detail. Code never cites this file.
 
-**No palette lives here.** onehand uses gpui-component's theme, overridden at boot by the app's
-own palette (`crate::theme::install`, which carries contrast tests): neutral greys for every
-surface and ink, a hue only for state. Every colour, radius and
-size is read from `cx.theme()` at the call site. A hex literal in the render layer is a bug even
-when it looks right, because a theme switch cannot reach it.
+**No palette lives here.** gpui-component's theme, overridden at boot by the app's palette
+(`crate::theme::install`, with its contrast tests): neutral greys for every surface and ink, a
+hue only for state. Every colour, radius and size is read from `cx.theme()` at the call site; a
+hex literal in the render layer is a bug even when it looks right, as no theme switch reaches it.
 
 ## Principles
 
-1. **The conversation is the centre while a session shows.** It is then the only region that
-   flexes. The Workbench and terminal are docks that start closed, open on demand, and never crowd
-   the conversation. Pages take the agent pane and put the docks away. A page never opens over a
-   session by itself; only a person picking it does.
+1. **The conversation is the centre while a session shows**, the only region that flexes. The
+   Workbench and terminal are docks that start closed, open on demand and never crowd it. Pages
+   take the agent pane and put the docks away; a page opens over a session only when picked.
 2. **Separate by hairline, not shadow.** A 1px `border` separates panels. Shadows are only for
-   surfaces that really float: dialogs, popovers, the composer popup, and what floats over the
-   transcript (the composer card, the cards pinned above it, the attachment tray and the
-   to-bottom button).
+   what really floats: dialogs, popovers, the composer's menus, and over the transcript the
+   composer card, the cards pinned above it and the to-bottom button.
 3. **Colour means state.** One accent, from the theme. Danger, warning and success ink mark
-   failure, in-flight and done; in the rail, warning is what waits on the person and the accent
-   what runs. Anything else is `muted_foreground`, or the transcript's
-   `meta_ink`, one step nearer full ink.
+   failure, in-flight and done; in the rail, warning waits on the person and the accent runs.
+   Anything else is `muted_foreground`, or the transcript's `meta_ink`, a step nearer full ink.
 4. **Mono for machines, sans for people.** Code, paths, terminal output and diffs use
    `mono_font_family`. Anything a person wrote uses the default family.
 5. **Icons are registry SVGs, never glyphs.**
@@ -89,41 +85,35 @@ monospace font.
   sessions in its order. The tree's order is the user's, set by dragging; pinned projects stay on
   top and sessions never leave their project. `Ctrl+Shift+B` hides the rail completely, never to an
   icon column. It resizes between 232 and 448px, on the ramp's lifted surface.
-- **Agent pane header**, left to right:
-  - the show-rail button, only while the rail is hidden;
-  - the conversation's name, semibold, full ink;
-  - a dots menu: *Rename…* and *Export as Markdown…*; then *Resume in this session…* (refused
-    mid-turn) and *Restart the agent*; then *Delete conversation* in the danger tint (refused
-    until the first turn has ended);
-  - a spacer;
-  - past conversations and *Close session*, only while a session shows;
-  - the terminal, with a dot while a shell is alive;
-  - always last, the Workbench.
-
-  On the overview, the Tasks, Issues and Workflows pages it reads the page's name, with no dots
-  menu and no dock buttons. When the pane narrows, the name gives way first, down to a minimum
-  width. Without a session, the row names the project, and its dots menu holds the project's
-  actions except *New session* and *Open terminal*, which the page and the header already offer.
+- **Agent pane header**, left to right: the show-rail button (only while the rail is hidden); the
+  conversation's name, medium weight; a dots menu (*Rename…*, *Export as Markdown…*; *Resume in
+  this session…*, refused mid-turn, and *Restart the agent*; *Delete conversation* in the danger
+  tint, refused until the first turn ends); a spacer; past conversations and *Close session*
+  (only while a session shows); the terminal, an accent dot on it while its dock is closed over a
+  live shell; last, the Workbench. The two dock buttons are filled while their dock is open. On
+  the overview, Tasks, Issues and Workflows it reads the page's name, with no dots menu and no
+  dock buttons. As the pane narrows, the name gives way first, down to a minimum. Without a
+  session it names the project, its dots menu holding the project's actions but *New session*
+  and *Open terminal*, which the page and the header already offer.
 - **Step strip.** Under the header, only while a run drives the session on screen: the workflow's
   name muted, each step's label between chevrons (done ones with a muted check, the current one in
   full ink), then *Review…*, *Revise…* and *Continue* (primary) while it waits for approval, and
   *Stop* always. Only the step labels clip. *Review…* reads the answer from the run; *Revise…*
   refuses an empty note; a press the run no longer waits at shows the new answer, in the warning
   ink, rather than approving it unread.
-- **Composer.** A card at the foot of the transcript, one row: the `+` menu, *Fast* and the model
-  chip (when offered), *Send* or *Stop*, and *Queue* beside *Stop* while a turn runs over a draft.
-  Under it, a strip: the branch left, the permission mode right, each opening a menu (not drawn
-  when neither exists). *Run a workflow…*, the `+` menu's last entry, the keymap command and the
-  Workflows page's *Run…* open one launcher: a workflow menu, what it does and where, a collapsed
-  *Preview* (steps, limits, the first prompt), *Title*, *Details*, *Instructions*, then what the
-  preflight found (blocks in the danger ink), *Run* spent while a block remains; it scrolls so the
-  footer stays. *Run workflow…* on an issue opens its own start form, no row to pick: the workflow
-  and where it works, *Before it starts* (the findings, limits included), *Instructions for this
-  run*, the *Preview*; once started the person stays on the issue.
+- **Composer.** A card with no edge, set off by its raised fill and lift; the caret alone shows
+  focus, and no line is ever added to it (a refusal is Send's tooltip, a failure a toast). The
+  field, then the `+` menu, *Fast* (a toggle when its choices read as on and off), the model and
+  effort chips, then *Send*, or *Stop* (solid danger, worded) and *Queue* over a draft. Under it
+  the branch and the mode, stacked when narrow. Each chip's menu opens just above it, without
+  its tooltip. Above the card: one pinned permission or question, the oldest, with how many more
+  wait; then the queue and a reconnect as plain lines; then the staged files as one row of chips,
+  faded where cut beside *Show all N*. *Run a workflow…* (the `+` menu, the keymap, the Workflows
+  page's *Run…*) opens the launcher, and an issue's *Run workflow…* its start form; both are
+  drawn as `docs/workflows.md` describes.
 - **Docks.** Bare panels with strips of their own and no library tab bars.
-  - The Workbench strip has the mode chips (Editor, Markdown, Neovim, Issues, Plugins), then
-    maximize, then hide.
-  - The terminal strip has its shell tabs and `+`, then the same maximize and hide.
+  - The Workbench strip: the mode chips (Editor, Markdown, Neovim, Issues, Plugins), maximize,
+    hide. The terminal strip: its shell tabs and `+`, maximize, hide.
   - Each dock is a card, inset on three sides and flush on the side it is dragged by, on the same
     reading surface as the conversation.
   - The Issues tab's issue is drawn in one fixed order, what it waits on before what it says: the
@@ -133,9 +123,8 @@ monospace font.
     with *read 2m ago* and *Refresh*); *Before* (capped); its history. Those lines keep their
     height while a step ends. The tab is a glance: ⋯ ▸ *Open in Issues* and its *Review…* open the
     issue on the Issues page, the latter with the review block open.
-  - Hiding a dock keeps its buffers and processes.
-  - A hidden terminal is unmounted and takes no room.
-  - The terminal's open state follows the selected project.
+  - Hiding a dock keeps its buffers and processes; a hidden terminal is unmounted and takes no
+    room, and its open state follows the selected project.
 - **Pages without a session.**
   - A project with no session shows *New session*, *Run check* when the project has a check
     command, its *Check command* field, one line counting its tasks that need attention, run or
@@ -173,23 +162,24 @@ monospace font.
   - *Workflows* lists the workflows, capped (shipped ones *Built in*, read-only), each with
     *Run…* (projects, the rail's first). *New workflow* or *Edit* opens a form below, one hairline
     box per step, a margin marking where a failure goes back to, problems above a spent *Save*.
-- **No top bar, no status bar, no right toolbar.** Transient status goes in a toast. Modals are
+- **No top bar, no status bar, no right toolbar.** Transient status goes in a toast; modals are
   `Dialog`s. Settings is a large dialog: a nav column with Appearance, Workspace, Agents,
-  Connections and Shortcuts. Groups are separated by hairlines, not boxes.
-- **Persistence.** The layout is saved as the Workbench width, terminal height and rail width,
-  plus whether each dock is open. It is never saved as the library's `DockAreaState`.
+  Connections and Shortcuts, its groups split by hairlines, not boxes.
+- **Persistence.** The layout is saved as the Workbench, terminal and rail sizes and whether each
+  dock is open, never as the library's `DockAreaState`.
 
 ## Transcript
 
 - **Two sides.** The user's prompt is the one filled bubble, against the right edge. Everything
   the agent produces starts on a shared left axis and runs bare. Nothing else is right-aligned.
-- **A centred reading column**, sized so 100 mono columns of a diff fit inside a card, and
-  narrowed on small panels. The composer, and anything pinned above it (permission, question,
-  queued prompt, an adapter still connecting), are capped narrower and read as one stack.
-- **One turn, many blocks**: prose, thoughts, plans, activity rows and clusters, commands,
-  diffs, permission and question cards, notices and errors. A workflow's steps reach the
-  transcript as notices. Long output folds and is capped. Content
-  wider than its well scrolls inside the well.
+- **A centred reading column**, narrowed on small panels, read a step over the chrome; what is
+  wider scrolls inside its well. A scrollbar runs on the panel's edge down to the composer.
+- **One turn, many blocks**: prose, thoughts, plans, activity clusters (tools only), commands,
+  diffs, answered permissions and questions, notices and errors. A workflow's steps and an
+  interrupted turn are notices, never prompts.
+- **Folding blocks open from one line**, the chevron first: what runs is open until done, the
+  plan stays open, and a reader's fold wins. Long output folds and is capped. Wells are filled
+  with no edge. A finished turn ends on Copy (its closing paragraph) and how long it took.
 - **Destructive actions are words in the danger tint**, confirmed through a modal that names the
   thing being removed, never through a button that arms on first press.
 
@@ -197,7 +187,7 @@ monospace font.
 
 | Role | How to write it |
 |---|---|
-| Body | the inherited size, never set; the transcript reads one step under it |
+| Body | the inherited size, never set; the transcript and the composer's field read a step over it |
 | Chrome (a panel's rows, cards, controls) | `.text_sm()` |
 | Titles | `.font_semibold()` (or `.font_medium()` for a page title) at the size of what they title |
 | Meta, hints | `.text_xs()` + `muted_foreground` |
@@ -208,9 +198,9 @@ monospace font.
   machine. `[font].monospace` can still name another installed mono family.
 
 - **Sizes are rems, never pixels**, because per-panel zoom overrides the rem base. Fixed chrome
-  heights stay outside the zoom wrapper. Two exceptions are pixels on purpose: the settings
-  dialog's bounds, which are measured against the window, and a menu row's inset, which cancels
-  one the library draws in pixels.
+  heights stay outside the zoom wrapper. Three exceptions are pixels on purpose: the settings
+  dialog's bounds, which are measured against the window, a menu row's inset, which cancels
+  one the library draws in pixels, and the composer's drop ring, which is a line and not a size.
 - Spacing uses gpui's base-4 scale. Radius comes from `cx.theme().radius` (`radius_lg` for
   cards); `rounded_full` is only for dots and pills. A size neither gives is a named constant
   beside the code using it, its reason in its doc comment, never a number at the call site.
@@ -221,18 +211,19 @@ monospace font.
 | Token | Use |
 |---|---|
 | `background` / `foreground` | surface and text |
-| `muted` / `muted_foreground` | quiet fills, meta text |
+| `muted` / `muted_foreground` | quiet fills (the prompt bubble, every well), meta text |
 | `theme::meta_ink` | the transcript's meta text, contrast-tested |
 | `border` | every hairline |
-| `ring` | a border marking where the keyboard is: the composer while typing there, a question card's row under the arrow keys |
-| `secondary` | the user's prompt bubble |
+| `ring` | a border marking where the keyboard is: the composer while a file is dragged over it, a question card's row under the arrow keys |
 | `accent` | the one item selected among several |
 | `list_hover` | hover on a pickable row |
 | `primary` | the single primary action in a view |
 | `status_ink()` | danger, warning and success text |
 | `popover` | floating surfaces |
+| `theme::raised` | the composer card, which stands on its fill and lift instead of an edge |
+| `secondary` | inline code in the prompt bubble, a step off its fill |
 
-- Cards are borders, not fills.
+- Cards are borders, the composer aside; wells and the bubble are fills.
 - No control gets a focus ring: hover and selection are fills, at distinct steps of the ramp.
 - One primary per view.
 - If a surface is missing, add it to the ramp with its contrast asserted. Never add it in the one
@@ -245,8 +236,9 @@ Reuse gpui-component before building anything: `Root`, `DockArea`, `Sidebar`, `D
 the app's action wrapper, which sets the pointer cursor; a control that refuses says so
 (`resting()` or `.refuses()`) and goes back to the arrow. The app owns only what is its own: the
 transcript renderers, the icon registry, the terminal panel, per-panel zoom, and the composer
-popup (one shell for `@`, `/`, the pickers and the attachment tray, with a pinned title and footer,
-at most twelve rows, grouped, with its own scrollbar).
+popup (one shell for `@`, `/`, the pickers, the `+` and branch menus and the attachment tray, with
+a pinned title and no key hints, at most six rows, grouped, then how many more; a menu
+opens just above the control that opened it).
 
 Scope: the Workbench editor is a quick editor (tree-sitter, no LSP). Neovim is a Workbench mode with a
 PTY of its own per project, through the shared terminal crate. Files lives inside Editor, not as a

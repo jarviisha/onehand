@@ -1,6 +1,7 @@
-use super::popup::{POPUP_MAX_ROWS, Runs};
+use super::popup::Runs;
 use super::presentation::{
-    Act, Pick, Row, fast_action, fast_rows, mode_action, mode_rows, options_action, options_rows,
+    Act, Pick, Row, add_rows, branch_rows, effort_action, effort_rows, fast_action, fast_rows,
+    fast_toggle, mode_action, mode_rows, options_action, options_rows,
 };
 use super::{Composer, Overlay, highlight};
 use crate::chat::session::ChatSession;
@@ -50,9 +51,10 @@ fn act_rows(query: &str, session: &Entity<ChatSession>, cx: &App) -> Vec<Row> {
     // are the answers the chips themselves are drawn on.
     let offered = |act: Act| match act {
         Act::Options => options_action(session, cx).is_some(),
+        Act::Effort => effort_action(session, cx).is_some(),
         Act::Mode => mode_action(session, cx).is_some(),
         Act::Fast => fast_action(session, cx).is_some(),
-        Act::Attach | Act::Mention => true,
+        Act::Attach | Act::Mention | Act::Command | Act::Workflow => true,
     };
     // Hoisted, for the reason the folder run hoists its own: inside the filter
     // it is an allocation per row, on a list rebuilt at every keystroke.
@@ -63,6 +65,7 @@ fn act_rows(query: &str, session: &Entity<ChatSession>, cx: &App) -> Vec<Row> {
             "Choose the model and the agent's other settings",
             Act::Options,
         ),
+        ("effort", "Choose how hard the model thinks", Act::Effort),
         ("mode", "Switch the session mode", Act::Mode),
         ("fast", "Turn fast mode on or off", Act::Fast),
         ("attach", "Pick files to send with the prompt", Act::Attach),
@@ -101,7 +104,10 @@ pub(super) fn picker_rows(
     match overlay {
         Overlay::Mode => Some(mode_rows(session, cx)),
         Overlay::Options => Some(options_rows(session, cx)),
+        Overlay::Effort => Some(effort_rows(session, cx)),
         Overlay::Fast => Some(fast_rows(session, cx)),
+        Overlay::Add => Some(add_rows()),
+        Overlay::Branch => Some(branch_rows()),
         Overlay::Completion | Overlay::Attachments => None,
     }
 }
@@ -168,7 +174,11 @@ impl Composer {
                 // reason `accept` does the same: the trigger and the overlay
                 // are settled outright instead of being trusted to arrive in
                 // an order this depends on.
-                if let Some(trigger) = self.trigger.clone() {
+                // Only a completion holds words that reached the control: the
+                // `+` menu opens over a field that may hold a trigger the user
+                // is still typing.
+                let completing = self.overlay == Some(Overlay::Completion);
+                if let Some(trigger) = self.trigger.clone().filter(|_| completing) {
                     let text = self.text(cx);
                     let caret = self.state.read(cx).cursor();
                     let (next, at) = completion::remove(&text, caret, &trigger);
@@ -181,13 +191,29 @@ impl Composer {
                 self.set_overlay(None);
                 self.selected = 0;
                 match (act.opens(), act) {
+                    // A fast group that reads as a switch is flipped by its
+                    // name, as its chip flips it, rather than opened.
+                    (_, Act::Fast) if self.flip_fast(session, cx) => {}
                     (Some(overlay), _) => self.toggle_picker(overlay, session, window, cx),
                     (None, Act::Attach) => self.attach(cx),
                     // Typed from code rather than inserted as text, so it goes
-                    // through the same path the `+` menu uses for a keyboard
-                    // that cannot produce the character.
-                    (None, _) => self.insert_trigger('@', window, cx),
+                    // through the same path a keyboard that cannot produce the
+                    // character needs.
+                    (None, Act::Command) => self.insert_trigger('/', window, cx),
+                    // Once the popup has gone, so the action starts from the
+                    // focus it hands back, inside the window's shell.
+                    (None, Act::Workflow) => window.defer(cx, |window, cx| {
+                        window.dispatch_action(Box::new(crate::shell::RunWorkflow), cx)
+                    }),
+                    (None, Act::Mention) => self.insert_trigger('@', window, cx),
+                    // Every picker opens an overlay, so these never land here.
+                    (None, Act::Options | Act::Effort | Act::Mode | Act::Fast) => {}
                 }
+                true
+            }
+            Pick::Branch(act) => {
+                cx.emit(super::ComposerEvent::Branch(*act));
+                self.close_overlay(cx);
                 true
             }
             Pick::Mode(id) => {
@@ -243,6 +269,25 @@ impl Composer {
         cx.notify();
     }
 
+    /// Flip fast mode, where the agent's group reads as a switch. Whether it did.
+    pub(super) fn flip_fast(
+        &mut self,
+        session: &Entity<ChatSession>,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(toggle) = fast_toggle(session, cx) else {
+            return false;
+        };
+        session.update(cx, |session, cx| {
+            session
+                .chat
+                .set_config_option(&toggle.config_id, &toggle.flip_to);
+            cx.notify();
+        });
+        cx.notify();
+        true
+    }
+
     /// Recompute the active trigger after an edit.
     pub(super) fn retrigger(&mut self, text: &str, caret: usize, cx: &mut Context<Self>) {
         let next = completion::detect(text, caret);
@@ -281,7 +326,7 @@ impl Composer {
     pub(super) fn shape(&self, session: &Entity<ChatSession>, cx: &App) -> (usize, usize) {
         let (all, _) = self.matches_for("", session, cx);
         (
-            all.len().min(POPUP_MAX_ROWS as usize),
+            all.len(),
             all.iter().filter(|row| row.group.is_some()).count(),
         )
     }
@@ -373,10 +418,10 @@ impl Composer {
                             // which is where a fact about a whole run of rows
                             // belongs. A third shape invented for it would be
                             // one chosen for a category rather than for a thing.
-                            mark: Some(match m.kind {
+                            mark: Some(gpui_component::Icon::new(match m.kind {
                                 completion::MentionKind::Folder => IconName::Folder,
                                 _ => IconName::File,
-                            }),
+                            })),
                             label_span: m.name_span,
                             group: heading,
                             checked: false,

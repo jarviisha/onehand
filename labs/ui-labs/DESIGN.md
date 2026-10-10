@@ -445,13 +445,19 @@ hierarchy are identical in both.
 |---|---|
 | Docks are continuous surfaces divided by one hairline | each dock is a card inset on three sides |
 | The Workbench takes the content area when the chat would drop under `CHAT_MIN` | docks never crowd the conversation, with no rule for when they would |
-| Bubble and well share `sunken`; hover and selected share `selected` | the app's palette keeps each pair a step apart, its other values the lab's |
-| Weights 400 and 500 only | titles are semibold |
-| *Stop* is a solid danger button with its word | Send and Stop share an icon button |
+| Hover and selected share `selected` | the app's palette keeps the two a step apart, its other values the lab's |
+| A popup's footer names its keys | a popup has no footer of keys |
+| Effort is a group of rows in the model's menu | effort has a chip and a menu of its own beside the model's |
+| Pinned cards ask in their title, say who asks, and name their keys as key caps | the app keeps its own permission and question cards: a generic title, bordered choice rows and numbered tabs, keys in words |
 | A question's description is said once | the description is repeated as the field's placeholder |
+| Fast is a toggle | a toggle when its two choices read as on and off, else a picker of them |
+| Staged files are a tray inside the card | they rest above the card in one row, cut with a fade beside *Show all N*; a file and an image share one chip |
+| A menu opened from a control starts under it, over the field | it opens just above the control that opened it |
+| The branch chip lists branches to switch to | it renames the branch, starts a worktree or refreshes the status; nothing switches branches |
+| A prompt's attachments are listed under its words in the bubble | they are thumbnails above the bubble, one that never went out marked *not sent* |
+| Weights 400 and 500 only | titles are semibold |
 | Settings is a page in the content area | Settings is a large dialog |
 | One primary per region, so a list and its detail side by side may each have one | one primary per view |
-| The composer card has no edge | the composer card is bordered |
 | A session's meta line ends on its diff, `+N −N` | no diff: nothing reports one per session |
 | A failed session's hover action is *Retry*, and every session's *Archive* | *Send the last prompt again* and *Close*: Retry is a task's word, and closing keeps the conversation |
 | Clicking a project row folds it | it goes to the project; only its chevron, a button of its own, folds it |

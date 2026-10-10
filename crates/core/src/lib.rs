@@ -45,6 +45,16 @@ pub mod workflow;
 pub mod workspace;
 pub mod worktree;
 
+/// `12s` / `1m 12s`: how long something took, at the coarseness it is read
+/// at. Seconds alone up to a minute; past it, a bare count of seconds is a
+/// number the reader has to divide before it means anything.
+pub fn duration(secs: u64) -> String {
+    match secs {
+        0..=59 => format!("{secs}s"),
+        _ => format!("{}m {}s", secs / 60, secs % 60),
+    }
+}
+
 /// `3m ago` / `2h ago` / `5d ago`: how long before `now` the moment `then` was,
 /// both in seconds since the epoch.
 pub fn rel_time(now: u64, then: u64) -> String {
@@ -54,5 +64,17 @@ pub fn rel_time(now: u64, then: u64) -> String {
         60..=3599 => format!("{}m ago", secs / 60),
         3600..=86_399 => format!("{}h ago", secs / 3600),
         _ => format!("{}d ago", secs / 86_400),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_duration_reads_in_seconds_then_minutes() {
+        assert_eq!(super::duration(0), "0s");
+        assert_eq!(super::duration(12), "12s");
+        assert_eq!(super::duration(59), "59s");
+        assert_eq!(super::duration(60), "1m 0s");
+        assert_eq!(super::duration(72), "1m 12s");
     }
 }

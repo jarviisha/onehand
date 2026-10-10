@@ -1,9 +1,5 @@
 use super::metrics::{
-    BUTTON_H, CHEVRON_MARK, CHEVRON_SLOT, CODE_TEXT, DETAIL_INSET, DETAIL_OPEN_H, DIFF_COLUMNS,
-    DIFF_NUM_PAD, DIFF_NUM_W, DIFF_SIGN_W, DIFF_TEXT_PAD, FRAME_PAD, HAIR_GAP, KIND_ICON, LINE_H,
-    MARK_SIZE, MARK_SLOT, MONO_ADVANCE, OBJECT_TEXT, PART_GAP, PILL_H, PILL_PAD_X, PILL_PAD_Y,
-    PLAN_BOX, ROW_PAD_X, ROW_PAD_Y, SMOKE_DIFF, SMOKE_OUT, STACK_GAP, STATUS_DOT, TEXT_PAD_X,
-    TEXT_PAD_Y, THUMB_H, THUMB_W, VERB_TEXT,
+    BUTTON_H, DETAIL_OPEN_H, HAIR_GAP, LINE_H, MARK_SIZE, PART_GAP, STACK_GAP, THUMB_H, THUMB_W,
 };
 use super::parts::Object;
 use super::parts::RowMark;
@@ -20,7 +16,7 @@ fn thought(secs: u64) -> ChatItem {
         md: Md::parse("…"),
         started: None,
         elapsed_secs: Some(secs),
-        expanded: false,
+        fold: None,
     })
 }
 
@@ -54,31 +50,15 @@ fn steps() -> Vec<(&'static str, f32)> {
         ("TIGHT_GAP", TIGHT_GAP.0),
         ("STACK_GAP", STACK_GAP.0),
         ("PART_GAP", PART_GAP.0),
-        ("FRAME_PAD", FRAME_PAD.0),
         ("BLOCK_GAP", BLOCK_GAP.0),
         ("TURN_GAP", TURN_GAP.0),
-        ("TEXT_PAD_X", TEXT_PAD_X.0),
-        ("TEXT_PAD_Y", TEXT_PAD_Y.0),
-        ("ROW_PAD_Y", ROW_PAD_Y.0),
-        ("ROW_PAD_X", ROW_PAD_X.0),
-        ("STATUS_DOT", STATUS_DOT.0),
-        ("KIND_ICON", KIND_ICON.0),
-        ("CHEVRON_SLOT", CHEVRON_SLOT.0),
-        ("PILL_PAD_Y", PILL_PAD_Y.0),
-        ("PILL_PAD_X", PILL_PAD_X.0),
-        ("PILL_H", PILL_H.0),
+        ("TEXT", TEXT.0),
+        ("TEXT_SM", TEXT_SM.0),
         ("BUTTON_H", BUTTON_H.0),
         ("LINE_H", LINE_H.0),
-        ("MARK_SLOT", MARK_SLOT.0),
         ("MARK_SIZE", MARK_SIZE.0),
-        ("DIFF_NUM_PAD", DIFF_NUM_PAD.0),
-        ("DIFF_SIGN_W", DIFF_SIGN_W.0),
-        ("DIFF_TEXT_PAD", DIFF_TEXT_PAD.0),
-        ("PLAN_BOX", PLAN_BOX.0),
         ("THUMB_W", THUMB_W.0),
         ("THUMB_H", THUMB_H.0),
-        ("SMOKE_DIFF", SMOKE_DIFF.0),
-        ("SMOKE_OUT", SMOKE_OUT.0),
         ("DETAIL_OPEN_H", DETAIL_OPEN_H.0),
     ]
 }
@@ -128,26 +108,8 @@ fn the_gaps_nest_and_so_do_the_corners() {
         assert!(a < b, "{inner} must stay under {outer}");
     }
 
-    // **A row's words start after its padding, its state disc and its kind
-    // icon**, and whatever that row opens is set in to the same place —
-    // written as a sum in one spot and a number in the other, the two
-    // drifted the first time either column moved.
-    assert_eq!(
-        DETAIL_INSET.0,
-        ROW_PAD_X.0 + STATUS_DOT.0 + PART_GAP.0 + KIND_ICON.0 + PART_GAP.0
-    );
-    // The marks and the type, each inside what holds it: a disc inside the
-    // slot that keeps its column (which is what lets a spinner take its
-    // place), the arrow quietest of the three, and what a row did it *to*
-    // a step under what it says it did.
-    let inside = [
-        ("STATUS_DOT", STATUS_DOT.0, "KIND_ICON", KIND_ICON.0),
-        ("CHEVRON_MARK", CHEVRON_MARK.0, "KIND_ICON", KIND_ICON.0),
-        ("OBJECT_TEXT", OBJECT_TEXT.0, "VERB_TEXT", VERB_TEXT.0),
-    ];
-    for (inner, a, outer, b) in inside {
-        assert!(a < b, "{inner} must stay under {outer}");
-    }
+    // What the agent did reads a step under what it said.
+    const { assert!(TEXT_SM.0 < TEXT.0, "TEXT_SM must stay under TEXT") };
 }
 
 #[test]
@@ -185,7 +147,7 @@ fn every_activity_group_has_its_own_name_and_icon() {
 /// the agent happened to do a second thing afterwards.
 #[test]
 fn one_step_is_still_a_cluster() {
-    let items = vec![thought(3)];
+    let items = vec![tool(ToolKind::Read, "Read src/a.rs")];
     let runs = runs(&targets(&items));
     assert!(
         matches!(runs.as_slice(), [Run::Activity { members }] if members.len() == 1),
@@ -204,11 +166,10 @@ fn every_kind_of_work_between_two_paragraphs_is_one_cluster() {
         tool(ToolKind::Read, "Read src/b.rs"),
         tool(ToolKind::Execute, "cargo build"),
         tool(ToolKind::Edit, "src/a.rs"),
-        thought(2),
     ];
     let runs = runs(&targets(&items));
     assert!(
-        matches!(runs.as_slice(), [Run::Activity { members }] if members.len() == 5),
+        matches!(runs.as_slice(), [Run::Activity { members }] if members.len() == 4),
         "{} runs, wanted one",
         runs.len()
     );
@@ -325,14 +286,43 @@ fn a_row_splits_a_path_and_leaves_a_command_whole() {
 }
 
 /// Output is read for the line that went wrong, so that line is the one
-/// the ink follows — not the row it sits in.
+/// the ink follows — not the row it sits in. A count of none in a passing
+/// summary is not a failure.
 #[test]
 fn the_line_that_went_wrong_is_the_one_marked() {
     assert!(is_error_line("error[E0433]: failed to resolve"));
     assert!(is_error_line("  FAILED: 1 test"));
     assert!(is_error_line("panicked at src/lib.rs:4"));
+    assert!(is_error_line("test backoff_caps ... FAILED"));
+    assert!(is_error_line(
+        "thread 'backoff_caps' panicked at 'elapsed 5.2s > 5s'"
+    ));
+    assert!(is_error_line("test result: FAILED. 11 passed; 1 failed"));
+    assert!(is_error_line("error[E0308]: mismatched types"));
+    assert!(!is_error_line("test result: ok. 12 passed; 0 failed"));
+    assert!(!is_error_line("test backoff_caps ... ok"));
     assert!(!is_error_line("test result: ok. 34 passed"));
     assert!(!is_error_line("   Compiling onehand v0.1.0"));
+}
+
+/// **A thought and a settled exchange are lines of their own.** The agent
+/// reasoning is read as its words, and an answered question is the person
+/// speaking; neither is one more step folded into the work around it.
+#[test]
+fn a_thought_or_an_answer_stands_between_clusters() {
+    let items = vec![
+        tool(ToolKind::Read, "Read src/a.rs"),
+        thought(2),
+        tool(ToolKind::Read, "Read src/b.rs"),
+    ];
+    let runs = runs(&targets(&items));
+    assert!(
+        matches!(
+            runs.as_slice(),
+            [Run::Activity { .. }, Run::Single(_), Run::Activity { .. }]
+        ),
+        "the thought splits the work either side of it"
+    );
 }
 
 /// The mark a run's row carries reads its ending, not its worst moment.
@@ -375,40 +365,12 @@ fn two_clusters_never_stand_next_to_each_other() {
         );
         previous_was_cluster = cluster;
     }
-    // And what does bound one is prose, a prompt, or a notice — three
-    // boundaries here, so four clusters.
+    // And what does bound one is prose, a prompt, a thought or a notice:
+    // four clusters here.
     assert_eq!(
         runs.iter()
             .filter(|run| matches!(run, Run::Activity { .. }))
             .count(),
-        3
-    );
-}
-
-/// **A line of this project's own code fits the reading column.**
-///
-/// The column used to be set by prose alone, which left a diff 74 columns
-/// wide against the 100 `rustfmt` writes at — so nearly every line of
-/// nearly every diff wrapped, in the one block somebody opens the
-/// transcript to read when something has broken. The cap is derived from
-/// that instead, and this is what keeps it derived: shift any inset between
-/// the column and the text and the sum moves, rather than the diff quietly
-/// getting tighter.
-#[test]
-fn a_hundred_columns_of_this_projects_code_fits() {
-    // Every inset between the edge of the column and a diff's first
-    // character, at the deepest place one is drawn: inside a child row's
-    // own detail.
-    // Every inset between the edge of the column and a diff's first
-    // character: the row's own detail inset, the frame's right margin, the
-    // detail box's border, and the diff's number and sign columns.
-    let chrome =
-        DETAIL_INSET.0 + ROW_PAD_X.0 + 2. / 16. + DIFF_NUM_W.0 + DIFF_SIGN_W.0 + DIFF_TEXT_PAD.0;
-    let text = CODE_TEXT.0 * MONO_ADVANCE * DIFF_COLUMNS;
-    assert!(
-        CONTENT_COLUMN.0 >= chrome + text,
-        "{DIFF_COLUMNS} columns need {:.2}rem and the column caps at {:.2}rem",
-        chrome + text,
-        CONTENT_COLUMN.0
+        4
     );
 }

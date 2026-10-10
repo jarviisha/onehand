@@ -26,21 +26,23 @@
 
 use super::session::ChatSession;
 use gpui::{
-    App, AppContext, Context, Entity, IntoElement, Rems, Render, SharedString, Subscription,
-    Window, div, rems,
+    App, AppContext, Context, Entity, IntoElement, Rems, Render, Subscription, Window, div, rems,
 };
+use gpui::{Bounds, Pixels};
 use gpui_component::input::{InputEvent, TextareaState};
 use onehand_core::attachment::StagedAttachment;
 use onehand_core::completion::ActiveTrigger;
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 
 mod presentation;
-use presentation::{fast_rows, mode_rows, options_rows};
 
 mod attachments;
 mod card;
 mod complete;
 mod popup;
 mod rows;
+pub(in crate::chat) use card::COMPOSER_SPLIT;
 pub(in crate::chat) use popup::POPUP_STACK_PEEK;
 pub use popup::popup_room;
 
@@ -64,6 +66,7 @@ pub use popup::popup_room;
 /// holds it, blending the fill the way the compositor does rather than
 /// asserting on the token it came from.
 pub(crate) const SELECTED_ALPHA: f32 = 0.75;
+
 /// The size the composer's own controls are lettered at.
 ///
 /// The smallest named reading size. These controls should remain quieter than
@@ -96,22 +99,31 @@ pub(super) const CHIP_H: Rems = rems(1.5);
 /// What is showing above the composer. Mutually exclusive **by construction**:
 /// one `Option` makes that structural, where a flag per overlay needs a
 /// "close the others" call on every path that opens one.
+/// Where each control that opens a menu was drawn, shared with the probe that
+/// measures it.
+type Anchors = Rc<RefCell<Vec<(Overlay, Bounds<Pixels>)>>>;
+/// Where the open menu was drawn, shared with the probe that measures it.
+type MenuBounds = Rc<Cell<Option<Bounds<Pixels>>>>;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Overlay {
     /// The `@`/`/` candidate list.
     Completion,
     /// The session mode's choices.
     Mode,
-    /// Model, effort, and every other agent-advertised config choice in one
-    /// directly selectable list.
+    /// The model and every other agent-advertised config choice, effort
+    /// aside, in one directly selectable list.
     Options,
-    /// The one config group given a chip of its own on the strip below the
-    /// card. A picker like the two above and not a switch: two rows name both
-    /// values and tick the one in force, where a switch shows a position and
-    /// leaves the reader to work out which way round it is -- and the agent's
-    /// own sentence about each value, which is where a setting that refuses to
-    /// stay put says why, has somewhere to go.
+    /// What the model runs at, from its own chip beside the model's.
+    Effort,
+    /// The fast group's choices, where they are not a plain switch: the chip
+    /// toggles a group whose two values say which is on, and opens this for
+    /// anything else, so both values are named and the one in force ticked.
     Fast,
+    /// The `+` menu: what can be put into the prompt from a control.
+    Add,
+    /// What can be done about the branch on the strip under the card.
+    Branch,
     /// All staged attachments, including the entries hidden by the compact
     /// tray's rendering bound.
     Attachments,
@@ -170,6 +182,17 @@ pub enum ComposerEvent {
     /// rather than done here: which dock the Workbench lives in and whether it
     /// has to be opened first are the shell's business, not the composer's.
     OpenFile(std::path::PathBuf),
+    /// Something done to the project's branch from its chip. The pane owns the
+    /// way to the shell, which carries it out.
+    Branch(BranchAct),
+}
+
+/// What the branch chip's menu offers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BranchAct {
+    Rename,
+    Worktree,
+    Refresh,
 }
 
 impl gpui::EventEmitter<ComposerEvent> for Composer {}
@@ -223,9 +246,14 @@ pub struct Composer {
     rows_scroll: gpui::ScrollHandle,
     /// The attachment manager's scroll, for its scrollbar.
     attachments_scroll: gpui::ScrollHandle,
-    /// A recoverable composer-side failure that has no chat-model blocker of
-    /// its own, such as failing to persist an image from the clipboard.
-    feedback: Option<SharedString>,
+    /// The tray's row, measured to tell whether it was cut.
+    tray_scroll: gpui::ScrollHandle,
+    /// Where each control that opens a menu was drawn last frame, in window
+    /// coordinates, so its menu opens on it.
+    anchors: Anchors,
+    /// Where the open menu was drawn last frame. It floats outside the block
+    /// that closes it on a press elsewhere, so that press asks this first.
+    pub(in crate::chat) menu_bounds: MenuBounds,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -273,7 +301,9 @@ impl Composer {
             attachments: Vec::new(),
             rows_scroll: gpui::ScrollHandle::new(),
             attachments_scroll: gpui::ScrollHandle::new(),
-            feedback: None,
+            tray_scroll: gpui::ScrollHandle::new(),
+            anchors: Default::default(),
+            menu_bounds: Default::default(),
             _subscriptions: vec![subscription],
         }
     }
@@ -289,7 +319,6 @@ impl Composer {
         self.set_overlay(None);
         self.selected = 0;
         self.attachments.clear();
-        self.feedback = None;
     }
 
     /// Lift out what is unsent and leave the composer empty.
@@ -369,28 +398,15 @@ impl Composer {
                 };
                 self.apply_pick(&pick, session, window, cx)
             }
-            Some(Overlay::Fast) => {
-                let rows = fast_rows(session, cx);
-                let Some(row) =
-                    highlight(self.selected, rows.len()).and_then(|row| rows.into_iter().nth(row))
-                else {
-                    self.close_overlay(cx);
-                    return true;
-                };
-                self.apply_pick(&row.pick, session, window, cx)
-            }
-            Some(Overlay::Mode) => {
-                let rows = mode_rows(session, cx);
-                let Some(row) =
-                    highlight(self.selected, rows.len()).and_then(|row| rows.into_iter().nth(row))
-                else {
-                    self.close_overlay(cx);
-                    return true;
-                };
-                self.apply_pick(&row.pick, session, window, cx)
-            }
-            Some(Overlay::Options) => {
-                let rows = options_rows(session, cx);
+            Some(
+                picker @ (Overlay::Fast
+                | Overlay::Mode
+                | Overlay::Options
+                | Overlay::Effort
+                | Overlay::Add
+                | Overlay::Branch),
+            ) => {
+                let rows = complete::picker_rows(&picker, session, cx).unwrap_or_default();
                 let Some(row) =
                     highlight(self.selected, rows.len()).and_then(|row| rows.into_iter().nth(row))
                 else {
@@ -429,6 +445,8 @@ impl Composer {
         }
         self.overlay = next;
         self.opened_rows = None;
+        // The last menu's place, or a press there would still count as on it.
+        self.menu_bounds.set(None);
     }
 
     /// Keep the highlighted row on screen.

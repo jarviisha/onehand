@@ -217,6 +217,12 @@ impl Chat {
                 self.consume_replay();
                 self.push_thought(&s);
             }
+            AcpEvent::UserChunk(s) if is_interruption(&s) => {
+                self.consume_replay();
+                self.finalize_thought();
+                self.user_chunk_open = false;
+                self.items.push(ChatItem::notice("Interrupted"));
+            }
             AcpEvent::UserChunk(s) => {
                 self.consume_replay();
                 self.finalize_thought();
@@ -228,7 +234,7 @@ impl Chat {
                 let mut item = ToolItem::new(tc);
                 // The same rule for a step that arrives already failed, which
                 // is how an adapter reports one it never started.
-                item.fold = item.call.status == ToolStatus::Failed;
+                item.fold = (item.call.status == ToolStatus::Failed).then_some(true);
                 self.items.push(ChatItem::Tool(item));
             }
             AcpEvent::ToolUpdate(tu) => {
@@ -313,6 +319,8 @@ impl Chat {
                 self.items.push(ChatItem::error(format!("Error: {e}")));
             }
             AcpEvent::Disconnected(e) => {
+                // A thought cut off with the adapter is over, not still running.
+                self.finalize_thought();
                 self.tx = None;
                 self.link = Link::Lost;
                 self.busy = false;
@@ -369,7 +377,7 @@ impl Chat {
                         // Running gets away with the OR because it stops being
                         // true on its own.
                         if status == ToolStatus::Failed && t.call.status != ToolStatus::Failed {
-                            t.fold = true;
+                            t.fold.get_or_insert(true);
                         }
                         t.call.status = status;
                     }
@@ -493,4 +501,13 @@ impl Chat {
         }
         self.user_chunk_open = true;
     }
+}
+
+/// Whether a user chunk is the adapter's own marker for a turn the person cut
+/// short, which it sends in the person's voice: `[Request interrupted by
+/// user]`, or `... for tool use]` when a tool was refused. Drawn as a bubble it
+/// reads as something the person typed.
+fn is_interruption(chunk: &str) -> bool {
+    let chunk = chunk.trim();
+    chunk.starts_with("[Request interrupted by user") && chunk.ends_with(']')
 }

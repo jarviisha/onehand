@@ -13,7 +13,7 @@
 
 use super::session::ChatSession;
 use gpui::{App, Entity, IntoElement, ParentElement, Styled, Window, div};
-use gpui_component::{ActiveTheme, Icon, IconName, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::chat::{ChatItem, NoticeLevel, TranscriptItemId};
 
 mod ask;
@@ -27,15 +27,15 @@ mod tool;
 mod user;
 pub(in crate::chat) use ask::ask;
 pub(in crate::chat) use metrics::{
-    BLOCK_GAP, CONTENT_COLUMN, TEXT, TIGHT_GAP, TURN_GAP, radius_block, radius_tag,
+    BLOCK_GAP, CONTENT_COLUMN, LEADING, TEXT, TEXT_SM, TIGHT_GAP, TURN_GAP,
 };
-use metrics::{FRAME_PAD, LINE_H, MARK_SIZE, MARK_SLOT, PART_GAP, TEXT_PAD_Y};
-pub(in crate::chat) use parts::{elapsed, floating_card, line_counts};
+use metrics::{LINE_H, STATE_TINT};
+pub(in crate::chat) use parts::{accent, line_counts};
 pub(in crate::chat) use permission::permission;
 use plan::plan;
 use prose::{agent, thought};
 pub(in crate::chat) use strip::turn_summary;
-pub use strip::{Run, activity_group, activity_summary, cluster, rule, runs, section_group};
+pub use strip::{Run, activity_group, activity_summary, cluster, runs, section_group};
 pub(in crate::chat) use tool::diff_rows;
 use tool::tool;
 use user::user;
@@ -136,27 +136,30 @@ fn notice(text: &str, level: NoticeLevel, cx: &App) -> impl IntoElement + use<> 
     // A failure is a banner: the full width of the column, its own edge, and
     // the mark anchored to the first line so a message that wraps to three
     // lines does not carry the icon down the middle of itself.
+    let danger = crate::theme::status_ink(cx).danger;
     div()
         .h_flex()
         .items_start()
-        .gap(TEXT_PAD_Y)
+        .gap_2()
         .w_full()
         .min_w_0()
-        .py(PART_GAP)
-        .px(FRAME_PAD)
-        .rounded(radius_block(cx))
+        .px_3()
+        .py_2()
+        .rounded(cx.theme().radius)
         .border_1()
-        .border_color(crate::theme::status_ink(cx).danger)
-        .bg(cx.theme().danger.opacity(0.1))
-        .text_color(crate::theme::status_ink(cx).danger)
+        .border_color(danger)
+        .bg(cx.theme().danger.opacity(STATE_TINT))
+        .text_size(TEXT_SM)
+        .text_color(danger)
         .child(
+            // The glyph is held to the first line's height, so a message that
+            // wraps keeps it beside its first words.
             div()
-                .size(MARK_SLOT)
+                .h(metrics::LINE_SM)
                 .flex_none()
                 .h_flex()
                 .items_center()
-                .justify_center()
-                .child(Icon::new(IconName::TriangleAlert).size(MARK_SIZE)),
+                .child(Icon::new(IconName::TriangleAlert).xsmall()),
         )
         .child(div().flex_1().min_w_0().child(text.to_string()))
         .into_any_element()

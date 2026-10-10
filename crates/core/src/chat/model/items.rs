@@ -1,6 +1,6 @@
 use crate::acp::{
-    ElicitKind, ElicitValue, Elicitation, PermissionRequest, PlanEntry, PlanStatus, ToolCall,
-    ToolContent, ToolStatus,
+    ElicitKind, ElicitValue, Elicitation, PermissionRequest, PlanEntry, ToolCall, ToolContent,
+    ToolStatus,
 };
 use crate::attachment::AttachmentSnapshot;
 use std::collections::{HashMap, HashSet};
@@ -32,40 +32,22 @@ pub struct PermItem {
     pub req: PermissionRequest,
     /// The chosen option's name once answered (buttons then disable).
     pub resolved: Option<String>,
-    /// Whether the command block is open past the lines it folds at.
+    /// Whether the record an answered permission leaves is open to the whole
+    /// command and where it ran.
     ///
-    /// Held on the item and not on the card that draws it, for the reason
-    /// every other fold in this conversation is: the card is rebuilt from
-    /// scratch on every frame, and what changes while a permission is parked
-    /// is the agent still streaming underneath it.
+    /// Held on the item and not on the row that draws it, for the reason every
+    /// other fold in this conversation is: the row is rebuilt from scratch on
+    /// every frame.
     pub expanded: bool,
 }
 
-/// Real lines of a command a permission card draws before it folds.
-///
-/// **Real lines, never wrapped ones.** A command is the text a grant is given
-/// on the strength of, so the count is over the newlines the agent wrote and
-/// nothing else -- a bound measured in drawn rows would fold a two-line
-/// command on a narrow pane and leave a ten-line one whole on a wide one,
-/// which is a fold the user cannot predict.
-///
-/// Eight is what leaves the header, the buttons and enough of a script to
-/// recognise it on one screen together.
-///
-/// Named outside this crate by the block that draws the fold: the collapsed
-/// box is this many rows tall, so a command of one very long line is held to
-/// the same height as one of eight short ones rather than filling the card. The
-/// rules below apply it to the agent's newlines; the height is the only thing
-/// that has to know the number itself.
-pub const COMMAND_FOLD_LINES: usize = 8;
-
 impl PermItem {
-    /// The exact command, whatever the fold is doing to what is drawn.
+    /// The exact command, whatever the box is showing of it.
     ///
-    /// **Never the visible part.** Copy is offered on a collapsed block on
-    /// purpose -- reading a long command elsewhere is the reason somebody
-    /// reaches for it -- so a copy that stopped where the fold does would hand
-    /// back a script that runs to a different end than the one approved.
+    /// **Never the visible part.** Reading a long command elsewhere is the
+    /// reason somebody reaches for Copy, so a copy that stopped where the box
+    /// does would hand back a script that runs to a different end than the one
+    /// approved.
     ///
     /// It is also the one place that says *which field of the request is the
     /// command*. The protocol calls it a title, which is a word for a heading
@@ -79,22 +61,6 @@ impl PermItem {
     /// The command's own lines, in the agent's order and wording.
     pub fn command_lines(&self) -> Vec<&str> {
         self.command().lines().collect()
-    }
-
-    /// Whether there is more command than the block draws unopened.
-    pub fn is_long(&self) -> bool {
-        self.command().lines().count() > COMMAND_FOLD_LINES
-    }
-
-    /// The lines the block draws now, and how many are held back behind the
-    /// fold. A short command is always whole and has nothing to open.
-    pub fn shown_lines(&self) -> (Vec<&str>, usize) {
-        let lines = self.command_lines();
-        if self.expanded || lines.len() <= COMMAND_FOLD_LINES {
-            return (lines, 0);
-        }
-        let hidden = lines.len() - COMMAND_FOLD_LINES;
-        (lines[..COMMAND_FOLD_LINES].to_vec(), hidden)
     }
 }
 
@@ -431,8 +397,8 @@ pub struct Thought {
     pub started: Option<Instant>,
     /// Final duration once the thought is done (persisted); `None` while live.
     pub elapsed_secs: Option<u64>,
-    /// Whether the reasoning text is expanded in the transcript.
-    pub expanded: bool,
+    /// What the user chose by opening or closing it; `None` until they do.
+    pub fold: Option<bool>,
 }
 
 impl Thought {
@@ -441,8 +407,19 @@ impl Thought {
             md: Md::parse(s),
             started: Some(Instant::now()),
             elapsed_secs: None,
-            expanded: false,
+            fold: None,
         }
+    }
+
+    /// Still being written. A restored thought carries no start, so one saved
+    /// without a duration does not read as live for the rest of its life.
+    pub fn is_running(&self) -> bool {
+        self.elapsed_secs.is_none() && self.started.is_some()
+    }
+
+    /// Open while it runs and closed once done, unless the user said otherwise.
+    pub fn is_open(&self) -> bool {
+        self.fold.unwrap_or_else(|| self.is_running())
     }
 }
 
@@ -451,10 +428,10 @@ impl Thought {
 /// fragment), and whether the turn is still streaming (Copy stays hidden until
 /// it settles).
 ///
-/// **The prose itself is deliberately not here.** Copy wants every agent block
-/// of the turn joined together, and joining them is proportional to the whole
-/// answer — paid on every redraw, for a string that is only read if a button is
-/// clicked. [`Chat::turn_prose`](super::Chat::turn_prose) is that join, asked for at the click.
+/// **The prose itself is deliberately not here.** Copy wants the paragraph the
+/// turn closes on, and finding it walks the whole answer — paid on every
+/// redraw, for a string that is only read if a button is clicked.
+/// [`Chat::turn_closing`](super::Chat::turn_closing) is that walk, asked for at the click.
 pub struct TurnAnswer {
     pub is_last: bool,
     pub is_active: bool,
@@ -541,8 +518,9 @@ pub struct ToolItem {
     /// when the tool reports new content, which is exactly where this is
     /// filled.
     pub diff_rows: HashMap<usize, Vec<crate::diff::Row>>,
-    /// The user opened this card.
-    pub(crate) fold: bool,
+    /// What the user chose by opening or closing this card; `None` until
+    /// they do, or until a failure opens it for them.
+    pub(crate) fold: Option<bool>,
     /// Content sections whose OUT well is un-folded past the threshold,
     /// keyed by the section's index in `call.content`.
     pub out_open: HashSet<usize>,
@@ -586,7 +564,7 @@ impl ToolItem {
             call,
             diff_summary,
             diff_rows,
-            fold: false,
+            fold: None,
             out_open: HashSet::new(),
         }
     }
@@ -631,10 +609,11 @@ impl ToolItem {
         self.diff_summary = Self::summarize_diffs(&self.call);
         self.diff_rows = Self::hunks(&self.call);
     }
-    /// Live work stays open. Every settled state, including failure, follows
-    /// the user's fold choice and therefore starts collapsed.
+    /// Live work starts open and settled work closed; the user's choice,
+    /// once made, wins either way, while it runs too.
     pub fn is_open(&self) -> bool {
-        self.fold || matches!(self.call.status, ToolStatus::InProgress)
+        self.fold
+            .unwrap_or(matches!(self.call.status, ToolStatus::InProgress))
     }
 }
 
@@ -642,7 +621,7 @@ impl ToolItem {
 /// one card per turn, replaced in full on every `plan` update.
 pub struct PlanItem {
     pub entries: Vec<PlanEntry>,
-    /// The user opened this card.
+    /// The user closed this card.
     pub(crate) fold: bool,
 }
 
@@ -653,16 +632,10 @@ impl PlanItem {
             fold: false,
         }
     }
-    /// Force-open while work is mid-flight (an `in_progress` entry) — computed,
-    /// never stored, the same way a running tool card is. A second stored flag
-    /// for "open because it is busy" would have to be cleared by whatever ends
-    /// the work, and the day that is missed the card stays open forever.
+    /// Open until the user closes it: a plan is what the turn is working
+    /// through, so it stays in sight whether or not a step is running.
     pub fn is_open(&self) -> bool {
-        self.fold
-            || self
-                .entries
-                .iter()
-                .any(|e| matches!(e.status, PlanStatus::InProgress))
+        !self.fold
     }
 }
 

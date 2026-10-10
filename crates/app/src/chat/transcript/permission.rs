@@ -141,20 +141,15 @@ pub(in crate::chat) fn permission(
         return permission_record(session, p, choice, target, cx);
     }
     let idx = live_index(target);
-    let (shown, hidden) = p.shown_lines();
+    let lines = p.command_lines();
     let block = CommandBlock {
-        session: session.clone(),
         target,
         command: SharedString::from(p.command().to_string()),
-        lines: shown
+        lines: lines
             .into_iter()
             .map(|l| SharedString::from(l.to_string()))
             .collect(),
-        hidden,
         well,
-        long: p.is_long(),
-        total: p.command_lines().len().max(1),
-        expanded: p.expanded,
     };
     // The only word the protocol offers about *what* is being asked for. An
     // unrecognised kind has no word, so the slot stays empty rather than

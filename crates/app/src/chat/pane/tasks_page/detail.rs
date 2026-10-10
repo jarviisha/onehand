@@ -381,7 +381,7 @@ fn timeline(
         let when = match until {
             Some(at) => format!(
                 "{started} · {}",
-                crate::chat::transcript::elapsed(at.saturating_sub(visit.started_at))
+                onehand_core::duration(at.saturating_sub(visit.started_at))
             ),
             None => started,
         };

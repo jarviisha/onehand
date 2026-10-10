@@ -1,4 +1,4 @@
-use super::popup::{POPUP_INSET, edge_scrolled, popup_footer, popup_header};
+use super::popup::{edge_scrolled, more_text, popup_header, popup_surface};
 use super::{CHIP_H, Composer, ComposerEvent, Overlay};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -13,6 +13,8 @@ use onehand_core::attachment::{
 
 /// How much of an attachment's name is shown before it truncates.
 const ATTACHMENT_MAX_W: Rems = rems(10.);
+/// How far the cut end of the tray fades out over the chips it hides.
+const TRAY_FADE: Rems = rems(3.);
 /// Attachment chips drawn before the tray starts counting instead.
 const MAX_TRAY_CHIPS: usize = 12;
 /// Rows built at once in the expanded attachment manager. Removing a visible
@@ -31,7 +33,6 @@ impl Composer {
         if paths.is_empty() {
             return;
         }
-        self.feedback = None;
         self.attachments.extend(
             paths
                 .into_iter()
@@ -58,7 +59,7 @@ impl Composer {
                 match entry {
                     gpui::ClipboardEntry::Image(image) => {
                         mine = true;
-                        self.stage_pasted_image(image, cx);
+                        self.stage_pasted_image(image, window.window_handle(), cx);
                     }
                     gpui::ClipboardEntry::ExternalPaths(paths) => {
                         mine = true;
@@ -79,7 +80,12 @@ impl Composer {
     /// The write is a real one and goes to the background executor; the id is
     /// the clipboard's own content hash, so pasting the same image twice
     /// rewrites one file instead of littering the temp directory.
-    fn stage_pasted_image(&mut self, image: gpui::Image, cx: &mut Context<Self>) {
+    fn stage_pasted_image(
+        &mut self,
+        image: gpui::Image,
+        window: gpui::AnyWindowHandle,
+        cx: &mut Context<Self>,
+    ) {
         cx.spawn(async move |composer, cx| {
             let written = cx
                 .background_executor()
@@ -92,9 +98,20 @@ impl Composer {
                 })
                 .await;
             let Ok(path) = written else {
-                let _ = composer.update(cx, |composer: &mut Self, cx| {
-                    composer.feedback = Some("Could not attach the pasted image".into());
-                    cx.notify();
+                // A toast and not a line in the card: nothing said about the
+                // composer may move it.
+                let _ = cx.update(|cx| {
+                    window
+                        .update(cx, |_, window, cx| {
+                            gpui_component::WindowExt::push_notification(
+                                window,
+                                gpui_component::notification::Notification::warning(
+                                    "Could not attach the pasted image",
+                                ),
+                                cx,
+                            );
+                        })
+                        .ok()
                 });
                 return;
             };
@@ -119,7 +136,6 @@ impl Composer {
                 return;
             };
             let _ = composer.update(cx, |composer: &mut Self, cx| {
-                composer.feedback = None;
                 composer.attachments.extend(
                     paths
                         .into_iter()
@@ -139,143 +155,192 @@ impl Composer {
         cx.notify();
     }
 
-    /// The staged files, as a horizontally scrolling tray.
+    /// The staged files, as one row of chips.
     ///
     /// Bounded like everything else that grows with what the user did: a folder
     /// dropped on the card is however many files it held, and a tray of two
     /// hundred chips is two hundred elements laid out on every keystroke. What
     /// is over the bound is counted rather than dropped silently.
     ///
-    /// **A chip names a staged file; it does not show it.** The picture is
-    /// previewed once the prompt is sent, in the transcript, where the
-    /// attachment is a block of the conversation rather than a strip along the
-    /// top of the card holding what is being typed — a tray of thumbnails takes
-    /// that room from the prompt itself, and it is the prompt the card is for.
-    pub(super) fn tray(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
+    /// **A chip names a staged file; it does not show it**, an image no more
+    /// than a file. The picture is previewed once the prompt is sent, in the
+    /// transcript. The tray rests above the composer card, not in it, so
+    /// staging a file never moves the field being typed in.
+    pub(in crate::chat) fn tray(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         if self.attachments.is_empty() {
             return None;
         }
-        let (border, muted, danger_border, danger_text, radius) = (
+        let (border, muted, danger_border, danger_text, radius, well) = (
             cx.theme().border,
             cx.theme().muted_foreground,
             cx.theme().danger,
             crate::theme::status_ink(cx).danger,
             cx.theme().radius,
+            cx.theme().muted,
         );
-        Some(
-            div()
-                .id("attachments")
-                .h_flex()
-                .gap_2()
-                .w_full()
-                .overflow_x_scroll()
-                .children(
-                    self.attachments
-                        .iter()
-                        .take(MAX_TRAY_CHIPS)
-                        .enumerate()
-                        .map(|(i, a)| {
-                            let id = a.id;
-                            // An unreadable file blocks Send entirely, so it has
-                            // to look wrong here rather than fail silently at
-                            // the moment the user hits Enter.
-                            let unavailable = a.delivery == AttachmentDelivery::Unavailable;
-                            let parts = [
-                                Icon::new(match a.kind {
-                                    AttachmentKind::Image => IconName::Frame,
-                                    AttachmentKind::File => IconName::File,
-                                })
-                                .size_3()
+        let hover = cx.theme().list_hover;
+        let page = cx.theme().background;
+        // **One row, never two.** Past the composer's width the row is cut,
+        // the cut fades out, and *Show all* opens the list of every staged
+        // file. Whether it was cut is last frame's measurement, a frame nobody
+        // sees go by.
+        let scroll = self.tray_scroll.clone();
+        let overflowed = scroll.max_offset().x > gpui::px(0.);
+        let cut = overflowed || self.attachments.len() > MAX_TRAY_CHIPS;
+        // Laid out after the chips, so it reads this frame's measurement and
+        // asks for one more frame only when it changed: nothing else redraws a
+        // tray that has just been cut.
+        let remeasure = {
+            let scroll = scroll.clone();
+            gpui::canvas(
+                move |_, window, cx| {
+                    if (scroll.max_offset().x > gpui::px(0.)) != overflowed {
+                        // After this frame: a refresh asked for mid-draw is
+                        // dropped.
+                        window.defer(cx, |window, _| window.refresh());
+                    }
+                },
+                |_, _, _, _| {},
+            )
+            .absolute()
+            .size_0()
+        };
+        let chips = div()
+            .id("attachment-tray")
+            .h_flex()
+            .gap_1()
+            .overflow_x_scroll()
+            .track_scroll(&scroll)
+            .children(
+                self.attachments
+                    .iter()
+                    .take(MAX_TRAY_CHIPS)
+                    .enumerate()
+                    .map(|(i, a)| {
+                        let id = a.id;
+                        // An unreadable file blocks Send entirely, so it has
+                        // to look wrong here rather than fail silently at
+                        // the moment the user hits Enter.
+                        let unavailable = a.delivery == AttachmentDelivery::Unavailable;
+                        let parts = [
+                            Icon::new(match a.kind {
+                                AttachmentKind::Image => IconName::Frame,
+                                AttachmentKind::File => IconName::File,
+                            })
+                            .xsmall()
+                            .text_color(muted)
+                            .into_any_element(),
+                            div()
+                                .max_w(ATTACHMENT_MAX_W)
+                                .truncate()
+                                .text_color(cx.theme().foreground)
+                                .when(unavailable, |el| el.text_color(danger_text))
+                                .child(a.name.clone())
                                 .into_any_element(),
-                                div()
-                                    .max_w(ATTACHMENT_MAX_W)
-                                    .truncate()
-                                    .when(unavailable, |el| el.text_color(danger_text))
-                                    .child(a.name.clone())
-                                    .into_any_element(),
-                            ];
-                            // The size, because two screenshots taken a minute
-                            // apart have interchangeable names, and because it
-                            // is the only warning that a large image will go as
-                            // a link instead of inline.
-                            let size = a.bytes.map(|bytes| {
-                                div()
-                                    .flex_none()
-                                    .text_color(muted)
-                                    .child(onehand_core::attachment::size_label(bytes))
-                                    .into_any_element()
-                            });
-                            // A real button, not a bare glyph: this one is
-                            // small, sits beside the name it destroys, and
-                            // needs the hover and the focus ring that say which
-                            // of the two the pointer is on.
-                            //
-                            // It is one clickable inside another wherever the
-                            // chip itself opens, which is what the stop is for:
-                            // without it the press that unstages a file also
-                            // asks the Workbench to open the file just removed.
-                            let unstage = crate::controls::action(("unstage", i))
-                                .ghost()
-                                .xsmall()
-                                .icon(Icon::new(IconName::Close))
-                                .tooltip("Remove this attachment")
-                                .on_click(cx.listener(move |composer: &mut Self, _, _, cx| {
-                                    cx.stop_propagation();
-                                    composer.unstage(id, cx);
-                                }))
-                                .into_any_element();
+                        ];
+                        // The size, because two screenshots taken a minute
+                        // apart have interchangeable names, and because it
+                        // is the only warning that a large image will go as
+                        // a link instead of inline.
+                        let size = a.bytes.map(|bytes| {
+                            div()
+                                .flex_none()
+                                .text_color(muted)
+                                .child(onehand_core::attachment::size_label(bytes))
+                                .into_any_element()
+                        });
+                        // A real button, not a bare glyph: this one is
+                        // small, sits beside the name it destroys, and
+                        // needs the hover and the focus ring that say which
+                        // of the two the pointer is on.
+                        //
+                        // It is one clickable inside another wherever the
+                        // chip itself opens, which is what the stop is for:
+                        // without it the press that unstages a file also
+                        // asks the Workbench to open the file just removed.
+                        let unstage = crate::controls::action(("unstage", i))
+                            .ghost()
+                            .xsmall()
+                            .icon(Icon::new(IconName::Close))
+                            .tooltip("Remove this attachment")
+                            .on_click(cx.listener(move |composer: &mut Self, _, _, cx| {
+                                cx.stop_propagation();
+                                composer.unstage(id, cx);
+                            }))
+                            .into_any_element();
 
-                            match openable(a) {
-                                Some(path) => attachment_shape(
-                                    crate::controls::action(("attachment", i)).ghost(),
-                                    unavailable,
-                                    border,
-                                    danger_border,
-                                    radius,
-                                )
-                                .children(parts)
-                                .children(size)
-                                .child(unstage)
-                                .tooltip("Open this file in the Workbench")
+                        // **One chip for a file and an image alike**, the
+                        // same element either way: only a file that opens
+                        // adds the pointer, a hover and a press.
+                        let open = openable(a);
+                        attachment_shape(
+                            div().id(("attachment", i)),
+                            unavailable,
+                            (border, danger_border, well),
+                            radius,
+                        )
+                        .children(parts)
+                        .children(size)
+                        .child(unstage)
+                        .when_some(open, |chip, path| {
+                            chip.cursor_pointer()
+                                .hover(move |chip| chip.bg(hover))
+                                .tooltip(|window, cx| {
+                                    gpui_component::tooltip::Tooltip::new(
+                                        "Open this file in the Workbench",
+                                    )
+                                    .build(window, cx)
+                                })
                                 .on_click(cx.listener(move |_: &mut Self, _, _, cx| {
                                     cx.emit(ComposerEvent::OpenFile(path.clone()));
                                 }))
-                                .into_any_element(),
-                                None => attachment_shape(
-                                    div(),
-                                    unavailable,
-                                    border,
-                                    danger_border,
-                                    radius,
-                                )
-                                .children(parts)
-                                .children(size)
-                                .child(unstage)
-                                .into_any_element(),
-                            }
+                        })
+                        .into_any_element()
+                    }),
+            );
+        Some(
+            div()
+                .h_flex()
+                .items_center()
+                .gap_1()
+                .w_full()
+                .child(
+                    div()
+                        .relative()
+                        .flex_1()
+                        .min_w_0()
+                        .child(chips)
+                        .child(remeasure)
+                        .when(cut, |row| {
+                            row.child(
+                                div()
+                                    .absolute()
+                                    .top_0()
+                                    .bottom_0()
+                                    .right_0()
+                                    .w(TRAY_FADE)
+                                    .bg(gpui::linear_gradient(
+                                        90.,
+                                        gpui::linear_color_stop(page.alpha(0.), 0.),
+                                        gpui::linear_color_stop(page, 1.),
+                                    )),
+                            )
                         }),
                 )
-                // **Offered from the second attachment, not from the
-                // thirteenth.** The tray scrolls sideways, so two long names on
-                // a narrow panel already push a chip past the edge — and the
-                // list this opens is the one place a chip out there can still be
-                // found and taken off. Gated on the tray's own *chip cap*, the
-                // way back to a staged file nobody can see was itself invisible
-                // until there were twelve of them. One attachment needs nothing:
-                // the single chip beside the button is already the whole list.
-                .when(self.attachments.len() > 1, |tray| {
+                .when(cut, |tray| {
                     tray.child(
                         crate::controls::action("all-attachments")
                             .ghost()
                             .xsmall()
                             .flex_none()
-                            .label(format!("View all {}", self.attachments.len()))
+                            .label(format!("Show all {}", self.attachments.len()))
                             .tooltip("Review or remove staged attachments")
                             .on_click(cx.listener(|composer: &mut Self, _, window, cx| {
                                 composer.toggle_attachments(window, cx);
                             })),
                     )
-                }),
+                })
+                .into_any_element(),
         )
     }
 
@@ -359,44 +424,18 @@ impl Composer {
                     }),
             );
 
-        div()
-            .v_flex()
-            .w_full()
-            .rounded(cx.theme().radius_lg)
-            .border_1()
-            // A step up rather than the hairline every other edge takes, for
-            // the reason the option lists carry the same colour: this opens
-            // from inside the composer, which is floating too, so its surface
-            // and the one behind it are the same and only the edge can say
-            // where one ends.
-            .border_color(cx.theme().accent)
-            .bg(cx.theme().popover.alpha(1.))
-            .shadow(crate::theme::lift(cx))
-            // The conversation behind must not move because of this card
-            // either; see the reason on the list above.
-            .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
-            .p(POPUP_INSET)
-            // The same pinned row every other popup carries. This one is built
-            // by its own function rather than through `popup`, so leaving it
-            // out here would make the header a property of which overlay
-            // happened to be open rather than of the card they all share.
+        popup_surface(cx)
             // The count rides in the pinned title rather than in a row of its
-            // own at the top of the list. That row said "Staged attachments"
-            // directly under a header already reading "Attachments" — one name
-            // twice within an inch — and it scrolled, so the half of it that
-            // was not a duplicate went away the moment the list was long enough
-            // to need it.
+            // own, which scrolled away once the list was long enough to need it.
             .child(popup_header(
                 format!("Attachments · {}", self.attachments.len()).into(),
                 cx,
             ))
             .child(edge_scrolled(&self.attachments_scroll, list))
-            // Pinned under the list and behind the same rule the completion
-            // popup's footer takes. Held among the rows it was scrolled out of
-            // sight in exactly the case that produced it: it only exists once
-            // there are more attachments than the manager draws.
+            // Under the list, where the rows it stands for would be: it only
+            // exists once there are more attachments than the manager draws.
             .when(hidden > 0, |popup| {
-                popup.child(popup_footer(cx).child(format!(
+                popup.child(more_text(cx).child(format!(
                     "{hidden} more — remove visible items to reveal them"
                 )))
             })
@@ -432,20 +471,20 @@ fn openable(attachment: &StagedAttachment) -> Option<std::path::PathBuf> {
 fn attachment_shape<E: Styled>(
     el: E,
     unavailable: bool,
-    border: gpui::Hsla,
-    danger: gpui::Hsla,
+    (border, danger, well): (gpui::Hsla, gpui::Hsla, gpui::Hsla),
     radius: gpui::Pixels,
 ) -> E {
     el.h_flex()
         .items_center()
-        .gap_1()
+        .gap_2()
         .flex_none()
+        .h(CHIP_H)
         .pl_2()
         .pr_1()
-        .py_1()
         .rounded(radius)
         .border_1()
         .border_color(if unavailable { danger } else { border })
+        .bg(well)
         .text_xs()
 }
 
@@ -459,11 +498,11 @@ fn attachment_shape<E: Styled>(
 /// shell makes them one family structurally rather than by two sets of style
 /// rules kept in step by hand.
 ///
-/// Two fills and no rules. Hover is the fainter step and an open popup the
-/// stronger one, which is the whole of the difference between "the pointer is
-/// here" and "this is the control you are editing" -- and it costs the row no
-/// width, where a border would have had to be carried by every control at rest
-/// to keep the row from shifting.
+/// A ghost control at a small button's height, its words lettered at
+/// `text_xs` by each chip on the child that carries them, in full ink, while
+/// its glyphs and its caret take the chip's muted ink. The chip whose popup is
+/// open takes the selected fill, and keeps it under the pointer; its caller
+/// leaves its tooltip off meanwhile, since the menu opens where it would show.
 pub(super) fn chip(id: impl Into<gpui::ElementId>, open: bool, cx: &App) -> Button {
     let (open_fill, fg, radius) = (
         cx.theme().accent,

@@ -1,8 +1,7 @@
 use super::Room;
 use super::metrics::{
-    BUBBLE_PAD_X, BUBBLE_PAD_Y, BUBBLE_TAIL_GAP, BUTTON_H, HAIR_GAP, MARK_SIZE, STACK_GAP, THUMB_H,
-    THUMB_W, TIGHT_GAP, USER_BUBBLE_MAX, USER_BUBBLE_MAX_NARROW, radius_block, radius_bubble,
-    radius_control,
+    BUBBLE_MAX, BUBBLE_TAIL_GAP, BUTTON_H, HAIR_GAP, MARK_SIZE, STACK_GAP, THUMB_H, THUMB_W,
+    TIGHT_GAP, USER_BUBBLE_MAX, USER_BUBBLE_MAX_NARROW, radius_block,
 };
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -99,26 +98,15 @@ pub(super) fn user(u: &UserMsg, uid: usize, room: Room, cx: &App) -> impl IntoEl
                 .hover(|turn| turn.text_color(cx.theme().muted_foreground))
                 .child(
                     div()
-                        .w_full()
-                        .py(BUBBLE_PAD_Y)
-                        .px(BUBBLE_PAD_X)
-                        .rounded(radius_bubble(cx))
-                        // **The corner nearest the speaker is the tight one.**
-                        // A bubble rounded evenly is a lozenge that could
-                        // belong to either side; one corner brought back down
-                        // to a control's points the shape at the edge the
-                        // prompt came from, which is the whole of what the
-                        // right-hand lane is saying.
-                        .rounded_br(radius_control(cx))
-                        // **The one filled surface in the transcript**, on the
-                        // ramp's own step for it. Everything else is an edge on
-                        // the reading surface, so a fill means one thing here:
-                        // this was typed by the person reading it. The hairline
-                        // is only to hold the shape where the two get close.
-                        .border_1()
-                        .border_color(cx.theme().border)
-                        .bg(cx.theme().secondary)
-                        .text_color(cx.theme().secondary_foreground)
+                        .max_w(BUBBLE_MAX)
+                        .px_3()
+                        .py_2()
+                        // **Even corners, the well's fill and no edge.** The
+                        // side it sits on already says whose words these are;
+                        // the fill only has to set them off the page.
+                        .rounded(cx.theme().radius_lg)
+                        .bg(cx.theme().muted)
+                        .text_color(cx.theme().foreground)
                         .child(prompt_text(&u.text, cx)),
                 )
                 .child(PromptCopy {
@@ -231,7 +219,8 @@ fn prompt_text(text: &str, cx: &App) -> gpui::AnyElement {
         // its glyphs and there is no radius on it — the rounded chip this wants
         // would need the text laid out by hand. The fill and the face together
         // are still enough to read as one.
-        background_color: Some(cx.theme().muted),
+        // The bubble's step on the well it sits in, so the chip shows on it.
+        background_color: Some(cx.theme().secondary),
         color: Some(cx.theme().secondary_foreground),
         ..Default::default()
     };

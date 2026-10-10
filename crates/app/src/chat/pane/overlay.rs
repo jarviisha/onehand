@@ -1,14 +1,11 @@
 //! The composer's overlay: the card that floats over the transcript, with
 //! whatever is pinned above it and the popups that open from it.
 
-use super::body::branch_control;
 use super::{COMPOSER_COLUMN, ChatPane, OverlayRoom};
 use crate::chat::session::ChatSession;
 use crate::chat::transcript::{self};
 use gpui::prelude::FluentBuilder as _;
-use gpui::{
-    Context, Entity, Focusable, InteractiveElement, IntoElement, ParentElement, Styled, Window, div,
-};
+use gpui::{Context, Entity, InteractiveElement, IntoElement, ParentElement, Styled, Window, div};
 use gpui_component::StyledExt;
 
 impl ChatPane {
@@ -33,24 +30,8 @@ impl ChatPane {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let pinned = self.pinned(session, room.well, window, cx);
-        let git = self
-            .git
-            .clone()
-            .map(|line| branch_control(line, cx.entity(), cx).into_any_element());
+        let git = self.git.clone();
         let pane = cx.entity();
-        // The field draws no ring of its own once the card is its border, so
-        // the card has to answer "does typing go here" -- with an app keymap
-        // that reaches over the terminal and a rail that can take focus, an
-        // input with no focused state is one the user has to test by typing.
-        //
-        // Asked here rather than handed in: it is a question about a window,
-        // and this is the innermost place holding one.
-        let typing_here = self
-            .composer
-            .read(cx)
-            .state
-            .focus_handle(cx)
-            .contains_focused(window, cx);
 
         div()
             .absolute()
@@ -68,12 +49,21 @@ impl ChatPane {
             // a click on a chip, a row or the field -- every one of which is a
             // click *outside* the list -- still reaches the control it was
             // aimed at.
-            .on_mouse_down_out(cx.listener(|pane: &mut Self, _, _, cx| {
-                if pane.composer.read(cx).overlay_open() {
-                    pane.composer
-                        .update(cx, |composer, cx| composer.close_overlay(cx));
-                }
-            }))
+            .on_mouse_down_out(cx.listener(
+                |pane: &mut Self, event: &gpui::MouseDownEvent, _, cx| {
+                    // A menu floats on its control, outside this block, so a press
+                    // on one of its rows is "outside" too and must not close it.
+                    let composer = pane.composer.read(cx);
+                    let on_menu = composer
+                        .menu_bounds
+                        .get()
+                        .is_some_and(|bounds| bounds.contains(&event.position));
+                    if composer.overlay_open() && !on_menu {
+                        pane.composer
+                            .update(cx, |composer, cx| composer.close_overlay(cx));
+                    }
+                },
+            ))
             // The popup sits *above* the input, so a long candidate list grows
             // away from the text being typed rather than over it -- and it sits
             // outside the measured box below, which is the whole point.
@@ -109,29 +99,22 @@ impl ChatPane {
             // opened the picker and can see they did. A card that *arrives*
             // while one is open is the case that would be silent, and that is
             // answered at the event instead: parking an ask closes the popup.
+            .children(self.composer.update(cx, |composer, cx| {
+                composer.anchored_menu(session, room.popup, window.rem_size(), cx)
+            }))
             .children({
                 let popup = self
                     .composer
                     .update(cx, |composer, cx| {
                         composer.detached_popup(session, room.popup, window.rem_size(), cx)
                     })
-                    // **Every overlay is the same card, in the same place.** The
-                    // option lists used to hang off the chip that opened them,
-                    // on the reasoning that keeping a compact surface against
-                    // its trigger says which control it belongs to. What it
-                    // cost is the thing a list of choices is for: sized to its
-                    // own rows and pinned to one end of the card, a model list
-                    // had no room for the sentence the agent sends about each
-                    // choice, and the rows it did fit were narrower than the
-                    // words in them. The card above the composer is the width
-                    // of the reading column, which is what every choice here
-                    // needs -- and the chip stays lit underneath for as long as
-                    // its list is open, which is what actually says where the
-                    // list came from.
+                    // **What spans the stack**: a completion, the attachments,
+                    // and a menu whose control is not on screen. A menu opened
+                    // from a control is drawn on that control instead, above.
                     .map(|popup| {
                         div()
                             .w_full()
-                            .px_4()
+                            .px(super::body::STACK_GUTTER)
                             // **Lifted off whatever is under it, and only when
                             // something is.** Flush, the popup and a parked
                             // card have the same width, nearly the same
@@ -173,7 +156,7 @@ impl ChatPane {
                 let cards = (!pinned.is_empty()).then(|| {
                     div()
                         .w_full()
-                        .px_4()
+                        .px(super::body::STACK_GUTTER)
                         // **A card covering the conversation must not move it.**
                         // The same leak the popup above has: gpui's handler for
                         // a scrolling box adjusts its own offset and never
@@ -192,7 +175,9 @@ impl ChatPane {
                         .child(
                             div()
                                 .v_flex()
-                                .gap_2()
+                                // The same gap the composer keeps from the cards,
+                                // so the whole stack reads as one rhythm.
+                                .gap_2p5()
                                 .w_full()
                                 .max_w(COMPOSER_COLUMN)
                                 .mx_auto()
@@ -287,13 +272,13 @@ impl ChatPane {
                         div()
                             .v_flex()
                             .w_full()
-                            .px_4()
+                            .px(super::body::STACK_GUTTER)
                             // Transparent spacing around the cards is what makes
                             // this read as an overlay rather than a footer. The
                             // transcript keeps painting through it; only the
                             // surfaces below cover what sits directly behind
                             // them.
-                            .pb_4()
+                            .pb_3()
                             .child(
                                 div()
                                     .v_flex()
@@ -301,7 +286,7 @@ impl ChatPane {
                                     .max_w(COMPOSER_COLUMN)
                                     .mx_auto()
                                     .child(self.composer.update(cx, |composer, cx| {
-                                        composer.card(session, blocked, typing_here, cx)
+                                        composer.card(session, blocked, cx)
                                     }))
                                     // Under the card and inside the measured
                                     // box, so the transcript ends above the
@@ -310,7 +295,7 @@ impl ChatPane {
                                     // whole overlay comes to, and the strip
                                     // appears and disappears with the project.
                                     .children(self.composer.update(cx, |composer, cx| {
-                                        composer.status_row(session, git, cx)
+                                        composer.status_row(session, git, room.narrow_strip, cx)
                                     })),
                             ),
                     ),

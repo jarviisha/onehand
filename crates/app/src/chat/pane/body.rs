@@ -1,6 +1,6 @@
 use super::{
-    BLOCK_GAP, COMPOSER_MIN_H, COMPOSER_REST, ChatPane, ChatPaneEvent, JUMP_PILL_H, LIST_HEAD,
-    NARROW_PANEL, OverlayRoom, ProjectAction, SMOKE, waits_alone,
+    BLOCK_GAP, COMPOSER_COLUMN, COMPOSER_MIN_H, COMPOSER_REST, ChatPane, JUMP_PILL_H, LIST_HEAD,
+    NARROW_PANEL, OverlayRoom, SMOKE, waits_alone,
 };
 use crate::chat::session::ChatSession;
 use crate::chat::transcript::{self};
@@ -11,7 +11,7 @@ use gpui::{
     list, px,
 };
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::menu::DropdownMenu as _;
+use gpui_component::scroll::Scrollbar;
 use gpui_component::spinner::Spinner;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::chat::{Link, TranscriptItemId};
@@ -68,13 +68,36 @@ impl ChatPane {
         // permission and a question at once, and the order they were asked in
         // is the only order that makes sense of them.
         out.sort_by_key(|(idx, _)| *idx);
-        let mut pinned: Vec<gpui::AnyElement> =
-            out.into_iter().map(|(_, element)| element).collect();
+        // **One card at a time, the oldest.** Each one stacked over the last
+        // took the conversation's whole height by the third, and every one
+        // offered Enter while only the focused one would take it. The next
+        // takes the same place once this one is answered.
+        let waiting = out.len().saturating_sub(1);
+        let mut pinned: Vec<gpui::AnyElement> = out
+            .into_iter()
+            .take(1)
+            .map(|(_, element)| element)
+            .collect();
+        pinned.extend((waiting > 0).then(|| {
+            div()
+                .px_3()
+                .text_xs()
+                .text_color(cx.theme().muted_foreground)
+                .child(match waiting {
+                    1 => "1 more request waits after this one".to_string(),
+                    n => format!("{n} more requests wait after this one"),
+                })
+                .into_any_element()
+        }));
         // Under the blocking cards and directly over the composer, because that
         // is where the prompt it holds was written and where it will reappear
         // if the queue is cancelled.
         pinned.extend(self.connecting_strip(cx).map(IntoElement::into_any_element));
         pinned.extend(self.queued_strip(cx).map(IntoElement::into_any_element));
+        // Last, so it rests on the composer it belongs to: what is staged
+        // waits above the card rather than inside it, where every file added
+        // or taken off moved the field being typed in.
+        pinned.extend(self.composer.update(cx, |composer, cx| composer.tray(cx)));
         pinned
     }
 
@@ -101,42 +124,54 @@ impl ChatPane {
             return None;
         }
         let status = SharedString::from(chat.activity_status()?);
+        // A strip and not a card: no edge and no fill, its words on the
+        // composer's own text edge, so it reads as a line of the stack.
         Some(
-            transcript::floating_card(cx)
+            div()
                 .h_flex()
                 .items_center()
                 .gap_2()
-                .px_3()
-                .py_2()
+                .w_full()
+                .px_1p5()
                 .text_sm()
                 .text_color(cx.theme().muted_foreground)
-                .child(Spinner::new().xsmall())
-                .child(status),
+                .child(Spinner::new().small())
+                .child(div().flex_1().min_w_0().truncate().child(status))
+                .child(
+                    div()
+                        .flex_none()
+                        .text_xs()
+                        .text_color(crate::theme::meta_ink(cx))
+                        .child("Send waits until it is up"),
+                ),
         )
     }
 
-    /// What is waiting for this turn to end, and the way to take it back.
+    /// What is waiting for this turn to end, and the ways to take it back.
     ///
     /// A prompt that left the composer and is not in the transcript is a prompt
     /// nothing on screen accounts for -- which is indistinguishable from one
-    /// the app dropped.
+    /// the app dropped. *Edit* puts it back in the field, in front of whatever
+    /// is being written now; the cross takes it off the queue.
     fn queued_strip(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
         let queued = self.active_chat(cx)?.queued.as_ref()?;
         let line = SharedString::from(onehand_core::chat::first_line_trunc(&queued.text, 80));
         let count = queued.attachments.len();
+        let muted = cx.theme().muted_foreground;
         Some(
-            transcript::floating_card(cx)
+            div()
                 .h_flex()
                 .items_center()
                 .gap_2()
-                .px_3()
-                .py_2()
+                .w_full()
+                .px_1p5()
                 .text_sm()
-                .child(Icon::new(IconName::Calendar).size_3())
                 .child(
                     div()
                         .flex_none()
-                        .text_color(cx.theme().muted_foreground)
+                        .text_xs()
+                        .font_medium()
+                        .text_color(muted)
                         .child("Queued"),
                 )
                 .child(div().flex_1().min_w_0().truncate().child(line))
@@ -144,104 +179,40 @@ impl ChatPane {
                     div()
                         .flex_none()
                         .text_xs()
-                        .text_color(cx.theme().muted_foreground)
+                        .text_color(muted)
                         .child(match count {
                             1 => "1 attachment".to_string(),
                             n => format!("{n} attachments"),
                         })
                 }))
                 .child(
-                    crate::controls::action("unqueue")
+                    crate::controls::action("edit-queued")
                         .ghost()
-                        .xsmall()
-                        .icon(Icon::new(IconName::Close))
+                        .small()
+                        .label("Edit")
                         .tooltip("Put it back in the composer")
                         .on_click(cx.listener(|pane: &mut Self, _, window, cx| {
                             pane.unqueue(window, cx);
                         })),
+                )
+                .child(
+                    crate::controls::action("drop-queued")
+                        .ghost()
+                        .small()
+                        .icon(Icon::new(IconName::Close))
+                        .tooltip("Remove from the queue")
+                        .on_click(cx.listener(|pane: &mut Self, _, _, cx| {
+                            if let Some(session) = pane.session() {
+                                session.update(cx, |session, cx| {
+                                    if session.chat.unqueue().is_some() {
+                                        cx.notify();
+                                    }
+                                });
+                            }
+                        })),
                 ),
         )
     }
-}
-
-/// The branch line, as the control it is.
-///
-/// **A menu and not a label**, because everything the reader might do about
-/// what it says is a thing the shell already does: split this branch into a
-/// second checkout, rename it, or go and look again. Printed flat, the strip's
-/// one piece of project state was the one piece with no way to act on it, and
-/// both of those actions were reachable only from a rail row or a page that is
-/// not on screen while a conversation is.
-///
-/// Built by the pane rather than by the composer, which draws the rest of the
-/// strip: git is the project's and this panel is what talks to the shell about
-/// the project. The composer has no vocabulary for any of it.
-///
-/// Drawn to match the two setting chips beside it — same height, same inset,
-/// same muted ink, a mark then a word and no caret — so the strip stays one row
-/// of one kind of thing. It is the same reason the line was never a sentence in
-/// prose: what differs is which side of the row it is on.
-pub(super) fn branch_control(
-    line: SharedString,
-    pane: Entity<ChatPane>,
-    cx: &mut Context<ChatPane>,
-) -> impl IntoElement + use<> {
-    let act = |action: ProjectAction, pane: Entity<ChatPane>| {
-        move |_: &gpui::ClickEvent, _: &mut Window, cx: &mut App| {
-            pane.update(cx, |_: &mut ChatPane, cx| {
-                cx.emit(ChatPaneEvent::Project(action));
-            });
-        }
-    };
-    let (worktree, rename, refresh) = (pane.clone(), pane.clone(), pane);
-
-    crate::controls::action("branch")
-        .ghost()
-        .xsmall()
-        .h_flex()
-        .items_center()
-        .gap_1()
-        .flex_shrink_1()
-        .min_w_0()
-        .h(crate::chat::composer::CHIP_H)
-        .px_1p5()
-        .rounded(cx.theme().radius)
-        .text_color(cx.theme().muted_foreground)
-        .child(Icon::new(crate::icons::Icon::GitBranch).size_3())
-        // The branch leads the line, so what the cap takes first is the change
-        // count behind it.
-        .child(
-            div()
-                .min_w_0()
-                .truncate()
-                .text_size(crate::chat::composer::CHIP_TEXT)
-                // Full strength, as every chip's value is: the muted ink on the
-                // button is what the mark beside this takes. A branch written a
-                // shade fainter than the setting at the other end of the strip
-                // reads as less certain rather than as a different kind of
-                // thing.
-                .text_color(cx.theme().foreground)
-                .child(line),
-        )
-        .tooltip("The branch checked out here")
-        .dropdown_menu_with_anchor(gpui::Anchor::BottomLeft, move |menu, _, _| {
-            menu.item(
-                crate::controls::menu_item("Rename branch…")
-                    .icon(Icon::new(crate::icons::Icon::SquarePen))
-                    .on_click(act(ProjectAction::RenameBranch, rename.clone())),
-            )
-            .item(
-                crate::controls::menu_item("New worktree…")
-                    .icon(Icon::new(crate::icons::Icon::GitBranch))
-                    .on_click(act(ProjectAction::Worktree, worktree.clone())),
-            )
-            .separator()
-            .item(
-                crate::controls::menu_item("Refresh Git status")
-                    .icon(Icon::new(IconName::Redo))
-                    .on_click(act(ProjectAction::RefreshGit, refresh.clone())),
-            )
-        })
 }
 
 impl ChatPane {
@@ -413,6 +384,13 @@ impl ChatPane {
         let list_w = list_state.viewport_bounds().size.width;
         let narrow = list_w > px(0.) && list_w < NARROW_PANEL.to_pixels(window.rem_size());
         let room = transcript::Room::new(well, narrow);
+        // The stack's own width, the panel less the overlay's gutters and
+        // capped at its column, is what the strip under the card splits by.
+        let rem = window.rem_size();
+        let stack_w =
+            (list_w - STACK_GUTTER.to_pixels(rem) * 2.).min(COMPOSER_COLUMN.to_pixels(rem));
+        let narrow_strip =
+            list_w > px(0.) && stack_w < crate::chat::composer::COMPOSER_SPLIT.to_pixels(rem);
         self.composer_drawn = true;
 
         div()
@@ -444,19 +422,26 @@ impl ChatPane {
                             .bottom(cut)
                             .overflow_hidden()
                             .child(
-                                list(list_state, move |ix, window: &mut Window, cx: &mut App| {
-                                    this.read(cx).run_element(
-                                        ix,
-                                        &for_render,
-                                        room.clone(),
-                                        window,
-                                        cx,
-                                    )
-                                })
+                                list(
+                                    list_state.clone(),
+                                    move |ix, window: &mut Window, cx: &mut App| {
+                                        this.read(cx).run_element(
+                                            ix,
+                                            &for_render,
+                                            room.clone(),
+                                            window,
+                                            cx,
+                                        )
+                                    },
+                                )
                                 .size_full()
                                 .pt(LIST_HEAD)
                                 .pb(tail_pad),
-                            ),
+                            )
+                            // On the panel's edge, over the clipped list, so
+                            // it ends where the conversation does and never
+                            // runs down behind the composer.
+                            .child(Scrollbar::vertical(&list_state)),
                     )
                     // The transcript dissolving into the surface it is drawn
                     // on, right down to the clip. Between the list and every
@@ -543,6 +528,7 @@ impl ChatPane {
                         OverlayRoom {
                             popup: popup_room,
                             well,
+                            narrow_strip,
                         },
                         blocked,
                         window,
@@ -552,6 +538,10 @@ impl ChatPane {
             .into_any_element()
     }
 }
+
+/// The inset the overlay holds the composer stack off each side of the panel
+/// by, read by the strip's split as well.
+pub(super) const STACK_GUTTER: gpui::Rems = gpui::rems(1.);
 
 /// Shown while no session is on screen.
 ///

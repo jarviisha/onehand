@@ -1,55 +1,27 @@
 use super::{BLOCK_GAP, COMPACT_GAP, ChatPane, SIDE_MARGIN, SIDE_MARGIN_NARROW};
 use crate::chat::session::ChatSession;
-use crate::chat::transcript::{self, radius_tag};
+use crate::chat::transcript;
 use crate::chat::viewport::{self, RunKind};
 use gpui::prelude::FluentBuilder as _;
-use gpui::{Animation, AnimationExt as _};
 use gpui::{
-    App, Context, Entity, IntoElement, ListState, ParentElement, Rems, Styled, Window, div, rems,
+    App, Context, Entity, IntoElement, ListState, ParentElement, Rems, Styled, Window, div,
+    relative, rems,
 };
-use gpui_component::{ActiveTheme, StyledExt};
+use gpui_component::spinner::Spinner;
+use gpui_component::{Sizable as _, StyledExt};
 use onehand_core::chat::{Chat, ChatItem, Link, TranscriptItemId};
 
 impl ChatPane {
     /// The widest the elapsed column ever has to be.
     ///
-    /// **Reserved, and the digits sit against its right edge.** The whole point
-    /// of the column is that nothing after it moves when `9s` becomes `10s` or
-    /// `59s` becomes `1m 0s`, and a box that shrink-wraps its digits moves on
-    /// every one of those. Fixing the box and putting the digits at its right
-    /// edge is the whole of the fix: what follows the clock begins at the same
-    /// place whatever the clock says, and the digits grow leftward into room
-    /// that was already spoken for.
-    ///
-    /// **Drawn in the row's own face, not in mono**, which the reserved box is
-    /// what makes affordable. Tabular digits answer a narrower question -- that
-    /// the text inside a shrink-wrapping box not slide -- and they answer it by
-    /// putting a second typeface on a row of text. Two faces on one line do not
-    /// share a baseline, so the clock sat a shade off everything beside it,
-    /// which reads as the row not being on one line at all. There is no jump
-    /// left for them to prevent.
-    ///
-    /// **Held at what the longest form actually needs and no wider.** Reserved
-    /// generously it is dead space that never goes away, and right-aligned
-    /// digits put all of it on the *left* -- so every short clock read as the
-    /// mark beside it having drifted away from the words.
-    const CLOCK_W: Rems = rems(2.75);
+    /// **Reserved**, so nothing after it moves when `9s` becomes `10s` or
+    /// `59s` becomes `1m 0s`: the digits grow into room already spoken for,
+    /// and what follows the clock begins at the same place whatever it says.
+    const CLOCK_W: Rems = rems(3.25);
 
-    /// The mark that says a turn is alive, and how far it breathes.
-    ///
-    /// **A square that swells and shrinks rather than a spinner.** A spinner is
-    /// a wait with no progress in it, which is what this is not: the thing it
-    /// stands beside is a clock counting up and a sentence that changes.
-    ///
-    /// **It grows about its own centre, and the slot around it never changes
-    /// size.** Growing a box on a row of text pushes that row's baseline
-    /// around, and a mark that moved the words beside it every second would be
-    /// worse than no mark. So the slot is held at the largest the square ever
-    /// gets and the square is centred inside it: what breathes is the ink, and
-    /// the space it occupies is constant.
-    const PULSE_SIZE: Rems = rems(0.875);
-    const PULSE_MIN: Rems = rems(0.4375);
-
+    /// The line under a live turn: a spinner and the turn's clock in the
+    /// accent, then how many steps are running and what the agent says it is
+    /// doing.
     fn working_strip(&self, cx: &App) -> gpui::AnyElement {
         let running = self
             .active_conversation()
@@ -77,17 +49,11 @@ impl ChatPane {
         let status = self
             .active_chat(cx)
             .and_then(|chat| chat.activity_status().or_else(|| working_word(chat)));
-
         let elapsed = self.turn_began.map_or(0, |began| began.elapsed().as_secs());
-        let clock = match elapsed {
-            0..=59 => format!("{elapsed}s"),
-            _ => format!("{}m {}s", elapsed / 60, elapsed % 60),
-        };
+        let accent = transcript::accent(cx);
 
         // **Only what is actually there.** A separator standing between a thing
-        // and nothing is punctuation for a clause that was never written, and
-        // the clock never takes one at all: it is the row's own left edge
-        // rather than one side of a pair.
+        // and nothing is punctuation for a clause that was never written.
         let mut parts: Vec<gpui::AnyElement> = Vec::new();
         if running > 0 {
             parts.push(
@@ -102,9 +68,8 @@ impl ChatPane {
             );
         }
         if let Some(status) = status {
-            // The one part that gives way: it is the agent's own words about
-            // what it is doing, and the only thing here whose length nothing
-            // bounds.
+            // The one part that gives way: the agent's own words about what it
+            // is doing, and the only thing here whose length nothing bounds.
             parts.push(
                 div()
                     .flex_1()
@@ -115,59 +80,23 @@ impl ChatPane {
             );
         }
 
-        let (big, small) = (Self::PULSE_SIZE.0, Self::PULSE_MIN.0);
         let mut row = div()
             .h_flex()
             .items_center()
-            .gap_1()
-            .h(rems(1.5))
-            .text_xs()
-            // **One ink for the words, the accent for the mark alone.** A
-            // status line tinted to be noticed is a status line competing with
-            // the answer arriving above it.
-            .text_color(cx.theme().muted_foreground)
+            .gap_2()
+            .text_size(transcript::TEXT_SM)
+            .text_color(accent)
+            .child(Spinner::new().small().color(accent))
             .child(
                 div()
                     .flex_none()
-                    .size(Self::PULSE_SIZE)
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .child(
-                        div()
-                            .rounded(radius_tag(cx))
-                            .bg(crate::theme::status_ink(cx).success)
-                            .with_animation(
-                                "turn-pulse",
-                                // Capped well under the frame rate: this is a
-                                // mark keeping time, not something being
-                                // watched, and an uncapped repeat redraws the
-                                // whole window on every frame for as long as a
-                                // turn runs.
-                                Animation::new(std::time::Duration::from_millis(1_100))
-                                    .repeat()
-                                    .with_max_fps(30.),
-                                move |square, t| {
-                                    // Centred by the slot rather than by an
-                                    // offset of its own, so the growth is even
-                                    // on all four sides and the arithmetic has
-                                    // nowhere to be wrong.
-                                    let phase = t * std::f32::consts::TAU;
-                                    let swell = (1. + phase.sin()) / 2.;
-                                    square.size(rems(small + (big - small) * swell))
-                                },
-                            ),
-                    ),
-            )
-            .child(div().flex_none().w(Self::CLOCK_W).text_right().child(clock));
+                    .w(Self::CLOCK_W)
+                    .whitespace_nowrap()
+                    .child(onehand_core::duration(elapsed)),
+            );
         for (n, part) in parts.into_iter().enumerate() {
             if n > 0 {
-                row = row.child(
-                    div()
-                        .flex_none()
-                        .text_color(cx.theme().muted_foreground.opacity(0.6))
-                        .child("·"),
-                );
+                row = row.child(div().flex_none().child("·"));
             }
             row = row.child(part);
         }
@@ -245,7 +174,7 @@ impl ChatPane {
         conv.viewport.replan(
             &session.chat,
             session.folds_revision(),
-            |anchor| session.activity_is_open(anchor),
+            |anchor, default| session.activity_is_open(anchor, default),
             |anchor, default| session.turn_is_open(anchor, default),
         );
         let state = conv.viewport.list_state(session.chat.busy, room);
@@ -388,20 +317,20 @@ impl ChatPane {
             true => strip
                 .sections
                 .iter()
-                .enumerate()
-                .map(|(n, section)| self.section_element(section, n, session, &room, window, cx))
+                .map(|section| self.section_element(section, session, &room, window, cx))
                 .collect(),
         };
 
+        let open = plan.open;
         column(
             lead,
             margin,
             vec![transcript::cluster(
                 &strip,
-                plan.open,
+                open,
                 move |_, _, cx: &mut App| {
                     folded.update(cx, |session, cx| {
-                        session.toggle_activity(anchor);
+                        session.set_activity_open(anchor, !open);
                         cx.notify();
                     });
                     // The pane owns the run layout the list reads back, so it
@@ -424,9 +353,6 @@ impl ChatPane {
     fn section_element(
         &self,
         section: &viewport::Section,
-        // Which of the cluster's sections this is, for the rule that a
-        // hairline goes between two of them and never above the first.
-        index: usize,
         session: &Entity<ChatSession>,
         room: &transcript::Room,
         window: &Window,
@@ -463,7 +389,6 @@ impl ChatPane {
             .v_flex()
             .w_full()
             .min_w_0()
-            .children((index > 0).then(|| transcript::rule(cx)))
             .map(|block| match single {
                 true => block.children(body(&section.members, room)),
                 false => block.child(transcript::activity_group(
@@ -556,33 +481,30 @@ pub(super) fn lead_gap(previous: Option<RunKind>, this: RunKind) -> Rems {
     }
 }
 
-/// The frame one run of the transcript is drawn in: a centred reading column
-/// that shrinks with its panel. Width lives here rather than around each item
-/// because a run is what the virtual list draws; activity summaries drawn by
-/// the pane and their steps must share the same two edges.
+/// The frame one run of the transcript is drawn in: a centred reading column,
+/// its inset inside its cap, that shrinks with its panel. Width lives here
+/// rather than around each item because a run is what the virtual list draws;
+/// a cluster's line drawn by the pane and its steps must share the same edges.
 fn column(lead: Rems, margin: Rems, content: Vec<gpui::AnyElement>) -> gpui::Div {
     div()
         .h_flex()
+        // Centred by the row rather than by an auto margin, which a list row
+        // ignores: each row is a layout root of its own.
+        .justify_center()
         .w_full()
-        // The reading size is set here, on the frame every run is drawn in, so
-        // one place decides it for prose, cards, wells and rows alike. Set per
-        // block instead, the blocks that never asked would keep the app's own
-        // base and the transcript would be two sizes.
+        // The reading size and its leading are set here, on the frame every
+        // run is drawn in, so one place decides them for prose, rows and
+        // wells alike; the leading as a ratio, so a well a step smaller keeps
+        // the same rhythm.
         .text_size(transcript::TEXT)
-        // **One margin, on the run rather than on the box that clips the
-        // transcript.** Padding there would inset the clip too, cutting text
-        // short of the header's rule and leaving a band of blank surface above
-        // whatever line the scroll stopped on. It was two insets — one here and
-        // one on the column inside — which is a single number written as a sum
-        // whose halves had already started moving independently.
-        .px(margin)
+        .line_height(relative(transcript::LEADING))
         .pt(lead)
         .child(
             div()
                 .w_full()
                 .min_w_0()
                 .max_w(transcript::CONTENT_COLUMN)
-                .mx_auto()
+                .px(margin)
                 .children(content),
         )
 }

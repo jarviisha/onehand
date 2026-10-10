@@ -87,21 +87,18 @@ fn a_list_is_capped_by_the_panel_and_never_below_its_floor() {
     // that arithmetic against the same constant, so it passed while the
     // fold landed mid-row for every popup whose chrome was not exactly
     // that number. Measured here against each shape the popup actually
-    // takes, including the three that draw no footer at all.
-    for (footer, rail) in [(true, false), (false, false), (false, true), (true, true)] {
-        let chrome = super::popup::popup_chrome(footer, rail);
+    // takes.
+    {
+        let chrome = super::popup::popup_chrome();
         for panel in [800., 500., 300., 0.] {
             let room = popup_room(px(panel), px(120.), rem);
             let list = super::popup::popup_list_h(room, rem, chrome);
-            assert_eq!(
-                list % row,
-                px(0.),
-                "footer {footer} rail {rail} at {panel}: the fold cuts a row"
-            );
+            assert_eq!(list % row, px(0.), "at {panel}: the fold cuts a row");
             assert!(
-                list >= row,
-                "footer {footer} rail {rail} at {panel}: no room for a row"
+                list <= row * super::popup::POPUP_MAX_ROWS,
+                "at {panel}: more rows than a list shows at once"
             );
+            assert!(list >= row, "at {panel}: no room for a row");
         }
     }
 

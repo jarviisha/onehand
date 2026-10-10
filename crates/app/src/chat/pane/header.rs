@@ -3,7 +3,7 @@ use gpui::prelude::FluentBuilder as _;
 use gpui::{App, Context, Entity, IntoElement, ParentElement, Rems, Styled, Window, div, rems};
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::menu::PopupMenuItem;
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, Sizable as _, StyledExt};
 use onehand_core::chat::{Chat, ConvMeta};
 use std::path::PathBuf;
 
@@ -27,6 +27,9 @@ const HEADER_H: Rems = rems(2.75);
 /// trade taken on purpose: a name cut to two characters names nothing, while a
 /// panel this narrow has already stopped being a place a conversation is read.
 const HEADER_NAME_MIN: Rems = rems(8.);
+/// The dot on the terminal button saying a shell is alive behind a closed dock:
+/// small enough to sit on the glyph's corner without covering it.
+const LIVE_DOT: Rems = rems(0.375);
 
 /// The conversations already had in the project on screen, for the header's
 /// *Open a past conversation* menu.
@@ -136,7 +139,7 @@ impl ChatPane {
             // left panel from the opposite edge of the row.
             .when(self.rail_hidden, |header| {
                 header.child(
-                    header_control("show-rail", IconName::PanelLeft, cx)
+                    header_control("show-rail", IconName::PanelLeftOpen, cx)
                         .tooltip("Show the navigation rail")
                         .on_click(cx.listener(|_: &mut Self, _, _, cx| {
                             cx.emit(ChatPaneEvent::ShowRail);
@@ -225,6 +228,9 @@ impl ChatPane {
             .when(self.page.is_none(), |row| {
                 row.child(
                     header_control("workbench", IconName::PanelRight, cx)
+                        // Lit while its dock is open, so the button says which
+                        // way the next press goes.
+                        .selected(self.docks_open.workbench)
                         // **Both directions, because the button does both.** It
                         // said "Show the Workbench" while it was a three-state
                         // control that could only ever open from here, and kept
@@ -252,18 +258,20 @@ impl ChatPane {
     /// neighbours have — a child in the content row would make this one control
     /// wider than the three beside it, which reads as a mistake.
     ///
-    /// Success ink, the same colour the app uses for a turn that finished
-    /// unseen: both mean "something of yours is there and you are not looking at
-    /// it".
+    /// The accent, the ink of something running: the dot is about a process
+    /// still going, and shows only while the dock is closed, since an open
+    /// terminal shows the shell itself.
     fn terminal_control(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let live = self.terminal_live;
-        let success = crate::theme::status_ink(cx).success;
+        let open = self.docks_open.terminal;
+        let running = cx.theme().link;
 
         div()
             .relative()
             .flex_none()
             .child(
                 header_control("terminal", IconName::SquareTerminal, cx)
+                    .selected(open)
                     // What it says is about the *shell*, which is the fact
                     // this pane is pushed and the one the icon cannot carry.
                     // Which way the press will go is left out for the reason
@@ -279,15 +287,15 @@ impl ChatPane {
                         cx.emit(ChatPaneEvent::ToggleTerminal);
                     })),
             )
-            .when(live, |control| {
+            .when(live && !open, |control| {
                 control.child(
                     div()
                         .absolute()
-                        .top_0()
-                        .right_0()
-                        .size(rems(0.375))
+                        .top_0p5()
+                        .right_0p5()
+                        .size(LIVE_DOT)
                         .rounded_full()
-                        .bg(success),
+                        .bg(running),
                 )
             })
     }
@@ -296,7 +304,7 @@ impl ChatPane {
     ///
     /// **The name is prose and the vertical-dots mark beside it is the
     /// control.** The name stays the loudest thing in the header --
-    /// full-strength ink and semibold against a row that is otherwise muted --
+    /// full-strength ink and medium weight against a row that is otherwise muted --
     /// because it is the one thing there that answers "which conversation is
     /// this". The menu lives on the mark and not on the name, so the popup
     /// opens directly under the dots that were pressed rather than under
@@ -331,7 +339,7 @@ impl ChatPane {
             .min_w_0()
             .truncate()
             .text_color(cx.theme().foreground)
-            .font_semibold()
+            .font_medium()
             .child(title);
         if !live && project.is_none() {
             return div().min_w_0().child(name).into_any_element();

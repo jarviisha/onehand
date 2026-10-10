@@ -33,7 +33,7 @@ fn a_running_line_is_never_wordless() {
         md: Md::parse("weighing it up"),
         started: None,
         elapsed_secs: None,
-        expanded: false,
+        fold: None,
     }));
     assert_eq!(chat.activity_status(), None, "the model stays quiet");
     assert_eq!(working_word(&chat).as_deref(), Some("Thinking…"));

@@ -127,7 +127,7 @@ pub(super) fn candidate_row(id: usize, row: Row, highlighted: bool, cx: &App) ->
         // rows, so neither list has a gap in it where the other has a glyph.
         .children(
             row.mark
-                .map(|mark| Icon::new(mark).size_3().flex_none().text_color(second)),
+                .map(|mark| mark.size_3().flex_none().text_color(second)),
         )
         // **A column of a fixed width, not a box that fits its name.** The name
         // is what the eye runs down, so it has to start at the same x on every
@@ -245,21 +245,13 @@ fn marked(
         .child(div().min_w_0().truncate().child(text[at.end..].to_string()))
 }
 
-/// One value of an agent-advertised setting: its name, the agent's sentence
-/// about it underneath, and a tick where it is the one in force.
+/// One row of a menu: an agent-advertised value, a mode, an entry of the `+`
+/// or branch menu. Its glyph where it has one, its name, what the agent or the
+/// app says about it beside the name, and a tick where it is the one in force.
 ///
-/// **Stacked, and that is the whole difference from a candidate.** A model's
-/// description is a sentence and the names it tells apart are two words each,
-/// so beside the name it either pushes the name off the row or truncates to the
-/// three words every model's description opens with. Under it, at the quieter
-/// size, the names stay a column that can be scanned and the sentences are
-/// there for the one being considered.
-///
-/// The tick comes back here because the objection to it does not hold in this
-/// shape: it used to pull a *centred* label off centre, and the content of this
-/// row is pinned to the start by a `flex_1` of its own. What the fill alone
-/// cannot do is survive a reader who does not separate its colour from the row
-/// above — so the answer is said twice, in the fill and in a mark.
+/// **One line, the detail truncating beside the name**, so every row of a menu
+/// stands at one height and the list can be bounded in whole rows. The name
+/// gives way only once the detail has gone.
 pub(super) fn choice_row(id: usize, row: Row, highlighted: bool, cx: &App) -> Button {
     let detail_ink = match highlighted {
         // On the fill, the muted ink of an unlit row is close to unreadable;
@@ -268,36 +260,24 @@ pub(super) fn choice_row(id: usize, row: Row, highlighted: bool, cx: &App) -> Bu
         true => cx.theme().accent_foreground.alpha(0.75),
         false => cx.theme().muted_foreground,
     };
-    let checked = row.checked;
     popup_row(id, highlighted, cx)
-        // **The height has to be taken back from the library, explicitly.** A
-        // `Button` writes a fixed height per size -- 1.5rem at this one -- and
-        // then wraps everything the call site gave it in a box set to the full
-        // height of that, centred. A second line does not make the button
-        // taller: it overflows the box it was centred in and is painted across
-        // the rows either side of it, which is two lines of one choice sitting
-        // on top of the next choice's name. Nothing about it looks like a
-        // height; it looks like the list has been drawn twice.
-        //
-        // The floor keeps a choice the agent sent no sentence for standing at
-        // exactly the height every other one-line row in this popup does.
-        .h_auto()
-        .min_h(POPUP_ROW_H)
-        .py_1()
+        .h(POPUP_ROW_H)
+        .children(
+            row.mark
+                .map(|mark| mark.small().flex_none().text_color(detail_ink)),
+        )
+        .child(div().min_w_0().truncate().child(row.label))
         .child(
             div()
-                .v_flex()
                 .flex_1()
                 .min_w_0()
-                .child(div().w_full().truncate().child(row.label))
-                .children(row.detail.map(|detail| {
-                    div()
-                        .w_full()
-                        .truncate()
-                        .text_xs()
-                        .text_color(detail_ink)
-                        .child(detail)
-                })),
+                .truncate()
+                .text_xs()
+                .text_color(detail_ink)
+                .children(row.detail),
         )
-        .children(checked.then(|| Icon::new(IconName::Check).size_4().flex_none()))
+        .children(
+            row.checked
+                .then(|| Icon::new(IconName::Check).small().flex_none()),
+        )
 }
