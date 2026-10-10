@@ -116,8 +116,8 @@ monospace font.
   offered), then *Send*; while a turn runs, *Stop* (solid danger, with its word) and, over a
   draft, *Queue*. Under it, a strip: the branch left, the permission mode right, each opening a
   menu (not drawn when neither exists), the branch over the mode when narrow. Pinned cards share
-  one shape: what is asked as the title, who asks, the body, then the answers at the
-  right, with no key hints. One is pinned at a time, the oldest, over a line saying how many more wait; the next
+  one shape: what is asked as the title, who asks, the body, then the keys left and the answers
+  right. One is pinned at a time, the oldest, over a line saying how many more wait; the next
   takes its place, and the caret, once it is answered. A question's description is said once. The queue and a reconnect are plain lines. *Run a workflow…*, the `+` menu's last entry, the keymap command and the
   Workflows page's *Run…* open one launcher: a workflow menu, what it does and where, a collapsed
   *Preview* (steps, limits, the first prompt), *Title*, *Details*, *Instructions*, then what the

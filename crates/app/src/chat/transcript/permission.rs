@@ -195,6 +195,7 @@ pub(in crate::chat) fn permission(
             // A card replayed from the archive carries an rpc id no running
             // adapter issued: controls would invite an answer nobody waits for.
             footer: idx.map(|idx| Footer {
+                keys: &[(&["enter"], "allow once"), (&["escape"], "deny")],
                 actions: permission_actions(session, p, idx),
             }),
         },
