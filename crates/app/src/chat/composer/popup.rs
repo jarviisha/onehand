@@ -225,7 +225,20 @@ impl Composer {
                     .child(
                         div().w(width).occlude().child(popup).child(
                             gpui::canvas(
-                                move |bounds, _, _| menu_bounds.set(Some(bounds)),
+                                // Only the size is taken from here: the box
+                                // reports where it was laid out, before it is
+                                // moved onto its control, so where it ends up
+                                // is worked out from the point it hangs from.
+                                move |bounds, _, _| {
+                                    let size = bounds.size;
+                                    let origin = match corner {
+                                        gpui::Anchor::BottomRight => {
+                                            gpui::point(at.x - size.width, at.y - size.height)
+                                        }
+                                        _ => gpui::point(at.x, at.y - size.height),
+                                    };
+                                    menu_bounds.set(Some(gpui::Bounds { origin, size }))
+                                },
                                 |_, _, _, _| {},
                             )
                             .absolute()
