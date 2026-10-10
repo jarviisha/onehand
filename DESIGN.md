@@ -112,8 +112,8 @@ monospace font.
   ink, rather than approving it unread.
 - **Composer.** A card at the foot of the transcript with no edge, set off by its raised fill and
   its lift; the caret alone shows focus. The field, then one row: the `+` menu, *Fast* (a toggle
-  when the agent offers two choices, else a picker) and the model chip with its effort (when
-  offered), then *Send*; while a turn runs, *Stop* (solid danger, with its word) and, over a
+  when the agent offers two choices, else a picker), the model chip and the effort chip beside it,
+  each opening its own menu (when offered), then *Send*; while a turn runs, *Stop* (solid danger, with its word) and, over a
   draft, *Queue*. Under it, a strip: the branch left, the permission mode right, each opening a
   menu (not drawn when neither exists), the branch over the mode when narrow. Pinned cards share
   one shape: what is asked as the title, who asks, the body, then the keys left and the answers

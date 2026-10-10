@@ -103,9 +103,11 @@ pub enum Overlay {
     Completion,
     /// The session mode's choices.
     Mode,
-    /// Model, effort, and every other agent-advertised config choice in one
-    /// directly selectable list.
+    /// The model and every other agent-advertised config choice, effort
+    /// aside, in one directly selectable list.
     Options,
+    /// What the model runs at, from its own chip beside the model's.
+    Effort,
     /// The fast group's choices, where they are not a plain switch: the chip
     /// toggles a group whose two values say which is on, and opens this for
     /// anything else, so both values are named and the one in force ticked.
@@ -386,6 +388,7 @@ impl Composer {
                 picker @ (Overlay::Fast
                 | Overlay::Mode
                 | Overlay::Options
+                | Overlay::Effort
                 | Overlay::Add
                 | Overlay::Branch),
             ) => {

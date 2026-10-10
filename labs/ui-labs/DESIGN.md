@@ -447,6 +447,7 @@ hierarchy are identical in both.
 | The Workbench takes the content area when the chat would drop under `CHAT_MIN` | docks never crowd the conversation, with no rule for when they would |
 | Hover and selected share `selected` | the app's palette keeps the two a step apart, its other values the lab's |
 | A popup's footer names its keys | a popup has no footer of keys |
+| Effort is a group of rows in the model's menu | effort has a chip and a menu of its own beside the model's |
 | Fast is a toggle | a toggle when the agent offers two choices, else a picker of them |
 | The branch chip lists branches to switch to | it renames the branch, starts a worktree or refreshes the status; nothing switches branches |
 | A prompt's attachments are listed under its words in the bubble | they are thumbnails above the bubble, one that never went out marked *not sent* |

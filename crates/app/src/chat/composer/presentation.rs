@@ -82,6 +82,8 @@ pub(super) enum Pick {
 pub(super) enum Act {
     /// The agent's config list: model, and whatever else it advertises.
     Options,
+    /// The effort the model runs at, where it has a chip of its own.
+    Effort,
     /// The session mode.
     Mode,
     /// The one config group promoted to a chip of its own.
@@ -106,6 +108,7 @@ impl Act {
     pub(super) fn opens(self) -> Option<super::Overlay> {
         match self {
             Self::Options => Some(super::Overlay::Options),
+            Self::Effort => Some(super::Overlay::Effort),
             Self::Mode => Some(super::Overlay::Mode),
             Self::Fast => Some(super::Overlay::Fast),
             Self::Attach | Self::Mention | Self::Command | Self::Workflow => None,
@@ -140,19 +143,14 @@ pub(super) fn mode_action(session: &Entity<ChatSession>, cx: &App) -> Option<Sha
     })
 }
 
-/// The one agent-advertised group this app draws as a rail of segments at the
-/// foot of the list rather than as rows in it.
-///
-/// **Named, and only this one.** Effort is the setting whose values are a
-/// *ladder* — less of a thing, then more of it — and three or four words on one
-/// rail says that where a column of rows says only that there are four of them.
-/// Nothing else the protocol carries is promised to be ordered, and a model list
-/// laid out this way would be claiming an order the agent never stated.
+/// The one agent-advertised group this app gives a chip and a menu of its own,
+/// beside the model's: what the model runs at, read as a qualifier of it.
 ///
 /// The cost is stated plainly: an agent that names this group something else
-/// gets rows, silently. That is the right way round — rows are correct for
-/// anything, and the strip is an improvement this app is guessing at.
-const SEGMENTED_GROUP: &str = "effort";
+/// gets rows in the model's list, silently. That is the right way round -- rows
+/// are correct for anything, and the chip is an improvement this app is
+/// guessing at.
+const EFFORT_GROUP: &str = "effort";
 
 /// The group the trigger promises, and so the group that leads the list.
 ///
@@ -173,57 +171,22 @@ fn names(option: &onehand_core::acp::ConfigOption, wanted: &str) -> bool {
     option.id.eq_ignore_ascii_case(wanted) || option.name.eq_ignore_ascii_case(wanted)
 }
 
-/// A config group drawn as one rail of segments.
-pub(super) struct Segments {
-    pub(super) name: SharedString,
-    pub(super) config_id: String,
-    /// Each choice as it is shown and as it is sent.
-    pub(super) choices: Vec<(SharedString, String)>,
-    pub(super) current: Option<usize>,
+/// Whether the effort group gets its chip: two choices at least, since a
+/// group with one is a value and not a choice, and goes back to being a row.
+fn has_own_chip(option: &onehand_core::acp::ConfigOption) -> bool {
+    names(option, EFFORT_GROUP) && option.choices.len() >= 2
 }
 
-/// The effort group, where the agent advertises one.
-pub(super) fn segmented_group(session: &Entity<ChatSession>, cx: &App) -> Option<Segments> {
+/// The effort menu's rows, where the group has a chip of its own.
+pub(super) fn effort_rows(session: &Entity<ChatSession>, cx: &App) -> Vec<Row> {
     session
         .read(cx)
         .chat
         .config_options
         .iter()
-        .find(|option| names(option, SEGMENTED_GROUP))
-        .and_then(segments_of)
-}
-
-/// The same decision, off the option alone.
-///
-/// Split out from the lookup above so the rule can be checked without a window:
-/// what it decides is whether the rail is drawn *at all*, and the list filters
-/// itself on the same answer — the two disagreeing is the setting appearing in
-/// both controls or in neither.
-fn segments_of(option: &onehand_core::acp::ConfigOption) -> Option<Segments> {
-    // A group with one choice is not a ladder, and a rail with a single rung on
-    // it is a label that happens to be pressable. Back to rows, where it reads
-    // as the one value there is.
-    if option.choices.len() < 2 {
-        return None;
-    }
-    Some(Segments {
-        name: SharedString::from(option.name.clone()),
-        config_id: option.id.clone(),
-        current: option
-            .current
-            .as_ref()
-            .and_then(|value| option.choices.iter().position(|c| &c.value == value)),
-        choices: option
-            .choices
-            .iter()
-            .map(|choice| {
-                (
-                    SharedString::from(choice.name.clone()),
-                    choice.value.clone(),
-                )
-            })
-            .collect(),
-    })
+        .find(|option| has_own_chip(option))
+        .map(rows_of)
+        .unwrap_or_default()
 }
 
 /// The one agent-advertised group this app gives a chip of its own on the strip
@@ -312,16 +275,10 @@ fn rows_of(option: &onehand_core::acp::ConfigOption) -> Vec<Row> {
 
 /// The model in force, as the chip says it.
 ///
-/// `None` where there is nothing for the chip's popup to hold at all.
-///
-/// **The rail counts as something to open.** Effort is drawn at the foot of
-/// that popup and nowhere else, so a chip withheld because the *list* above the
-/// rail is empty is effort made unreachable — which is exactly the shape an
-/// agent advertising effort and fast mode and nothing else has, since both of
-/// those are promoted out of the list and neither leaves a row behind.
+/// `None` where the model's list would hold nothing.
 pub(super) fn options_action(session: &Entity<ChatSession>, cx: &App) -> Option<SharedString> {
     let options = &session.read(cx).chat.config_options;
-    if !opens_onto_something(options) {
+    if !options.iter().any(|option| listed(&option)) {
         return None;
     }
     let model = options
@@ -332,15 +289,19 @@ pub(super) fn options_action(session: &Entity<ChatSession>, cx: &App) -> Option<
     Some(model.unwrap_or_else(|| SharedString::from("Model")))
 }
 
-/// The effort in force, as the model chip says it after the model's name: the
-/// qualifier in lower case, so the two read as a name and what it is run at.
+/// The effort in force, as its chip beside the model's says it: the qualifier
+/// in lower case, so the two read as a name and what it is run at. `None`
+/// where the group has no chip of its own.
 pub(super) fn effort_action(session: &Entity<ChatSession>, cx: &App) -> Option<SharedString> {
     let options = &session.read(cx).chat.config_options;
     options
         .iter()
-        .find(|option| names(option, SEGMENTED_GROUP))
-        .and_then(in_force)
-        .map(|choice| SharedString::from(choice.name.to_lowercase()))
+        .find(|option| has_own_chip(option))
+        .map(|option| {
+            in_force(option)
+                .map(|choice| SharedString::from(choice.name.to_lowercase()))
+                .unwrap_or_else(|| SharedString::from("effort"))
+        })
 }
 
 /// Fast mode as a switch: which way it stands, and the value a press sends.
@@ -492,38 +453,17 @@ pub(super) fn mode_rows(session: &Entity<ChatSession>, cx: &App) -> Vec<Row> {
         .collect()
 }
 
-/// Whether a group belongs in the list at all.
+/// Whether a group belongs in the model's list at all.
 ///
-/// Two of them do not: the one drawn as a rail under the list and the one drawn
-/// as a switch in the composer's row. Both are dropped on **exactly the
-/// condition their own control is drawn on**, never on the name alone -- a
+/// Two of them do not: effort, which has a chip and a menu of its own, and the
+/// one drawn as a switch in the composer's row. Both are dropped on **exactly
+/// the condition their own control is drawn on**, never on the name alone -- a
 /// group named `effort` that offers one choice, or `fast` that offers two
-/// values neither of which reads as *on*, gets no promoted control and has to
-/// come back here or it is reachable from nowhere.
-///
-/// One function because the list and the chip that opens it both ask, and the
-/// two disagreeing is a chip whose popup is empty.
-/// Whether the Options popup has anything in it at all.
-///
-/// **Rows or the rail, because the rail is inside that popup.** Effort is drawn
-/// at its foot and nowhere else, so a chip withheld on the strength of the list
-/// alone takes effort off the screen entirely -- which is precisely the shape of
-/// an agent advertising effort and fast mode and nothing more, both of them
-/// promoted out of the list and neither leaving a row behind.
-///
-/// One function because the chip and the popup both ask, and the two
-/// disagreeing is either a chip opening onto nothing or a setting with no way
-/// in.
-fn opens_onto_something(options: &[onehand_core::acp::ConfigOption]) -> bool {
-    options.iter().any(|option| listed(&option))
-        || options
-            .iter()
-            .any(|option| names(option, SEGMENTED_GROUP) && segments_of(option).is_some())
-}
-
+/// values neither of which reads as *on*, gets no control of its own and has
+/// to come back here or it is reachable from nowhere.
 fn listed(option: &&onehand_core::acp::ConfigOption) -> bool {
-    let promoted = (names(option, SEGMENTED_GROUP) && segments_of(option).is_some())
-        || (names(option, CHIP_GROUP) && !option.choices.is_empty());
+    let promoted =
+        has_own_chip(option) || (names(option, CHIP_GROUP) && !option.choices.is_empty());
     !promoted
 }
 
@@ -553,7 +493,7 @@ pub(super) fn options_rows(session: &Entity<ChatSession>, cx: &App) -> Vec<Row> 
 fn config_rank(option: &onehand_core::acp::ConfigOption, index: usize) -> (u8, usize) {
     let rank = if names(option, LEAD_GROUP) {
         0
-    } else if names(option, SEGMENTED_GROUP) {
+    } else if names(option, EFFORT_GROUP) {
         1
     } else {
         2
@@ -583,8 +523,7 @@ pub(super) fn composer_status(blocked: Option<SubmitBlock>, cx: &App) -> Option<
 #[cfg(test)]
 mod tests {
     use super::{
-        CHIP_GROUP, SEGMENTED_GROUP, config_rank, listed, names, opens_onto_something, segments_of,
-        toggle_of,
+        CHIP_GROUP, EFFORT_GROUP, config_rank, has_own_chip, in_force, listed, names, toggle_of,
     };
     use onehand_core::acp::{ConfigChoice, ConfigOption};
 
@@ -609,27 +548,26 @@ mod tests {
     fn a_group_is_found_by_id_or_by_label() {
         assert!(names(
             &effort("effort", "Reasoning", &[], None),
-            SEGMENTED_GROUP
+            EFFORT_GROUP
         ));
-        assert!(names(&effort("x-9", "Effort", &[], None), SEGMENTED_GROUP));
-        assert!(names(&effort("x-9", "EFFORT", &[], None), SEGMENTED_GROUP));
-        assert!(!names(
-            &effort("model", "Model", &[], None),
-            SEGMENTED_GROUP
-        ));
+        assert!(names(&effort("x-9", "Effort", &[], None), EFFORT_GROUP));
+        assert!(names(&effort("x-9", "EFFORT", &[], None), EFFORT_GROUP));
+        assert!(!names(&effort("model", "Model", &[], None), EFFORT_GROUP));
     }
 
     #[test]
-    fn a_ladder_needs_two_rungs_to_be_a_strip() {
+    fn effort_needs_two_choices_for_a_chip_of_its_own() {
         let one = effort("effort", "Effort", &["high"], Some("high"));
         assert!(
-            segments_of(&one).is_none(),
+            !has_own_chip(&one),
             "one choice falls back to a row, so the list must keep it"
         );
-        let two = effort("effort", "Effort", &["low", "high"], Some("high"));
-        let strip = segments_of(&two).expect("two choices is a strip");
-        assert_eq!(strip.current, Some(1));
-        assert_eq!(strip.choices.len(), 2);
+        assert!(has_own_chip(&effort(
+            "effort",
+            "Effort",
+            &["low", "high"],
+            Some("high")
+        )));
     }
 
     #[test]
@@ -642,26 +580,25 @@ mod tests {
             "a group with nothing to pick gets no chip, so dropping it would hide it entirely"
         );
 
-        let rail = effort("effort", "Effort", &["low", "high"], Some("high"));
-        assert!(!listed(&&rail), "the rail has it");
+        let own = effort("effort", "Effort", &["low", "high"], Some("high"));
+        assert!(!listed(&&own), "its own chip has it");
         assert!(
             listed(&&effort("effort", "Effort", &["high"], Some("high"))),
-            "one rung is no rail, so it is a row"
+            "one choice gets no chip, so it is a row"
         );
     }
 
     #[test]
     fn a_value_the_agent_never_offered_lights_nothing() {
         let stale = effort("effort", "Effort", &["low", "high"], Some("medium"));
-        assert_eq!(
-            segments_of(&stale).expect("still a strip").current,
-            None,
-            "guessing at the nearest rung would report a setting nobody chose"
+        assert!(
+            in_force(&stale).is_none(),
+            "guessing at the nearest choice would report a setting nobody chose"
         );
     }
 
     #[test]
-    fn a_rail_alone_is_still_worth_opening() {
+    fn effort_and_fast_each_have_a_control_and_leave_no_row() {
         let promoted = [
             effort("effort", "Effort", &["low", "high"], Some("low")),
             effort("fast", "Fast mode", &["on", "off"], Some("off")),
@@ -670,14 +607,7 @@ mod tests {
             !promoted.iter().any(|option| listed(&option)),
             "both are drawn by controls of their own, so neither is a row"
         );
-        assert!(
-            opens_onto_something(&promoted),
-            "the rail lives in that popup, so withholding the chip hides effort entirely"
-        );
-        assert!(
-            !opens_onto_something(&[effort("fast", "Fast mode", &["on", "off"], Some("on"))]),
-            "the chip draws fast mode itself, so its popup would open onto nothing"
-        );
+        assert!(has_own_chip(&promoted[0]), "effort is still reachable");
     }
 
     #[test]

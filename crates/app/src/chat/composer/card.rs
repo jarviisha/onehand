@@ -48,9 +48,22 @@ impl Composer {
         let tray = self.tray(cx).map(IntoElement::into_any_element);
         let fast = self.fast_control(session, cx);
         let options_open = self.overlay == Some(Overlay::Options);
-        let options_control = options_action(session, cx).map(|label| {
-            let effort = effort_action(session, cx);
-            option_action(label, effort, options_open, session, cx).into_any_element()
+        let effort_open = self.overlay == Some(Overlay::Effort);
+        let model = options_action(session, cx)
+            .map(|label| option_action(label, options_open, session, cx).into_any_element());
+        let effort = effort_action(session, cx)
+            .map(|label| effort_chip(label, effort_open, session, cx).into_any_element());
+        // The model and what it runs at sit side by side, each opening its own
+        // short menu: one popup holding both outgrew any width a menu can take.
+        let options_control = (model.is_some() || effort.is_some()).then(|| {
+            div()
+                .h_flex()
+                .items_center()
+                .min_w_0()
+                .flex_shrink_1()
+                .children(model)
+                .children(effort)
+                .into_any_element()
         });
         let add_open = self.overlay == Some(Overlay::Add);
         let add = {
@@ -340,17 +353,14 @@ fn status_action(
         }))
 }
 
-/// The card's own picker: the model in force, then the effort it runs at in
-/// muted ink, so the two read as a name and its qualifier, then the caret.
+/// The card's own picker: the model in force, then the caret.
 fn option_action(
     label: SharedString,
-    effort: Option<SharedString>,
     open: bool,
     session: &Entity<ChatSession>,
     cx: &mut Context<Composer>,
 ) -> impl IntoElement + use<> {
     let session = session.clone();
-    let muted = cx.theme().muted_foreground;
     chip("model-selector", open, cx)
         .max_w(OPTION_MAX_W)
         .flex_shrink_1()
@@ -358,17 +368,34 @@ fn option_action(
         // Children and not the button's `label`, which the library boxes
         // `flex_none`: against the cap it would push the caret past the clip.
         .child(chip_text(label, cx))
-        .children(effort.map(|effort| {
-            div()
-                .flex_none()
-                .text_size(CHIP_TEXT)
-                .text_color(muted)
-                .child(effort)
-        }))
         .dropdown_caret(true)
-        .tooltip("Choose model, effort and other options")
+        .tooltip("Choose the model and other options")
         .on_click(cx.listener(move |composer: &mut Composer, _, window, cx| {
             composer.toggle_picker(Overlay::Options, &session, window, cx);
+        }))
+}
+
+/// The effort the model runs at, in muted ink beside the model's chip so the
+/// two read as a name and its qualifier, opening a menu of its own.
+fn effort_chip(
+    label: SharedString,
+    open: bool,
+    session: &Entity<ChatSession>,
+    cx: &mut Context<Composer>,
+) -> impl IntoElement + use<> {
+    let session = session.clone();
+    chip("effort-selector", open, cx)
+        .flex_none()
+        .child(
+            div()
+                .text_size(CHIP_TEXT)
+                .text_color(cx.theme().muted_foreground)
+                .child(label),
+        )
+        .dropdown_caret(true)
+        .tooltip("Choose how hard the model thinks")
+        .on_click(cx.listener(move |composer: &mut Composer, _, window, cx| {
+            composer.toggle_picker(Overlay::Effort, &session, window, cx);
         }))
 }
 

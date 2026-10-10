@@ -1,7 +1,7 @@
 use super::popup::Runs;
 use super::presentation::{
-    Act, Pick, Row, add_rows, branch_rows, fast_action, fast_rows, fast_toggle, mode_action,
-    mode_rows, options_action, options_rows,
+    Act, Pick, Row, add_rows, branch_rows, effort_action, effort_rows, fast_action, fast_rows,
+    fast_toggle, mode_action, mode_rows, options_action, options_rows,
 };
 use super::{Composer, Overlay, highlight};
 use crate::chat::session::ChatSession;
@@ -51,6 +51,7 @@ fn act_rows(query: &str, session: &Entity<ChatSession>, cx: &App) -> Vec<Row> {
     // are the answers the chips themselves are drawn on.
     let offered = |act: Act| match act {
         Act::Options => options_action(session, cx).is_some(),
+        Act::Effort => effort_action(session, cx).is_some(),
         Act::Mode => mode_action(session, cx).is_some(),
         Act::Fast => fast_action(session, cx).is_some(),
         Act::Attach | Act::Mention | Act::Command | Act::Workflow => true,
@@ -64,6 +65,7 @@ fn act_rows(query: &str, session: &Entity<ChatSession>, cx: &App) -> Vec<Row> {
             "Choose the model and the agent's other settings",
             Act::Options,
         ),
+        ("effort", "Choose how hard the model thinks", Act::Effort),
         ("mode", "Switch the session mode", Act::Mode),
         ("fast", "Turn fast mode on or off", Act::Fast),
         ("attach", "Pick files to send with the prompt", Act::Attach),
@@ -102,6 +104,7 @@ pub(super) fn picker_rows(
     match overlay {
         Overlay::Mode => Some(mode_rows(session, cx)),
         Overlay::Options => Some(options_rows(session, cx)),
+        Overlay::Effort => Some(effort_rows(session, cx)),
         Overlay::Fast => Some(fast_rows(session, cx)),
         Overlay::Add => Some(add_rows()),
         Overlay::Branch => Some(branch_rows()),
@@ -204,7 +207,7 @@ impl Composer {
                     }),
                     (None, Act::Mention) => self.insert_trigger('@', window, cx),
                     // Every picker opens an overlay, so these never land here.
-                    (None, Act::Options | Act::Mode | Act::Fast) => {}
+                    (None, Act::Options | Act::Effort | Act::Mode | Act::Fast) => {}
                 }
                 true
             }

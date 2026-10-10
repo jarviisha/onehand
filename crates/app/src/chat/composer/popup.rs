@@ -1,16 +1,15 @@
 use super::complete::picker_rows;
-use super::presentation::{Row, segmented_group};
+use super::presentation::Row;
 use super::rows::{candidate_row, choice_row};
-use super::{CHIP_H, Composer, Overlay, highlight};
+use super::{Composer, Overlay, highlight};
 use crate::chat::session::ChatSession;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, Context, Entity, InteractiveElement, ParentElement, Rems, SharedString,
     StatefulInteractiveElement, Styled, div, rems,
 };
-use gpui_component::button::ButtonVariants as _;
 use gpui_component::scroll::{Scrollbar, ScrollbarMode};
-use gpui_component::{ActiveTheme, Selectable as _, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::completion::TriggerKind;
 
 /// The least room a list is ever given, however short the panel is.
@@ -48,11 +47,10 @@ pub(in crate::chat) const POPUP_STACK_PEEK: Rems = rems(0.375);
 /// squeezed panel.
 ///
 /// The parts: the pinned header, the line counting what is out of view, the
-/// segment rail where one is drawn, and the surface's own
+/// the surface's own
 /// inset top and bottom.
 const POPUP_HEADER_H: Rems = rems(1.75);
 const POPUP_MORE_H: Rems = rems(1.5);
-const POPUP_RAIL_H: Rems = rems(3.);
 const POPUP_INSET_H: Rems = rems(0.75);
 /// A menu opened from a control is this wide, and starts under that control;
 /// the wider one holds a model's or a mode's name beside the agent's words
@@ -69,21 +67,16 @@ const MENU_WIDE_W: Rems = rems(20.);
 /// scrolls its list, but it is never reduced to one row and a scrollbar.
 pub fn popup_room(panel: gpui::Pixels, reserved: gpui::Pixels, rem: gpui::Pixels) -> gpui::Pixels {
     let row = POPUP_ROW_H.to_pixels(rem);
-    let chrome = popup_chrome(true).to_pixels(rem);
+    let chrome = popup_chrome().to_pixels(rem);
     let rows = row * POPUP_MAX_ROWS + chrome;
     (panel - reserved - POPUP_HEADROOM.to_pixels(rem))
         .min(rows)
         .max(POPUP_MIN_H.to_pixels(rem))
 }
 
-/// Everything the popup draws above and below its scrolling box. The rail is
-/// asked for by name, because only the caller knows it is about to draw one.
-pub(super) fn popup_chrome(rail: bool) -> Rems {
-    let mut h = POPUP_HEADER_H.0 + POPUP_MORE_H.0 + POPUP_INSET_H.0;
-    if rail {
-        h += POPUP_RAIL_H.0;
-    }
-    rems(h)
+/// Everything the popup draws above and below its scrolling box.
+pub(super) fn popup_chrome() -> Rems {
+    rems(POPUP_HEADER_H.0 + POPUP_MORE_H.0 + POPUP_INSET_H.0)
 }
 
 /// The inset every popup surface pads its contents by.
@@ -145,7 +138,7 @@ fn anchor(overlay: &Overlay) -> Anchor {
         Overlay::Completion | Overlay::Attachments => Anchor::Span,
         // The model chip sits past Fast, whose word changes width, so its menu
         // starts at the inset too rather than chasing the chip.
-        Overlay::Add | Overlay::Branch | Overlay::Fast => Anchor::Left(MENU_W),
+        Overlay::Add | Overlay::Branch | Overlay::Fast | Overlay::Effort => Anchor::Left(MENU_W),
         Overlay::Options => Anchor::Left(MENU_WIDE_W),
         Overlay::Mode => Anchor::Right(MENU_WIDE_W),
     }
@@ -228,15 +221,10 @@ impl Composer {
             }
             picker => picker_rows(picker, session, cx).unwrap_or_default(),
         };
-        let segments = match overlay {
-            Overlay::Options => segmented_group(session, cx),
-            _ => None,
-        };
         // A trigger that matches nothing still has to say so: the popup is the
         // only thing on screen confirming the `@` or `/` was understood. A
-        // selector with no choices has nothing to confirm, so it stays away --
-        // unless the rail below the list is the whole of what it has.
-        if rows.is_empty() && segments.is_none() && !completion {
+        // selector with no choices has nothing to confirm, so it stays away.
+        if rows.is_empty() && !completion {
             return None;
         }
         let selected = highlight(self.selected, rows.len());
@@ -300,7 +288,7 @@ impl Composer {
                         // left after the lines below, rather than pushing them
                         // off the bottom.
                         .min_h_0()
-                        .max_h(popup_list_h(room, rem, popup_chrome(segments.is_some())))
+                        .max_h(popup_list_h(room, rem, popup_chrome()))
                         .overflow_y_scroll()
                         // Held by the composer, so walking the list with the
                         // keys can scroll it.
@@ -367,93 +355,8 @@ impl Composer {
                         true => format!("{more} more — keep typing to narrow"),
                         false => format!("{more} more"),
                     })))
-                })
-                .children(segments.map(|segments| self.segment_rail(segments, session, cx))),
+                }),
         )
-    }
-
-    /// A config group drawn as one rail of segments at the foot of the list.
-    ///
-    /// **A rail and not rows**, because effort is the one setting here whose
-    /// values are a ladder, and three or four words on one line say that.
-    /// **Below the list and outside the scroll**, because it is a second
-    /// setting rather than one of the choices being scrolled through. **It does
-    /// not close the popup**: a segment lights where it was pressed, and the
-    /// next thing somebody does with a ladder is often try the rung beside it.
-    /// The arrow keys walk the list above it and do not reach it.
-    fn segment_rail(
-        &self,
-        segments: super::presentation::Segments,
-        session: &Entity<ChatSession>,
-        cx: &mut Context<Self>,
-    ) -> gpui::Div {
-        let super::presentation::Segments {
-            name,
-            config_id,
-            choices,
-            current,
-        } = segments;
-        let session = session.clone();
-        let values: Vec<String> = choices.iter().map(|(_, value)| value.clone()).collect();
-        let labels: Vec<SharedString> = choices.into_iter().map(|(label, _)| label).collect();
-        let (fill, ink, radius) = (
-            cx.theme().accent,
-            cx.theme().accent_foreground,
-            cx.theme().radius,
-        );
-
-        // A plain row of buttons rather than a `ButtonGroup`, which squares the
-        // inner corners of a joined bordered block: flat, the only thing drawn
-        // is the fill under the rung in force, and it has to be a whole chip.
-        let rail = div().h_flex().items_center().gap_1().flex_none().children(
-            labels.into_iter().enumerate().map(|(i, label)| {
-                let current = Some(i) == current;
-                let value = values.get(i).cloned().unwrap_or_default();
-                let config_id = config_id.clone();
-                let session = session.clone();
-                crate::controls::action(("segment", i))
-                    .ghost()
-                    .small()
-                    .h(CHIP_H)
-                    .px_2()
-                    .rounded(radius)
-                    .label(label)
-                    .selected(current)
-                    // The popup's one spelling for "in force" being the
-                    // selected step, as the rows above use.
-                    .when(current, |segment| segment.bg(fill).text_color(ink))
-                    .on_click(cx.listener(move |_: &mut Self, _, _, cx| {
-                        let (config_id, value) = (config_id.clone(), value.clone());
-                        session.update(cx, |session, cx| {
-                            session.chat.set_config_option(&config_id, &value);
-                            cx.notify();
-                        });
-                        // The rail is drawn by the composer, so the session's
-                        // own notify does not redraw it.
-                        cx.notify();
-                    }))
-            }),
-        );
-
-        div()
-            .h_flex()
-            .items_center()
-            .justify_between()
-            .gap_2()
-            .w_full()
-            .px_2()
-            .py_2()
-            .mt_1()
-            .border_t_1()
-            .border_color(cx.theme().border)
-            .child(
-                div()
-                    .flex_none()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(name),
-            )
-            .child(rail)
     }
 }
 
@@ -506,7 +409,7 @@ pub(super) fn popup_title(
         Overlay::Add => "Add to the prompt".into(),
         Overlay::Branch => "Branch".into(),
         Overlay::Attachments => "Attachments".into(),
-        Overlay::Mode | Overlay::Options | Overlay::Fast => {
+        Overlay::Mode | Overlay::Options | Overlay::Fast | Overlay::Effort => {
             let mut groups = rows.iter().filter_map(|row| row.group.clone());
             match (groups.next(), groups.next()) {
                 (Some(only), None) => only,
