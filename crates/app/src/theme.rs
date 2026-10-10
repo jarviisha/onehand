@@ -38,15 +38,10 @@ use std::rc::Rc;
 /// name the guard against using a raw status fill as text points at.
 pub(crate) use onehand_plugin_host::status_ink;
 
-/// The surface a dock panel's card draws on is the plugin host's for the same
-/// reason, and named through this module for the same one: the Neovim mode
-/// hands it to a terminal grid as that grid's background, and a second copy of
-/// the answer is a panel and the shell inside it disagreeing about what colour
-/// the panel is.
-///
-/// It was called `chrome` while it was a step off the reading surface. It is
-/// that surface now, so the word had come to name the opposite of what the
-/// function returns -- and its own first line said so.
+/// The surface a dock draws on is the plugin host's for the same reason, and
+/// named through this module for the same one: the Neovim mode hands it to a
+/// terminal grid as that grid's background, and a second copy of the answer is
+/// a panel and the shell inside it disagreeing about what colour the panel is.
 pub(crate) use onehand_plugin_host::dock_surface;
 
 /// One mode's surfaces, and the ink that has to be legible on each.
@@ -58,6 +53,10 @@ struct Ramp {
     /// The reading surface, and the prose on it.
     background: &'static str,
     foreground: &'static str,
+    /// The docks: the Workbench and the terminal, one step off the reading
+    /// surface, so each meets the conversation at a hairline as a surface of its
+    /// own rather than as a card inset in it.
+    panel: &'static str,
     /// A well sunk into the surface: quoted commands, output, diffs, a folded
     /// thought. Every one of them is small text, so the ink is chosen against
     /// *this* rather than against the surface.
@@ -129,6 +128,7 @@ struct Ramp {
 const LIGHT: Ramp = Ramp {
     background: "#ffffff",
     foreground: "#1f1f1f",
+    panel: "#f3f3f3",
     well: "#eeeeee",
     // The lab's secondary ink rather than its metadata grey: this one is drawn
     // as small text on every surface, and the lighter grey falls under AA on
@@ -138,11 +138,12 @@ const LIGHT: Ramp = Ramp {
     // finds scanning back through a long conversation.
     bubble: "#dedede",
     bubble_ink: "#1f1f1f",
-    // The lab's hover tint, composited onto the surface.
-    hover: "#ededed",
+    // The lab's hover tint, darkened until a hovered row shows on a dock as well
+    // as on the surface: the lab's own value vanished on the panel.
+    hover: "#e8e8e8",
     // Far enough past hover that a row both hovered and selected, thinned in
     // the completion popup, still reads as selected.
-    selected: "#d6d6d6",
+    selected: "#d0d0d0",
     selected_ink: "#1f1f1f",
     // The lab's hover tint over the well the rail is drawn in.
     marked: "#dedede",
@@ -169,6 +170,7 @@ const LIGHT: Ramp = Ramp {
 const DARK: Ramp = Ramp {
     background: "#181818",
     foreground: "#ececec",
+    panel: "#202020",
     well: "#282828",
     // A notch over the lab's secondary ink: at that value it fell under AA on
     // the bubble, which the ramp's own test caught.
@@ -207,6 +209,10 @@ fn paint(colors: &mut ThemeConfigColors, ramp: &Ramp) {
 
     set(&mut colors.background, ramp.background);
     set(&mut colors.foreground, ramp.foreground);
+    // The docks' surface rides in the slot the library gives a dock of tiles,
+    // which the app never draws: a built-in plugin hands it to a terminal grid
+    // and can only reach it through the theme.
+    set(&mut colors.tiles, ramp.panel);
     set(&mut colors.muted, ramp.well);
     set(&mut colors.muted_foreground, ramp.well_ink);
     set(&mut colors.secondary, ramp.bubble);
@@ -913,6 +919,42 @@ mod tests {
         }
     }
 
+    /// A dock is a surface of its own, a step off the reading surface, and
+    /// everything drawn in it still shows: the hairline it meets the
+    /// conversation at, a hovered row, a selected tab, and its ink. Its step
+    /// from the surface is under a region's, on purpose: the hairline is what
+    /// says where a dock begins, and the fill only keeps it from reading as
+    /// the conversation running on.
+    #[test]
+    fn a_dock_stands_on_its_own_step() {
+        for (name, ramp, mode) in [
+            ("light", &LIGHT, ThemeMode::Light),
+            ("dark", &DARK, ThemeMode::Dark),
+        ] {
+            let theme = resolve(ramp, mode);
+            let panel = theme.tiles;
+            assert_eq!(panel, Hsla::parse_hex(ramp.panel).unwrap());
+            assert_ne!(
+                panel, theme.background,
+                "{name}: a dock is the reading surface"
+            );
+            for (label, fill, floor) in [
+                ("the hairline", theme.border, STEP),
+                ("a hovered row", theme.list_hover, ROW),
+                ("the selected fill", theme.accent, STEP),
+                ("an off switch's track", theme.switch, 3.0),
+                ("prose", theme.foreground, AA),
+                ("meta ink", theme.muted_foreground, AA),
+            ] {
+                let ratio = contrast(fill, panel);
+                assert!(
+                    ratio >= floor,
+                    "{name}: {label} on a dock is {ratio:.2}, under {floor}"
+                );
+            }
+        }
+    }
+
     /// The collapse that made the app own a palette in the first place: the
     /// shipped dark values put hover, well, bubble and hairline on one colour,
     /// so a quoted command and the user's own message were the same block.
@@ -953,7 +995,11 @@ mod tests {
                 ("success", theme.green),
             ] {
                 let ink = onehand_plugin_host::status_hue(base, theme.foreground);
-                let mut on = vec![("surface", theme.background), ("well", theme.muted)];
+                let mut on = vec![
+                    ("surface", theme.background),
+                    ("well", theme.muted),
+                    ("dock", theme.tiles),
+                ];
                 if role == "danger" {
                     on.push(("bubble", theme.secondary));
                 }

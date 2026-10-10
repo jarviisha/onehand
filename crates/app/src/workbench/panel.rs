@@ -70,6 +70,11 @@ pub struct Workbench {
     /// one where the panel fills the window and the user is looking for the way
     /// back.
     maximized: bool,
+    /// Whether this panel has taken the whole area beside the rail, because
+    /// the window cannot hold it beside the conversation. Pushed down from the
+    /// shell, which decides it; the strip leads with the way back while it
+    /// holds.
+    focused_area: bool,
 }
 
 impl Workbench {
@@ -93,6 +98,7 @@ impl Workbench {
                 root: None,
                 zoom,
                 maximized: false,
+                focused_area: false,
             }
         })
     }
@@ -226,6 +232,18 @@ impl Workbench {
             return;
         }
         self.maximized = maximized;
+        cx.notify();
+    }
+
+    /// Tell the strip whether this panel has taken the area beside the rail.
+    ///
+    /// Guarded for the reason [`Self::set_maximized`] is: the shell pushes it
+    /// on every frame.
+    pub fn set_focused_area(&mut self, focused: bool, cx: &mut Context<Self>) {
+        if self.focused_area == focused {
+            return;
+        }
+        self.focused_area = focused;
         cx.notify();
     }
 
@@ -373,6 +391,9 @@ impl EventEmitter<PanelEvent> for Workbench {}
 pub enum WorkbenchEvent {
     Hide,
     ToggleMaximize,
+    /// Give the area back to the conversation without putting the Workbench
+    /// away, while the window is too narrow to show the two side by side.
+    StepAside,
     /// A mode changed something the agent reads only when it starts, and the
     /// user asked for it to start again.
     RestartAgent,
@@ -514,6 +535,22 @@ impl Render for Workbench {
             .py_1p5()
             .border_b_1()
             .border_color(cx.theme().border)
+            // The way back to the conversation, while this panel has taken the
+            // area because the window cannot hold the two side by side. A
+            // maximized panel has its own way back at the other end.
+            .when(self.focused_area && !full, |strip| {
+                strip.child(
+                    crate::controls::action("step-aside")
+                        .ghost()
+                        .small()
+                        .flex_none()
+                        .icon(Icon::new(IconName::ArrowLeft))
+                        .label("Conversation")
+                        .on_click(cx.listener(|_: &mut Self, _, _, cx| {
+                            cx.emit(WorkbenchEvent::StepAside);
+                        })),
+                )
+            })
             // The modes are the row's own content and the only part of it that
             // gives way: flat beside the controls, a fifth mode would push the
             // way out past the panel's right edge -- the control wanted
@@ -591,40 +628,20 @@ impl Render for Workbench {
         };
         div()
             .size_full()
-            // **A card floating in its dock, not the dock itself.** The inset is
-            // what makes it one: held off every side but the seam, which is the
-            // edge the dock is resized from and the one place the gap is the
-            // neighbour's to draw rather than this panel's.
-            //
-            // The change of surface alone was tried and is not enough. A panel
-            // drawn edge to edge in a different fill reads as the window having
-            // been *divided* -- two regions meeting along a line, which is what
-            // the whole arrangement stops being the moment either dock closes
-            // and the conversation takes the space back. The gap is what says
-            // the dock is a thing put down on the window rather than a piece of
-            // it.
-            //
-            // **Flush on the seam, because there the border has to be the
-            // grip.** The dock's resize grip is a fixed band a few pixels either
-            // side of the dock's own edge, and it cannot be moved from here --
-            // so an inset on that side puts the one line a user reads as
-            // draggable outside the only place dragging works, and the panel is
-            // resized from a strip of apparently empty surface while the border
-            // does nothing. Nothing is lost by closing it up: what sits on the
-            // other side is the conversation, drawn on the same reading surface
-            // this gap was showing, so the card still stands off its neighbour
-            // by whatever that neighbour keeps clear.
-            .pt_2()
-            .pr_2()
-            .pb_2()
+            .v_flex()
+            // A surface of its own, meeting the conversation at one hairline.
+            // That line is on the seam the dock is dragged by: the dock's grip
+            // is a fixed band either side of the dock's edge and draws nothing
+            // itself, so the border is what a user aims at and where the drag
+            // is taken.
+            .border_l_1()
+            .border_color(cx.theme().border)
+            .bg(crate::theme::dock_surface(cx))
             // Mounted bare, so nothing else tracks this handle. A `TabPanel`
             // calls `track_focus` on the panel it holds, which is what normally
             // makes `contains_focused` answer for a dock panel at all -- and
             // without it the three-state panel keymap silently reads "the caret
             // is not in the Workbench" however deep inside it the caret is.
-            //
-            // On the outer box and not the card, so the gap belongs to the
-            // panel: a click landing in it is a click on the Workbench.
             .track_focus(&self.focus_handle)
             // A mode hosting a PTY takes the *terminal's* context while it is
             // showing, and it has to be that name and not one of its own:
@@ -634,27 +651,8 @@ impl Render for Workbench {
             // Under any other mode this is the Workbench, which is what the save
             // is *for*.
             .key_context(showing.key_context)
-            .child(
-                div()
-                    .size_full()
-                    .v_flex()
-                    .border_1()
-                    .border_color(cx.theme().border)
-                    .rounded(cx.theme().radius_lg)
-                    // The surface a dock card draws on, which is the reading
-                    // surface -- so this fill says nothing the border above it
-                    // does not, and is here to stop the panel inheriting
-                    // whatever is behind it. The terminal takes the same answer,
-                    // both through one function so the two cannot drift.
-                    .bg(crate::theme::dock_surface(cx))
-                    // `overflow_hidden` is what the rounding needs: the strip's
-                    // hairline runs the full width and the file tree's own
-                    // border runs the full height, so without it both draw
-                    // straight through the corners the radius just cut.
-                    .overflow_hidden()
-                    .child(strip)
-                    .child(body),
-            )
+            .child(strip)
+            .child(body)
     }
 }
 

@@ -65,8 +65,9 @@ impl Shell {
         let right = dock.right_dock().map(|d| d.read(cx));
         let bottom = dock.bottom_dock().map(|d| d.read(cx));
         PanelLayout {
-            workbench_w: right.map_or(fallback.workbench_w, |d| f32::from(d.size())),
-            workbench_open: right.is_some_and(|d| d.is_open()),
+            // The width the person wants, never one a narrow window drew.
+            workbench_w: fallback.workbench_w,
+            workbench_open: right.is_some_and(|d| d.is_open()) || self.stepped_aside,
             terminal_h: bottom.map_or(fallback.terminal_h, |d| f32::from(d.size())),
             terminal_open: bottom.is_some_and(|d| d.is_open()),
             rail_w: self.rail_width(cx),
@@ -127,6 +128,7 @@ impl Shell {
             return;
         }
         self.last_panel = FocusedPanel::Workbench;
+        self.stepped_aside = false;
         let open = self.dock.read(cx).is_dock_open(DockPlacement::Right, cx);
         self.workbench
             .update(cx, |panel, cx| panel.set_mode(mode, cx));
@@ -152,6 +154,8 @@ impl Shell {
 
     /// Close the dock and recover focus if its focused content disappears.
     pub(super) fn hide_workbench(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.stepped_aside = false;
+        self.leave_workbench_focus(window, cx);
         let had_focus = self.workbench.focus_handle(cx).contains_focused(window, cx);
         // A maximized panel cannot be left blown up over a dock that is no
         // longer open, and the way back out of that is the button that just
@@ -185,6 +189,13 @@ impl Shell {
             return;
         }
         self.last_panel = FocusedPanel::Terminal;
+        // The terminal sits under the conversation, so while the Workbench has
+        // the area, asking for it brings the conversation back first -- and
+        // the press then opens the terminal, never closes it.
+        let stepped = self.workbench_focused();
+        if stepped {
+            self.step_aside(window, cx);
+        }
         let open = self.dock.read(cx).is_dock_open(DockPlacement::Bottom, cx);
         // **An open dock with nothing in it is not a dock to close.** Closing
         // the last tab's ✕ leaves exactly that, and the panel it leaves offers
@@ -192,7 +203,7 @@ impl Shell {
         // falling through does. Closed instead, the one gesture that reaches an
         // empty terminal took it off screen, and the way back up asked for a
         // shell the user had just been offered.
-        if open && self.terminal.read(cx).has_shell() {
+        if open && !stepped && self.terminal.read(cx).has_shell() {
             self.set_terminal_visible(false, window, cx);
             return;
         }

@@ -510,6 +510,9 @@ impl Shell {
             mru: HashMap::new(),
             tab_cycle: None,
             app_maximized: None,
+            presentation: super::presentation::Presentation::Conversation,
+            workbench_drawn: None,
+            stepped_aside: false,
         }
     }
 }

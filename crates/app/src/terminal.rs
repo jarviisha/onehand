@@ -388,39 +388,14 @@ impl Render for TerminalPanel {
         self.sync_theme(cx);
         div()
             .size_full()
-            // **A card floating in its dock, the Workbench's shape exactly**:
-            // inset on every side but the seam it is dragged by, which here is
-            // the top. Two docks answering "where does this panel begin"
-            // differently would read as two separate decisions rather than one,
-            // and that holds for which side is flush as much as for the gap.
-            //
-            // Flush there for the reason the Workbench is: the dock's resize
-            // grip is a fixed band a few pixels either side of the dock's own
-            // edge and cannot be moved from here, so an inset leaves the border
-            // a user aims at sitting outside the only place a drag is taken.
-            // The conversation above is on the same reading surface the gap was
-            // showing, so closing it up costs nothing to look at -- the card
-            // stands off that conversation exactly as far as it keeps its own
-            // content clear.
-            //
-            // **The right edge is left inset although a grip runs down it too.**
-            // The Workbench's dock is a sibling of this whole column, so its
-            // grip is the full height of the window and passes this panel as
-            // well -- but the edge that seam moves is the Workbench card's own
-            // border, which is flush against it and is what a user aims at. A
-            // second flush edge here would put two borders against each other
-            // with no gap between the two cards.
-            //
-            // It costs the shell a column of cells and half a row, because the
-            // grid measures its own bounds and resizes the PTY to match and
-            // this is one more thing narrowing them. Paid once rather than
-            // growing with the panel, since the inset is fixed while the dock
-            // is dragged.
-            .px_2()
-            .pb_2()
-            // On the outer box, so the gap around the card belongs to the panel:
-            // a click landing in it is a click on the terminal.
-            //
+            .v_flex()
+            // A surface of its own, as the Workbench is, meeting the
+            // conversation above at one hairline on the seam it is dragged by.
+            // The grid below is handed the same surface as its background, so a
+            // shell is the dock rather than a plate laid on it.
+            .border_t_1()
+            .border_color(cx.theme().border)
+            .bg(crate::theme::dock_surface(cx))
             // Tracked here because this panel is mounted bare. A `TabPanel` calls
             // `track_focus` on the panel it holds, which is what normally puts
             // that handle in the focus tree; without a tab group nothing does,
@@ -429,24 +404,7 @@ impl Render for TerminalPanel {
             // every "which panel is this" question at some other panel.
             .track_focus(&self.focus_handle)
             .key_context("Terminal")
-            .child(
-                div()
-                    .size_full()
-                    .v_flex()
-                    .border_1()
-                    .border_color(cx.theme().border)
-                    .rounded(cx.theme().radius_lg)
-                    // The surface a dock card draws on, as the Workbench takes
-                    // it, and the grid below is handed the same value as its own
-                    // background
-                    // -- so a shell is the card rather than a plate laid on it.
-                    .bg(crate::theme::dock_surface(cx))
-                    // The strip's hairline runs the full width of the panel, so
-                    // without this it draws straight through the corners the
-                    // radius just cut.
-                    .overflow_hidden()
-                    .child(self.body(window, cx)),
-            )
+            .child(self.body(window, cx))
     }
 }
 
@@ -634,16 +592,11 @@ impl TerminalPanel {
                                 tab.bg(cx.theme().accent)
                                     .text_color(cx.theme().accent_foreground)
                             })
-                            // **The well, not the reading surface.** This panel
-                            // draws on the reading surface, so sinking a row
-                            // into it is the ordinary step up from there. It was
-                            // the reading surface itself while the panel was
-                            // filled with the well, when a fill taken from the
-                            // well was one nobody could see -- the same pair of
-                            // values, read from whichever end the panel is
-                            // standing on.
+                            // The row hover, which the ramp keeps visible on a
+                            // dock; the well sits too near the dock's surface
+                            // to show under the pointer.
                             .when(i != active, |tab| {
-                                tab.hover(|tab| tab.bg(cx.theme().muted))
+                                tab.hover(|tab| tab.bg(cx.theme().list_hover))
                             })
                             .child(
                                 Icon::new(IconName::SquareTerminal)

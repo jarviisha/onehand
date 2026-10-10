@@ -676,7 +676,8 @@ impl Shell {
             self.terminal_open.insert(root, live);
         }
         self.set_terminal_visible(false, window, cx);
-        self.workbench_aside = self.dock.read(cx).is_dock_open(DockPlacement::Right, cx);
+        self.workbench_aside =
+            self.dock.read(cx).is_dock_open(DockPlacement::Right, cx) || self.stepped_aside;
         self.hide_workbench(window, cx);
     }
 
