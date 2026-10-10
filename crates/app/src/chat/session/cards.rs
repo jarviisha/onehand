@@ -4,7 +4,6 @@
 use super::{AskBox, AskInput, ChatSession};
 use gpui::{App, AppContext, Context, Entity, Window};
 use gpui_component::input::{InputEvent, InputState};
-use onehand_core::acp::ElicitKind;
 use std::collections::HashSet;
 
 impl ChatSession {
@@ -31,18 +30,10 @@ impl ChatSession {
             if !a.has_custom(field) {
                 continue;
             }
-            let f = &a.req.fields[field];
-            // A text field *is* its box, so the question's own wording is the
-            // invitation; a select's box is the way past the choices above it
-            // and has to say so.
-            let hint = match &f.kind {
-                ElicitKind::Text => f
-                    .description
-                    .clone()
-                    .or_else(|| f.title.clone())
-                    .unwrap_or_else(|| "Type your answer".into()),
-                _ => "Or type your own answer".into(),
-            };
+            // Just "Answer": the question and its description are said on the
+            // card already, and said again as the placeholder they were the
+            // longest line on it, cut off on a narrow pane.
+            let hint = "Answer".to_string();
             let typed = a.custom.get(field).cloned().unwrap_or_default();
             wanted.push((idx, field, hint, typed));
         }
