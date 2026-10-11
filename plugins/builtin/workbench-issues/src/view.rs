@@ -130,6 +130,9 @@ pub(crate) struct IssuesView {
     /// What the Issues page holds beside what the tab does: `None` for the
     /// Workbench's Issues mode, which draws one project at the dock's width.
     page: Option<page::PageState>,
+    /// The issue, by project and number, whose history is open. Every other
+    /// issue's starts folded.
+    history_open: Option<(PathBuf, u64)>,
 }
 
 /// One project's issues file, shared with every other view of it, and what
@@ -178,6 +181,7 @@ impl IssuesView {
             status: None,
             connectors,
             query: None,
+            history_open: None,
             showing: Showing::default(),
             label: None,
             ask,
@@ -597,6 +601,7 @@ impl IssuesView {
             pr: self.pr_seen(work.as_ref()),
             last: self.pr_value(work.as_ref()),
             templates,
+            history_open: self.history_open.as_ref() == Some(&(root.to_path_buf(), issue.number)),
             work,
         };
         issue_view(root, &issue, body, publish_to, doing, window, cx)

@@ -59,6 +59,8 @@ pub(super) struct Doing<'a> {
     /// The templates the issue's project offers, which its body is read
     /// against.
     pub(super) templates: Vec<IssueTemplate>,
+    /// Its history is open rather than folded.
+    pub(super) history_open: bool,
 }
 
 /// One issue, read, in one fixed order whatever the state, so what it waits
@@ -195,16 +197,18 @@ pub(super) fn issue_view(
     let progress = work::progress_view(&doing, &next, cx);
     let left = work::left_view(&doing, cx);
     let before = doing.work.as_ref().and_then(|w| work::before_view(w, cx));
-    let history = history(issue, cx);
+    let history = history(root, issue, doing.history_open, cx);
     let review = doing.review;
 
-    div()
+    // Under the title and its facts everything scrolls as one: the body, then
+    // what it names, what the work left, what came before and the history,
+    // so none of them is pinned over the description it follows.
+    let content = div()
+        .id(("issue-content", number))
         .flex_1()
-        .min_w_0()
-        .h_full()
+        .min_h_0()
         .v_flex()
-        .child(header)
-        .child(facts)
+        .overflow_y_scroll()
         .children(conflict)
         .children(progress)
         // Below where the work stands, pushing the body down: a person
@@ -212,8 +216,6 @@ pub(super) fn issue_view(
         .children(review)
         .child(match &body {
             Some((parsed, _)) => div()
-                .flex_1()
-                .min_h_0()
                 .max_w(BODY_MEASURE)
                 .px_4()
                 .py_3()
@@ -221,14 +223,13 @@ pub(super) fn issue_view(
                 .child(
                     TextView::new(parsed)
                         .selectable(true)
-                        .scrollable(true)
                         .style(body_style(window.rem_size(), cx))
                         .on_link_click(on_link(cx.entity().downgrade())),
                 )
                 .into_any_element(),
             None => div()
-                .px_2()
-                .py_1()
+                .px_4()
+                .py_3()
                 .text_sm()
                 .text_color(muted)
                 .child("No description")
@@ -237,7 +238,16 @@ pub(super) fn issue_view(
         .children(body.and_then(|(_, files)| referenced(files, cx)))
         .children(left)
         .children(before)
-        .child(history)
+        .child(history);
+
+    div()
+        .flex_1()
+        .min_w_0()
+        .h_full()
+        .v_flex()
+        .child(header)
+        .child(facts)
+        .child(content)
         .into_any_element()
 }
 
@@ -270,10 +280,16 @@ fn state_badge(open: bool, cx: &App) -> AnyElement {
         .into_any_element()
 }
 
-/// Everything that happened to the issue, oldest first under its arrival:
-/// each with when, in local time and how long ago, and for one a session took
-/// up, a way to open that session. The latest ones only, with the cut said.
-fn history(issue: &LocalIssue, cx: &mut Context<IssuesView>) -> AnyElement {
+/// Everything that happened to the issue, oldest first under its arrival,
+/// folded under one line counting it until opened: each with how long ago,
+/// the date and minute on hover, and for one a session took up, a way to open
+/// that session. The latest ones only, with the cut said.
+fn history(
+    root: &Path,
+    issue: &LocalIssue,
+    open: bool,
+    cx: &mut Context<IssuesView>,
+) -> AnyElement {
     let muted = cx.theme().muted_foreground;
     let now = onehand_core::issues::now();
     let arrived = (issue.created > 0).then(|| (issue.created, issue.arrival(), None));
@@ -286,20 +302,47 @@ fn history(issue: &LocalIssue, cx: &mut Context<IssuesView>) -> AnyElement {
                 .map(|note| (note.at, note.text.clone(), note.session.clone())),
         )
         .collect();
+    let key = (root.to_path_buf(), issue.number);
+    let count = match entries.len() {
+        1 => "History · 1 event".to_string(),
+        n => format!("History · {n} events"),
+    };
     let left_out = entries.len().saturating_sub(HISTORY_SHOWN);
     div()
-        .id("issue-history")
         .flex_none()
-        .max_h(gpui::rems(14.))
-        .overflow_y_scroll()
         .v_flex()
         .gap_1()
         .px_4()
         .py_3()
         .border_t_1()
         .border_color(cx.theme().border)
-        .child(div().text_xs().text_color(muted).child("History"))
-        .when(left_out > 0, |list| {
+        .child(
+            div()
+                .id("issue-history")
+                .h_flex()
+                .items_center()
+                .gap_1()
+                .text_xs()
+                .text_color(muted)
+                .cursor_pointer()
+                .child(
+                    Icon::new(if open {
+                        IconName::ChevronDown
+                    } else {
+                        IconName::ChevronRight
+                    })
+                    .xsmall(),
+                )
+                .child(count)
+                .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
+                    view.history_open = match view.history_open.take() {
+                        Some(shown) if shown == key => None,
+                        _ => Some(key.clone()),
+                    };
+                    cx.notify();
+                })),
+        )
+        .when(open && left_out > 0, |list| {
             list.child(
                 div()
                     .text_xs()
@@ -307,22 +350,24 @@ fn history(issue: &LocalIssue, cx: &mut Context<IssuesView>) -> AnyElement {
                     .child(format!("… {left_out} earlier not shown")),
             )
         })
-        .children(
-            entries
-                .into_iter()
-                .skip(left_out)
-                .enumerate()
-                .map(|(i, (at, text, session))| {
+        .when(open, |list| {
+            list.children(entries.into_iter().skip(left_out).enumerate().map(
+                |(i, (at, text, session))| {
                     div()
                         .h_flex()
                         .items_start()
                         .gap_2()
                         .text_xs()
-                        .child(div().flex_none().text_color(muted).child(format!(
-                            "{} · {}",
-                            moment(at),
-                            onehand_core::rel_time(now, at)
-                        )))
+                        .child(
+                            div()
+                                .id(("issue-history-at", i))
+                                .flex_none()
+                                .text_color(muted)
+                                .tooltip(move |window, cx| {
+                                    Tooltip::new(moment(at)).build(window, cx)
+                                })
+                                .child(onehand_core::rel_time(now, at)),
+                        )
                         .child(div().flex_1().min_w_0().child(text))
                         .children(session.map(|session| {
                             action(("issue-history-session", i))
@@ -334,8 +379,9 @@ fn history(issue: &LocalIssue, cx: &mut Context<IssuesView>) -> AnyElement {
                                     view.open_session(session.clone(), window, cx)
                                 }))
                         }))
-                }),
-        )
+                },
+            ))
+        })
         .into_any_element()
 }
 

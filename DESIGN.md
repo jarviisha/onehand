@@ -125,9 +125,11 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
     then the reference, the labels, how its work stands (*No runs yet*, muted, before a run) and
     when it last changed; while a run is recorded, where its work stands (*Step N of M* and the
     next action in a sentence); the body, at the UI's size with its lines capped at a reading
-    measure, its first heading a section title's size and its second a step under; what the work left (the branch, and the pull request's state
-    with *read 2m ago* and *Refresh*); *Before* (capped); its history, each line keeping its height
-    while a step ends. ⋯ ▸ *Open in Issues* and *Review…* open it on the Issues page, the latter
+    measure, its first heading a section title's size and its second a step under; the files it
+    names; what the work left (the branch, and the pull request's state with *read 2m ago* and
+    *Refresh*); *Before* (capped); its history, folded under *History · N events* until opened,
+    each line how long ago first with the date on hover. Under the title and its facts all of it
+    scrolls as one, nothing pinned below the body. ⋯ ▸ *Open in Issues* and *Review…* open it on the Issues page, the latter
     with its review block open.
   - Hiding a dock keeps its buffers and processes; the terminal's open state follows the project.
 - **Pages without a session.**
