@@ -124,7 +124,8 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
     move, then ⋯ holding *Edit* and the rest); its facts, *Open* or *Closed* first as a badge,
     then the reference, the labels, how its work stands (*No runs yet*, muted, before a run) and
     when it last changed; while a run is recorded, where its work stands (*Step N of M* and the
-    next action in a sentence); the body; what the work left (the branch, and the pull request's state
+    next action in a sentence); the body, at the UI's size with its lines capped at a reading
+    measure, its first heading a section title's size and its second a step under; what the work left (the branch, and the pull request's state
     with *read 2m ago* and *Refresh*); *Before* (capped); its history, each line keeping its height
     while a step ends. ⋯ ▸ *Open in Issues* and *Review…* open it on the Issues page, the latter
     with its review block open.

@@ -5,8 +5,8 @@ use super::{FILES_SHOWN, HISTORY_SHOWN, IssuesView};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, HighlightStyle, InteractiveElement as _,
-    IntoElement, ParentElement, SharedString, StatefulInteractiveElement as _, Styled, WeakEntity,
-    Window, div,
+    IntoElement, ParentElement, Rems, SharedString, StatefulInteractiveElement as _, Styled,
+    WeakEntity, Window, div, rems,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::text::{TextView, TextViewState, TextViewStyle};
@@ -18,6 +18,27 @@ use onehand_core::task::Group;
 use onehand_core::task::work::{IssueWork, PrSeen};
 use onehand_plugin_host::{AppIcon, BAR_H, Tint, action, status_ink, tint};
 use std::path::Path;
+
+/// The widest a description's lines run: past it a line is too long to
+/// find the start of the next one.
+const BODY_MEASURE: Rems = rems(45.);
+
+/// A description's text: the UI's own size, so an issue reads as part of the
+/// window rather than as a document dropped into it.
+const BODY_TEXT: Rems = rems(0.875);
+
+/// A description's first heading, at a section title's size, and its second
+/// a step under it; the rest are the body's size, told apart by weight.
+const HEADING_1: Rems = rems(1.);
+const HEADING_2: Rems = rems(0.9375);
+
+/// The gutter inside a fenced block, wider than a row's so the code reads as
+/// set in its well rather than on its edge.
+const CODE_INSET: Rems = rems(0.75);
+
+/// A fenced block's text, a step under the body's, as machine text is
+/// everywhere else.
+const CODE_TEXT: Rems = rems(0.8125);
 
 /// What is being done with an issue: the live session its history names,
 /// whether a run may be started on its project, and its work as the app told
@@ -193,8 +214,10 @@ pub(super) fn issue_view(
             Some((parsed, _)) => div()
                 .flex_1()
                 .min_h_0()
+                .max_w(BODY_MEASURE)
                 .px_4()
                 .py_3()
+                .text_size(BODY_TEXT)
                 .child(
                     TextView::new(parsed)
                         .selectable(true)
@@ -513,14 +536,16 @@ fn referenced(files: Vec<String>, cx: &mut Context<IssuesView>) -> Option<AnyEle
 
 /// Body styling. The renderer sizes its headings from an absolute pixel base,
 /// which the panel's rem-base zoom cannot reach by itself, so the base in force
-/// is written in by hand.
+/// is written in by hand, and each level is scaled from it here: the
+/// renderer's own scale tops out at twice the body, which over an issue reads
+/// as a page title shouting from inside the description.
 fn body_style(rem: gpui::Pixels, cx: &App) -> TextViewStyle {
     let theme = cx.theme();
     let mut style = TextViewStyle::default()
         .code_block(
             gpui::StyleRefinement::default()
-                .p(gpui::rems(0.75))
-                .text_size(gpui::rems(0.8125))
+                .p(CODE_INSET)
+                .text_size(CODE_TEXT)
                 .bg(theme.muted),
         )
         // Inline code on the well, the quiet fill, rather than the renderer's
@@ -531,6 +556,13 @@ fn body_style(rem: gpui::Pixels, cx: &App) -> TextViewStyle {
         .inline_code(HighlightStyle {
             background_color: Some(theme.muted),
             ..HighlightStyle::default()
+        })
+        .heading_font_size(|level, rem| {
+            rem * match level {
+                1 => HEADING_1.0,
+                2 => HEADING_2.0,
+                _ => BODY_TEXT.0,
+            }
         });
     style.heading_base_font_size = rem;
     style
