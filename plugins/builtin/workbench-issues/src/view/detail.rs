@@ -14,8 +14,9 @@ use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::issues::template::{IssueTemplate, lacking};
 use onehand_core::issues::{LocalIssue, sync};
+use onehand_core::task::Group;
 use onehand_core::task::work::{IssueWork, PrSeen};
-use onehand_plugin_host::{action, status_ink};
+use onehand_plugin_host::{AppIcon, BAR_H, Tint, action, status_ink, tint};
 use std::path::Path;
 
 /// What is being done with an issue: the live session its history names,
@@ -54,20 +55,32 @@ pub(super) fn issue_view(
     let number = issue.number;
     let open = issue.open;
     let muted = cx.theme().muted_foreground;
-    // Who it is: the title wraps rather than cutting, since it is the one
-    // place the whole of it is read.
+    let next = work::next_for(issue, &doing);
+    // Who it is, and what to do about it on the same row: the title wraps
+    // rather than cutting, since it is the one place the whole of it is
+    // read, and the row is never shorter than the bar beside it, so the
+    // title stands level with the list's head.
     let header = div()
+        .h_flex()
+        .items_center()
+        .gap_2()
         .w_full()
         .flex_none()
+        .min_h(BAR_H)
         .px_4()
-        .pt_4()
-        .font_semibold()
-        .child(issue.title.clone());
+        .py_1()
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .text_base()
+                .font_medium()
+                .child(issue.title.clone()),
+        )
+        .child(work::actions(root, issue, &doing, &next, publish_to, cx));
 
-    // Whether it is open, where it lives, its labels, and how urgent the body
-    // says it is: plain facts joined by a dot. Its state comes first and
-    // reads as a fact like the rest, never as a badge, so it is not taken for
-    // the state of its run.
+    // Its state as a badge, then where it lives, its labels, how its work
+    // stands, when it last changed, and how urgent the body says it is.
     let reference = match (issue.reference(), &issue.link) {
         (Some(reference), Some(link)) => div()
             .id("issue-reference")
@@ -86,14 +99,21 @@ pub(super) fn issue_view(
             .into_any_element(),
         _ => identity(issue, cx),
     };
-    let mut said: Vec<AnyElement> = vec![
-        div()
-            .flex_none()
-            .text_color(muted)
-            .child(if open { "Open" } else { "Closed" })
-            .into_any_element(),
-        reference,
-    ];
+    let work = doing.work.as_ref().map(|work| &work.work);
+    let run = match work {
+        Some(work) => {
+            let ink = if work.group.needs_attention() {
+                status_ink(cx).warning
+            } else if work.group == Group::Running {
+                cx.theme().link
+            } else {
+                muted
+            };
+            div().flex_none().text_color(ink).child(work.said.clone())
+        }
+        None => div().flex_none().text_color(muted).child("No runs yet"),
+    };
+    let mut said: Vec<AnyElement> = vec![reference];
     if !issue.labels.is_empty() {
         said.push(
             div()
@@ -101,6 +121,20 @@ pub(super) fn issue_view(
                 .flex_wrap()
                 .gap_1()
                 .children(issue.labels.iter().map(|label| chip(label.clone(), cx)))
+                .into_any_element(),
+        );
+    }
+    said.push(run.into_any_element());
+    let changed = issue.updated.max(issue.created);
+    if changed > 0 {
+        said.push(
+            div()
+                .flex_none()
+                .text_color(muted)
+                .child(format!(
+                    "updated {}",
+                    onehand_core::rel_time(onehand_core::issues::now(), changed)
+                ))
                 .into_any_element(),
         );
     }
@@ -127,21 +161,17 @@ pub(super) fn issue_view(
         .gap_1()
         .flex_none()
         .px_4()
-        .pt_1()
         .pb_3()
         .border_b_1()
         .border_color(cx.theme().border)
-        .text_xs();
-    for (n, fact) in said.into_iter().enumerate() {
-        if n > 0 {
-            facts = facts.child(div().text_color(muted).child("·"));
-        }
-        facts = facts.child(fact);
+        .text_xs()
+        .child(state_badge(open, cx));
+    for fact in said {
+        facts = facts.child(div().text_color(muted).child("·")).child(fact);
     }
     let conflict = conflict_view(issue, cx);
 
-    let next = work::next_for(issue, &doing);
-    let progress = work::progress_view(root, issue, &doing, &next, publish_to, cx);
+    let progress = work::progress_view(&doing, &next, cx);
     let left = work::left_view(&doing, cx);
     let before = doing.work.as_ref().and_then(|w| work::before_view(w, cx));
     let history = history(issue, cx);
@@ -155,7 +185,7 @@ pub(super) fn issue_view(
         .child(header)
         .child(facts)
         .children(conflict)
-        .child(progress)
+        .children(progress)
         // Below where the work stands, pushing the body down: a person
         // opened it, so it is not content moving under them.
         .children(review)
@@ -185,6 +215,35 @@ pub(super) fn issue_view(
         .children(left)
         .children(before)
         .child(history)
+        .into_any_element()
+}
+
+/// Whether the issue is open or closed, as a badge: its own mark and word on
+/// the success tint while open, on the neutral fill once closed.
+fn state_badge(open: bool, cx: &App) -> AnyElement {
+    let theme = cx.theme();
+    let (icon, fill, ink, word) = if open {
+        let Tint { fill, ink } = tint(theme.green, cx);
+        (Icon::new(AppIcon::CircleDot), fill, ink, "Open")
+    } else {
+        (
+            Icon::new(IconName::CircleCheck),
+            theme.secondary,
+            theme.secondary_foreground,
+            "Closed",
+        )
+    };
+    div()
+        .h_flex()
+        .flex_none()
+        .items_center()
+        .gap_1()
+        .px_1p5()
+        .rounded_full()
+        .bg(fill)
+        .text_color(ink)
+        .child(icon.xsmall())
+        .child(word)
         .into_any_element()
 }
 

@@ -120,9 +120,11 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   - A list beside its detail (files, documents, issues) only while the dock holds both; else one at
     a time, the detail under a link back naming the list. Picking shows it; going back keeps it.
   - The Issues tab's issue is drawn in one fixed order, what it waits on before what it says: the
-    title over its facts, *Open* or *Closed* first; where its work stands (progress with
-    *step N of M*, the next action in a sentence, at most one primary, the rest in a place that
-    does not move, then ⋯); the body; what the work left (the branch, and the pull request's state
+    title, its actions at the row's end (at most one primary, one other in a place that does not
+    move, then ⋯ holding *Edit* and the rest); its facts, *Open* or *Closed* first as a badge,
+    then the reference, the labels, how its work stands (*No runs yet*, muted, before a run) and
+    when it last changed; while a run is recorded, where its work stands (*Step N of M* and the
+    next action in a sentence); the body; what the work left (the branch, and the pull request's state
     with *read 2m ago* and *Refresh*); *Before* (capped); its history, each line keeping its height
     while a step ends. ⋯ ▸ *Open in Issues* and *Review…* open it on the Issues page, the latter
     with its review block open.

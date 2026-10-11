@@ -471,6 +471,7 @@ hierarchy are identical in both.
 | The Files tree has a search reaching into closed folders | Files has no search yet |
 | `CHAT_MIN` scales with the reading zoom | it scales with the conversation's own zoom, since the app zooms per panel |
 | An Issues row's labels are muted facts, never pills | labels that ask for something, enhancements and agents' reports are tinted chips; the picked row carries an accent line down its left edge |
+| An issue's *Open* is a plain fact; *Where it stands* holds its one primary | *Open* and *Closed* are a badge; the actions sit at the end of the title's row |
 | Regions meet at one hairline | the Workbench meets the conversation by its surface alone, with no line; the terminal is a block on its surface, held off its neighbours by a gap |
 
 ## Backlog

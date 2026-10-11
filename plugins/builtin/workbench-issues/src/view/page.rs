@@ -19,7 +19,7 @@ use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::issues::{self, IssueKey, LocalIssue};
 use onehand_core::task::work::IssueWork;
 use onehand_core::task::work::list::{Filters, Held, Item, PrReads, list};
-use onehand_plugin_host::{action, hint};
+use onehand_plugin_host::{action, back_link, hint};
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
@@ -256,7 +256,7 @@ impl IssuesView {
             .into_any_element()
     }
 
-    /// The issue picked, under a *Back* when it is shown alone.
+    /// The issue picked, under *← Issues* when it is shown alone.
     fn page_issue(
         &mut self,
         alone: bool,
@@ -278,22 +278,20 @@ impl IssuesView {
                     div()
                         .flex_none()
                         .h_flex()
-                        .px_2()
+                        .items_center()
                         .py_1()
+                        .px_3()
                         .border_b_1()
                         .border_color(cx.theme().border)
                         .child(
-                            action("issues-page-back")
-                                .xsmall()
-                                .ghost()
-                                .icon(Icon::new(IconName::ArrowLeft))
-                                .label("Back")
-                                .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
+                            back_link("issues-page-back", "Issues").on_click(cx.listener(
+                                |view, _: &ClickEvent, _, cx| {
                                     if let Some(page) = view.page.as_mut() {
                                         page.alone = false;
                                     }
                                     cx.notify();
-                                })),
+                                },
+                            )),
                         ),
                 )
             })
