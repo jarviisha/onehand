@@ -144,9 +144,13 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
     narrow). Above the list: the search, *New issue* (its *Template* row, while the body is empty:
     *Bug*, *Feature*, *Refactor*, or the project's own), *Open N | Closed N*, the progress filter
     (*All*, *Needs attention*, *Running*, *Queued*, *Pull request open*, *No run recorded*),
-    project and label filters, the pull request reading's age and *Refresh*. A row: the title over
-    project and reference, its line of work (warning ink only for what needs the person), its
-    labels. The list never moves under a person: a row keeps its place, one that stops matching
+    project and label filters, the pull request reading's age and *Refresh*. A row, bordered and
+    one height: its state mark (open, running, closed), the title in two lines at most, then one
+    line: the project (only while every project is listed and more than one shows), the
+    reference, the labels, and at its end how long ago it changed, or *running*, or what its work
+    needs in the warning ink. A label that asks for something takes the accent's tint, an
+    enhancement the success one, an agent's report the warning one; the rest stay neutral. The
+    picked row takes the selected fill and an accent line down its left edge. The list never moves under a person: a row keeps its place, one that stops matching
     says *now …* until another is picked, new matches go below, and an issue opened from elsewhere
     outside the filters is pinned on top with *Clear filters*. The issue is the tab's order plus
     the steps to come, and *What the work left* with the check, the files changed (diffs in place)

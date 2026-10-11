@@ -1014,6 +1014,34 @@ mod tests {
         }
     }
 
+    /// A tinted badge or label carries words, so its ink has to read on its
+    /// own fill, for every hue one is drawn in.
+    #[test]
+    fn a_tint_reads_on_its_own_fill() {
+        for (name, ramp, mode) in [
+            ("light", &LIGHT, ThemeMode::Light),
+            ("dark", &DARK, ThemeMode::Dark),
+        ] {
+            let theme = resolve(ramp, mode);
+            for (hue, base) in [
+                ("accent", theme.blue),
+                ("success", theme.green),
+                ("warning", theme.yellow),
+            ] {
+                let tint = onehand_plugin_host::tint_over(base, theme.background, theme.foreground);
+                let ratio = contrast(tint.ink, tint.fill);
+                assert!(
+                    ratio >= AA,
+                    "{name}: {hue} ink on its tint is {ratio:.2}, under {AA}"
+                );
+                assert!(
+                    contrast(tint.fill, theme.background) > 1.0,
+                    "{name}: the {hue} tint is the surface"
+                );
+            }
+        }
+    }
+
     /// The accent is ink as well as a link: it marks a running session in the
     /// rail, on the well and on the rail's marked fill. A mark is a graphic,
     /// so it is held to the 3:1 a control's parts are.

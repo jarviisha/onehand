@@ -239,3 +239,14 @@ fn issues_survive_a_round_trip_and_a_missing_file_is_empty() {
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "not json");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_label_is_told_by_what_it_asks_for() {
+    assert_eq!(LabelKind::of("ready-for-agent"), LabelKind::Action);
+    assert_eq!(LabelKind::of("Needs-Triage"), LabelKind::Action);
+    assert_eq!(LabelKind::of("auto"), LabelKind::Action);
+    assert_eq!(LabelKind::of("enhancement"), LabelKind::Enhancement);
+    assert_eq!(LabelKind::of("agent-report"), LabelKind::Report);
+    assert_eq!(LabelKind::of("architecture"), LabelKind::Category);
+    assert_eq!(LabelKind::of("documentation"), LabelKind::Category);
+}

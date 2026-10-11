@@ -470,6 +470,7 @@ hierarchy are identical in both.
 | Markdown lists its documents flat, each with its title | a folder tree of the documents, each by its file name |
 | The Files tree has a search reaching into closed folders | Files has no search yet |
 | `CHAT_MIN` scales with the reading zoom | it scales with the conversation's own zoom, since the app zooms per panel |
+| An Issues row's labels are muted facts, never pills | labels that ask for something, enhancements and agents' reports are tinted chips; the picked row carries an accent line down its left edge |
 | Regions meet at one hairline | the Workbench meets the conversation by its surface alone, with no line; the terminal is a block on its surface, held off its neighbours by a gap |
 
 ## Backlog

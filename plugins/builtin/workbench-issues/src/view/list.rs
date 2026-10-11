@@ -11,8 +11,8 @@ use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, Size, StyledExt};
-use onehand_core::issues::{self, Issues, LocalIssue};
-use onehand_plugin_host::{action, menu_below, menu_item, status_ink, switch};
+use onehand_core::issues::{self, Issues, LabelKind, LocalIssue};
+use onehand_plugin_host::{Tint, action, menu_below, menu_item, status_ink, switch, tint};
 use std::collections::BTreeSet;
 
 /// How many labels the label filter offers, in name order. A project with more
@@ -610,15 +610,29 @@ pub(super) fn identity(issue: &LocalIssue, cx: &App) -> AnyElement {
     }
 }
 
-/// A small tag: a label, or the *Draft* mark.
+/// A small tag: a label, or the *Draft* mark. A label that asks for
+/// something takes the accent's tint, an enhancement the success one and an
+/// agent's report the warning one; a label that only files the issue, and
+/// the mark, stay neutral.
 pub(super) fn chip(text: String, cx: &App) -> AnyElement {
+    let theme = cx.theme();
+    let tinted = |base| {
+        let Tint { fill, ink } = tint(base, cx);
+        (fill, ink)
+    };
+    let (fill, ink) = match LabelKind::of(&text) {
+        LabelKind::Category => (theme.secondary, theme.secondary_foreground),
+        LabelKind::Action => tinted(theme.blue),
+        LabelKind::Enhancement => tinted(theme.green),
+        LabelKind::Report => tinted(theme.yellow),
+    };
     div()
         .flex_none()
         .px_1()
-        .rounded(cx.theme().radius)
-        .bg(cx.theme().secondary)
+        .rounded(theme.radius)
+        .bg(fill)
         .text_xs()
-        .text_color(cx.theme().secondary_foreground)
+        .text_color(ink)
         .child(text)
         .into_any_element()
 }

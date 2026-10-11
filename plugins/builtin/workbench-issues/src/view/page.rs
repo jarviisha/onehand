@@ -390,13 +390,21 @@ impl IssuesView {
                 .map(|(_, label)| label.clone())
                 .unwrap_or_default()
         };
+        // The project is named on a row only where it tells rows apart: every
+        // project listed, and more than one of them on screen.
+        let mixed = filters.project.is_none()
+            && listed
+                .rows
+                .iter()
+                .any(|row| row.item.root != listed.rows[0].item.root);
         let rows: Vec<AnyElement> = listed
             .rows
             .iter()
             .enumerate()
             .map(|(i, row)| {
                 let picked = selected == Some(&row.item.key);
-                page_row(i, row, label_of(row.item.root), picked, cx)
+                let project = mixed.then(|| label_of(row.item.root));
+                page_row(i, row, project, picked, cx)
             })
             .collect();
         let left_out = listed.left_out;
@@ -439,21 +447,19 @@ impl IssuesView {
                     .flex_1()
                     .min_h_0()
                     .v_flex()
-                    .gap_0p5()
-                    .p_1()
                     .overflow_y_scroll()
                     .track_scroll(&scroll)
                     .children(
                         empty.map(|empty| {
-                            div().px_2().py_1().text_xs().text_color(muted).child(empty)
+                            div().px_3().py_2().text_xs().text_color(muted).child(empty)
                         }),
                     )
                     .children(rows)
                     .when(left_out > 0, |list| {
                         list.child(
                             div()
-                                .px_2()
-                                .py_1()
+                                .px_3()
+                                .py_2()
                                 .text_xs()
                                 .text_color(muted)
                                 .child(format!("… {left_out} more not shown")),
