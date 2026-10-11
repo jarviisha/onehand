@@ -188,8 +188,6 @@ pub(super) fn issue_view(
         .flex_none()
         .px_4()
         .pb_3()
-        .border_b_1()
-        .border_color(cx.theme().border)
         .text_xs()
         .child(state_badge(open, cx));
     for fact in said {
@@ -208,7 +206,6 @@ pub(super) fn issue_view(
     // so none of them is pinned over the description it follows.
     let content = div()
         .v_flex()
-        .max_w(ISSUE_MAX)
         .children(conflict)
         .children(progress)
         // Below where the work stands, pushing the body down: a person
@@ -244,8 +241,16 @@ pub(super) fn issue_view(
         .min_w_0()
         .h_full()
         .v_flex()
-        .child(header.max_w(ISSUE_MAX))
-        .child(facts.max_w(ISSUE_MAX))
+        // The head's hairline runs the column's width, dividing the issue's
+        // name from what it says the way the list's head does beside it.
+        .child(
+            div()
+                .flex_none()
+                .border_b_1()
+                .border_color(cx.theme().border)
+                .child(centred(header))
+                .child(centred(facts)),
+        )
         // The scroll spans the column, so its bar stays on the column's edge
         // while what it scrolls keeps to the issue's width.
         .child(
@@ -254,9 +259,20 @@ pub(super) fn issue_view(
                 .flex_1()
                 .min_h_0()
                 .overflow_y_scroll()
-                .child(content),
+                .child(centred(content)),
         )
         .into_any_element()
+}
+
+/// `inner` at most [`ISSUE_MAX`] wide, centred with equal gutters either
+/// side: on a wide page the issue reads as a column of its own, and on a
+/// narrow one it simply takes the width.
+fn centred(inner: gpui::Div) -> gpui::Div {
+    div()
+        .w_full()
+        .h_flex()
+        .justify_center()
+        .child(inner.w_full().max_w(ISSUE_MAX))
 }
 
 /// Whether the issue is open or closed, as a badge: its own mark and word on

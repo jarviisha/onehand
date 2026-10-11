@@ -129,7 +129,8 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
     *Refresh*); *Before* (capped); its history, folded under *History · N events* until opened,
     each line how long ago first with the date on hover. Under the title and its facts all of it
     scrolls as one, nothing pinned below the body; the whole issue, title and actions
-    included, keeps to a reading measure rather than the column's width. ⋯ ▸ *Open in Issues* and *Review…* open it on the Issues page, the latter
+    included, keeps to a reading measure centred in the column, its head's hairline
+    running the column's width. ⋯ ▸ *Open in Issues* and *Review…* open it on the Issues page, the latter
     with its review block open.
   - Hiding a dock keeps its buffers and processes; the terminal's open state follows the project.
 - **Pages without a session.**
