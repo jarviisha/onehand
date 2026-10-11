@@ -429,6 +429,25 @@ impl ChatPane {
         })
     }
 
+    /// Whether the caret is in the composer or on the pane itself: where every
+    /// route into the conversation puts it. Read off the handles rather than
+    /// the frame, so it answers while the pane is not drawn.
+    pub fn holds_caret(&self, window: &Window, cx: &App) -> bool {
+        self.focus_handle.is_focused(window)
+            || self
+                .composer
+                .read(cx)
+                .state
+                .focus_handle(cx)
+                .is_focused(window)
+    }
+
+    /// This pane's zoom, which the shell reads to keep the conversation
+    /// readable beside the Workbench.
+    pub fn zoom(&self) -> crate::zoom::Zoom {
+        self.zoom
+    }
+
     /// This pane's zoom, for the shell to step.
     pub fn zoom_mut(&mut self) -> &mut crate::zoom::Zoom {
         &mut self.zoom

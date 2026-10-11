@@ -65,9 +65,11 @@ impl Shell {
         let right = dock.right_dock().map(|d| d.read(cx));
         let bottom = dock.bottom_dock().map(|d| d.read(cx));
         PanelLayout {
-            workbench_w: right.map_or(fallback.workbench_w, |d| f32::from(d.size())),
-            workbench_open: right.is_some_and(|d| d.is_open()),
-            terminal_h: bottom.map_or(fallback.terminal_h, |d| f32::from(d.size())),
+            // The width the person wants, never one a narrow window drew.
+            workbench_w: fallback.workbench_w,
+            workbench_open: right.is_some_and(|d| d.is_open()) || self.stepped_aside,
+            // The height the person wants, never one a short window drew.
+            terminal_h: fallback.terminal_h,
             terminal_open: bottom.is_some_and(|d| d.is_open()),
             rail_w: self.rail_width(cx),
         }
@@ -127,6 +129,7 @@ impl Shell {
             return;
         }
         self.last_panel = FocusedPanel::Workbench;
+        self.stepped_aside = false;
         let open = self.dock.read(cx).is_dock_open(DockPlacement::Right, cx);
         self.workbench
             .update(cx, |panel, cx| panel.set_mode(mode, cx));
@@ -152,6 +155,8 @@ impl Shell {
 
     /// Close the dock and recover focus if its focused content disappears.
     pub(super) fn hide_workbench(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.stepped_aside = false;
+        self.leave_workbench_focus(window, cx);
         let had_focus = self.workbench.focus_handle(cx).contains_focused(window, cx);
         // A maximized panel cannot be left blown up over a dock that is no
         // longer open, and the way back out of that is the button that just
@@ -185,6 +190,13 @@ impl Shell {
             return;
         }
         self.last_panel = FocusedPanel::Terminal;
+        // The terminal sits under the conversation, so while the Workbench has
+        // the area, asking for it brings the conversation back first -- and
+        // the press then opens the terminal, never closes it.
+        let stepped = self.workbench_fills_area();
+        if stepped {
+            self.step_aside(window, cx);
+        }
         let open = self.dock.read(cx).is_dock_open(DockPlacement::Bottom, cx);
         // **An open dock with nothing in it is not a dock to close.** Closing
         // the last tab's ✕ leaves exactly that, and the panel it leaves offers
@@ -192,7 +204,7 @@ impl Shell {
         // falling through does. Closed instead, the one gesture that reaches an
         // empty terminal took it off screen, and the way back up asked for a
         // shell the user had just been offered.
-        if open && self.terminal.read(cx).has_shell() {
+        if open && !stepped && self.terminal.read(cx).has_shell() {
             self.set_terminal_visible(false, window, cx);
             return;
         }
@@ -266,18 +278,6 @@ impl Shell {
             });
             cx.notify();
             return;
-        }
-        // The height has to be read back before the dock holding it goes, or
-        // every reopen comes up at the built-in default and the drag is lost.
-        // It lands in the workspace's own layout, which is what the saved
-        // arrangement falls back to while there is no dock to ask.
-        if let Some(height) = self
-            .dock
-            .read(cx)
-            .bottom_dock()
-            .map(|dock| f32::from(dock.read(cx).size()))
-        {
-            self.window.workspace.layout.terminal_h = height;
         }
         // A maximized panel cannot be unmounted out from under the zoom: the
         // dock area would be left blown up over something that is no longer

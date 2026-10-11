@@ -2,6 +2,7 @@
 //! it, the change in flight — and how it is drawn.
 
 use crate::cli::{self, Available, Catalog, Change, Plugin, Scope, Verb};
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, AppContext as _, ClickEvent, Context, Entity, FocusHandle,
     InteractiveElement as _, IntoElement, ParentElement, Render, SharedString,
@@ -531,8 +532,8 @@ impl PluginsView {
             .flex_1()
             .min_h_0()
             .v_flex()
-            .gap_3()
-            .p_3()
+            .gap_4()
+            .p_4()
             .child(tabs)
             // What is happening, while it happens — only then, so an idle
             // panel carries no line above its list.
@@ -546,10 +547,24 @@ impl PluginsView {
                     .id(self.tab.label())
                     .flex_1()
                     .min_h_0()
-                    .v_flex()
-                    .gap_1()
                     .overflow_y_scroll()
-                    .children(rows),
+                    // One hairline box, its rows divided by hairlines, so the
+                    // inventory reads as one list rather than loose cards.
+                    .child(
+                        div()
+                            .v_flex()
+                            .rounded(cx.theme().radius_lg)
+                            .border_1()
+                            .border_color(cx.theme().border)
+                            .overflow_hidden()
+                            .children(rows.into_iter().enumerate().map(|(i, row)| {
+                                div()
+                                    .when(i > 0, |row| {
+                                        row.border_t_1().border_color(cx.theme().border)
+                                    })
+                                    .child(row)
+                            })),
+                    ),
             )
             .into_any_element()
     }

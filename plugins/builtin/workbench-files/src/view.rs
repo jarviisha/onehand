@@ -175,6 +175,13 @@ impl Render for FilesView {
 /// The tint a change badge carries. Severity, not category: red is something
 /// that lost content, amber is something that changed, green is something that
 /// arrived.
+/// A row of the tree: a little over a control's height, so a long list of
+/// names reads as rows with air between them rather than a block of text.
+const ROW_H: gpui::Rems = gpui::rems(1.875);
+/// Where a row's content starts, and how far each level of the tree steps in.
+const ROW_INSET: f32 = 0.5;
+const TREE_INDENT: f32 = 0.875;
+
 fn change_color(change: FileChange, cx: &App) -> gpui::Hsla {
     let status = status_ink(cx);
     match change {
@@ -203,7 +210,8 @@ fn rows(
         .id("file-tree")
         .v_flex()
         .size_full()
-        .p_1()
+        .p_2()
+        .gap_0p5()
         .overflow_y_scroll()
         .children(rows.into_iter().enumerate().map(|(i, row)| {
             let entry = row.entry;
@@ -226,9 +234,9 @@ fn rows(
                 .id(("tree-row", i))
                 .h_flex()
                 .items_center()
-                .gap_1()
+                .gap_2()
                 .w_full()
-                .h_6()
+                .h(ROW_H)
                 .px_1()
                 .rounded(cx.theme().radius)
                 .text_sm()
@@ -240,7 +248,7 @@ fn rows(
                 .hover(|r| r.bg(cx.theme().list_hover))
                 // Indent by depth, not by nested containers: a 600-row tree
                 // (the core cap) would otherwise be 600 nested elements.
-                .pl(rems(0.25 + row.depth as f32 * 0.75))
+                .pl(rems(ROW_INSET + row.depth as f32 * TREE_INDENT))
                 .child(
                     Icon::new(if entry.is_dir {
                         if expanded {

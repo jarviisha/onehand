@@ -7,9 +7,6 @@ use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, Sizable as _,
 use onehand_core::chat::{Chat, ConvMeta};
 use std::path::PathBuf;
 
-/// The conversation header, which is the one row in the panel that never
-/// scrolls and so the edge every other measurement here is taken from.
-const HEADER_H: Rems = rems(2.75);
 /// How little the header will settle for before it stops taking room from the
 /// conversation's name.
 ///
@@ -111,7 +108,7 @@ impl ChatPane {
             // contents it moved whenever a badge appeared or a title wrapped,
             // taking the top of the conversation with it.
             .flex_none()
-            .h(HEADER_H)
+            .h(crate::controls::BAR_H)
             .px_4()
             // **No rule under it.** A hairline is an edge between two surfaces,
             // and there are not two here: the header and the transcript are one

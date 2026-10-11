@@ -607,7 +607,7 @@ impl Default for PanelLayout {
         // Both docks start closed: the conversation is the window's job, and a
         // panel nobody asked for is width taken from it.
         Self {
-            workbench_w: 420.0,
+            workbench_w: 480.0,
             workbench_open: false,
             terminal_h: 240.0,
             terminal_open: false,

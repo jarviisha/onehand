@@ -40,6 +40,7 @@ impl Shell {
         use WorkbenchEvent as E;
         match event {
             E::Hide => self.hide_workbench(window, cx),
+            E::StepAside => self.step_aside(window, cx),
             E::RestartAgent => self.restart_session(window, cx),
             E::WorkIssueHere {
                 root,

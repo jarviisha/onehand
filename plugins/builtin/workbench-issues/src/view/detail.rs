@@ -55,89 +55,89 @@ pub(super) fn issue_view(
     let open = issue.open;
     let muted = cx.theme().muted_foreground;
     // Who it is: the title wraps rather than cutting, since it is the one
-    // place the whole of it is read, and the issue's state is beside it and
-    // nowhere else, so it is never taken for its run's.
+    // place the whole of it is read.
     let header = div()
-        .h_flex()
-        .items_start()
-        .gap_2()
         .w_full()
         .flex_none()
-        .px_3()
-        .pt_2()
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .font_semibold()
-                .child(issue.title.clone()),
-        )
-        .child(
-            div()
-                .flex_none()
-                .px_1p5()
-                .rounded(cx.theme().radius)
-                .text_xs()
-                // The status fill for work still open; a closed one takes
-                // the quiet chip every other tag here wears.
-                .map(|badge| {
-                    if open {
-                        badge
-                            .bg(cx.theme().success)
-                            .text_color(cx.theme().success_foreground)
-                    } else {
-                        badge
-                            .bg(cx.theme().secondary)
-                            .text_color(cx.theme().secondary_foreground)
-                    }
-                })
-                .child(if open { "Open" } else { "Closed" }),
-        );
+        .px_4()
+        .pt_4()
+        .font_semibold()
+        .child(issue.title.clone());
 
-    // Where it lives, its labels, and how urgent the body says it is.
-    let facts = div()
+    // Whether it is open, where it lives, its labels, and how urgent the body
+    // says it is: plain facts joined by a dot. Its state comes first and
+    // reads as a fact like the rest, never as a badge, so it is not taken for
+    // the state of its run.
+    let reference = match (issue.reference(), &issue.link) {
+        (Some(reference), Some(link)) => div()
+            .id("issue-reference")
+            .flex_none()
+            .text_color(muted)
+            .cursor_pointer()
+            .hover(|reference| reference.underline())
+            .tooltip({
+                let tip = format!("Open on {}", link.connector);
+                move |window, cx| Tooltip::new(tip.clone()).build(window, cx)
+            })
+            .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
+                view.with_url(number, |url, cx| cx.open_url(&url), cx)
+            }))
+            .child(reference.to_string())
+            .into_any_element(),
+        _ => identity(issue, cx),
+    };
+    let mut said: Vec<AnyElement> = vec![
+        div()
+            .flex_none()
+            .text_color(muted)
+            .child(if open { "Open" } else { "Closed" })
+            .into_any_element(),
+        reference,
+    ];
+    if !issue.labels.is_empty() {
+        said.push(
+            div()
+                .h_flex()
+                .flex_wrap()
+                .gap_1()
+                .children(issue.labels.iter().map(|label| chip(label.clone(), cx)))
+                .into_any_element(),
+        );
+    }
+    said.extend(priority(&issue.body).map(|priority| {
+        div()
+            .flex_none()
+            .text_color(muted)
+            .child(format!("Priority: {priority}"))
+            .into_any_element()
+    }));
+    // What a body written from a template left out: advice, never a refusal,
+    // and nothing at all for a body written its own way.
+    said.extend(lacking(&issue.body, &doing.templates).map(|lacks| {
+        div()
+            .flex_none()
+            .text_color(muted)
+            .child(lacks.said())
+            .into_any_element()
+    }));
+    let mut facts = div()
         .h_flex()
         .flex_wrap()
         .items_center()
         .gap_1()
         .flex_none()
-        .px_3()
+        .px_4()
         .pt_1()
-        .pb_2()
+        .pb_3()
         .border_b_1()
         .border_color(cx.theme().border)
-        .text_xs()
-        .child(match (issue.reference(), &issue.link) {
-            (Some(reference), Some(link)) => div()
-                .id("issue-reference")
-                .flex_none()
-                .text_color(muted)
-                .cursor_pointer()
-                .hover(|reference| reference.underline())
-                .tooltip({
-                    let tip = format!("Open on {}", link.connector);
-                    move |window, cx| Tooltip::new(tip.clone()).build(window, cx)
-                })
-                .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
-                    view.with_url(number, |url, cx| cx.open_url(&url), cx)
-                }))
-                .child(reference.to_string())
-                .into_any_element(),
-            _ => identity(issue, cx),
-        })
-        .children(issue.labels.iter().map(|label| chip(label.clone(), cx)))
-        .children(priority(&issue.body).map(|priority| {
-            div()
-                .flex_none()
-                .text_color(muted)
-                .child(format!("Priority: {priority}"))
-        }))
-        // What a body written from a template left out: advice, never a
-        // refusal, and nothing at all for a body written its own way.
-        .children(
-            lacking(&issue.body, &doing.templates)
-                .map(|lacks| div().flex_none().text_color(muted).child(lacks.said())),
-        );
+        .text_xs();
+    for (n, fact) in said.into_iter().enumerate() {
+        if n > 0 {
+            facts = facts.child(div().text_color(muted).child("·"));
+        }
+        facts = facts.child(fact);
+    }
     let conflict = conflict_view(issue, cx);
 
     let next = work::next_for(issue, &doing);
@@ -163,7 +163,8 @@ pub(super) fn issue_view(
             Some((parsed, _)) => div()
                 .flex_1()
                 .min_h_0()
-                .p_3()
+                .px_4()
+                .py_3()
                 .child(
                     TextView::new(parsed)
                         .selectable(true)
@@ -211,8 +212,8 @@ fn history(issue: &LocalIssue, cx: &mut Context<IssuesView>) -> AnyElement {
         .overflow_y_scroll()
         .v_flex()
         .gap_1()
-        .px_3()
-        .py_2()
+        .px_4()
+        .py_3()
         .border_t_1()
         .border_color(cx.theme().border)
         .child(div().text_xs().text_color(muted).child("History"))
@@ -408,8 +409,8 @@ fn referenced(files: Vec<String>, cx: &mut Context<IssuesView>) -> Option<AnyEle
             .flex_none()
             .v_flex()
             .gap_0p5()
-            .px_3()
-            .py_2()
+            .px_4()
+            .py_3()
             .border_t_1()
             .border_color(cx.theme().border)
             .child(div().text_xs().text_color(muted).child("Referenced files"))
