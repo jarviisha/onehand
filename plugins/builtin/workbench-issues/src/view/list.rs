@@ -101,7 +101,13 @@ impl IssuesView {
             if matches!(event, InputEvent::Change) {
                 let text = query.read(cx).value().to_string();
                 match view.page.as_mut() {
-                    None => view.jump(&text, cx),
+                    // Typing is looking through the list, so a narrow tab
+                    // shows it: a filter applied behind the issue changes
+                    // nothing on screen.
+                    None => {
+                        view.detail = false;
+                        view.jump(&text, cx);
+                    }
                     // A search is a filter: the page's list is drawn afresh.
                     Some(page) => page.refilter(),
                 }
@@ -130,10 +136,12 @@ impl IssuesView {
         else {
             return;
         };
+        // Selected, not opened: the query may still be on its way to
+        // another number (`#1` on the way to `#12`), so a narrow tab keeps
+        // the list showing with the row marked, and a click opens it.
         if let Some(state) = self.state_mut() {
             state.selected = Some(number);
         }
-        self.detail = true;
         self.showing = if open { Showing::Open } else { Showing::Closed };
         if self
             .label
