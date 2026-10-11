@@ -19,9 +19,12 @@ use onehand_core::task::work::{IssueWork, PrSeen};
 use onehand_plugin_host::{AppIcon, BAR_H, Tint, action, status_ink, tint};
 use std::path::Path;
 
-/// The widest a description's lines run: past it a line is too long to
-/// find the start of the next one.
-const BODY_MEASURE: Rems = rems(45.);
+/// The widest an issue is drawn, its gutters included: a description's lines
+/// past it are too long to find the start of the next one, and its title,
+/// actions and facts follow the body rather than stretching to a wide
+/// page's far edge, where the actions would sit a screen away from the
+/// title they act on.
+const ISSUE_MAX: Rems = rems(48.);
 
 /// A description's text: the UI's own size, so an issue reads as part of the
 /// window rather than as a document dropped into it.
@@ -204,11 +207,8 @@ pub(super) fn issue_view(
     // what it names, what the work left, what came before and the history,
     // so none of them is pinned over the description it follows.
     let content = div()
-        .id(("issue-content", number))
-        .flex_1()
-        .min_h_0()
         .v_flex()
-        .overflow_y_scroll()
+        .max_w(ISSUE_MAX)
         .children(conflict)
         .children(progress)
         // Below where the work stands, pushing the body down: a person
@@ -216,7 +216,6 @@ pub(super) fn issue_view(
         .children(review)
         .child(match &body {
             Some((parsed, _)) => div()
-                .max_w(BODY_MEASURE)
                 .px_4()
                 .py_3()
                 .text_size(BODY_TEXT)
@@ -245,9 +244,18 @@ pub(super) fn issue_view(
         .min_w_0()
         .h_full()
         .v_flex()
-        .child(header)
-        .child(facts)
-        .child(content)
+        .child(header.max_w(ISSUE_MAX))
+        .child(facts.max_w(ISSUE_MAX))
+        // The scroll spans the column, so its bar stays on the column's edge
+        // while what it scrolls keeps to the issue's width.
+        .child(
+            div()
+                .id(("issue-content", number))
+                .flex_1()
+                .min_h_0()
+                .overflow_y_scroll()
+                .child(content),
+        )
         .into_any_element()
 }
 
