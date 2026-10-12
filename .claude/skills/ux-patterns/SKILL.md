@@ -64,6 +64,10 @@ self.ask(ask, window, cx, move |shell, window, cx| shell.drop_root(&path, window
 
 - A new command goes into `COMMANDS` in `crates/app/src/keymap.rs` (id, label, default keys,
   action, context), never into an `on_key_down` arm.
+- A window command's context starts `Shell` and its key has a modifier. A region's starts with the
+  region's own context (`Rail`, `IssuesPage`, `PluginList`, `QuestionCard`, `PermissionCard`): a
+  key without a modifier adds `&& !Input`, and Escape needs `&& !Dialog && !Input`. One key may
+  serve one command in each region; `validate` refuses the rest.
 - A control bound to one shows its key:
 
   ```rust

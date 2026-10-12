@@ -307,6 +307,7 @@ impl IssuesView {
         let panel = (open && self.has_page_issue()).then(|| self.page_panel(window, cx));
         div()
             .id("issues-page")
+            .key_context("IssuesPage")
             .track_focus(&focus)
             .on_key_down(cx.listener(|view, event: &KeyDownEvent, window, cx| {
                 view.page_key(event, window, cx)

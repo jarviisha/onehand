@@ -545,6 +545,7 @@ impl PluginsView {
                     // Keyed by the tab, so each list keeps a scroll of its own
                     // instead of the one showing inheriting the other's.
                     .id(self.tab.label())
+                    .key_context("PluginList")
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()

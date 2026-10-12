@@ -291,6 +291,7 @@ fn permission_keys(
     let session = session.clone();
     let card_focus = focus.clone();
     card.id(("perm-card", idx))
+        .key_context("PermissionCard")
         .track_focus(&focus)
         .on_key_down(move |event, window, cx| {
             let keystroke = &event.keystroke;

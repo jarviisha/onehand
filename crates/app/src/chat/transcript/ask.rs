@@ -870,6 +870,7 @@ impl AskForm<'_> {
         let session = self.session.clone();
         let card = focus.clone();
         body.id(("ask-card", idx))
+            .key_context("QuestionCard")
             .track_focus(&focus)
             .on_key_down(move |event, window, cx| {
                 let keystroke = &event.keystroke;
