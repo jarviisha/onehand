@@ -9,10 +9,13 @@
 // a working feature.
 #![warn(unreachable_pub)]
 
+mod confirm;
 mod list_detail;
 mod menu;
 mod tabs;
+pub mod tokens;
 mod workbench;
+pub use confirm::{Confirm, confirm_on};
 pub use list_detail::{ListDetail, ListWidths, back_link, list_detail};
 pub use menu::{menu_below, menu_item, menu_row};
 pub use onehand_core::worktree::removal::Process;
@@ -24,7 +27,7 @@ pub use workbench::{Ask, Request, WorkbenchMode};
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, ElementId, Hsla, InteractiveElement as _, IntoElement as _,
+    AnyElement, App, Div, ElementId, Hsla, InteractiveElement as _, IntoElement,
     ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div,
 };
 use gpui_component::button::Button;
@@ -57,6 +60,97 @@ pub type RemoteChannelFactory = fn(String) -> Box<dyn onehand_core::remote::type
 /// against.
 pub fn action(id: impl Into<ElementId>) -> Button {
     Button::new(id).cursor_pointer()
+}
+
+/// The cursor for an action that is currently refusing.
+///
+/// Applied on the disabled branch, so the pointer is a promise the control can
+/// keep: it appears over things that will act on a click and nowhere else.
+fn resting(button: Button) -> Button {
+    button.cursor_default()
+}
+
+/// Refusing, and looking like it, in one call.
+///
+/// [`resting`] is the cursor half of a refusal and `disabled` is the behaviour
+/// half, and while they were two separate calls six controls in the app had
+/// made one without the other: a Save with nothing to save, a Submit with
+/// nothing chosen, an Unbind with nothing bound, a Cancel already cancelling.
+/// Every one of them sat under a pointer promising a press would do something.
+///
+/// It has to be explicit because the library re-applies the caller's own style
+/// refinement *after* the cursor it picks, so [`action`]'s pointer outlives
+/// being disabled — the control goes quiet, refuses the click, and still
+/// beckons. Taking the pointer back in the same call that refuses is what stops
+/// the two halves drifting apart again.
+///
+/// Here rather than in the app for the reason [`action`] is: a built-in plugin
+/// draws buttons that refuse while they work.
+pub trait Refuses: Sized {
+    /// Refuse presses while `refusing` holds, and say so in the cursor.
+    fn refuses(self, refusing: bool) -> Self;
+}
+
+impl Refuses for Button {
+    fn refuses(self, refusing: bool) -> Self {
+        use gpui_component::Disableable as _;
+
+        match refusing {
+            true => resting(self).disabled(true),
+            false => self,
+        }
+    }
+}
+
+/// A sunk box of machine text: full width, the muted fill, the theme's corner
+/// and the mono family, clipped so a long line cannot push the column wider.
+/// The caller sets the text size and the padding, which differ by what is in it.
+///
+/// Here rather than in the app for the reason [`action`] is: the Issues mode
+/// draws the same well as the conversation's, and a second copy is a second
+/// place for its fill to drift.
+pub fn well(cx: &App) -> Div {
+    let theme = cx.theme();
+    div()
+        .w_full()
+        .min_w_0()
+        .overflow_hidden()
+        .rounded(theme.radius)
+        .bg(theme.muted)
+        .font_family(theme.mono_font_family.clone())
+}
+
+/// One setting, stacked: its name, a line about it in meta text, and the
+/// control under both at the column's full width -- so a field is as wide as
+/// what can be typed into it, and a long description wraps above it rather
+/// than beside it.
+///
+/// Here rather than in the app for the reason [`action`] is: a plugin's form
+/// asks for settings too, and a second copy is a second place for a field's
+/// rhythm to drift.
+pub fn field(
+    title: impl Into<SharedString>,
+    about: Option<AnyElement>,
+    control: impl IntoElement,
+    cx: &App,
+) -> Div {
+    div()
+        .v_flex()
+        .gap_2()
+        .w_full()
+        .child(
+            div()
+                .v_flex()
+                .gap_0p5()
+                .child(div().text_sm().child(title.into()))
+                .children(about.map(|about| {
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(about)
+                })),
+        )
+        .child(control)
 }
 
 /// The surface a dock draws on: the palette's panel step, one off the reading
@@ -118,17 +212,6 @@ pub fn status_hue(base: Hsla, foreground: Hsla) -> Hsla {
     base.mix_oklab(foreground, 0.70)
 }
 
-/// The height every bar along the top of a region shares: the conversation's
-/// header, the Workbench's mode strip, the rail's workspace bar and foot, and
-/// a page's column heads, so bars side by side line up across the window.
-pub const BAR_H: gpui::Rems = gpui::rems(2.75);
-
-/// The widest a workspace-wide page grows (the overview, Tasks, the Issues
-/// list): room for two cards side by side, or a row's facts in columns,
-/// without lines too long to read. One figure, so moving between the pages
-/// does not move the column.
-pub const PAGE_WIDE: gpui::Rems = gpui::rems(64.);
-
 /// How much of a hue a pale fill keeps; the rest is the surface it sits on.
 const TINT: f32 = 0.16;
 
@@ -179,7 +262,8 @@ impl gpui_component::IconNamed for AppIcon {
     }
 }
 
-/// A mode's empty state: one muted line, centred in the body it would fill.
+/// A mode's empty state: one line of meta text, centred in the body it would
+/// fill.
 ///
 /// Here rather than copied into each mode for the reason [`action`] is. Four
 /// copies of a centred muted line is four places for one of them to drift into
@@ -191,6 +275,7 @@ pub fn hint(text: &'static str, cx: &App) -> AnyElement {
         .v_flex()
         .items_center()
         .justify_center()
+        .text_xs()
         .text_color(cx.theme().muted_foreground)
         .child(text)
         .into_any_element()

@@ -60,7 +60,6 @@ impl Shell {
                     };
                     if root.check != check {
                         root.check = check;
-                        shell.workspace_note_wanted = true;
                         shell.save_workspace_soon(cx);
                         // *Run check* comes and goes with the command.
                         shell.sync_project_facts(cx);

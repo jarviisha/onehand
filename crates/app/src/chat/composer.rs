@@ -25,9 +25,7 @@
 //! and the pane catches the action on its way out.
 
 use super::session::ChatSession;
-use gpui::{
-    App, AppContext, Context, Entity, IntoElement, Rems, Render, Subscription, Window, div, rems,
-};
+use gpui::{App, AppContext, Context, Entity, IntoElement, Render, Subscription, Window, div};
 use gpui::{Bounds, Pixels};
 use gpui_component::input::{InputEvent, TextareaState};
 use onehand_core::attachment::StagedAttachment;
@@ -66,35 +64,6 @@ pub use popup::popup_room;
 /// holds it, blending the fill the way the compositor does rather than
 /// asserting on the token it came from.
 pub(crate) const SELECTED_ALPHA: f32 = 0.75;
-
-/// The size the composer's own controls are lettered at.
-///
-/// The smallest named reading size. These controls should remain quieter than
-/// the prompt without falling below the rest of the app's type ladder. It is
-/// still a rem, so panel zoom carries it like everything else.
-pub(super) const CHIP_TEXT: Rems = rems(0.75);
-/// How tall every control in the composer's row stands, and every row of the
-/// list a control opens.
-///
-/// Fixed, because otherwise the *content* decides it and the content is not the
-/// same shape: a chip with a word in it is as tall as that word's line box
-/// (`text_xs` times gpui's default leading, about 1.21rem), while a chip
-/// holding only an icon is as tall as the icon (0.75rem). Left to themselves
-/// they came out about seven pixels apart on the same row.
-///
-/// The value is the floor a pointer target can stand at and still be aimed for
-/// without care, and it keeps the metadata row subordinate to the prompt. It
-/// does not go lower: what makes this row compact is the card's inset and the
-/// gaps, which cost nothing to give back, where the target does not.
-///
-/// **The popup's rows take it too**, so the choices behind a chip stand as tall
-/// as the chip. They are library buttons, and a button nobody gives a size to
-/// takes the library's default of 2rem — which is a step above everything in
-/// the row that opened it, chosen by nobody and noticed only once a selector's
-/// list stopped being as wide as the reading column. The two notice rows in
-/// that list are plain text and take it as well, or a list saying it has
-/// nothing stands taller than the same list saying anything.
-pub(super) const CHIP_H: Rems = rems(1.5);
 
 /// What is showing above the composer. Mutually exclusive **by construction**:
 /// one `Option` makes that structural, where a flag per overlay needs a

@@ -638,28 +638,6 @@ mod tests {
         }
     }
 
-    /// Lengths written as numbers where they are drawn, per file, that predate
-    /// the rule below. A file may only go down; once it does, lower its entry
-    /// here, and remove it at zero.
-    ///
-    /// The settings dialog's six are there to stay: its bounds are measured
-    /// against the window in pixels, which is the point of them.
-    const LENGTHS_BEFORE_THE_RULE: &[(&str, usize)] = &[
-        ("crates/app/src/chat/pane/step_strip.rs", 2),
-        ("crates/app/src/chat/transcript/tool.rs", 1),
-        ("crates/app/src/chat/viewport.rs", 2),
-        ("crates/app/src/dialogs.rs", 4),
-        ("crates/app/src/dialogs/issue.rs", 2),
-        ("crates/app/src/settings.rs", 9),
-        ("crates/app/src/settings/pages.rs", 1),
-        ("crates/app/src/workflows_page/step.rs", 1),
-        ("plugins/builtin/workbench-files/src/view.rs", 1),
-        ("plugins/builtin/workbench-issues/src/view/full.rs", 1),
-        ("plugins/builtin/workbench-issues/src/view/review.rs", 2),
-        ("plugins/builtin/workbench-markdown/src/document.rs", 2),
-        ("plugins/builtin/workbench-plugins/src/view/details.rs", 1),
-    ];
-
     /// The lengths written into `rems(` or `px(` on one line, unless the line
     /// declares a constant or is a comment. Zero is not a length anyone tunes.
     fn written_lengths(line: &str) -> Vec<String> {
@@ -699,20 +677,12 @@ mod tests {
         found
     }
 
-    /// Every length is named where the theme and gpui's spacing scale give it
-    /// none: a `const` beside the code that uses it, its reason in its doc
-    /// comment. A number at the call site says neither what it is for nor
-    /// that the same number two files away is the same decision, and it is how
-    /// one size drifts into three.
-    ///
-    /// Ratcheted rather than all at once: the files that already wrote numbers
-    /// are listed with how many, and a file may only lose them.
-    #[test]
-    fn every_length_has_a_name() {
+    /// Fails with `what` on every line of `sources` that `find` finds
+    /// something on, tests and comments left out.
+    fn forbid(sources: Vec<(String, String)>, find: impl Fn(&str) -> Vec<String>, what: &str) {
         let root = workspace_root().display().to_string();
-        let mut over = Vec::new();
-        let mut under = Vec::new();
-        for (path, source) in ui_sources() {
+        let mut found = Vec::new();
+        for (path, source) in sources {
             let rel = path
                 .strip_prefix(&root)
                 .unwrap_or(&path)
@@ -722,37 +692,32 @@ mod tests {
                 continue;
             }
             let code = source.split("#[cfg(test)]\nmod tests").next().unwrap_or("");
-            let lines: Vec<String> = code
-                .lines()
-                .enumerate()
-                .flat_map(|(n, line)| {
-                    let rel = &rel;
-                    written_lengths(line)
-                        .into_iter()
-                        .map(move |v| format!("{rel}:{}: {v} in {}", n + 1, line.trim()))
-                })
-                .collect();
-            let allowed = LENGTHS_BEFORE_THE_RULE
-                .iter()
-                .find(|(file, _)| *file == rel)
-                .map_or(0, |(_, n)| *n);
-            if lines.len() > allowed {
-                over.extend(lines);
-            } else if lines.len() < allowed {
-                under.push(format!("{rel}: {} now, listed as {allowed}", lines.len()));
-            }
+            found.extend(
+                code.lines()
+                    .enumerate()
+                    .filter(|(_, line)| !line.trim_start().starts_with("//"))
+                    .flat_map(|(n, line)| {
+                        let rel = &rel;
+                        find(line)
+                            .into_iter()
+                            .map(move |v| format!("{rel}:{}: {v} in {}", n + 1, line.trim()))
+                    }),
+            );
         }
-        assert!(
-            over.is_empty(),
-            "a length written as a number; name it in a const beside its use, with \
-             its reason:\n{}",
-            over.join("\n")
-        );
-        assert!(
-            under.is_empty(),
-            "fewer written lengths than listed; lower these in \
-             LENGTHS_BEFORE_THE_RULE:\n{}",
-            under.join("\n")
+        assert!(found.is_empty(), "{what}:\n{}", found.join("\n"));
+    }
+
+    /// Every length is named where the theme and gpui's spacing scale give it
+    /// none: a `const` beside the code that uses it, its reason in its doc
+    /// comment. A number at the call site says neither what it is for nor
+    /// that the same number two files away is the same decision, and it is how
+    /// one size drifts into three.
+    #[test]
+    fn every_length_has_a_name() {
+        forbid(
+            ui_sources(),
+            written_lengths,
+            "a length written as a number; name it in a const beside its use, with its reason",
         );
     }
 
@@ -1086,5 +1051,175 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Every `.name()` call on `line` whose name is one of `names`.
+    fn named_calls(line: &str, names: &[String]) -> Vec<String> {
+        names
+            .iter()
+            .flat_map(|name| {
+                let call = format!(".{name}()");
+                line.match_indices(&call)
+                    .map(|_| name.clone())
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    }
+
+    /// The colours written out on one line: a `"#rrggbb"` string, or a call to
+    /// `rgb(`, `rgba(` or `hsla(`.
+    fn colour_literals(line: &str) -> Vec<String> {
+        let mut found = Vec::new();
+        for (at, _) in line.match_indices("\"#") {
+            let hex: String = line[at + 2..]
+                .chars()
+                .take_while(|c| c.is_ascii_hexdigit())
+                .collect();
+            if (3..=8).contains(&hex.len()) && line[at + 2 + hex.len()..].starts_with('"') {
+                found.push(format!("#{hex}"));
+            }
+        }
+        for call in ["rgb(", "rgba(", "hsla("] {
+            for (at, _) in line.match_indices(call) {
+                if !line[..at]
+                    .chars()
+                    .last()
+                    .is_some_and(|c| c.is_alphanumeric() || c == '_')
+                {
+                    found.push(call.to_string());
+                }
+            }
+        }
+        found
+    }
+
+    /// Every colour comes from the palette: `theme.rs` writes the ramps and
+    /// the theme slots, and everything else reads them. A colour written at
+    /// its use is one the contrast tests never see and the other palette never
+    /// changes. The terminal's grid is the one other place, since a program's
+    /// sixteen colours are its own.
+    #[test]
+    fn no_colour_literal_outside_the_palette() {
+        let sources = ui_sources()
+            .into_iter()
+            .filter(|(path, _)| {
+                !path.ends_with("crates/app/src/theme.rs") && !path.contains("crates/terminal-ui/")
+            })
+            .collect();
+        forbid(
+            sources,
+            colour_literals,
+            "a colour written out; read it from the theme, or add it to the palette in theme.rs",
+        );
+    }
+
+    /// The spacing steps off the scale (0.5, 1, 1.5, 2, 3, 4, 6, 8): what
+    /// gpui offers between and beyond them.
+    fn off_scale_spacing(line: &str) -> Vec<String> {
+        let sides = [
+            "p", "px", "py", "pt", "pb", "pl", "pr", "m", "mx", "my", "mt", "mb", "ml", "mr",
+            "gap", "gap_x", "gap_y",
+        ];
+        let steps = [
+            "2p5", "3p5", "5", "7", "9", "10", "11", "12", "16", "20", "24", "32", "40", "48",
+            "56", "64", "72", "80", "96",
+        ];
+        let names: Vec<String> = sides
+            .iter()
+            .flat_map(|side| steps.iter().map(move |step| format!("{side}_{step}")))
+            .collect();
+        named_calls(line, &names)
+    }
+
+    /// Spacing a step apart from its neighbours rather than a near-miss:
+    /// half a step is a difference nobody sees and everybody copies.
+    #[test]
+    fn spacing_stays_on_the_steps() {
+        forbid(
+            ui_sources(),
+            off_scale_spacing,
+            "spacing off the steps; take 0p5, 1, 1p5, 2, 3, 4, 6 or 8, or name the length",
+        );
+    }
+
+    /// gpui's own shadow steps.
+    fn gpui_shadows(line: &str) -> Vec<String> {
+        let names: Vec<String> = ["2xs", "xs", "sm", "md", "lg", "xl", "2xl"]
+            .iter()
+            .map(|step| format!("shadow_{step}"))
+            .collect();
+        named_calls(line, &names)
+    }
+
+    /// gpui's shadows are black at a tenth of an alpha, which cannot be seen
+    /// on the dark palette; a floating surface takes the tokens' `lift`.
+    #[test]
+    fn no_shadow_from_gpuis_steps() {
+        forbid(
+            ui_sources(),
+            gpui_shadows,
+            "a gpui shadow step, invisible on the dark palette; use tokens::lift",
+        );
+    }
+
+    /// Text sized or weighted off the scale: `text_2xl` and above, bold and
+    /// heavier, and a size written as a number.
+    fn off_scale_type(line: &str) -> Vec<String> {
+        let names: Vec<String> = ["text_2xl", "text_3xl", "text_4xl", "text_5xl", "text_6xl"]
+            .iter()
+            .chain(["font_bold", "font_extrabold", "font_black"].iter())
+            .map(|name| name.to_string())
+            .collect();
+        let mut found = named_calls(line, &names);
+        for (at, _) in line.match_indices(".text_size(") {
+            let arg = line[at + ".text_size(".len()..].trim_start();
+            let arg = arg.strip_prefix("gpui::").unwrap_or(arg);
+            if let Some(arg) = arg.strip_prefix("rems(")
+                && arg.trim_start().starts_with(|c: char| c.is_ascii_digit())
+            {
+                found.push("text_size(rems(".to_string());
+            }
+        }
+        found
+    }
+
+    /// Type stays on the scale: the library's sizes up to `text_xl`, and
+    /// semibold at the heaviest. A step above is a second page title on a
+    /// screen that has one, and a number is a size the zoom and the next
+    /// reader cannot place.
+    #[test]
+    fn type_stays_on_the_scale() {
+        forbid(
+            ui_sources(),
+            off_scale_type,
+            "type off the scale; take text_xs to text_xl and at most semibold, or a named size",
+        );
+    }
+
+    #[test]
+    fn the_style_matchers_tell_a_breach_from_its_neighbours() {
+        assert_eq!(colour_literals(r##"let c = "#1f2937";"##), vec!["#1f2937"]);
+        assert_eq!(colour_literals("gpui::rgb(0x1f2937)"), vec!["rgb("]);
+        assert!(colour_literals(r##"tooltip("#3 in the list")"##).is_empty());
+        assert!(colour_literals("Hsla::parse_hex(hex)").is_empty());
+        assert!(colour_literals("to_hsla(x)").is_empty());
+
+        assert_eq!(off_scale_spacing(".px_5().gap_2()"), vec!["px_5"]);
+        assert!(off_scale_spacing(".px_1p5().py_2()").is_empty());
+        assert!(off_scale_spacing(".px_50()").is_empty());
+
+        assert_eq!(gpui_shadows(".shadow_md()"), vec!["shadow_md"]);
+        assert!(gpui_shadows(".shadow(lift(cx))").is_empty());
+
+        assert_eq!(
+            off_scale_type(".text_2xl().font_bold()"),
+            vec!["text_2xl", "font_bold"]
+        );
+        assert_eq!(
+            off_scale_type(".text_size(rems(0.7))"),
+            vec!["text_size(rems("]
+        );
+        assert!(off_scale_type(".text_size(CODE_TEXT).font_semibold()").is_empty());
+        assert!(off_scale_type(".text_size(rems(TEXT.0))").is_empty());
     }
 }

@@ -11,7 +11,8 @@ use gpui::{
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme, IconName, Sizable as _, StyledExt};
-use onehand_plugin_host::{BAR_H, action, hint};
+use onehand_plugin_host::tokens::BAR_H;
+use onehand_plugin_host::{action, hint};
 
 // The widths below are plain rems rather than `Rems`: the drag works them out
 // against the pointer in that unit.
@@ -139,7 +140,7 @@ impl IssuesView {
             .border_color(theme.border)
             .bg(theme.popover)
             .text_color(theme.popover_foreground)
-            .shadow_lg()
+            .shadow(onehand_plugin_host::tokens::lift(cx))
             .overflow_hidden()
             .children(bar)
             .child(div().flex_1().min_h_0().v_flex().child(body))

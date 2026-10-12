@@ -1,10 +1,9 @@
-use super::confirm::Ask;
+use super::confirm::Confirm;
 use super::{FocusedPanel, RailSession, Shell, TabCycle};
 use crate::state::Shared;
 use gpui::{App, BorrowAppContext, Context, SharedString, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::dock::DockPlacement;
-use gpui_component::notification::Notification;
 use onehand_core::gitstat;
 use std::path::PathBuf;
 
@@ -70,7 +69,7 @@ impl Shell {
         cx: &mut Context<Self>,
     ) {
         self.select_root_session(root_idx, session_idx, window, cx);
-        self.chat.update(cx, |pane, cx| pane.export(cx));
+        self.chat.update(cx, |pane, cx| pane.export(window, cx));
     }
 
     /// Open the rename field on the conversation showing.
@@ -123,7 +122,7 @@ impl Shell {
         let name = self
             .active_session_uid()
             .and_then(|uid| self.chat.read(cx).title_for(uid, cx));
-        let ask = Ask {
+        let ask = Confirm {
             id: "delete-open-conversation",
             title: "Delete this conversation?".into(),
             description: match &name {
@@ -139,7 +138,7 @@ impl Shell {
             act: "Delete",
             ..Default::default()
         };
-        self.ask(ask, window, cx, move |shell, window, cx| {
+        self.confirm(ask, window, cx, move |shell, window, cx| {
             shell.delete_conversation(dir.clone(), window, cx)
         });
     }
@@ -169,7 +168,7 @@ impl Shell {
                         // conversation is exactly where it was, which is the
                         // opposite of a failed save.
                         window.push_notification(
-                            Notification::warning(format!("Conversation not deleted — {e}")),
+                            crate::toast::failed("Deleting the conversation", e),
                             cx,
                         );
                     })
@@ -225,7 +224,7 @@ impl Shell {
             return;
         }
         let label = self.session_label(uid, cx);
-        let ask = Ask {
+        let ask = Confirm {
             id: "close-session",
             title: format!("Close {label}?").into(),
             description: "A turn is running. Closing the session stops its agent, and that \
@@ -235,7 +234,7 @@ impl Shell {
             ..Default::default()
         };
         // By uid, not by place: the list can shift while the question is open.
-        self.ask(ask, window, cx, move |shell, window, cx| {
+        self.confirm(ask, window, cx, move |shell, window, cx| {
             shell.end_session(uid, window, cx)
         });
     }
@@ -517,13 +516,16 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> Option<u64> {
         let Some(spec) = Shared::global(cx).agents.get(idx).cloned() else {
-            window.push_notification(Notification::warning("No agents configured"), cx);
+            window.push_notification(
+                crate::toast::warning("Add an agent in Settings before starting a session"),
+                cx,
+            );
             return None;
         };
         let uid = cx.update_global::<Shared, _>(|shared, _| shared.next_uid());
         if self.window.workspace.add_session(spec, uid).is_none() {
             window.push_notification(
-                Notification::warning("Add a project before starting a session"),
+                crate::toast::warning("Add a project before starting a session"),
                 cx,
             );
             return None;
@@ -559,7 +561,7 @@ impl Shell {
             return;
         }
         let label = self.session_label(uid, cx);
-        let ask = Ask {
+        let ask = Confirm {
             id: "restart-agent",
             title: format!("Restart the agent of {label}?").into(),
             description: "A turn is running. Restarting stops it, and that turn is lost.".into(),
@@ -568,7 +570,7 @@ impl Shell {
         };
         // By uid: the question is about the session it was asked on,
         // whichever one shows by the time it is answered.
-        self.ask(ask, window, cx, move |shell, window, cx| {
+        self.confirm(ask, window, cx, move |shell, window, cx| {
             shell.restart_now(uid, window, cx)
         });
     }
@@ -577,7 +579,7 @@ impl Shell {
     fn restart_now(&mut self, uid: u64, window: &mut Window, cx: &mut Context<Self>) {
         match self.chat.update(cx, |pane, cx| pane.restart(uid, cx)) {
             crate::chat::pane::Restart::Restarted => {
-                window.push_notification(Notification::info("Restarting the agent"), cx);
+                window.push_notification(crate::toast::info("Restarting the agent"), cx);
             }
             crate::chat::pane::Restart::Nothing => {}
         }

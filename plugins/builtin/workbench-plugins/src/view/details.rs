@@ -3,9 +3,10 @@ use crate::inventory::Inventory;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, InteractiveElement as _, IntoElement, ParentElement,
-    StatefulInteractiveElement as _, Styled, Window, div, rems,
+    StatefulInteractiveElement as _, Styled, Window, div,
 };
-use gpui_component::{ActiveTheme, StyledExt, WindowExt as _};
+use gpui_component::tag::Tag;
+use gpui_component::{ActiveTheme, Sizable as _, StyledExt, WindowExt as _};
 use onehand_plugin_host::status_ink;
 
 /// "4 skills", "1 command" … for each counted kind a plugin has any of, in one
@@ -57,22 +58,23 @@ pub(super) fn component_chips(plugin: &Plugin, cx: &App) -> Option<AnyElement> {
     })
 }
 
+/// A kind the plugin carries, as the library's small label, outlined: in the
+/// warning ink and edged in it for hooks, muted on a hairline otherwise.
 fn chip(text: String, warn: bool, cx: &App) -> AnyElement {
-    let ink = if warn {
-        status_ink(cx).warning
-    } else {
-        cx.theme().muted_foreground
+    let (ink, edge) = match warn {
+        true => (status_ink(cx).warning, status_ink(cx).warning),
+        false => (cx.theme().muted_foreground, cx.theme().border),
     };
-    div()
-        .px_1p5()
-        .rounded(cx.theme().radius)
-        .border_1()
-        .border_color(if warn { ink } else { cx.theme().border })
-        .text_xs()
-        .text_color(ink)
+    Tag::custom(ink, ink, edge)
+        .outline()
+        .small()
         .child(text)
         .into_any_element()
 }
+
+/// The details drawer's width: a hook's command on one line at the panel's
+/// zoom, which is what somebody opens it to check.
+const DRAWER_W: gpui::Rems = gpui::rems(26.25);
 
 /// A plugin's details, in a drawer over the window: what it says it is, and
 /// every skill, command, agent, MCP server and hook it carries — a hook with
@@ -84,7 +86,7 @@ pub(super) fn open_details(plugin: &Plugin, window: &mut Window, cx: &mut App) {
             .title(plugin.name().to_string())
             // In rems, so the drawer follows the zoom the rest of the panel
             // is read at.
-            .size(rems(26.25))
+            .size(DRAWER_W)
             .child(details(&plugin, cx))
     });
 }

@@ -247,10 +247,10 @@ pub(super) fn session_row(
         .v_flex()
         .py_1()
         .when(flat, |d| d.pl_1p5())
-        // A session's text starts under its project's name. The row's fill
-        // starts there too, past the fold chevron's column, so a chosen row
-        // carries no empty band on its left.
-        .when(!flat, |d| d.ml_5().pl_2())
+        // A session's mark stands under its project's folder and its title
+        // under the name. The row's fill starts past the fold control's
+        // column, so a chosen row carries no empty band on its left.
+        .when(!flat, |d| d.ml(super::INDENT).pl_1p5())
         .pr_1()
         .rounded(cx.theme().radius)
         .cursor_pointer()

@@ -17,14 +17,17 @@
 //! [`model`], without drawing, and the same rows are what the keyboard walks.
 
 use crate::shell::Shell;
+use crate::tokens::ROW_H;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, AppContext as _, ClickEvent, Context, Entity, FocusHandle, Focusable as _,
-    InteractiveElement, IntoElement, ParentElement, Rems, SharedString, StatefulInteractiveElement,
-    Styled, Subscription, Task, Window, div, rems,
+    InteractiveElement, IntoElement, ParentElement, SharedString, StatefulInteractiveElement,
+    Styled, Subscription, Task, Window, div,
 };
+use gpui::{Rems, rems};
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{InputEvent, InputState};
+use gpui_component::tag::Tag;
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, Sizable as _, StyledExt};
 use model::{Filter, Item, Row};
@@ -40,8 +43,11 @@ pub use project::{pick_item, unattended_item};
 pub(crate) use session::{signal_mark, signal_word};
 pub(crate) use workspace::ellipsize_front;
 
-/// A single-line rail row: a page, a project, a note.
-const ROW_H: Rems = rems(1.875);
+/// How far a session row is set in under its project: the project row's fold
+/// control (an `xsmall` control, 1.25rem) and the gap after it. With the
+/// inset every row keeps, a session's mark stands under its project's folder
+/// and its title under the project's name.
+const INDENT: Rems = rems(1.25 + 0.375);
 
 /// How often a session's age is said again: the finest unit it is said in.
 const AGE_TICK: std::time::Duration = std::time::Duration::from_secs(60);
@@ -246,13 +252,13 @@ pub fn rail(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> impl Int
                     cx,
                 )
             }
-            Row::Empty => note("Empty", cx),
+            Row::Empty => note("No sessions yet", true, cx),
             Row::More { group, hidden } => more(
                 group.map(|root| workspace.roots[root].path.clone()),
                 hidden,
                 cx,
             ),
-            Row::NoMatch => note("No sessions match", cx),
+            Row::NoMatch => note("No sessions match", false, cx),
             Row::AddProject => add_project(cx),
         });
     }
@@ -334,7 +340,10 @@ fn pages(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
             Icon::new(IconName::LayoutDashboard),
             shell.workspace_shown(cx),
             None,
-            "What is waiting, working and open across every project",
+            (
+                "What is waiting, working and open across every project",
+                None,
+            ),
             cx,
             |shell, window, cx| shell.show_workspace(window, cx),
         ))
@@ -343,7 +352,10 @@ fn pages(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
             Icon::new(IconName::Inbox),
             shell.tasks_shown(cx),
             tasks,
-            "Every task, and what each needs",
+            (
+                "Every task, and what each needs",
+                Some(&crate::shell::ShowTasks),
+            ),
             cx,
             |shell, window, cx| shell.show_tasks(None, window, cx),
         ))
@@ -352,7 +364,10 @@ fn pages(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
             Icon::new(crate::icons::Icon::CircleDot),
             shell.issues_shown(cx),
             None,
-            "Every issue of every project, and where its work stands",
+            (
+                "Every issue of every project, and where its work stands",
+                None,
+            ),
             cx,
             |shell, window, cx| shell.show_issues(window, cx),
         ))
@@ -361,7 +376,7 @@ fn pages(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
             Icon::new(IconName::Play),
             shell.workflows_shown(cx),
             None,
-            "Every workflow, to run one or write one",
+            ("Every workflow, to run one or write one", None),
             cx,
             |shell, window, cx| shell.show_workflows(window, cx),
         ))
@@ -373,7 +388,7 @@ fn page_row<F: Fn(&mut Shell, &mut Window, &mut Context<Shell>) + 'static>(
     icon: Icon,
     on: bool,
     count: Option<String>,
-    tip: &'static str,
+    (tip, key): (&'static str, Option<&'static dyn gpui::Action>),
     cx: &mut Context<Shell>,
     go: F,
 ) -> impl IntoElement + use<F> {
@@ -395,19 +410,23 @@ fn page_row<F: Fn(&mut Shell, &mut Window, &mut Context<Shell>) + 'static>(
             d.hover(move |d| d.bg(hover))
                 .text_color(cx.theme().muted_foreground)
         })
-        .tooltip(move |window, cx| Tooltip::new(tip).build(window, cx))
+        .tooltip(move |window, cx| {
+            let tip = Tooltip::new(tip);
+            match key {
+                Some(key) => tip.action(key, None),
+                None => tip,
+            }
+            .build(window, cx)
+        })
         .on_click(
             cx.listener(move |shell: &mut Shell, _: &ClickEvent, window, cx| go(shell, window, cx)),
         )
         .child(div().w_4().flex().justify_center().child(icon.small()))
         .child(div().flex_1().child(label))
         .children(count.map(|n| {
-            div()
-                .px_1()
-                .rounded(cx.theme().radius)
-                .bg(cx.theme().secondary)
-                .text_xs()
-                .text_color(cx.theme().secondary_foreground)
+            let fill = cx.theme().secondary;
+            Tag::custom(fill, cx.theme().secondary_foreground, fill)
+                .small()
                 .child(n)
         }))
 }
@@ -424,8 +443,8 @@ fn foot(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
         .h_flex()
         .items_center()
         .flex_none()
-        .h(crate::controls::BAR_H)
-        .px_2()
+        .h(crate::tokens::BAR_H)
+        .px_3()
         .border_t_1()
         .border_color(cx.theme().border)
         .child(div().flex_1())
@@ -434,21 +453,27 @@ fn foot(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
                 .ghost()
                 .small()
                 .icon(Icon::new(IconName::Settings).text_color(cx.theme().muted_foreground))
-                .tooltip("Appearance, the workspace, agents and connections")
-                .selected(shell.settings_shown())
+                .tooltip_with_action(
+                    "Appearance, the workspace, agents and connections",
+                    &crate::shell::OpenSettings,
+                    None,
+                )
+                .selected(shell.settings_shown(cx))
                 .on_click(
                     cx.listener(|shell: &mut Shell, _, window, cx| shell.open_settings(window, cx)),
                 ),
         )
 }
 
-/// A muted line in the list where rows would be.
-fn note(text: &'static str, cx: &App) -> AnyElement {
+/// A muted line in the list where rows would be: under a project's name when
+/// it stands for that project's sessions, at the list's edge otherwise.
+fn note(text: &'static str, in_project: bool, cx: &App) -> AnyElement {
     div()
         .h_flex()
         .items_center()
         .h(ROW_H)
-        .pl_7()
+        .when(in_project, |d| d.ml(INDENT))
+        .pl_1p5()
         .text_xs()
         .text_color(cx.theme().muted_foreground)
         .child(text)
@@ -465,8 +490,8 @@ fn more(group: Option<PathBuf>, hidden: usize, cx: &mut Context<Shell>) -> AnyEl
         .h_flex()
         .items_center()
         .h(ROW_H)
-        .when(group.is_some(), |d| d.pl_7())
-        .when(group.is_none(), |d| d.pl_1p5())
+        .when(group.is_some(), |d| d.ml(INDENT))
+        .pl_1p5()
         .child(
             crate::controls::action(gpui::ElementId::Name(id))
                 .ghost()

@@ -1,7 +1,7 @@
 use super::fold_key;
 use super::metrics::{
     BLOCK_INSET, COMMAND_FADE, COMMAND_H, COMMAND_SHARE, COPY_ICON, COPY_SIZE, LARGE_DIFF,
-    MONO_ADVANCE, PREVIEW_DIFF, PREVIEW_OUT, STATE_TINT, TEXT_SM, TIGHT_GAP, radius_control,
+    MONO_ADVANCE, PREVIEW_DIFF, PREVIEW_OUT, STATE_TINT, TEXT_SM, TIGHT_GAP,
 };
 use super::parts::{
     ActivityRow, Object, RowMark, accent, activity_row, copy_button, detail_well, line_counts,
@@ -21,6 +21,10 @@ use onehand_core::chat::activity;
 use onehand_core::chat::{ToolItem, TranscriptItemId};
 use onehand_core::diff::Row as DiffRow;
 use std::path::Path;
+
+/// Less than a pixel left to scroll is the scroller's rounding, not more text
+/// under the fade.
+const SCROLL_SLACK: gpui::Pixels = gpui::px(1.);
 
 /// Diff lines drawn per tool card, **shared across all its hunks** — a
 /// MultiEdit touching twenty files must not cost twenty times the budget.
@@ -316,7 +320,7 @@ fn detail_frame(
                 .absolute()
                 .top(TIGHT_GAP)
                 .right(TIGHT_GAP)
-                .rounded(radius_control(cx))
+                .rounded(cx.theme().radius_tokens().sm)
                 .bg(cx.theme().muted)
                 .child(copy_button(("detail-copy", key), text).tooltip("Copy this"))
         }))
@@ -765,14 +769,14 @@ impl RenderOnce for CommandBlock {
         // a command draws without these and the second has them, which is a
         // frame nobody can see.
         let overflows = scroll.max_offset().y > gpui::px(0.);
-        let more_below = scroll.max_offset().y - scroll.offset().y.abs() > gpui::px(1.);
+        let more_below = scroll.max_offset().y - scroll.offset().y.abs() > SCROLL_SLACK;
 
         plain_box(cx)
             .relative()
             .rounded(cx.theme().radius)
             .border_1()
             .border_color(cx.theme().border)
-            .py_2p5()
+            .py_2()
             .pl_3()
             // The copy button's own column, kept clear of the text rather than
             // laid over it: a button that covers the first line of a command

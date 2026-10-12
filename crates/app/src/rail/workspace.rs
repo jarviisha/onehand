@@ -28,7 +28,7 @@ pub(super) fn workspace_bar(
     div()
         .h_flex()
         .items_center()
-        .h(crate::controls::BAR_H)
+        .h(crate::tokens::BAR_H)
         .flex_none()
         .px_3()
         .gap_2()
@@ -68,7 +68,7 @@ pub(super) fn workspace_bar(
                 .ghost()
                 .small()
                 .icon(Icon::new(IconName::PanelLeftClose).text_color(cx.theme().muted_foreground))
-                .tooltip("Hide the rail")
+                .tooltip_with_action("Hide the rail", &crate::shell::ToggleRail, None)
                 .on_click(
                     cx.listener(|shell: &mut Shell, _, window, cx| shell.toggle_rail(window, cx)),
                 ),
@@ -236,7 +236,7 @@ pub(super) fn new_button(
     let new = crate::controls::action("new-session")
         .icon(IconName::Plus)
         .label("New")
-        .tooltip(hint)
+        .tooltip_with_action(hint, &crate::shell::NewSession, None)
         .refuses(target.is_none())
         .on_click(
             cx.listener(move |shell: &mut Shell, _: &ClickEvent, window, cx| {

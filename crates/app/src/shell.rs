@@ -19,7 +19,7 @@ mod boot;
 mod check_commands;
 mod cleanup;
 mod confirm;
-pub(crate) use confirm::{Ask, ask_on};
+pub(crate) use confirm::{Confirm, confirm_on};
 mod docks;
 mod drafts;
 mod issue_work;
@@ -30,7 +30,7 @@ mod render;
 mod retry;
 mod roots;
 mod sessions;
-mod settings_dialog;
+mod settings_page;
 mod storage;
 mod workflows;
 pub use boot::{boot, open_or_focus, seed_workspace};
@@ -206,31 +206,19 @@ pub struct Shell {
     /// Each project's check command field, by root, made as its project
     /// page comes up.
     check_inputs: HashMap<PathBuf, Entity<InputState>>,
-    /// Which page the Settings dialog is showing.
-    ///
-    /// On the shell rather than inside the dialog because a triggered dialog is
-    /// rebuilt from its content closure on every frame it is open, so it has
-    /// nowhere of its own to keep a selection.
+    /// Which of its pages Settings is showing: on the shell, with the drafts,
+    /// so leaving Settings and coming back finds it where it was.
     ///
     /// Not persisted: a launch that opened Settings on the agent list would be
     /// one where the appearance, the thing most likely to be looked for, is a
     /// page away.
     settings_page: SettingsPage,
-    settings_open: bool,
-    settings_return_focus: Option<gpui::FocusHandle>,
-    /// Held by Settings' body and focused when it opens.
+    /// Held by Settings' nav and focused when it opens.
     settings_focus: gpui::FocusHandle,
     keymap_editor: Entity<crate::keymap::Editor>,
     settings_view: Entity<crate::settings::SettingsView>,
     /// What each agent's last *Test* found, by `settings::check_key`.
     agent_checks: HashMap<String, AgentCheck>,
-    /// How the last write made from the Settings page showing went.
-    settings_note: Option<Result<(), String>>,
-    /// The next workspace write was asked for from Settings, so how it goes is
-    /// Settings' to say. Workspace writes also come from runs, pins and the
-    /// dock, and one of those landing while Settings is open is not a change
-    /// the page in front of the user made.
-    workspace_note_wanted: bool,
     held_commands: std::collections::HashSet<&'static str>,
     /// The workspace-rename field.
     workspace_name: Entity<InputState>,
@@ -257,6 +245,11 @@ pub struct Shell {
     /// The workflow launcher, while it is on screen. Opened from a menu entry
     /// or a key, so this being `Some` is what puts it up.
     workflow_launcher: Option<WorkflowLauncher>,
+    /// What held the keyboard when one of the shell's own dialogs opened, so
+    /// it gets the keyboard back once the dialog is gone: those dialogs are
+    /// mounted by the shell rather than by the library, which would do this
+    /// itself. `None` when nothing held it, and the conversation takes it.
+    dialog_return: Option<gpui::WeakFocusHandle>,
     /// Settings' new workflow label: the label typed, the workflow picked for
     /// it, and why the last *Add* was refused.
     label_input: Entity<InputState>,
@@ -406,6 +399,10 @@ pub struct IssuePicker {
     /// read with the issues: what an issue's body is read against. Empty
     /// until read, when nothing is said to be lacking.
     pub templates: Vec<onehand_core::issues::template::IssueTemplate>,
+    /// The picker's body, which holds the keyboard until an issue is chosen:
+    /// there is no field to hold it before then, and outside the dialog Esc
+    /// would not reach it.
+    pub focus: gpui::FocusHandle,
 }
 
 impl IssuePicker {

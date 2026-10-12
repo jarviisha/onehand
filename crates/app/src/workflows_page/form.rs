@@ -12,8 +12,8 @@ use gpui_component::input::Input;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::workflow::Place;
 
-/// How wide the margin beside the steps runs, in rems.
-const MARGIN: f32 = 4.5;
+/// How wide the margin beside the steps runs.
+const MARGIN: gpui::Rems = gpui::rems(4.5);
 
 /// A step's margin: where its failure sends the run back to, and which later
 /// steps send theirs back to it, by step number. The arrows of a loop read
@@ -21,7 +21,7 @@ const MARGIN: f32 = 4.5;
 fn margin(back: Option<usize>, from: &[usize], muted: gpui::Hsla) -> impl IntoElement {
     div()
         .flex_none()
-        .w(gpui::rems(MARGIN))
+        .w(MARGIN)
         .pt_3()
         .v_flex()
         .gap_1()

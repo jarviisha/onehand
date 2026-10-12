@@ -122,7 +122,7 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
                     .ghost()
                     .small()
                     .text_color(ink.danger)
-                    .label("Delete")
+                    .label("Delete…")
                     .on_click({
                         let shell = shell.clone();
                         move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
@@ -193,7 +193,7 @@ pub(super) fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                 div()
                     .text_sm()
                     .text_color(cx.theme().muted_foreground)
-                    .child("No agents yet — add one below."),
+                    .child("No agents yet"),
             )
         });
     let form = section(
@@ -233,9 +233,12 @@ pub(super) fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
             .child(
                 crate::controls::action("save-agent")
                     .primary()
-                    // Disabled until name and command are both non-blank: an
+                    // Refused until name and command are both non-blank: an
                     // agent missing either cannot be launched.
                     .refuses(!saveable)
+                    .when(!saveable, |save| {
+                        save.tooltip("Name it and give its command first")
+                    })
                     .label(if editing { "Save" } else { "Add" })
                     .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
                         save.update(cx, |shell, cx| shell.save_agent_draft(window, cx));

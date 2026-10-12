@@ -12,17 +12,16 @@ use gpui::{
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{Input, InputState};
-use gpui_component::notification::Notification;
 use gpui_component::{ActiveTheme, Sizable as _, StyledExt, WindowExt as _};
 use onehand_core::config::AppConfig;
 
-use crate::shell::*;
 use crate::state::Shared;
 
 gpui::actions!(keymap_editor, [SaveShortcut, CancelShortcut]);
 
 type Overrides = BTreeMap<String, Vec<String>>;
 
+#[derive(Clone)]
 pub struct Command {
     pub id: &'static str,
     pub label: &'static str,
@@ -48,280 +47,10 @@ macro_rules! command {
     };
 }
 
-pub const COMMANDS: &[Command] = &[
-    command!("settings", "Open Settings", ["ctrl-,"], OpenSettings),
-    command!(
-        "toggle_rail",
-        "Show / hide navigation rail",
-        ["ctrl-shift-b"],
-        ToggleRail
-    ),
-    command!(
-        "toggle_workbench",
-        "Show / hide Workbench (previous mode)",
-        ["ctrl-shift-j"],
-        ToggleWorkbenchVisibility
-    ),
-    command!(
-        "editor",
-        "Open / focus Editor",
-        ["ctrl-shift-e"],
-        ToggleWorkbench
-    ),
-    command!(
-        "markdown",
-        "Open / focus Markdown",
-        ["ctrl-shift-m"],
-        ToggleMarkdown
-    ),
-    command!(
-        "neovim",
-        "Open / focus Neovim",
-        ["ctrl-shift-n"],
-        OpenNeovim
-    ),
-    // Unshifted on purpose: gpui names a key by the keysym the layout produces
-    // with the modifiers applied, so shift over the backtick arrives as
-    // `ctrl-~` and a `ctrl-shift-`` binding never matches anything.
-    command!(
-        "terminal",
-        "Show / hide terminal",
-        ["ctrl-`"],
-        ToggleTerminal
-    ),
-    command!(
-        "composer",
-        "Focus composer",
-        ["ctrl-shift-a"],
-        FocusComposer
-    ),
-    command!(
-        NEW_SESSION,
-        "New session (default agent, current project)",
-        ["ctrl-shift-o"],
-        NewSession
-    ),
-    command!(
-        RESTART,
-        "Restart agent (confirm again mid-turn)",
-        ["ctrl-shift-r"],
-        RestartSession
-    ),
-    command!(
-        CLOSE_SESSION,
-        "Close session (confirm again mid-turn)",
-        ["ctrl-shift-w"],
-        CloseSession
-    ),
-    command!(
-        "run_workflow",
-        "Run a workflow on the current project",
-        [],
-        RunWorkflow
-    ),
-    command!("show_tasks", "Show the Tasks page", [], ShowTasks),
-    command!(
-        "maximize",
-        "Maximize focused panel / restore",
-        ["ctrl-shift-k"],
-        ToggleMaximize
-    ),
-    command!(
-        "save",
-        "Save open file",
-        ["ctrl-s"],
-        SaveFile,
-        "Shell && !Terminal && !Dialog",
-        "Outside terminal"
-    ),
-    command!(
-        "zoom_in",
-        "Zoom focused panel in",
-        ["ctrl-=", "ctrl-+"],
-        ZoomIn
-    ),
-    command!("zoom_out", "Zoom focused panel out", ["ctrl--"], ZoomOut),
-    command!(
-        "zoom_reset",
-        "Reset focused panel zoom",
-        ["ctrl-0"],
-        ZoomReset
-    ),
-    command!(
-        "next_session",
-        "Next session (most recent first)",
-        ["ctrl-tab"],
-        NextSession
-    ),
-    command!(
-        "previous_session",
-        "Previous session",
-        ["ctrl-shift-tab"],
-        PrevSession
-    ),
-    command!(
-        "session_1",
-        "Session 1",
-        ["ctrl-1"],
-        SelectSession { index: 0 }
-    ),
-    command!(
-        "session_2",
-        "Session 2",
-        ["ctrl-2"],
-        SelectSession { index: 1 }
-    ),
-    command!(
-        "session_3",
-        "Session 3",
-        ["ctrl-3"],
-        SelectSession { index: 2 }
-    ),
-    command!(
-        "session_4",
-        "Session 4",
-        ["ctrl-4"],
-        SelectSession { index: 3 }
-    ),
-    command!(
-        "session_5",
-        "Session 5",
-        ["ctrl-5"],
-        SelectSession { index: 4 }
-    ),
-    command!(
-        "session_6",
-        "Session 6",
-        ["ctrl-6"],
-        SelectSession { index: 5 }
-    ),
-    command!(
-        "session_7",
-        "Session 7",
-        ["ctrl-7"],
-        SelectSession { index: 6 }
-    ),
-    command!(
-        "session_8",
-        "Session 8",
-        ["ctrl-8"],
-        SelectSession { index: 7 }
-    ),
-    command!(
-        "session_9",
-        "Session 9",
-        ["ctrl-9"],
-        SelectSession { index: 8 }
-    ),
-    command!(
-        "focus_rail_search",
-        "Search sessions and projects in the rail",
-        ["ctrl-k"],
-        crate::rail::FocusRailSearch,
-        "Shell && !Terminal && !Dialog",
-        "Outside terminal"
-    ),
-    command!(
-        "rail_next_session",
-        "Next session in the rail",
-        ["alt-down"],
-        crate::rail::RailNext,
-        "Shell && !Terminal && !Dialog",
-        "Outside terminal"
-    ),
-    command!(
-        "rail_previous_session",
-        "Previous session in the rail",
-        ["alt-up"],
-        crate::rail::RailPrev,
-        "Shell && !Terminal && !Dialog",
-        "Outside terminal"
-    ),
-    command!(
-        "rail_open",
-        "Open the session, or fold the project",
-        ["enter"],
-        crate::rail::RailOpen,
-        "Rail",
-        "Rail list"
-    ),
-    command!(
-        "rail_up",
-        "Move to the row above",
-        ["up"],
-        crate::rail::RailUp,
-        "Rail",
-        "Rail list"
-    ),
-    command!(
-        "rail_down",
-        "Move to the row below",
-        ["down"],
-        crate::rail::RailDown,
-        "Rail",
-        "Rail list"
-    ),
-    command!(
-        "rail_fold",
-        "Fold the project",
-        ["left"],
-        crate::rail::RailFold,
-        "Rail",
-        "Rail list"
-    ),
-    command!(
-        "rail_unfold",
-        "Unfold the project",
-        ["right"],
-        crate::rail::RailUnfold,
-        "Rail",
-        "Rail list"
-    ),
-    // `A > B` scores at `B`'s depth, so these tie with the input's own arrow
-    // and Tab bindings and win by being registered later. The composer adds
-    // `ChatComposer` only while a list is open, so otherwise the keys still
-    // move the caret.
-    command!(
-        "completion_previous",
-        "Previous suggestion",
-        ["up"],
-        CompletionPrev,
-        "ChatComposer > Input",
-        "Composer suggestions"
-    ),
-    command!(
-        "completion_next",
-        "Next suggestion",
-        ["down"],
-        CompletionNext,
-        "ChatComposer > Input",
-        "Composer suggestions"
-    ),
-    command!(
-        "completion_accept",
-        "Accept suggestion",
-        ["tab"],
-        CompletionAccept,
-        "ChatComposer > Input",
-        "Composer suggestions (Enter also accepts)"
-    ),
-    command!(
-        "paste",
-        "Paste text / attach image or file",
-        ["ctrl-v"],
-        PasteHere,
-        "ChatComposerCard > Input",
-        "Composer"
-    ),
-    command!(
-        "cycle_mode",
-        "Next session mode",
-        ["shift-tab"],
-        CycleMode,
-        "ChatComposerCard > Input",
-        "Composer"
-    ),
-];
+// The table itself, one entry per command, in a file of its own: it is
+// the part that grows with every key the app learns.
+mod commands;
+pub use commands::COMMANDS;
 
 impl Command {
     pub fn keys(&self, overrides: &Overrides) -> Vec<String> {
@@ -413,53 +142,106 @@ fn parse_key(raw: &str) -> Result<Keystroke, String> {
 }
 
 fn validate(overrides: &Overrides) -> Result<(), String> {
+    check(COMMANDS, overrides)
+}
+
+/// The focus stack a command's context sits in, named by the context its
+/// predicate starts from.
+///
+/// A window command (`Shell…`) is in every stack. The composer's two scopes
+/// nest, the suggestion list's inside the card's, so they are one stack. The
+/// rail's list, the Issues page, the Plugins list and the two blocking cards
+/// never hold one another, so each is a stack of its own, and one key may serve
+/// one command in each.
+fn stack(context: &str) -> &str {
+    match head(context) {
+        "ChatComposer" => "ChatComposerCard",
+        head => head,
+    }
+}
+
+/// The context a command's predicate starts from: its region.
+fn head(context: &str) -> &str {
+    context
+        .split(|c: char| !c.is_alphanumeric())
+        .next()
+        .unwrap_or_default()
+}
+
+/// Whether a binding in `context` fires with `contexts` as the focus stack,
+/// outermost first: at any depth of it, as the keymap matches.
+fn fires(context: &str, contexts: &[&str]) -> bool {
+    let contexts: Vec<_> = contexts
+        .iter()
+        .map(|c| gpui::KeyContext::parse(c).unwrap())
+        .collect();
+    gpui::KeyBindingContextPredicate::parse(context)
+        .is_ok_and(|predicate| predicate.depth_of(&contexts).is_some())
+}
+
+fn check(commands: &[Command], overrides: &Overrides) -> Result<(), String> {
     for id in overrides.keys() {
-        if !COMMANDS.iter().any(|c| c.id == id) {
+        if !commands.iter().any(|c| c.id == id) {
             return Err(format!("Unknown command: {id}"));
         }
     }
     let mut seen: Vec<(Keystroke, &str, &str)> = Vec::new();
-    for command in COMMANDS {
+    for command in commands {
+        let window_wide = stack(command.context) == "Shell";
+        let region = head(command.context);
+        // Fires in its region, and still fires with a field inside it focused.
+        let reaches_fields = fires(command.context, &["Shell", region])
+            && fires(command.context, &["Shell", region, "Input"]);
         for raw in command.keys(overrides) {
             let key = parse_key(&raw)?;
-            // A key may serve two commands only when one is the rail list's and
-            // the other a field's: the list holds no field, so the two are never
-            // in one focus stack. A window command is everywhere, and the
-            // composer's scopes nest in each other; anything else would rest on
-            // registration order.
-            let overlap = |context: &str| {
-                context == command.context
-                    || context.starts_with("Shell")
-                    || command.context.starts_with("Shell")
-                    || (context != "Rail" && command.context != "Rail")
-            };
-            if let Some((_, other, _)) = seen
-                .iter()
-                .find(|(k, _, context)| *k == key && overlap(context))
-            {
+            // Two commands on one key in one focus stack would be decided by
+            // registration order, so that is the clash; in two stacks that
+            // never hold each other, each key reaches only its own.
+            if let Some((_, other, _)) = seen.iter().find(|(k, _, context)| {
+                *k == key
+                    && (window_wide
+                        || stack(context) == "Shell"
+                        || stack(context) == stack(command.context))
+            }) {
                 return Err(format!(
                     "{raw} conflicts between {other} and {}",
                     command.label
                 ));
             }
-            if command.context.starts_with("Shell")
-                && !(key.modifiers.control
-                    || key.modifiers.alt
-                    || key.modifiers.platform
-                    || key.modifiers.function
-                    || key.key.starts_with('f') && key.key.len() > 1)
-            {
+            let modified = key.modifiers.control
+                || key.modifiers.alt
+                || key.modifiers.platform
+                || key.modifiers.function
+                || key.key.starts_with('f') && key.key.len() > 1;
+            if window_wide && !modified {
                 return Err(format!(
                     "{} needs Ctrl, Alt, Super, or a function key",
                     command.label
                 ));
             }
-            if ["ctrl-shift-c", "ctrl-shift-v", "escape"]
+            // A plain key a region handles must not land while a field in that
+            // region holds the caret, or typing fires it.
+            if !window_wide && !modified && reaches_fields {
+                return Err(format!(
+                    "{raw} for {} would fire while typing; exclude Input from its context",
+                    command.label
+                ));
+            }
+            if ["ctrl-shift-c", "ctrl-shift-v"]
                 .iter()
                 .any(|reserved| Keystroke::parse(reserved).unwrap() == key)
             {
+                return Err(format!("{raw} is reserved for the clipboard"));
+            }
+            // Escape belongs to dialogs and fields. A region may take it only
+            // where neither is in the stack.
+            if key == Keystroke::parse("escape").unwrap()
+                && (window_wide
+                    || fires(command.context, &["Shell", region, "Input"])
+                    || fires(command.context, &["Shell", "Dialog", region]))
+            {
                 return Err(format!(
-                    "{raw} is reserved for clipboard or closing dialogs"
+                    "{raw} is reserved for closing dialogs and leaving fields"
                 ));
             }
             seen.push((key, command.label, command.context));
@@ -579,8 +361,8 @@ pub use editor::Editor;
 
 #[cfg(test)]
 mod tests {
-    use super::editor::edit_changes;
     use super::*;
+    use crate::shell::*;
     use gpui::{KeyContext, Keymap};
 
     fn action_at(map: &Keymap, key: &str, contexts: &[&str]) -> Option<String> {
@@ -640,20 +422,6 @@ mod tests {
         );
     }
 
-    /// A shortcut opened and left as it was is not an unsaved change, so
-    /// closing Settings over it must not ask; one whose keys differ is.
-    #[test]
-    fn a_shortcut_edit_is_pending_only_when_its_keys_changed() {
-        let current = vec!["ctrl-shift-b".to_string()];
-        assert!(!edit_changes("ctrl-shift-b", &current));
-        assert!(!edit_changes("  ctrl-shift-b  ", &current));
-        assert!(edit_changes("ctrl-shift-x", &current));
-        assert!(edit_changes("ctrl-shift-b ctrl-alt-b", &current));
-        // Emptied is a change: it unassigns the command.
-        assert!(edit_changes("", &current));
-        assert!(!edit_changes("   ", &[]));
-    }
-
     #[test]
     fn defaults_dispatch_by_context() {
         validate(&Overrides::new()).unwrap();
@@ -671,6 +439,11 @@ mod tests {
             Some(SaveFile.name().into())
         );
         assert_eq!(action_at(&map, "ctrl-s", &["Shell", "Terminal"]), None);
+        // Settings hides the editor, so its save does not reach through it.
+        assert_eq!(
+            action_at(&map, "ctrl-s", &["Shell", "Chat", "Settings", "Input"]),
+            None
+        );
         assert_eq!(
             action_at(&map, "ctrl-shift-w", &["Shell", "Dialog", "Input"]),
             None
@@ -702,6 +475,56 @@ mod tests {
         assert_eq!(
             action_at(&map, "shift-tab", &["Shell", "ChatComposerCard", "Input"]),
             Some(CycleMode.name().into())
+        );
+        // The Issues page steps its list with the arrows, but never while
+        // the caret is in its search; Esc closes what is open over the list.
+        let page = ["Shell", "Chat", "IssuesPage"];
+        assert_eq!(
+            action_at(&map, "up", &page),
+            Some(onehand_workbench_issues::IssuesUp.name().into())
+        );
+        assert_eq!(
+            action_at(&map, "up", &[&page[..], &["Input"]].concat()),
+            None
+        );
+        assert_eq!(
+            action_at(&map, "escape", &page),
+            Some(onehand_workbench_issues::IssuesClose.name().into())
+        );
+        // The question card walks on the arrows and takes a number, but the
+        // free-text box inside it keeps every key; the permission card answers
+        // Enter and Esc.
+        let card = ["Shell", "Chat", "QuestionCard"];
+        assert_eq!(
+            action_at(&map, "2", &card),
+            Some(
+                crate::chat::transcript::QuestionPick { index: 1 }
+                    .name()
+                    .into()
+            )
+        );
+        assert_eq!(
+            action_at(&map, "2", &[&card[..], &["Input"]].concat()),
+            None
+        );
+        assert_eq!(
+            action_at(&map, "escape", &["Shell", "Chat", "PermissionCard"]),
+            Some(crate::chat::transcript::PermissionDeny.name().into())
+        );
+        // A Plugins row opens on Enter and flips on Space, but never while a
+        // field holds the caret.
+        let list = ["Shell", "Workbench", "PluginList"];
+        assert_eq!(
+            action_at(&map, "enter", &list),
+            Some(onehand_workbench_plugins::PluginOpen.name().into())
+        );
+        assert_eq!(
+            action_at(&map, "space", &list),
+            Some(onehand_workbench_plugins::PluginFlip.name().into())
+        );
+        assert_eq!(
+            action_at(&map, "space", &[&list[..], &["Input"]].concat()),
+            None
         );
         // The rail's list and the composer's suggestions share the arrows,
         // each only where it has focus.
@@ -771,9 +594,9 @@ mod tests {
 
     /// The composer's scopes nest while a suggestion list is open, so one key
     /// in two of them would be decided by registration order; the rail's list
-    /// holds no field, so its keys may repeat a field's.
+    /// is a stack of its own, so its keys may repeat a field's.
     #[test]
-    fn only_the_rail_list_shares_a_key_with_a_field() {
+    fn the_composers_scopes_are_one_stack() {
         let overrides = Overrides::from([("cycle_mode".into(), vec!["tab".into()])]);
         assert!(
             validate(&overrides).is_err(),
@@ -825,5 +648,181 @@ mod tests {
         let overrides = Overrides::from([(RESTART.into(), vec!["alt-x".into()])]);
         assert!(released(RESTART, "x", &overrides));
         assert!(!released(RESTART, "r", &overrides));
+    }
+
+    /// One command on `j` in each region that takes keys of its own, each
+    /// kept out of the fields inside it.
+    fn regions() -> Vec<(&'static str, Command)> {
+        vec![
+            (
+                "IssuesPage",
+                command!(
+                    "t_issues",
+                    "Issues j",
+                    ["j"],
+                    crate::rail::RailUp,
+                    "IssuesPage && !Input",
+                    "Issues page"
+                ),
+            ),
+            (
+                "PluginList",
+                command!(
+                    "t_plugins",
+                    "Plugins j",
+                    ["j"],
+                    crate::rail::RailDown,
+                    "PluginList && !Input",
+                    "Plugins list"
+                ),
+            ),
+            (
+                "QuestionCard",
+                command!(
+                    "t_question",
+                    "Question j",
+                    ["j"],
+                    crate::rail::RailFold,
+                    "QuestionCard && !Input",
+                    "Question card"
+                ),
+            ),
+            (
+                "PermissionCard",
+                command!(
+                    "t_permission",
+                    "Permission j",
+                    ["j"],
+                    crate::rail::RailUnfold,
+                    "PermissionCard && !Input",
+                    "Permission card"
+                ),
+            ),
+        ]
+    }
+
+    /// `COMMANDS` and `extra`, as the validator would see them registered.
+    fn with(extra: impl IntoIterator<Item = Command>) -> Vec<Command> {
+        COMMANDS.iter().cloned().chain(extra).collect()
+    }
+
+    #[test]
+    fn a_key_may_serve_one_command_in_each_region() {
+        let all = with(regions().into_iter().map(|(_, command)| command));
+        assert_eq!(check(&all, &Overrides::new()), Ok(()));
+    }
+
+    #[test]
+    fn a_key_shared_by_a_region_and_a_window_command_fails() {
+        let all = with([command!(
+            "t_issues",
+            "Issues new",
+            ["ctrl-shift-o"],
+            crate::rail::RailUp,
+            "IssuesPage && !Input",
+            "Issues page"
+        )]);
+        assert!(check(&all, &Overrides::new()).is_err());
+    }
+
+    #[test]
+    fn a_plain_region_key_must_stay_out_of_fields() {
+        let typed = with([command!(
+            "t",
+            "j",
+            ["j"],
+            crate::rail::RailUp,
+            "IssuesPage",
+            "Issues page"
+        )]);
+        assert!(check(&typed, &Overrides::new()).is_err());
+        let modified = with([command!(
+            "t",
+            "j",
+            ["alt-j"],
+            crate::rail::RailUp,
+            "IssuesPage",
+            "Issues page"
+        )]);
+        assert_eq!(check(&modified, &Overrides::new()), Ok(()));
+    }
+
+    #[test]
+    fn escape_is_a_regions_only_where_no_dialog_or_field_is() {
+        let on = |context: &'static str| {
+            let command = Command {
+                id: "t",
+                label: "Esc",
+                defaults: &["escape"],
+                context,
+                scope: "",
+                action: || Box::new(crate::rail::RailUp),
+            };
+            check(&with([command]), &Overrides::new())
+        };
+        assert_eq!(on("PluginList && !Dialog && !Input"), Ok(()));
+        for context in [
+            "PluginList && !Input",
+            "PluginList && !Dialog",
+            "ChatComposer > Input",
+            "Shell && !Dialog",
+        ] {
+            assert!(on(context).is_err(), "escape accepted in {context}");
+        }
+    }
+
+    #[test]
+    fn a_regions_key_fires_in_its_region_only() {
+        let regions = regions();
+        let escape = command!(
+            "t_escape",
+            "Esc",
+            ["escape"],
+            crate::rail::RailOpen,
+            "PluginList && !Dialog && !Input",
+            "Plugins list"
+        );
+        let all = with(regions.iter().map(|(_, c)| c.clone()).chain([escape]));
+        check(&all, &Overrides::new()).unwrap();
+        let map = Keymap::new(
+            all.iter()
+                .flat_map(|c| c.keys(&Overrides::new()).into_iter().map(|k| c.binding(&k)))
+                .collect(),
+        );
+        for (region, command) in &regions {
+            let own = Some((command.action)().name().to_string());
+            assert_eq!(action_at(&map, "j", &["Shell", region]), own, "{region}");
+            assert_eq!(
+                action_at(&map, "j", &["Shell", region, "Input"]),
+                None,
+                "{region}"
+            );
+            assert_eq!(
+                action_at(&map, "j", &["Shell", "Dialog", "Input"]),
+                None,
+                "{region}"
+            );
+            assert_eq!(
+                action_at(&map, "j", &["Shell", "Terminal"]),
+                None,
+                "{region}"
+            );
+            // The window's commands still reach a region, and a field in it.
+            assert_eq!(
+                action_at(&map, "ctrl-shift-o", &["Shell", region, "Input"]),
+                Some(NewSession.name().into()),
+                "{region}"
+            );
+        }
+        let esc = Some(crate::rail::RailOpen.name().to_string());
+        assert_eq!(action_at(&map, "escape", &["Shell", "PluginList"]), esc);
+        assert_eq!(
+            action_at(&map, "escape", &["Shell", "PluginList", "Input"]),
+            None
+        );
+        assert_eq!(
+            action_at(&map, "escape", &["Shell", "PluginList", "Dialog"]),
+            None
+        );
     }
 }

@@ -3,7 +3,6 @@ use crate::state::Shared;
 use gpui::{App, AppContext as _, BorrowAppContext, Context, Entity, SharedString, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::input::{InputState, TextareaState};
-use gpui_component::notification::Notification;
 use onehand_core::config::AgentSpec;
 use std::path::{Path, PathBuf};
 
@@ -40,9 +39,6 @@ impl Shell {
             .filter(|root| root.unattended)
         {
             crate::unattended::check_now(self.project_for_runs(&root.path), cx);
-        }
-        if self.settings_open {
-            self.workspace_note_wanted = true;
         }
         self.save_workspace(window, cx);
         // The project page's menu says whether this is on, in the entry that was
@@ -227,7 +223,11 @@ impl Shell {
             TextareaState::new(window, cx)
                 .placeholder("Optional: added to what every step is asked")
         });
+        self.remember_focus(window, cx);
+        let focus = cx.focus_handle();
+        focus.focus(window, cx);
         self.issue_picker = Some(IssuePicker {
+            focus,
             root: path.clone(),
             project: label,
             found: None,
@@ -299,7 +299,7 @@ impl Shell {
     ) {
         let path = crate::state::Shared::global(cx).config_path.clone();
         let saved = crate::unattended::set_workflows(default, by_label, &path, cx);
-        self.report_write("Unattended runs", saved, true, window, cx);
+        crate::toast::report(window, cx, "Saving the unattended runs", None, saved);
         cx.notify();
     }
 
@@ -378,10 +378,14 @@ impl Shell {
         self.issue_picker.as_ref()
     }
 
-    /// Choose the `index`th issue in the picker's list, for the form below it.
-    pub fn choose_issue(&mut self, index: usize, cx: &mut Context<Self>) {
+    /// Choose the `index`th issue in the picker's list, for the form below
+    /// it, whose first field takes the keyboard.
+    pub fn choose_issue(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(picker) = self.issue_picker.as_mut() {
             picker.chosen = Some(index);
+            picker
+                .instructions
+                .update(cx, |field, cx| field.focus(window, cx));
             cx.notify();
         }
     }
@@ -428,7 +432,7 @@ impl Shell {
             handle,
             cx,
         ) {
-            window.push_notification(Notification::warning(why), cx);
+            window.push_notification(crate::toast::warning(why), cx);
         }
     }
 

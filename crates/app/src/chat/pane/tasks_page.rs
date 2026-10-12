@@ -1,6 +1,7 @@
 use super::workspace_page::{ALL_PROJECTS, PageProject, card_box, page_card};
 use super::{ChatPane, ChatPaneEvent, Page};
 use crate::task::Row;
+use crate::tokens::PAGE_WIDE;
 use gpui::{
     App, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, Window, div,
@@ -8,7 +9,6 @@ use gpui::{
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::task::{Group, Section};
-use onehand_plugin_host::PAGE_WIDE;
 use std::path::{Path, PathBuf};
 
 /// How many rows each card of the Tasks page draws. Finished tasks are kept
@@ -29,6 +29,10 @@ pub(super) struct TasksPage {
     /// The task shown in place of the cards, if one is opened.
     pub(super) open: Option<TaskDetail>,
 }
+
+// The Tasks page's key: the task open in place of the cards closed, the
+// cards back.
+gpui::actions!(tasks_page, [CloseTaskDetail]);
 
 impl TasksPage {
     /// What `root` is called here, or its folder's name.
@@ -62,6 +66,7 @@ impl ChatPane {
             open: None,
         }));
         self.leave_shown_session(window, cx);
+        self.tasks_focus.clone().focus(window, cx);
         self.active = None;
         self.empty = None;
         cx.notify();
@@ -222,6 +227,11 @@ impl ChatPane {
     /// The page around `body`: its header, then one scrolled column.
     fn tasks_frame(&self, body: Vec<gpui::AnyElement>, cx: &mut Context<Self>) -> gpui::AnyElement {
         div()
+            .key_context("TasksPage")
+            .track_focus(&self.tasks_focus)
+            .on_action(cx.listener(|pane: &mut Self, _: &CloseTaskDetail, _, cx| {
+                pane.open_task(None, cx);
+            }))
             .size_full()
             .v_flex()
             .child(self.header(cx))
@@ -316,7 +326,7 @@ fn row_actions(
     };
     let open = open_session(&format!("{key}-open"), row, cx);
     let retry = |cx: &mut Context<ChatPane>| {
-        button("retry", "Retry")
+        button("retry", "Retry…")
             .tooltip("Run it again in a new run")
             .on_click(emit(&id, cx, ChatPaneEvent::RetryTask))
             .into_any_element()

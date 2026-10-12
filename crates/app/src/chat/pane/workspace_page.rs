@@ -1,14 +1,13 @@
 use super::project_page::count_of;
 use super::{ChatPane, ChatPaneEvent, Page, SessionSignal, rel_time};
-use gpui::prelude::FluentBuilder as _;
+use crate::tokens::PAGE_WIDE;
 use gpui::{
-    App, Context, Div, InteractiveElement, IntoElement, ParentElement, SharedString,
+    App, Context, Div, InteractiveElement, IntoElement, ParentElement, Rems, SharedString,
     StatefulInteractiveElement, Styled, Window, div, rems,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::chat::ConvMeta;
-use onehand_plugin_host::PAGE_WIDE;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
@@ -29,29 +28,23 @@ const PAGE_RECENT: usize = 5;
 /// many that a workspace of busy projects builds a thousand rows nobody reaches.
 const PAGE_ISSUES: usize = 100;
 
-/// The width of the column the pages drawn in place of a conversation keep to:
-/// the project page, the resume picker and the workspace page. One figure, so
-/// moving between them does not move the column. In rems, so it follows the
-/// pane's zoom with the text inside it.
-pub(super) const PAGE_COLUMN: f32 = 35.;
+/// The width a workspace page card starts from before it grows into its row.
+/// Two fit side by side within the page, and a narrower panel wraps them one
+/// under the other.
+const PAGE_CARD: Rems = rems(22.);
 
-/// The width a workspace page card starts from before it grows into its row,
-/// in rems. Two fit side by side within the page, and a narrower panel wraps
-/// them one under the other.
-const PAGE_CARD: f32 = 22.;
+/// The width a project tile starts from.
+const PAGE_TILE: Rems = rems(14.);
 
-/// The width a project tile starts from, in rems.
-const PAGE_TILE: f32 = 14.;
+/// The widest a project tile grows into its row, so a short last row does not
+/// stretch one tile across the page.
+const PAGE_TILE_MAX: Rems = rems(21.);
 
-/// The widest a project tile grows into its row, in rems, so a short last row
-/// does not stretch one tile across the page.
-const PAGE_TILE_MAX: f32 = 21.;
+/// How tall the open-issues card's list grows before it scrolls.
+const PAGE_ISSUES_H: Rems = rems(24.);
 
-/// How tall the open-issues card's list grows before it scrolls, in rems.
-const PAGE_ISSUES_H: f32 = 24.;
-
-/// The height of a workspace page card's title row, in rems.
-const PAGE_TITLE_H: f32 = 1.75;
+/// The height of a workspace page card's title row.
+const PAGE_TITLE_H: Rems = rems(1.75);
 
 /// What a project filter reads while it is not narrowing the list at all:
 /// the workspace page's issues, or the Tasks page.
@@ -141,7 +134,8 @@ impl ChatPane {
         // A filter survives the page being shown again, while its project does.
         let filter = match self.page.take() {
             Some(Page::Workspace(page)) => page.filter,
-            Some(Page::Tasks(_) | Page::Issues(_) | Page::Workflows(_)) | None => None,
+            Some(Page::Tasks(_) | Page::Issues(_) | Page::Workflows(_) | Page::Settings(_))
+            | None => None,
         }
         .filter(|only| projects.iter().any(|project| &project.root == only));
         self.page = Some(Page::Workspace(WorkspacePage {
@@ -225,7 +219,7 @@ impl ChatPane {
                 }
                 page.projects = projects;
             }
-            Some(Page::Issues(_) | Page::Workflows(_)) | None => return,
+            Some(Page::Issues(_) | Page::Workflows(_) | Page::Settings(_)) | None => return,
         }
         cx.notify();
     }
@@ -234,7 +228,8 @@ impl ChatPane {
     pub fn showing_workspace(&self) -> bool {
         match self.page {
             Some(Page::Workspace(_)) => true,
-            Some(Page::Tasks(_) | Page::Issues(_) | Page::Workflows(_)) | None => false,
+            Some(Page::Tasks(_) | Page::Issues(_) | Page::Workflows(_) | Page::Settings(_))
+            | None => false,
         }
     }
 
@@ -242,7 +237,8 @@ impl ChatPane {
     pub fn showing_tasks(&self) -> bool {
         match self.page {
             Some(Page::Tasks(_)) => true,
-            Some(Page::Workspace(_) | Page::Issues(_) | Page::Workflows(_)) | None => false,
+            Some(Page::Workspace(_) | Page::Issues(_) | Page::Workflows(_) | Page::Settings(_))
+            | None => false,
         }
     }
 
@@ -250,7 +246,8 @@ impl ChatPane {
     pub fn showing_issues(&self) -> bool {
         match self.page {
             Some(Page::Issues(_)) => true,
-            Some(Page::Workspace(_) | Page::Tasks(_) | Page::Workflows(_)) | None => false,
+            Some(Page::Workspace(_) | Page::Tasks(_) | Page::Workflows(_) | Page::Settings(_))
+            | None => false,
         }
     }
 
@@ -258,8 +255,36 @@ impl ChatPane {
     pub fn showing_workflows(&self) -> bool {
         match self.page {
             Some(Page::Workflows(_)) => true,
-            Some(Page::Workspace(_) | Page::Tasks(_) | Page::Issues(_)) | None => false,
+            Some(Page::Workspace(_) | Page::Tasks(_) | Page::Issues(_) | Page::Settings(_))
+            | None => false,
         }
+    }
+
+    /// Whether Settings is what the pane shows.
+    pub fn showing_settings(&self) -> bool {
+        match self.page {
+            Some(Page::Settings(_)) => true,
+            Some(Page::Workspace(_) | Page::Tasks(_) | Page::Issues(_) | Page::Workflows(_))
+            | None => false,
+        }
+    }
+
+    /// Show Settings, `view`, on the page it was left on, its drafts as they
+    /// were left, the way the other pages that are views of their own are
+    /// shown.
+    pub fn show_settings(
+        &mut self,
+        view: gpui::AnyView,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // Off another view page, a field there may hold the caret.
+        self.leave_issues_page(window, cx);
+        self.page = Some(Page::Settings(view));
+        self.leave_shown_session(window, cx);
+        self.active = None;
+        self.empty = None;
+        cx.notify();
     }
 
     /// Show the Workflows page, `view`, as it was left, the way the Issues
@@ -270,10 +295,8 @@ impl ChatPane {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // Off the Issues page, its search may hold the caret.
-        if self.showing_issues() {
-            self.focus_handle.clone().focus(window, cx);
-        }
+        // Off another view page, a field there may hold the caret.
+        self.leave_issues_page(window, cx);
         self.page = Some(Page::Workflows(view));
         self.leave_shown_session(window, cx);
         self.active = None;
@@ -289,10 +312,8 @@ impl ChatPane {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // Off the Workflows page, a field there may hold the caret.
-        if self.showing_workflows() {
-            self.focus_handle.clone().focus(window, cx);
-        }
+        // Off another view page, a field there may hold the caret.
+        self.leave_issues_page(window, cx);
         self.page = Some(Page::Issues(view));
         self.leave_shown_session(window, cx);
         self.active = None;
@@ -300,33 +321,17 @@ impl ChatPane {
         cx.notify();
     }
 
-    /// A page that is a view of its own (Issues, Workflows) under the
-    /// pane's header, as the other pages are drawn.
-    ///
-    /// The Issues page names itself in its own head, beside its actions, so
-    /// the header would say *Issues* a second time: it is left off, but for
-    /// the way back to a hidden rail.
+    /// A page that is a view of its own (Issues, Workflows, Settings) under the
+    /// pane's header, which names it as it names every page.
     pub(super) fn view_page(
         &self,
         view: gpui::AnyView,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        let issues = self.showing_issues();
         div()
             .size_full()
             .v_flex()
-            .when(!issues, |page| page.child(self.header(cx)))
-            .when(issues && self.rail_hidden, |page| {
-                page.child(
-                    div()
-                        .flex_none()
-                        .h_flex()
-                        .items_center()
-                        .h(crate::controls::BAR_H)
-                        .px_4()
-                        .child(super::header::show_rail(cx)),
-                )
-            })
+            .child(self.header(cx))
             .child(div().flex_1().min_h_0().v_flex().child(view))
             .into_any_element()
     }
@@ -335,7 +340,11 @@ impl ChatPane {
     /// the frame: a field on it may hold it, and a caret in nothing answers
     /// no key.
     pub fn leave_issues_page(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.showing_issues() || self.showing_workflows() {
+        if self.showing_issues()
+            || self.showing_workflows()
+            || self.showing_settings()
+            || self.showing_tasks()
+        {
             self.focus_handle.clone().focus(window, cx);
         }
     }
@@ -494,8 +503,8 @@ impl ChatPane {
                 card_box(cx)
                     .id(("workspace-project", i))
                     .flex_grow_1()
-                    .flex_basis(rems(PAGE_TILE))
-                    .max_w(rems(PAGE_TILE_MAX))
+                    .flex_basis(PAGE_TILE)
+                    .max_w(PAGE_TILE_MAX)
                     .gap_1()
                     .cursor_pointer()
                     .hover(|tile| tile.bg(cx.theme().list_hover))
@@ -580,7 +589,7 @@ impl ChatPane {
             })
             .collect();
         let recent = page_card("Recent conversations", None, None, cx).child(match page.recent {
-            None => div().child(muted_line("Looking for past conversations…".to_string())),
+            None => div().child(muted_line("Reading past conversations…".to_string())),
             Some(_) => list(
                 recent,
                 PAGE_RECENT,
@@ -682,7 +691,7 @@ impl ChatPane {
             div()
                 .id("workspace-issues")
                 .v_flex()
-                .max_h(rems(PAGE_ISSUES_H))
+                .max_h(PAGE_ISSUES_H)
                 .overflow_y_scroll()
                 .children(rows)
         }))
@@ -703,8 +712,8 @@ impl ChatPane {
                 .items_start()
                 .gap_4()
                 .w_full()
-                .child(left.flex_grow_1().flex_basis(rems(PAGE_CARD)))
-                .child(right.flex_grow_1().flex_basis(rems(PAGE_CARD)))
+                .child(left.flex_grow_1().flex_basis(PAGE_CARD))
+                .child(right.flex_grow_1().flex_basis(PAGE_CARD))
         };
 
         div()
@@ -762,7 +771,7 @@ pub(super) fn card_box(cx: &App) -> Div {
         .gap_2()
         .min_w_0()
         .p_3()
-        .rounded(cx.theme().radius)
+        .rounded(cx.theme().radius_lg)
         .border_1()
         .border_color(cx.theme().border)
 }
@@ -782,7 +791,7 @@ fn card_title(
         .gap_2()
         // The control's own height must not change the title row's, or a card
         // with a filter sits taller than the one beside it.
-        .h(rems(PAGE_TITLE_H))
+        .h(PAGE_TITLE_H)
         .child(div().font_semibold().child(title.into()))
         .children(count.map(|n| div().text_xs().text_color(muted).child(n.to_string())))
         .child(div().flex_1())

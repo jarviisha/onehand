@@ -694,8 +694,10 @@ impl ChatPane {
         }
     }
 
-    /// Write the whole conversation to a Markdown file.
-    pub fn export(&mut self, cx: &mut Context<Self>) {
+    /// Write the whole conversation to a Markdown file, saying so in a toast
+    /// when the write fails: the picker is gone by then, and nothing else on
+    /// screen would.
+    pub fn export(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(chat) = self.active_chat(cx) else {
             return;
         };
@@ -704,7 +706,7 @@ impl ChatPane {
             .conversation_title()
             .unwrap_or_else(|| "conversation".to_string());
 
-        cx.spawn(async move |pane, cx| {
+        cx.spawn_in(window, async move |pane, cx| {
             // Picker *and* write both go to the background executor: the dialog
             // blocks until the user is done, and the write can be megabytes.
             let saved = cx
@@ -717,9 +719,12 @@ impl ChatPane {
                 })
                 .await;
             if let Some(error) = saved {
-                let _ = pane.update(cx, |_: &mut Self, cx| {
-                    eprintln!("onehand: export failed: {error}");
-                    cx.notify();
+                let _ = pane.update_in(cx, |_: &mut Self, window, cx| {
+                    gpui_component::WindowExt::push_notification(
+                        window,
+                        crate::toast::failed("Exporting the conversation", error),
+                        cx,
+                    );
                 });
             }
         })

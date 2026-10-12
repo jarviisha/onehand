@@ -219,6 +219,7 @@ pub(super) fn form_view(
     form: &Form,
     project: Option<SharedString>,
     templates: &[IssueTemplate],
+    writing: bool,
     cx: &mut Context<IssuesView>,
 ) -> AnyElement {
     div()
@@ -271,6 +272,7 @@ pub(super) fn form_view(
                     action("issue-form-save")
                         .small()
                         .primary()
+                        .loading(writing)
                         .label(match form.editing {
                             Some(_) => "Save",
                             None => "Create issue",

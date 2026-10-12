@@ -94,9 +94,6 @@ impl Shell {
         self.workbench
             .update(cx, |panel, cx| panel.set_storage(Some(&dir), cx));
         self.tell_issues_page(&onehand_plugin_host::Request::SetStorage(Some(&dir)), cx);
-        if self.settings_open {
-            self.workspace_note_wanted = true;
-        }
         self.save_workspace(window, cx);
         self.set_window_identity(Some(dir.clone()), window, cx);
         cx.update_global::<Shared, _>(|shared, _| {
@@ -156,7 +153,7 @@ impl Shell {
                     cx.update(|cx| open_or_focus(workspace, cx));
                     say(
                         &shell,
-                        Notification::info(format!(
+                        crate::toast::info(format!(
                             "{} already holds a workspace — opened it, and this one is unchanged",
                             dir.display()
                         )),
@@ -170,7 +167,11 @@ impl Shell {
                         })
                         .ok();
                 }
-                Err(message) => say(&shell, Notification::error(message), cx),
+                Err(message) => say(
+                    &shell,
+                    crate::toast::failed("Using that folder", message),
+                    cx,
+                ),
             }
         })
         .detach();
@@ -201,7 +202,7 @@ impl Shell {
                     cx.update(|cx| open_or_focus(workspace, cx));
                     say(
                         &shell,
-                        Notification::info(format!(
+                        crate::toast::info(format!(
                             "{} already has a workspace — opened it",
                             root.display()
                         )),
@@ -231,15 +232,19 @@ impl Shell {
                         // remembers.
                         Err(e) => say(
                             &shell,
-                            Notification::error(format!(
-                                "Workspace not created — {} could not be written: {e}",
-                                dir.display()
-                            )),
+                            crate::toast::failed(
+                                "Creating the workspace",
+                                format!("{} could not be written: {e}", dir.display()),
+                            ),
                             cx,
                         ),
                     }
                 }
-                Err(message) => say(&shell, Notification::error(message), cx),
+                Err(message) => say(
+                    &shell,
+                    crate::toast::failed("Creating the workspace", message),
+                    cx,
+                ),
             }
         })
         .detach();
@@ -273,9 +278,7 @@ impl Shell {
                 Err(_) => {
                     say(
                         &shell,
-                        Notification::error(
-                            "That folder's onehand-workspace.toml could not be read",
-                        ),
+                        crate::toast::error("Reading that folder's onehand-workspace.toml failed"),
                         cx,
                     );
                     return;
@@ -288,7 +291,7 @@ impl Shell {
                 }
                 None => say(
                     &shell,
-                    Notification::warning(
+                    crate::toast::warning(
                         "No workspace for that folder — New workspace… makes one",
                     ),
                     cx,
@@ -347,8 +350,8 @@ impl Shell {
                     shell
                         .update_in(cx, |_, window, cx| {
                             window.push_notification(
-                                Notification::error(format!(
-                                    "Could not read the workspace in {} — the entry was kept",
+                                crate::toast::error(format!(
+                                    "Reading the workspace in {} failed, and its entry was kept",
                                     dir.display()
                                 )),
                                 cx,
@@ -377,8 +380,7 @@ impl Shell {
         self.window.workspace.layout = layout;
 
         let saved = self.window.workspace.to_config().save_to(&dir);
-        let noted = std::mem::take(&mut self.workspace_note_wanted);
-        self.report_write("Workspace", saved, noted, window, cx);
+        crate::toast::report(window, cx, "Saving the workspace", None, saved);
         cx.notify();
     }
 }

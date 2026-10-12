@@ -1,5 +1,5 @@
 use super::fold_key;
-use super::metrics::{TEXT_SM, radius_tag};
+use super::metrics::FOLD_INDENT;
 use super::parts::{
     ActivityRow, Object, RowMark, accent, activity_row, chevron, detail_well, fold_line,
     line_counts, plain_box, sideways,
@@ -130,7 +130,7 @@ pub fn cluster(
                     .v_flex()
                     .w_full()
                     .min_w_0()
-                    .pl_5()
+                    .pl(FOLD_INDENT)
                     .gap_2()
                     .children(body),
             )
@@ -268,9 +268,9 @@ pub(in crate::chat) fn turn_summary(
                 .v_flex()
                 .w_full()
                 .min_w_0()
-                .pl_5()
+                .pl(FOLD_INDENT)
                 .gap_1()
-                .text_size(TEXT_SM)
+                .text_sm()
                 .children(
                     listed
                         .into_iter()
@@ -452,7 +452,7 @@ fn ratio_bar(file: &onehand_core::chat::FileChange, cx: &App) -> gpui::Div {
         .items_center()
         .w(RATIO_W)
         .h(RATIO_H)
-        .rounded(radius_tag(cx))
+        .rounded(cx.theme().radius_tokens().sm)
         .overflow_hidden()
         .bg(cx.theme().border)
         .children((file.added > 0).then(|| div().h_full().w(share(file.added)).bg(status.success)))
@@ -505,7 +505,7 @@ pub fn activity_group(
                     .v_flex()
                     .w_full()
                     .min_w_0()
-                    .pl_5()
+                    .pl(FOLD_INDENT)
                     .gap_2()
                     .children(rows),
             )

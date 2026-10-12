@@ -1,17 +1,15 @@
 //! Settings: appearance, this workspace, the agent menu, the connections,
 //! the keymap.
 //!
-//! A modal, mounted by the shell so its rail row and its key share one dialog,
-//! and sized to the window up to 960 × 680. The shell restores the previous focus when
-//! it closes.
+//! A page in the agent pane, opened by its rail row and its key, and left the
+//! way every page is left.
 
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, AppContext, ClickEvent, Context, Div, Entity, InteractiveElement, IntoElement,
-    ParentElement, SharedString, StatefulInteractiveElement as _, Styled, Window, div, rems,
+    ParentElement, SharedString, StatefulInteractiveElement as _, Styled, Window, div,
 };
-use gpui_component::button::ButtonVariants;
 use gpui_component::input::InputState;
 use gpui_component::tag::Tag;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
@@ -61,17 +59,6 @@ impl AgentDraft {
         self.editing = None;
         for field in [&self.name, &self.command, &self.args] {
             field.update(cx, |s, cx| s.set_value("", window, cx));
-        }
-    }
-
-    /// Whether the form holds something not yet saved: a change to the agent it
-    /// was opened on, or anything typed into a form adding a new one.
-    pub fn dirty(&self, agents: &[AgentSpec], cx: &App) -> bool {
-        match self.editing {
-            Some(idx) => self.to_spec(cx).as_ref() != agents.get(idx),
-            None => [&self.name, &self.command, &self.args]
-                .iter()
-                .any(|field| !field.read(cx).value().trim().is_empty()),
         }
     }
 
@@ -179,7 +166,7 @@ pub(crate) fn section(title: Option<&'static str>, about: Option<SharedString>, 
     let muted = cx.theme().muted_foreground;
     div()
         .v_flex()
-        .gap_5()
+        .gap_4()
         .w_full()
         .when_some(title, |group, title| {
             group
@@ -198,33 +185,9 @@ pub(crate) fn section(title: Option<&'static str>, about: Option<SharedString>, 
         })
 }
 
-/// One setting, stacked: its name, a line about it, and the control under
-/// both at the column's full width -- so a field is as wide as what can be
-/// typed into it, and a long description wraps above it rather than beside it.
-pub(crate) fn field(
-    title: impl Into<SharedString>,
-    about: Option<AnyElement>,
-    control: impl IntoElement,
-    cx: &App,
-) -> Div {
-    div()
-        .v_flex()
-        .gap_2()
-        .w_full()
-        .child(
-            div()
-                .v_flex()
-                .gap_0p5()
-                .child(div().text_sm().child(title.into()))
-                .children(about.map(|about| {
-                    div()
-                        .text_sm()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(about)
-                })),
-        )
-        .child(control)
-}
+/// One setting, stacked: the plugin host's, where a plugin's form reaches it
+/// too.
+pub(crate) use onehand_plugin_host::field;
 
 /// One entry in a list: what it is on the left, what can be done to it on the
 /// right. For things of which there are many -- agents, commands -- where the
@@ -333,10 +296,11 @@ impl SettingsPage {
 /// rail's own icon column, so the column reads as the same kind of list the
 /// rail beside it is.
 fn nav_row(page: SettingsPage, current: SettingsPage, handle: &Entity<Shell>, cx: &App) -> Div {
-    let (accent, accent_fg, muted, radius) = (
+    let (accent, accent_fg, muted, hover, radius) = (
         cx.theme().accent,
         cx.theme().accent_foreground,
         cx.theme().muted_foreground,
+        cx.theme().list_hover,
         cx.theme().radius,
     );
     let handle = handle.clone();
@@ -356,9 +320,7 @@ fn nav_row(page: SettingsPage, current: SettingsPage, handle: &Entity<Shell>, cx
             .cursor_pointer()
             .map(|row| match selected {
                 true => row.bg(accent).text_color(accent_fg),
-                false => row
-                    .text_color(muted)
-                    .hover(move |row| row.bg(accent.opacity(0.5))),
+                false => row.text_color(muted).hover(move |row| row.bg(hover)),
             })
             .child(page.icon().small())
             .child(page.label())
@@ -373,15 +335,16 @@ pub(crate) fn page_title(name: &'static str) -> impl IntoElement {
     div().text_xl().font_medium().child(name)
 }
 
+/// The width of Settings' nav column: its longest name beside its mark.
+const NAV_W: gpui::Rems = gpui::rems(13.5);
+
 /// Settings: appearance, this workspace, the agent menu, the connections, the
 /// keymap.
 ///
-/// **A modal, and a roomy one.** At the few hundred pixels a dialog usually
-/// takes, the keymap and the agent form scrolled inside a box; drawn in the
-/// panels' place instead, it had to be left by navigating, and every command
-/// had to be told it was not on screen. A modal up to 960 × 680 keeps enough
-/// room and the one way out, without a near-full-window box that left a
-/// one-control page looking lost in it.
+/// **A page, not a modal.** It is somewhere to be: opened by its rail row and
+/// its key, left by a session, another page, a key or a dock, as every page is,
+/// and found again as it was. Esc does nothing on it; inside a field, Esc is
+/// the field's.
 ///
 /// **A nav column and a page, not one scroll.** What is in here belongs to
 /// three different scopes -- the theme is app-wide, the name and the storage
@@ -389,23 +352,13 @@ pub(crate) fn page_title(name: &'static str) -> impl IntoElement {
 /// stacked in one column the only thing saying so was a row of `text_xs`
 /// labels. A page per scope is the shape that says it without a sentence.
 ///
-/// **One surface, and no rule where space already divides.** The nav and the
-/// page are not separated by a border, nor the page by a header bar: the gap
-/// between them is the edge. The only lines left are the dialog's own edge and
-/// the ones between groups on a page.
-///
 /// **There is no footer, and no control here sits away from what it acts on.**
-/// The pair that binds and unbinds storage was in one, three items below the
-/// folder it names -- and a `.primary()` button at the foot of a settings
-/// page reads as *Save*, while that one opens a folder picker and re-points
-/// where the workspace is written.
+/// Settings apply as they are made, and a write that fails says so in a toast.
 ///
 /// **Drawn by a view of its own** ([`SettingsView`]) rather than built inside
 /// the shell's render: every page reads the shell, and the shell is the entity
 /// being updated for as long as its own render runs, so reading it from there
-/// is a panic. A child view renders after the shell's render has returned --
-/// and the dialog's content builder runs inside that render, so the view is
-/// what keeps the dialog able to read the shell at all.
+/// is a panic. A child view renders after the shell's render has returned.
 pub struct SettingsView {
     shell: gpui::WeakEntity<Shell>,
 }
@@ -425,55 +378,11 @@ impl gpui::Render for SettingsView {
     }
 }
 
-/// The modal around [`SettingsView`], sized to the window it opens in.
-///
-/// **960 × 680 at most**: room for the nav and a page holding a stacked field
-/// at a comfortable width, without the near-full-window box that left a
-/// one-control page looking lost in it.
-///
-/// **Clamped to the frame on both axes**, because the library centres a
-/// dialog by subtracting half its width from half the viewport's and never
-/// clamps: a box wider than the window starts at a negative x, with the nav off
-/// the left edge and the ✕ off the right and nothing to scroll either back. The
-/// height is fixed rather than grown to the page, so the box does not jump size
-/// between pages, and the top margin centres it vertically instead of the
-/// library's tenth-of-the-viewport drop, which would push a box this tall off
-/// the bottom.
-///
-/// The library's own padding is taken off (`p_0`) because the view pads its
-/// own nav and page, and its ✕ is off too, since that one is a plain library
-/// button that draws the arrow cursor; the view carries its own in the corner.
-pub fn dialog(
-    view: Entity<SettingsView>,
-    window: &Window,
-    cx: &mut Context<Shell>,
-) -> gpui_component::dialog::Dialog {
-    let frame = window.viewport_size();
-    let width = (frame.width - gpui::px(64.)).clamp(gpui::px(360.), gpui::px(960.));
-    let height = (frame.height - gpui::px(64.)).clamp(gpui::px(240.), gpui::px(680.));
-    let top = ((frame.height - height) / 2.).max(gpui::px(0.));
-    let handle = cx.entity();
-
-    gpui_component::dialog::Dialog::new(cx)
-        .w(width)
-        .margin_top(top)
-        .p_0()
-        .close_button(false)
-        .on_close(move |_, window, cx| {
-            handle.update(cx, |shell, cx| shell.request_close_settings(window, cx))
-        })
-        .content(move |content, _: &mut Window, _: &mut App| {
-            content.child(div().h(height).w_full().child(view.clone()))
-        })
-}
-
 fn settings(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     let handle = handle.clone();
     let current = handle.read(cx).settings_page();
     let focus = handle.read(cx).settings_focus();
     let muted = cx.theme().muted_foreground;
-    let status = crate::theme::status_ink(cx);
-    let note = handle.read(cx).settings_note(current, cx);
     let nav = SettingsPage::ALL
         .into_iter()
         .map(|page| nav_row(page, current, &handle, cx).into_any_element())
@@ -487,40 +396,27 @@ fn settings(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     };
 
     div()
-        // The caret has to be inside the page for Escape to reach it, and the
-        // handle is the shell's because this is rebuilt every frame -- one made
-        // here would be a new handle each time.
-        .track_focus(&focus)
-        // Escape pressed in one of the page's fields: the field claims the key
-        // itself and lets the action travel outward when it has no use for it,
-        // so a binding of ours on the key would never be reached from there.
-        .on_action({
-            let handle = handle.clone();
-            move |_: &gpui_component::input::Escape, window, cx| {
-                handle.update(cx, |shell, cx| shell.request_close_settings(window, cx));
-            }
-        })
-        .relative()
+        // A command acting on a region this page hides (the Workbench editor's
+        // save) excludes it, so a key typed here never reaches what is not on
+        // screen.
+        .key_context("Settings")
         .size_full()
         .h_flex()
         .items_start()
         .child(
             div()
+                .id("settings-nav")
+                // The keyboard lands here when Settings opens. The handle is
+                // the shell's because this is rebuilt every frame -- one made
+                // here would be a new handle each time.
+                .track_focus(&focus)
                 .v_flex()
                 .gap_0p5()
                 .flex_none()
-                .w(rems(13.5))
+                .w(NAV_W)
                 .h_full()
-                .px_4()
-                .py_5()
-                .child(
-                    div()
-                        .px_2()
-                        .pb_2()
-                        .text_sm()
-                        .font_medium()
-                        .child("Settings"),
-                )
+                .p_6()
+                .pr_0()
                 .children(nav)
                 // The build, at the foot of the nav: it is about the app
                 // rather than about any one page.
@@ -543,6 +439,7 @@ fn settings(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                 .min_w_0()
                 .h_full()
                 .overflow_y_scroll()
+                .p_6()
                 .child(
                     // A reading measure, so a wide window does not stretch a
                     // field across it, centred in whatever room is left.
@@ -550,53 +447,9 @@ fn settings(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                         div()
                             .v_flex()
                             .w_full()
-                            .max_w(rems(48.))
-                            .px_8()
-                            .py_6()
+                            .max_w(crate::tokens::PAGE_PROSE)
                             .child(page),
                     ),
-                ),
-        )
-        // The way out, in the corner rather than on a title bar of its own: a
-        // header row holding one button is a border and a strip of surface
-        // spent on it.
-        .child(
-            div()
-                .absolute()
-                .top_3()
-                .right_3()
-                .h_flex()
-                .items_center()
-                .gap_2()
-                // What the last change on this page did, beside the way out:
-                // settings apply as they are made, so the only thing left to
-                // say is whether the write took.
-                .children(note.map(|note| {
-                    let (line, ink) = match note {
-                        Ok(()) => ("Saved".to_string(), status.success),
-                        Err(why) => (format!("Not saved — {why}"), status.danger),
-                    };
-                    div()
-                        .max_w(rems(24.))
-                        .truncate()
-                        .text_sm()
-                        .text_color(ink)
-                        .child(line)
-                }))
-                .child(
-                    crate::controls::action("settings-close")
-                        .small()
-                        .ghost()
-                        .icon(Icon::new(IconName::Close))
-                        .tooltip("Close Settings")
-                        .on_click({
-                            let handle = handle.clone();
-                            move |_: &ClickEvent, window, cx| {
-                                handle.update(cx, |shell, cx| {
-                                    shell.request_close_settings(window, cx)
-                                });
-                            }
-                        }),
                 ),
         )
         .into_any_element()

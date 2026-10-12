@@ -15,6 +15,11 @@ use std::path::{Path, PathBuf};
 mod view;
 use view::IssuesView;
 
+// The Issues page's keys, which the app's keymap binds in the page's
+// `IssuesPage` context: the row above, the row below, and the innermost layer
+// open over the list closed.
+gpui::actions!(issues_page, [IssuesUp, IssuesDown, IssuesClose]);
+
 /// What this mode declares about itself, which is what the panel reads
 /// instead of matching the ID against a list it has to know by heart.
 pub const SPEC: WorkbenchModeSpec =

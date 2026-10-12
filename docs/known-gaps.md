@@ -9,6 +9,17 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   be the active one with its tab off the end of the list: the grid is right, the strip is behind.
   Fixing it means a `ScrollHandle` on the panel, and `scroll_to_item` on a tab that has never been
   painted needs deferring past the frame that first draws it.
+- **A document's first heading is bold**, where every other heading in the app is semibold at
+  most. The Markdown renderer picks each heading level's weight itself, and its style lets a caller
+  size a level but not weigh one; the Markdown mode and an issue's description both draw through it.
+  Changing it means a patch to the renderer.
+- **The rail's keyboard row shows after a click too.** While the rail holds the keys, the row
+  the arrows move takes the selected fill, whether the keys or the pointer put it there; every
+  other keyboard mark shows for the keyboard only. The row is also how the rail says which project
+  a click picked, so drawing it for the keyboard alone needs a second mark for the pointer.
+- **Some window behaviour has no automated test**: Settings' drafts kept across leaving the page,
+  a failed write said once, and the keyboard handed back when a dialog closes. Each needs a window
+  to run in, and the app runs no GPUI test harness; they are checked by hand.
 - **The Workbench's file tree has no search.** A file in a closed folder is reached by opening the
   folders above it.
 - **Dragging a rail row has no edge autoscroll**, and the keyboard's row in the rail is not

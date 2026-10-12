@@ -18,21 +18,21 @@ mod step;
 
 pub(crate) use draft::WorkflowDraft;
 
+// The Workflows page's key: the form open on the page closed, asked first
+// when it holds changes.
+gpui::actions!(workflows_page, [CloseWorkflowForm]);
+
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, AppContext as _, ClickEvent, Context, Entity, EventEmitter, FocusHandle,
     Focusable, InteractiveElement as _, IntoElement, ParentElement, Render, SharedString,
-    StatefulInteractiveElement as _, Styled, Window, div, rems,
+    StatefulInteractiveElement as _, Styled, Window, div,
 };
 use gpui_component::button::ButtonVariants;
 use gpui_component::tag::Tag;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::workflow as core;
 use std::path::PathBuf;
-
-/// How wide the page's column runs, in rems: wider than the other pages',
-/// since a step's prompt is written here and reads as prose.
-const EDITOR_COLUMN: f32 = 48.;
 
 /// What the page asks of its window.
 pub(crate) enum WorkflowsPageEvent {
@@ -122,16 +122,22 @@ impl Render for WorkflowsPage {
         // must be inside this, or the window's keys land elsewhere.
         div()
             .id("workflows-page")
+            .key_context("WorkflowsPage")
             .track_focus(&self.focus_handle)
+            .on_action(
+                cx.listener(|page: &mut Self, _: &CloseWorkflowForm, window, cx| {
+                    page.close_workflow_form(window, cx);
+                }),
+            )
             .size_full()
             .overflow_y_scroll()
             .child(
-                div().h_flex().justify_center().px_4().py_6().child(
+                div().h_flex().justify_center().p_6().child(
                     div()
                         .v_flex()
                         .gap_6()
                         .w_full()
-                        .max_w(rems(EDITOR_COLUMN))
+                        .max_w(crate::tokens::PAGE_PROSE)
                         .child(
                             div()
                                 .text_sm()
@@ -345,7 +351,7 @@ fn row_delete(
         .ghost()
         .small()
         .text_color(crate::theme::status_ink(cx).danger)
-        .label("Delete")
+        .label("Delete…")
         .on_click(click(handle, act))
 }
 

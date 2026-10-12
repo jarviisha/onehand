@@ -2,9 +2,10 @@
 //! and the two dialogs its approval controls open.
 
 use super::{ChatPane, ChatPaneEvent};
+use crate::controls::Refuses as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, AppContext as _, Context, InteractiveElement as _, IntoElement, ParentElement,
+    App, AppContext as _, Context, InteractiveElement as _, IntoElement, ParentElement, Rems,
     StatefulInteractiveElement as _, Styled, WeakEntity, Window, div, rems,
 };
 use gpui_component::WindowExt as _;
@@ -175,6 +176,12 @@ pub(super) fn press_continue(
     }
 }
 
+/// How tall a review's answer grows before it scrolls, so the buttons that
+/// answer it stay on screen.
+const REVIEW_MAX_H: Rems = rems(28.);
+/// How tall the note sent back stands: a few sentences in view.
+const NOTE_H: Rems = rems(10.);
+
 /// Put up what task `task`'s run waits on approval for, as `review` read it:
 /// the answer the step kept, as the markdown it was written in, saying first
 /// when it is not the answer a press was drawn from (`changed`).
@@ -200,7 +207,7 @@ pub(super) fn open_review(
         let body = match review.answer.trim().is_empty() {
             true => div()
                 .text_color(cx.theme().muted_foreground)
-                .child("The step kept no answer.")
+                .child("The step kept no answer")
                 .into_any_element(),
             false => gpui_component::text::TextView::markdown(
                 "workflow-review-body",
@@ -227,7 +234,7 @@ pub(super) fn open_review(
                     .child(
                         div()
                             .id("workflow-review-scroll")
-                            .max_h(rems(28.))
+                            .max_h(REVIEW_MAX_H)
                             .overflow_y_scroll()
                             .child(body),
                     ),
@@ -240,14 +247,12 @@ pub(super) fn open_review(
                     .justify_end()
                     .child(
                         crate::controls::action("workflow-review-close")
-                            .small()
                             .ghost()
                             .label("Close")
                             .on_click(|_, window, cx| window.close_dialog(cx)),
                     )
                     .child(
                         crate::controls::action("workflow-review-continue")
-                            .small()
                             .primary()
                             .icon(Icon::new(IconName::Check))
                             .label("Continue")
@@ -270,6 +275,8 @@ pub(super) fn open_revise(approval: Approval, window: &mut Window, cx: &mut Cont
     note.update(cx, |input, cx| input.focus(window, cx));
     let changed = Rc::new(Cell::new(false));
     window.open_dialog(cx, move |dialog, _, cx| {
+        // Built again on every frame, so the refusal follows the typing.
+        let empty = note.read(cx).value().trim().is_empty();
         let send = {
             let (note, pane, approval, changed) = (
                 note.clone(),
@@ -280,7 +287,6 @@ pub(super) fn open_revise(approval: Approval, window: &mut Window, cx: &mut Cont
             move |_: &gpui::ClickEvent, window: &mut Window, cx: &mut App| {
                 let text = note.read(cx).value().trim().to_string();
                 if text.is_empty() {
-                    window.push_notification("Say what to change", cx);
                     return;
                 }
                 if !matches!(waits(&approval, cx), Waits::There) {
@@ -323,7 +329,7 @@ pub(super) fn open_revise(approval: Approval, window: &mut Window, cx: &mut Cont
                                 )),
                         )
                     })
-                    .child(Textarea::new(&note).h(rems(10.))),
+                    .child(Textarea::new(&note).h(NOTE_H)),
             )
             .footer(
                 div()
@@ -333,16 +339,16 @@ pub(super) fn open_revise(approval: Approval, window: &mut Window, cx: &mut Cont
                     .justify_end()
                     .child(
                         crate::controls::action("workflow-revise-cancel")
-                            .small()
                             .ghost()
                             .label("Cancel")
                             .on_click(|_, window, cx| window.close_dialog(cx)),
                     )
                     .child(
                         crate::controls::action("workflow-revise-send")
-                            .small()
                             .primary()
                             .label("Send back")
+                            .refuses(empty)
+                            .when(empty, |send| send.tooltip("Say what to change first"))
                             .on_click(send),
                     ),
             )

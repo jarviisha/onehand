@@ -80,6 +80,7 @@ impl ChatPane {
                 (Some(super::Page::Tasks(_)), _) => "Tasks".to_string(),
                 (Some(super::Page::Issues(_)), _) => "Issues".to_string(),
                 (Some(super::Page::Workflows(_)), _) => "Workflows".to_string(),
+                (Some(super::Page::Settings(_)), _) => "Settings".to_string(),
                 (None, Some(project)) => project.label.to_string(),
                 (None, None) => String::new(),
             }
@@ -108,8 +109,8 @@ impl ChatPane {
             // contents it moved whenever a badge appeared or a title wrapped,
             // taking the top of the conversation with it.
             .flex_none()
-            .h(crate::controls::BAR_H)
-            .px_4()
+            .h(crate::tokens::BAR_H)
+            .px_3()
             // **No rule under it.** A hairline is an edge between two surfaces,
             // and there are not two here: the header and the transcript are one
             // reading surface, and what separates them is that one is a row of
@@ -186,7 +187,11 @@ impl ChatPane {
                     // read as closing a panel, and a power mark read as
                     // quitting the whole app.
                     header_control("close-session", crate::icons::Icon::LogOut, cx)
-                        .tooltip("Close this session and its agent")
+                        .tooltip_with_action(
+                            "Close this session and its agent",
+                            &crate::shell::CloseSession,
+                            None,
+                        )
                         .on_click(cx.listener(|_: &mut Self, _, _, cx| {
                             cx.emit(ChatPaneEvent::CloseSession);
                         })),
@@ -229,7 +234,11 @@ impl ChatPane {
                         // Which way it will go this time is not said, since that
                         // needs a dock fact pushed down here and the panel on
                         // screen already answers it.
-                        .tooltip("Show or hide the Workbench")
+                        .tooltip_with_action(
+                            "Show or hide the Workbench",
+                            &crate::shell::ToggleWorkbenchVisibility,
+                            None,
+                        )
                         .on_click(cx.listener(|_: &mut Self, _, _, cx| {
                             cx.emit(ChatPaneEvent::ToggleWorkbench);
                         })),
@@ -267,11 +276,15 @@ impl ChatPane {
                     // the Workbench's is: the panel on screen answers it, and
                     // saying it would need a second fact pushed down here to
                     // keep in step.
-                    .tooltip(if live {
-                        "A shell is running here — show or hide the terminal"
-                    } else {
-                        "Open a shell in this project"
-                    })
+                    .tooltip_with_action(
+                        if live {
+                            "A shell is running here — show or hide the terminal"
+                        } else {
+                            "Open a shell in this project"
+                        },
+                        &crate::shell::ToggleTerminal,
+                        None,
+                    )
                     .on_click(cx.listener(|_: &mut Self, _, _, cx| {
                         cx.emit(ChatPaneEvent::ToggleTerminal);
                     })),
@@ -406,8 +419,8 @@ impl ChatPane {
                     .item(
                         crate::controls::menu_item("Export as Markdown…")
                             .icon(Icon::new(IconName::ExternalLink))
-                            .on_click(move |_, _, cx: &mut App| {
-                                export.update(cx, |pane: &mut Self, cx| pane.export(cx));
+                            .on_click(move |_, window, cx: &mut App| {
+                                export.update(cx, |pane: &mut Self, cx| pane.export(window, cx));
                             }),
                     )
                     .separator()
@@ -449,7 +462,7 @@ impl ChatPane {
                         // header, so the two are never one press apart.
                         {
                             let row = move |_: &mut Window, _: &mut App| {
-                                div().text_color(danger).child("Delete conversation")
+                                div().text_color(danger).child("Delete conversation…")
                             };
                             // Nothing on disk to remove until the first turn has
                             // ended, so until then this refuses -- and a refusal
@@ -559,7 +572,7 @@ fn project_menu(
         .separator()
         .item(
             crate::controls::menu_row(move |_, _| {
-                div().text_color(danger).child("Remove from workspace")
+                div().text_color(danger).child("Remove from workspace…")
             })
             .icon(Icon::new(IconName::Delete).text_color(danger))
             .on_click(act(ProjectAction::Remove, pane.clone())),
@@ -570,7 +583,7 @@ fn project_menu(
 /// The way back to a hidden rail.
 pub(super) fn show_rail(cx: &mut Context<ChatPane>) -> gpui_component::button::Button {
     header_control("show-rail", IconName::PanelLeftOpen, cx)
-        .tooltip("Show the navigation rail")
+        .tooltip_with_action("Show the navigation rail", &crate::shell::ToggleRail, None)
         .on_click(cx.listener(|_: &mut ChatPane, _, _, cx| {
             cx.emit(ChatPaneEvent::ShowRail);
         }))

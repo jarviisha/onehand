@@ -13,12 +13,21 @@ use gpui::{
 use gpui_component::button::ButtonVariants;
 use gpui_component::dialog::{Dialog, DialogClose, DialogTitle};
 use gpui_component::input::Input;
-use gpui_component::{ActiveTheme, Disableable, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 
 mod issue;
 
 pub use issue::pick_issue;
 pub(crate) use issue::{PickJudged, issue_row, issue_workflow_menu, page_row};
+
+/// How tall a form's details field stands: a paragraph in view.
+const DETAILS_H: gpui::Rems = gpui::rems(8.);
+/// How tall a form's instructions field stands: a line or two, since they are
+/// optional and added to every step.
+const INSTRUCTIONS_H: gpui::Rems = gpui::rems(4.);
+/// How tall the first prompt's preview grows before it scrolls, so the form's
+/// fields stay in reach under it.
+const PREVIEW_MAX_H: gpui::Rems = gpui::rems(12.);
 
 /// A dialog's name, and the ✕ that closes it.
 ///
@@ -61,7 +70,7 @@ pub(super) fn title_row(name: impl Into<SharedString>) -> impl IntoElement {
                 // off at the baseline, which is the "g" in *Settings* losing
                 // its tail. The refinement lands after the library's own, so
                 // asking for the room back here is enough.
-                .line_height(relative(1.3))
+                .line_height(relative(crate::tokens::LEADING_TIGHT))
                 .truncate()
                 .child(name.into()),
         )
@@ -205,7 +214,7 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
 
     Dialog::new(cx)
         .margin_top(margin)
-        .p(gpui::rems(1.))
+        .p_4()
         .close_button(false)
         .content(move |content, _, cx: &mut App| {
             // Read here, as it is typed, so the preview follows the brief.
@@ -279,11 +288,11 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
                             .child(label("Title"))
                             .child(Input::new(&title))
                             .child(label("Details"))
-                            .child(gpui_component::input::Textarea::new(&body).h(gpui::rems(8.)))
+                            .child(gpui_component::input::Textarea::new(&body).h(DETAILS_H))
                             .child(label("Instructions"))
                             .child(
                                 gpui_component::input::Textarea::new(&instructions)
-                                    .h(gpui::rems(4.)),
+                                    .h(INSTRUCTIONS_H),
                             )
                             .children(lines)
                             .when_some(error.clone(), |col, why| {
@@ -311,13 +320,10 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
                 .child({
                     let run = crate::controls::action("run-workflow")
                         .primary()
-                        .label(if busy {
-                            "Making the worktree…"
-                        } else {
-                            "Run"
-                        });
+                        .label("Run")
+                        .loading(busy);
                     match busy || blocking > 0 {
-                        true => crate::controls::resting(run).disabled(true),
+                        true => run.refuses(true),
                         false => run.on_click(cx.listener(
                             |shell: &mut Shell, _: &ClickEvent, window, cx| {
                                 shell.commit_workflow(window, cx);
@@ -539,7 +545,7 @@ fn workflow_preview(
             div()
                 .id("workflow-preview-prompt")
                 .w_full()
-                .max_h(gpui::rems(12.))
+                .max_h(PREVIEW_MAX_H)
                 .overflow_y_scroll()
                 .p_2()
                 .border_1()
@@ -639,16 +645,12 @@ pub fn new_worktree(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                     // work from: cloning a working tree takes long enough that
                     // a button still offering itself invites the second press
                     // that would ask for the same folder twice.
-                    let create =
-                        crate::controls::action("create-worktree")
-                            .primary()
-                            .label(if busy {
-                                "Creating…"
-                            } else {
-                                "Create worktree"
-                            });
+                    let create = crate::controls::action("create-worktree")
+                        .primary()
+                        .label("Create worktree")
+                        .loading(busy);
                     match busy || !named {
-                        true => crate::controls::resting(create).disabled(true),
+                        true => create.refuses(true),
                         false => create.on_click(cx.listener(
                             |shell: &mut Shell, _: &ClickEvent, _, cx| {
                                 shell.commit_worktree(cx);
@@ -722,9 +724,10 @@ pub fn rename_branch(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                 .child({
                     let rename = crate::controls::action("commit-branch-rename")
                         .primary()
-                        .label(if busy { "Renaming…" } else { "Rename" });
+                        .label("Rename")
+                        .loading(busy);
                     match busy {
-                        true => crate::controls::resting(rename).disabled(true),
+                        true => rename.refuses(true),
                         false => rename.on_click(cx.listener(
                             |shell: &mut Shell, _: &ClickEvent, _, cx| {
                                 shell.commit_branch_rename(cx);

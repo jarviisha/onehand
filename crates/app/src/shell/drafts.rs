@@ -3,7 +3,6 @@ use super::storage::pick_folder;
 use gpui::{App, Context, Entity, Focusable as _, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::input::InputState;
-use gpui_component::notification::Notification;
 use onehand_core::workspace::{self};
 use onehand_core::worktree;
 use std::path::PathBuf;
@@ -155,6 +154,7 @@ impl Shell {
             return;
         };
         let (root, label) = (root.path.clone(), root.label.clone());
+        self.remember_focus(window, cx);
         self.worktree_branch
             .update(cx, |state, cx| state.set_value("", window, cx));
         self.worktree_draft = Some(WorktreeDraft {
@@ -222,6 +222,7 @@ impl Shell {
         else {
             return;
         };
+        self.remember_focus(window, cx);
         self.branch_input
             .update(cx, |state, cx| state.set_value(&from, window, cx));
         self.branch_draft = Some(BranchDraft {
@@ -307,7 +308,7 @@ impl Shell {
                             // screen anywhere until one runs.
                             shell.refresh_git(cx);
                             window.push_notification(
-                                Notification::info(format!("Renamed {from} to {name}")),
+                                crate::toast::info(format!("Renamed {from} to {name}")),
                                 cx,
                             );
                         }
@@ -471,7 +472,7 @@ impl Shell {
                             shell.refresh_git(cx);
                             shell.save_workspace(window, cx);
                             window.push_notification(
-                                Notification::info(format!("Added {label}, on {branch}")),
+                                crate::toast::info(format!("Added {label}, on {branch}")),
                                 cx,
                             );
                         }
@@ -495,6 +496,7 @@ impl Shell {
     /// guess in place as an explicit choice, and the derived title is supposed
     /// to keep tracking the conversation.
     pub fn begin_rename(&mut self, uid: u64, window: &mut Window, cx: &mut Context<Self>) {
+        self.remember_focus(window, cx);
         let current = self.chat.read(cx).custom_title(uid, cx).unwrap_or_default();
         self.rename_input
             .update(cx, |state, cx| state.set_value(current, window, cx));

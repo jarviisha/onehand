@@ -497,7 +497,7 @@ fn column(lead: Rems, margin: Rems, content: Vec<gpui::AnyElement>) -> gpui::Div
         // wells alike; the leading as a ratio, so a well a step smaller keeps
         // the same rhythm.
         .text_size(transcript::TEXT)
-        .line_height(relative(transcript::LEADING))
+        .line_height(relative(crate::tokens::LEADING))
         .pt(lead)
         .child(
             div()

@@ -14,17 +14,18 @@
 //! leaving the page for a session and picking it again finds it as it was.
 
 use super::{IssuesView, full, review};
+use crate::{IssuesClose, IssuesDown, IssuesUp};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, Context, FocusHandle, InteractiveElement as _, IntoElement, KeyDownEvent,
-    ParentElement, ScrollHandle, SharedString, StatefulInteractiveElement as _, Styled, Window,
-    div,
+    AnyElement, Context, FocusHandle, InteractiveElement as _, IntoElement, ParentElement,
+    ScrollHandle, SharedString, StatefulInteractiveElement as _, Styled, Window, div,
 };
 use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::issues::{self, IssueKey, LocalIssue};
 use onehand_core::task::work::IssueWork;
 use onehand_core::task::work::list::{Filters, Held, Item, PrReads, list};
-use onehand_plugin_host::{PAGE_WIDE, hint};
+use onehand_plugin_host::hint;
+use onehand_plugin_host::tokens::PAGE_WIDE;
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
@@ -217,39 +218,18 @@ impl IssuesView {
         }
     }
 
-    /// The keys, while the page holds the keyboard itself rather than a
-    /// field inside it: Esc closes the issue, up and down pick the row above
-    /// or below the one picked and open it.
-    fn page_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+    /// Pick the row `step` away from the one picked, and open it; closed,
+    /// the first press opens the row picked rather than moving.
+    fn page_step(&mut self, step: isize, window: &mut Window, cx: &mut Context<Self>) {
         let current = self.root.clone().zip(self.selected_number());
         let Some(page) = self.page.as_mut() else {
             return;
         };
-        if !page
-            .focus
-            .as_ref()
-            .is_some_and(|focus| focus.is_focused(window))
-        {
-            return;
-        }
-        let step: isize = match event.keystroke.key.as_str() {
-            "escape" if page.open => {
-                page.open = false;
-                cx.stop_propagation();
-                cx.notify();
-                return;
-            }
-            "up" => -1,
-            "down" => 1,
-            _ => return,
-        };
-        cx.stop_propagation();
         let at = current.and_then(|(root, number)| {
             page.shown
                 .iter()
                 .position(|(r, n)| *r == root && *n == number)
         });
-        // Closed, the first press opens the row picked rather than moving.
         let next = match at {
             Some(at) if !page.open => Some(at),
             Some(at) => at.checked_add_signed(step),
@@ -258,6 +238,31 @@ impl IssuesView {
         if let Some((root, number)) = next.and_then(|next| page.shown.get(next)).cloned() {
             page.reveal = true;
             self.pick(root, number, window, cx);
+        }
+    }
+
+    /// Close the innermost layer open over the list, and hand the keyboard
+    /// back to the page, since what held it may be gone with the layer.
+    fn page_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let form = self.state_mut().is_some_and(|state| state.form.is_some());
+        let Some(page) = self.page.as_ref() else {
+            return;
+        };
+        match innermost(page.open, form, page.review.is_open()) {
+            Some(Layer::Form) => {
+                self.unless_drafting(window, cx, |view, _, cx| view.cancel_form(cx));
+            }
+            Some(Layer::Review) => self.close_review(cx),
+            Some(Layer::Issue) => {
+                if let Some(page) = self.page.as_mut() {
+                    page.open = false;
+                }
+                cx.notify();
+            }
+            None => return,
+        }
+        if let Some(focus) = self.page.as_ref().and_then(|page| page.focus.clone()) {
+            window.focus(&focus, cx);
         }
     }
 
@@ -306,10 +311,13 @@ impl IssuesView {
         let panel = (open && self.has_page_issue()).then(|| self.page_panel(window, cx));
         div()
             .id("issues-page")
+            .key_context("IssuesPage")
             .track_focus(&focus)
-            .on_key_down(cx.listener(|view, event: &KeyDownEvent, window, cx| {
-                view.page_key(event, window, cx)
-            }))
+            .on_action(cx.listener(|view, _: &IssuesUp, window, cx| view.page_step(-1, window, cx)))
+            .on_action(
+                cx.listener(|view, _: &IssuesDown, window, cx| view.page_step(1, window, cx)),
+            )
+            .on_action(cx.listener(|view, _: &IssuesClose, window, cx| view.page_close(window, cx)))
             .size_full()
             .v_flex()
             .child(top)
@@ -389,11 +397,14 @@ impl IssuesView {
         let query = self.query(window, cx);
         let text = query.read(cx).value().to_string();
         let columns = self.width.get().0 >= row::COLUMNS_MIN;
-        let page_focused = self
-            .page
-            .as_ref()
-            .and_then(|page| page.focus.as_ref())
-            .is_some_and(|focus| focus.is_focused(window));
+        // The ring is the keyboard's: drawn while the page holds the keys and
+        // the keyboard was last used, never after a click.
+        let page_focused = window.last_input_was_keyboard()
+            && self
+                .page
+                .as_ref()
+                .and_then(|page| page.focus.as_ref())
+                .is_some_and(|focus| focus.is_focused(window));
         let Some(page) = self.page.as_mut() else {
             return (hint("No page", cx), div().into_any_element());
         };
@@ -532,4 +543,39 @@ pub(super) fn works_of<'a>(
     file: &'a Path,
 ) -> impl Iterator<Item = &'a IssueWork> {
     works.iter().filter(move |work| work.key.file == file)
+}
+
+/// A layer open over the list, innermost first.
+#[derive(Debug, PartialEq)]
+enum Layer {
+    /// The issue form, inside the floating issue.
+    Form,
+    /// The review block, inside the floating issue.
+    Review,
+    /// The floating issue itself.
+    Issue,
+}
+
+/// The layer Esc closes: the form or the review block inside the floating
+/// issue before the issue itself, and nothing while the issue is closed.
+fn innermost(open: bool, form: bool, review: bool) -> Option<Layer> {
+    match (open, form, review) {
+        (false, _, _) => None,
+        (true, true, _) => Some(Layer::Form),
+        (true, false, true) => Some(Layer::Review),
+        (true, false, false) => Some(Layer::Issue),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Layer, innermost};
+
+    #[test]
+    fn esc_closes_the_innermost_layer_only() {
+        assert_eq!(innermost(false, true, true), None);
+        assert_eq!(innermost(true, true, true), Some(Layer::Form));
+        assert_eq!(innermost(true, false, true), Some(Layer::Review));
+        assert_eq!(innermost(true, false, false), Some(Layer::Issue));
+    }
 }

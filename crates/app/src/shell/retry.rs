@@ -5,13 +5,11 @@
 //! Resume, judged first by the run's own setup, is here too.
 
 use super::Shell;
+use crate::controls::Refuses as _;
 use gpui::{App, Context, Entity, ParentElement as _, SharedString, Styled as _, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::notification::Notification;
-use gpui_component::{
-    ActiveTheme as _, Disableable as _, Icon, IconName, Sizable as _, StyledExt as _,
-};
+use gpui_component::{ActiveTheme as _, Icon, IconName, Sizable as _, StyledExt as _};
 use onehand_core::preflight;
 use onehand_core::task::marks::{self, Against};
 use onehand_core::task::work::Act;
@@ -409,7 +407,7 @@ fn refused_elsewhere(against: &Option<Against>, window: &mut Window, cx: &mut Ap
         return false;
     };
     window.push_notification(
-        Notification::warning(format!(
+        crate::toast::warning(format!(
             "Check out {branch} again to retry: the last run worked on it"
         )),
         cx,
@@ -478,7 +476,7 @@ fn footer(
                 .primary()
                 .label(confirm);
             match blocked {
-                true => crate::controls::resting(button).disabled(true),
+                true => button.refuses(true),
                 false => button.on_click(move |_, window: &mut Window, cx: &mut App| {
                     window.close_dialog(cx);
                     run(window, cx);
@@ -507,7 +505,9 @@ impl Shell {
             let read = reading.await;
             let _ = shell.update_in(cx, |shell: &mut Self, window, cx| match read {
                 Ok(read) => shell.confirm_answer(task, read, has_check, window, cx),
-                Err(why) => window.push_notification(Notification::warning(why), cx),
+                Err(why) => {
+                    window.push_notification(crate::toast::failed("Reading the review", why), cx)
+                }
             });
         })
         .detach();
@@ -561,7 +561,7 @@ impl Shell {
                         return;
                     };
                     if let Err(why) = crate::unattended::start_answer(read, has_check, handle, cx) {
-                        window.push_notification(Notification::warning(why), cx);
+                        window.push_notification(crate::toast::warning(why), cx);
                     }
                 }
             };
@@ -601,7 +601,7 @@ impl Shell {
         });
         match blocked {
             Some(block) => window.push_notification(
-                Notification::warning(format!("Not resumed: {}", block.text)),
+                crate::toast::warning(format!("Not resumed: {}", block.text)),
                 cx,
             ),
             None => crate::task::request(id, window, cx),

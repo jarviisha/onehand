@@ -223,7 +223,11 @@ impl ChatPane {
         match &self.page {
             Some(super::Page::Workspace(_)) => return self.workspace_page(cx),
             Some(super::Page::Tasks(_)) => return self.tasks_page(cx),
-            Some(super::Page::Issues(view) | super::Page::Workflows(view)) => {
+            Some(
+                super::Page::Issues(view)
+                | super::Page::Workflows(view)
+                | super::Page::Settings(view),
+            ) => {
                 return self.view_page(view.clone(), cx);
             }
             None => {}
@@ -491,13 +495,13 @@ impl ChatPane {
                                     // opaque raised surface so transcript text
                                     // scrolling beneath cannot show through it.
                                     div()
-                                        .rounded_full()
+                                        .rounded(cx.theme().radius_lg)
                                         .bg(cx.theme().popover.alpha(1.))
-                                        .shadow_lg()
+                                        .shadow(crate::tokens::lift(cx))
                                         .child(
                                             crate::controls::action("to-bottom")
                                                 .outline()
-                                                .rounded_full()
+                                                .rounded(cx.theme().radius_lg)
                                                 // **The arrow alone.** The
                                                 // words named what was down
                                                 // there, which the transcript

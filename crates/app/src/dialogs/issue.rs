@@ -1,6 +1,7 @@
 //! The issue picker, and the rows every list of issues is drawn with.
 
 use super::title_row;
+use crate::controls::Refuses as _;
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -10,7 +11,8 @@ use gpui::{
 use gpui_component::button::ButtonVariants;
 use gpui_component::dialog::Dialog;
 use gpui_component::input::{Textarea, TextareaState};
-use gpui_component::{ActiveTheme, Disableable, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::tag::Tag;
+use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::issues::template;
 use onehand_core::preflight::{Check, Finding};
 use onehand_core::unattended::{self as core, IssueRow, Tracker};
@@ -30,6 +32,10 @@ use onehand_core::workflow::Template;
 /// Opened on one issue, from that issue, there is no row to pick: the form
 /// reads top to bottom in the order a person decides, and *Run* is the one
 /// thing left to press.
+/// How tall the list of issues grows before it scrolls, so the form under a
+/// chosen one stays in reach.
+const ISSUE_LIST_MAX_H: gpui::Rems = gpui::rems(24.);
+
 pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Dialog {
     let Some(picker) = shell.issue_picker() else {
         return Dialog::new(cx);
@@ -41,6 +47,7 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
     let found = picker.found.clone();
     let (at, narrowed, preview) = (picker.chosen, picker.only.is_some(), picker.preview);
     let instructions = picker.instructions.clone();
+    let focus = picker.focus.clone();
     let templates = picker.templates.clone();
     let picked = picker.workflow.clone();
     let chosen = picker.chosen();
@@ -92,6 +99,7 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
             content.child(title_row(heading.clone())).child(
                 div()
                     .id("issue-picker-body")
+                    .track_focus(&focus)
                     .w_full()
                     .max_h(room)
                     .overflow_y_scroll()
@@ -125,7 +133,7 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
                 .child({
                     let run = crate::controls::action("run-pick").primary().label("Run");
                     match runnable {
-                        false => crate::controls::resting(run).disabled(true),
+                        false => run.refuses(true),
                         true => run.on_click(cx.listener(
                             |shell: &mut Shell, _: &ClickEvent, window, cx| {
                                 shell.commit_pick(window, cx);
@@ -223,7 +231,7 @@ fn start_form(
             col.child(label("Before it starts")).children(lines)
         })
         .child(label("Instructions for this run"))
-        .child(Textarea::new(instructions).h(gpui::rems(4.)));
+        .child(Textarea::new(instructions).h(super::INSTRUCTIONS_H));
     let Ok(template) = template else {
         return column.into_any_element();
     };
@@ -327,19 +335,15 @@ pub(crate) fn issue_row(
     trailing: String,
     cx: &App,
 ) -> gpui::Stateful<gpui::Div> {
-    let (muted, radius) = (cx.theme().muted_foreground, cx.theme().radius);
-    let (pill_bg, pill_fg) = (cx.theme().secondary, cx.theme().secondary_foreground);
+    let muted = cx.theme().muted_foreground;
+    let (fill, ink) = (cx.theme().secondary, cx.theme().secondary_foreground);
     row_shell(id, shown, title, cx)
         // A few labels, not all: the row is for telling issues apart, and the
         // title is what does most of that.
         .children(labels.iter().take(3).map(|label| {
-            div()
+            Tag::custom(fill, ink, fill)
+                .small()
                 .flex_none()
-                .px_1()
-                .rounded(radius)
-                .text_xs()
-                .bg(pill_bg)
-                .text_color(pill_fg)
                 .child(label.clone())
         }))
         .child(
@@ -423,7 +427,7 @@ fn issue_list(
         Some(Ok((rows, _, _))) if rows.is_empty() => {
             return div()
                 .text_color(muted)
-                .child("There are no open issues.")
+                .child("No open issues")
                 .into_any_element();
         }
         Some(Ok((rows, cut, unread))) => (rows, *cut, unread.clone()),
@@ -437,7 +441,7 @@ fn issue_list(
                 .id("issue-list")
                 .v_flex()
                 .w_full()
-                .max_h(gpui::rems(24.))
+                .max_h(ISSUE_LIST_MAX_H)
                 .overflow_y_scroll()
                 .children(rows.iter().enumerate().map(|(i, (tracker, row))| {
                     let handle = handle.clone();
@@ -467,8 +471,8 @@ fn issue_list(
                     )
                     .when(chosen == Some(i), |row| row.bg(active))
                     .on_click(
-                        move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                            handle.update(cx, |shell, cx| shell.choose_issue(i, cx));
+                        move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                            handle.update(cx, |shell, cx| shell.choose_issue(i, window, cx));
                         },
                     )
                 })),

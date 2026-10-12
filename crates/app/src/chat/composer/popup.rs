@@ -3,6 +3,7 @@ use super::presentation::Row;
 use super::rows::{candidate_row, choice_row};
 use super::{Composer, Overlay, highlight};
 use crate::chat::session::ChatSession;
+use crate::tokens::{CONTROL_H, ROW_H};
 use gpui::IntoElement as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -50,7 +51,6 @@ pub(in crate::chat) const POPUP_STACK_PEEK: Rems = rems(0.375);
 /// The parts: the pinned header, the line counting what is out of view, and
 /// the surface's own inset top and bottom.
 const POPUP_HEADER_H: Rems = rems(1.75);
-const POPUP_MORE_H: Rems = rems(1.5);
 const POPUP_INSET_H: Rems = rems(0.75);
 /// A menu opened from a control is this wide, and opens on that control;
 /// the wider one holds a model's or a mode's name beside the agent's words
@@ -68,7 +68,7 @@ const MENU_WIDE_W: Rems = rems(20.);
 /// what is left when the panel is too short for either: a squeezed pane
 /// scrolls its list, but it is never reduced to one row and a scrollbar.
 pub fn popup_room(panel: gpui::Pixels, reserved: gpui::Pixels, rem: gpui::Pixels) -> gpui::Pixels {
-    let row = POPUP_ROW_H.to_pixels(rem);
+    let row = ROW_H.to_pixels(rem);
     let chrome = popup_chrome().to_pixels(rem);
     let rows = row * POPUP_MAX_ROWS + chrome;
     (panel - reserved - POPUP_HEADROOM.to_pixels(rem))
@@ -78,7 +78,7 @@ pub fn popup_room(panel: gpui::Pixels, reserved: gpui::Pixels, rem: gpui::Pixels
 
 /// Everything the popup draws above and below its scrolling box.
 pub(super) fn popup_chrome() -> Rems {
-    rems(POPUP_HEADER_H.0 + POPUP_MORE_H.0 + POPUP_INSET_H.0)
+    rems(POPUP_HEADER_H.0 + CONTROL_H.0 + POPUP_INSET_H.0)
 }
 
 /// The inset every popup surface pads its contents by.
@@ -113,13 +113,10 @@ const THUMB_LANE: Rems = rems(0.75);
 /// How tall the scrolling box may stand: a whole number of rows, always, and
 /// never more of them than a list shows at once.
 pub(super) fn popup_list_h(room: gpui::Pixels, rem: gpui::Pixels, chrome: Rems) -> gpui::Pixels {
-    let row = POPUP_ROW_H.to_pixels(rem);
+    let row = ROW_H.to_pixels(rem);
     let left = room - chrome.to_pixels(rem);
     (left / row).floor().clamp(1., POPUP_MAX_ROWS) * row
 }
-/// How tall a row in the popup stands: a rail row's height, so the choices
-/// behind a chip line up with every other list in the window.
-pub(super) const POPUP_ROW_H: Rems = rems(1.875);
 /// The line a label over a run of rows stands on: its words sit at its foot,
 /// with air above them separating the run from the one before. A height rather
 /// than padding, so the filler holding a popup's size can match it exactly.
@@ -145,8 +142,8 @@ fn anchor(overlay: &Overlay) -> Anchor {
     }
 }
 
-/// The surface every popup is drawn on: the floating fill, a control's edge,
-/// the app's lift, and the wheel held so the conversation behind does not move
+/// The surface every popup is drawn on: the floating fill, a control's edge
+/// and a menu's corner, the app's lift, and the wheel held so the conversation behind does not move
 /// with the list.
 ///
 /// **The wheel is claimed on the surface**, so the header and the inset swallow
@@ -157,11 +154,11 @@ pub(super) fn popup_surface(cx: &App) -> gpui::Div {
     div()
         .v_flex()
         .w_full()
-        .rounded(cx.theme().radius_lg)
+        .rounded(cx.theme().radius)
         .border_1()
         .border_color(cx.theme().input)
         .bg(cx.theme().popover.alpha(1.))
-        .shadow(crate::theme::lift(cx))
+        .shadow(crate::tokens::lift(cx))
         .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
         .p(POPUP_INSET)
 }
@@ -457,7 +454,7 @@ impl Composer {
                                 },
                             ))
                         })
-                        .children(filler.map(|_| div().h(POPUP_ROW_H).flex_none()))
+                        .children(filler.map(|_| div().h(ROW_H).flex_none()))
                         .children(label_filler.map(|_| div().h(GROUP_LABEL_H).flex_none())),
                 ))
                 // Outside the scroll, so the count is never scrolled out of
@@ -477,7 +474,7 @@ impl Composer {
 pub(super) fn more_text(cx: &App) -> gpui::Div {
     div()
         .flex_none()
-        .h(POPUP_MORE_H)
+        .h(CONTROL_H)
         .h_flex()
         .items_center()
         .px_2()
@@ -570,6 +567,6 @@ fn notice(cx: &App) -> gpui::Div {
         .h_flex()
         .items_center()
         .px_2()
-        .min_h(POPUP_ROW_H)
+        .min_h(ROW_H)
         .text_color(cx.theme().muted_foreground)
 }

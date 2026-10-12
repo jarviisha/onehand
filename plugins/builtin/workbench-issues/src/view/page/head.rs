@@ -1,5 +1,6 @@
-//! The page's head — its name, the open count, *Refresh* and *New issue* —
-//! the filter bar under it, and what the list cannot vouch for.
+//! The page's head — the open count, *Refresh* and *New issue* — the filter
+//! bar under it, and what the list cannot vouch for. The page's name is the
+//! pane's header's, as every page's is.
 
 use super::IssuesView;
 use gpui::prelude::FluentBuilder as _;
@@ -23,8 +24,8 @@ const LABELS_SHOWN: usize = 100;
 const SEARCH_W: Rems = rems(18.);
 
 impl IssuesView {
-    /// The page's head over the list: its name, how many issues are open,
-    /// *Refresh* and *New issue* on one row; under it the search as wide as
+    /// The page's head over the list: how many issues are open, *Refresh*
+    /// and *New issue* on one row; under it the search as wide as
     /// the row allows and the open/closed, progress, project and label
     /// filters, wrapping when narrow.
     pub(super) fn page_head(
@@ -195,7 +196,6 @@ impl IssuesView {
             .h_flex()
             .items_center()
             .gap_2()
-            .child(div().flex_none().text_2xl().font_semibold().child("Issues"))
             .child(
                 div()
                     .flex_1()

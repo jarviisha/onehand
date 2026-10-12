@@ -218,7 +218,7 @@ pub(super) fn left_lines(
             Some(why) => div()
                 .text_color(warning)
                 .child(format!("could not be read: {why}")),
-            None => div().text_color(muted).child("reading…"),
+            None => div().text_color(muted).child("Reading the check…"),
         };
         return vec![line("Check", said.into_any_element())];
     };
@@ -427,7 +427,7 @@ fn file_row(
                 None => div()
                     .px_2()
                     .text_color(muted)
-                    .child("reading…")
+                    .child("Reading the diff…")
                     .into_any_element(),
                 Some(Err(why)) => div()
                     .px_2()
@@ -440,18 +440,18 @@ fn file_row(
         .into_any_element()
 }
 
+/// The column a diff line's `+` or `−` stands in, so the text after it lines
+/// up whatever the sign.
+const SIGN_W: gpui::Rems = gpui::rems(1.);
+
 /// One file's diff, a line per row, the first [`DIFF_LINES`] of them.
 fn diff_view(rows: &[DiffRow], cx: &Context<IssuesView>) -> AnyElement {
     let muted = cx.theme().muted_foreground;
     let ink = status_ink(cx);
     let left_out = rows.len().saturating_sub(DIFF_LINES);
-    div()
+    onehand_plugin_host::well(cx)
         .v_flex()
-        .min_w_0()
         .my_1()
-        .rounded(cx.theme().radius)
-        .bg(cx.theme().muted)
-        .font_family(cx.theme().mono_font_family.clone())
         .children(rows.iter().take(DIFF_LINES).map(|row| {
             let (sign, text, color) = match row {
                 DiffRow::Added(text) => ("+", text.clone(), ink.success),
@@ -465,7 +465,7 @@ fn diff_view(rows: &[DiffRow], cx: &Context<IssuesView>) -> AnyElement {
                 .min_w_0()
                 .px_1()
                 .text_color(color)
-                .child(div().flex_none().w(gpui::rems(1.)).child(sign))
+                .child(div().flex_none().w(SIGN_W).child(sign))
                 .child(div().flex_1().min_w_0().child(text))
         }))
         .when(left_out > 0, |column| {

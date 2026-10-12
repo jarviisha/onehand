@@ -10,8 +10,8 @@ use gpui::{
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{Input, InputEvent, InputState};
-use gpui_component::{ActiveTheme, Disableable as _, Selectable as _, Sizable as _, StyledExt};
-use onehand_plugin_host::{Ask, Request, action, hint, status_line, switch};
+use gpui_component::{ActiveTheme, Selectable as _, Sizable as _, StyledExt};
+use onehand_plugin_host::{Ask, Refuses as _, Request, action, hint, status_line, switch};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -380,7 +380,7 @@ impl Render for PluginsView {
 impl PluginsView {
     fn body(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         if self.root.is_none() {
-            return hint("No project root", cx);
+            return hint("No project selected", cx);
         }
         let query = self.query(window, cx);
         let installed_query = self.installed_query(window, cx);
@@ -545,6 +545,7 @@ impl PluginsView {
                     // Keyed by the tab, so each list keeps a scroll of its own
                     // instead of the one showing inheriting the other's.
                     .id(self.tab.label())
+                    .key_context("PluginList")
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
@@ -677,8 +678,8 @@ impl PluginsView {
                     action("plugins-restart")
                         .small()
                         .outline()
-                        .label("Restart agent")
-                        .disabled(self.busy.is_some())
+                        .label("Restart the agent")
+                        .refuses(self.busy.is_some())
                         .on_click(move |_, window, cx| ask(&Request::RestartAgent, window, cx)),
                 )
                 .into_any_element(),

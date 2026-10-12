@@ -13,7 +13,7 @@ use gpui::{
 use gpui_component::{ActiveTheme, Icon, IconName, StyledExt};
 use onehand_core::gitstat::{FileChange, GitStatus};
 use onehand_core::tree::{self, FileTree};
-use onehand_plugin_host::{Ask, Request, hint, status_ink};
+use onehand_plugin_host::{Ask, Request, hint, status_ink, tokens};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -150,11 +150,16 @@ impl FilesView {
 impl Render for FilesView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let Some(root) = self.root.clone() else {
-            return hint("No project root", cx).into_any_element();
+            return hint("No project selected", cx).into_any_element();
         };
         let Some(tree) = self.trees.get(&root) else {
-            return hint("No project root", cx).into_any_element();
+            return hint("No project selected", cx).into_any_element();
         };
+        // Until the root's first listing lands there is nothing to draw, and a
+        // blank panel reads as an empty project.
+        if !tree.listings.contains_key(&root) {
+            return hint("Reading the project's files…", cx).into_any_element();
+        }
         div()
             .flex_1()
             .min_h_0()
@@ -175,9 +180,6 @@ impl Render for FilesView {
 /// The tint a change badge carries. Severity, not category: red is something
 /// that lost content, amber is something that changed, green is something that
 /// arrived.
-/// A row of the tree: a little over a control's height, so a long list of
-/// names reads as rows with air between them rather than a block of text.
-const ROW_H: gpui::Rems = gpui::rems(1.875);
 /// Where a row's content starts, and how far each level of the tree steps in.
 const ROW_INSET: f32 = 0.5;
 const TREE_INDENT: f32 = 0.875;
@@ -236,7 +238,7 @@ fn rows(
                 .items_center()
                 .gap_2()
                 .w_full()
-                .h(ROW_H)
+                .h(tokens::ROW_H)
                 .px_1()
                 .rounded(cx.theme().radius)
                 .text_sm()
@@ -281,7 +283,7 @@ fn rows(
                     row.child(if entry.is_dir {
                         div()
                             .flex_none()
-                            .size(rems(0.375))
+                            .size_1p5()
                             .rounded_full()
                             .bg(color)
                             .into_any_element()

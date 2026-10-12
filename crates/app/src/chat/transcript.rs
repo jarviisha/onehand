@@ -26,9 +26,24 @@ mod strip;
 mod tool;
 mod user;
 pub(in crate::chat) use ask::ask;
-pub(in crate::chat) use metrics::{
-    BLOCK_GAP, CONTENT_COLUMN, LEADING, TEXT, TEXT_SM, TIGHT_GAP, TURN_GAP,
-};
+
+// The blocking cards' keys, which the keymap binds in the cards' own contexts:
+// a question's choices walked, taken, numbered or skipped, and a permission
+// allowed or denied.
+gpui::actions!(
+    question_card,
+    [QuestionUp, QuestionDown, QuestionTake, QuestionSkip]
+);
+gpui::actions!(permission_card, [PermissionAllow, PermissionDeny]);
+
+/// Take the question card's row numbered `index + 1`, the free-text box
+/// included; a number nobody offered does nothing.
+#[derive(Clone, PartialEq, Debug, gpui::Action)]
+#[action(namespace = question_card, no_json)]
+pub struct QuestionPick {
+    pub index: usize,
+}
+pub(in crate::chat) use metrics::{BLOCK_GAP, CONTENT_COLUMN, TEXT, TEXT_SM, TIGHT_GAP, TURN_GAP};
 use metrics::{LINE_H, STATE_TINT};
 pub(in crate::chat) use parts::{accent, line_counts};
 pub(in crate::chat) use permission::permission;
@@ -149,7 +164,7 @@ fn notice(text: &str, level: NoticeLevel, cx: &App) -> impl IntoElement + use<> 
         .border_1()
         .border_color(danger)
         .bg(cx.theme().danger.opacity(STATE_TINT))
-        .text_size(TEXT_SM)
+        .text_sm()
         .text_color(danger)
         .child(
             // The glyph is held to the first line's height, so a message that

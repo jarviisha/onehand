@@ -1,5 +1,5 @@
 use super::drafts::answered;
-use super::settings_dialog::apply_appearance;
+use super::settings_page::apply_appearance;
 use super::{APP_ID, FocusedPanel, Shell, init_keymap};
 use crate::chat::ChatPane;
 use crate::settings::{AgentDraft, SettingsPage};
@@ -9,7 +9,6 @@ use crate::workbench::Workbench;
 use gpui::{App, AppContext, BorrowAppContext, Context, Focusable as _, Window, px};
 use gpui_component::dock::{DockArea, DockEvent, DockItem, DockPlacement};
 use gpui_component::input::{InputEvent, InputState};
-use gpui_component::notification::Notification;
 use gpui_component::{ResizableState, Root, WindowExt as _};
 use onehand_core::config::WorkspaceConfig;
 use onehand_core::config::{AppConfig, Appearance};
@@ -52,9 +51,9 @@ impl Shell {
                 let Some(page) = page.upgrade().filter(|page| page.read(cx).dirty(cx)) else {
                     return true;
                 };
-                crate::shell::ask_on(
+                crate::shell::confirm_on(
                     page,
-                    crate::shell::Ask {
+                    crate::shell::Confirm {
                         id: "close-workflow-draft",
                         title: "Drop the workflow being written?".into(),
                         description: "Its changes are not saved. Closing the window throws \
@@ -196,14 +195,14 @@ impl Shell {
                     // for a stronger reason: a workspace that will not save can
                     // be described again, a conversation cannot.
                     E::ArchiveFailed(why) => window.push_notification(
-                        Notification::error(format!("Conversation not saved — {why}")),
+                        crate::toast::failed("Saving the conversation", why),
                         cx,
                     ),
                     // A warning rather than an error: nothing went wrong and
                     // nothing was lost -- the conversation is exactly where it
                     // was, which is the opposite of the message above.
                     E::ConversationNotDeleted(why) => window.push_notification(
-                        Notification::warning(format!("Conversation not deleted — {why}")),
+                        crate::toast::failed("Deleting the conversation", why),
                         cx,
                     ),
                     E::OpenIssue { root, number } => shell.open_issue(root, *number, window, cx),
@@ -358,6 +357,14 @@ impl Shell {
         // may have gone stale: the agent kept working while the user was
         // elsewhere, and the badge on the session they are about to read
         // should not still be up when they get there.
+        // Something holding the keyboard left the frame: a dialog closed, a
+        // panel went, a page changed. The keyboard goes where it is wanted
+        // rather than staying on a node no frame draws, where it answers no key.
+        cx.on_focus_lost(window, |shell: &mut Self, window, cx| {
+            shell.focus_lost(window, cx)
+        })
+        .detach();
+
         cx.observe_window_activation(window, |shell: &mut Self, window, cx| {
             if !window.is_window_active() {
                 shell.held_commands.clear();
@@ -406,9 +413,6 @@ impl Shell {
                     let name = state.read(cx).value().trim().to_string();
                     if !name.is_empty() && name != shell.window.workspace.name {
                         shell.window.workspace.name = name;
-                        if shell.settings_open {
-                            shell.workspace_note_wanted = true;
-                        }
                         shell.save_workspace_soon(cx);
                         cx.notify();
                     }
@@ -458,8 +462,6 @@ impl Shell {
             rail_split: cx.new(|_| ResizableState::default()),
             agent_draft: AgentDraft::new(window, cx),
             settings_page: SettingsPage::default(),
-            settings_open: false,
-            settings_return_focus: None,
             settings_focus: cx.focus_handle(),
             keymap_editor: cx.new(|cx| crate::keymap::Editor::new(window, cx)),
             settings_view: {
@@ -467,8 +469,6 @@ impl Shell {
                 cx.new(|_| crate::settings::SettingsView::new(shell))
             },
             agent_checks: HashMap::new(),
-            settings_note: None,
-            workspace_note_wanted: false,
             held_commands: Default::default(),
             workspace_name,
             renaming: None,
@@ -478,6 +478,7 @@ impl Shell {
             worktree_draft: None,
             branch_draft: None,
             issue_picker: None,
+            dialog_return: None,
             label_input: cx.new(|cx| InputState::new(window, cx).placeholder("bug")),
             label_workflow: None,
             label_refused: None,
@@ -550,6 +551,11 @@ pub fn open_or_focus(workspace: Workspace, cx: &mut App) {
     open_window(workspace, cx);
 }
 
+/// The smallest the window may be dragged to: the rail's minimum beside the
+/// conversation's, and a transcript still a few turns tall. Pixels, because it
+/// is a bound measured against the screen, not something drawn inside a zoom.
+const WINDOW_MIN: gpui::Size<gpui::Pixels> = gpui::size(gpui::px(720.), gpui::px(480.));
+
 /// Open a window for `workspace` and register it.
 fn open_window(workspace: Workspace, cx: &mut App) {
     let storage_dir = workspace.storage_dir.clone();
@@ -566,6 +572,7 @@ fn open_window(workspace: Workspace, cx: &mut App) {
             // match, so every entry on disk is unreachable and the result is
             // the generic placeholder no matter how many icons are installed.
             app_id: Some(APP_ID.into()),
+            window_min_size: Some(WINDOW_MIN),
             ..Default::default()
         };
         // Filled in by the window builder below and read out after it, because

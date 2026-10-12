@@ -1,7 +1,6 @@
 use super::metrics::{
     ASK_CHOICE_DOT, ASK_CHOICE_MARK, ASK_CUSTOM_ROW_MIN, ASK_HINT_PAD, ASK_HINT_SIZE, ASK_INSET,
-    ASK_MARK_RING, ASK_PROMPT_LEADING, ASK_ROW_MIN, ASK_TAB_H, ASK_TAB_MARK, ASK_TAB_W, BUTTON_H,
-    PART_GAP, WORK_TEXT,
+    ASK_MARK_RING, ASK_ROW_MIN, ASK_TAB_H, ASK_TAB_MARK, ASK_TAB_W, PART_GAP,
 };
 use super::parts::{
     ActivityRow, BlockingBody, Object, RowMark, activity_row, detail_well, floating_card, grows,
@@ -9,13 +8,14 @@ use super::parts::{
 };
 use super::{fold_key, live_index};
 use crate::chat::session::ChatSession;
+use crate::controls::Refuses as _;
+use crate::tokens::{CODE_TEXT, CONTROL_H, LEADING_TIGHT};
 use gpui::Focusable as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, ClickEvent, Entity, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, Window, div, relative,
 };
-use gpui_component::Disableable as _;
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::Input;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
@@ -94,7 +94,7 @@ fn ask_record(
                             .gap(PART_GAP)
                             .w_full()
                             .min_w_0()
-                            .h(BUTTON_H)
+                            .h(CONTROL_H)
                             .child(
                                 div()
                                     .flex_1()
@@ -184,7 +184,7 @@ pub(in crate::chat) fn ask(
         )
     });
 
-    floating_card(cx)
+    floating_card(live, cx)
         .v_flex()
         .p_0()
         // **The card's own padding goes to the rows inside it.** The heading
@@ -456,7 +456,7 @@ fn ask_choice_mark(on: bool, single: bool, cx: &App) -> impl IntoElement + use<>
         })
         .map(|mark| match single {
             true => mark.rounded_full(),
-            false => mark.rounded(cx.theme().radius),
+            false => mark.rounded(cx.theme().radius_tokens().sm),
         })
         .when(on, |mark| {
             mark.child(
@@ -465,7 +465,7 @@ fn ask_choice_mark(on: bool, single: bool, cx: &App) -> impl IntoElement + use<>
                     .bg(cx.theme().primary)
                     .map(|dot| match single {
                         true => dot.rounded_full(),
-                        false => dot.rounded_sm(),
+                        false => dot.rounded(cx.theme().radius_tokens().sm),
                     }),
             )
         })
@@ -541,7 +541,7 @@ impl AskForm<'_> {
                     .gap_2()
                     .flex_none()
                     .h(ASK_TAB_H)
-                    .px_2p5()
+                    .px_2()
                     .rounded_none()
                     // **Underlined rather than filled.** A filled tab in a
                     // strip that already carries a filled number in each of its
@@ -627,7 +627,7 @@ impl AskForm<'_> {
                     words = words.child(
                         div()
                             .w_full()
-                            .text_size(WORK_TEXT)
+                            .text_size(CODE_TEXT)
                             .text_color(cx.theme().muted_foreground)
                             .child(description),
                     );
@@ -638,7 +638,7 @@ impl AskForm<'_> {
                     .py_2()
                     .w_full()
                     .min_h(ASK_ROW_MIN)
-                    .rounded(cx.theme().radius_lg)
+                    .rounded(cx.theme().radius)
                     .border_1()
                     // **A taken choice is named by its border, and a destructive
                     // one by the danger step of that same border.** Taking it is
@@ -742,7 +742,7 @@ impl AskForm<'_> {
                 .w_full()
                 .px_3()
                 .min_h(ASK_CUSTOM_ROW_MIN)
-                .rounded(cx.theme().radius_lg)
+                .rounded(cx.theme().radius)
                 .border_1()
                 // **Dashed** rather than solid, which is the one thing that
                 // separates it from the rows above without taking it out of
@@ -799,7 +799,7 @@ impl AskForm<'_> {
                     .gap_2()
                     .w_full()
                     .px_4()
-                    .py_2p5()
+                    .py_2()
                     // What the keyboard can do, said where the keyboard's
                     // work ends. The numbers are on the rows themselves --
                     // this is the walk, which has nowhere else to be named.
@@ -837,14 +837,9 @@ impl AskForm<'_> {
                                 crate::controls::action(("ask-submit", idx))
                                     .primary()
                                     .small()
-                                    .map(|submit| match can_advance {
-                                        true => submit,
-                                        // Nothing is picked yet, so the
-                                        // pointer would be promising a
-                                        // press that does nothing.
-                                        false => crate::controls::resting(submit),
-                                    })
-                                    .disabled(!can_advance)
+                                    // Nothing is picked yet: refusing, and
+                                    // the pointer would promise otherwise.
+                                    .refuses(!can_advance)
                                     .label(match last {
                                         false => "Next →",
                                         true => "Submit",
@@ -870,85 +865,92 @@ impl AskForm<'_> {
         let session = self.session.clone();
         let card = focus.clone();
         body.id(("ask-card", idx))
+            .key_context("QuestionCard")
             .track_focus(&focus)
-            .on_key_down(move |event, window, cx| {
-                let keystroke = &event.keystroke;
-                // A modified key is somebody else's: Ctrl+1 switches sessions and
-                // Shift+Enter is a newline in whatever holds the caret.
-                if keystroke.modifiers.modified() {
-                    return;
+            // **The free-text box takes every key while it has the caret**:
+            // every one of these is bound outside a field, so a "1" typed into
+            // the box is a "1" rather than a jump to the first choice.
+            .on_action({
+                let (session, card) = (session.clone(), card.clone());
+                move |_: &super::QuestionUp, window, cx| {
+                    walk(&session, idx, active, -1, &card, window, cx)
                 }
-                let session = session.clone();
-                // **The free-text box takes every key while it has the caret.** It
-                // is inside the card, so a key press there reaches this listener on
-                // its way out -- and the answers this card is shortest about are
-                // digits, which is exactly what somebody writing their own answer
-                // types. Unguarded, a "1" in that box jumps to the first choice and
-                // empties the line being written.
-                let typing = session
-                    .read(cx)
-                    .ask_input(idx, active)
-                    .map(|state| state.read(cx).focus_handle(cx))
-                    .is_some_and(|handle| handle.is_focused(window));
-                if typing {
-                    return;
+            })
+            .on_action({
+                let (session, card) = (session.clone(), card.clone());
+                move |_: &super::QuestionDown, window, cx| {
+                    walk(&session, idx, active, 1, &card, window, cx)
                 }
-                match keystroke.key.as_str() {
-                    "up" | "down" => {
-                        let delta = if keystroke.key == "up" { -1 } else { 1 };
-                        // The walk takes the caret back off whichever row was last
-                        // clicked, or the cursor and the focus point at two
-                        // different rows and Enter answers the one the eye is not
-                        // on.
-                        window.focus(&card, cx);
-                        session.update(cx, |s, cx| {
-                            if let Some(item) = s.chat.ask_at_mut(idx) {
-                                item.move_cursor(active, delta);
-                            }
-                            cx.notify();
-                        });
+            })
+            // **Only where the card itself holds the caret.** A choice row is a
+            // library `Button`, and a focused one already turns Enter into its
+            // own click -- so answering here as well is two answers, which on a
+            // multi-select is the choice toggled on and straight back off. The
+            // row that has the caret settles itself; this is the walk's Enter,
+            // for the cursor the arrows moved.
+            .on_action({
+                let (session, card) = (session.clone(), card.clone());
+                move |_: &super::QuestionTake, window, cx| {
+                    if !card.is_focused(window) {
+                        return;
                     }
-                    // **Only where the card itself holds the caret.** A choice row
-                    // is a library `Button`, and a focused one already turns Enter
-                    // into its own click -- so answering here as well is two
-                    // answers, which on a multi-select is the choice toggled on and
-                    // straight back off. The row that has the caret settles itself;
-                    // this is the walk's Enter, for the cursor the arrows moved.
-                    "enter" if card.is_focused(window) => {
-                        let row = session
-                            .read(cx)
-                            .chat
-                            .ask_at(idx)
-                            .and_then(|item| item.cursor_row(active));
-                        if let Some(row) = row {
-                            ask_take(&session, idx, active, row, quick, window, cx);
-                        }
-                    }
-                    "enter" => {}
-                    // Esc passes on this question rather than refusing the whole
-                    // form: the card is walked one question at a time, and the key
-                    // that means "not this one" has to mean it at the same scale
-                    // the Skip button beside it does.
-                    "escape" if !quick => ask_skip(&session, idx, active, window, cx),
-                    // A number jumps to the row carrying it, the typed answer's box
-                    // included -- and a number nobody offered does nothing at all,
-                    // which is `row` refusing rather than rounding to the nearest.
-                    key => {
-                        let Some(n) = key.parse::<usize>().ok().filter(|&n| n >= 1) else {
-                            return;
-                        };
-                        let row = session
-                            .read(cx)
-                            .chat
-                            .ask_at(idx)
-                            .and_then(|item| item.row(active, n - 1));
-                        if let Some(row) = row {
-                            ask_take(&session, idx, active, row, quick, window, cx);
-                        }
+                    let row = session
+                        .read(cx)
+                        .chat
+                        .ask_at(idx)
+                        .and_then(|item| item.cursor_row(active));
+                    if let Some(row) = row {
+                        ask_take(&session, idx, active, row, quick, window, cx);
                     }
                 }
             })
+            // Esc passes on this question rather than refusing the whole form:
+            // the card is walked one question at a time, and the key that means
+            // "not this one" has to mean it at the same scale the Skip button
+            // beside it does.
+            .on_action({
+                let session = session.clone();
+                move |_: &super::QuestionSkip, window, cx| {
+                    if !quick {
+                        ask_skip(&session, idx, active, window, cx);
+                    }
+                }
+            })
+            // A number jumps to the row carrying it, the typed answer's box
+            // included -- and a number nobody offered does nothing at all, which
+            // is `row` refusing rather than rounding to the nearest.
+            .on_action(move |pick: &super::QuestionPick, window, cx| {
+                let row = session
+                    .read(cx)
+                    .chat
+                    .ask_at(idx)
+                    .and_then(|item| item.row(active, pick.index));
+                if let Some(row) = row {
+                    ask_take(&session, idx, active, row, quick, window, cx);
+                }
+            })
     }
+}
+
+/// Move the question card's cursor `delta` rows. The walk takes the caret
+/// back off whichever row was last clicked, or the cursor and the focus point
+/// at two different rows and Enter answers the one the eye is not on.
+fn walk(
+    session: &Entity<ChatSession>,
+    idx: usize,
+    active: usize,
+    delta: isize,
+    card: &gpui::FocusHandle,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    window.focus(card, cx);
+    session.update(cx, |s, cx| {
+        if let Some(item) = s.chat.ask_at_mut(idx) {
+            item.move_cursor(active, delta);
+        }
+        cx.notify();
+    });
 }
 
 /// The question card: the strip of questions, the open one's choices, the box
@@ -997,13 +999,13 @@ fn ask_form(
                 .gap_3()
                 .w_full()
                 .px(ASK_INSET)
-                .pt_3p5()
+                .pt_3()
                 .pb_4()
                 .children(form.question().map(|line| {
                     div()
                         .w_full()
                         .text_sm()
-                        .line_height(relative(ASK_PROMPT_LEADING))
+                        .line_height(relative(LEADING_TIGHT))
                         .child(line)
                 }))
                 // Only the choices scroll. The tab strip is how the *other*

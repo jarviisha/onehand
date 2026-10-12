@@ -8,7 +8,7 @@
 //! that the conversation above it drops under a readable height.
 
 use super::{FocusedPanel, Shell};
-use crate::controls::BAR_H;
+use crate::tokens::BAR_H;
 use gpui::{Context, Focusable as _, Rems, Window, px, rems};
 use gpui_component::dock::DockPlacement;
 

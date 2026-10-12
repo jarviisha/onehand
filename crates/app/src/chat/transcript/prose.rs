@@ -1,9 +1,10 @@
 use super::fold_key;
 use super::metrics::{
-    HEADING_1, HEADING_2, LEADING, MAX_CODE_BLOCK_H, PARAGRAPH_GAP, TEXT, TEXT_SM, TIGHT_GAP,
+    FOLD_INDENT, HEADING_1, HEADING_2, MAX_CODE_BLOCK_H, PARAGRAPH_GAP, TEXT, TIGHT_GAP,
 };
 use super::parts::{accent, copy_button, copy_turn_button, fold_line};
 use crate::chat::session::ChatSession;
+use crate::tokens::LEADING;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, ClickEvent, Entity, HighlightStyle, IntoElement, ParentElement,
@@ -134,9 +135,9 @@ fn prose_style(window: &Window, cx: &App) -> TextViewStyle {
                 .max_h(MAX_CODE_BLOCK_H)
                 .overflow_hidden()
                 .p_3()
-                .rounded(cx.theme().radius_lg)
+                .rounded(cx.theme().radius)
                 .bg(cx.theme().muted)
-                .text_size(TEXT_SM)
+                .text_sm()
                 .line_height(relative(LEADING)),
         )
         // A table is read across, so its cells are wider than they are tall.
@@ -187,8 +188,8 @@ pub(super) fn thought(
                 div()
                     .w_full()
                     .min_w_0()
-                    .pl_5()
-                    .text_size(TEXT_SM)
+                    .pl(FOLD_INDENT)
+                    .text_sm()
                     .text_color(cx.theme().muted_foreground)
                     .child(md_view(session, &th.md, window, cx)),
             )

@@ -17,6 +17,11 @@ mod inventory;
 mod view;
 use view::PluginsView;
 
+// The Plugins list's keys, which the app's keymap binds in the list's
+// `PluginList` context: a row's details, and the row's plugin turned on or off
+// here.
+gpui::actions!(plugin_list, [PluginOpen, PluginFlip]);
+
 /// What this mode declares about itself, which is what the panel reads
 /// instead of matching the ID against a list it has to know by heart.
 pub const SPEC: WorkbenchModeSpec =

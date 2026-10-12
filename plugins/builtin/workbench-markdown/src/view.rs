@@ -370,7 +370,7 @@ impl Render for MarkdownView {
 impl MarkdownView {
     fn body(&mut self, window: &Window, cx: &mut Context<Self>) -> gpui::AnyElement {
         let Some(root) = self.root.clone() else {
-            return hint("No project root", cx);
+            return hint("No project selected", cx);
         };
         let Some(docs) = self.docs.get(&root) else {
             // The walk was asked for and has not landed; the list says so for
