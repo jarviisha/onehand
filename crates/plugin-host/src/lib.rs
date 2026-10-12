@@ -118,6 +118,11 @@ pub fn status_hue(base: Hsla, foreground: Hsla) -> Hsla {
     base.mix_oklab(foreground, 0.70)
 }
 
+/// The height every bar along the top of a region shares: the conversation's
+/// header, the Workbench's mode strip, the rail's workspace bar and foot, and
+/// a page's column heads, so bars side by side line up across the window.
+pub const BAR_H: gpui::Rems = gpui::rems(2.75);
+
 /// How much of a hue a pale fill keeps; the rest is the surface it sits on.
 const TINT: f32 = 0.16;
 

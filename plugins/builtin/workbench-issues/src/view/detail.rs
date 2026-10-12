@@ -17,6 +17,7 @@ use onehand_core::issues::{LocalIssue, sync};
 use onehand_core::task::Group;
 use onehand_core::task::work::{IssueWork, PrSeen};
 use onehand_plugin_host::{AppIcon, BAR_H, Tint, action, status_ink, tint};
+use priority::{priority, priority_ink};
 use std::path::Path;
 
 /// The widest an issue is drawn, its gutters included: a description's lines
@@ -164,10 +165,11 @@ pub(super) fn issue_view(
                 .into_any_element(),
         );
     }
+    // Inked by how hard it presses, so only what cannot wait draws the eye.
     said.extend(priority(&issue.body).map(|priority| {
         div()
             .flex_none()
-            .text_color(muted)
+            .text_color(priority_ink(&priority, cx))
             .child(format!("Priority: {priority}"))
             .into_any_element()
     }));
@@ -423,35 +425,6 @@ fn moment(secs: u64) -> String {
         .unwrap_or_default()
 }
 
-/// The first line under a *Priority* heading in `body`, list marker and bold
-/// taken off, or `None` where the body has no such section or it is empty.
-fn priority(body: &str) -> Option<String> {
-    let heading = |line: &str| line.trim_start().starts_with('#');
-    let mut lines = body.lines();
-    lines.find(|line| {
-        heading(line)
-            && line
-                .trim()
-                .trim_start_matches('#')
-                .trim()
-                .trim_end_matches(':')
-                .eq_ignore_ascii_case("priority")
-    })?;
-    let first = lines
-        .take_while(|line| !heading(line))
-        .map(str::trim)
-        .find(|line| !line.is_empty())?;
-    let first = first
-        .strip_prefix("- ")
-        .or_else(|| first.strip_prefix("* "))
-        .or_else(|| first.strip_prefix("+ "))
-        .unwrap_or(first)
-        .replace("**", "")
-        .replace("__", "");
-    let first = first.trim();
-    (!first.is_empty()).then(|| first.to_string())
-}
-
 /// What a person has to decide about an issue both sides changed: each field in
 /// conflict, as it reads here and as it reads on the forge, and the two ways
 /// out. `None` for an issue with nothing to decide.
@@ -650,5 +623,4 @@ fn excerpt(text: &str) -> String {
     }
 }
 
-#[cfg(test)]
-mod tests;
+pub(super) mod priority;
