@@ -66,7 +66,7 @@ pub fn action(id: impl Into<ElementId>) -> Button {
 ///
 /// Applied on the disabled branch, so the pointer is a promise the control can
 /// keep: it appears over things that will act on a click and nowhere else.
-pub fn resting(button: Button) -> Button {
+fn resting(button: Button) -> Button {
     button.cursor_default()
 }
 

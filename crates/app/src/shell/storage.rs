@@ -380,7 +380,7 @@ impl Shell {
         self.window.workspace.layout = layout;
 
         let saved = self.window.workspace.to_config().save_to(&dir);
-        self.report_write("the workspace", saved, window, cx);
+        crate::toast::report(window, cx, "Saving the workspace", None, saved);
         cx.notify();
     }
 }

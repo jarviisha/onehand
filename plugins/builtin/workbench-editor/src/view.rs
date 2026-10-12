@@ -492,7 +492,7 @@ impl Render for EditorView {
                 .min_w_0()
                 .min_h_0()
                 .v_flex()
-                .child(hint("No project root", cx));
+                .child(hint("No project selected", cx));
         };
         // The strip is drawn with no tabs as well: the tree's toggle lives on
         // it, and a strip that went with the last tab would leave a hidden tree

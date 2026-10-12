@@ -28,7 +28,7 @@ pub(super) fn workspace_bar(
     div()
         .h_flex()
         .items_center()
-        .h(crate::controls::BAR_H)
+        .h(crate::tokens::BAR_H)
         .flex_none()
         .px_3()
         .gap_2()

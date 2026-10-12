@@ -202,7 +202,7 @@ impl Render for NeovimView {
 impl NeovimView {
     fn body(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let Some(root) = self.root.clone() else {
-            return hint("No project root", cx);
+            return hint("No project selected", cx);
         };
 
         let Some(tab) = self.tabs.get(&root) else {

@@ -229,7 +229,7 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
 Reuse gpui-component before building anything: `Root`, `DockArea`, `Sidebar`, `Dialog`, `Switch`,
 `InputState`, `Editor`, `TextView`, plus gpui's own `list` for the transcript. Buttons go through
 the app's action wrapper, which sets the pointer cursor; a control that refuses says so
-(`resting()` or `.refuses()`) and goes back to the arrow. A control takes the library's default
+(`.refuses()`) and goes back to the arrow. A control takes the library's default
 size in a dialog's footer and a form, `small` on a page, a box or a strip and as a field inside a
 row, `xsmall` on a list row, in a transcript block and as a chip. The app owns only its own: the
 transcript renderers, the icon registry, the terminal panel, per-panel zoom, and the composer

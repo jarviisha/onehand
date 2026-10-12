@@ -46,18 +46,18 @@ A failure reaches the screen once. `eprintln!` alone, as the export in
 
 ## Confirming a removal
 
-From `crates/app/src/shell/roots.rs`; `ask_on(entity, ask, window, cx, then)` asks from outside
-the shell.
+From `crates/app/src/shell/roots.rs`; `confirm_on(entity, ask, window, cx, then)` asks from
+outside the shell.
 
 ```rust
-let ask = Ask {
+let ask = Confirm {
     id: "remove-project",
     title: format!("Remove {label} from the workspace?").into(),
     description: format!("This {}. The folder itself stays on disk.", losses.join(" and ")).into(),
     act: "Remove",
     ..Default::default()
 };
-self.ask(ask, window, cx, move |shell, window, cx| shell.drop_root(&path, window, cx));
+self.confirm(ask, window, cx, move |shell, window, cx| shell.drop_root(&path, window, cx));
 ```
 
 ## Keys and focus

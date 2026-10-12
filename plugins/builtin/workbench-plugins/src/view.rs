@@ -380,7 +380,7 @@ impl Render for PluginsView {
 impl PluginsView {
     fn body(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         if self.root.is_none() {
-            return hint("No project root", cx);
+            return hint("No project selected", cx);
         }
         let query = self.query(window, cx);
         let installed_query = self.installed_query(window, cx);

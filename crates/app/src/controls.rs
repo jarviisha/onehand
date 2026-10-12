@@ -19,10 +19,6 @@
 use gpui::ElementId;
 use gpui_component::button::Button;
 
-/// The height every bar along the top of a region shares; the plugin host's,
-/// because a plugin's page draws bars of its own beside the app's.
-pub(crate) use crate::tokens::BAR_H;
-
 /// A button that answers the pointer, which is every button this app draws.
 ///
 /// The rule and its reasoning live with the definition in

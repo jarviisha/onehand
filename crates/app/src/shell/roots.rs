@@ -1,4 +1,4 @@
-use super::confirm::Ask;
+use super::confirm::Confirm;
 use super::storage::pick_folder;
 use super::{Shell, WARM_DELAY};
 use crate::state::Shared;
@@ -294,7 +294,7 @@ impl Shell {
             let s = if unsaved == 1 { "file" } else { "files" };
             losses.push(format!("discards {unsaved} unsaved {s}"));
         }
-        let ask = Ask {
+        let ask = Confirm {
             id: "remove-project",
             title: format!("Remove {label} from the workspace?").into(),
             description: format!(
@@ -307,7 +307,7 @@ impl Shell {
         };
         // By path, not by index: the tree can be reordered while the question
         // is open, and the answer has to land on the project it was about.
-        self.ask(ask, window, cx, move |shell, window, cx| {
+        self.confirm(ask, window, cx, move |shell, window, cx| {
             shell.drop_root(&path, window, cx)
         });
     }

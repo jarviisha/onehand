@@ -537,7 +537,7 @@ impl IssuesView {
             return self.page_body(window, cx);
         }
         let Some(root) = self.root.clone() else {
-            return hint("No project root", cx);
+            return hint("No project selected", cx);
         };
         if self.storage.is_none() {
             return hint(

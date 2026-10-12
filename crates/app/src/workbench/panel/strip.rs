@@ -30,7 +30,7 @@ impl Workbench {
             .items_center()
             // The height of the conversation's header beside it, so the two
             // bars line up across the seam.
-            .h(crate::controls::BAR_H)
+            .h(crate::tokens::BAR_H)
             .gap_1p5()
             .px_3()
             .border_b_1()

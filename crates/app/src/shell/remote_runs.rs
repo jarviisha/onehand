@@ -299,7 +299,7 @@ impl Shell {
     ) {
         let path = crate::state::Shared::global(cx).config_path.clone();
         let saved = crate::unattended::set_workflows(default, by_label, &path, cx);
-        self.report_write("the unattended runs", saved, window, cx);
+        crate::toast::report(window, cx, "Saving the unattended runs", None, saved);
         cx.notify();
     }
 

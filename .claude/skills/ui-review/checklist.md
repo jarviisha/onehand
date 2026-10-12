@@ -44,7 +44,7 @@ document owning its rule; read it before answering.
 21. Every failure of something a person started reaches the screen once: a toast or a line, never
     both, never a log line alone?
 22. Every toast's kind chosen by what it means?
-23. Every removal that cannot be undone confirmed through `Ask`: the thing named, *Keep*, then
+23. Every removal that cannot be undone confirmed through `Confirm`: the thing named, *Keep*, then
     the verb in the danger tint?
 24. Every new key a keymap command, every control bound to one showing its key?
 25. Esc closes what opened; focus lands on the first field and returns on close; no focus left on

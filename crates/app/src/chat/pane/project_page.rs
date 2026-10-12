@@ -167,9 +167,9 @@ impl ChatPane {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        crate::shell::ask_on(
+        crate::shell::confirm_on(
             cx.entity(),
-            crate::shell::Ask {
+            crate::shell::Confirm {
                 id: "delete-conversation",
                 title: "Delete this conversation?".into(),
                 description: format!(

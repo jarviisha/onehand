@@ -7,9 +7,6 @@ use gpui_component::WindowExt as _;
 use onehand_core::workflow::{self as core, StepKind, Template};
 use std::path::PathBuf;
 
-/// What a save says, done or not.
-const SAVED: (&str, &str) = ("Workflow saved", "Saving the workflow");
-
 impl WorkflowsPage {
     /// Open the form on a new template, one agent step to start from.
     pub(crate) fn new_workflow(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -71,12 +68,13 @@ impl WorkflowsPage {
             let Some(written) = written else {
                 return;
             };
-            let _ = page.update_in(cx, |page: &mut Self, window, cx| {
-                page.report(
-                    ("Workflow exported", "Exporting the workflow"),
-                    written,
+            let _ = page.update_in(cx, |_: &mut Self, window, cx| {
+                crate::toast::report(
                     window,
                     cx,
+                    "Exporting the workflow",
+                    Some("Workflow exported"),
+                    written,
                 );
                 cx.notify();
             });
@@ -128,7 +126,7 @@ impl WorkflowsPage {
 
     /// Put `template`, kept in `file`, in the form, asking first when the
     /// form holds changes not saved: opening another template over them
-    /// would throw them away as surely as closing Settings does.
+    /// would throw them away.
     fn open_workflow_form(
         &mut self,
         template: Template,
@@ -136,28 +134,49 @@ impl WorkflowsPage {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.draft.as_ref().is_some_and(|d| d.dirty(cx)) {
-            self.draft = Some(WorkflowDraft::load(&template, file, window, cx));
-            cx.notify();
-            return;
-        }
-        crate::shell::ask_on(
-            cx.entity(),
-            crate::shell::Ask {
-                id: "discard-workflow-edit",
-                title: "Discard the workflow being edited?".into(),
-                description: "Its changes are not saved. Opening another workflow throws them \
-                              away."
-                    .into(),
-                act: "Discard",
-                ..Default::default()
-            },
+        self.unless_editing(
+            "Opening another workflow",
             window,
             cx,
             move |page, window, cx| {
                 page.draft = Some(WorkflowDraft::load(&template, file.clone(), window, cx));
                 cx.notify();
             },
+        );
+    }
+
+    /// Close the form, asking first when it holds changes.
+    pub(crate) fn close_workflow_form(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.unless_editing("Closing the form", window, cx, |page, _, cx| {
+            page.clear_workflow_draft(cx)
+        });
+    }
+
+    /// Do `then`, asking first when the form holds changes not saved, which
+    /// `doing` would throw away.
+    fn unless_editing(
+        &mut self,
+        doing: &'static str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        then: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
+    ) {
+        if !self.dirty(cx) {
+            then(self, window, cx);
+            return;
+        }
+        crate::shell::confirm_on(
+            cx.entity(),
+            crate::shell::Confirm {
+                id: "discard-workflow-edit",
+                title: "Discard the workflow being edited?".into(),
+                description: format!("Its changes are not saved. {doing} throws them away.").into(),
+                act: "Discard",
+                ..Default::default()
+            },
+            window,
+            cx,
+            then,
         );
     }
 
@@ -172,28 +191,6 @@ impl WorkflowsPage {
             edit(draft, window, cx);
         }
         cx.notify();
-    }
-
-    /// Close the form, asking first when it holds changes, as opening
-    /// another workflow over it does.
-    pub(crate) fn close_workflow_form(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.dirty(cx) {
-            self.clear_workflow_draft(cx);
-            return;
-        }
-        crate::shell::ask_on(
-            cx.entity(),
-            crate::shell::Ask {
-                id: "close-workflow-form",
-                title: "Discard the workflow being edited?".into(),
-                description: "Its changes are not saved. Closing the form throws them away.".into(),
-                act: "Discard",
-                ..Default::default()
-            },
-            window,
-            cx,
-            |page, _, cx| page.clear_workflow_draft(cx),
-        );
     }
 
     pub(crate) fn clear_workflow_draft(&mut self, cx: &mut Context<Self>) {
@@ -224,7 +221,7 @@ impl WorkflowsPage {
             .any(|entry| !same(entry) && entry.name() == template.name);
         if clash {
             let why = format!("another workflow is already called {}", template.name);
-            self.report(SAVED, Err(why), window, cx);
+            crate::toast::report(window, cx, "Saving the workflow", None, Err(why));
             cx.notify();
             return;
         }
@@ -247,10 +244,18 @@ impl WorkflowsPage {
                             draft.file = Some(path);
                             draft.original = written;
                         }
-                        page.report(SAVED, Ok::<(), String>(()), window, cx);
+                        crate::toast::report(
+                            window,
+                            cx,
+                            "Saving the workflow",
+                            Some("Workflow saved"),
+                            Ok::<(), String>(()),
+                        );
                         crate::workflow::reload_templates(cx);
                     }
-                    Err(why) => page.report(SAVED, Err(why), window, cx),
+                    Err(why) => {
+                        crate::toast::report(window, cx, "Saving the workflow", None, Err(why))
+                    }
                 }
                 cx.notify();
             });
@@ -271,7 +276,7 @@ impl WorkflowsPage {
         let Some(file) = entry.file.clone() else {
             return;
         };
-        let ask = crate::shell::Ask {
+        let ask = crate::shell::Confirm {
             id: "delete-workflow",
             title: format!("Delete {}?", entry.name()).into(),
             description: "The template's file is deleted. Runs already started from it carry \
@@ -280,7 +285,7 @@ impl WorkflowsPage {
             act: "Delete",
             ..Default::default()
         };
-        crate::shell::ask_on(cx.entity(), ask, window, cx, move |page, window, cx| {
+        crate::shell::confirm_on(cx.entity(), ask, window, cx, move |page, window, cx| {
             page.delete_workflow_file(file.clone(), window, cx)
         });
     }
@@ -304,33 +309,17 @@ impl WorkflowsPage {
                 {
                     page.draft = None;
                 }
-                page.report(
-                    ("Workflow deleted", "Deleting the workflow"),
-                    gone,
+                crate::toast::report(
                     window,
                     cx,
+                    "Deleting the workflow",
+                    Some("Workflow deleted"),
+                    gone,
                 );
                 crate::workflow::reload_templates(cx);
                 cx.notify();
             });
         })
         .detach();
-    }
-
-    /// Say how a write went, in a toast: `done` when it went, and the
-    /// failure of `what` and why when it did not. The page has no line of its
-    /// own to say it on.
-    fn report<E: std::fmt::Display>(
-        &mut self,
-        (done, what): (&str, &str),
-        written: Result<(), E>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let note = match written {
-            Ok(()) => crate::toast::success(done.to_string()),
-            Err(why) => crate::toast::failed(what, why),
-        };
-        window.push_notification(note, cx);
     }
 }

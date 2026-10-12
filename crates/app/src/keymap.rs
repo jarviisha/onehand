@@ -187,11 +187,11 @@ fn check(commands: &[Command], overrides: &Overrides) -> Result<(), String> {
     }
     let mut seen: Vec<(Keystroke, &str, &str)> = Vec::new();
     for command in commands {
-        let window = stack(command.context) == "Shell";
-        let head = head(command.context);
+        let window_wide = stack(command.context) == "Shell";
+        let region = head(command.context);
         // Fires in its region, and still fires with a field inside it focused.
-        let reaches_fields = fires(command.context, &["Shell", head])
-            && fires(command.context, &["Shell", head, "Input"]);
+        let reaches_fields = fires(command.context, &["Shell", region])
+            && fires(command.context, &["Shell", region, "Input"]);
         for raw in command.keys(overrides) {
             let key = parse_key(&raw)?;
             // Two commands on one key in one focus stack would be decided by
@@ -199,7 +199,7 @@ fn check(commands: &[Command], overrides: &Overrides) -> Result<(), String> {
             // never hold each other, each key reaches only its own.
             if let Some((_, other, _)) = seen.iter().find(|(k, _, context)| {
                 *k == key
-                    && (window
+                    && (window_wide
                         || stack(context) == "Shell"
                         || stack(context) == stack(command.context))
             }) {
@@ -213,7 +213,7 @@ fn check(commands: &[Command], overrides: &Overrides) -> Result<(), String> {
                 || key.modifiers.platform
                 || key.modifiers.function
                 || key.key.starts_with('f') && key.key.len() > 1;
-            if window && !modified {
+            if window_wide && !modified {
                 return Err(format!(
                     "{} needs Ctrl, Alt, Super, or a function key",
                     command.label
@@ -221,7 +221,7 @@ fn check(commands: &[Command], overrides: &Overrides) -> Result<(), String> {
             }
             // A plain key a region handles must not land while a field in that
             // region holds the caret, or typing fires it.
-            if !window && !modified && reaches_fields {
+            if !window_wide && !modified && reaches_fields {
                 return Err(format!(
                     "{raw} for {} would fire while typing; exclude Input from its context",
                     command.label
@@ -236,9 +236,9 @@ fn check(commands: &[Command], overrides: &Overrides) -> Result<(), String> {
             // Escape belongs to dialogs and fields. A region may take it only
             // where neither is in the stack.
             if key == Keystroke::parse("escape").unwrap()
-                && (window
-                    || fires(command.context, &["Shell", head, "Input"])
-                    || fires(command.context, &["Shell", "Dialog", head]))
+                && (window_wide
+                    || fires(command.context, &["Shell", region, "Input"])
+                    || fires(command.context, &["Shell", "Dialog", region]))
             {
                 return Err(format!(
                     "{raw} is reserved for closing dialogs and leaving fields"

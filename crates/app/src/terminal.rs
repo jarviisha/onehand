@@ -46,19 +46,6 @@ struct Tab {
     shell: PtyTab,
 }
 
-impl std::ops::Deref for Tab {
-    type Target = PtyTab;
-    fn deref(&self) -> &PtyTab {
-        &self.shell
-    }
-}
-
-impl std::ops::DerefMut for Tab {
-    fn deref_mut(&mut self) -> &mut PtyTab {
-        &mut self.shell
-    }
-}
-
 impl RootShells {
     /// Add `shell` as the newest tab, and select it.
     fn push(&mut self, shell: PtyTab) {
@@ -88,7 +75,7 @@ impl RootShells {
         let mut dropped = Vec::new();
         let mut ix = 0;
         self.tabs.retain_mut(|tab| {
-            let drop = goes(ix, tab);
+            let drop = goes(ix, &mut tab.shell);
             if drop {
                 dropped.push(ix);
             }
@@ -180,7 +167,7 @@ impl TerminalPanel {
                 shells
                     .tabs
                     .iter()
-                    .filter_map(|tab| Some((root.clone(), tab.process_id()?)))
+                    .filter_map(|tab| Some((root.clone(), tab.shell.process_id()?)))
             })
             .collect()
     }
@@ -246,7 +233,7 @@ impl TerminalPanel {
         let held_focus = self.focus_handle.contains_focused(window, cx);
         let mut removed = false;
         for set in self.shells.values_mut() {
-            removed |= set.drop_where(|_, tab| tab.finished());
+            removed |= set.drop_where(|_, shell| shell.finished());
         }
         if !removed {
             return;
@@ -271,7 +258,7 @@ impl TerminalPanel {
             return;
         };
         let id = tab.id;
-        let description = match tab.busy() {
+        let description = match tab.shell.busy() {
             Some(false) => return self.close_tab_id(&root, id, window, cx),
             Some(true) => "A command is still running in it. Closing the terminal ends it.",
             None => {
@@ -279,9 +266,9 @@ impl TerminalPanel {
                  whatever is."
             }
         };
-        crate::shell::ask_on(
+        crate::shell::confirm_on(
             cx.entity(),
-            crate::shell::Ask {
+            crate::shell::Confirm {
                 id: "close-terminal",
                 title: "Close this terminal?".into(),
                 description: description.into(),
@@ -362,7 +349,7 @@ impl TerminalPanel {
         let size = crate::zoom::term_font_size(zoom);
         for set in self.shells.values() {
             for tab in &set.tabs {
-                tab.set_font_size(size, cx);
+                tab.shell.set_font_size(size, cx);
             }
         }
         cx.notify();
@@ -382,7 +369,7 @@ impl TerminalPanel {
         let colors = terminal_palette(crate::theme::dock_surface(cx), cx);
         for set in self.shells.values() {
             for tab in &set.tabs {
-                tab.set_palette(colors.clone(), cx);
+                tab.shell.set_palette(colors.clone(), cx);
             }
         }
     }
@@ -400,7 +387,7 @@ impl TerminalPanel {
         let handle = self
             .active_set()
             .and_then(|set| set.tabs.get(set.active))
-            .map(|tab| tab.view().read(cx).focus_handle().clone());
+            .map(|tab| tab.shell.view().read(cx).focus_handle().clone());
         match handle {
             Some(handle) => handle.focus(window, cx),
             None => self.focus_handle.focus(window, cx),
@@ -521,14 +508,14 @@ impl TerminalPanel {
         // shell map, and it is the one case with nothing for a strip to sit
         // over: no project means no shell to start and nowhere to start it.
         if self.root.is_none() {
-            return onehand_plugin_host::hint("No project root", cx);
+            return onehand_plugin_host::hint("No project selected", cx);
         }
 
         let set = self.active_set().filter(|set| !set.tabs.is_empty());
         let active = set.map_or(0, |set| set.active);
         let body = set
             .and_then(|set| set.tabs.get(active))
-            .map(|tab| tab.view().clone());
+            .map(|tab| tab.shell.view().clone());
         // A tab is named by the PTY's program alone, which is the same word for
         // every tab a root has open, so three shells came out three tabs
         // reading `zsh`. **Numbered, and only where there is more than one**: a
@@ -551,8 +538,8 @@ impl TerminalPanel {
             .iter()
             .enumerate()
             .map(|(i, tab)| match tabs.len() {
-                1 => tab.label(),
-                _ => SharedString::from(format!("{} {}", tab.label(), i + 1)),
+                1 => tab.shell.label(),
+                _ => SharedString::from(format!("{} {}", tab.shell.label(), i + 1)),
             })
             .collect();
 
@@ -570,7 +557,7 @@ impl TerminalPanel {
                     .h_flex()
                     .flex_none()
                     .items_center()
-                    .h(crate::controls::BAR_H)
+                    .h(crate::tokens::BAR_H)
                     .gap_1()
                     .px_3()
                     .border_b_1()

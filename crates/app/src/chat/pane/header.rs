@@ -109,7 +109,7 @@ impl ChatPane {
             // contents it moved whenever a badge appeared or a title wrapped,
             // taking the top of the conversation with it.
             .flex_none()
-            .h(crate::controls::BAR_H)
+            .h(crate::tokens::BAR_H)
             .px_3()
             // **No rule under it.** A hairline is an edge between two surfaces,
             // and there are not two here: the header and the transcript are one

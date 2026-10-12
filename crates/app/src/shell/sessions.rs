@@ -1,4 +1,4 @@
-use super::confirm::Ask;
+use super::confirm::Confirm;
 use super::{FocusedPanel, RailSession, Shell, TabCycle};
 use crate::state::Shared;
 use gpui::{App, BorrowAppContext, Context, SharedString, Window};
@@ -122,7 +122,7 @@ impl Shell {
         let name = self
             .active_session_uid()
             .and_then(|uid| self.chat.read(cx).title_for(uid, cx));
-        let ask = Ask {
+        let ask = Confirm {
             id: "delete-open-conversation",
             title: "Delete this conversation?".into(),
             description: match &name {
@@ -138,7 +138,7 @@ impl Shell {
             act: "Delete",
             ..Default::default()
         };
-        self.ask(ask, window, cx, move |shell, window, cx| {
+        self.confirm(ask, window, cx, move |shell, window, cx| {
             shell.delete_conversation(dir.clone(), window, cx)
         });
     }
@@ -224,7 +224,7 @@ impl Shell {
             return;
         }
         let label = self.session_label(uid, cx);
-        let ask = Ask {
+        let ask = Confirm {
             id: "close-session",
             title: format!("Close {label}?").into(),
             description: "A turn is running. Closing the session stops its agent, and that \
@@ -234,7 +234,7 @@ impl Shell {
             ..Default::default()
         };
         // By uid, not by place: the list can shift while the question is open.
-        self.ask(ask, window, cx, move |shell, window, cx| {
+        self.confirm(ask, window, cx, move |shell, window, cx| {
             shell.end_session(uid, window, cx)
         });
     }
@@ -561,7 +561,7 @@ impl Shell {
             return;
         }
         let label = self.session_label(uid, cx);
-        let ask = Ask {
+        let ask = Confirm {
             id: "restart-agent",
             title: format!("Restart the agent of {label}?").into(),
             description: "A turn is running. Restarting stops it, and that turn is lost.".into(),
@@ -570,7 +570,7 @@ impl Shell {
         };
         // By uid: the question is about the session it was asked on,
         // whichever one shows by the time it is answered.
-        self.ask(ask, window, cx, move |shell, window, cx| {
+        self.confirm(ask, window, cx, move |shell, window, cx| {
             shell.restart_now(uid, window, cx)
         });
     }

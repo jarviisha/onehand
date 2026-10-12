@@ -19,7 +19,7 @@ mod boot;
 mod check_commands;
 mod cleanup;
 mod confirm;
-pub(crate) use confirm::{Ask, ask_on};
+pub(crate) use confirm::{Confirm, confirm_on};
 mod docks;
 mod drafts;
 mod issue_work;

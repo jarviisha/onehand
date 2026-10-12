@@ -7,6 +7,8 @@
 //! what a toast says is a reason written for other places too (a log line, an
 //! issue comment), where the sentence keeps its period.
 
+use gpui::{App, Window};
+use gpui_component::WindowExt as _;
 use gpui_component::notification::Notification;
 use std::fmt::Display;
 
@@ -34,6 +36,24 @@ pub(crate) fn success(text: impl Display) -> Notification {
 /// News that asks for nothing.
 pub(crate) fn info(text: impl Display) -> Notification {
     Notification::info(line(&text.to_string()))
+}
+
+/// Say how a write went, once: what `doing` failed at and why, or `done`
+/// when it went and the screen does not already show it.
+pub(crate) fn report<E: Display>(
+    window: &mut Window,
+    cx: &mut App,
+    doing: &str,
+    done: Option<&str>,
+    written: Result<(), E>,
+) {
+    let note = match written {
+        Ok(()) => done.map(success),
+        Err(why) => Some(failed(doing, why)),
+    };
+    if let Some(note) = note {
+        window.push_notification(note, cx);
+    }
 }
 
 fn failed_line(what: &str, why: &str) -> String {

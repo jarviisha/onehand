@@ -150,10 +150,10 @@ impl FilesView {
 impl Render for FilesView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let Some(root) = self.root.clone() else {
-            return hint("No project root", cx).into_any_element();
+            return hint("No project selected", cx).into_any_element();
         };
         let Some(tree) = self.trees.get(&root) else {
-            return hint("No project root", cx).into_any_element();
+            return hint("No project selected", cx).into_any_element();
         };
         // Until the root's first listing lands there is nothing to draw, and a
         // blank panel reads as an empty project.

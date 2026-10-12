@@ -149,7 +149,7 @@ impl Shell {
             Some(branch) => format!("The worktree {folder} and its branch {branch} are deleted."),
             None => format!("The worktree {folder} is deleted; it is on no branch."),
         };
-        let ask = super::Ask {
+        let ask = super::Confirm {
             id: "remove-worktree",
             title: "Remove this worktree?".into(),
             description: what.into(),
@@ -157,7 +157,7 @@ impl Shell {
             lines,
             refused,
         };
-        super::ask_on(cx.entity(), ask, window, cx, move |shell, window, cx| {
+        super::confirm_on(cx.entity(), ask, window, cx, move |shell, window, cx| {
             shell.removal_confirmed(id.clone(), window, cx)
         });
     }

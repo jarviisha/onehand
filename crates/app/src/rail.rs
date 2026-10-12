@@ -443,7 +443,7 @@ fn foot(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
         .h_flex()
         .items_center()
         .flex_none()
-        .h(crate::controls::BAR_H)
+        .h(crate::tokens::BAR_H)
         .px_3()
         .border_t_1()
         .border_color(cx.theme().border)

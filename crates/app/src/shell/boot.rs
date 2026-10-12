@@ -51,9 +51,9 @@ impl Shell {
                 let Some(page) = page.upgrade().filter(|page| page.read(cx).dirty(cx)) else {
                     return true;
                 };
-                crate::shell::ask_on(
+                crate::shell::confirm_on(
                     page,
-                    crate::shell::Ask {
+                    crate::shell::Confirm {
                         id: "close-workflow-draft",
                         title: "Drop the workflow being written?".into(),
                         description: "Its changes are not saved. Closing the window throws \
