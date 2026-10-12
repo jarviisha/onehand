@@ -113,6 +113,8 @@ enum Page {
 
 struct Labs {
     focus: FocusHandle,
+    /// The Issues page's list, which takes the arrow keys and Esc.
+    issues_focus: FocusHandle,
     dark: bool,
     workbench: bool,
     page: Page,
@@ -151,11 +153,12 @@ impl Labs {
         focus.focus(window, cx);
         Self {
             focus,
+            issues_focus: cx.focus_handle(),
             dark: false,
             workbench: true,
             page: Page::Overview,
             task_open: false,
-            issue: Some(0),
+            issue: None,
             choice: 0,
             picks: [true, false, false, false],
             rail_w: RAIL_W,

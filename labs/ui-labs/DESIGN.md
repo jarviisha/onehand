@@ -321,12 +321,16 @@ project, and `←` / `→` fold and unfold the cursor's project. The cursor's ro
   detail replaces the list in the same column under `← Tasks`: the title at `text_xl` with its
   main action beside it, its facts with its state badge at their end, its steps, then what
   awaits approval.
-- **Issues:** the list beside the issue while the content area holds `ISSUE_LIST_W` +
-  `DETAIL_MIN`, otherwise one at a time under `← Issues`. Above the list: search, *New issue*,
-  *Open N | Closed N*. A row's labels are muted facts after its reference (`atlas-api #42 · bug ·
-  auto`), never pills. The issue: its title, then one line of facts (`Open · atlas-api #42 ·
-  opened … · bug`), where *Open* is a plain fact and not a coloured badge; *Where it stands* with
-  one primary; the body; *What the work left*.
+- **Issues:** the list alone in the page column under one wrapping toolbar (search at
+  `ISSUE_SEARCH_W`, *Open N | Closed N*, *Progress*, project and label filters, *New issue*). A row
+  is one line of `ISSUE_ROW_H`: its dot, the title, then in columns the labels, project and
+  number, and its end (what needs the person in amber, *running* in the accent, else how long
+  ago); below `ISSUE_COLUMNS_MIN` only the title and its end. Nothing is open on arrival. The
+  issue picked floats over the list's right side under the toolbar, `PEEK_W` wide, with an edge
+  and a lift; below `PEEK_W` + `PEEK_LIST_MIN` it takes the list's whole area. Its head is the
+  reference, *N of M* and `×`; under it the title, one line of facts (`Open · atlas-api #42 ·
+  updated … · bug`, *Open* a plain fact), *Where it stands* with one primary, the body, *What the
+  work left*. The list never moves as it opens or closes. `×` or Esc closes it; ↑/↓ step.
 - **Workflows:** one section of the workspace's workflows, each with *Run*, and *New workflow* at
   its head. The lab draws the list only; running or writing one is the app's.
 
@@ -394,7 +398,8 @@ hierarchy are identical in both.
 | `primary_bg` / `primary_fg` | the one primary action in a region |
 | `scrim` | under a dialog |
 
-- Solid fills only. Shadows only on what floats: the composer card, popups, menus, dialogs.
+- Solid fills only. Shadows only on what floats: the composer card, popups, menus, dialogs, and
+  the Issues page's floating issue.
 - **One exception to solid fills: the fade.** A name too long for its room in the rail fades
   out over `FADE_W` at the room's edge instead of ending on an ellipsis (`controls::faded`). The
   band is painted in the row's own opaque fill (the rail, or `selected` over it while hovered or
@@ -472,6 +477,7 @@ hierarchy are identical in both.
 | `CHAT_MIN` scales with the reading zoom | it scales with the conversation's own zoom, since the app zooms per panel |
 | An Issues row's labels are muted facts, never pills | labels that ask for something, enhancements and agents' reports are tinted chips; the picked row carries an accent line down its left edge |
 | An issue's *Open* is a plain fact; *Where it stands* holds its one primary | *Open* and *Closed* are a badge; the actions sit at the end of the title's row |
+| The floating issue is `PEEK_W` wide; an Issues row has no priority | its left edge drags its width for the session; a row shows the priority its body names |
 | Regions meet at one hairline | the Workbench meets the conversation by its surface alone, with no line; the terminal is a block on its surface, held off its neighbours by a gap |
 
 ## Backlog
