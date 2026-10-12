@@ -305,6 +305,14 @@ acceptance, and *Revise…* and *Continue*, each saying what it starts
 with its block open; the review is never drawn at the dock's width. A press
 carries the visit it was drawn from, so it approves only what was read.
 
+The block never opens by itself, and closes only by *Close* or another issue.
+It is a hairline box scrolling past its cap: *Review: <step>*, the answer (its
+last 60 lines, *Show all N lines*), each changed file as a diff, the check's
+last 20 lines in a mono well, *Acceptance* collapsed, then *Revise…* and
+*Continue* (primary). A cut answer says so above them in the warning ink. A
+press says it was sent, then what came of it, keeping the scroll; one the run
+no longer waits for reloads, saying the answer changed.
+
 Below the body, *What the work left* names the branch and, on a project a
 forge serves once the run has reached its pull request step, the pull
 request's state (*open, draft*, *open*, *merged*, *closed unmerged*), how

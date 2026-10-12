@@ -3,12 +3,13 @@
 The whole-app UI contract for `onehand`: how the window is laid out and the rules every view
 follows, as structure and behaviour, not values. It binds at the level written here; below it,
 the code and its tests decide. A feature's own document (`docs/tasks.md`, `docs/workflows.md`,
-`docs/unattended.md`) holds its screens' detail. Code never cites this file.
+`docs/unattended.md`) holds its screens' detail, and `docs/ui-patterns.md` the patterns every
+screen repeats and how they behave. Code never cites this file.
 
 **No palette lives here.** gpui-component's theme, overridden at boot by the app's palette
-(`crate::theme::install`, with its contrast tests): neutral greys for every surface and ink, a
-hue only for state. Every colour, radius and size is read from `cx.theme()` at the call site; a
-hex literal in the render layer is a bug even when it looks right, as no theme switch reaches it.
+(`crate::theme::install`, with its contrast tests). Every colour, radius and size is a token read
+at the call site (see `.claude/skills/design-tokens/reference.md`); a hex literal in the render
+layer is a bug even when it looks right, as no theme switch reaches it.
 
 ## Principles
 
@@ -17,13 +18,12 @@ hex literal in the render layer is a bug even when it looks right, as no theme s
    narrow for both, the Workbench takes the area under *← Conversation*, which steps it aside. Pages
    take the agent pane and put the docks away; a page opens over a session only when picked.
 2. **Separate by surface and hairline, not shadow.** Docks part from the conversation by their
-   surface, rows and cards by a 1px `border`. Shadows only for what floats: dialogs, popovers,
-   menus, over the transcript the composer card, the cards pinned above it, the to-bottom pill, and
-   on the Issues page the issue floating over the list.
-3. **Colour means state.** One accent, from the theme. Danger, warning and success ink mark
-   failure, in-flight and done; in the rail, warning waits on the person and the accent runs.
-   Anything else is `muted_foreground`, or the transcript's `meta_ink`, a step nearer full ink.
-   One exception: an issue's labels are tinted by kind, so a list of them reads at a glance.
+   surface, rows and boxes by a 1px `border`. Shadows only for what floats, the app's own in
+   `lift`: dialogs, popovers, menus, over the transcript the composer card, the cards pinned above
+   it, the to-bottom button, and on the Issues page the issue floating over the list.
+3. **Colour comes from the theme.** A hue may carry meaning wherever it helps a reader (a state,
+   a label's kind, code in prose); each one is a theme token holding its contrast on every
+   surface it lands on.
 4. **Mono for machines, sans for people.** Code, paths, terminal output and diffs use
    `mono_font_family`. Anything a person wrote uses the default family.
 5. **Icons are registry SVGs, never glyphs.**
@@ -93,10 +93,9 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   tint, refused until the first turn ends); a spacer; past conversations and *Close session*
   (only while a session shows); the terminal, an accent dot on it while its dock is closed over a
   live shell; last, the Workbench. The two dock buttons are filled while their dock is open. On
-  the overview, Tasks and Workflows it reads the page's name, with no dots menu and no dock
-  buttons; the Issues page names itself in its own head, so there the header shows only while
-  the rail is hidden, as the way back to it. As the pane narrows, the name gives way first, down
-  to a minimum. Without a session it names the project, its dots menu holding the project's
+  a page (the overview, Tasks, Issues, Workflows, Settings) it reads the page's name, with no dots
+  menu and no dock buttons. As the pane narrows, the name gives way first, down to a minimum.
+  Without a session it names the project, its dots menu holding the project's
   actions but *New session* and *Open terminal*, which the page and the header already offer.
 - **Step strip.** Under the header, only while a run drives the session on screen: the workflow's
   name muted, each step's label between chevrons (done ones with a muted check, the current one in
@@ -141,28 +140,20 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
     *Finished*, each with a count, an empty line and a cap. A row is the title over workflow, step
     or outcome and project, with ghost actions by state (*Open session*, *Stop*, *Resume*, *Retry*,
     *Dismiss*); its text opens the task's detail in the same column.
-  - *Issues*, in the overview's column: a head (*Issues*, *N open*, *Refresh*, *New issue*); a
+  - *Issues*, in the overview's column: a head (*N open*, *Refresh*, *New issue*); a
     filter bar (search, then chips for open/closed, progress, project, label); a hairline table,
     *Title*, *Labels*, *Updated*, a row a line, rows keeping their place while a person reads.
     Nothing is open on arrival; a picked issue floats over the list's right side, its width
     dragged for the session; `×`/Esc close it, ↑/↓ step. *No issues yet* or *No issues match*
     when empty. Filters, search, selection, the open issue and scroll persist.
-  - The **review block** opens below where the work stands only on *Review…*, never by itself,
-    and closes only by *Close* or another issue. A hairline box scrolling past its cap: *Review:
-    <step>*, the answer (last 60 lines, *Show all N lines*), the files the step changed (each a
-    diff), the check when a command ran since (last 20 lines in a mono well), *Acceptance*
-    collapsed, then *Revise…* and *Continue* (primary), each beside what it starts. A cut answer
-    says so above them in the warning ink. A press says it was sent, then what came of it,
-    keeping the scroll; one the run no longer waits for reloads, saying the answer changed.
-  - The task detail's *Awaiting approval* draws the same answer and actions through the strip's
-    guarded call; an ended task's *Way out* says why in the issue's words, with *Retry with
-    current settings…* when it fits. A merged worktree's *Remove worktree…* is a danger word.
+  - The **review block** opens below where the work stands only on *Review…*, as
+    `docs/unattended.md` draws it.
   - *Workflows* lists the workflows, capped (shipped ones *Built in*, read-only), each with
     *Run…* (projects, the rail's first). *New workflow* or *Edit* opens a form below, one hairline
     box per step, a margin marking where a failure goes back to, problems above a spent *Save*.
 - **No top bar, no status bar, no right toolbar.** Transient status goes in a toast; modals are
-  `Dialog`s. Settings is a large dialog: a nav column with Appearance, Workspace, Agents,
-  Connections and Shortcuts, its groups split by hairlines, not boxes.
+  `Dialog`s. Settings is a page: a nav column with Appearance, Workspace, Agents, Connections and
+  Shortcuts, its groups split by hairlines, not boxes.
 - **Persistence.** The layout is saved as the Workbench's dragged width, the terminal and rail
   sizes and whether each dock is open, never as the library's `DockAreaState`.
 
@@ -178,30 +169,36 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
 - **Folding blocks open from one line**, the chevron first: what runs is open until done, the
   plan stays open, and a reader's fold wins. Long output folds and is capped. Wells are filled
   with no edge. A finished turn ends on Copy (its closing paragraph) and how long it took.
-- **Destructive actions are words in the danger tint**, confirmed through a modal that names the
-  thing being removed, never through a button that arms on first press.
 
-## Typography and spacing
+## Type, space and shape
 
-| Role | How to write it |
+| Role | Size |
 |---|---|
-| Body | the inherited size, never set; the transcript and the composer's field read a step over it |
-| Chrome (a panel's rows, cards, controls) | `.text_sm()` |
-| Titles | `.font_semibold()` (or `.font_medium()` for a page title) at the size of what they title |
-| Meta, hints | `.text_xs()` + `muted_foreground` |
-| Machine text | `mono_font_family` |
+| Meta, hints, counts, a small label | `.text_xs()`, in `muted_foreground` when it is meta |
+| Machine text | `CODE_TEXT`, in `mono_font_family` |
+| Chrome: a panel's rows, boxes, controls and forms | `.text_sm()` |
+| Reading text: the transcript, the composer's field, a document | the inherited size, `.text_base()` |
+| A heading in reading text | a step up the scale per level, two at most; then the body's size |
+| A page's or an issue's title | `.text_xl()` |
 
-- **The families ship with the app:** Inter for the interface (the theme's `font_family`) and
-  JetBrains Mono for machine text (`mono_font_family`), so text looks and centres the same on every
-  machine. `[font].monospace` can still name another installed mono family.
-- **Sizes are rems, never pixels**, because per-panel zoom overrides the rem base. Fixed chrome
-  heights stay outside the zoom wrapper. Three exceptions are pixels on purpose: the settings
-  dialog's bounds, which are measured against the window, a menu row's inset, which cancels
-  one the library draws in pixels, and the composer's drop ring, which is a line and not a size.
-- Spacing uses gpui's base-4 scale. Radius comes from `cx.theme().radius` (`radius_lg` for
-  cards); `rounded_full` is only for dots and pills. A size neither gives is a named constant
-  beside the code using it, its reason in its doc comment, never a number at the call site.
-- Weight carries hierarchy before size does.
+- **Weight carries hierarchy before size does**: `font_medium` for a page's title and a name in
+  a header, `font_semibold` for any other title or heading; nothing bolder. Line height is gpui's,
+  but `LEADING` for reading text and `LEADING_TIGHT` for a wrapped title.
+- **Inter and JetBrains Mono ship with the app**, so text looks and centres the same everywhere;
+  `[font].monospace` can still name another installed mono family.
+- **Space** takes gpui's steps `0p5`, `1`, `1p5`, `2`, `3`, `4`, `6` and `8`; a named spacing
+  constant equals one of them. An indent lining text up under a title is an icon plus its gap.
+- **Sizes are rems**, as per-panel zoom overrides the rem base; pixels only for lines, rings,
+  shadows, bounds measured against the window, an inset cancelling one the library draws in
+  pixels, and the terminal's grid, which zooms on its own. Fixed chrome heights stay outside the
+  zoom wrapper. A size the steps lack is a named constant (shared ones in
+  `onehand_plugin_host::tokens`, others beside their use), its reason in its doc comment.
+- **Corners by role**: `radius_tokens().sm` for a small label read rather than pressed, and a
+  checkbox; `radius` for what is pressed or picked (a control, menu, row, chip) and every block
+  inside a column (a well, code, a diff, a notice); `radius_lg` for a box standing on its own (a
+  page's box, a table, the bubble, the composer, the terminal, a floating panel, a dialog, a
+  toast); `rounded_full` for a dot. A part joined to its container's edge takes its corner there.
+- **Lines** are a 1px `border`; the mark under an open tab is 2px.
 
 ## Colour and state
 
@@ -212,17 +209,18 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
 | `muted` / `muted_foreground` | quiet fills (the prompt bubble, every well), meta text |
 | `theme::meta_ink` | the transcript's meta text, contrast-tested |
 | `border` | every hairline |
-| `ring` | a border marking where the keyboard is: the composer while a file is dragged over it, a question card's row under the arrow keys |
-| `accent` | the one item selected among several |
+| `ring` | keyboard focus, drawn only when the keyboard moved it; the composer while a file is dragged over it |
+| `accent` | the one item selected among several (a fill, not a hue) |
+| `link` | the accent hue: what runs, and links |
 | `list_hover` | hover on a pickable row |
 | `primary` | the single primary action in a view |
 | `status_ink()` | danger, warning and success text |
 | `popover` | floating surfaces |
-| `theme::raised` | the composer card, which stands on its fill and lift instead of an edge |
+| `theme::raised` | the composer card |
 | `secondary` | inline code in the prompt bubble, a step off its fill; a document's code on a dock |
 
-- Cards are borders, the composer aside; wells and the bubble are fills.
-- No control gets a focus ring: hover and selection are fills, at distinct steps of the ramp.
+- Boxes are borders; wells and the bubble are fills.
+- Hover and selection are fills, at distinct steps of the ramp; keyboard focus is the ring.
 - One primary per view.
 - A missing surface goes into the ramp with its contrast asserted, never into one view.
 
@@ -231,7 +229,9 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
 Reuse gpui-component before building anything: `Root`, `DockArea`, `Sidebar`, `Dialog`, `Switch`,
 `InputState`, `Editor`, `TextView`, plus gpui's own `list` for the transcript. Buttons go through
 the app's action wrapper, which sets the pointer cursor; a control that refuses says so
-(`resting()` or `.refuses()`) and goes back to the arrow. The app owns only what is its own: the
+(`resting()` or `.refuses()`) and goes back to the arrow. A control takes the library's default
+size in a dialog's footer and a form, `small` on a page, a box or a strip and as a field inside a
+row, `xsmall` on a list row, in a transcript block and as a chip. The app owns only its own: the
 transcript renderers, the icon registry, the terminal panel, per-panel zoom, and the composer
 popup (one shell for `@`, `/`, the pickers, the `+` and branch menus and the attachment tray, with
 a pinned title and no key hints, at most six rows, grouped, then how many more; a menu
@@ -247,3 +247,12 @@ cannot draw (shapes it has no drawing of, brand marks, and forks of bundled shap
 weight), synced from `assets/icons/manifest.toml` by `scripts/sync-icons.sh`. Where the bundled
 set lacks a shape, an approximate icon is accepted. An icon at rest is `muted_foreground`. One that
 carries state uses a semantic token. One that sits beside text takes that text's colour.
+
+## Exceptions
+
+The whole list: any other departure from a rule above is a bug until agreed and listed here.
+
+- **The composer card has no edge.** It stands off the page on its own fill (`theme::raised`) and
+  its own lift (`composer_lift`).
+- **A solid danger fill marks two buttons**: *Stop* in the composer, and the button confirming a
+  removal inside its modal. Anywhere else a destructive action is a word in the danger tint.
