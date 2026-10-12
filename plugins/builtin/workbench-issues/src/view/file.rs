@@ -41,12 +41,15 @@ impl IssuesView {
         let Some(file) = self.state_mut().map(|state| state.file.clone()) else {
             return;
         };
+        self.publishing = self.key(&root, number);
+        cx.notify();
         cx.spawn(async move |view, cx| {
             let done = cx
                 .background_executor()
                 .spawn(async move { sync::publish_blocking(&path, &root, forge, number) })
                 .await;
             let _ = view.update(cx, |view: &mut Self, cx| {
+                view.publishing = None;
                 view.status = done.err();
                 file.update(cx, |file, cx| file.load(cx));
             });
@@ -82,12 +85,15 @@ impl IssuesView {
         let Some((root, path)) = self.file() else {
             return;
         };
+        self.writing = true;
+        cx.notify();
         cx.spawn(async move |view, cx| {
             let done = cx
                 .background_executor()
                 .spawn(async move { issues::update_blocking(&path, change) })
                 .await;
             let _ = view.update(cx, |view: &mut Self, cx| {
+                view.writing = false;
                 let Some(state) = view.roots.get_mut(&root) else {
                     return;
                 };

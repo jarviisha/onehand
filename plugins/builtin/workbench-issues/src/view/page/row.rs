@@ -22,8 +22,8 @@ const ROW_LABELS: usize = 2;
 
 /// A row's inset: enough round one line of text to aim the pointer at, the
 /// same for every row so the list reads as a table.
-const ROW_PAD_X: Rems = rems(0.875);
-const ROW_PAD_Y: Rems = rems(0.5625);
+const ROW_PAD_X: Rems = rems(0.75);
+const ROW_PAD_Y: Rems = rems(0.5);
 
 /// The columns after the title, fixed so each lines up down the list and
 /// only the title gives way: two labels and a count, and an age.
@@ -151,7 +151,9 @@ pub(super) fn page_row(
                 .flex_initial()
                 .min_w_0()
                 .truncate()
-                .when(place.picked && neutral, |chip| chip.bg(well))
+                .when(place.picked && neutral, |chip| {
+                    chip.bg(well).border_color(well)
+                })
         }))
         .when(more > 0, |labels| {
             labels.child(

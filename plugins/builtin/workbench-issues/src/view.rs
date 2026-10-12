@@ -11,14 +11,12 @@ use gpui::{
     Subscription, Task, Window, div,
 };
 use gpui_component::StyledExt;
-use gpui_component::WindowExt as _;
-use gpui_component::dialog::DialogButtonProps;
 use gpui_component::input::InputState;
 use gpui_component::text::TextViewState;
 use onehand_core::connector::{Connector, PullRequest};
 use onehand_core::issues::{self, IssueKey, Issues, LocalIssue};
 use onehand_core::task::work::{IssueWork, Reading};
-use onehand_plugin_host::{Ask, Request, hint, measure_width, status_line};
+use onehand_plugin_host::{Ask, Confirm, Request, confirm_on, hint, measure_width, status_line};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -133,6 +131,11 @@ pub(crate) struct IssuesView {
     /// Which of an issue's sections shows: kept from one issue to the next,
     /// so stepping through the list reads the same section of each.
     issue_tab: detail::IssueTab,
+    /// A change is being written: the form's save shows it until it lands.
+    writing: bool,
+    /// The issue being sent to its forge: the menu that sent it shows it
+    /// until the forge answers.
+    publishing: Option<IssueKey>,
 }
 
 /// One project's issues file, shared with every other view of it, and what
@@ -182,6 +185,8 @@ impl IssuesView {
             connectors,
             query: None,
             issue_tab: detail::IssueTab::default(),
+            writing: false,
+            publishing: None,
             showing: Showing::default(),
             label: None,
             ask,
@@ -351,28 +356,24 @@ impl IssuesView {
             then(self, window, cx);
             return;
         }
-        let view = cx.entity();
-        let then = std::rc::Rc::new(then);
-        window.open_alert_dialog(cx, move |alert, _, _| {
-            let (view, then) = (view.clone(), then.clone());
-            alert
-                .title("Drop this draft?")
-                .description("What is written in the issue form has not been saved.")
-                .button_props(
-                    DialogButtonProps::default()
-                        .ok_text("Drop draft")
-                        .show_cancel(true),
-                )
-                .on_ok(move |_, window, cx| {
-                    view.update(cx, |view, cx| {
-                        if let Some(state) = view.state_mut() {
-                            state.form = None;
-                        }
-                        then(view, window, cx)
-                    });
-                    true
-                })
-        });
+        confirm_on(
+            cx.entity(),
+            Confirm {
+                id: "drop-issue-draft",
+                title: "Discard this draft?".into(),
+                description: "What is written in the issue form has not been saved.".into(),
+                act: "Discard",
+                ..Default::default()
+            },
+            window,
+            cx,
+            move |view, window, cx| {
+                if let Some(state) = view.state_mut() {
+                    state.form = None;
+                }
+                then(view, window, cx)
+            },
+        );
     }
 
     /// Select issue `number` of the active project, asked from outside the
@@ -417,26 +418,23 @@ impl IssuesView {
         // The project is held so a dialog left open across a switch closes the
         // issue it was opened for, never the same number in another project.
         let root = self.root.clone();
-        let view = cx.entity();
-        window.open_alert_dialog(cx, move |alert, _, _| {
-            let (root, view) = (root.clone(), view.clone());
-            alert
-                .title("Close this issue?")
-                .description(description.clone())
-                .button_props(
-                    DialogButtonProps::default()
-                        .ok_text("Close issue")
-                        .show_cancel(true),
-                )
-                .on_ok(move |_, _, cx| {
-                    view.update(cx, |view, cx| {
-                        if view.root == root {
-                            view.set_open(number, false, cx);
-                        }
-                    });
-                    true
-                })
-        });
+        confirm_on(
+            cx.entity(),
+            Confirm {
+                id: "close-issue",
+                title: "Close this issue?".into(),
+                description: description.into(),
+                act: "Close issue",
+                ..Default::default()
+            },
+            window,
+            cx,
+            move |view, _, cx| {
+                if view.root == root {
+                    view.set_open(number, false, cx);
+                }
+            },
+        );
     }
 
     /// Find issue `number`'s address on its forge, then hand it to `then` —
@@ -570,7 +568,7 @@ impl IssuesView {
         if let Some(form) = &state.form {
             let project = self.page.as_ref().and_then(|page| page.label_of(root));
             let templates = state.file.read(cx).templates.clone();
-            return form_view(form, project, &templates, cx);
+            return form_view(form, project, &templates, self.writing, cx);
         }
         let Some(issue) = state.selected.and_then(|n| issues.get(n)).cloned() else {
             return hint("Pick an issue, or start a new one", cx);
@@ -594,7 +592,9 @@ impl IssuesView {
         self.read_pr_if_due(root, work.as_ref(), cx);
         self.read_left_if_due(work.as_ref(), cx);
         let review = self.review_block(&issue, key.as_ref(), work.as_ref(), cx);
+        let publishing = key.is_some() && self.publishing == key;
         let doing = Doing {
+            publishing,
             review,
             full: self.page.as_ref().map(page::PageState::full),
             session: working_in(&issue, &self.live).map(str::to_string),

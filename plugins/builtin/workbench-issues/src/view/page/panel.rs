@@ -140,7 +140,7 @@ impl IssuesView {
             .border_color(theme.border)
             .bg(theme.popover)
             .text_color(theme.popover_foreground)
-            .shadow_lg()
+            .shadow(onehand_plugin_host::tokens::lift(cx))
             .overflow_hidden()
             .children(bar)
             .child(div().flex_1().min_h_0().v_flex().child(body))

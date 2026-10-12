@@ -9,6 +9,7 @@ use gpui::{
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{Input, InputEvent, InputState};
+use gpui_component::tag::Tag;
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, Size, StyledExt};
 use onehand_core::issues::{self, Issues, LabelKind, LocalIssue};
@@ -610,21 +611,12 @@ pub(super) fn identity(issue: &LocalIssue, cx: &App) -> AnyElement {
     }
 }
 
-/// A label's text, a notch under the UI's small size: a tag is read after
-/// the title it sits beside, never instead of it.
-const CHIP_TEXT: gpui::Rems = gpui::rems(0.6875);
-
-/// A label's inset: wide enough at the sides that the tint reads as a shape
-/// round the word, shallow enough that a row of tags stays one line.
-const CHIP_PAD_X: gpui::Rems = gpui::rems(0.4375);
-const CHIP_PAD_Y: gpui::Rems = gpui::rems(0.125);
-
 /// A label as a small tag, on a tint of its kind's hue with that hue's ink
 /// and no edge. A label that asks for something is blue, an enhancement
 /// green, one about the code's structure violet, one about the documents
 /// yellow, an agent's report cyan; a label that only files the issue stays
 /// neutral.
-pub(super) fn chip(label: String, cx: &App) -> gpui::Div {
+pub(super) fn chip(label: String, cx: &App) -> Tag {
     let theme = cx.theme();
     let kind = match LabelKind::of(&label) {
         LabelKind::Category => neutral(cx),
@@ -634,14 +626,14 @@ pub(super) fn chip(label: String, cx: &App) -> gpui::Div {
         LabelKind::Docs => tint(theme.yellow, cx),
         LabelKind::Report => tint(theme.cyan, cx),
     };
-    tag(label, kind, cx)
+    tag(label, kind)
 }
 
 /// A tag that is not a label (the *Draft* mark, a project's name), always
 /// neutral, so a name that happens to read like a label is never drawn as
 /// one.
-pub(super) fn plain_tag(text: String, cx: &App) -> gpui::Div {
-    tag(text, neutral(cx), cx)
+pub(super) fn plain_tag(text: String, cx: &App) -> Tag {
+    tag(text, neutral(cx))
 }
 
 /// The tint a tag takes when it says nothing about state.
@@ -653,17 +645,10 @@ fn neutral(cx: &App) -> Tint {
     }
 }
 
-fn tag(text: String, Tint { fill, ink }: Tint, cx: &App) -> gpui::Div {
-    div()
-        .flex_none()
-        .px(CHIP_PAD_X)
-        .py(CHIP_PAD_Y)
-        .rounded(cx.theme().radius)
-        .bg(fill)
-        .text_size(CHIP_TEXT)
-        .line_height(CHIP_TEXT)
-        .text_color(ink)
-        .child(text)
+/// The library's small label on `fill`, edged in the same fill so it reads as
+/// one shape round the word.
+fn tag(text: String, Tint { fill, ink }: Tint) -> Tag {
+    Tag::custom(fill, ink, fill).small().flex_none().child(text)
 }
 
 #[cfg(test)]

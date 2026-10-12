@@ -17,7 +17,7 @@ use gpui_component::menu::PopupMenu;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::issues::LocalIssue;
 use onehand_core::task::work::{Act, Around, IssueWork, Next, PrSeen, next_action, pr_named};
-use onehand_plugin_host::{Request, action, menu_below, menu_item, status_ink};
+use onehand_plugin_host::{Request, action, menu_below, menu_item, menu_row, status_ink};
 use std::path::Path;
 
 /// How many secondary actions get a button of their own after the primary
@@ -346,6 +346,7 @@ fn more_menu(
     let open = issue.open;
     let forge = issue.link.as_ref().map(|link| link.connector.clone());
     let view = cx.entity();
+    let danger = status_ink(cx).danger;
     let overflow: Vec<(&'static str, Pressed)> = overflow
         .into_iter()
         .map(|act| {
@@ -363,6 +364,7 @@ fn more_menu(
     let trigger = action("issue-more")
         .small()
         .ghost()
+        .loading(doing.publishing)
         .icon(Icon::new(IconName::Ellipsis))
         .tooltip("More actions");
     // Named by the project and the issue, so a menu held open across a switch
@@ -403,7 +405,7 @@ fn more_menu(
             if !overflow.is_empty() || publish_to.is_some() || in_tab {
                 menu = menu.separator();
             }
-            issue_items(menu, &view, number, open, forge.as_deref())
+            issue_items(menu, &view, number, open, forge.as_deref(), danger)
         }))
         .into_any_element()
 }
@@ -415,6 +417,7 @@ fn issue_items(
     number: u64,
     open: bool,
     forge: Option<&str>,
+    danger: gpui::Hsla,
 ) -> PopupMenu {
     if let Some(forge) = forge {
         let (open_view, copy_view) = (view.clone(), view.clone());
@@ -449,11 +452,11 @@ fn issue_items(
     // Reopening is a secondary action of a closed issue's work instead.
     if open {
         menu = menu.item(
-            menu_item("Close issue")
-                .icon(Icon::new(IconName::CircleX))
-                .on_click(move |_, window, cx: &mut App| {
+            menu_row(move |_, _| div().text_color(danger).child("Close issue…")).on_click(
+                move |_, window, cx: &mut App| {
                     view.update(cx, |view, cx| view.confirm_close(number, window, cx))
-                }),
+                },
+            ),
         );
     }
     menu
@@ -494,7 +497,10 @@ pub(super) fn left_view(doing: &Doing, cx: &mut Context<IssuesView>) -> Option<A
         .unwrap_or_default();
     let on_page = doing.full.is_some();
     let pr_value = has_pr.then(|| match doing.pr {
-        PrSeen::Unread => div().text_color(muted).child("reading…").into_any_element(),
+        PrSeen::Unread => div()
+            .text_color(muted)
+            .child("Reading the pull request…")
+            .into_any_element(),
         PrSeen::Read(None) => div()
             .text_color(muted)
             .child("none for this branch")

@@ -14,7 +14,7 @@ use super::full::{Full, Side, files_view};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, AppContext as _, ClickEvent, Context, Entity, InteractiveElement as _, IntoElement,
-    ParentElement, StatefulInteractiveElement as _, Styled, Window, div, rems,
+    ParentElement, Rems, StatefulInteractiveElement as _, Styled, Window, div, rems,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{Textarea, TextareaState};
@@ -27,16 +27,23 @@ use onehand_core::task::marks::{self, Change};
 use onehand_core::task::work::{
     ANSWER_CHANGED, ANSWER_LINES, Checked, IssueWork, Reading, UnderReview, Work, last_lines,
 };
-use onehand_plugin_host::{Request, action, status_ink};
+use onehand_plugin_host::{Refuses as _, Request, action, status_ink};
 use std::path::{Path, PathBuf};
 
 /// How many lines of what a check printed are drawn: its last ones, where a
 /// build or a test run says how it ended.
 const CHECK_LINES: usize = 20;
 
-/// How tall the block grows before it scrolls, in rems: the body stays in
-/// reach below it.
-const BLOCK_MAX_H: f32 = 32.;
+/// How tall the block grows before it scrolls: the body stays in reach below
+/// it.
+const BLOCK_MAX_H: Rems = rems(32.);
+
+/// The column a line's name stands in, so what each line says starts at one
+/// edge down the block.
+const LABEL_W: Rems = rems(5.);
+
+/// How tall the note for *Revise…* stands: a few sentences in view.
+const NOTE_H: Rems = rems(6.);
 
 /// What a press sent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,15 +71,18 @@ pub(super) struct ReviewState {
     whole: bool,
     /// The issue's acceptance is open.
     acceptance: bool,
-    /// The note for *Revise…*, while it is written; `refused` while it was
-    /// sent empty.
+    /// The note for *Revise…*, while it is written.
     note: Option<Entity<TextareaState>>,
-    refused: bool,
     /// What the step under review changed, as read off git.
     files: Reading<(String, String), Vec<Change>>,
 }
 
 impl ReviewState {
+    /// Whether it is open at all.
+    pub(super) fn is_open(&self) -> bool {
+        self.open.is_some()
+    }
+
     /// Whether it is open on the issue `key`.
     pub(super) fn open_on(&self, key: Option<&IssueKey>) -> bool {
         self.open.is_some() && self.open.as_ref() == key
@@ -232,7 +242,6 @@ impl IssuesView {
         note.update(cx, |input, cx| input.focus(window, cx));
         if let Some(page) = self.page.as_mut() {
             page.review.note = Some(note);
-            page.review.refused = false;
             cx.notify();
         }
     }
@@ -244,8 +253,9 @@ impl IssuesView {
         }
     }
 
-    /// Send the note back, on what was read; an empty one is refused, and a
-    /// run no longer waiting there keeps the note to send again once read.
+    /// Send the note back, on what was read; an empty one is not sent (its
+    /// button refuses it), and a run no longer waiting there keeps the note to
+    /// send again once read.
     fn send_revise(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(page) = self.page.as_mut() else {
             return;
@@ -255,8 +265,6 @@ impl IssuesView {
         };
         let text = note.read(cx).value().trim().to_string();
         if text.is_empty() {
-            page.review.refused = true;
-            cx.notify();
             return;
         }
         if !self.still_where_read(cx) {
@@ -334,7 +342,7 @@ impl IssuesView {
         let mut block = div()
             .id("issue-review")
             .flex_none()
-            .max_h(rems(BLOCK_MAX_H))
+            .max_h(BLOCK_MAX_H)
             .overflow_y_scroll()
             .v_flex()
             .gap_2()
@@ -469,7 +477,7 @@ fn labelled(name: &'static str, value: AnyElement, cx: &Context<IssuesView>) -> 
         .child(
             div()
                 .flex_none()
-                .w(rems(5.))
+                .w(LABEL_W)
                 .text_color(cx.theme().muted_foreground)
                 .child(name),
         )
@@ -516,11 +524,8 @@ fn check_line(
             })
             .when(!printed.is_empty(), |column| {
                 column.child(
-                    div()
+                    onehand_plugin_host::well(cx)
                         .p_1()
-                        .rounded(cx.theme().radius)
-                        .bg(cx.theme().muted)
-                        .font_family(cx.theme().mono_font_family.clone())
                         .text_xs()
                         .children(printed.lines().map(|line| div().child(line.to_string()))),
                 )
@@ -558,14 +563,12 @@ fn answers(
         return div().text_color(muted).child(said).into_any_element();
     }
     if let Some(note) = &review.note {
+        let empty = note.read(cx).value().trim().is_empty();
         return div()
             .v_flex()
             .gap_1()
             .child(div().text_color(muted).child(read.revise_said()))
-            .child(Textarea::new(note).h(rems(6.)))
-            .when(review.refused, |column| {
-                column.child(div().text_color(ink.warning).child("Say what to change."))
-            })
+            .child(Textarea::new(note).h(NOTE_H))
             .child(
                 div()
                     .h_flex()
@@ -585,6 +588,8 @@ fn answers(
                             .xsmall()
                             .primary()
                             .label("Send back")
+                            .refuses(empty)
+                            .when(empty, |send| send.tooltip("Say what to change first"))
                             .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
                                 view.send_revise(window, cx)
                             })),

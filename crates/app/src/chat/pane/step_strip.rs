@@ -2,6 +2,7 @@
 //! and the two dialogs its approval controls open.
 
 use super::{ChatPane, ChatPaneEvent};
+use crate::controls::Refuses as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, AppContext as _, Context, InteractiveElement as _, IntoElement, ParentElement,
@@ -270,6 +271,8 @@ pub(super) fn open_revise(approval: Approval, window: &mut Window, cx: &mut Cont
     note.update(cx, |input, cx| input.focus(window, cx));
     let changed = Rc::new(Cell::new(false));
     window.open_dialog(cx, move |dialog, _, cx| {
+        // Built again on every frame, so the refusal follows the typing.
+        let empty = note.read(cx).value().trim().is_empty();
         let send = {
             let (note, pane, approval, changed) = (
                 note.clone(),
@@ -280,7 +283,6 @@ pub(super) fn open_revise(approval: Approval, window: &mut Window, cx: &mut Cont
             move |_: &gpui::ClickEvent, window: &mut Window, cx: &mut App| {
                 let text = note.read(cx).value().trim().to_string();
                 if text.is_empty() {
-                    window.push_notification("Say what to change", cx);
                     return;
                 }
                 if !matches!(waits(&approval, cx), Waits::There) {
@@ -343,6 +345,8 @@ pub(super) fn open_revise(approval: Approval, window: &mut Window, cx: &mut Cont
                             .small()
                             .primary()
                             .label("Send back")
+                            .refuses(empty)
+                            .when(empty, |send| send.tooltip("Say what to change first"))
                             .on_click(send),
                     ),
             )

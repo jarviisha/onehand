@@ -278,6 +278,30 @@ pub const COMMANDS: &[Command] = &[
         "Rail && !Input",
         "Rail list"
     ),
+    command!(
+        "issues_up",
+        "Pick the issue above",
+        ["up"],
+        onehand_workbench_issues::IssuesUp,
+        "IssuesPage && !Input",
+        "Issues page"
+    ),
+    command!(
+        "issues_down",
+        "Pick the issue below",
+        ["down"],
+        onehand_workbench_issues::IssuesDown,
+        "IssuesPage && !Input",
+        "Issues page"
+    ),
+    command!(
+        "issues_close",
+        "Close the form, the review or the issue",
+        ["escape"],
+        onehand_workbench_issues::IssuesClose,
+        "IssuesPage && !Dialog && !Input",
+        "Issues page"
+    ),
     // `A > B` scores at `B`'s depth, so these tie with the input's own arrow
     // and Tab bindings and win by being registered later. The composer adds
     // `ChatComposer` only while a list is open, so otherwise the keys still
@@ -757,6 +781,21 @@ mod tests {
             action_at(&map, "shift-tab", &["Shell", "ChatComposerCard", "Input"]),
             Some(CycleMode.name().into())
         );
+        // The Issues page steps its list with the arrows, but never while
+        // the caret is in its search; Esc closes what is open over the list.
+        let page = ["Shell", "Chat", "IssuesPage"];
+        assert_eq!(
+            action_at(&map, "up", &page),
+            Some(onehand_workbench_issues::IssuesUp.name().into())
+        );
+        assert_eq!(
+            action_at(&map, "up", &[&page[..], &["Input"]].concat()),
+            None
+        );
+        assert_eq!(
+            action_at(&map, "escape", &page),
+            Some(onehand_workbench_issues::IssuesClose.name().into())
+        );
         // The rail's list and the composer's suggestions share the arrows,
         // each only where it has focus.
         assert_eq!(
@@ -991,10 +1030,10 @@ mod tests {
             };
             check(&with([command]), &Overrides::new())
         };
-        assert_eq!(on("IssuesPage && !Dialog && !Input"), Ok(()));
+        assert_eq!(on("PluginList && !Dialog && !Input"), Ok(()));
         for context in [
-            "IssuesPage && !Input",
-            "IssuesPage && !Dialog",
+            "PluginList && !Input",
+            "PluginList && !Dialog",
             "ChatComposer > Input",
             "Shell && !Dialog",
         ] {
@@ -1010,8 +1049,8 @@ mod tests {
             "Esc",
             ["escape"],
             crate::rail::RailOpen,
-            "IssuesPage && !Dialog && !Input",
-            "Issues page"
+            "PluginList && !Dialog && !Input",
+            "Plugins list"
         );
         let all = with(regions.iter().map(|(_, c)| c.clone()).chain([escape]));
         check(&all, &Overrides::new()).unwrap();
@@ -1046,13 +1085,13 @@ mod tests {
             );
         }
         let esc = Some(crate::rail::RailOpen.name().to_string());
-        assert_eq!(action_at(&map, "escape", &["Shell", "IssuesPage"]), esc);
+        assert_eq!(action_at(&map, "escape", &["Shell", "PluginList"]), esc);
         assert_eq!(
-            action_at(&map, "escape", &["Shell", "IssuesPage", "Input"]),
+            action_at(&map, "escape", &["Shell", "PluginList", "Input"]),
             None
         );
         assert_eq!(
-            action_at(&map, "escape", &["Shell", "IssuesPage", "Dialog"]),
+            action_at(&map, "escape", &["Shell", "PluginList", "Dialog"]),
             None
         );
     }

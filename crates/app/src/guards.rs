@@ -651,8 +651,6 @@ mod tests {
         ("crates/app/src/settings.rs", 9),
         ("crates/app/src/settings/pages.rs", 1),
         ("plugins/builtin/workbench-files/src/view.rs", 1),
-        ("plugins/builtin/workbench-issues/src/view/full.rs", 1),
-        ("plugins/builtin/workbench-issues/src/view/review.rs", 2),
         ("plugins/builtin/workbench-markdown/src/document.rs", 1),
         ("plugins/builtin/workbench-plugins/src/view/details.rs", 1),
     ];
@@ -1207,8 +1205,7 @@ mod tests {
     /// gpui's shadows are black at a tenth of an alpha, which cannot be seen
     /// on the dark palette; a floating surface takes the tokens' `lift`.
     /// Counts from before the rule; a file may only go down.
-    const SHADOWS_BEFORE_THE_RULE: &[(&str, usize)] =
-        &[("plugins/builtin/workbench-issues/src/view/page/panel.rs", 1)];
+    const SHADOWS_BEFORE_THE_RULE: &[(&str, usize)] = &[];
 
     #[test]
     fn no_shadow_from_gpuis_steps() {
@@ -1246,8 +1243,7 @@ mod tests {
     /// screen that has one, and a number is a size the zoom and the next
     /// reader cannot place. Counts from before the rule; a file may only go
     /// down.
-    const TYPE_BEFORE_THE_RULE: &[(&str, usize)] =
-        &[("plugins/builtin/workbench-issues/src/view/page/head.rs", 1)];
+    const TYPE_BEFORE_THE_RULE: &[(&str, usize)] = &[];
 
     #[test]
     fn type_stays_on_the_scale() {

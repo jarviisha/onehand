@@ -10,6 +10,7 @@ use gpui::{
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::tab::{Tab, TabBar};
+use gpui_component::tag::Tag;
 use gpui_component::text::{TextView, TextViewState, TextViewStyle};
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
@@ -22,14 +23,13 @@ use onehand_plugin_host::{AppIcon, Tint, action, status_ink, tint};
 use priority::{priority, priority_ink};
 use std::path::Path;
 
-/// A description's text: the UI's own size, so an issue reads as part of the
-/// window rather than as a document dropped into it.
-const BODY_TEXT: Rems = rems(0.875);
-
-/// A description's first heading, at a section title's size, and its second
-/// a step under it; the rest are the body's size, told apart by weight.
-const HEADING_1: Rems = rems(1.);
-const HEADING_2: Rems = rems(0.9375);
+/// A description's headings on the type scale: the first at `text_lg`, the
+/// second at `text_base`, the rest at the body's `text_sm`, told apart by
+/// weight. Numbers rather than the style methods because the renderer asks a
+/// size of each level.
+const HEADING_1: Rems = rems(1.125);
+const HEADING_2: Rems = rems(1.);
+const HEADING_REST: Rems = rems(0.875);
 
 /// The gutter inside a fenced block, wider than a row's so the code reads as
 /// set in its well rather than on its edge.
@@ -51,6 +51,8 @@ pub(super) struct Doing<'a> {
     pub(super) full: Option<super::full::Full<'a>>,
     /// On the Issues page, the review block, while a person has it open.
     pub(super) review: Option<AnyElement>,
+    /// The issue is being sent to its forge.
+    pub(super) publishing: bool,
     /// The templates the issue's project offers, which its body is read
     /// against.
     pub(super) templates: Vec<IssueTemplate>,
@@ -259,7 +261,7 @@ pub(super) fn issue_view(
                 Some((parsed, _)) => div()
                     .px_4()
                     .py_3()
-                    .text_size(BODY_TEXT)
+                    .text_sm()
                     .child(
                         TextView::new(parsed)
                             .selectable(true)
@@ -327,7 +329,7 @@ fn centred(inner: gpui::Div) -> gpui::Div {
 
 /// Whether the issue is open or closed, as a badge: its own mark and word on
 /// the success tint while open, on the neutral fill once closed.
-fn state_badge(open: bool, cx: &App) -> AnyElement {
+fn state_badge(open: bool, cx: &App) -> Tag {
     let theme = cx.theme();
     let (icon, Tint { fill, ink }, word) = if open {
         (Icon::new(AppIcon::CircleDot), tint(theme.green, cx), "Open")
@@ -338,18 +340,12 @@ fn state_badge(open: bool, cx: &App) -> AnyElement {
         };
         (Icon::new(IconName::CircleCheck), neutral, "Closed")
     };
-    div()
-        .h_flex()
+    Tag::custom(fill, ink, fill)
+        .small()
         .flex_none()
-        .items_center()
         .gap_1()
-        .px_1p5()
-        .rounded_full()
-        .bg(fill)
-        .text_color(ink)
         .child(icon.xsmall())
         .child(word)
-        .into_any_element()
 }
 
 /// Everything that happened to the issue, oldest first under its arrival:
@@ -617,7 +613,7 @@ fn body_style(rem: gpui::Pixels, cx: &App) -> TextViewStyle {
             rem * match level {
                 1 => HEADING_1.0,
                 2 => HEADING_2.0,
-                _ => BODY_TEXT.0,
+                _ => HEADING_REST.0,
             }
         });
     style.heading_base_font_size = rem;
