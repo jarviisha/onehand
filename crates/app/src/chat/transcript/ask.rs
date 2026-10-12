@@ -8,6 +8,7 @@ use super::parts::{
 };
 use super::{fold_key, live_index};
 use crate::chat::session::ChatSession;
+use crate::controls::Refuses as _;
 use crate::tokens::{CODE_TEXT, CONTROL_H, LEADING_TIGHT};
 use gpui::Focusable as _;
 use gpui::prelude::FluentBuilder as _;
@@ -15,7 +16,6 @@ use gpui::{
     App, ClickEvent, Entity, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, Window, div, relative,
 };
-use gpui_component::Disableable as _;
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::Input;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
@@ -184,7 +184,7 @@ pub(in crate::chat) fn ask(
         )
     });
 
-    floating_card(cx)
+    floating_card(live, cx)
         .v_flex()
         .p_0()
         // **The card's own padding goes to the rows inside it.** The heading
@@ -456,7 +456,7 @@ fn ask_choice_mark(on: bool, single: bool, cx: &App) -> impl IntoElement + use<>
         })
         .map(|mark| match single {
             true => mark.rounded_full(),
-            false => mark.rounded(cx.theme().radius),
+            false => mark.rounded(cx.theme().radius_tokens().sm),
         })
         .when(on, |mark| {
             mark.child(
@@ -465,7 +465,7 @@ fn ask_choice_mark(on: bool, single: bool, cx: &App) -> impl IntoElement + use<>
                     .bg(cx.theme().primary)
                     .map(|dot| match single {
                         true => dot.rounded_full(),
-                        false => dot.rounded_sm(),
+                        false => dot.rounded(cx.theme().radius_tokens().sm),
                     }),
             )
         })
@@ -541,7 +541,7 @@ impl AskForm<'_> {
                     .gap_2()
                     .flex_none()
                     .h(ASK_TAB_H)
-                    .px_2p5()
+                    .px_2()
                     .rounded_none()
                     // **Underlined rather than filled.** A filled tab in a
                     // strip that already carries a filled number in each of its
@@ -638,7 +638,7 @@ impl AskForm<'_> {
                     .py_2()
                     .w_full()
                     .min_h(ASK_ROW_MIN)
-                    .rounded(cx.theme().radius_lg)
+                    .rounded(cx.theme().radius)
                     .border_1()
                     // **A taken choice is named by its border, and a destructive
                     // one by the danger step of that same border.** Taking it is
@@ -742,7 +742,7 @@ impl AskForm<'_> {
                 .w_full()
                 .px_3()
                 .min_h(ASK_CUSTOM_ROW_MIN)
-                .rounded(cx.theme().radius_lg)
+                .rounded(cx.theme().radius)
                 .border_1()
                 // **Dashed** rather than solid, which is the one thing that
                 // separates it from the rows above without taking it out of
@@ -799,7 +799,7 @@ impl AskForm<'_> {
                     .gap_2()
                     .w_full()
                     .px_4()
-                    .py_2p5()
+                    .py_2()
                     // What the keyboard can do, said where the keyboard's
                     // work ends. The numbers are on the rows themselves --
                     // this is the walk, which has nowhere else to be named.
@@ -837,14 +837,9 @@ impl AskForm<'_> {
                                 crate::controls::action(("ask-submit", idx))
                                     .primary()
                                     .small()
-                                    .map(|submit| match can_advance {
-                                        true => submit,
-                                        // Nothing is picked yet, so the
-                                        // pointer would be promising a
-                                        // press that does nothing.
-                                        false => crate::controls::resting(submit),
-                                    })
-                                    .disabled(!can_advance)
+                                    // Nothing is picked yet: refusing, and
+                                    // the pointer would promise otherwise.
+                                    .refuses(!can_advance)
                                     .label(match last {
                                         false => "Next →",
                                         true => "Submit",
@@ -998,7 +993,7 @@ fn ask_form(
                 .gap_3()
                 .w_full()
                 .px(ASK_INSET)
-                .pt_3p5()
+                .pt_3()
                 .pb_4()
                 .children(form.question().map(|line| {
                     div()

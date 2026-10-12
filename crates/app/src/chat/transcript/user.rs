@@ -1,7 +1,7 @@
 use super::Room;
 use super::metrics::{
     BUBBLE_MAX, BUBBLE_TAIL_GAP, HAIR_GAP, MARK_SIZE, STACK_GAP, THUMB_H, THUMB_W, TIGHT_GAP,
-    USER_BUBBLE_MAX, USER_BUBBLE_MAX_NARROW, radius_block,
+    USER_BUBBLE_MAX, USER_BUBBLE_MAX_NARROW,
 };
 use crate::tokens::CONTROL_H;
 use gpui::prelude::FluentBuilder as _;
@@ -288,7 +288,7 @@ fn attachment(a: &onehand_core::attachment::AttachmentSnapshot, cx: &App) -> imp
         .w(THUMB_W)
         .h(THUMB_H)
         .overflow_hidden()
-        .rounded(radius_block(cx))
+        .rounded(cx.theme().radius)
         .border_1()
         .border_color(cx.theme().border)
         .map(|plate| match thumbnail {

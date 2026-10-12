@@ -157,7 +157,7 @@ pub(in crate::chat) fn permission(
     let kind = (p.req.kind != ToolKind::Other).then(|| tool_label(p.req.kind));
     let cwd = command_cwd(&session.read(cx).chat.root);
 
-    floating_card(cx)
+    floating_card(idx.is_some(), cx)
         .v_flex()
         // The card's own padding goes to the rows inside it, because the
         // footer's rule has to run edge to edge and a rule inside a padded box
@@ -225,7 +225,7 @@ pub(in crate::chat) fn permission(
                 .w_full()
                 .px_4()
                 .pt_3()
-                .pb_3p5()
+                .pb_3()
                 .child(block)
                 .children(cwd.map(|(shown, full)| {
                     div()
@@ -368,7 +368,7 @@ fn permission_footer(
                 .gap_2()
                 .w_full()
                 .px_4()
-                .py_2p5()
+                .py_2()
                 .child(
                     div()
                         // The first thing to give way when the row runs out of

@@ -1,5 +1,4 @@
-use gpui::{App, Rems, rems};
-use gpui_component::ActiveTheme;
+use gpui::{Rems, rems};
 
 /// The transcript's reading size: what the agent and the person say.
 ///
@@ -60,6 +59,9 @@ pub(super) const HAIR_GAP: Rems = rems(0.125);
 /// a bubble and the row of controls under it.
 pub(super) const STACK_GAP: Rems = rems(0.375);
 
+/// Where a folding block's body starts: under the words of its fold line,
+/// past the chevron (an `xsmall` icon, 0.75rem) and the gap after it (`gap_2`).
+pub(super) const FOLD_INDENT: Rems = rems(0.75 + 0.5);
 /// One line of machine text.
 pub(super) const LINE_H: Rems = rems(1.25);
 /// The glyph on a well's copy button.
@@ -91,48 +93,6 @@ pub(in crate::chat) const CONTENT_COLUMN: Rems = rems(44.);
 /// The widest a prompt's bubble grows, so a long one wraps well short of the
 /// agent's left edge and the two sides stay told apart.
 pub(super) const BUBBLE_MAX: Rems = rems(28.);
-/// The corner ladder below the theme's card corner: a mark, a control, a
-/// block. Wells and the user's bubble take the card corner itself.
-///
-/// **Anchored on the theme's two named steps rather than written out**, so a
-/// theme that squares its corners squares every one of these with it. The
-/// ladder's rule is that an inner corner is never wider than the one enclosing
-/// it: a box drawn at its container's own radius leaves the two arcs crossing,
-/// which reads as a box that failed to fit rather than as one thing inside
-/// another.
-fn corner(base: gpui::Pixels, step: f32) -> gpui::Pixels {
-    match base <= gpui::px(0.) {
-        // A squared theme is squared all the way down. Stepping up from zero
-        // would round exactly the corners such a theme asked to be left alone.
-        true => base,
-        false => (base + gpui::px(step)).max(gpui::px(0.)),
-    }
-}
-
-/// A kind mark, a checkbox: the tightest corner drawn anywhere here.
-pub(in crate::chat) fn radius_tag(cx: &App) -> gpui::Pixels {
-    corner(cx.theme().radius, -4.)
-}
-/// A button, a status pill, an inline mark, a callout's open side.
-///
-/// **A pill is a corner and not a capsule**, which is the one place this ladder
-/// overrules the shape a pill usually has. Fully round, it was the only
-/// silhouette in the transcript that curved — a lozenge at the end of a row of
-/// square boxes, reading as a badge stuck onto the row rather than as one of
-/// its columns.
-pub(super) fn radius_control(cx: &App) -> gpui::Pixels {
-    corner(cx.theme().radius, -2.)
-}
-/// Everything that is a box with content in it: an activity block, a well of
-/// machine text, a diff, a banner, a plan, a thumbnail.
-///
-/// **One step for all of them**, because they are one thing — a bounded region
-/// of the column — and a ladder that gave a well and the block around it two
-/// different corners would be spending a rung on a distinction nobody reading
-/// it is making.
-pub(super) fn radius_block(cx: &App) -> gpui::Pixels {
-    cx.theme().radius
-}
 /// An attached file's plate beside a prompt.
 ///
 /// **A fixed plate, not a bounded picture.** A preview is here to be
@@ -156,10 +116,10 @@ pub(super) const USER_BUBBLE_MAX: f32 = 0.78;
 pub(super) const USER_BUBBLE_MAX_NARROW: f32 = 0.9;
 /// Between the bubble and the control offered under it.
 ///
-/// Closer than anything else in the transcript: the control belongs to the
-/// bubble rather than following it, and at any of the scale's steps it read as
-/// a separate thing that happened to be beneath.
-pub(super) const BUBBLE_TAIL_GAP: Rems = rems(0.1875);
+/// Closer than anything else in the transcript, the scale's smallest step: the
+/// control belongs to the bubble rather than following it, and any wider it
+/// read as a separate thing that happened to be beneath.
+pub(super) const BUBBLE_TAIL_GAP: Rems = rems(0.125);
 
 /// How much of the panel a permission's command box may take, on a panel too
 /// short for [`COMMAND_H`]: the heading that says what is asked and the
@@ -189,8 +149,6 @@ pub(super) const COMMAND_H: Rems = rems(LINE_SM.0 * 8.);
 pub(super) const ASK_INSET: Rems = rems(1.);
 /// Left and right inside a frame that lays its contents out in columns.
 pub(super) const FRAME_PAD: Rems = rems(0.75);
-/// A status pill: as tall as the words in it and no taller.
-pub(super) const PILL_H: Rems = rems(1.125);
 /// Width a question's tab label is elided at. Only a *tab* is ever elided.
 pub(super) const ASK_TAB_W: Rems = rems(8.75);
 /// The numbered circle at the head of a question's tab.
@@ -214,7 +172,7 @@ pub(super) const ASK_MARK_RING: gpui::Pixels = gpui::px(1.5);
 /// The key-hint chip at the end of a choice row: a floor rather than a size, so
 /// a two-digit hint grows sideways instead of overrunning its border.
 pub(super) const ASK_HINT_SIZE: Rems = rems(1.25);
-pub(super) const ASK_HINT_PAD: Rems = rems(0.3125);
+pub(super) const ASK_HINT_PAD: Rems = rems(0.25);
 /// The height a choice row stands at whatever it holds.
 ///
 /// A floor, not a height. The label and the description under it are the

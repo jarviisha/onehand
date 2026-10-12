@@ -491,13 +491,13 @@ impl ChatPane {
                                     // opaque raised surface so transcript text
                                     // scrolling beneath cannot show through it.
                                     div()
-                                        .rounded_full()
+                                        .rounded(cx.theme().radius_lg)
                                         .bg(cx.theme().popover.alpha(1.))
-                                        .shadow_lg()
+                                        .shadow(crate::tokens::lift(cx))
                                         .child(
                                             crate::controls::action("to-bottom")
                                                 .outline()
-                                                .rounded_full()
+                                                .rounded(cx.theme().radius_lg)
                                                 // **The arrow alone.** The
                                                 // words named what was down
                                                 // there, which the transcript

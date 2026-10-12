@@ -42,7 +42,7 @@ impl ChatPane {
             // A step over the gap the cards keep between themselves: a pinned
             // card and the composer are two objects and the cards in a stack
             // are one, so the seam that has to read as a seam is this one.
-            .gap_2p5()
+            .gap_2()
             .w_full()
             // Reading the conversation is a way of saying the popup is done
             // with. It hangs off this whole block rather than off the list, so
@@ -177,7 +177,7 @@ impl ChatPane {
                                 .v_flex()
                                 // The same gap the composer keeps from the cards,
                                 // so the whole stack reads as one rhythm.
-                                .gap_2p5()
+                                .gap_2()
                                 .w_full()
                                 .max_w(COMPOSER_COLUMN)
                                 .mx_auto()

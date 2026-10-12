@@ -50,11 +50,11 @@ page needs the same thing, lift it into a shared module in that change rather th
 
 Several builders draw one thing. Use the first one named; add no other.
 
-- **A small label**: `Tag` at `.small()`. Drawn by hand today in `pill`
-  (`chat/transcript/parts.rs`), `chip` and `tag` (`workbench-issues/src/view/list.rs`), `chip`
+- **A small label**: `Tag` at `.small()`, as the transcript's `pill` draws it. Drawn by hand today
+  in `chip` and `tag` (`workbench-issues/src/view/list.rs`), `chip`
   (`workbench-plugins/src/view/details.rs`), the rail's counts and the issue state badge.
 - **A line filling an empty panel**: `hint`. Copied into `crates/app/src/terminal.rs`.
-- **A well**: `well`. `mono_well` builds on it; `plain_box` and the Issues review and diff views
+- **A well**: `well`. `mono_well` and `plain_box` build on it; the Issues review and diff views
   still draw their own.
 - **A confirmation**: `Confirm` (`Ask` in the app). Drawn by hand with `open_alert_dialog` on the project page, in
   Workflows, Settings, the editor, Plugins and Issues.

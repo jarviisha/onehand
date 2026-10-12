@@ -646,8 +646,6 @@ mod tests {
     /// against the window in pixels, which is the point of them.
     const LENGTHS_BEFORE_THE_RULE: &[(&str, usize)] = &[
         ("crates/app/src/chat/pane/step_strip.rs", 2),
-        ("crates/app/src/chat/transcript/tool.rs", 1),
-        ("crates/app/src/chat/viewport.rs", 2),
         ("crates/app/src/dialogs.rs", 4),
         ("crates/app/src/dialogs/issue.rs", 2),
         ("crates/app/src/settings.rs", 9),
@@ -1184,14 +1182,6 @@ mod tests {
     /// half a step is a difference nobody sees and everybody copies. Counts
     /// from before the rule; a file may only go down.
     const SPACING_BEFORE_THE_RULE: &[(&str, usize)] = &[
-        ("crates/app/src/chat/pane/overlay.rs", 2),
-        ("crates/app/src/chat/transcript/ask.rs", 3),
-        ("crates/app/src/chat/transcript/parts.rs", 1),
-        ("crates/app/src/chat/transcript/permission.rs", 2),
-        ("crates/app/src/chat/transcript/plan.rs", 1),
-        ("crates/app/src/chat/transcript/prose.rs", 1),
-        ("crates/app/src/chat/transcript/strip.rs", 3),
-        ("crates/app/src/chat/transcript/tool.rs", 1),
         ("crates/app/src/rail.rs", 2),
         ("crates/app/src/rail/session.rs", 1),
         ("crates/app/src/settings.rs", 2),
@@ -1220,11 +1210,8 @@ mod tests {
     /// gpui's shadows are black at a tenth of an alpha, which cannot be seen
     /// on the dark palette; a floating surface takes the tokens' `lift`.
     /// Counts from before the rule; a file may only go down.
-    const SHADOWS_BEFORE_THE_RULE: &[(&str, usize)] = &[
-        ("crates/app/src/chat/pane/body.rs", 1),
-        ("crates/app/src/chat/transcript/parts.rs", 1),
-        ("plugins/builtin/workbench-issues/src/view/page/panel.rs", 1),
-    ];
+    const SHADOWS_BEFORE_THE_RULE: &[(&str, usize)] =
+        &[("plugins/builtin/workbench-issues/src/view/page/panel.rs", 1)];
 
     #[test]
     fn no_shadow_from_gpuis_steps() {

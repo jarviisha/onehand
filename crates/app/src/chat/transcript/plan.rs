@@ -1,5 +1,5 @@
 use super::fold_key;
-use super::metrics::TEXT_SM;
+use super::metrics::FOLD_INDENT;
 use super::parts::{accent, fold_line};
 use crate::chat::session::ChatSession;
 use gpui::prelude::FluentBuilder as _;
@@ -65,8 +65,8 @@ pub(super) fn plan(
                 div()
                     .v_flex()
                     .gap_1()
-                    .pl_5()
-                    .text_size(TEXT_SM)
+                    .pl(FOLD_INDENT)
+                    .text_sm()
                     .children(p.entries.iter().take(MAX_TODO_ITEMS).map(|entry| {
                         // **The glyph changes, never the row**: a plan is
                         // worked through while it is on screen.

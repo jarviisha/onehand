@@ -14,6 +14,13 @@ use onehand_core::chat::{
     ActivityGroup, Chat, ChatItem, RunOutcome, TranscriptItemId, cluster_summary, run_outcome,
 };
 
+/// How far below a row's top still counts as resting on it: under a pixel is
+/// the list's own rounding, not a reader's scroll.
+const AT_REST_SLACK: Pixels = px(1.);
+/// How far past the viewport the list lays rows out ahead of a scroll, so a
+/// wheel notch lands on rows already measured.
+const OVERDRAW: Pixels = px(512.);
+
 /// One cluster of activity: the muted line, and what is under it once opened.
 ///
 /// **Worked out at plan time, where the members are already in hand**, and not
@@ -542,7 +549,8 @@ impl Viewport {
         // So this is not a latch. A wheel or a drag takes the position over,
         // and coming back to the question takes it back --
         // and either way the room stays exactly as it is, see [`Hold::reading`].
-        let at_rest = top.item_ix >= count || (top.item_ix == run && top.offset_in_item <= px(1.));
+        let at_rest =
+            top.item_ix >= count || (top.item_ix == run && top.offset_in_item <= AT_REST_SLACK);
         hold.reading = !at_rest;
         let reading = hold.reading;
 
@@ -585,7 +593,7 @@ impl Viewport {
         let (state, known) = self.list.get_or_insert_with(|| {
             // `Bottom`: a transcript follows its tail, and the list's own
             // documentation names this the chat-log case.
-            let state = ListState::new(count, ListAlignment::Bottom, px(512.));
+            let state = ListState::new(count, ListAlignment::Bottom, OVERDRAW);
             // A transcript follows its tail, and saying so is what makes the
             // list track *whether* it still is. Left in the default mode the
             // question could only be answered by measuring the whole

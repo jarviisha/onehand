@@ -1,7 +1,5 @@
 use super::fold_key;
-use super::metrics::{
-    DETAIL_OPEN_H, MARK_SIZE, PART_GAP, PILL_H, TEXT_SM, TIGHT_GAP, radius_control,
-};
+use super::metrics::{DETAIL_OPEN_H, FOLD_INDENT, MARK_SIZE, TIGHT_GAP};
 use crate::chat::session::ChatSession;
 use crate::tokens::{CONTROL_H, LEADING};
 use gpui::prelude::FluentBuilder as _;
@@ -13,6 +11,7 @@ use gpui::{
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::scroll::{ScrollableMask, Scrollbar, ScrollbarMode};
 use gpui_component::spinner::Spinner;
+use gpui_component::tag::Tag;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::acp::{ToolKind, ToolStatus};
 use onehand_core::chat::TranscriptItemId;
@@ -137,7 +136,7 @@ pub(super) fn copy_turn_button(session: &Entity<ChatSession>, target: Transcript
 /// Where whatever a row opens into is set in to: under the row's glyph, past
 /// the chevron's column.
 pub(super) fn detail_well(body: impl IntoElement) -> gpui::Div {
-    div().w_full().min_w_0().pl_5().pt_1().child(body)
+    div().w_full().min_w_0().pl(FOLD_INDENT).pt_1().child(body)
 }
 
 /// The ink of what runs, and of a way into more: the theme's link hue, the
@@ -179,7 +178,7 @@ pub(super) fn fold_line(
         .gap_2()
         .min_w_0()
         .cursor_pointer()
-        .text_size(TEXT_SM)
+        .text_sm()
         .text_color(cx.theme().muted_foreground)
         .hover(move |line| line.text_color(lit))
         .child(chevron(open))
@@ -332,14 +331,8 @@ pub(super) fn scrolled(open: bool, key: usize, body: gpui::Div) -> gpui::AnyElem
 /// reading size. What a tool read, printed or changed sits in one, and so does
 /// an answer's fenced code, so the two read as the same kind of thing.
 pub(super) fn plain_box(cx: &App) -> gpui::Div {
-    div()
-        .w_full()
-        .min_w_0()
-        .overflow_hidden()
-        .rounded(cx.theme().radius_lg)
-        .bg(cx.theme().muted)
-        .font_family(cx.theme().mono_font_family.clone())
-        .text_size(TEXT_SM)
+    onehand_plugin_host::well(cx)
+        .text_sm()
         .line_height(relative(LEADING))
 }
 
@@ -401,12 +394,10 @@ pub(super) fn grows(button: Button) -> Button {
 /// it — one window drawing its floating surfaces at two corners is a difference
 /// nobody chose.
 ///
-/// The shadow stays on a card **drawn back in the transcript once it has been
-/// answered**, which is deliberate and not an oversight. The same element is
-/// used in both places by design — one card that changed on being answered
-/// would read as two different cards — and what it carries into the history is
-/// the mark of the one block that stopped everything until somebody replied.
-pub(in crate::chat) fn floating_card(cx: &App) -> gpui::Div {
+/// **The lift only while it is pinned.** A card that floats over the
+/// transcript is set off by the app's shadow; one drawn back in the history is
+/// a block of the column like any other, and a shadow there marks nothing.
+pub(in crate::chat) fn floating_card(pinned: bool, cx: &App) -> gpui::Div {
     div()
         .w_full()
         .rounded(cx.theme().radius_lg)
@@ -416,7 +407,7 @@ pub(in crate::chat) fn floating_card(cx: &App) -> gpui::Div {
         // these and text showing through a box that is asking a question is the
         // one place in the app that cannot afford it.
         .bg(cx.theme().popover.alpha(1.))
-        .shadow_lg()
+        .when(pinned, |card| card.shadow(crate::tokens::lift(cx)))
 }
 
 // ── shared bits ─────────────────────────────────────────────────────────────
@@ -611,7 +602,7 @@ pub(super) fn activity_row(
             .gap_2()
             .w_full()
             .min_w_0()
-            .text_size(TEXT_SM)
+            .text_sm()
             .text_color(muted)
             .child(chevron_slot(row.fold))
             .child(row.mark.draw(row.kind, cx))
@@ -724,20 +715,15 @@ pub(super) fn tool_label(kind: ToolKind) -> &'static str {
     }
 }
 
-/// A word in a ring: the one shape a state takes wherever one is named.
-pub(super) fn pill(label: impl Into<SharedString>, ink: gpui::Hsla, cx: &App) -> gpui::Div {
-    div()
+/// A word in a small label, in the ink its state gives it: the one shape a
+/// state takes wherever one is named. Outlined rather than filled, so a row of
+/// them reads as the row's last column rather than as badges stuck onto it.
+pub(super) fn pill(label: impl Into<SharedString>, ink: gpui::Hsla, cx: &App) -> Tag {
+    Tag::custom(ink, ink, cx.theme().border)
+        .outline()
+        .small()
         .flex_none()
-        .h(PILL_H)
-        .px(PART_GAP)
-        .h_flex()
-        .items_center()
         .whitespace_nowrap()
         .overflow_hidden()
-        .rounded(radius_control(cx))
-        .border_1()
-        .border_color(cx.theme().border)
-        .text_xs()
-        .text_color(ink)
         .child(div().min_w_0().truncate().child(label.into()))
 }

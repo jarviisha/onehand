@@ -147,7 +147,7 @@ fn notice(text: &str, level: NoticeLevel, cx: &App) -> impl IntoElement + use<> 
         .border_1()
         .border_color(danger)
         .bg(cx.theme().danger.opacity(STATE_TINT))
-        .text_size(TEXT_SM)
+        .text_sm()
         .text_color(danger)
         .child(
             // The glyph is held to the first line's height, so a message that
