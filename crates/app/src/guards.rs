@@ -645,9 +645,6 @@ mod tests {
     /// The settings dialog's six are there to stay: its bounds are measured
     /// against the window in pixels, which is the point of them.
     const LENGTHS_BEFORE_THE_RULE: &[(&str, usize)] = &[
-        ("crates/app/src/chat/pane/step_strip.rs", 2),
-        ("crates/app/src/dialogs.rs", 4),
-        ("crates/app/src/dialogs/issue.rs", 2),
         ("crates/app/src/settings.rs", 9),
         ("crates/app/src/settings/pages.rs", 1),
     ];

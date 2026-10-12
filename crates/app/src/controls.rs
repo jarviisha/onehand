@@ -31,7 +31,7 @@ pub(crate) use crate::tokens::BAR_H;
 /// it, and two copies of this is two places for the library's default to be let
 /// through. This is the name the app's own call sites already use.
 ///
-/// **Pair it with [`resting`] on anything that can be disabled.** A pointer
+/// **Refuse through [`Refuses`] on anything that can be disabled.** A pointer
 /// over a control that refuses is the same lie as a Send that stays lit over a
 /// prompt it will discard: it promises a press will do something.
 pub(crate) fn action(id: impl Into<ElementId>) -> Button {
@@ -48,4 +48,4 @@ pub(crate) use onehand_plugin_host::{menu_below, menu_item, menu_row};
 /// Refusing, and looking like it: the cursor half and the behaviour half in
 /// one call. The rule and its reasoning live with the definitions in
 /// [`onehand_plugin_host`], where a built-in plugin's buttons reach them too.
-pub(crate) use onehand_plugin_host::{Refuses, resting};
+pub(crate) use onehand_plugin_host::Refuses;

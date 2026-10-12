@@ -69,6 +69,7 @@ impl Shell {
             return;
         };
         let (root, project) = (root.path.clone(), root.label.clone());
+        self.remember_focus(window, cx);
         let entries = crate::workflow::templates(cx);
         let named = |entry: &crate::workflow::Entry| {
             entry

@@ -478,6 +478,7 @@ impl Shell {
             worktree_draft: None,
             branch_draft: None,
             issue_picker: None,
+            dialog_return: None,
             label_input: cx.new(|cx| InputState::new(window, cx).placeholder("bug")),
             label_workflow: None,
             label_refused: None,

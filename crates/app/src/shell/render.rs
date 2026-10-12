@@ -213,6 +213,7 @@ impl Render for Shell {
         // mount, and until this existed `Dialog::trigger` opened a dialog into
         // a list nobody read. That is why the settings, agent-manager and Help
         // dialogs did nothing when clicked.
+        self.return_focus(window, cx);
         let sheet_layer = Root::render_sheet_layer(window, cx);
         let dialog_layer = Root::render_dialog_layer(window, cx);
         let notification_layer = Root::render_notification_layer(window, cx);
@@ -263,5 +264,38 @@ impl Render for Shell {
             .children(sheet_layer)
             .children(dialog_layer)
             .children(notification_layer)
+    }
+}
+
+impl Shell {
+    /// Note what holds the keyboard as one of the shell's own dialogs opens.
+    /// The first opener wins, so a dialog opened over another hands back to
+    /// where the first was opened from.
+    pub(super) fn remember_focus(&mut self, window: &Window, cx: &gpui::App) {
+        if self.dialog_return.is_none() {
+            self.dialog_return = Some(window.focused(cx).map(|focus| focus.downgrade()));
+        }
+    }
+
+    /// Hand the keyboard back once the shell's own dialogs are all gone: to
+    /// what held it before, or to the conversation when that is gone.
+    fn return_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let up = self.renaming.is_some()
+            || self.worktree_draft.is_some()
+            || self.branch_draft.is_some()
+            || self.issue_picker.is_some()
+            || self.workflow_launcher.is_some();
+        if up {
+            return;
+        }
+        let Some(back) = self.dialog_return.take() else {
+            return;
+        };
+        match back.and_then(|back| back.upgrade()) {
+            Some(focus) => focus.focus(window, cx),
+            None => self
+                .chat
+                .update(cx, |pane, cx| pane.reclaim_focus(window, cx)),
+        }
     }
 }

@@ -20,7 +20,7 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | Need | Use | Where |
 |---|---|---|
 | Any button | `action` | `crates/app/src/controls.rs` (the app), `crates/plugin-host/src/lib.rs` (a plugin) |
-| A button that can refuse | `.refuses(bool)` (the `Refuses` trait), `resting(button)` | `crates/plugin-host/src/lib.rs`, re-exported by `crates/app/src/controls.rs` |
+| A button that can refuse | `.refuses(bool)` (the `Refuses` trait, re-exported by `crates/app/src/controls.rs`); `resting(button)` for the cursor alone | `crates/plugin-host/src/lib.rs` |
 | A small label | `Tag` at `.small()`; tinted through `Tag::custom` and `tint(base, cx)` | gpui-component; `crates/plugin-host/src/lib.rs` |
 | A menu, its rows, a menu under its control | `menu_item`, `menu_row`, `menu_below` | `crates/plugin-host/src/menu.rs` |
 | A segmented switch | `switch` | `crates/plugin-host/src/lib.rs` |

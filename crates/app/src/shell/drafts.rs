@@ -155,6 +155,7 @@ impl Shell {
             return;
         };
         let (root, label) = (root.path.clone(), root.label.clone());
+        self.remember_focus(window, cx);
         self.worktree_branch
             .update(cx, |state, cx| state.set_value("", window, cx));
         self.worktree_draft = Some(WorktreeDraft {
@@ -222,6 +223,7 @@ impl Shell {
         else {
             return;
         };
+        self.remember_focus(window, cx);
         self.branch_input
             .update(cx, |state, cx| state.set_value(&from, window, cx));
         self.branch_draft = Some(BranchDraft {
@@ -495,6 +497,7 @@ impl Shell {
     /// guess in place as an explicit choice, and the derived title is supposed
     /// to keep tracking the conversation.
     pub fn begin_rename(&mut self, uid: u64, window: &mut Window, cx: &mut Context<Self>) {
+        self.remember_focus(window, cx);
         let current = self.chat.read(cx).custom_title(uid, cx).unwrap_or_default();
         self.rename_input
             .update(cx, |state, cx| state.set_value(current, window, cx));

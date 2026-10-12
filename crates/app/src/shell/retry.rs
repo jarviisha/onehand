@@ -5,13 +5,12 @@
 //! Resume, judged first by the run's own setup, is here too.
 
 use super::Shell;
+use crate::controls::Refuses as _;
 use gpui::{App, Context, Entity, ParentElement as _, SharedString, Styled as _, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::notification::Notification;
-use gpui_component::{
-    ActiveTheme as _, Disableable as _, Icon, IconName, Sizable as _, StyledExt as _,
-};
+use gpui_component::{ActiveTheme as _, Icon, IconName, Sizable as _, StyledExt as _};
 use onehand_core::preflight;
 use onehand_core::task::marks::{self, Against};
 use onehand_core::task::work::Act;
@@ -478,7 +477,7 @@ fn footer(
                 .primary()
                 .label(confirm);
             match blocked {
-                true => crate::controls::resting(button).disabled(true),
+                true => button.refuses(true),
                 false => button.on_click(move |_, window: &mut Window, cx: &mut App| {
                     window.close_dialog(cx);
                     run(window, cx);

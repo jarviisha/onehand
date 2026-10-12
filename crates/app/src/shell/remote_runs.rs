@@ -227,7 +227,11 @@ impl Shell {
             TextareaState::new(window, cx)
                 .placeholder("Optional: added to what every step is asked")
         });
+        self.remember_focus(window, cx);
+        let focus = cx.focus_handle();
+        focus.focus(window, cx);
         self.issue_picker = Some(IssuePicker {
+            focus,
             root: path.clone(),
             project: label,
             found: None,
@@ -378,10 +382,14 @@ impl Shell {
         self.issue_picker.as_ref()
     }
 
-    /// Choose the `index`th issue in the picker's list, for the form below it.
-    pub fn choose_issue(&mut self, index: usize, cx: &mut Context<Self>) {
+    /// Choose the `index`th issue in the picker's list, for the form below
+    /// it, whose first field takes the keyboard.
+    pub fn choose_issue(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(picker) = self.issue_picker.as_mut() {
             picker.chosen = Some(index);
+            picker
+                .instructions
+                .update(cx, |field, cx| field.focus(window, cx));
             cx.notify();
         }
     }

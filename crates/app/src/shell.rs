@@ -257,6 +257,13 @@ pub struct Shell {
     /// The workflow launcher, while it is on screen. Opened from a menu entry
     /// or a key, so this being `Some` is what puts it up.
     workflow_launcher: Option<WorkflowLauncher>,
+    /// What held the keyboard when one of the shell's own dialogs opened, so
+    /// it gets the keyboard back once the dialog is gone: those dialogs are
+    /// mounted by the shell rather than by the library, which would do this
+    /// itself, and a caret left in a field that is no longer drawn answers no
+    /// key at all.
+    /// `Some(None)`: nothing held it, and the conversation takes it.
+    dialog_return: Option<Option<gpui::WeakFocusHandle>>,
     /// Settings' new workflow label: the label typed, the workflow picked for
     /// it, and why the last *Add* was refused.
     label_input: Entity<InputState>,
@@ -406,6 +413,10 @@ pub struct IssuePicker {
     /// read with the issues: what an issue's body is read against. Empty
     /// until read, when nothing is said to be lacking.
     pub templates: Vec<onehand_core::issues::template::IssueTemplate>,
+    /// The picker's body, which holds the keyboard until an issue is chosen:
+    /// there is no field to hold it before then, and outside the dialog Esc
+    /// would not reach it.
+    pub focus: gpui::FocusHandle,
 }
 
 impl IssuePicker {
