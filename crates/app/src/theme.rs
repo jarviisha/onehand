@@ -13,10 +13,9 @@
 //! identically and the composer paints exactly the surface it floats above.
 //!
 //! So the app names its own steps, and its own hues with them: neutral greys
-//! carry everything, and a hue only ever means state. The values are the ones
-//! `labs/ui-labs/src/tokens.rs` proposed; where the app draws a distinction the
-//! lab does not (a bubble apart from a well, selected apart from hover, a
-//! marked rail row), the step is the nearest grey that keeps the tests below.
+//! carry everything, and a hue only ever means state. Where two roles must be
+//! told apart (a bubble apart from a well, selected apart from hover, a marked
+//! rail row), the step is the nearest grey that keeps the tests below.
 //! Every token not written here keeps the value the library shipped.
 //!
 //! ## Status colour is still not a surface
@@ -130,29 +129,28 @@ const LIGHT: Ramp = Ramp {
     foreground: "#1f1f1f",
     panel: "#f3f3f3",
     well: "#eeeeee",
-    // The lab's secondary ink rather than its metadata grey: this one is drawn
-    // as small text on every surface, and the lighter grey falls under AA on
-    // white.
+    // A secondary ink rather than a metadata grey: this one is drawn as small
+    // text on every surface, and a lighter grey falls under AA on white.
     well_ink: "#616161",
     // A step past the well, so the user's own message is the block a reader
     // finds scanning back through a long conversation.
     bubble: "#dedede",
     bubble_ink: "#1f1f1f",
-    // The lab's hover tint, darkened until a hovered row shows on a dock as well
-    // as on the surface: the lab's own value vanished on the panel.
+    // Dark enough that a hovered row shows on a dock as well as on the surface:
+    // a lighter tint vanished on the panel.
     hover: "#e8e8e8",
     // Far enough past hover that a row both hovered and selected, thinned in
     // the completion popup, still reads as selected.
     selected: "#d0d0d0",
     selected_ink: "#1f1f1f",
-    // The lab's hover tint over the well the rail is drawn in.
+    // A hover tint over the well the rail is drawn in.
     marked: "#dedede",
     hairline: "#d4d4d4",
     floating: "#ffffff",
     raised: "#ffffff",
     control: "#c7c7c7",
     ring: "#888888",
-    // A shade under the lab's `#007acc`, which inline code tempered toward the
+    // A shade under `#007acc`, which inline code tempered toward the
     // meta ink drew under AA in a well.
     accent: "#006eb8",
     warning: "#854f0b",
@@ -172,7 +170,7 @@ const DARK: Ramp = Ramp {
     foreground: "#ececec",
     panel: "#202020",
     well: "#282828",
-    // A notch over the lab's secondary ink: at that value it fell under AA on
+    // A notch over a plain secondary grey: that value fell under AA on
     // the bubble, which the ramp's own test caught.
     well_ink: "#a0a0a0",
     bubble: "#333333",
@@ -184,7 +182,7 @@ const DARK: Ramp = Ramp {
     // rail row did not show on a dark screen at all.
     marked: "#404040",
     hairline: "#404040",
-    // The well's grey: the lab's panel sits too close to the surface for a
+    // The well's grey: the panel sits too close to the surface for a
     // card that has no visible shadow to stand on.
     floating: "#282828",
     raised: "#303030",

@@ -5,12 +5,12 @@ fix this file in the same change.
 
 ## gpui-component draws the controls
 
-Both contexts use the library for: `Button` (primary, ghost, outline, danger; `selected`,
+The app uses the library for: `Button` (primary, ghost, outline, danger; `selected`,
 `disabled`, sizes), `Radio`, `Checkbox`, `Kbd`, `Spinner`, `Tooltip`, `Dialog`
-(`window.open_dialog`), `Input`/`InputState`, `Switch`, `Root`. The app adds `DockArea`,
+(`window.open_dialog`), `Input`/`InputState`, `Switch`, `Root`, `DockArea`,
 `Sidebar`, `Editor`, `TextView`, `PopupMenu`/`DropdownMenu`, and gpui's `list` for the
-transcript. Icons are `gpui_component::IconName`; what that set lacks is `crate::icons` in the app
-(synced through `assets/icons/manifest.toml`) and `crate::assets` in the lab.
+transcript. Icons are `gpui_component::IconName`; what that set lacks is `crate::icons`
+(synced through `assets/icons/manifest.toml`).
 
 Never draw one of these by hand: a `div` that looks like a button, a hand-made check, a key cap
 spelled in text.
@@ -44,21 +44,3 @@ The app has **no shared page section, row list or well**: each page draws its ow
 nearest one above; when a second page needs the same thing, lift it to a shared module in that
 change rather than copying it.
 
-## The lab
-
-| Need | Use | Where |
-|---|---|---|
-| Any button | `action` | `labs/ui-labs/src/controls.rs` |
-| An icon-only button whose glyph lights on hover | `icon_button` (`IconButton`), `glyph` | `controls.rs` |
-| One line that truncates and shows in full on hover | `full` | `controls.rs` |
-| A page column, a section, rows in a hairline box, a state badge | `column`, `inner`, `section`, `rows` (`Row`), `badge` | `pages.rs` |
-| The composer card and its chips | `card`, `chip`, `plus_chip`, `fast_chip`, `model_chip`, `strip_chip` | `composer.rs` |
-| A pinned card, a well, a popup and its rows, a key cap | `pinned`, `well`, `popup` (`item`/`Item`), `key` | `composer.rs` |
-| Chat or Workbench, and seams | `presentation`, `seam`, `hairline_v` | `layout.rs` |
-| A list beside its detail, the mode strip | `list_detail`, `mode_strip` | `workbench.rs` |
-| A confirming dialog | `confirm_delete` (the pattern: title, wrapping name, *Keep* outline, *Delete* danger) | `settings.rs` |
-| The palette into the library | `paint`, `install`, `set_mode` | `theme.rs` |
-
-The lab's `Palette` reaches gpui-component only through `paint` writing the theme *config*, then
-`Theme::change`. Writing resolved colours onto the theme leaves the library's buttons, radios and
-key caps on its own palette; `theme.rs`'s test holds the button states to the palette.

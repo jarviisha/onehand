@@ -7,7 +7,6 @@
 #   make smoke ACP_CMD="node examples/mock_terminal_agent.js"
 #   make dev                 # a debug build beside the app in use, on ~/onehand-dev
 #   make showcase            # the app as it is, on scratch projects and the Mock UI agent
-#   make labs                # ui-labs: proposed UI on static data (labs/ui-labs)
 
 CARGO ?= cargo
 ROOT  ?=
@@ -46,7 +45,7 @@ OURS := -p onehand -p onehand-core -p onehand-plugin-api -p onehand-plugin-host 
 
 .DEFAULT_GOAL := help
 
-.PHONY: help run dev showcase labs release-run build release check test fmt fmt-check clippy lint smoke desktop clean
+.PHONY: help run dev showcase release-run build release check test fmt fmt-check clippy lint smoke desktop clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -64,11 +63,6 @@ dev: ## Run a debug build beside the app in use, on a data root of its own (DEV_
 
 showcase: ## The app as it is, on scratch projects and the Mock UI agent (SHOWCASE_HOME)
 	./scripts/showcase.sh
-
-# ui-labs is outside the workspace and no CI job builds it. It shares this
-# target dir so the gpui graph it has in common with the app is built once.
-labs: ## ui-labs: proposed UI on static data, outside the workspace and CI
-	$(CARGO) run --manifest-path labs/ui-labs/Cargo.toml --target-dir target
 
 release-run: ## Run the release build
 	$(CARGO) run --release -- $(ROOT)
