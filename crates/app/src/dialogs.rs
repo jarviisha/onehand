@@ -61,7 +61,7 @@ pub(super) fn title_row(name: impl Into<SharedString>) -> impl IntoElement {
                 // off at the baseline, which is the "g" in *Settings* losing
                 // its tail. The refinement lands after the library's own, so
                 // asking for the room back here is enough.
-                .line_height(relative(1.3))
+                .line_height(relative(crate::tokens::LEADING_TIGHT))
                 .truncate()
                 .child(name.into()),
         )

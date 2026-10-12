@@ -456,46 +456,8 @@ fn between(prose: Hsla, meta: Hsla) -> Hsla {
     prose.mix_oklab(meta, 0.5)
 }
 
-/// The shadow a surface takes when it floats over another surface.
-///
-/// **Because the component ladder's shadows cannot be seen on this palette.**
-/// Every step of gpui's `shadow_*` is pure black at a tenth of an alpha, which
-/// is a sensible cue on a white page and nothing at all on a dark one: against
-/// the floating surface that is a difference of three parts in 255, and the
-/// popup drawn over a parked card came out looking like one tall panel with a
-/// rule across it. That is the whole of what "a drop shadow over near-black is
-/// invisible" has always meant here — not that shadow is the wrong idea, but
-/// that *that* shadow is too faint to be one.
-///
-/// So the alpha is chosen per palette rather than shared. It has to be, and
-/// this is the direction that surprises: the dark palette needs **more** than
-/// four times the light one, because a black shadow on white has the whole
-/// range to fall through while on near-black it has almost none. One value
-/// tuned by eye in either mode is invisible in the other — the same trap the
-/// selected fill fell into, in the other direction.
-///
-/// Two shadows for the reason the component library uses two: the tight one
-/// draws the edge and the broad one carries the elevation. Blur costs the peak
-/// opacity, so the number that matters is not the alpha written here but what
-/// lands on the surface underneath — which is what
-/// `the_lift_can_be_seen_on_both_palettes` measures.
-pub(crate) fn lift(cx: &App) -> Vec<gpui::BoxShadow> {
-    let alpha = lift_alpha(cx.theme().mode.is_dark());
-    let shadow = |y: f32, blur: f32, spread: f32, alpha: f32| gpui::BoxShadow {
-        color: gpui::hsla(0., 0., 0., alpha),
-        offset: gpui::point(gpui::px(0.), gpui::px(y)),
-        blur_radius: gpui::px(blur),
-        spread_radius: gpui::px(spread),
-        inset: false,
-    };
-    vec![
-        shadow(2., 4., -1., alpha),
-        shadow(10., 20., -4., alpha * 0.8),
-    ]
-}
-
 /// The composer card's fill. No library token holds it, so it is read off the
-/// ramp by mode, the way [`lift`] chooses its alpha.
+/// ramp by mode, the way [`crate::tokens::lift`] chooses its alpha.
 pub(crate) fn raised(cx: &App) -> Hsla {
     let ramp = match cx.theme().mode.is_dark() {
         true => &DARK,
@@ -513,7 +475,7 @@ const COMPOSER_BLUR: f32 = 16.;
 /// The composer card's lift: a tight shadow drawn where an edge would be, and a
 /// soft one under it.
 ///
-/// **Its own rather than [`lift`]**, because the card has no border: the tight
+/// **Its own rather than [`crate::tokens::lift`]**, because the card has no border: the tight
 /// shadow is the whole of its outline on a white page, so it has to be dark
 /// enough to read as one, where the floating cards keep a hairline and only
 /// need the elevation.
@@ -542,13 +504,6 @@ fn composer_shades(dark: bool) -> (Hsla, Hsla) {
             let ink = Hsla::parse_hex(LIGHT.foreground).unwrap_or(gpui::black());
             (ink.alpha(0.18), ink.alpha(0.10))
         }
-    }
-}
-
-fn lift_alpha(dark: bool) -> f32 {
-    match dark {
-        true => 0.6,
-        false => 0.14,
     }
 }
 
@@ -1240,7 +1195,7 @@ mod tests {
             ("dark", &DARK, ThemeMode::Dark),
         ] {
             let theme = resolve(ramp, mode);
-            let alpha = lift_alpha(mode == ThemeMode::Dark);
+            let alpha = onehand_plugin_host::tokens::lift_alpha(mode == ThemeMode::Dark);
             let ratio = contrast(under(theme.popover, alpha), theme.popover);
             assert!(
                 ratio >= ROW,

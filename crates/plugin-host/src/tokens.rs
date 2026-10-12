@@ -1,0 +1,113 @@
+//! The sizes and the lift the app and its plugins share.
+//!
+//! A size used in one place is a `const` beside that use. One that two places
+//! have to agree on lives here, because the second place is often a built-in
+//! plugin, which cannot reach into the binary hosting it — and two copies of
+//! one number are two places for it to drift.
+
+use gpui::{App, BoxShadow, Rems, rems};
+use gpui_component::ActiveTheme as _;
+
+/// The height every bar along the top of a region shares: the conversation's
+/// header, the Workbench's mode strip, the rail's workspace bar and foot, and
+/// a page's column heads, so bars side by side line up across the window.
+pub const BAR_H: Rems = rems(2.75);
+
+/// A single-line list row: a rail row, a file or a document in a tree, a
+/// choice in the composer's popup. A little over a control's height, so a
+/// long list of names reads as rows with air between them rather than a
+/// block of text, and every list in the window stands at one pitch.
+pub const ROW_H: Rems = rems(1.875);
+
+/// A small control the pointer has to hit: a transcript button, a composer
+/// chip, a blocking card's answers.
+///
+/// Fixed, because otherwise the *content* decides it and the content is not
+/// the same shape: a chip with a word in it is as tall as that word's line
+/// box, one holding only an icon as tall as the icon, and side by side they
+/// came out about seven pixels apart on the same row.
+///
+/// The component library's **small** row, carried as a number because the
+/// library hard-codes its row heights in a sizing branch and offers no way to
+/// ask for one. Worth matching exactly: controls a few inches apart with
+/// floors a pixel or two off read as a line of controls that do not agree.
+pub const CONTROL_H: Rems = rems(1.5);
+
+/// Machine text: code, a command, a tool's output, a path.
+///
+/// A step under the secondary size, so what a program printed reads quieter
+/// than what a person or the agent wrote, and one figure wherever it appears.
+pub const CODE_TEXT: Rems = rems(0.8125);
+
+/// Line height for reading text, as a multiple of its size: set as a ratio so
+/// a well a step smaller keeps the same rhythm as the prose around it.
+pub const LEADING: f32 = 1.6;
+
+/// Line height for a title or a question that may wrap: looser than a
+/// control's and tighter than prose, because it is one sentence read once —
+/// and enough that a clipped line keeps its descenders.
+pub const LEADING_TIGHT: f32 = 1.4;
+
+/// The column a one-column page keeps to: the project page, the resume
+/// picker and the workspace page's list. One figure, so moving between them
+/// does not move the column.
+pub const PAGE_NARROW: Rems = rems(35.);
+
+/// The column for one thing read or written in full: a workflow's editor, an
+/// issue. Wider than [`PAGE_NARROW`], since what is in it reads as prose, and
+/// no wider, or a line runs too long to find the start of the next.
+pub const PAGE_PROSE: Rems = rems(48.);
+
+/// The widest a workspace-wide page grows (the overview, Tasks, the Issues
+/// list): room for two cards side by side, or a row's facts in columns,
+/// without lines too long to read. One figure, so moving between the pages
+/// does not move the column.
+pub const PAGE_WIDE: Rems = rems(64.);
+
+/// The shadow a surface takes when it floats over another surface.
+///
+/// **Because the component ladder's shadows cannot be seen on this palette.**
+/// Every step of gpui's `shadow_*` is pure black at a tenth of an alpha, which
+/// is a sensible cue on a white page and nothing at all on a dark one: against
+/// the floating surface that is a difference of three parts in 255, and the
+/// popup drawn over a parked card came out looking like one tall panel with a
+/// rule across it. That is the whole of what "a drop shadow over near-black is
+/// invisible" has always meant here — not that shadow is the wrong idea, but
+/// that *that* shadow is too faint to be one.
+///
+/// So the alpha is chosen per palette rather than shared. It has to be, and
+/// this is the direction that surprises: the dark palette needs **more** than
+/// four times the light one, because a black shadow on white has the whole
+/// range to fall through while on near-black it has almost none. One value
+/// tuned by eye in either mode is invisible in the other — the same trap the
+/// selected fill fell into, in the other direction.
+///
+/// Two shadows for the reason the component library uses two: the tight one
+/// draws the edge and the broad one carries the elevation. Blur costs the peak
+/// opacity, so the number that matters is not the alpha written here but what
+/// lands on the surface underneath — which is what the app's palette test
+/// measures.
+pub fn lift(cx: &App) -> Vec<BoxShadow> {
+    let alpha = lift_alpha(cx.theme().mode.is_dark());
+    let shadow = |y: f32, blur: f32, spread: f32, alpha: f32| BoxShadow {
+        color: gpui::black().alpha(alpha),
+        offset: gpui::point(gpui::px(0.), gpui::px(y)),
+        blur_radius: gpui::px(blur),
+        spread_radius: gpui::px(spread),
+        inset: false,
+    };
+    vec![
+        shadow(2., 4., -1., alpha),
+        shadow(10., 20., -4., alpha * 0.8),
+    ]
+}
+
+/// The tight shadow's alpha on the dark palette or the light one. Exposed for
+/// the palette's contrast test, which works from a resolved ramp rather than
+/// the theme in force; a call site wants [`lift`].
+pub fn lift_alpha(dark: bool) -> f32 {
+    match dark {
+        true => 0.6,
+        false => 0.14,
+    }
+}

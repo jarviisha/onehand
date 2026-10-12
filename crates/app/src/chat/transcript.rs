@@ -26,9 +26,7 @@ mod strip;
 mod tool;
 mod user;
 pub(in crate::chat) use ask::ask;
-pub(in crate::chat) use metrics::{
-    BLOCK_GAP, CONTENT_COLUMN, LEADING, TEXT, TEXT_SM, TIGHT_GAP, TURN_GAP,
-};
+pub(in crate::chat) use metrics::{BLOCK_GAP, CONTENT_COLUMN, TEXT, TEXT_SM, TIGHT_GAP, TURN_GAP};
 use metrics::{LINE_H, STATE_TINT};
 pub(in crate::chat) use parts::{accent, line_counts};
 pub(in crate::chat) use permission::permission;

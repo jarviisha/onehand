@@ -20,10 +20,6 @@ becomes.
 Done when the change writes only tokens and named constants: `.claude/skills/ui-review/scan.sh`
 prints nothing for its lines, and `cargo test -p onehand --locked guards` passes.
 
-`onehand_plugin_host::tokens` arrives with the migration's first step
-(`docs/proposals/design-system-migration.md`). Until it lands, reference.md (*Shared sizes*)
-gives each shared token's current home.
-
 ## Right and wrong
 
 ```rust

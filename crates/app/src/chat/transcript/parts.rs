@@ -1,9 +1,9 @@
 use super::fold_key;
 use super::metrics::{
-    BUTTON_H, CONTROL_ROW, DETAIL_OPEN_H, LEADING, MARK_SIZE, PART_GAP, PILL_H, TEXT_SM, TIGHT_GAP,
-    radius_control,
+    DETAIL_OPEN_H, MARK_SIZE, PART_GAP, PILL_H, TEXT_SM, TIGHT_GAP, radius_control,
 };
 use crate::chat::session::ChatSession;
+use crate::tokens::{CONTROL_H, LEADING};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, Axis, ClickEvent, Entity, InteractiveElement, IntoElement, Length, ParentElement, Rems,
@@ -112,7 +112,7 @@ pub(super) fn copy_button(id: impl Into<gpui::ElementId>, text: impl Into<Shared
         .xsmall()
         // Square at the shared control height, so a copy offered on a fenced
         // block and one offered at the end of an answer are the same target.
-        .size(BUTTON_H)
+        .size(CONTROL_H)
         .icon(Icon::new(IconName::Copy).size(MARK_SIZE))
         .on_click(move |_, _, cx: &mut App| {
             cx.write_to_clipboard(gpui::ClipboardItem::new_string(text.to_string()));
@@ -375,11 +375,11 @@ pub(super) fn sideways(
 /// already held the label off both edges — so taking the row away and nothing
 /// else leaves every control shrink-wrapped around its text, which is a
 /// different card to be wrong about in the same place. A single line lands back
-/// on exactly the row the library would have drawn: [`CONTROL_ROW`] is that
+/// on exactly the row the library would have drawn: [`CONTROL_H`] is that
 /// height, and the padding is what a second line grows by rather than what a
 /// first line needs.
 pub(super) fn grows(button: Button) -> Button {
-    button.small().h(Length::Auto).min_h(CONTROL_ROW).py_1p5()
+    button.small().h(Length::Auto).min_h(CONTROL_H).py_1p5()
 }
 
 // ── permission — blocking; the agent parks until answered ───────────────────

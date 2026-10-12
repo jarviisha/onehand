@@ -18,6 +18,7 @@ use gpui_component::button::ButtonVariants as _;
 use gpui_component::text::{TextView, TextViewState, TextViewStyle};
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use onehand_plugin_host::tokens;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -25,13 +26,6 @@ use std::time::SystemTime;
 /// The widest a document's column runs: a comfortable line of prose, so a
 /// wide dock does not stretch a paragraph into lines too long to follow.
 const DOC_MEASURE: Rems = rems(34.);
-/// A document's line height as a multiple of its size: a shade more open than
-/// the conversation's, because a document is read in long stretches.
-const LEADING_DOC: f32 = 1.65;
-
-/// A row of the tree: a little over a control's height, so a long list of
-/// names reads as rows with air between them rather than a block of text.
-const ROW_H: gpui::Rems = gpui::rems(1.875);
 /// Where a row's content starts, and how far each level of the tree steps in.
 const ROW_INSET: f32 = 0.5;
 const TREE_INDENT: f32 = 0.875;
@@ -227,7 +221,7 @@ fn doc_row(
         .items_center()
         .gap_2()
         .w_full()
-        .h(ROW_H)
+        .h(tokens::ROW_H)
         .px_1()
         .rounded(cx.theme().radius)
         .text_sm()
@@ -357,7 +351,7 @@ pub(crate) fn reader(
                         .h_full()
                         .max_w(DOC_MEASURE)
                         .text_base()
-                        .line_height(relative(LEADING_DOC))
+                        .line_height(relative(tokens::LEADING))
                         .child(
                             TextView::new(&doc.state)
                                 .selectable(true)
@@ -391,7 +385,7 @@ fn doc_style(rem: gpui::Pixels, cx: &App) -> TextViewStyle {
     let mut style = TextViewStyle::default().code_block(
         gpui::StyleRefinement::default()
             .p(rems(0.75))
-            .text_size(rems(0.8125))
+            .text_size(tokens::CODE_TEXT)
             // **The fill is named here rather than left to the library**, and
             // it is the step past the well: the dock this document is read on
             // sits so near the well that a block filled with it showed only its

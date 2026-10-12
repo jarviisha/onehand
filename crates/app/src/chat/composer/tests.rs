@@ -79,7 +79,7 @@ fn a_list_is_capped_by_the_panel_and_never_below_its_floor() {
     use gpui::px;
 
     let rem = px(16.);
-    let row = super::popup::POPUP_ROW_H.to_pixels(rem);
+    let row = crate::tokens::ROW_H.to_pixels(rem);
 
     // **The whole-row bound is on the scrolling box, so it is exact
     // whatever the chrome comes to.** It used to be on the surface, with

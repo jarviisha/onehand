@@ -17,11 +17,12 @@
 //! [`model`], without drawing, and the same rows are what the keyboard walks.
 
 use crate::shell::Shell;
+use crate::tokens::ROW_H;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, AppContext as _, ClickEvent, Context, Entity, FocusHandle, Focusable as _,
-    InteractiveElement, IntoElement, ParentElement, Rems, SharedString, StatefulInteractiveElement,
-    Styled, Subscription, Task, Window, div, rems,
+    InteractiveElement, IntoElement, ParentElement, SharedString, StatefulInteractiveElement,
+    Styled, Subscription, Task, Window, div,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{InputEvent, InputState};
@@ -39,9 +40,6 @@ mod workspace;
 pub use project::{pick_item, unattended_item};
 pub(crate) use session::{signal_mark, signal_word};
 pub(crate) use workspace::ellipsize_front;
-
-/// A single-line rail row: a page, a project, a note.
-const ROW_H: Rems = rems(1.875);
 
 /// How often a session's age is said again: the finest unit it is said in.
 const AGE_TICK: std::time::Duration = std::time::Duration::from_secs(60);

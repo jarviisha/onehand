@@ -707,14 +707,9 @@ fn review_card(
 /// `text`'s last lines in a mono well, saying how many were left out.
 fn mono_well(text: &str, cx: &App) -> Vec<gpui::AnyElement> {
     let (shown, hidden) = last_lines(text, OUTPUT_LINES);
-    let well = div()
+    let well = onehand_plugin_host::well(cx)
         .v_flex()
-        .w_full()
-        .min_w_0()
         .p_2()
-        .rounded(cx.theme().radius)
-        .bg(cx.theme().muted)
-        .font_family(cx.theme().mono_font_family.clone())
         .text_xs()
         .children(shown.lines().map(|line| {
             // An empty line still takes its height.

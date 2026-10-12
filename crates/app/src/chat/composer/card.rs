@@ -135,7 +135,7 @@ impl Composer {
                     // The reading size and leading, as the transcript: what is typed
                     // reads as what it will be once sent.
                     .text_size(crate::chat::transcript::TEXT)
-                    .line_height(relative(crate::chat::transcript::LEADING))
+                    .line_height(relative(crate::tokens::LEADING))
                     // The whole field's area takes the caret, not only its
                     // first line.
                     .on_click(cx.listener(|composer: &mut Self, _, window, cx| {

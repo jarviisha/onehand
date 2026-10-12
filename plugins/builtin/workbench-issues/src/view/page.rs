@@ -24,7 +24,8 @@ use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::issues::{self, IssueKey, LocalIssue};
 use onehand_core::task::work::IssueWork;
 use onehand_core::task::work::list::{Filters, Held, Item, PrReads, list};
-use onehand_plugin_host::{PAGE_WIDE, hint};
+use onehand_plugin_host::hint;
+use onehand_plugin_host::tokens::PAGE_WIDE;
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 

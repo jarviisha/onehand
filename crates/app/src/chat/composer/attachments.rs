@@ -1,5 +1,6 @@
 use super::popup::{edge_scrolled, more_text, popup_header, popup_surface};
-use super::{CHIP_H, Composer, ComposerEvent, Overlay};
+use super::{Composer, ComposerEvent, Overlay};
+use crate::tokens::CONTROL_H;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, Context, InteractiveElement, IntoElement, ParentElement, Rems, StatefulInteractiveElement,
@@ -393,7 +394,7 @@ impl Composer {
                             .w_full()
                             .min_w_0()
                             .px_2()
-                            .h(CHIP_H)
+                            .h(CONTROL_H)
                             .children(
                                 unavailable
                                     .then(|| Icon::new(IconName::Info).size_3().text_color(danger)),
@@ -478,7 +479,7 @@ fn attachment_shape<E: Styled>(
         .items_center()
         .gap_2()
         .flex_none()
-        .h(CHIP_H)
+        .h(CONTROL_H)
         .pl_2()
         .pr_1()
         .rounded(radius)
@@ -523,7 +524,7 @@ pub(super) fn chip(id: impl Into<gpui::ElementId>, open: bool, cx: &App) -> Butt
         .items_center()
         .gap_1()
         .flex_none()
-        .h(CHIP_H)
+        .h(CONTROL_H)
         .px_1p5()
         .rounded(radius)
         // Ink here, but **not the text size**: the library sets that on the box

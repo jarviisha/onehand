@@ -1,8 +1,9 @@
 use super::Room;
 use super::metrics::{
-    BUBBLE_MAX, BUBBLE_TAIL_GAP, BUTTON_H, HAIR_GAP, MARK_SIZE, STACK_GAP, THUMB_H, THUMB_W,
-    TIGHT_GAP, USER_BUBBLE_MAX, USER_BUBBLE_MAX_NARROW, radius_block,
+    BUBBLE_MAX, BUBBLE_TAIL_GAP, HAIR_GAP, MARK_SIZE, STACK_GAP, THUMB_H, THUMB_W, TIGHT_GAP,
+    USER_BUBBLE_MAX, USER_BUBBLE_MAX_NARROW, radius_block,
 };
+use crate::tokens::CONTROL_H;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, InteractiveElement, IntoElement, ParentElement, RenderOnce, SharedString,
@@ -149,7 +150,7 @@ impl RenderOnce for PromptCopy {
             .justify_end()
             .gap(TIGHT_GAP)
             .flex_none()
-            .h(BUTTON_H)
+            .h(CONTROL_H)
             .cursor_pointer()
             .text_xs()
             // **No colour of its own until it has something to say.** The ink

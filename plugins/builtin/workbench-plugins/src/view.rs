@@ -10,8 +10,8 @@ use gpui::{
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{Input, InputEvent, InputState};
-use gpui_component::{ActiveTheme, Disableable as _, Selectable as _, Sizable as _, StyledExt};
-use onehand_plugin_host::{Ask, Request, action, hint, status_line, switch};
+use gpui_component::{ActiveTheme, Selectable as _, Sizable as _, StyledExt};
+use onehand_plugin_host::{Ask, Refuses as _, Request, action, hint, status_line, switch};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -678,7 +678,7 @@ impl PluginsView {
                         .small()
                         .outline()
                         .label("Restart agent")
-                        .disabled(self.busy.is_some())
+                        .refuses(self.busy.is_some())
                         .on_click(move |_, window, cx| ask(&Request::RestartAgent, window, cx)),
                 )
                 .into_any_element(),

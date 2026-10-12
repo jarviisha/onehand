@@ -1,5 +1,6 @@
 use super::project_page::count_of;
 use super::{ChatPane, ChatPaneEvent, Page, SessionSignal, rel_time};
+use crate::tokens::PAGE_WIDE;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, Context, Div, InteractiveElement, IntoElement, ParentElement, SharedString,
@@ -8,7 +9,6 @@ use gpui::{
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::chat::ConvMeta;
-use onehand_plugin_host::PAGE_WIDE;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
@@ -28,12 +28,6 @@ const PAGE_RECENT: usize = 5;
 /// How many open issues the workspace page lists. Enough to read down, not so
 /// many that a workspace of busy projects builds a thousand rows nobody reaches.
 const PAGE_ISSUES: usize = 100;
-
-/// The width of the column the pages drawn in place of a conversation keep to:
-/// the project page, the resume picker and the workspace page. One figure, so
-/// moving between them does not move the column. In rems, so it follows the
-/// pane's zoom with the text inside it.
-pub(super) const PAGE_COLUMN: f32 = 35.;
 
 /// The width a workspace page card starts from before it grows into its row,
 /// in rems. Two fit side by side within the page, and a narrower panel wraps

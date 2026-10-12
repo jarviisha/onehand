@@ -1,6 +1,6 @@
 use super::SELECTED_ALPHA;
-use super::popup::POPUP_ROW_H;
 use super::presentation::Row;
+use crate::tokens::ROW_H;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{App, ParentElement, Rems, SharedString, Styled, div, rems};
 use gpui_component::button::{Button, ButtonVariants as _};
@@ -119,7 +119,7 @@ pub(super) fn candidate_row(id: usize, row: Row, highlighted: bool, cx: &App) ->
         false => crate::theme::meta_ink(cx),
     };
     popup_row(id, highlighted, cx)
-        .h(POPUP_ROW_H)
+        .h(ROW_H)
         // **The icon is what holds the name's left edge still.** Without it a
         // row with no folder and a row with a long one start their names in
         // different places, and the column a reader scans down stops being a
@@ -261,7 +261,7 @@ pub(super) fn choice_row(id: usize, row: Row, highlighted: bool, cx: &App) -> Bu
         false => cx.theme().muted_foreground,
     };
     popup_row(id, highlighted, cx)
-        .h(POPUP_ROW_H)
+        .h(ROW_H)
         .children(
             row.mark
                 .map(|mark| mark.small().flex_none().text_color(detail_ink)),

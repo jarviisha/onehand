@@ -13,7 +13,7 @@ use gpui::{
 use gpui_component::{ActiveTheme, Icon, IconName, StyledExt};
 use onehand_core::gitstat::{FileChange, GitStatus};
 use onehand_core::tree::{self, FileTree};
-use onehand_plugin_host::{Ask, Request, hint, status_ink};
+use onehand_plugin_host::{Ask, Request, hint, status_ink, tokens};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -175,9 +175,6 @@ impl Render for FilesView {
 /// The tint a change badge carries. Severity, not category: red is something
 /// that lost content, amber is something that changed, green is something that
 /// arrived.
-/// A row of the tree: a little over a control's height, so a long list of
-/// names reads as rows with air between them rather than a block of text.
-const ROW_H: gpui::Rems = gpui::rems(1.875);
 /// Where a row's content starts, and how far each level of the tree steps in.
 const ROW_INSET: f32 = 0.5;
 const TREE_INDENT: f32 = 0.875;
@@ -236,7 +233,7 @@ fn rows(
                 .items_center()
                 .gap_2()
                 .w_full()
-                .h(ROW_H)
+                .h(tokens::ROW_H)
                 .px_1()
                 .rounded(cx.theme().radius)
                 .text_sm()

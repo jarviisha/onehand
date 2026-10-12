@@ -22,17 +22,13 @@ use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, AppContext as _, ClickEvent, Context, Entity, EventEmitter, FocusHandle,
     Focusable, InteractiveElement as _, IntoElement, ParentElement, Render, SharedString,
-    StatefulInteractiveElement as _, Styled, Window, div, rems,
+    StatefulInteractiveElement as _, Styled, Window, div,
 };
 use gpui_component::button::ButtonVariants;
 use gpui_component::tag::Tag;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::workflow as core;
 use std::path::PathBuf;
-
-/// How wide the page's column runs, in rems: wider than the other pages',
-/// since a step's prompt is written here and reads as prose.
-const EDITOR_COLUMN: f32 = 48.;
 
 /// What the page asks of its window.
 pub(crate) enum WorkflowsPageEvent {
@@ -131,7 +127,7 @@ impl Render for WorkflowsPage {
                         .v_flex()
                         .gap_6()
                         .w_full()
-                        .max_w(rems(EDITOR_COLUMN))
+                        .max_w(crate::tokens::PAGE_PROSE)
                         .child(
                             div()
                                 .text_sm()

@@ -1,9 +1,10 @@
 use super::fold_key;
 use super::metrics::{
-    HEADING_1, HEADING_2, LEADING, MAX_CODE_BLOCK_H, PARAGRAPH_GAP, TEXT, TEXT_SM, TIGHT_GAP,
+    HEADING_1, HEADING_2, MAX_CODE_BLOCK_H, PARAGRAPH_GAP, TEXT, TEXT_SM, TIGHT_GAP,
 };
 use super::parts::{accent, copy_button, copy_turn_button, fold_line};
 use crate::chat::session::ChatSession;
+use crate::tokens::LEADING;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, ClickEvent, Entity, HighlightStyle, IntoElement, ParentElement,

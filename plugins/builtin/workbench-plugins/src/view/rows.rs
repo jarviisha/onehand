@@ -15,7 +15,9 @@ use gpui_component::tooltip::Tooltip;
 use gpui_component::{
     ActiveTheme, Disableable as _, Icon, IconName, Sizable as _, StyledExt, WindowExt as _,
 };
-use onehand_plugin_host::{Request, action, menu_below, menu_item, menu_row, status_ink};
+use onehand_plugin_host::{
+    Refuses as _, Request, action, menu_below, menu_item, menu_row, status_ink,
+};
 
 impl PluginsView {
     /// One installed plugin.
@@ -68,7 +70,7 @@ impl PluginsView {
         .ghost()
         .xsmall()
         .icon(Icon::new(IconName::Ellipsis))
-        .disabled(busy)
+        .refuses(busy)
         .tooltip("Where it is on, and removing it");
         let menu = self.row_menu(plugin, trigger, cx);
 
@@ -110,7 +112,7 @@ impl PluginsView {
                 .outline()
                 .label(format!("Update {}", update.to))
                 .loading(self.running(&change))
-                .disabled(busy)
+                .refuses(busy)
                 .on_click(
                     cx.listener(move |view, _: &ClickEvent, _, cx| view.change(change.clone(), cx)),
                 )
@@ -400,7 +402,7 @@ impl PluginsView {
                     .label("Enable")
                     .tooltip("Installed but off here — turn it on on this machine only")
                     .loading(self.running(&enable))
-                    .disabled(busy)
+                    .refuses(busy)
                     .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
                         view.change(enable.clone(), cx)
                     }))
@@ -511,7 +513,7 @@ impl PluginsView {
             .label("Install")
             .tooltip(format!("Install for: {}", scope.meaning()))
             .loading(running)
-            .disabled(busy)
+            .refuses(busy)
             .on_click(
                 cx.listener(move |view, _: &ClickEvent, _, cx| view.change(install.clone(), cx)),
             );
@@ -522,7 +524,7 @@ impl PluginsView {
         .xsmall()
         .outline()
         .icon(Icon::new(IconName::ChevronDown))
-        .disabled(busy)
+        .refuses(busy)
         .tooltip("Install for…");
         let (id, view) = (plugin.id.clone(), cx.entity());
         let menu = menu_below(

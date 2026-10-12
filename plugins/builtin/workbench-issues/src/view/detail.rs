@@ -17,16 +17,10 @@ use onehand_core::issues::template::{IssueTemplate, lacking};
 use onehand_core::issues::{LocalIssue, sync};
 use onehand_core::task::Group;
 use onehand_core::task::work::{IssueWork, PrSeen};
-use onehand_plugin_host::{AppIcon, BAR_H, Tint, action, status_ink, tint};
+use onehand_plugin_host::tokens::{BAR_H, CODE_TEXT, PAGE_PROSE};
+use onehand_plugin_host::{AppIcon, Tint, action, status_ink, tint};
 use priority::{priority, priority_ink};
 use std::path::Path;
-
-/// The widest an issue is drawn, its gutters included: a description's lines
-/// past it are too long to find the start of the next one, and its title,
-/// actions and facts follow the body rather than stretching to a wide
-/// page's far edge, where the actions would sit a screen away from the
-/// title they act on.
-const ISSUE_MAX: Rems = rems(48.);
 
 /// A description's text: the UI's own size, so an issue reads as part of the
 /// window rather than as a document dropped into it.
@@ -40,10 +34,6 @@ const HEADING_2: Rems = rems(0.9375);
 /// The gutter inside a fenced block, wider than a row's so the code reads as
 /// set in its well rather than on its edge.
 const CODE_INSET: Rems = rems(0.75);
-
-/// A fenced block's text, a step under the body's, as machine text is
-/// everywhere else.
-const CODE_TEXT: Rems = rems(0.8125);
 
 /// What is being done with an issue: the live session its history names,
 /// whether a run may be started on its project, and its work as the app told
@@ -324,7 +314,7 @@ pub(super) fn issue_view(
         .into_any_element()
 }
 
-/// `inner` at most [`ISSUE_MAX`] wide, centred with equal gutters either
+/// `inner` at most [`PAGE_PROSE`] wide, centred with equal gutters either
 /// side: on a wide page the issue reads as a column of its own, and on a
 /// narrow one it simply takes the width.
 fn centred(inner: gpui::Div) -> gpui::Div {
@@ -332,7 +322,7 @@ fn centred(inner: gpui::Div) -> gpui::Div {
         .w_full()
         .h_flex()
         .justify_center()
-        .child(inner.w_full().max_w(ISSUE_MAX))
+        .child(inner.w_full().max_w(PAGE_PROSE))
 }
 
 /// Whether the issue is open or closed, as a badge: its own mark and word on

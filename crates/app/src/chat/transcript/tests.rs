@@ -1,11 +1,12 @@
 use super::metrics::{
-    BUTTON_H, DETAIL_OPEN_H, HAIR_GAP, LINE_H, MARK_SIZE, PART_GAP, STACK_GAP, THUMB_H, THUMB_W,
+    DETAIL_OPEN_H, HAIR_GAP, LINE_H, MARK_SIZE, PART_GAP, STACK_GAP, THUMB_H, THUMB_W,
 };
 use super::parts::Object;
 use super::parts::RowMark;
 use super::strip::activity_identity;
 use super::tool::is_error_line;
 use super::*;
+use crate::tokens::CONTROL_H;
 use onehand_core::acp::ToolCall;
 use onehand_core::acp::{ToolContent, ToolKind, ToolStatus};
 use onehand_core::chat::activity;
@@ -54,7 +55,7 @@ fn steps() -> Vec<(&'static str, f32)> {
         ("TURN_GAP", TURN_GAP.0),
         ("TEXT", TEXT.0),
         ("TEXT_SM", TEXT_SM.0),
-        ("BUTTON_H", BUTTON_H.0),
+        ("CONTROL_H", CONTROL_H.0),
         ("LINE_H", LINE_H.0),
         ("MARK_SIZE", MARK_SIZE.0),
         ("THUMB_W", THUMB_W.0),

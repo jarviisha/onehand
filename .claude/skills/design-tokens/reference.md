@@ -82,7 +82,7 @@ The library's controls apply their own: buttons, inputs, tooltips, menus and pop
 
 | Write | For | Lives in |
 |---|---|---|
-| `lift(cx)` | anything the app floats | `crates/app/src/theme.rs`, until `tokens` takes it |
+| `tokens::lift(cx)` | anything the app floats | `crates/plugin-host/src/tokens.rs` |
 | `composer_lift(cx)` | the composer card | `crates/app/src/theme.rs` |
 
 ## Control heights
@@ -95,21 +95,21 @@ The library's controls apply their own: buttons, inputs, tooltips, menus and pop
 
 ## Shared sizes
 
-`onehand_plugin_host::tokens` does not exist yet: the migration's first step creates it and moves
-these into it. Until then each lives where the last column says.
+All in `onehand_plugin_host::tokens` (`crates/plugin-host/src/tokens.rs`), which the app names
+`crate::tokens`.
 
-| Token | Value | What | Lives in today |
-|---|---|---|---|
-| `BAR_H` | 2.75rem | every strip along the top of a region | `crates/plugin-host/src/lib.rs` |
-| `ROW_H` | 1.875rem | a list row | `ROW_H` in `crates/app/src/rail.rs`, `workbench-files/src/view.rs`, `workbench-markdown/src/document.rs`; `POPUP_ROW_H` in `chat/composer/popup.rs` |
-| `CONTROL_H` | 1.5rem | a small control | `BUTTON_H` and `CONTROL_ROW` in `chat/transcript/metrics.rs`; `CHIP_H` in `chat/composer.rs`; `POPUP_MORE_H` in `chat/composer/popup.rs` |
-| `CODE_TEXT` | 0.8125rem | machine text | `WORK_TEXT` in `chat/transcript/metrics.rs`; `CODE_TEXT` in `workbench-issues/src/view/detail.rs` |
-| `LEADING` | 1.6 | reading text | `LEADING` in `chat/transcript/metrics.rs` |
-| `LEADING_TIGHT` | 1.4 | a wrapped title | `ASK_PROMPT_LEADING` in `chat/transcript/metrics.rs` |
-| `PAGE_NARROW` | 35rem | a one-column page | `PAGE_COLUMN` in `chat/pane/workspace_page.rs` |
-| `PAGE_PROSE` | 48rem | an editor, or one thing read in full | `EDITOR_COLUMN` in `workflows_page.rs`; `ISSUE_MAX` in `workbench-issues/src/view/detail.rs` |
-| `PAGE_WIDE` | 64rem | boxes side by side, a table | `crates/plugin-host/src/lib.rs` |
-| `lift(cx)` | | the floating shadow | `crates/app/src/theme.rs` |
+| Token | Value | What |
+|---|---|---|
+| `BAR_H` | 2.75rem | every strip along the top of a region |
+| `ROW_H` | 1.875rem | a list row |
+| `CONTROL_H` | 1.5rem | a small control |
+| `CODE_TEXT` | 0.8125rem | machine text |
+| `LEADING` | 1.6 | reading text |
+| `LEADING_TIGHT` | 1.4 | a wrapped title |
+| `PAGE_NARROW` | 35rem | a one-column page |
+| `PAGE_PROSE` | 48rem | an editor, or one thing read in full |
+| `PAGE_WIDE` | 64rem | boxes side by side, a table |
+| `lift(cx)` | | the floating shadow |
 
 Equal values kept apart on purpose, each one decision beside its one use: `CHAT_MIN`,
 `NARROW_PANEL` and `MODES_MIN_W` (30rem); `CONTENT_COLUMN` and `COMPOSER_COLUMN` (44rem).

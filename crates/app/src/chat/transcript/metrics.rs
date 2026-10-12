@@ -12,9 +12,6 @@ pub(in crate::chat) const TEXT: Rems = rems(1.);
 /// Activity lines, a thought's reasoning, code and every well of machine text
 /// take it, so what the agent did reads quieter than what it said.
 pub(in crate::chat) const TEXT_SM: Rems = rems(0.875);
-/// Line height as a multiple of the size, for prose and wells alike: set once
-/// on the column as a ratio, so a well a step smaller keeps the same rhythm.
-pub(in crate::chat) const LEADING: f32 = 1.6;
 /// An answer's first two heading levels over its body; below them a heading
 /// is told apart by weight alone, so a deep one never prints smaller than the
 /// prose it names.
@@ -63,8 +60,6 @@ pub(super) const HAIR_GAP: Rems = rems(0.125);
 /// a bubble and the row of controls under it.
 pub(super) const STACK_GAP: Rems = rems(0.375);
 
-/// A control the pointer has to hit.
-pub(super) const BUTTON_H: Rems = rems(1.5);
 /// One line of machine text.
 pub(super) const LINE_H: Rems = rems(1.25);
 /// The glyph on a well's copy button.
@@ -166,21 +161,6 @@ pub(super) const USER_BUBBLE_MAX_NARROW: f32 = 0.9;
 /// a separate thing that happened to be beneath.
 pub(super) const BUBBLE_TAIL_GAP: Rems = rems(0.1875);
 
-/// The floor a control on a blocking card stands at.
-///
-/// Carried here as a number because the library hard-codes its row heights in a
-/// sizing branch and offers no way to ask for one — and it is worth matching
-/// exactly, because these controls sit a few inches from the composer's, and a
-/// floor a pixel or two off is a line of controls that no longer agree.
-///
-/// It is the library's **small** row and not the default one it used to be. The
-/// composer's own controls all came down to that height, and a card floating an
-/// inch above them with buttons half a rem taller read as a dialog that had
-/// landed there rather than as the next thing in the same column. A blocking
-/// card is loud enough by being the thing everything is waiting on; it does not
-/// also need the biggest buttons on screen.
-pub(super) const CONTROL_ROW: Rems = rems(1.5);
-
 /// How much of the panel a permission's command box may take, on a panel too
 /// short for [`COMMAND_H`]: the heading that says what is asked and the
 /// buttons that answer it have to stay on screen with it.
@@ -196,7 +176,7 @@ pub(super) const COMMAND_FADE: Rems = rems(3.);
 /// number and no wider.
 pub(super) const MONO_ADVANCE: f32 = 0.62;
 /// One line of the secondary size, at the reading leading.
-pub(super) const LINE_SM: Rems = rems(TEXT_SM.0 * LEADING);
+pub(super) const LINE_SM: Rems = rems(TEXT_SM.0 * crate::tokens::LEADING);
 /// How tall a permission's command box stands before it scrolls: eight lines,
 /// which leaves the heading, the buttons and enough of a script to recognise
 /// on one screen. A height and not a line count, so one line three thousand
@@ -207,20 +187,6 @@ pub(super) const COMMAND_H: Rems = rems(LINE_SM.0 * 8.);
 /// The question card's side padding, which its choices' scroll frame reaches
 /// back through to put the thumb on the card's edge.
 pub(super) const ASK_INSET: Rems = rems(1.);
-/// The transcript's second voice: the record of how an answer got made.
-///
-/// A tool card, a plan and a blocking card's secondary line are *about* the
-/// work rather than part of it, and size is what tells the two voices apart.
-/// That distinction is the one thing the reading size above cost: it used to be
-/// a step under the app's base, which the reading size then dropped to as well,
-/// so an answer and the tool card beside it came out identical. This is the
-/// step put back, under the new reading size rather than under the old one.
-///
-/// It lands on the same number as the wells of machine text and stays a
-/// separate decision from them: a card's header is chrome around output, not
-/// output, and the two are free to move apart. Nothing else marks them the
-/// same — a well is mono, tinted and padded, a card header is none of those.
-pub(super) const WORK_TEXT: Rems = rems(0.8125);
 /// Left and right inside a frame that lays its contents out in columns.
 pub(super) const FRAME_PAD: Rems = rems(0.75);
 /// A status pill: as tall as the words in it and no taller.
@@ -262,7 +228,3 @@ pub(super) const ASK_ROW_MIN: Rems = rems(3.25);
 pub(super) const ASK_CUSTOM_ROW_MIN: Rems = rems(2.75);
 /// The height of one tab, which is also the strip's.
 pub(super) const ASK_TAB_H: Rems = rems(2.25);
-/// Leading for the question itself — looser than a control's and tighter than
-/// prose, because it is one sentence that has to be read once and is as long as
-/// the agent made it.
-pub(super) const ASK_PROMPT_LEADING: f32 = 1.4;

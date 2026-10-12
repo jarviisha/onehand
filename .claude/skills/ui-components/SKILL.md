@@ -54,6 +54,3 @@ div().px(CHIP_PAD_X).py(CHIP_PAD_Y).rounded(cx.theme().radius).bg(fill).text_col
 // Right: the library's label, at the small corner
 Tag::custom(tint.fill, tint.ink, tint.fill).small().child(text)
 ```
-
-`refuses` reaches a plugin once the plugin host exports it, in the migration's first step; until
-then a plugin pairs `.disabled(busy)` with `.cursor_default()` on the refusing branch.

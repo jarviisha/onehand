@@ -1,7 +1,6 @@
 use super::metrics::{
     ASK_CHOICE_DOT, ASK_CHOICE_MARK, ASK_CUSTOM_ROW_MIN, ASK_HINT_PAD, ASK_HINT_SIZE, ASK_INSET,
-    ASK_MARK_RING, ASK_PROMPT_LEADING, ASK_ROW_MIN, ASK_TAB_H, ASK_TAB_MARK, ASK_TAB_W, BUTTON_H,
-    PART_GAP, WORK_TEXT,
+    ASK_MARK_RING, ASK_ROW_MIN, ASK_TAB_H, ASK_TAB_MARK, ASK_TAB_W, PART_GAP,
 };
 use super::parts::{
     ActivityRow, BlockingBody, Object, RowMark, activity_row, detail_well, floating_card, grows,
@@ -9,6 +8,7 @@ use super::parts::{
 };
 use super::{fold_key, live_index};
 use crate::chat::session::ChatSession;
+use crate::tokens::{CODE_TEXT, CONTROL_H, LEADING_TIGHT};
 use gpui::Focusable as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -94,7 +94,7 @@ fn ask_record(
                             .gap(PART_GAP)
                             .w_full()
                             .min_w_0()
-                            .h(BUTTON_H)
+                            .h(CONTROL_H)
                             .child(
                                 div()
                                     .flex_1()
@@ -627,7 +627,7 @@ impl AskForm<'_> {
                     words = words.child(
                         div()
                             .w_full()
-                            .text_size(WORK_TEXT)
+                            .text_size(CODE_TEXT)
                             .text_color(cx.theme().muted_foreground)
                             .child(description),
                     );
@@ -1003,7 +1003,7 @@ fn ask_form(
                     div()
                         .w_full()
                         .text_sm()
-                        .line_height(relative(ASK_PROMPT_LEADING))
+                        .line_height(relative(LEADING_TIGHT))
                         .child(line)
                 }))
                 // Only the choices scroll. The tab strip is how the *other*

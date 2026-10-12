@@ -470,7 +470,7 @@ pub(super) fn project_row(
         .h_flex()
         .items_center()
         .relative()
-        .h(super::ROW_H)
+        .h(crate::tokens::ROW_H)
         .pl_1p5()
         .pr_1()
         .gap_1p5()

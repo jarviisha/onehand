@@ -20,7 +20,7 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | Need | Use | Where |
 |---|---|---|
 | Any button | `action` | `crates/app/src/controls.rs` (the app), `crates/plugin-host/src/lib.rs` (a plugin) |
-| A button that can refuse | `.refuses(bool)`, `resting(button)` | `crates/app/src/controls.rs` |
+| A button that can refuse | `.refuses(bool)` (the `Refuses` trait), `resting(button)` | `crates/plugin-host/src/lib.rs`, re-exported by `crates/app/src/controls.rs` |
 | A small label | `Tag` at `.small()`; tinted through `Tag::custom` and `tint(base, cx)` | gpui-component; `crates/plugin-host/src/lib.rs` |
 | A menu, its rows, a menu under its control | `menu_item`, `menu_row`, `menu_below` | `crates/plugin-host/src/menu.rs` |
 | A segmented switch | `switch` | `crates/plugin-host/src/lib.rs` |
@@ -30,18 +30,20 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | A condition standing under a view | `status_line` | `crates/plugin-host/src/lib.rs` |
 | Status ink, a dock's surface | `status_ink`, `dock_surface` | `crates/plugin-host/src/lib.rs` |
 | Chat or Workbench in the area | `presentation` | `crates/app/src/shell/presentation.rs` |
-| A confirmation | `Ask` with `Shell::ask`, or `ask_on` from elsewhere | `crates/app/src/shell/confirm.rs` |
+| A confirmation | `Confirm` with `confirm_on`; in the app `Ask` with `Shell::ask` or `ask_on` | `crates/plugin-host/src/confirm.rs`, named in `crates/app/src/shell/confirm.rs` |
 | A dialog's title row | `title_row` | `crates/app/src/dialogs.rs` |
 | A form field, a Settings group, a Settings row | `field`, `section`, `list_row` | `crates/app/src/settings.rs` |
 | A page's box and its title row | `card_box`, `card_title` | `crates/app/src/chat/pane/workspace_page.rs` |
-| A mono well on a page | `mono_well` | `crates/app/src/chat/pane/tasks_page/detail.rs` |
+| A sunk box of machine text | `well` (callers set size and padding) | `crates/plugin-host/src/lib.rs` |
+| A mono well on a page | `mono_well`, built on `well` | `crates/app/src/chat/pane/tasks_page/detail.rs` |
+| Shared sizes and the floating shadow | `tokens` | `crates/plugin-host/src/tokens.rs` |
 | A transcript well, a pinned card, a row's note | `plain_box`, `floating_card`, `row_note` | `crates/app/src/chat/transcript/parts.rs` |
 | Transcript sizes and corners | the constants and `radius_*` | `crates/app/src/chat/transcript/metrics.rs` |
 | The composer card | `card` | `crates/app/src/chat/composer/card.rs` |
 | The composer popup and its parts | `popup_surface`, `popup_header`, `popup_title`, `candidate_row`, `choice_row` | `crates/app/src/chat/composer/popup.rs`, `rows.rs` |
 | A rail row's fills and controls | `row_surfaces`, `hover_fill`, `chosen_fill`, `rail_control`, `menu_button` | `crates/app/src/rail/row.rs` |
 
-The app has no shared page section or well yet: take the nearest one above, and when a second
+The app has no shared page section yet: take the nearest one above, and when a second
 page needs the same thing, lift it into a shared module in that change rather than copying it.
 
 ## Being merged
@@ -52,6 +54,7 @@ Several builders draw one thing. Use the first one named; add no other.
   (`chat/transcript/parts.rs`), `chip` and `tag` (`workbench-issues/src/view/list.rs`), `chip`
   (`workbench-plugins/src/view/details.rs`), the rail's counts and the issue state badge.
 - **A line filling an empty panel**: `hint`. Copied into `crates/app/src/terminal.rs`.
-- **A well**: `plain_box`. Drawn again as `mono_well` and in the Issues review and diff views.
-- **A confirmation**: `Ask`. Drawn by hand with `open_alert_dialog` on the project page, in
+- **A well**: `well`. `mono_well` builds on it; `plain_box` and the Issues review and diff views
+  still draw their own.
+- **A confirmation**: `Confirm` (`Ask` in the app). Drawn by hand with `open_alert_dialog` on the project page, in
   Workflows, Settings, the editor, Plugins and Issues.
