@@ -25,9 +25,7 @@
 //! and the pane catches the action on its way out.
 
 use super::session::ChatSession;
-use gpui::{
-    App, AppContext, Context, Entity, IntoElement, Rems, Render, Subscription, Window, div, rems,
-};
+use gpui::{App, AppContext, Context, Entity, IntoElement, Render, Subscription, Window, div};
 use gpui::{Bounds, Pixels};
 use gpui_component::input::{InputEvent, TextareaState};
 use onehand_core::attachment::StagedAttachment;
@@ -66,13 +64,6 @@ pub use popup::popup_room;
 /// holds it, blending the fill the way the compositor does rather than
 /// asserting on the token it came from.
 pub(crate) const SELECTED_ALPHA: f32 = 0.75;
-
-/// The size the composer's own controls are lettered at.
-///
-/// The smallest named reading size. These controls should remain quieter than
-/// the prompt without falling below the rest of the app's type ladder. It is
-/// still a rem, so panel zoom carries it like everything else.
-pub(super) const CHIP_TEXT: Rems = rems(0.75);
 
 /// What is showing above the composer. Mutually exclusive **by construction**:
 /// one `Option` makes that structural, where a flag per overlay needs a

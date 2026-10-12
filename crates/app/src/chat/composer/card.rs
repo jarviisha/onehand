@@ -1,8 +1,9 @@
 use super::attachments::chip;
 use super::presentation::{effort_action, fast_action, fast_toggle, mode_action, options_action};
 use super::rows::OPTION_MAX_W;
-use super::{CHIP_TEXT, Composer, ComposerEvent, Overlay};
+use super::{Composer, ComposerEvent, Overlay};
 use crate::chat::session::ChatSession;
+use crate::controls::Refuses as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, Context, Entity, InteractiveElement, IntoElement, ParentElement, Rems, SharedString,
@@ -10,7 +11,7 @@ use gpui::{
 };
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::input::Textarea;
-use gpui_component::{ActiveTheme, Disableable as _, Icon, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, Sizable as _, StyledExt};
 use onehand_core::attachment::AttachmentSource;
 
 /// How big the `+` glyph is drawn: a step over the chips' glyphs, because it is
@@ -308,7 +309,7 @@ fn chip_text(text: impl Into<SharedString>, cx: &App) -> gpui::Div {
     div()
         .min_w_0()
         .truncate()
-        .text_size(CHIP_TEXT)
+        .text_xs()
         .text_color(cx.theme().foreground)
         .child(text.into())
 }
@@ -385,7 +386,7 @@ fn effort_chip(
         .flex_none()
         .child(
             div()
-                .text_size(CHIP_TEXT)
+                .text_xs()
                 .text_color(cx.theme().muted_foreground)
                 .child(label),
         )
@@ -448,8 +449,7 @@ fn send_controls(
         // No pointer over a button that refuses: the cursor is a promise a
         // press will do something, and this one is here to say it will not.
         Some(reason) => div().child(
-            crate::controls::resting(send)
-                .disabled(true)
+            send.refuses(true)
                 .tooltip(SharedString::from(reason.hint())),
         ),
         None => div().child(
