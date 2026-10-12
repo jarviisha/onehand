@@ -293,33 +293,27 @@ fn permission_keys(
     card.id(("perm-card", idx))
         .key_context("PermissionCard")
         .track_focus(&focus)
-        .on_key_down(move |event, window, cx| {
-            let keystroke = &event.keystroke;
-            // A modified key is somebody else's: Ctrl+1 switches sessions and
-            // Shift+Enter is a newline in whatever holds the caret.
-            if keystroke.modifiers.modified() {
-                return;
+        // **Enter only while the card itself holds the caret**, which is the
+        // question card's rule and matters more here. Every button in the
+        // footer is a library `Button`, and a focused one already turns Enter
+        // into its own click -- so answering here as well races it. Somebody
+        // who has tabbed to Deny and pressed Enter would have granted the call:
+        // the grant lands, and Deny's own click arrives afterwards to find the
+        // permission already answered and is dropped. Unguarded, the key that
+        // means no is how yes gets said.
+        .on_action({
+            let session = session.clone();
+            move |_: &super::PermissionAllow, window, cx| {
+                if let Some(option) = allow.as_deref().filter(|_| card_focus.is_focused(window)) {
+                    answer_permission(&session, idx, option, cx);
+                }
             }
-            let chosen = match keystroke.key.as_str() {
-                // **Only while the card itself holds the caret**, which is the
-                // question card's rule and matters more here. Every button in
-                // the footer is a library `Button`, and a focused one already
-                // turns Enter into its own click -- so answering here as well
-                // races it, and this listener runs first because a click is
-                // settled on the key going *up*. Somebody who has tabbed to
-                // Deny and pressed Enter would have granted the call: the grant
-                // lands, and Deny's own click arrives afterwards to find the
-                // permission already answered and is dropped. Unguarded, the
-                // key that means no is how yes gets said.
-                "enter" if card_focus.is_focused(window) => allow.as_deref(),
-                "enter" => None,
-                // Esc is safe in the other direction and needs no such guard:
-                // no button on this card denies by being focused, and the worst
-                // it can do is refuse a call twice.
-                "escape" => deny.as_deref(),
-                _ => None,
-            };
-            if let Some(option) = chosen {
+        })
+        // Esc is safe in the other direction and needs no such guard: no
+        // button on this card denies by being focused, and the worst it can do
+        // is refuse a call twice.
+        .on_action(move |_: &super::PermissionDeny, _, cx| {
+            if let Some(option) = deny.as_deref() {
                 answer_permission(&session, idx, option, cx);
             }
         })

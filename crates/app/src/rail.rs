@@ -340,7 +340,10 @@ fn pages(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
             Icon::new(IconName::LayoutDashboard),
             shell.workspace_shown(cx),
             None,
-            "What is waiting, working and open across every project",
+            (
+                "What is waiting, working and open across every project",
+                None,
+            ),
             cx,
             |shell, window, cx| shell.show_workspace(window, cx),
         ))
@@ -349,7 +352,10 @@ fn pages(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
             Icon::new(IconName::Inbox),
             shell.tasks_shown(cx),
             tasks,
-            "Every task, and what each needs",
+            (
+                "Every task, and what each needs",
+                Some(&crate::shell::ShowTasks),
+            ),
             cx,
             |shell, window, cx| shell.show_tasks(None, window, cx),
         ))
@@ -358,7 +364,10 @@ fn pages(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
             Icon::new(crate::icons::Icon::CircleDot),
             shell.issues_shown(cx),
             None,
-            "Every issue of every project, and where its work stands",
+            (
+                "Every issue of every project, and where its work stands",
+                None,
+            ),
             cx,
             |shell, window, cx| shell.show_issues(window, cx),
         ))
@@ -367,7 +376,7 @@ fn pages(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
             Icon::new(IconName::Play),
             shell.workflows_shown(cx),
             None,
-            "Every workflow, to run one or write one",
+            ("Every workflow, to run one or write one", None),
             cx,
             |shell, window, cx| shell.show_workflows(window, cx),
         ))
@@ -379,7 +388,7 @@ fn page_row<F: Fn(&mut Shell, &mut Window, &mut Context<Shell>) + 'static>(
     icon: Icon,
     on: bool,
     count: Option<String>,
-    tip: &'static str,
+    (tip, key): (&'static str, Option<&'static dyn gpui::Action>),
     cx: &mut Context<Shell>,
     go: F,
 ) -> impl IntoElement + use<F> {
@@ -401,7 +410,14 @@ fn page_row<F: Fn(&mut Shell, &mut Window, &mut Context<Shell>) + 'static>(
             d.hover(move |d| d.bg(hover))
                 .text_color(cx.theme().muted_foreground)
         })
-        .tooltip(move |window, cx| Tooltip::new(tip).build(window, cx))
+        .tooltip(move |window, cx| {
+            let tip = Tooltip::new(tip);
+            match key {
+                Some(key) => tip.action(key, None),
+                None => tip,
+            }
+            .build(window, cx)
+        })
         .on_click(
             cx.listener(move |shell: &mut Shell, _: &ClickEvent, window, cx| go(shell, window, cx)),
         )
@@ -437,7 +453,11 @@ fn foot(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
                 .ghost()
                 .small()
                 .icon(Icon::new(IconName::Settings).text_color(cx.theme().muted_foreground))
-                .tooltip("Appearance, the workspace, agents and connections")
+                .tooltip_with_action(
+                    "Appearance, the workspace, agents and connections",
+                    &crate::shell::OpenSettings,
+                    None,
+                )
                 .selected(shell.settings_shown(cx))
                 .on_click(
                     cx.listener(|shell: &mut Shell, _, window, cx| shell.open_settings(window, cx)),

@@ -317,6 +317,142 @@ pub const COMMANDS: &[Command] = &[
         "PluginList && !Input",
         "Plugins list"
     ),
+    command!(
+        "question_up",
+        "Move to the choice above",
+        ["up"],
+        crate::chat::transcript::QuestionUp,
+        "QuestionCard && !Input",
+        "Question card"
+    ),
+    command!(
+        "question_down",
+        "Move to the choice below",
+        ["down"],
+        crate::chat::transcript::QuestionDown,
+        "QuestionCard && !Input",
+        "Question card"
+    ),
+    command!(
+        "question_take",
+        "Take the choice",
+        ["enter"],
+        crate::chat::transcript::QuestionTake,
+        "QuestionCard && !Input",
+        "Question card"
+    ),
+    command!(
+        "question_skip",
+        "Skip the question",
+        ["escape"],
+        crate::chat::transcript::QuestionSkip,
+        "QuestionCard && !Dialog && !Input",
+        "Question card"
+    ),
+    command!(
+        "question_1",
+        "Choice 1",
+        ["1"],
+        crate::chat::transcript::QuestionPick { index: 0 },
+        "QuestionCard && !Input",
+        "Question card"
+    ),
+    command!(
+        "question_2",
+        "Choice 2",
+        ["2"],
+        crate::chat::transcript::QuestionPick { index: 1 },
+        "QuestionCard && !Input",
+        "Question card"
+    ),
+    command!(
+        "question_3",
+        "Choice 3",
+        ["3"],
+        crate::chat::transcript::QuestionPick { index: 2 },
+        "QuestionCard && !Input",
+        "Question card"
+    ),
+    command!(
+        "question_4",
+        "Choice 4",
+        ["4"],
+        crate::chat::transcript::QuestionPick { index: 3 },
+        "QuestionCard && !Input",
+        "Question card"
+    ),
+    command!(
+        "question_5",
+        "Choice 5",
+        ["5"],
+        crate::chat::transcript::QuestionPick { index: 4 },
+        "QuestionCard && !Input",
+        "Question card"
+    ),
+    command!(
+        "question_6",
+        "Choice 6",
+        ["6"],
+        crate::chat::transcript::QuestionPick { index: 5 },
+        "QuestionCard && !Input",
+        "Question card"
+    ),
+    command!(
+        "question_7",
+        "Choice 7",
+        ["7"],
+        crate::chat::transcript::QuestionPick { index: 6 },
+        "QuestionCard && !Input",
+        "Question card"
+    ),
+    command!(
+        "question_8",
+        "Choice 8",
+        ["8"],
+        crate::chat::transcript::QuestionPick { index: 7 },
+        "QuestionCard && !Input",
+        "Question card"
+    ),
+    command!(
+        "question_9",
+        "Choice 9",
+        ["9"],
+        crate::chat::transcript::QuestionPick { index: 8 },
+        "QuestionCard && !Input",
+        "Question card"
+    ),
+    command!(
+        "permission_allow",
+        "Allow once",
+        ["enter"],
+        crate::chat::transcript::PermissionAllow,
+        "PermissionCard && !Input",
+        "Permission card"
+    ),
+    command!(
+        "permission_deny",
+        "Deny",
+        ["escape"],
+        crate::chat::transcript::PermissionDeny,
+        "PermissionCard && !Dialog && !Input",
+        "Permission card"
+    ),
+    command!(
+        "tasks_close",
+        "Close the task, back to the cards",
+        ["escape"],
+        crate::chat::pane::CloseTaskDetail,
+        "TasksPage && !Dialog && !Input",
+        "Tasks page"
+    ),
+    command!(
+        "workflows_close",
+        "Close the workflow form",
+        ["escape"],
+        crate::workflows_page::CloseWorkflowForm,
+        "WorkflowsPage && !Dialog && !Input",
+        "Workflows page"
+    ),
     // `A > B` scores at `B`'s depth, so these tie with the input's own arrow
     // and Tab bindings and win by being registered later. The composer adds
     // `ChatComposer` only while a list is open, so otherwise the keys still
@@ -800,6 +936,26 @@ mod tests {
         assert_eq!(
             action_at(&map, "escape", &page),
             Some(onehand_workbench_issues::IssuesClose.name().into())
+        );
+        // The question card walks on the arrows and takes a number, but the
+        // free-text box inside it keeps every key; the permission card answers
+        // Enter and Esc.
+        let card = ["Shell", "Chat", "QuestionCard"];
+        assert_eq!(
+            action_at(&map, "2", &card),
+            Some(
+                crate::chat::transcript::QuestionPick { index: 1 }
+                    .name()
+                    .into()
+            )
+        );
+        assert_eq!(
+            action_at(&map, "2", &[&card[..], &["Input"]].concat()),
+            None
+        );
+        assert_eq!(
+            action_at(&map, "escape", &["Shell", "Chat", "PermissionCard"]),
+            Some(crate::chat::transcript::PermissionDeny.name().into())
         );
         // A Plugins row opens on Enter and flips on Space, but never while a
         // field holds the caret.

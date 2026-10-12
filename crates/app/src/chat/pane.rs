@@ -38,6 +38,7 @@ mod workspace_page;
 pub use events::{ChatPaneEvent, ProjectAction, Restart, SessionSignal};
 use header::Archives;
 use project_page::EmptyProject;
+pub use tasks_page::CloseTaskDetail;
 use tasks_page::TasksPage;
 pub use workspace_page::PageProject;
 use workspace_page::WorkspacePage;
@@ -237,6 +238,10 @@ pub struct DocksOpen {
 
 pub struct ChatPane {
     focus_handle: FocusHandle,
+    /// Held by the Tasks page, and focused when it shows, so Esc reaches the
+    /// task detail: clicking through the cards moves no focus, and a page that
+    /// held none would hear no key at all.
+    tasks_focus: FocusHandle,
     /// Every session the user has opened, in whatever phase it has reached.
     ///
     /// One map, not six. What each session's phase means, and why the parallel
@@ -409,6 +414,7 @@ impl ChatPane {
 
             Self {
                 focus_handle: cx.focus_handle(),
+                tasks_focus: cx.focus_handle(),
                 conversations: HashMap::new(),
                 active: None,
                 composer,

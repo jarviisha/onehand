@@ -26,6 +26,23 @@ mod strip;
 mod tool;
 mod user;
 pub(in crate::chat) use ask::ask;
+
+// The blocking cards' keys, which the keymap binds in the cards' own contexts:
+// a question's choices walked, taken, numbered or skipped, and a permission
+// allowed or denied.
+gpui::actions!(
+    question_card,
+    [QuestionUp, QuestionDown, QuestionTake, QuestionSkip]
+);
+gpui::actions!(permission_card, [PermissionAllow, PermissionDeny]);
+
+/// Take the question card's row numbered `index + 1`, the free-text box
+/// included; a number nobody offered does nothing.
+#[derive(Clone, PartialEq, Debug, gpui::Action)]
+#[action(namespace = question_card, no_json)]
+pub struct QuestionPick {
+    pub index: usize,
+}
 pub(in crate::chat) use metrics::{BLOCK_GAP, CONTENT_COLUMN, TEXT, TEXT_SM, TIGHT_GAP, TURN_GAP};
 use metrics::{LINE_H, STATE_TINT};
 pub(in crate::chat) use parts::{accent, line_counts};

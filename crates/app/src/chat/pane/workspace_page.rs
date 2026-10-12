@@ -340,7 +340,11 @@ impl ChatPane {
     /// the frame: a field on it may hold it, and a caret in nothing answers
     /// no key.
     pub fn leave_issues_page(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.showing_issues() || self.showing_workflows() || self.showing_settings() {
+        if self.showing_issues()
+            || self.showing_workflows()
+            || self.showing_settings()
+            || self.showing_tasks()
+        {
             self.focus_handle.clone().focus(window, cx);
         }
     }

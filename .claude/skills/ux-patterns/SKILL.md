@@ -65,17 +65,17 @@ self.ask(ask, window, cx, move |shell, window, cx| shell.drop_root(&path, window
 - A new command goes into `COMMANDS` in `crates/app/src/keymap.rs` (id, label, default keys,
   action, context), never into an `on_key_down` arm.
 - A window command's context starts `Shell` and its key has a modifier. A region's starts with the
-  region's own context (`Rail`, `IssuesPage`, `PluginList`, `QuestionCard`, `PermissionCard`): a
-  key without a modifier adds `&& !Input`, and Escape needs `&& !Dialog && !Input`. One key may
-  serve one command in each region; `validate` refuses the rest.
-- A control bound to one shows its key:
+  region's own context (`Rail`, `IssuesPage`, `TasksPage`, `WorkflowsPage`, `PluginList`,
+  `QuestionCard`, `PermissionCard`): a key without a modifier adds `&& !Input`, and Escape needs
+  `&& !Dialog && !Input`. One key may serve one command in each region; `validate` refuses the
+  rest.
+- A control bound to one shows its key, through the library's own lookup so a rebound key shows:
 
   ```rust
-  .tooltip(move |window, cx| {
-      Tooltip::new("Show the Workbench")
-          .key_binding(crate::keymap::first_key("toggle_workbench", cx).map(Kbd::new))
-          .build(window, cx)
-  })
+  // A button
+  .tooltip_with_action("Hide the Workbench", &crate::shell::ToggleWorkbenchVisibility, None)
+  // Any other element
+  .tooltip(move |window, cx| Tooltip::new(tip).action(&crate::shell::ShowTasks, None).build(window, cx))
   ```
 
 - An element you draw that takes focus tracks it and shows the ring for the keyboard only:

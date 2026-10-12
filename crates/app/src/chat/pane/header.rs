@@ -187,7 +187,11 @@ impl ChatPane {
                     // read as closing a panel, and a power mark read as
                     // quitting the whole app.
                     header_control("close-session", crate::icons::Icon::LogOut, cx)
-                        .tooltip("Close this session and its agent")
+                        .tooltip_with_action(
+                            "Close this session and its agent",
+                            &crate::shell::CloseSession,
+                            None,
+                        )
                         .on_click(cx.listener(|_: &mut Self, _, _, cx| {
                             cx.emit(ChatPaneEvent::CloseSession);
                         })),
@@ -230,7 +234,11 @@ impl ChatPane {
                         // Which way it will go this time is not said, since that
                         // needs a dock fact pushed down here and the panel on
                         // screen already answers it.
-                        .tooltip("Show or hide the Workbench")
+                        .tooltip_with_action(
+                            "Show or hide the Workbench",
+                            &crate::shell::ToggleWorkbenchVisibility,
+                            None,
+                        )
                         .on_click(cx.listener(|_: &mut Self, _, _, cx| {
                             cx.emit(ChatPaneEvent::ToggleWorkbench);
                         })),
@@ -268,11 +276,15 @@ impl ChatPane {
                     // the Workbench's is: the panel on screen answers it, and
                     // saying it would need a second fact pushed down here to
                     // keep in step.
-                    .tooltip(if live {
-                        "A shell is running here — show or hide the terminal"
-                    } else {
-                        "Open a shell in this project"
-                    })
+                    .tooltip_with_action(
+                        if live {
+                            "A shell is running here — show or hide the terminal"
+                        } else {
+                            "Open a shell in this project"
+                        },
+                        &crate::shell::ToggleTerminal,
+                        None,
+                    )
                     .on_click(cx.listener(|_: &mut Self, _, _, cx| {
                         cx.emit(ChatPaneEvent::ToggleTerminal);
                     })),
@@ -571,7 +583,7 @@ fn project_menu(
 /// The way back to a hidden rail.
 pub(super) fn show_rail(cx: &mut Context<ChatPane>) -> gpui_component::button::Button {
     header_control("show-rail", IconName::PanelLeftOpen, cx)
-        .tooltip("Show the navigation rail")
+        .tooltip_with_action("Show the navigation rail", &crate::shell::ToggleRail, None)
         .on_click(cx.listener(|_: &mut ChatPane, _, _, cx| {
             cx.emit(ChatPaneEvent::ShowRail);
         }))

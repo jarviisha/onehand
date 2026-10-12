@@ -174,6 +174,28 @@ impl WorkflowsPage {
         cx.notify();
     }
 
+    /// Close the form, asking first when it holds changes, as opening
+    /// another workflow over it does.
+    pub(crate) fn close_workflow_form(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.dirty(cx) {
+            self.clear_workflow_draft(cx);
+            return;
+        }
+        crate::shell::ask_on(
+            cx.entity(),
+            crate::shell::Ask {
+                id: "close-workflow-form",
+                title: "Discard the workflow being edited?".into(),
+                description: "Its changes are not saved. Closing the form throws them away.".into(),
+                act: "Discard",
+                ..Default::default()
+            },
+            window,
+            cx,
+            |page, _, cx| page.clear_workflow_draft(cx),
+        );
+    }
+
     pub(crate) fn clear_workflow_draft(&mut self, cx: &mut Context<Self>) {
         self.draft = None;
         cx.notify();

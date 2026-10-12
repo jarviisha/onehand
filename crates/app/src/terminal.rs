@@ -560,10 +560,14 @@ impl TerminalPanel {
                                 true => IconName::Minimize,
                                 false => IconName::Maximize,
                             }))
-                            .tooltip(match full {
-                                true => "Back to the dock",
-                                false => "Fill the window",
-                            })
+                            .tooltip_with_action(
+                                match full {
+                                    true => "Back to the dock",
+                                    false => "Fill the window",
+                                },
+                                &crate::shell::ToggleMaximize,
+                                None,
+                            )
                             .on_click(cx.listener(|_: &mut Self, _, _, cx| {
                                 cx.emit(TerminalPanelEvent::ToggleMaximize);
                             }))
@@ -579,7 +583,11 @@ impl TerminalPanel {
                             .flex_none()
                             .text_color(cx.theme().muted_foreground)
                             .icon(Icon::new(IconName::Minus))
-                            .tooltip("Hide the terminal")
+                            .tooltip_with_action(
+                                "Hide the terminal",
+                                &crate::shell::ToggleTerminal,
+                                None,
+                            )
                             .on_click(cx.listener(|_: &mut Self, _, _, cx| {
                                 cx.emit(TerminalPanelEvent::Hide);
                             })),

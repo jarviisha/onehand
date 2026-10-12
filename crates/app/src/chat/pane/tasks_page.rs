@@ -30,6 +30,10 @@ pub(super) struct TasksPage {
     pub(super) open: Option<TaskDetail>,
 }
 
+// The Tasks page's key: the task open in place of the cards closed, the
+// cards back.
+gpui::actions!(tasks_page, [CloseTaskDetail]);
+
 impl TasksPage {
     /// What `root` is called here, or its folder's name.
     fn label_of(&self, root: &Path) -> String {
@@ -62,6 +66,7 @@ impl ChatPane {
             open: None,
         }));
         self.leave_shown_session(window, cx);
+        self.tasks_focus.clone().focus(window, cx);
         self.active = None;
         self.empty = None;
         cx.notify();
@@ -222,6 +227,11 @@ impl ChatPane {
     /// The page around `body`: its header, then one scrolled column.
     fn tasks_frame(&self, body: Vec<gpui::AnyElement>, cx: &mut Context<Self>) -> gpui::AnyElement {
         div()
+            .key_context("TasksPage")
+            .track_focus(&self.tasks_focus)
+            .on_action(cx.listener(|pane: &mut Self, _: &CloseTaskDetail, _, cx| {
+                pane.open_task(None, cx);
+            }))
             .size_full()
             .v_flex()
             .child(self.header(cx))

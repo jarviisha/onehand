@@ -397,11 +397,14 @@ impl IssuesView {
         let query = self.query(window, cx);
         let text = query.read(cx).value().to_string();
         let columns = self.width.get().0 >= row::COLUMNS_MIN;
-        let page_focused = self
-            .page
-            .as_ref()
-            .and_then(|page| page.focus.as_ref())
-            .is_some_and(|focus| focus.is_focused(window));
+        // The ring is the keyboard's: drawn while the page holds the keys and
+        // the keyboard was last used, never after a click.
+        let page_focused = window.last_input_was_keyboard()
+            && self
+                .page
+                .as_ref()
+                .and_then(|page| page.focus.as_ref())
+                .is_some_and(|focus| focus.is_focused(window));
         let Some(page) = self.page.as_mut() else {
             return (hint("No page", cx), div().into_any_element());
         };

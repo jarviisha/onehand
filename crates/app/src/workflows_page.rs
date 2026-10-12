@@ -18,6 +18,10 @@ mod step;
 
 pub(crate) use draft::WorkflowDraft;
 
+// The Workflows page's key: the form open on the page closed, asked first
+// when it holds changes.
+gpui::actions!(workflows_page, [CloseWorkflowForm]);
+
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, AppContext as _, ClickEvent, Context, Entity, EventEmitter, FocusHandle,
@@ -118,7 +122,13 @@ impl Render for WorkflowsPage {
         // must be inside this, or the window's keys land elsewhere.
         div()
             .id("workflows-page")
+            .key_context("WorkflowsPage")
             .track_focus(&self.focus_handle)
+            .on_action(
+                cx.listener(|page: &mut Self, _: &CloseWorkflowForm, window, cx| {
+                    page.close_workflow_form(window, cx);
+                }),
+            )
             .size_full()
             .overflow_y_scroll()
             .child(
