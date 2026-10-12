@@ -52,7 +52,7 @@ Several builders draw one thing. Use the first one named; add no other.
 
 - **A small label**: `Tag` at `.small()`, as the transcript's `pill` draws it. Drawn by hand today
   in `chip` and `tag` (`workbench-issues/src/view/list.rs`), `chip`
-  (`workbench-plugins/src/view/details.rs`), the rail's counts and the issue state badge.
+  (`workbench-plugins/src/view/details.rs`) and the issue state badge.
 - **A line filling an empty panel**: `hint`. Copied into `crates/app/src/terminal.rs`.
 - **A well**: `well`. `mono_well` and `plain_box` build on it; the Issues review and diff views
   still draw their own.

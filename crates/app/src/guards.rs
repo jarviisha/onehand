@@ -1182,8 +1182,6 @@ mod tests {
     /// half a step is a difference nobody sees and everybody copies. Counts
     /// from before the rule; a file may only go down.
     const SPACING_BEFORE_THE_RULE: &[(&str, usize)] = &[
-        ("crates/app/src/rail.rs", 2),
-        ("crates/app/src/rail/session.rs", 1),
         ("crates/app/src/settings.rs", 2),
         ("plugins/builtin/workbench-plugins/src/view/rows.rs", 2),
     ];

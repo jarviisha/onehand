@@ -12,6 +12,7 @@ use gpui::{
     ParentElement, SharedString, StatefulInteractiveElement, Styled, WeakEntity, Window, div, rems,
 };
 use gpui_component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
+use gpui_component::tag::Tag;
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 
@@ -558,15 +559,12 @@ pub(super) fn project_row(
                 // says why. A run's pill opens its issue on the Issues page.
                 .when_some(auto, |row, auto| {
                     let target = shell.clone();
+                    let ink = if auto.stuck { warning } else { chip_ink };
                     row.child(
                         div()
                             .id(("project-auto", root_idx))
                             .flex_none()
-                            .px_1()
-                            .rounded(radius)
-                            .bg(chip)
-                            .text_color(if auto.stuck { warning } else { chip_ink })
-                            .child(auto.badge)
+                            .child(Tag::custom(chip, ink, chip).small().child(auto.badge))
                             .when_some(pill_issue, |pill, number| {
                                 pill.cursor_pointer()
                                     .on_mouse_up(gpui::MouseButton::Left, |_, _, cx| {

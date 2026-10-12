@@ -24,8 +24,10 @@ use gpui::{
     InteractiveElement, IntoElement, ParentElement, SharedString, StatefulInteractiveElement,
     Styled, Subscription, Task, Window, div,
 };
+use gpui::{Rems, rems};
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{InputEvent, InputState};
+use gpui_component::tag::Tag;
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, Sizable as _, StyledExt};
 use model::{Filter, Item, Row};
@@ -40,6 +42,12 @@ mod workspace;
 pub use project::{pick_item, unattended_item};
 pub(crate) use session::{signal_mark, signal_word};
 pub(crate) use workspace::ellipsize_front;
+
+/// How far a session row is set in under its project: the project row's fold
+/// control (an `xsmall` control, 1.25rem) and the gap after it. With the
+/// inset every row keeps, a session's mark stands under its project's folder
+/// and its title under the project's name.
+const INDENT: Rems = rems(1.25 + 0.375);
 
 /// How often a session's age is said again: the finest unit it is said in.
 const AGE_TICK: std::time::Duration = std::time::Duration::from_secs(60);
@@ -244,13 +252,13 @@ pub fn rail(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> impl Int
                     cx,
                 )
             }
-            Row::Empty => note("Empty", cx),
+            Row::Empty => note("No sessions yet", true, cx),
             Row::More { group, hidden } => more(
                 group.map(|root| workspace.roots[root].path.clone()),
                 hidden,
                 cx,
             ),
-            Row::NoMatch => note("No sessions match", cx),
+            Row::NoMatch => note("No sessions match", false, cx),
             Row::AddProject => add_project(cx),
         });
     }
@@ -400,12 +408,9 @@ fn page_row<F: Fn(&mut Shell, &mut Window, &mut Context<Shell>) + 'static>(
         .child(div().w_4().flex().justify_center().child(icon.small()))
         .child(div().flex_1().child(label))
         .children(count.map(|n| {
-            div()
-                .px_1()
-                .rounded(cx.theme().radius)
-                .bg(cx.theme().secondary)
-                .text_xs()
-                .text_color(cx.theme().secondary_foreground)
+            let fill = cx.theme().secondary;
+            Tag::custom(fill, cx.theme().secondary_foreground, fill)
+                .small()
                 .child(n)
         }))
 }
@@ -440,13 +445,15 @@ fn foot(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
         )
 }
 
-/// A muted line in the list where rows would be.
-fn note(text: &'static str, cx: &App) -> AnyElement {
+/// A muted line in the list where rows would be: under a project's name when
+/// it stands for that project's sessions, at the list's edge otherwise.
+fn note(text: &'static str, in_project: bool, cx: &App) -> AnyElement {
     div()
         .h_flex()
         .items_center()
         .h(ROW_H)
-        .pl_7()
+        .when(in_project, |d| d.ml(INDENT))
+        .pl_1p5()
         .text_xs()
         .text_color(cx.theme().muted_foreground)
         .child(text)
@@ -463,8 +470,8 @@ fn more(group: Option<PathBuf>, hidden: usize, cx: &mut Context<Shell>) -> AnyEl
         .h_flex()
         .items_center()
         .h(ROW_H)
-        .when(group.is_some(), |d| d.pl_7())
-        .when(group.is_none(), |d| d.pl_1p5())
+        .when(group.is_some(), |d| d.ml(INDENT))
+        .pl_1p5()
         .child(
             crate::controls::action(gpui::ElementId::Name(id))
                 .ghost()
