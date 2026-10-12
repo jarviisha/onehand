@@ -211,9 +211,7 @@ impl Render for Shell {
         // them. Its own `render` puts up the view, the tooltip overlay and the
         // native-menu overlay and stops -- every layer below is the app's to
         // mount, and until this existed `Dialog::trigger` opened a dialog into
-        // a list nobody read. That is why the settings, agent-manager and Help
-        // dialogs did nothing when clicked.
-        self.return_focus(window, cx);
+        // a list nobody read, so every dialog did nothing when clicked.
         let sheet_layer = Root::render_sheet_layer(window, cx);
         let dialog_layer = Root::render_dialog_layer(window, cx);
         let notification_layer = Root::render_notification_layer(window, cx);
@@ -264,30 +262,34 @@ impl Render for Shell {
 }
 
 impl Shell {
-    /// Note what holds the keyboard as one of the shell's own dialogs opens.
-    /// The first opener wins, so a dialog opened over another hands back to
-    /// where the first was opened from.
-    pub(super) fn remember_focus(&mut self, window: &Window, cx: &gpui::App) {
-        if self.dialog_return.is_none() {
-            self.dialog_return = Some(window.focused(cx).map(|focus| focus.downgrade()));
-        }
-    }
-
-    /// Hand the keyboard back once the shell's own dialogs are all gone: to
-    /// what held it before, or to the conversation when that is gone.
-    fn return_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let up = self.renaming.is_some()
+    /// Whether one of the shell's own dialogs is up.
+    fn dialog_up(&self) -> bool {
+        self.renaming.is_some()
             || self.worktree_draft.is_some()
             || self.branch_draft.is_some()
             || self.issue_picker.is_some()
-            || self.workflow_launcher.is_some();
-        if up {
+            || self.workflow_launcher.is_some()
+    }
+
+    /// Note what holds the keyboard as one of the shell's own dialogs opens.
+    /// A dialog opened over another keeps the first one's, so closing both
+    /// lands where the first was opened from.
+    pub(super) fn remember_focus(&mut self, window: &Window, cx: &gpui::App) {
+        if !self.dialog_up() {
+            self.dialog_return = window.focused(cx).map(|focus| focus.downgrade());
+        }
+    }
+
+    /// The keyboard left the frame. Once the shell's dialogs are all gone it
+    /// goes back to what held it when the first one opened; and when that is
+    /// gone too, or not drawn (which loses the keyboard once more and lands
+    /// here again with nothing remembered), to the conversation, which every
+    /// page and session keeps on screen.
+    pub(super) fn focus_lost(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.dialog_up() {
             return;
         }
-        let Some(back) = self.dialog_return.take() else {
-            return;
-        };
-        match back.and_then(|back| back.upgrade()) {
+        match self.dialog_return.take().and_then(|back| back.upgrade()) {
             Some(focus) => focus.focus(window, cx),
             None => self
                 .chat

@@ -206,11 +206,8 @@ pub struct Shell {
     /// Each project's check command field, by root, made as its project
     /// page comes up.
     check_inputs: HashMap<PathBuf, Entity<InputState>>,
-    /// Which of its pages Settings is showing.
-    ///
-    /// On the shell rather than inside the dialog because a triggered dialog is
-    /// rebuilt from its content closure on every frame it is open, so it has
-    /// nowhere of its own to keep a selection.
+    /// Which of its pages Settings is showing: on the shell, with the drafts,
+    /// so leaving Settings and coming back finds it where it was.
     ///
     /// Not persisted: a launch that opened Settings on the agent list would be
     /// one where the appearance, the thing most likely to be looked for, is a
@@ -251,10 +248,8 @@ pub struct Shell {
     /// What held the keyboard when one of the shell's own dialogs opened, so
     /// it gets the keyboard back once the dialog is gone: those dialogs are
     /// mounted by the shell rather than by the library, which would do this
-    /// itself, and a caret left in a field that is no longer drawn answers no
-    /// key at all.
-    /// `Some(None)`: nothing held it, and the conversation takes it.
-    dialog_return: Option<Option<gpui::WeakFocusHandle>>,
+    /// itself. `None` when nothing held it, and the conversation takes it.
+    dialog_return: Option<gpui::WeakFocusHandle>,
     /// Settings' new workflow label: the label typed, the workflow picked for
     /// it, and why the last *Add* was refused.
     label_input: Entity<InputState>,

@@ -1133,7 +1133,6 @@ mod tests {
 
     /// Spacing a step apart from its neighbours rather than a near-miss:
     /// half a step is a difference nobody sees and everybody copies.
-
     #[test]
     fn spacing_stays_on_the_steps() {
         forbid(
@@ -1154,7 +1153,6 @@ mod tests {
 
     /// gpui's shadows are black at a tenth of an alpha, which cannot be seen
     /// on the dark palette; a floating surface takes the tokens' `lift`.
-
     #[test]
     fn no_shadow_from_gpuis_steps() {
         forbid(
@@ -1189,7 +1187,6 @@ mod tests {
     /// semibold at the heaviest. A step above is a second page title on a
     /// screen that has one, and a number is a size the zoom and the next
     /// reader cannot place.
-
     #[test]
     fn type_stays_on_the_scale() {
         forbid(

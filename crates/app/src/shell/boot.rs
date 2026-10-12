@@ -357,6 +357,14 @@ impl Shell {
         // may have gone stale: the agent kept working while the user was
         // elsewhere, and the badge on the session they are about to read
         // should not still be up when they get there.
+        // Something holding the keyboard left the frame: a dialog closed, a
+        // panel went, a page changed. The keyboard goes where it is wanted
+        // rather than staying on a node no frame draws, where it answers no key.
+        cx.on_focus_lost(window, |shell: &mut Self, window, cx| {
+            shell.focus_lost(window, cx)
+        })
+        .detach();
+
         cx.observe_window_activation(window, |shell: &mut Self, window, cx| {
             if !window.is_window_active() {
                 shell.held_commands.clear();

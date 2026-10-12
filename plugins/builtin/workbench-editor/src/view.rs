@@ -528,7 +528,10 @@ impl Render for EditorView {
             cx,
         );
         let body = match buffer {
-            _ if self.opening.is_some() => hint("Opening the file…", cx),
+            // The read's wait stands where the file will be, and only where
+            // nothing is drawn yet: a buffer already open stays readable while
+            // the next one is read.
+            None if self.opening.is_some() => hint("Opening the file…", cx),
             None => hint("Open a file from the tree, or from a tool card", cx),
             Some(state) => div()
                 .flex_1()
