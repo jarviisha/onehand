@@ -1,13 +1,14 @@
-use super::workspace_page::{ALL_PROJECTS, PAGE_WIDE, PageProject, card_box, page_card};
+use super::workspace_page::{ALL_PROJECTS, PageProject, card_box, page_card};
 use super::{ChatPane, ChatPaneEvent, Page};
 use crate::task::Row;
 use gpui::{
     App, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, Window, div, rems,
+    StatefulInteractiveElement, Styled, Window, div,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::task::{Group, Section};
+use onehand_plugin_host::PAGE_WIDE;
 use std::path::{Path, PathBuf};
 
 /// How many rows each card of the Tasks page draws. Finished tasks are kept
@@ -237,7 +238,7 @@ impl ChatPane {
                                 .v_flex()
                                 .gap_6()
                                 .w_full()
-                                .max_w(rems(PAGE_WIDE))
+                                .max_w(PAGE_WIDE)
                                 .text_sm()
                                 .children(body),
                         ),

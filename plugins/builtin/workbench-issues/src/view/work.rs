@@ -22,7 +22,8 @@ use std::path::Path;
 
 /// How many secondary actions get a button of their own after the primary
 /// one; the rest are in the ⋯ menu, with what is done to the issue itself.
-const SECONDARY_SHOWN: usize = 2;
+/// One, because the actions share the title's row.
+const SECONDARY_SHOWN: usize = 1;
 
 /// The primary action's place, in rems, kept with nothing in it so the
 /// secondary actions do not move into it.
@@ -45,47 +46,34 @@ pub(super) fn next_for(issue: &LocalIssue, doing: &Doing) -> Next {
     )
 }
 
-/// Above the body: the latest run's progress in one line, the next action in one
-/// more, and the actions. Always these three lines, whatever the state, so
-/// the body under it never moves when a step ends.
+/// Above the body, while the issue has a run: the step it is at in one line,
+/// on the page the steps to come in one more, and the next action in a
+/// sentence. Always these lines, whatever the state, so the body under them
+/// never moves when a step ends. `None` with no run recorded: the facts line
+/// already says so, and the actions are beside the title.
 pub(super) fn progress_view(
-    root: &Path,
-    issue: &LocalIssue,
     doing: &Doing,
     next: &Next,
-    publish_to: Option<&'static str>,
     cx: &mut Context<IssuesView>,
-) -> AnyElement {
+) -> Option<AnyElement> {
+    let work = &doing.work.as_ref()?.work;
     let muted = cx.theme().muted_foreground;
     let warning = status_ink(cx).warning;
-    let work = doing.work.as_ref().map(|work| &work.work);
     let ink = match work {
         _ if next.muted => muted,
-        Some(work) if work.group.needs_attention() => warning,
+        work if work.group.needs_attention() => warning,
         _ => cx.theme().foreground,
     };
-    // The step is drawn whole and the words before it give way: on a narrow
-    // dock it is the step that says how far the work has come.
-    let progress = div()
-        .h_flex()
-        .items_center()
-        .gap_1()
+    let step = div()
         .min_w_0()
+        .truncate()
         .text_sm()
         .text_color(ink)
-        .child(
-            div()
-                .min_w_0()
-                .truncate()
-                .font_semibold()
-                .child(work.map_or_else(|| "No run recorded".to_string(), |w| w.said.clone())),
-        )
-        .children(work.and_then(|w| w.step.as_ref()).map(|step| {
-            div().flex_none().child(format!(
-                "· {} · step {} of {}",
-                step.label, step.at, step.of
-            ))
-        }));
+        // A space keeps the line's height once no step is open.
+        .child(work.step.as_ref().map_or_else(
+            || "\u{a0}".to_string(),
+            |step| format!("Step {} of {} · {}", step.at, step.of, step.label),
+        ));
     let said = next.said.clone().unwrap_or_default();
     let ink = if next.muted {
         muted
@@ -120,29 +108,31 @@ pub(super) fn progress_view(
                     .child("Issue is closed; this run is still active."),
             )
         });
-    div()
-        .flex_none()
-        .v_flex()
-        .gap_1()
-        .px_4()
-        .py_3()
-        .border_b_1()
-        .border_color(cx.theme().border)
-        .child(progress)
-        // The page names the steps still to come, always on a line of its
-        // own so the body under it does not move when one is done.
-        .when(doing.full.is_some(), |region| {
-            region.child(super::full::rest_line(work, cx))
-        })
-        .child(sentence)
-        .child(actions_row(root, issue, doing, next, publish_to, cx))
-        .into_any_element()
+    Some(
+        div()
+            .flex_none()
+            .v_flex()
+            .gap_1()
+            .px_4()
+            .py_3()
+            .border_b_1()
+            .border_color(cx.theme().border)
+            .child(step)
+            // The page names the steps still to come, always on a line of its
+            // own so the body under it does not move when one is done.
+            .when(doing.full.is_some(), |region| {
+                region.child(super::full::rest_line(Some(work), cx))
+            })
+            .child(sentence)
+            .into_any_element(),
+    )
 }
 
-/// The primary action, then the secondary ones in a place that does not
-/// move, then ⋯ for the rest and for the issue itself. With no primary
-/// action its place stays empty rather than taken by a secondary one.
-fn actions_row(
+/// The actions, at the end of the title's row: the primary one, then a
+/// secondary one in a place that does not move, then ⋯ for the rest, *Edit*
+/// among them, and for the issue itself. With no primary action its place
+/// stays empty rather than taken by a secondary one.
+pub(super) fn actions(
     root: &Path,
     issue: &LocalIssue,
     doing: &Doing,
@@ -153,32 +143,32 @@ fn actions_row(
     let number = issue.number;
     let mut secondary = next.secondary.clone();
     let shown: Vec<Act> = secondary
-        .drain(..secondary.len().min(SECONDARY_SHOWN))
+        .iter()
+        .copied()
+        .filter(|act| *act != Act::Edit)
+        .take(SECONDARY_SHOWN)
         .collect();
+    secondary.retain(|act| !shown.contains(act));
     let primary = next
         .primary
         .map(|act| act_button(("issue-primary", 0), act, number, doing, cx).primary());
     div()
         .h_flex()
+        .flex_none()
         .items_center()
         .gap_1()
-        .min_w_0()
         .child(
             div()
                 .flex_none()
                 .min_w(gpui::rems(PRIMARY_MIN_W))
+                .h_flex()
+                .justify_end()
                 .children(primary),
         )
-        .child(
-            div()
-                .h_flex()
-                .flex_1()
-                .min_w_0()
-                .overflow_hidden()
-                .gap_1()
-                .children(shown.into_iter().enumerate().map(|(i, act)| {
-                    act_button(("issue-secondary", i), act, number, doing, cx).ghost()
-                })),
+        .children(
+            shown.into_iter().enumerate().map(|(i, act)| {
+                act_button(("issue-secondary", i), act, number, doing, cx).outline()
+            }),
         )
         .child(more_menu(root, issue, doing, secondary, publish_to, cx))
         .into_any_element()
@@ -229,7 +219,7 @@ fn act_button(
     cx: &mut Context<IssuesView>,
 ) -> Button {
     let pressed = Pressed::of(act, number, doing);
-    let button = action(id).xsmall().label(act.label());
+    let button = action(id).small().label(act.label());
     let button = match tooltip(act) {
         Some(tip) => button.tooltip(tip),
         None => button,
@@ -371,7 +361,7 @@ fn more_menu(
     // The tab leads to the page, where there is room to work the issue.
     let in_tab = doing.full.is_none();
     let trigger = action("issue-more")
-        .xsmall()
+        .small()
         .ghost()
         .icon(Icon::new(IconName::Ellipsis))
         .tooltip("More actions");

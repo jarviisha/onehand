@@ -1,55 +1,88 @@
-//! The head of the page's list: the open/closed switch, the progress,
-//! project and label filters, how old the pull request reading is, and what
-//! the list cannot vouch for.
+//! The page's head — its name, the open count, *Refresh* and *New issue* —
+//! the filter bar under it, and what the list cannot vouch for.
 
 use super::IssuesView;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, ClickEvent, Context, IntoElement, ParentElement, SharedString, Styled, Window,
-    div,
+    AnyElement, App, ClickEvent, Context, Entity, InteractiveElement as _, IntoElement,
+    ParentElement, Rems, SharedString, StatefulInteractiveElement as _, Styled, Window, div, rems,
 };
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, Size, StyledExt};
+use gpui_component::input::{Input, InputState};
+use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::issues;
 use onehand_core::task::work::list::{Filters, Incomplete, Listed, Progress};
-use onehand_plugin_host::{action, menu_below, menu_item, status_ink, switch};
+use onehand_plugin_host::{AppIcon, action, menu_below, menu_item, status_ink};
 use std::path::PathBuf;
 
 /// How many labels the label filter offers.
 const LABELS_SHOWN: usize = 100;
 
+/// The narrowest the search gets before the toolbar wraps: room for a
+/// title's few words or a `#number`.
+const SEARCH_W: Rems = rems(18.);
+
 impl IssuesView {
-    /// The filters: open or closed, progress, project and label, and how
-    /// old the pull request reading is.
+    /// The page's head over the list: its name, how many issues are open,
+    /// *Refresh* and *New issue* on one row; under it the search as wide as
+    /// the row allows and the open/closed, progress, project and label
+    /// filters, wrapping when narrow.
     pub(super) fn page_head(
         &self,
         listed: &Listed<'_>,
         filters: &Filters,
         projects: &[(PathBuf, SharedString)],
         labels: Vec<String>,
+        query: &Entity<InputState>,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let view = cx.entity();
-        let showing = switch(
-            "issues-page-showing",
-            &[
-                SharedString::from(format!("Open {}", listed.open)),
-                SharedString::from(format!("Closed {}", listed.closed)),
-            ],
-            usize::from(filters.closed),
-            Size::XSmall,
-            move |picked, _, cx| {
-                let closed = *picked == 1;
-                view.update(cx, |view, cx| view.filter(|f| f.closed = closed, cx))
-            },
-            cx,
-        );
+        let showing = {
+            let closed = filters.closed;
+            // The count of open issues heads the page; the menu keeps both.
+            let count = |closed: bool| match closed {
+                true => format!("Closed {}", listed.closed),
+                false => format!("Open {}", listed.open),
+            };
+            let choices = [count(false), count(true)];
+            let view = cx.entity();
+            menu_below(
+                "issues-page-showing",
+                trigger(
+                    "issues-page-showing-trigger",
+                    if closed { "Closed" } else { "Open" },
+                    closed,
+                    cx,
+                ),
+                move |mut menu, _, _| {
+                    for (i, choice) in choices.iter().enumerate() {
+                        let pick = i == 1;
+                        let view = view.clone();
+                        menu =
+                            menu.item(menu_item(choice.clone()).checked(pick == closed).on_click(
+                                move |_, _, cx: &mut App| {
+                                    view.update(cx, |view, cx| view.filter(|f| f.closed = pick, cx))
+                                },
+                            ));
+                    }
+                    menu
+                },
+            )
+        };
         let progress = {
             let picked = filters.progress;
             let view = cx.entity();
             menu_below(
                 "issues-page-progress",
-                trigger("issues-page-progress-trigger", picked.label()),
+                // Unset, the trigger names what it filters by.
+                trigger(
+                    "issues-page-progress-trigger",
+                    match picked {
+                        Progress::All => "Progress",
+                        picked => picked.label(),
+                    },
+                    picked != Progress::All,
+                    cx,
+                ),
                 move |mut menu, _, _| {
                     for choice in Progress::ALL {
                         let view = view.clone();
@@ -80,7 +113,7 @@ impl IssuesView {
             let view = cx.entity();
             menu_below(
                 "issues-page-project",
-                trigger("issues-page-project-trigger", &name),
+                trigger("issues-page-project-trigger", &name, picked.is_some(), cx),
                 move |menu, _, _| {
                     let pick = |only: Option<PathBuf>| {
                         let view = view.clone();
@@ -114,6 +147,8 @@ impl IssuesView {
                 trigger(
                     "issues-page-label-trigger",
                     picked.as_deref().unwrap_or("Label"),
+                    picked.is_some(),
+                    cx,
                 ),
                 move |menu, window, _| {
                     let pick = |label: Option<String>| {
@@ -143,48 +178,84 @@ impl IssuesView {
                 },
             )
         });
-        let read = self.prs_read_at().map(|at| {
-            div()
-                .flex_none()
-                .text_xs()
-                .text_color(cx.theme().muted_foreground)
-                .child(format!(
-                    "read {}",
+        // The age of the pull request reading rides in the tooltip, so the
+        // button says what it does and when it last did it.
+        let read = self.prs_read_at().map_or_else(
+            || "Refresh".to_string(),
+            |at| {
+                format!(
+                    "Refresh (pull requests read {})",
                     onehand_core::rel_time(issues::now(), at)
-                ))
-        });
-        div()
-            .flex_none()
-            .v_flex()
-            .gap_1()
-            .px_2()
-            .py_1()
-            .border_b_1()
-            .border_color(cx.theme().border)
-            .child(showing)
+                )
+            },
+        );
+        let theme = cx.theme();
+        let muted = theme.muted_foreground;
+        let header = div()
+            .h_flex()
+            .items_center()
+            .gap_2()
+            .child(div().flex_none().text_2xl().font_semibold().child("Issues"))
             .child(
                 div()
-                    .h_flex()
-                    .flex_wrap()
-                    .items_center()
-                    .gap_1()
-                    .child(progress)
-                    .child(project)
-                    .children(label)
-                    .child(div().flex_1())
-                    .children(read)
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .text_sm()
+                    .text_color(muted)
+                    .child(format!("{} open", listed.open)),
+            )
+            // Named for assistive technology in a box of its own: the
+            // library's button takes a name only from a text label.
+            .child(
+                div()
+                    .id("issues-page-refresh-named")
+                    .flex_none()
+                    .aria_label("Refresh")
                     .child(
                         action("issues-page-refresh")
-                            .xsmall()
                             .ghost()
-                            .icon(Icon::new(IconName::Redo))
-                            .tooltip("Read the pull requests again")
+                            .icon(Icon::new(AppIcon::Refresh))
+                            .tooltip(read)
                             .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
                                 view.read_prs(cx);
                                 cx.notify();
                             })),
                     ),
             )
+            .child(
+                action("issues-page-new")
+                    .primary()
+                    .icon(Icon::new(IconName::Plus))
+                    .label("New issue")
+                    .tooltip("In the project filtered to, or the one picked")
+                    .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
+                        view.new_issue_on_page(window, cx)
+                    })),
+            );
+        let filters = div()
+            .h_flex()
+            .flex_wrap()
+            .items_center()
+            .gap_2()
+            // The search takes what the row leaves, down to its floor, where
+            // the row wraps.
+            .child(
+                div().flex_1().min_w(SEARCH_W).child(
+                    Input::new(query)
+                        .prefix(Icon::new(IconName::Search).small().text_color(muted))
+                        .cleanable(true),
+                ),
+            )
+            .child(showing)
+            .child(progress)
+            .child(project)
+            .children(label);
+        div()
+            .v_flex()
+            .gap_4()
+            .child(header)
+            .child(filters)
             .into_any_element()
     }
 
@@ -240,8 +311,6 @@ impl IssuesView {
                 .flex_none()
                 .v_flex()
                 .gap_0p5()
-                .px_2()
-                .py_1()
                 .text_xs()
                 .when(!failed.is_empty(), |notes| {
                     notes.child(div().text_color(warning).child(format!(
@@ -255,11 +324,20 @@ impl IssuesView {
     }
 }
 
-/// A filter's trigger.
-fn trigger(id: &'static str, label: &str) -> gpui_component::button::Button {
+/// A filter's trigger: an edged chip naming what it is set to, then the
+/// caret that opens it, so it reads as a control. Set away from where it
+/// starts, its edge goes a step stronger and its words take the primary
+/// ink, so a narrowed list says so.
+fn trigger(id: &'static str, label: &str, set: bool, cx: &App) -> gpui_component::button::Button {
+    let theme = cx.theme();
+    let (edge, ink) = match set {
+        true => (theme.muted_foreground, theme.primary),
+        false => (theme.border, theme.muted_foreground),
+    };
     action(id)
-        .xsmall()
-        .ghost()
+        .outline()
         .label(label.to_string())
-        .icon(Icon::new(IconName::ChevronDown))
+        .dropdown_caret(true)
+        .border_color(edge)
+        .text_color(ink)
 }

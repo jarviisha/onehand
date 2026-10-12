@@ -1,22 +1,49 @@
-use super::list::{chip, identity};
+use super::list::{chip, identity, plain_tag};
 use super::mentions::FILE_LINK;
 use super::work;
 use super::{FILES_SHOWN, HISTORY_SHOWN, IssuesView};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, HighlightStyle, InteractiveElement as _,
-    IntoElement, ParentElement, SharedString, StatefulInteractiveElement as _, Styled, WeakEntity,
-    Window, div,
+    IntoElement, ParentElement, Rems, SharedString, StatefulInteractiveElement as _, Styled,
+    WeakEntity, Window, div, rems,
 };
 use gpui_component::button::ButtonVariants as _;
+use gpui_component::tab::{Tab, TabBar};
 use gpui_component::text::{TextView, TextViewState, TextViewStyle};
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::issues::template::{IssueTemplate, lacking};
 use onehand_core::issues::{LocalIssue, sync};
+use onehand_core::task::Group;
 use onehand_core::task::work::{IssueWork, PrSeen};
-use onehand_plugin_host::{action, status_ink};
+use onehand_plugin_host::{AppIcon, BAR_H, Tint, action, status_ink, tint};
+use priority::{priority, priority_ink};
 use std::path::Path;
+
+/// The widest an issue is drawn, its gutters included: a description's lines
+/// past it are too long to find the start of the next one, and its title,
+/// actions and facts follow the body rather than stretching to a wide
+/// page's far edge, where the actions would sit a screen away from the
+/// title they act on.
+const ISSUE_MAX: Rems = rems(48.);
+
+/// A description's text: the UI's own size, so an issue reads as part of the
+/// window rather than as a document dropped into it.
+const BODY_TEXT: Rems = rems(0.875);
+
+/// A description's first heading, at a section title's size, and its second
+/// a step under it; the rest are the body's size, told apart by weight.
+const HEADING_1: Rems = rems(1.);
+const HEADING_2: Rems = rems(0.9375);
+
+/// The gutter inside a fenced block, wider than a row's so the code reads as
+/// set in its well rather than on its edge.
+const CODE_INSET: Rems = rems(0.75);
+
+/// A fenced block's text, a step under the body's, as machine text is
+/// everywhere else.
+const CODE_TEXT: Rems = rems(0.8125);
 
 /// What is being done with an issue: the live session its history names,
 /// whether a run may be started on its project, and its work as the app told
@@ -37,42 +64,102 @@ pub(super) struct Doing<'a> {
     /// The templates the issue's project offers, which its body is read
     /// against.
     pub(super) templates: Vec<IssueTemplate>,
+    /// What the issue's project is called, for the trail over it.
+    pub(super) project: SharedString,
+    /// Which of the issue's sections shows under its head.
+    pub(super) tab: IssueTab,
+    /// On the Issues page, where the issue stands in the list and the way to
+    /// close it, at the end of the trail.
+    pub(super) nav: Option<AnyElement>,
 }
 
-/// One issue, read, in one fixed order whatever the state, so what it waits
-/// on comes before what it says: who it is, where its work stands, what it
-/// asks for, what the work left, and what came before.
+/// The sections an issue's head switches between: what it says and what its
+/// work left behind, and everything that happened to it.
+#[derive(Clone, Copy, Default, PartialEq)]
+pub(super) enum IssueTab {
+    #[default]
+    Description,
+    Activity,
+}
+
+/// One issue, read: a trail naming it with its actions at the end; its state,
+/// project and labels; the title; one line of facts; then, before any of
+/// what it says, what it waits on (a conflict, where its work stands, the
+/// review); and under two tabs its description with what its work left, and
+/// its activity.
 pub(super) fn issue_view(
     root: &Path,
     issue: &LocalIssue,
     body: Option<(Entity<TextViewState>, Vec<String>)>,
     publish_to: Option<&'static str>,
-    doing: Doing<'_>,
+    mut doing: Doing<'_>,
     window: &mut Window,
     cx: &mut Context<IssuesView>,
 ) -> AnyElement {
+    let nav = doing.nav.take();
+    let review = doing.review.take();
     let number = issue.number;
-    let open = issue.open;
-    let muted = cx.theme().muted_foreground;
-    // Who it is: the title wraps rather than cutting, since it is the one
-    // place the whole of it is read.
-    let header = div()
-        .w_full()
-        .flex_none()
-        .px_4()
-        .pt_4()
-        .font_semibold()
-        .child(issue.title.clone());
+    let theme = cx.theme();
+    let muted = theme.muted_foreground;
+    let border = theme.border;
+    let next = work::next_for(issue, &doing);
+    let named = issue
+        .reference()
+        .map_or_else(|| format!("#{number}"), str::to_string);
 
-    // Whether it is open, where it lives, its labels, and how urgent the body
-    // says it is: plain facts joined by a dot. Its state comes first and
-    // reads as a fact like the rest, never as a badge, so it is not taken for
-    // the state of its run.
+    // The trail: the project, then the issue, and its actions at the end of
+    // the same bar, so what to do is found where the issue is named.
+    let trail = div()
+        .h_flex()
+        .items_center()
+        .gap_2()
+        .flex_none()
+        .min_h(BAR_H)
+        .px_4()
+        .border_b_1()
+        .border_color(border)
+        .child(
+            div()
+                .h_flex()
+                .flex_1()
+                .min_w_0()
+                .items_center()
+                .gap_1()
+                .text_xs()
+                .text_color(muted)
+                .child(div().min_w_0().truncate().child(doing.project.clone()))
+                .child(Icon::new(IconName::ChevronRight).xsmall())
+                .child(
+                    div()
+                        .flex_none()
+                        .font_family(theme.mono_font_family.clone())
+                        .child(named.clone()),
+                ),
+        )
+        .child(work::actions(root, issue, &doing, &next, publish_to, cx))
+        .children(nav);
+
+    // What it is at a glance: open or closed, where it lives, what it is
+    // filed under.
+    let tags = div()
+        .h_flex()
+        .flex_wrap()
+        .items_center()
+        .gap_1p5()
+        .child(state_badge(issue.open, cx))
+        .child(plain_tag(doing.project.to_string(), cx))
+        .children(issue.labels.iter().map(|label| chip(label.clone(), cx)));
+
+    // The title, the largest words on the issue: the whole of it, wrapped.
+    let title = div().text_xl().font_semibold().child(issue.title.clone());
+
+    // Its facts on one line: the reference (to the forge, where it is
+    // linked), the project, when it changed, how its work stands, how urgent
+    // the body says it is, and what a template-written body left out.
     let reference = match (issue.reference(), &issue.link) {
         (Some(reference), Some(link)) => div()
             .id("issue-reference")
             .flex_none()
-            .text_color(muted)
             .cursor_pointer()
             .hover(|reference| reference.underline())
             .tooltip({
@@ -86,112 +173,200 @@ pub(super) fn issue_view(
             .into_any_element(),
         _ => identity(issue, cx),
     };
-    let mut said: Vec<AnyElement> = vec![
-        div()
-            .flex_none()
-            .text_color(muted)
-            .child(if open { "Open" } else { "Closed" })
-            .into_any_element(),
-        reference,
-    ];
-    if !issue.labels.is_empty() {
-        said.push(
-            div()
-                .h_flex()
-                .flex_wrap()
-                .gap_1()
-                .children(issue.labels.iter().map(|label| chip(label.clone(), cx)))
-                .into_any_element(),
-        );
+    let fact = |text: String| div().flex_none().child(text).into_any_element();
+    let mut said: Vec<AnyElement> = vec![reference, fact(doing.project.to_string())];
+    let changed = issue.changed();
+    if changed > 0 {
+        said.push(fact(format!(
+            "Updated {}",
+            onehand_core::rel_time(onehand_core::issues::now(), changed)
+        )));
     }
+    said.push(match doing.work.as_ref().map(|work| &work.work) {
+        Some(work) => {
+            let ink = if work.group.needs_attention() {
+                status_ink(cx).warning
+            } else if work.group == Group::Running {
+                cx.theme().link
+            } else {
+                muted
+            };
+            div()
+                .flex_none()
+                .text_color(ink)
+                .child(work.said.clone())
+                .into_any_element()
+        }
+        None => fact("No runs yet".to_string()),
+    });
+    // Inked by how hard it presses, so only what cannot wait draws the eye.
     said.extend(priority(&issue.body).map(|priority| {
         div()
             .flex_none()
-            .text_color(muted)
+            .text_color(priority_ink(&priority, cx))
             .child(format!("Priority: {priority}"))
             .into_any_element()
     }));
-    // What a body written from a template left out: advice, never a refusal,
-    // and nothing at all for a body written its own way.
-    said.extend(lacking(&issue.body, &doing.templates).map(|lacks| {
-        div()
-            .flex_none()
-            .text_color(muted)
-            .child(lacks.said())
-            .into_any_element()
-    }));
+    // Advice, never a refusal, and nothing at all for a body written its own
+    // way.
+    said.extend(lacking(&issue.body, &doing.templates).map(|lacks| fact(lacks.said().to_string())));
     let mut facts = div()
         .h_flex()
         .flex_wrap()
         .items_center()
         .gap_1()
-        .flex_none()
-        .px_4()
-        .pt_1()
-        .pb_3()
-        .border_b_1()
-        .border_color(cx.theme().border)
-        .text_xs();
-    for (n, fact) in said.into_iter().enumerate() {
-        if n > 0 {
-            facts = facts.child(div().text_color(muted).child("·"));
+        .text_xs()
+        .text_color(muted);
+    for (i, said) in said.into_iter().enumerate() {
+        if i > 0 {
+            facts = facts.child(div().child("·"));
         }
-        facts = facts.child(fact);
+        facts = facts.child(said);
     }
-    let conflict = conflict_view(issue, cx);
 
-    let next = work::next_for(issue, &doing);
-    let progress = work::progress_view(root, issue, &doing, &next, publish_to, cx);
-    let left = work::left_view(&doing, cx);
-    let before = doing.work.as_ref().and_then(|w| work::before_view(w, cx));
-    let history = history(issue, cx);
-    let review = doing.review;
+    let events = usize::from(issue.created > 0) + issue.notes.len();
+    let tabs = [IssueTab::Description, IssueTab::Activity];
+    let at = tabs.iter().position(|tab| *tab == doing.tab).unwrap_or(0);
+    let shown = tabs[at];
+    let view = cx.entity();
+    let picker = {
+        TabBar::new(("issue-tabs", number))
+            .underline()
+            .small()
+            .selected_index(at)
+            .children(tabs.iter().map(|tab| {
+                let (name, count) = match tab {
+                    IssueTab::Description => ("Description", None),
+                    IssueTab::Activity => ("Activity", Some(events)),
+                };
+                Tab::new().label(name).when_some(count, |tab, count| {
+                    tab.suffix(div().text_xs().text_color(muted).child(count.to_string()))
+                })
+            }))
+            .on_click(move |at, _, cx| {
+                let tab = tabs[*at];
+                view.update(cx, |view, cx| {
+                    view.issue_tab = tab;
+                    cx.notify();
+                })
+            })
+    };
+
+    let head = div()
+        .v_flex()
+        .gap_3()
+        .px_4()
+        .pt_4()
+        .child(tags)
+        .child(title)
+        .child(facts)
+        .child(picker);
+
+    let section = match shown {
+        IssueTab::Description => div()
+            .v_flex()
+            .child(match &body {
+                Some((parsed, _)) => div()
+                    .px_4()
+                    .py_3()
+                    .text_size(BODY_TEXT)
+                    .child(
+                        TextView::new(parsed)
+                            .selectable(true)
+                            .style(body_style(window.rem_size(), cx))
+                            .on_link_click(on_link(cx.entity().downgrade())),
+                    )
+                    .into_any_element(),
+                None => div()
+                    .px_4()
+                    .py_3()
+                    .text_sm()
+                    .text_color(muted)
+                    .child("No description")
+                    .into_any_element(),
+            })
+            .children(body.and_then(|(_, files)| referenced(files, cx)))
+            // What the work left follows what the issue asked for.
+            .children(work::left_view(&doing, cx))
+            .children(doing.work.as_ref().and_then(|w| work::before_view(w, cx))),
+        IssueTab::Activity => div().v_flex().child(activity(issue, cx)),
+    };
+
+    // Under the trail everything scrolls as one, so a long title or a tall
+    // review never pins the description out of reach. What the issue waits
+    // on comes before its tabs, whichever of them is showing.
+    let content = div()
+        .v_flex()
+        .child(head)
+        .children(conflict_view(issue, cx))
+        .children(work::progress_view(&doing, &next, cx))
+        // Below where the work stands, pushing the rest down: a person opened
+        // it, so it is not content moving under them.
+        .children(review)
+        .child(section);
 
     div()
         .flex_1()
         .min_w_0()
         .h_full()
         .v_flex()
-        .child(header)
-        .child(facts)
-        .children(conflict)
-        .child(progress)
-        // Below where the work stands, pushing the body down: a person
-        // opened it, so it is not content moving under them.
-        .children(review)
-        .child(match &body {
-            Some((parsed, _)) => div()
+        .child(trail)
+        // The scroll spans the column, so its bar stays on the column's edge
+        // while what it scrolls keeps to the issue's width.
+        .child(
+            div()
+                .id(("issue-content", number))
                 .flex_1()
                 .min_h_0()
-                .px_4()
-                .py_3()
-                .child(
-                    TextView::new(parsed)
-                        .selectable(true)
-                        .scrollable(true)
-                        .style(body_style(window.rem_size(), cx))
-                        .on_link_click(on_link(cx.entity().downgrade())),
-                )
-                .into_any_element(),
-            None => div()
-                .px_2()
-                .py_1()
-                .text_sm()
-                .text_color(muted)
-                .child("No description")
-                .into_any_element(),
-        })
-        .children(body.and_then(|(_, files)| referenced(files, cx)))
-        .children(left)
-        .children(before)
-        .child(history)
+                .overflow_y_scroll()
+                .child(centred(content)),
+        )
+        .into_any_element()
+}
+
+/// `inner` at most [`ISSUE_MAX`] wide, centred with equal gutters either
+/// side: on a wide page the issue reads as a column of its own, and on a
+/// narrow one it simply takes the width.
+fn centred(inner: gpui::Div) -> gpui::Div {
+    div()
+        .w_full()
+        .h_flex()
+        .justify_center()
+        .child(inner.w_full().max_w(ISSUE_MAX))
+}
+
+/// Whether the issue is open or closed, as a badge: its own mark and word on
+/// the success tint while open, on the neutral fill once closed.
+fn state_badge(open: bool, cx: &App) -> AnyElement {
+    let theme = cx.theme();
+    let (icon, Tint { fill, ink }, word) = if open {
+        (Icon::new(AppIcon::CircleDot), tint(theme.green, cx), "Open")
+    } else {
+        let neutral = Tint {
+            fill: theme.secondary,
+            ink: theme.secondary_foreground,
+        };
+        (Icon::new(IconName::CircleCheck), neutral, "Closed")
+    };
+    div()
+        .h_flex()
+        .flex_none()
+        .items_center()
+        .gap_1()
+        .px_1p5()
+        .rounded_full()
+        .bg(fill)
+        .text_color(ink)
+        .child(icon.xsmall())
+        .child(word)
         .into_any_element()
 }
 
 /// Everything that happened to the issue, oldest first under its arrival:
-/// each with when, in local time and how long ago, and for one a session took
-/// up, a way to open that session. The latest ones only, with the cut said.
-fn history(issue: &LocalIssue, cx: &mut Context<IssuesView>) -> AnyElement {
+/// each with how long ago, the date and minute on hover, and for one a
+/// session took up, a way to open that session. The latest ones only, with
+/// the cut said.
+fn activity(issue: &LocalIssue, cx: &mut Context<IssuesView>) -> AnyElement {
     let muted = cx.theme().muted_foreground;
     let now = onehand_core::issues::now();
     let arrived = (issue.created > 0).then(|| (issue.created, issue.arrival(), None));
@@ -206,17 +381,14 @@ fn history(issue: &LocalIssue, cx: &mut Context<IssuesView>) -> AnyElement {
         .collect();
     let left_out = entries.len().saturating_sub(HISTORY_SHOWN);
     div()
-        .id("issue-history")
         .flex_none()
-        .max_h(gpui::rems(14.))
-        .overflow_y_scroll()
         .v_flex()
         .gap_1()
         .px_4()
         .py_3()
-        .border_t_1()
-        .border_color(cx.theme().border)
-        .child(div().text_xs().text_color(muted).child("History"))
+        .when(entries.is_empty(), |list| {
+            list.child(div().text_xs().text_color(muted).child("Nothing yet"))
+        })
         .when(left_out > 0, |list| {
             list.child(
                 div()
@@ -236,11 +408,16 @@ fn history(issue: &LocalIssue, cx: &mut Context<IssuesView>) -> AnyElement {
                         .items_start()
                         .gap_2()
                         .text_xs()
-                        .child(div().flex_none().text_color(muted).child(format!(
-                            "{} · {}",
-                            moment(at),
-                            onehand_core::rel_time(now, at)
-                        )))
+                        .child(
+                            div()
+                                .id(("issue-history-at", i))
+                                .flex_none()
+                                .text_color(muted)
+                                .tooltip(move |window, cx| {
+                                    Tooltip::new(moment(at)).build(window, cx)
+                                })
+                                .child(onehand_core::rel_time(now, at)),
+                        )
                         .child(div().flex_1().min_w_0().child(text))
                         .children(session.map(|session| {
                             action(("issue-history-session", i))
@@ -259,7 +436,7 @@ fn history(issue: &LocalIssue, cx: &mut Context<IssuesView>) -> AnyElement {
 
 /// `secs` since the epoch as a date and minute in the machine's own time zone,
 /// which is the one the person reading it lives in.
-fn moment(secs: u64) -> String {
+pub(super) fn moment(secs: u64) -> String {
     i64::try_from(secs)
         .ok()
         .and_then(|secs| chrono::DateTime::from_timestamp(secs, 0))
@@ -269,35 +446,6 @@ fn moment(secs: u64) -> String {
                 .to_string()
         })
         .unwrap_or_default()
-}
-
-/// The first line under a *Priority* heading in `body`, list marker and bold
-/// taken off, or `None` where the body has no such section or it is empty.
-fn priority(body: &str) -> Option<String> {
-    let heading = |line: &str| line.trim_start().starts_with('#');
-    let mut lines = body.lines();
-    lines.find(|line| {
-        heading(line)
-            && line
-                .trim()
-                .trim_start_matches('#')
-                .trim()
-                .trim_end_matches(':')
-                .eq_ignore_ascii_case("priority")
-    })?;
-    let first = lines
-        .take_while(|line| !heading(line))
-        .map(str::trim)
-        .find(|line| !line.is_empty())?;
-    let first = first
-        .strip_prefix("- ")
-        .or_else(|| first.strip_prefix("* "))
-        .or_else(|| first.strip_prefix("+ "))
-        .unwrap_or(first)
-        .replace("**", "")
-        .replace("__", "");
-    let first = first.trim();
-    (!first.is_empty()).then(|| first.to_string())
 }
 
 /// What a person has to decide about an issue both sides changed: each field in
@@ -454,14 +602,16 @@ fn referenced(files: Vec<String>, cx: &mut Context<IssuesView>) -> Option<AnyEle
 
 /// Body styling. The renderer sizes its headings from an absolute pixel base,
 /// which the panel's rem-base zoom cannot reach by itself, so the base in force
-/// is written in by hand.
+/// is written in by hand, and each level is scaled from it here: the
+/// renderer's own scale tops out at twice the body, which over an issue reads
+/// as a page title shouting from inside the description.
 fn body_style(rem: gpui::Pixels, cx: &App) -> TextViewStyle {
     let theme = cx.theme();
     let mut style = TextViewStyle::default()
         .code_block(
             gpui::StyleRefinement::default()
-                .p(gpui::rems(0.75))
-                .text_size(gpui::rems(0.8125))
+                .p(CODE_INSET)
+                .text_size(CODE_TEXT)
                 .bg(theme.muted),
         )
         // Inline code on the well, the quiet fill, rather than the renderer's
@@ -472,6 +622,13 @@ fn body_style(rem: gpui::Pixels, cx: &App) -> TextViewStyle {
         .inline_code(HighlightStyle {
             background_color: Some(theme.muted),
             ..HighlightStyle::default()
+        })
+        .heading_font_size(|level, rem| {
+            rem * match level {
+                1 => HEADING_1.0,
+                2 => HEADING_2.0,
+                _ => BODY_TEXT.0,
+            }
         });
     style.heading_base_font_size = rem;
     style
@@ -489,5 +646,4 @@ fn excerpt(text: &str) -> String {
     }
 }
 
-#[cfg(test)]
-mod tests;
+pub(super) mod priority;

@@ -120,8 +120,21 @@ pub const SPLIT_SLACK: f32 = 1.0;
 pub const LIST_W: f32 = 12.0;
 pub const DETAIL_MIN: f32 = 24.0;
 pub const SPLIT_MIN: f32 = LIST_W + DETAIL_MIN;
-/// The Issues page's list, wider than a dock's because its rows carry more.
-pub const ISSUE_LIST_W: f32 = 22.0;
+/// The Issues page with the list alone in the page column: a row is one line
+/// of this height, its facts in columns of these widths so they line up down
+/// the list, and below `ISSUE_COLUMNS_MIN` only the title and its end stay.
+pub const ISSUE_ROW_H: f32 = 2.5;
+pub const ISSUE_LABELS_W: f32 = 7.0;
+pub const ISSUE_PROJECT_W: f32 = 9.0;
+pub const ISSUE_END_W: f32 = 10.0;
+pub const ISSUE_COLUMNS_MIN: f32 = 48.0;
+/// The search in the Issues toolbar: a query's width, not the row's.
+pub const ISSUE_SEARCH_W: f32 = 14.0;
+/// The issue floating over the list: a reading measure, narrow enough that
+/// the titles stay readable beside it on a common window. Below
+/// `PEEK_W + PEEK_LIST_MIN` of content area it takes the whole list area.
+pub const PEEK_W: f32 = 40.0;
+pub const PEEK_LIST_MIN: f32 = 16.0;
 /// A Markdown document's comfortable measure.
 pub const DOC_MEASURE: f32 = 34.0;
 /// A page's column.
@@ -183,7 +196,8 @@ pub const STATE_TINT: f32 = 0.1;
 /// is danger. A selected row is a faint ink tint, never the accent.
 ///
 /// Solid fills only: no gradients, no textures. Shadows only on what floats
-/// (the composer card, dialogs, menus, popups).
+/// (the composer card, dialogs, menus, popups, the Issues page's floating
+/// issue).
 #[derive(Clone, Copy)]
 pub struct Palette {
     /// The reading surface.

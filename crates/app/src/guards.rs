@@ -654,7 +654,6 @@ mod tests {
         ("crates/app/src/settings/pages.rs", 1),
         ("crates/app/src/workflows_page/step.rs", 1),
         ("plugins/builtin/workbench-files/src/view.rs", 1),
-        ("plugins/builtin/workbench-issues/src/view/detail.rs", 3),
         ("plugins/builtin/workbench-issues/src/view/full.rs", 1),
         ("plugins/builtin/workbench-issues/src/view/review.rs", 2),
         ("plugins/builtin/workbench-markdown/src/document.rs", 2),

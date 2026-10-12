@@ -58,12 +58,21 @@ pub fn duration(secs: u64) -> String {
 /// `3m ago` / `2h ago` / `5d ago`: how long before `now` the moment `then` was,
 /// both in seconds since the epoch.
 pub fn rel_time(now: u64, then: u64) -> String {
+    match age(now, then).as_str() {
+        "now" => "just now".to_string(),
+        age => format!("{age} ago"),
+    }
+}
+
+/// `now` / `3m` / `2h` / `5d`: [`rel_time`] without its *ago*, for a column
+/// of rows that each end on one.
+pub fn age(now: u64, then: u64) -> String {
     let secs = now.saturating_sub(then);
     match secs {
-        0..=59 => "just now".to_string(),
-        60..=3599 => format!("{}m ago", secs / 60),
-        3600..=86_399 => format!("{}h ago", secs / 3600),
-        _ => format!("{}d ago", secs / 86_400),
+        0..=59 => "now".to_string(),
+        60..=3599 => format!("{}m", secs / 60),
+        3600..=86_399 => format!("{}h", secs / 3600),
+        _ => format!("{}d", secs / 86_400),
     }
 }
 
@@ -76,5 +85,14 @@ mod tests {
         assert_eq!(super::duration(59), "59s");
         assert_eq!(super::duration(60), "1m 0s");
         assert_eq!(super::duration(72), "1m 12s");
+    }
+
+    #[test]
+    fn an_age_is_rel_time_without_its_ago() {
+        assert_eq!(super::age(100, 90), "now");
+        assert_eq!(super::age(23 * 3600, 0), "23h");
+        assert_eq!(super::age(2 * 86_400 + 5, 0), "2d");
+        assert_eq!(super::rel_time(100, 90), "just now");
+        assert_eq!(super::rel_time(180, 0), "3m ago");
     }
 }

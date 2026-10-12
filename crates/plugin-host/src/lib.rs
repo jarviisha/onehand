@@ -118,6 +118,67 @@ pub fn status_hue(base: Hsla, foreground: Hsla) -> Hsla {
     base.mix_oklab(foreground, 0.70)
 }
 
+/// The height every bar along the top of a region shares: the conversation's
+/// header, the Workbench's mode strip, the rail's workspace bar and foot, and
+/// a page's column heads, so bars side by side line up across the window.
+pub const BAR_H: gpui::Rems = gpui::rems(2.75);
+
+/// The widest a workspace-wide page grows (the overview, Tasks, the Issues
+/// list): room for two cards side by side, or a row's facts in columns,
+/// without lines too long to read. One figure, so moving between the pages
+/// does not move the column.
+pub const PAGE_WIDE: gpui::Rems = gpui::rems(64.);
+
+/// How much of a hue a pale fill keeps; the rest is the surface it sits on.
+const TINT: f32 = 0.16;
+
+/// A hue as a pale solid fill, and the ink that reads on it: a badge, or a
+/// label that asks for something.
+#[derive(Clone, Copy)]
+pub struct Tint {
+    pub fill: Hsla,
+    pub ink: Hsla,
+}
+
+/// `base` tinted over the reading surface.
+///
+/// **Solid, never a hue at partial opacity.** A see-through fill takes
+/// whatever is under it, so the same badge reads one shade on a row and
+/// another on that row hovered or selected, and its ink is tested against
+/// neither. Mixed here, the fill is one colour wherever it lands, and the
+/// app's contrast test holds the ink to it.
+pub fn tint(base: Hsla, cx: &App) -> Tint {
+    tint_over(base, cx.theme().background, cx.theme().foreground)
+}
+
+/// [`tint`] from the three colours it is made of. `pub` for the reason
+/// [`status_hue`] is: the app's contrast test works from a resolved ramp.
+pub fn tint_over(base: Hsla, surface: Hsla, foreground: Hsla) -> Tint {
+    Tint {
+        fill: base.mix_oklab(surface, TINT),
+        ink: status_hue(base, foreground),
+    }
+}
+
+/// A mark the app's own icon set draws for a plugin, where the bundled set
+/// has no drawing: an open issue's circle with a dot, and a refresh. The app
+/// serves these under its own prefix, and its registry test holds each path to
+/// the one it serves.
+#[derive(Clone, Copy)]
+pub enum AppIcon {
+    CircleDot,
+    Refresh,
+}
+
+impl gpui_component::IconNamed for AppIcon {
+    fn path(self) -> SharedString {
+        match self {
+            Self::CircleDot => "onehand/icons/circle-dot.svg".into(),
+            Self::Refresh => "onehand/icons/refresh-cw.svg".into(),
+        }
+    }
+}
+
 /// A mode's empty state: one muted line, centred in the body it would fill.
 ///
 /// Here rather than copied into each mode for the reason [`action`] is. Four

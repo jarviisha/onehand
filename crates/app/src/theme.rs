@@ -1014,6 +1014,63 @@ mod tests {
         }
     }
 
+    /// A tinted badge or label carries words, so its ink has to read on its
+    /// own fill, for every hue one is drawn in.
+    #[test]
+    fn a_tint_reads_on_its_own_fill() {
+        for (name, ramp, mode) in [
+            ("light", &LIGHT, ThemeMode::Light),
+            ("dark", &DARK, ThemeMode::Dark),
+        ] {
+            let theme = resolve(ramp, mode);
+            for (hue, base) in [
+                ("accent", theme.blue),
+                ("success", theme.green),
+                ("warning", theme.yellow),
+                // A label about the code's structure, and an agent's report.
+                ("violet", theme.magenta),
+                ("cyan", theme.cyan),
+            ] {
+                let tint = onehand_plugin_host::tint_over(base, theme.background, theme.foreground);
+                let ratio = contrast(tint.ink, tint.fill);
+                assert!(
+                    ratio >= AA,
+                    "{name}: {hue} ink on its tint is {ratio:.2}, under {AA}"
+                );
+                assert!(
+                    contrast(tint.fill, theme.background) > 1.0,
+                    "{name}: the {hue} tint is the surface"
+                );
+            }
+        }
+    }
+
+    /// A neutral label is drawn on the bubble, and on a picked row, whose fill
+    /// is a step past the bubble, on the well instead: either way its fill has
+    /// to show against the row it sits in, or it reads as loose words.
+    #[test]
+    fn a_neutral_label_shows_on_its_row() {
+        // Enough to see an edge; a fill is not text, so AA does not apply.
+        const APART: f32 = 1.05;
+        for (name, ramp, mode) in [
+            ("light", &LIGHT, ThemeMode::Light),
+            ("dark", &DARK, ThemeMode::Dark),
+        ] {
+            let theme = resolve(ramp, mode);
+            for (row, fill, under) in [
+                ("a row", theme.secondary, theme.background),
+                ("a hovered row", theme.secondary, theme.list_hover),
+                ("the picked row", theme.muted, theme.accent),
+            ] {
+                let ratio = contrast(fill, under);
+                assert!(
+                    ratio >= APART,
+                    "{name}: a neutral label on {row} is {ratio:.2} from it"
+                );
+            }
+        }
+    }
+
     /// The accent is ink as well as a link: it marks a running session in the
     /// rail, on the well and on the rail's marked fill. A mark is a graphic,
     /// so it is held to the 3:1 a control's parts are.

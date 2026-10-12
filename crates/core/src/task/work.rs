@@ -504,7 +504,7 @@ pub fn next_action(work: Option<&Work>, around: Around<'_>) -> Next {
             true => Act::OpenWorkingSession,
             false => Act::WorkHere,
         };
-        // The progress line already says no run is recorded.
+        // The facts line already says no run is recorded.
         let mut next = row(None, None, &[here]);
         if around.open && around.can_start {
             next.primary = Some(Act::RunWorkflow);

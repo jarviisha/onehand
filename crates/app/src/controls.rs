@@ -16,13 +16,12 @@
 //! that way, and the library's own default is overridden exactly once rather
 //! than at forty call sites that each have to remember.
 
-use gpui::{ElementId, Rems, rems};
+use gpui::ElementId;
 use gpui_component::button::Button;
 
-/// The height every bar along the top of a region shares: the conversation's
-/// header, the Workbench's mode strip and the rail's workspace bar and foot,
-/// so bars side by side line up across the window.
-pub(crate) const BAR_H: Rems = rems(2.75);
+/// The height every bar along the top of a region shares; the plugin host's,
+/// because a plugin's page draws bars of its own beside the app's.
+pub(crate) use onehand_plugin_host::BAR_H;
 
 /// A button that answers the pointer, which is every button this app draws.
 ///

@@ -110,6 +110,7 @@ icons! {
     LogOut => "log-out",
     Paperclip => "paperclip",
     PlusLight => "plus-light",
+    RefreshCw => "refresh-cw",
     Shield => "shield",
     Square => "square",
     SquarePen => "square-pen",
@@ -120,6 +121,16 @@ icons! {
 #[cfg(test)]
 mod tests {
     use super::{Icon, embedded};
+    use gpui_component::IconNamed as _;
+
+    /// A plugin names the app's marks by a path of its own, since it cannot
+    /// reach this registry; each has to be the path served here.
+    #[test]
+    fn a_plugin_names_an_app_icon_by_the_path_it_is_served_at() {
+        use onehand_plugin_host::AppIcon;
+        assert_eq!(AppIcon::CircleDot.path(), Icon::CircleDot.path());
+        assert_eq!(AppIcon::Refresh.path(), Icon::RefreshCw.path());
+    }
 
     /// The registry, the pinned manifest and the checked-in SVGs must agree:
     /// each is easy to update alone, and any two of them agreeing is not enough
