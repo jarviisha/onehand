@@ -41,9 +41,6 @@ impl Shell {
         {
             crate::unattended::check_now(self.project_for_runs(&root.path), cx);
         }
-        if self.settings_open {
-            self.workspace_note_wanted = true;
-        }
         self.save_workspace(window, cx);
         // The project page's menu says whether this is on, in the entry that was
         // just used.
@@ -303,7 +300,7 @@ impl Shell {
     ) {
         let path = crate::state::Shared::global(cx).config_path.clone();
         let saved = crate::unattended::set_workflows(default, by_label, &path, cx);
-        self.report_write("Unattended runs", saved, true, window, cx);
+        self.report_write("Unattended runs", saved, window, cx);
         cx.notify();
     }
 

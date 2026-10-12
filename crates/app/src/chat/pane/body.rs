@@ -223,7 +223,11 @@ impl ChatPane {
         match &self.page {
             Some(super::Page::Workspace(_)) => return self.workspace_page(cx),
             Some(super::Page::Tasks(_)) => return self.tasks_page(cx),
-            Some(super::Page::Issues(view) | super::Page::Workflows(view)) => {
+            Some(
+                super::Page::Issues(view)
+                | super::Page::Workflows(view)
+                | super::Page::Settings(view),
+            ) => {
                 return self.view_page(view.clone(), cx);
             }
             None => {}

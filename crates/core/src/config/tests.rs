@@ -190,7 +190,7 @@ fn a_remote_section_parses_and_keeps_everything_else() {
 }
 
 /// There is no key for the token, and there must not become one: the file
-/// is rewritten whole by the settings dialog, so anything in it is printed
+/// is rewritten whole by Settings, so anything in it is printed
 /// back out on a schedule nobody chose.
 #[test]
 fn a_token_in_the_config_file_is_not_a_key() {

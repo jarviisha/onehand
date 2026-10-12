@@ -134,7 +134,8 @@ impl ChatPane {
         // A filter survives the page being shown again, while its project does.
         let filter = match self.page.take() {
             Some(Page::Workspace(page)) => page.filter,
-            Some(Page::Tasks(_) | Page::Issues(_) | Page::Workflows(_)) | None => None,
+            Some(Page::Tasks(_) | Page::Issues(_) | Page::Workflows(_) | Page::Settings(_))
+            | None => None,
         }
         .filter(|only| projects.iter().any(|project| &project.root == only));
         self.page = Some(Page::Workspace(WorkspacePage {
@@ -218,7 +219,7 @@ impl ChatPane {
                 }
                 page.projects = projects;
             }
-            Some(Page::Issues(_) | Page::Workflows(_)) | None => return,
+            Some(Page::Issues(_) | Page::Workflows(_) | Page::Settings(_)) | None => return,
         }
         cx.notify();
     }
@@ -227,7 +228,8 @@ impl ChatPane {
     pub fn showing_workspace(&self) -> bool {
         match self.page {
             Some(Page::Workspace(_)) => true,
-            Some(Page::Tasks(_) | Page::Issues(_) | Page::Workflows(_)) | None => false,
+            Some(Page::Tasks(_) | Page::Issues(_) | Page::Workflows(_) | Page::Settings(_))
+            | None => false,
         }
     }
 
@@ -235,7 +237,8 @@ impl ChatPane {
     pub fn showing_tasks(&self) -> bool {
         match self.page {
             Some(Page::Tasks(_)) => true,
-            Some(Page::Workspace(_) | Page::Issues(_) | Page::Workflows(_)) | None => false,
+            Some(Page::Workspace(_) | Page::Issues(_) | Page::Workflows(_) | Page::Settings(_))
+            | None => false,
         }
     }
 
@@ -243,7 +246,8 @@ impl ChatPane {
     pub fn showing_issues(&self) -> bool {
         match self.page {
             Some(Page::Issues(_)) => true,
-            Some(Page::Workspace(_) | Page::Tasks(_) | Page::Workflows(_)) | None => false,
+            Some(Page::Workspace(_) | Page::Tasks(_) | Page::Workflows(_) | Page::Settings(_))
+            | None => false,
         }
     }
 
@@ -251,8 +255,36 @@ impl ChatPane {
     pub fn showing_workflows(&self) -> bool {
         match self.page {
             Some(Page::Workflows(_)) => true,
-            Some(Page::Workspace(_) | Page::Tasks(_) | Page::Issues(_)) | None => false,
+            Some(Page::Workspace(_) | Page::Tasks(_) | Page::Issues(_) | Page::Settings(_))
+            | None => false,
         }
+    }
+
+    /// Whether Settings is what the pane shows.
+    pub fn showing_settings(&self) -> bool {
+        match self.page {
+            Some(Page::Settings(_)) => true,
+            Some(Page::Workspace(_) | Page::Tasks(_) | Page::Issues(_) | Page::Workflows(_))
+            | None => false,
+        }
+    }
+
+    /// Show Settings, `view`, on the page it was left on, its drafts as they
+    /// were left, the way the other pages that are views of their own are
+    /// shown.
+    pub fn show_settings(
+        &mut self,
+        view: gpui::AnyView,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // Off another view page, a field there may hold the caret.
+        self.leave_issues_page(window, cx);
+        self.page = Some(Page::Settings(view));
+        self.leave_shown_session(window, cx);
+        self.active = None;
+        self.empty = None;
+        cx.notify();
     }
 
     /// Show the Workflows page, `view`, as it was left, the way the Issues
@@ -263,10 +295,8 @@ impl ChatPane {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // Off the Issues page, its search may hold the caret.
-        if self.showing_issues() {
-            self.focus_handle.clone().focus(window, cx);
-        }
+        // Off another view page, a field there may hold the caret.
+        self.leave_issues_page(window, cx);
         self.page = Some(Page::Workflows(view));
         self.leave_shown_session(window, cx);
         self.active = None;
@@ -282,10 +312,8 @@ impl ChatPane {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // Off the Workflows page, a field there may hold the caret.
-        if self.showing_workflows() {
-            self.focus_handle.clone().focus(window, cx);
-        }
+        // Off another view page, a field there may hold the caret.
+        self.leave_issues_page(window, cx);
         self.page = Some(Page::Issues(view));
         self.leave_shown_session(window, cx);
         self.active = None;
@@ -293,7 +321,7 @@ impl ChatPane {
         cx.notify();
     }
 
-    /// A page that is a view of its own (Issues, Workflows) under the
+    /// A page that is a view of its own (Issues, Workflows, Settings) under the
     /// pane's header, which names it as it names every page.
     pub(super) fn view_page(
         &self,
@@ -312,7 +340,7 @@ impl ChatPane {
     /// the frame: a field on it may hold it, and a caret in nothing answers
     /// no key.
     pub fn leave_issues_page(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.showing_issues() || self.showing_workflows() {
+        if self.showing_issues() || self.showing_workflows() || self.showing_settings() {
             self.focus_handle.clone().focus(window, cx);
         }
     }

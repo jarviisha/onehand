@@ -428,7 +428,7 @@ fn foot(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
         .items_center()
         .flex_none()
         .h(crate::controls::BAR_H)
-        .px_2()
+        .px_3()
         .border_t_1()
         .border_color(cx.theme().border)
         .child(div().flex_1())
@@ -438,7 +438,7 @@ fn foot(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
                 .small()
                 .icon(Icon::new(IconName::Settings).text_color(cx.theme().muted_foreground))
                 .tooltip("Appearance, the workspace, agents and connections")
-                .selected(shell.settings_shown())
+                .selected(shell.settings_shown(cx))
                 .on_click(
                     cx.listener(|shell: &mut Shell, _, window, cx| shell.open_settings(window, cx)),
                 ),

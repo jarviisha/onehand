@@ -30,7 +30,7 @@ mod render;
 mod retry;
 mod roots;
 mod sessions;
-mod settings_dialog;
+mod settings_page;
 mod storage;
 mod workflows;
 pub use boot::{boot, open_or_focus, seed_workspace};
@@ -206,7 +206,7 @@ pub struct Shell {
     /// Each project's check command field, by root, made as its project
     /// page comes up.
     check_inputs: HashMap<PathBuf, Entity<InputState>>,
-    /// Which page the Settings dialog is showing.
+    /// Which of its pages Settings is showing.
     ///
     /// On the shell rather than inside the dialog because a triggered dialog is
     /// rebuilt from its content closure on every frame it is open, so it has
@@ -216,21 +216,12 @@ pub struct Shell {
     /// one where the appearance, the thing most likely to be looked for, is a
     /// page away.
     settings_page: SettingsPage,
-    settings_open: bool,
-    settings_return_focus: Option<gpui::FocusHandle>,
-    /// Held by Settings' body and focused when it opens.
+    /// Held by Settings' nav and focused when it opens.
     settings_focus: gpui::FocusHandle,
     keymap_editor: Entity<crate::keymap::Editor>,
     settings_view: Entity<crate::settings::SettingsView>,
     /// What each agent's last *Test* found, by `settings::check_key`.
     agent_checks: HashMap<String, AgentCheck>,
-    /// How the last write made from the Settings page showing went.
-    settings_note: Option<Result<(), String>>,
-    /// The next workspace write was asked for from Settings, so how it goes is
-    /// Settings' to say. Workspace writes also come from runs, pins and the
-    /// dock, and one of those landing while Settings is open is not a change
-    /// the page in front of the user made.
-    workspace_note_wanted: bool,
     held_commands: std::collections::HashSet<&'static str>,
     /// The workspace-rename field.
     workspace_name: Entity<InputState>,

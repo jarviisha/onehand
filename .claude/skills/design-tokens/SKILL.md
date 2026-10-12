@@ -58,7 +58,7 @@ prints nothing for its lines, and `cargo test -p onehand --locked guards` passes
 ```
 
 ```rust
-// Wrong (settings.rs, nav_row): a hover made by thinning another token
+// Wrong: a hover made by thinning another token
 .hover(move |row| row.bg(accent.opacity(0.5)))
 // Right
 .hover(|row| row.bg(cx.theme().list_hover))

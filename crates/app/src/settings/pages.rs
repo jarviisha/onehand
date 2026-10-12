@@ -13,6 +13,9 @@ use gpui_component::{ActiveTheme, Icon, IconName, Selectable, Sizable as _, Styl
 use onehand_core::config::Appearance;
 use onehand_core::unattended::Slots;
 
+/// The field a new workflow label is typed into: a label is a word or two.
+const LABEL_FIELD_W: gpui::Rems = gpui::rems(10.);
+
 /// The light/dark/system picker.
 ///
 /// A button group rather than three loose buttons: the choice is one value with
@@ -411,14 +414,7 @@ fn slots_field(handle: &Entity<Shell>, slots: Slots, cx: &App) -> AnyElement {
                 .small()
                 .label(holder.shown.clone())
                 .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
-                    shell.update(cx, |shell, cx| {
-                        // Only once Settings has closed: an edit there still
-                        // pending asks first, and the task waits for the answer.
-                        shell.request_close_settings(window, cx);
-                        if !shell.settings_shown() {
-                            shell.show_task(&task, window, cx);
-                        }
-                    });
+                    shell.update(cx, |shell, cx| shell.show_task(&task, window, cx));
                 })
         });
     let waiting = match slots.waiting_cap {
@@ -535,7 +531,7 @@ fn workflow_labels(handle: &Entity<Shell>, cx: &App) -> impl IntoElement {
                 .h_flex()
                 .items_center()
                 .gap_2()
-                .child(div().w(gpui::rems(10.)).child(Input::new(&input).small()))
+                .child(div().w(LABEL_FIELD_W).child(Input::new(&input).small()))
                 .child(pick)
                 .child(add),
         )

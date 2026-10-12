@@ -1,5 +1,5 @@
 use super::drafts::answered;
-use super::settings_dialog::apply_appearance;
+use super::settings_page::apply_appearance;
 use super::{APP_ID, FocusedPanel, Shell, init_keymap};
 use crate::chat::ChatPane;
 use crate::settings::{AgentDraft, SettingsPage};
@@ -406,9 +406,6 @@ impl Shell {
                     let name = state.read(cx).value().trim().to_string();
                     if !name.is_empty() && name != shell.window.workspace.name {
                         shell.window.workspace.name = name;
-                        if shell.settings_open {
-                            shell.workspace_note_wanted = true;
-                        }
                         shell.save_workspace_soon(cx);
                         cx.notify();
                     }
@@ -458,8 +455,6 @@ impl Shell {
             rail_split: cx.new(|_| ResizableState::default()),
             agent_draft: AgentDraft::new(window, cx),
             settings_page: SettingsPage::default(),
-            settings_open: false,
-            settings_return_focus: None,
             settings_focus: cx.focus_handle(),
             keymap_editor: cx.new(|cx| crate::keymap::Editor::new(window, cx)),
             settings_view: {
@@ -467,8 +462,6 @@ impl Shell {
                 cx.new(|_| crate::settings::SettingsView::new(shell))
             },
             agent_checks: HashMap::new(),
-            settings_note: None,
-            workspace_note_wanted: false,
             held_commands: Default::default(),
             workspace_name,
             renaming: None,

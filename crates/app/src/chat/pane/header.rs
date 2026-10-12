@@ -80,6 +80,7 @@ impl ChatPane {
                 (Some(super::Page::Tasks(_)), _) => "Tasks".to_string(),
                 (Some(super::Page::Issues(_)), _) => "Issues".to_string(),
                 (Some(super::Page::Workflows(_)), _) => "Workflows".to_string(),
+                (Some(super::Page::Settings(_)), _) => "Settings".to_string(),
                 (None, Some(project)) => project.label.to_string(),
                 (None, None) => String::new(),
             }

@@ -7,9 +7,8 @@ pub struct Editor {
     editing: Option<usize>,
     focus: gpui::FocusHandle,
     input: Entity<InputState>,
+    /// Why the keys typed were refused, said under the field they are in.
     error: Option<String>,
-    /// A save just went through, until the next edit starts.
-    saved: bool,
 }
 
 impl Editor {
@@ -19,14 +18,12 @@ impl Editor {
             focus: cx.focus_handle(),
             input: cx.new(|cx| InputState::new(window, cx).placeholder("ctrl-shift-j")),
             error: None,
-            saved: false,
         }
     }
 
     fn edit(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         self.editing = Some(index);
         self.error = None;
-        self.saved = false;
         let value = COMMANDS[index].keys(&Shared::global(cx).keymap).join(" ");
         self.input
             .update(cx, |input, cx| input.set_value(value, window, cx));
@@ -51,8 +48,9 @@ impl Editor {
             overrides.insert(command.id.to_string(), keys);
         }
         let existing: Vec<_> = cx.key_bindings().borrow().bindings().cloned().collect();
+        // Refused keys are the field's to say, under it; a write the disk
+        // refused is a toast. Each is said once, in one place.
         if let Err(error) = validate_controls(&overrides, &existing) {
-            window.push_notification(Notification::error(error.clone()), cx);
             self.error = Some(error);
             cx.notify();
             return;
@@ -60,10 +58,10 @@ impl Editor {
         let path = Shared::global(cx).config_path.clone();
         if let Err(error) = AppConfig::update_in_place(&path, |cfg| cfg.keymap = overrides.clone())
         {
-            let error = format!("Shortcuts were not saved: {error}");
-            window.push_notification(Notification::error(error.clone()), cx);
-            self.error = Some(error);
-            cx.notify();
+            window.push_notification(
+                Notification::error(format!("Shortcuts not saved — {error}")),
+                cx,
+            );
             return;
         }
         cx.update_global::<Shared, _>(|shared, _| shared.keymap = overrides);
@@ -72,9 +70,6 @@ impl Editor {
         self.focus.focus(window, cx);
         self.editing = None;
         self.error = None;
-        // Said beside Settings' ✕ rather than in a toast, the way every other
-        // page says a change was written.
-        self.saved = true;
         cx.notify();
     }
 }
@@ -83,40 +78,6 @@ impl Editor {
 /// all when it is empty.
 fn typed_keys(value: &str) -> Vec<String> {
     value.split_whitespace().map(str::to_string).collect()
-}
-
-/// Whether what is typed in a shortcut field differs from the keys the command
-/// has now.
-pub(super) fn edit_changes(value: &str, current: &[String]) -> bool {
-    typed_keys(value) != current
-}
-
-impl Editor {
-    /// Whether a shortcut is open for editing.
-    pub fn editing(&self) -> bool {
-        self.editing.is_some()
-    }
-
-    /// Whether the shortcut open for editing holds keys it does not have yet --
-    /// opened and left as it was is nothing to lose.
-    pub fn dirty(&self, cx: &App) -> bool {
-        self.editing.is_some_and(|index| {
-            let current = COMMANDS[index].keys(&Shared::global(cx).keymap);
-            edit_changes(&self.input.read(cx).value(), &current)
-        })
-    }
-
-    /// `Saved` right after a save went through, until the next edit starts. A
-    /// failure is not repeated here: it is already written on the page, under
-    /// the field it is about.
-    pub fn note(&self) -> Option<Result<(), String>> {
-        self.saved.then_some(Ok(()))
-    }
-
-    /// Drop that word, when Settings opens or leaves this page.
-    pub fn forget_note(&mut self) {
-        self.saved = false;
-    }
 }
 
 impl Render for Editor {

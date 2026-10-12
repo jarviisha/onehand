@@ -94,9 +94,6 @@ impl Shell {
         self.workbench
             .update(cx, |panel, cx| panel.set_storage(Some(&dir), cx));
         self.tell_issues_page(&onehand_plugin_host::Request::SetStorage(Some(&dir)), cx);
-        if self.settings_open {
-            self.workspace_note_wanted = true;
-        }
         self.save_workspace(window, cx);
         self.set_window_identity(Some(dir.clone()), window, cx);
         cx.update_global::<Shared, _>(|shared, _| {
@@ -377,8 +374,7 @@ impl Shell {
         self.window.workspace.layout = layout;
 
         let saved = self.window.workspace.to_config().save_to(&dir);
-        let noted = std::mem::take(&mut self.workspace_note_wanted);
-        self.report_write("Workspace", saved, noted, window, cx);
+        self.report_write("Workspace", saved, window, cx);
         cx.notify();
     }
 }

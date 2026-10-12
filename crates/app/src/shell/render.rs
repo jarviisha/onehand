@@ -257,10 +257,6 @@ impl Render for Shell {
                     .is_some()
                     .then(|| crate::dialogs::run_workflow(self, window, cx)),
             )
-            .children(
-                self.settings_open
-                    .then(|| crate::settings::dialog(self.settings_view.clone(), window, cx)),
-            )
             .children(sheet_layer)
             .children(dialog_layer)
             .children(notification_layer)

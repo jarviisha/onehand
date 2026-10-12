@@ -27,7 +27,7 @@ pub use workbench::{Ask, Request, WorkbenchMode};
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, Div, ElementId, Hsla, InteractiveElement as _, IntoElement as _,
+    AnyElement, App, Div, ElementId, Hsla, InteractiveElement as _, IntoElement,
     ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div,
 };
 use gpui_component::button::Button;
@@ -118,6 +118,39 @@ pub fn well(cx: &App) -> Div {
         .rounded(theme.radius)
         .bg(theme.muted)
         .font_family(theme.mono_font_family.clone())
+}
+
+/// One setting, stacked: its name, a line about it in meta text, and the
+/// control under both at the column's full width -- so a field is as wide as
+/// what can be typed into it, and a long description wraps above it rather
+/// than beside it.
+///
+/// Here rather than in the app for the reason [`action`] is: a plugin's form
+/// asks for settings too, and a second copy is a second place for a field's
+/// rhythm to drift.
+pub fn field(
+    title: impl Into<SharedString>,
+    about: Option<AnyElement>,
+    control: impl IntoElement,
+    cx: &App,
+) -> Div {
+    div()
+        .v_flex()
+        .gap_2()
+        .w_full()
+        .child(
+            div()
+                .v_flex()
+                .gap_0p5()
+                .child(div().text_sm().child(title.into()))
+                .children(about.map(|about| {
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(about)
+                })),
+        )
+        .child(control)
 }
 
 /// The surface a dock draws on: the palette's panel step, one off the reading

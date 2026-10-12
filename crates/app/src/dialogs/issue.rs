@@ -11,6 +11,7 @@ use gpui::{
 use gpui_component::button::ButtonVariants;
 use gpui_component::dialog::Dialog;
 use gpui_component::input::{Textarea, TextareaState};
+use gpui_component::tag::Tag;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::issues::template;
 use onehand_core::preflight::{Check, Finding};
@@ -334,19 +335,15 @@ pub(crate) fn issue_row(
     trailing: String,
     cx: &App,
 ) -> gpui::Stateful<gpui::Div> {
-    let (muted, radius) = (cx.theme().muted_foreground, cx.theme().radius);
-    let (pill_bg, pill_fg) = (cx.theme().secondary, cx.theme().secondary_foreground);
+    let muted = cx.theme().muted_foreground;
+    let (fill, ink) = (cx.theme().secondary, cx.theme().secondary_foreground);
     row_shell(id, shown, title, cx)
         // A few labels, not all: the row is for telling issues apart, and the
         // title is what does most of that.
         .children(labels.iter().take(3).map(|label| {
-            div()
+            Tag::custom(fill, ink, fill)
+                .small()
                 .flex_none()
-                .px_1()
-                .rounded(radius)
-                .text_xs()
-                .bg(pill_bg)
-                .text_color(pill_fg)
                 .child(label.clone())
         }))
         .child(

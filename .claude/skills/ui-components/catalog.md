@@ -32,7 +32,8 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | Chat or Workbench in the area | `presentation` | `crates/app/src/shell/presentation.rs` |
 | A confirmation | `Confirm` with `confirm_on`; in the app `Ask` with `Shell::ask` or `ask_on` | `crates/plugin-host/src/confirm.rs`, named in `crates/app/src/shell/confirm.rs` |
 | A dialog's title row | `title_row` | `crates/app/src/dialogs.rs` |
-| A form field, a Settings group, a Settings row | `field`, `section`, `list_row` | `crates/app/src/settings.rs` |
+| A form field | `field` (its line about the setting in meta text) | `crates/plugin-host/src/lib.rs`, re-exported by `crates/app/src/settings.rs` |
+| A Settings group, a Settings row | `section`, `list_row` | `crates/app/src/settings.rs` |
 | A page's box and its title row | `card_box`, `card_title` | `crates/app/src/chat/pane/workspace_page.rs` |
 | A sunk box of machine text | `well` (callers set size and padding) | `crates/plugin-host/src/lib.rs` |
 | A mono well on a page | `mono_well`, built on `well` | `crates/app/src/chat/pane/tasks_page/detail.rs` |
@@ -50,8 +51,4 @@ page needs the same thing, lift it into a shared module in that change rather th
 
 Several builders draw one thing. Use the first one named; add no other.
 
-- **A small label**: `Tag` at `.small()`, as the transcript's `pill`, the Issues labels and the
-  Plugins chips draw it. Drawn by hand today in the issue picker's labels.
 - **A well**: `well`. `mono_well`, `plain_box` and the Issues review and diff views build on it.
-- **A confirmation**: `Confirm` (`Ask` in the app). Drawn by hand with `open_alert_dialog` in
-  Settings.

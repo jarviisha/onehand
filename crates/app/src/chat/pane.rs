@@ -51,6 +51,8 @@ enum Page {
     Issues(gpui::AnyView),
     /// The Workflows page, an entity of the window's for the same reason.
     Workflows(gpui::AnyView),
+    /// Settings, whose drafts are the shell's and so outlive this.
+    Settings(gpui::AnyView),
 }
 
 /// The rest the transcript comes to above the composer.

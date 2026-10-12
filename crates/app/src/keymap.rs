@@ -132,7 +132,7 @@ pub const COMMANDS: &[Command] = &[
         "Save open file",
         ["ctrl-s"],
         SaveFile,
-        "Shell && !Terminal && !Dialog",
+        "Shell && !Terminal && !Dialog && !Settings",
         "Outside terminal"
     ),
     command!(
@@ -673,7 +673,6 @@ pub use editor::Editor;
 
 #[cfg(test)]
 mod tests {
-    use super::editor::edit_changes;
     use super::*;
     use gpui::{KeyContext, Keymap};
 
@@ -734,20 +733,6 @@ mod tests {
         );
     }
 
-    /// A shortcut opened and left as it was is not an unsaved change, so
-    /// closing Settings over it must not ask; one whose keys differ is.
-    #[test]
-    fn a_shortcut_edit_is_pending_only_when_its_keys_changed() {
-        let current = vec!["ctrl-shift-b".to_string()];
-        assert!(!edit_changes("ctrl-shift-b", &current));
-        assert!(!edit_changes("  ctrl-shift-b  ", &current));
-        assert!(edit_changes("ctrl-shift-x", &current));
-        assert!(edit_changes("ctrl-shift-b ctrl-alt-b", &current));
-        // Emptied is a change: it unassigns the command.
-        assert!(edit_changes("", &current));
-        assert!(!edit_changes("   ", &[]));
-    }
-
     #[test]
     fn defaults_dispatch_by_context() {
         validate(&Overrides::new()).unwrap();
@@ -765,6 +750,11 @@ mod tests {
             Some(SaveFile.name().into())
         );
         assert_eq!(action_at(&map, "ctrl-s", &["Shell", "Terminal"]), None);
+        // Settings hides the editor, so its save does not reach through it.
+        assert_eq!(
+            action_at(&map, "ctrl-s", &["Shell", "Chat", "Settings", "Input"]),
+            None
+        );
         assert_eq!(
             action_at(&map, "ctrl-shift-w", &["Shell", "Dialog", "Input"]),
             None

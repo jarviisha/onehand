@@ -2,9 +2,7 @@ use super::Shell;
 use super::confirm::Ask;
 use crate::settings::{AgentCheck, AgentDraft, DraftShift, SettingsPage};
 use crate::state::Shared;
-use gpui::{App, BorrowAppContext, Context, Entity, ParentElement, Window, WindowAppearance};
-use gpui_component::button::ButtonVariants as _;
-use gpui_component::dialog::{DialogClose, DialogFooter};
+use gpui::{App, BorrowAppContext, Context, Entity, Window, WindowAppearance};
 use gpui_component::notification::Notification;
 use gpui_component::{Theme, ThemeMode, WindowExt as _};
 use onehand_core::config::{AgentSpec, AppConfig, Appearance};
@@ -22,120 +20,40 @@ impl Shell {
         &self.agent_draft
     }
 
+    /// Show Settings in the agent pane, on the page it was left on, with the
+    /// keyboard on its nav. The docks go aside as for every page.
+    ///
+    /// **A page, so nothing guards leaving it.** What it holds saves as it
+    /// changes, and the two drafts (an agent being written, a shortcut being
+    /// edited) are the shell's, kept until their own *Save* or *Cancel*: leave
+    /// by a session, a page, a key or a dock and come back, and they are as
+    /// they were.
     pub fn open_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.settings_return_focus = window.focused(cx);
         self.held_commands.clear();
-        self.settings_open = true;
-        self.settings_note = None;
-        self.keymap_editor
-            .update(cx, |editor, _| editor.forget_note());
+        self.docks_aside(window, cx);
+        let view: gpui::AnyView = self.settings_view.clone().into();
+        self.chat
+            .update(cx, |pane, cx| pane.show_settings(view, window, cx));
         self.settings_focus.focus(window, cx);
         cx.notify();
     }
 
-    /// Close Settings, unless that would throw away something not saved.
-    ///
-    /// An agent form or a shortcut left mid-edit is asked about first, and only
-    /// then: a question on every close teaches the user to click through it,
-    /// and closing with nothing pending has nothing to lose.
-    pub fn request_close_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let pending = self.agent_draft.dirty(&Shared::global(cx).agents, cx)
-            || self.keymap_editor.read(cx).dirty(cx);
-        if !pending {
-            self.close_settings(window, cx);
-            return;
-        }
-        let shell = cx.entity();
-        window.open_alert_dialog(cx, move |alert, _, _| {
-            let shell = shell.clone();
-            alert
-                .title("Discard unsaved changes?")
-                .description(
-                    "An agent or a shortcut is still being edited. \
-                     Closing Settings now throws those changes away.",
-                )
-                // Ours rather than the library's default pair, for the reason
-                // every button in this app is ours: the library draws its own
-                // with the arrow cursor.
-                .footer(
-                    DialogFooter::new()
-                        .child(
-                            DialogClose::new().child(
-                                crate::controls::action("keep-settings-edit")
-                                    .ghost()
-                                    .label("Keep editing"),
-                            ),
-                        )
-                        .child(
-                            crate::controls::action("discard-settings-edit")
-                                .danger()
-                                .label("Discard")
-                                .on_click(move |_, window: &mut Window, cx: &mut App| {
-                                    window.close_dialog(cx);
-                                    shell.update(cx, |shell: &mut Self, cx| {
-                                        shell.agent_draft.clear(window, cx);
-                                        shell.keymap_editor.update(cx, |editor, cx| {
-                                            if editor.editing() {
-                                                editor.cancel(window, cx);
-                                            }
-                                        });
-                                        shell.close_settings(window, cx);
-                                    });
-                                }),
-                        ),
-                )
-        });
+    /// Whether Settings is what the centre of the window shows.
+    pub(crate) fn settings_shown(&self, cx: &App) -> bool {
+        self.chat.read(cx).showing_settings()
     }
 
-    /// Whether Settings is on screen.
-    pub(crate) fn settings_shown(&self) -> bool {
-        self.settings_open
-    }
-
-    pub fn close_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.settings_open {
-            return;
-        }
-        self.settings_open = false;
-        // An unbound workspace writes nothing, so a flag set there is never
-        // taken; it must not outlive the Settings that set it.
-        self.workspace_note_wanted = false;
-        if let Some(focus) = self.settings_return_focus.take() {
-            focus.focus(window, cx);
-        } else {
-            self.chat
-                .update(cx, |pane, cx| pane.reclaim_focus(window, cx));
-        }
-        cx.notify();
-    }
-
-    /// The word Settings shows beside its ✕ for `page`. The shortcut editor
-    /// writes the keymap itself, so it keeps its own; every other page's
-    /// writes come through [`Shell::report_write`].
-    pub fn settings_note(&self, page: SettingsPage, cx: &App) -> Option<Result<(), String>> {
-        match page {
-            SettingsPage::Shortcuts => self.keymap_editor.read(cx).note(),
-            _ => self.settings_note.clone(),
-        }
-    }
-
-    /// Say how a write went: a failure as a notification wherever it came
-    /// from, and -- when `noted`, which is to say Settings asked for it -- the
-    /// outcome either way, for Settings to show beside its ✕.
+    /// Say a write that failed, once, as a toast: whatever started it is no
+    /// longer on screen to say so, or never was.
     pub(super) fn report_write<E: std::fmt::Display>(
         &mut self,
         what: &str,
         saved: Result<(), E>,
-        noted: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let saved = saved.map_err(|e| e.to_string());
-        if let Err(e) = &saved {
+        if let Err(e) = saved {
             window.push_notification(Notification::error(format!("{what} not saved — {e}")), cx);
-        }
-        if noted && self.settings_open {
-            self.settings_note = Some(saved);
         }
     }
 
@@ -153,12 +71,6 @@ impl Shell {
 
     pub fn show_settings_page(&mut self, page: SettingsPage, cx: &mut Context<Self>) {
         self.settings_page = page;
-        // A word about the last write belongs to the page it was made on, and
-        // so does a write still waiting on its debounce.
-        self.settings_note = None;
-        self.workspace_note_wanted = false;
-        self.keymap_editor
-            .update(cx, |editor, _| editor.forget_note());
         cx.notify();
     }
 
@@ -340,7 +252,7 @@ impl Shell {
 
         let path = Shared::global(cx).config_path.clone();
         let saved = AppConfig::update_in_place(&path, |cfg| cfg.appearance = choice);
-        self.report_write("Appearance", saved, true, window, cx);
+        self.report_write("Appearance", saved, window, cx);
         cx.notify();
     }
 
@@ -350,7 +262,7 @@ impl Shell {
         let shared = Shared::global(cx);
         let (path, agents) = (shared.config_path.clone(), shared.agents.clone());
         let saved = AppConfig::update_in_place(&path, |cfg| cfg.agents = agents);
-        self.report_write("Agents", saved, true, window, cx);
+        self.report_write("Agents", saved, window, cx);
     }
 }
 
