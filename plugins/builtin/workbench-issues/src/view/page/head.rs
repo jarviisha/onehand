@@ -1,14 +1,15 @@
-//! The head of the page's list: the open/closed switch, the progress,
-//! project and label filters, how old the pull request reading is, and what
-//! the list cannot vouch for.
+//! The page's toolbar — the search, the open/closed switch, the progress,
+//! project and label filters, *Refresh* and *New issue* — and what the list
+//! cannot vouch for.
 
 use super::IssuesView;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, ClickEvent, Context, IntoElement, ParentElement, SharedString, Styled, Window,
-    div,
+    AnyElement, App, ClickEvent, Context, Entity, IntoElement, ParentElement, Rems, SharedString,
+    Styled, Window, div, rems,
 };
 use gpui_component::button::ButtonVariants as _;
+use gpui_component::input::{Input, InputState};
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, Size, StyledExt};
 use onehand_core::issues;
 use onehand_core::task::work::list::{Filters, Incomplete, Listed, Progress};
@@ -18,15 +19,21 @@ use std::path::PathBuf;
 /// How many labels the label filter offers.
 const LABELS_SHOWN: usize = 100;
 
+/// The search's width: room for a title's few words or a `#number`, not the
+/// row's, so the filters beside it stay on the same line.
+const SEARCH_W: Rems = rems(14.);
+
 impl IssuesView {
-    /// The filters: open or closed, progress, project and label, and how
-    /// old the pull request reading is.
+    /// One row of controls over the list, wrapping when narrow: the search,
+    /// open or closed, progress, project and label, then *Refresh* (how old
+    /// the pull request reading is in its tooltip) and *New issue*.
     pub(super) fn page_head(
         &self,
         listed: &Listed<'_>,
         filters: &Filters,
         projects: &[(PathBuf, SharedString)],
         labels: Vec<String>,
+        query: &Entity<InputState>,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let view = cx.entity();
@@ -37,7 +44,7 @@ impl IssuesView {
                 SharedString::from(format!("Closed {}", listed.closed)),
             ],
             usize::from(filters.closed),
-            Size::XSmall,
+            Size::Small,
             move |picked, _, cx| {
                 let closed = *picked == 1;
                 view.update(cx, |view, cx| view.filter(|f| f.closed = closed, cx))
@@ -49,7 +56,14 @@ impl IssuesView {
             let view = cx.entity();
             menu_below(
                 "issues-page-progress",
-                trigger("issues-page-progress-trigger", picked.label()),
+                // Unset, the trigger names what it filters by.
+                trigger(
+                    "issues-page-progress-trigger",
+                    match picked {
+                        Progress::All => "Progress",
+                        picked => picked.label(),
+                    },
+                ),
                 move |mut menu, _, _| {
                     for choice in Progress::ALL {
                         let view = view.clone();
@@ -143,47 +157,55 @@ impl IssuesView {
                 },
             )
         });
-        let read = self.prs_read_at().map(|at| {
-            div()
-                .flex_none()
-                .text_xs()
-                .text_color(cx.theme().muted_foreground)
-                .child(format!(
-                    "read {}",
+        let read = self.prs_read_at().map_or_else(
+            || "Read the pull requests again".to_string(),
+            |at| {
+                format!(
+                    "Read the pull requests again (read {})",
                     onehand_core::rel_time(issues::now(), at)
-                ))
-        });
+                )
+            },
+        );
+        let muted = cx.theme().muted_foreground;
         div()
-            .flex_none()
-            .v_flex()
-            .gap_1()
-            .px_2()
-            .py_1()
-            .border_b_1()
-            .border_color(cx.theme().border)
-            .child(showing)
+            .h_flex()
+            .flex_wrap()
+            .items_center()
+            .gap_2()
             .child(
-                div()
-                    .h_flex()
-                    .flex_wrap()
-                    .items_center()
-                    .gap_1()
-                    .child(progress)
-                    .child(project)
-                    .children(label)
-                    .child(div().flex_1())
-                    .children(read)
-                    .child(
-                        action("issues-page-refresh")
-                            .xsmall()
-                            .ghost()
-                            .icon(Icon::new(IconName::Redo))
-                            .tooltip("Read the pull requests again")
-                            .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
-                                view.read_prs(cx);
-                                cx.notify();
-                            })),
-                    ),
+                div().flex_none().w(SEARCH_W).child(
+                    Input::new(query)
+                        .small()
+                        .prefix(Icon::new(IconName::Search).xsmall().text_color(muted))
+                        .cleanable(true),
+                ),
+            )
+            .child(showing)
+            .child(progress)
+            .child(project)
+            .children(label)
+            .child(div().flex_1())
+            .child(
+                action("issues-page-refresh")
+                    .small()
+                    .ghost()
+                    .icon(Icon::new(IconName::Redo))
+                    .tooltip(read)
+                    .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
+                        view.read_prs(cx);
+                        cx.notify();
+                    })),
+            )
+            .child(
+                action("issues-page-new")
+                    .small()
+                    .primary()
+                    .icon(Icon::new(IconName::Plus))
+                    .label("New issue")
+                    .tooltip("In the project filtered to, or the one picked")
+                    .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
+                        view.new_issue_on_page(window, cx)
+                    })),
             )
             .into_any_element()
     }
@@ -240,8 +262,6 @@ impl IssuesView {
                 .flex_none()
                 .v_flex()
                 .gap_0p5()
-                .px_2()
-                .py_1()
                 .text_xs()
                 .when(!failed.is_empty(), |notes| {
                     notes.child(div().text_color(warning).child(format!(
@@ -255,11 +275,11 @@ impl IssuesView {
     }
 }
 
-/// A filter's trigger.
+/// A filter's trigger: what it is set to, then the caret that opens it.
 fn trigger(id: &'static str, label: &str) -> gpui_component::button::Button {
     action(id)
-        .xsmall()
+        .small()
         .ghost()
         .label(label.to_string())
-        .icon(Icon::new(IconName::ChevronDown))
+        .dropdown_caret(true)
 }

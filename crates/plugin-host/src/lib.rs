@@ -123,6 +123,12 @@ pub fn status_hue(base: Hsla, foreground: Hsla) -> Hsla {
 /// a page's column heads, so bars side by side line up across the window.
 pub const BAR_H: gpui::Rems = gpui::rems(2.75);
 
+/// The widest a workspace-wide page grows (the overview, Tasks, the Issues
+/// list): room for two cards side by side, or a row's facts in columns,
+/// without lines too long to read. One figure, so moving between the pages
+/// does not move the column.
+pub const PAGE_WIDE: gpui::Rems = gpui::rems(64.);
+
 /// How much of a hue a pale fill keeps; the rest is the surface it sits on.
 const TINT: f32 = 0.16;
 

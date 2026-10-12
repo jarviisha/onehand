@@ -1,5 +1,11 @@
 //! The Issues page: the issues of every project of the workspace in one
-//! list, and the one picked beside it, drawn in full.
+//! list, and the one picked floating over it, drawn in full.
+//!
+//! The list keeps to the column the other workspace pages keep to, under one
+//! toolbar, a row a line. The issue picked floats over the list's right side
+//! in a panel of its own (`panel`), which never moves the list: closing it
+//! finds every row where it was. Nothing is open when the page is first
+//! shown.
 //!
 //! What the list shows, in what order and what each row says is core's
 //! (`onehand_core::task::work::list`); what is here holds the page's state —
@@ -10,31 +16,24 @@
 use super::{IssuesView, full, review};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, ClickEvent, Context, InteractiveElement as _, IntoElement, ParentElement,
-    ScrollHandle, SharedString, StatefulInteractiveElement as _, Styled, Window, div, rems,
+    AnyElement, Context, FocusHandle, InteractiveElement as _, IntoElement, KeyDownEvent,
+    ParentElement, ScrollHandle, SharedString, StatefulInteractiveElement as _, Styled, Window,
+    div,
 };
-use gpui_component::button::ButtonVariants as _;
-use gpui_component::input::Input;
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::issues::{self, IssueKey, LocalIssue};
 use onehand_core::task::work::IssueWork;
 use onehand_core::task::work::list::{Filters, Held, Item, PrReads, list};
-use onehand_plugin_host::{action, back_link, hint};
+use onehand_plugin_host::{PAGE_WIDE, hint};
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 mod head;
+mod panel;
 mod prs;
 mod row;
 
 use row::page_row;
-
-/// The page's width, in rems, below which the list and the issue no longer
-/// fit side by side: the list is shown, then the issue alone.
-const TWO_COLUMNS: f32 = 56.;
-
-/// The list's width beside the issue, in rems.
-const LIST_W: f32 = 24.;
 
 /// What the page holds beside what every Issues view does.
 #[derive(Default)]
@@ -48,10 +47,21 @@ pub(super) struct PageState {
     /// The rows on screen that stopped matching, which leave once another
     /// issue is picked.
     stopped: Vec<IssueKey>,
-    /// Narrow, the issue is shown alone; *Back* is the list again.
-    alone: bool,
-    /// The list's scroll, kept across leaving the page and *Back*.
+    /// The issue (or the form) floats over the list. Closed, the row stays
+    /// picked, so the arrow keys and opening it again start from it.
+    open: bool,
+    /// The panel's width in rems, once dragged; kept while the app runs.
+    panel_w: Option<f32>,
+    /// The list's scroll, kept across leaving the page.
     scroll: ScrollHandle,
+    /// The picked row is scrolled into view on the next draw: the arrow keys
+    /// moved past the list's edge, or an issue was opened from outside.
+    reveal: bool,
+    /// The rows on screen, in order, which the arrow keys step through.
+    shown: Vec<(PathBuf, u64)>,
+    /// Where the arrow keys and Esc land: the page itself, once a row is
+    /// picked.
+    focus: Option<FocusHandle>,
     /// Each project's pull requests, as last read.
     pub(super) prs: HashMap<PathBuf, PrReads>,
     /// The generation of each project's pull request read, so an answer to
@@ -64,7 +74,6 @@ pub(super) struct PageState {
     /// The review block, while one is open.
     pub(super) review: review::ReviewState,
 }
-
 impl PageState {
     /// The filters changed: the list is drawn afresh, the pin let go.
     pub(super) fn refilter(&mut self) {
@@ -121,7 +130,8 @@ impl IssuesView {
             page.review = review::ReviewState::default();
         }
         page.held.pinned = key;
-        page.alone = true;
+        page.open = true;
+        page.reveal = true;
         self.root = Some(root.to_path_buf());
         if let Some(state) = self.state_for(root, cx) {
             state.selected = Some(number);
@@ -129,12 +139,16 @@ impl IssuesView {
         cx.notify();
     }
 
-    /// Pick issue `number` of `root` from the page's list.
+    /// Pick issue `number` of `root` from the page's list, and open it.
     ///
     /// A changed draft in that project is asked about first; cancelled,
     /// nothing in the list moves. The pin goes once another issue is picked.
     fn pick(&mut self, root: PathBuf, number: u64, window: &mut Window, cx: &mut Context<Self>) {
         let key = self.key(&root, number);
+        // The page takes the keyboard, so the arrow keys and Esc work from here.
+        if let Some(focus) = self.page.as_ref().and_then(|page| page.focus.clone()) {
+            window.focus(&focus, cx);
+        }
         let arriving = self.root.as_deref() != Some(root.as_path());
         self.root = Some(root.clone());
         let drafting = self
@@ -144,7 +158,7 @@ impl IssuesView {
         // is kept across a switch of project; picking within it asks.
         if arriving && drafting {
             if let Some(page) = self.page.as_mut() {
-                page.alone = true;
+                page.open = true;
             }
             cx.notify();
             return;
@@ -159,7 +173,7 @@ impl IssuesView {
                 if !page.review.open_on(key.as_ref()) {
                     page.review = review::ReviewState::default();
                 }
-                page.alone = true;
+                page.open = true;
             }
             if let Some(state) = view.state_mut() {
                 state.selected = Some(number);
@@ -184,7 +198,7 @@ impl IssuesView {
         else {
             return;
         };
-        page.alone = true;
+        page.open = true;
         self.root = Some(root.clone());
         self.state_for(&root, cx);
         self.open_form(None, window, cx);
@@ -199,8 +213,57 @@ impl IssuesView {
         }
     }
 
-    /// The page: the list and the issue side by side, or one at a time when
-    /// narrow.
+    /// The keys, while the page holds the keyboard itself rather than a
+    /// field inside it: Esc closes the issue, up and down pick the row above
+    /// or below the one picked and open it.
+    fn page_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        let current = self.root.clone().zip(self.selected_number());
+        let Some(page) = self.page.as_mut() else {
+            return;
+        };
+        if !page
+            .focus
+            .as_ref()
+            .is_some_and(|focus| focus.is_focused(window))
+        {
+            return;
+        }
+        let step: isize = match event.keystroke.key.as_str() {
+            "escape" if page.open => {
+                page.open = false;
+                cx.stop_propagation();
+                cx.notify();
+                return;
+            }
+            "up" => -1,
+            "down" => 1,
+            _ => return,
+        };
+        cx.stop_propagation();
+        let at = current.and_then(|(root, number)| {
+            page.shown
+                .iter()
+                .position(|(r, n)| *r == root && *n == number)
+        });
+        // Closed, the first press opens the row picked rather than moving.
+        let next = match at {
+            Some(at) if !page.open => Some(at),
+            Some(at) => at.checked_add_signed(step),
+            None => Some(0),
+        };
+        if let Some((root, number)) = next.and_then(|next| page.shown.get(next)).cloned() {
+            page.reveal = true;
+            self.pick(root, number, window, cx);
+        }
+    }
+
+    /// The issue number picked in the project on screen.
+    fn selected_number(&self) -> Option<u64> {
+        self.roots.get(self.root.as_deref()?)?.selected
+    }
+
+    /// The page: the toolbar over the list, and the issue picked floating
+    /// over the list while it is open.
     pub(super) fn page_body(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         if self.storage.is_none() {
             return hint(
@@ -223,80 +286,49 @@ impl IssuesView {
         }
         self.read_prs_if_due(cx);
 
-        let wide = window.viewport_size().width >= window.rem_size() * TWO_COLUMNS;
-        let alone = self.page.as_ref().is_some_and(|page| page.alone);
         let selected = self.selected_key();
-        if !wide && alone && selected.is_some() {
-            return self.page_issue(true, window, cx);
-        }
-        let list = self.page_list(&projects, selected.as_ref(), window, cx);
-        if !wide {
-            return list;
-        }
+        let focus = match self.page.as_mut() {
+            Some(page) => page.focus.get_or_insert_with(|| cx.focus_handle()).clone(),
+            None => return hint("No page", cx),
+        };
+        let (top, rows) = self.page_list(&projects, selected.as_ref(), window, cx);
+        let open = self.page.as_ref().is_some_and(|page| page.open);
+        let panel = (open && self.has_page_issue()).then(|| self.page_panel(window, cx));
         div()
+            .id("issues-page")
+            .track_focus(&focus)
+            .on_key_down(cx.listener(|view, event: &KeyDownEvent, window, cx| {
+                view.page_key(event, window, cx)
+            }))
             .size_full()
-            .h_flex()
-            .items_start()
+            .v_flex()
+            .child(top)
             .child(
+                // The panel is placed on the list's area, under the toolbar,
+                // so the filters stay in reach while an issue is open.
                 div()
-                    .flex_none()
-                    .w(rems(LIST_W))
-                    .h_full()
-                    .border_r_1()
-                    .border_color(cx.theme().border)
-                    .child(list),
-            )
-            .child(
-                div()
+                    .id("issues-page-area")
+                    .relative()
                     .flex_1()
-                    .min_w_0()
-                    .h_full()
-                    .child(self.page_issue(false, window, cx)),
+                    .min_h_0()
+                    .on_drag_move(cx.listener(Self::drag_panel))
+                    .child(rows)
+                    .children(panel),
             )
             .into_any_element()
     }
 
-    /// The issue picked, under *← Issues* when it is shown alone.
-    fn page_issue(
-        &mut self,
-        alone: bool,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let detail = match self.root.clone() {
-            Some(root) => match self.issues_of(&root, cx).cloned() {
-                Some(issues) => self.detail(&root, &issues, window, cx),
-                None => hint("Reading issues…", cx),
-            },
-            None => hint("Pick an issue", cx),
-        };
-        div()
-            .size_full()
-            .v_flex()
-            .when(alone, |column| {
-                column.child(
-                    div()
-                        .flex_none()
-                        .h_flex()
-                        .items_center()
-                        .py_1()
-                        .px_3()
-                        .border_b_1()
-                        .border_color(cx.theme().border)
-                        .child(
-                            back_link("issues-page-back", "Issues").on_click(cx.listener(
-                                |view, _: &ClickEvent, _, cx| {
-                                    if let Some(page) = view.page.as_mut() {
-                                        page.alone = false;
-                                    }
-                                    cx.notify();
-                                },
-                            )),
-                        ),
-                )
-            })
-            .child(div().flex_1().min_h_0().v_flex().child(detail))
-            .into_any_element()
+    /// Whether a form is open in the project on screen.
+    fn drafting(&self) -> bool {
+        self.root
+            .as_deref()
+            .and_then(|root| self.roots.get(root))
+            .is_some_and(|state| state.form.is_some())
+    }
+
+    /// Whether there is an issue or a form to float over the list.
+    fn has_page_issue(&self) -> bool {
+        self.drafting() || self.selected_key().is_some()
     }
 
     /// The issue the page has picked, by its file and number.
@@ -306,14 +338,15 @@ impl IssuesView {
         self.key(root, number)
     }
 
-    /// The list: the search and filters, what the reading says, the rows.
+    /// The list: the toolbar and what the reading says, then, apart, the
+    /// rows, which the panel floats over.
     fn page_list(
         &mut self,
         projects: &[(PathBuf, SharedString)],
         selected: Option<&IssueKey>,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> AnyElement {
+    ) -> (AnyElement, AnyElement) {
         // What the rows borrow, held for the length of this draw.
         let owned: Vec<(PathBuf, LocalIssue)> = projects
             .iter()
@@ -326,9 +359,7 @@ impl IssuesView {
             })
             .collect();
         let works = self.works.clone();
-        let Some(storage) = self.storage.clone() else {
-            return hint("No storage", cx);
-        };
+        let storage = self.storage.clone().unwrap_or_default();
         let items: Vec<Item<'_>> = owned
             .iter()
             .map(|(root, issue)| {
@@ -347,8 +378,9 @@ impl IssuesView {
             .collect();
         let query = self.query(window, cx);
         let text = query.read(cx).value().to_string();
+        let columns = self.width.get().0 >= row::COLUMNS_MIN;
         let Some(page) = self.page.as_mut() else {
-            return hint("No page", cx);
+            return (hint("No page", cx), div().into_any_element());
         };
         let mut filters = page.filters.clone();
         filters.query = text;
@@ -363,7 +395,22 @@ impl IssuesView {
         let listed = list(&items, &filters, &page.prs, &page.held, issues::now());
         page.held.order = listed.order();
         page.stopped = listed.stopped_matching();
+        page.shown = listed
+            .rows
+            .iter()
+            .map(|row| (row.item.root.to_path_buf(), row.item.issue.number))
+            .collect();
         let scroll = page.scroll.clone();
+        // The picked row into view; the handle scrolls by child, and each row
+        // is one child.
+        if std::mem::take(&mut page.reveal)
+            && let Some(at) = listed
+                .rows
+                .iter()
+                .position(|row| selected == Some(&row.item.key))
+        {
+            scroll.scroll_to_item(at);
+        }
         let labels: Vec<String> = items
             .iter()
             .flat_map(|item| item.issue.labels.iter().cloned())
@@ -371,7 +418,7 @@ impl IssuesView {
             .into_iter()
             .collect();
 
-        let head = self.page_head(&listed, &filters, projects, labels, cx);
+        let toolbar = self.page_head(&listed, &filters, projects, labels, &query, cx);
         let notices = self.page_notices(&listed, projects, cx);
         let muted = cx.theme().muted_foreground;
         let empty = if items.is_empty() {
@@ -395,6 +442,7 @@ impl IssuesView {
                 .rows
                 .iter()
                 .any(|row| row.item.root != listed.rows[0].item.root);
+        let last = listed.rows.len().saturating_sub(1);
         let rows: Vec<AnyElement> = listed
             .rows
             .iter()
@@ -402,69 +450,37 @@ impl IssuesView {
             .map(|(i, row)| {
                 let picked = selected == Some(&row.item.key);
                 let project = mixed.then(|| label_of(row.item.root));
-                page_row(i, row, project, picked, cx)
+                page_row(i, i == last, row, project, picked, columns, cx)
             })
             .collect();
         let left_out = listed.left_out;
+        let line =
+            |text: String| column(div().px_3().py_2().text_xs().text_color(muted).child(text));
 
-        div()
+        let top = div()
+            .flex_none()
+            .px_4()
+            .pt_6()
+            .pb_3()
+            .child(column(
+                div().v_flex().gap_2().child(toolbar).children(notices),
+            ))
+            .into_any_element();
+        let rows = div()
+            .id("issues-page-list")
             .size_full()
             .v_flex()
-            .child(
-                div()
-                    .h_flex()
-                    .items_center()
-                    .gap_1()
-                    .flex_none()
-                    .px_2()
-                    .pt_2()
-                    .child(
-                        div().flex_1().min_w_0().child(
-                            Input::new(&query)
-                                .small()
-                                .prefix(Icon::new(IconName::Search).xsmall().text_color(muted))
-                                .cleanable(true),
-                        ),
-                    )
-                    .child(
-                        action("issues-page-new")
-                            .small()
-                            .ghost()
-                            .icon(Icon::new(IconName::Plus))
-                            .tooltip("New issue, in the project filtered to or the one picked")
-                            .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
-                                view.new_issue_on_page(window, cx)
-                            })),
-                    ),
-            )
-            .child(head)
-            .children(notices)
-            .child(
-                div()
-                    .id("issues-page-list")
-                    .flex_1()
-                    .min_h_0()
-                    .v_flex()
-                    .overflow_y_scroll()
-                    .track_scroll(&scroll)
-                    .children(
-                        empty.map(|empty| {
-                            div().px_3().py_2().text_xs().text_color(muted).child(empty)
-                        }),
-                    )
-                    .children(rows)
-                    .when(left_out > 0, |list| {
-                        list.child(
-                            div()
-                                .px_3()
-                                .py_2()
-                                .text_xs()
-                                .text_color(muted)
-                                .child(format!("… {left_out} more not shown")),
-                        )
-                    }),
-            )
-            .into_any_element()
+            .overflow_y_scroll()
+            .track_scroll(&scroll)
+            .px_4()
+            .pb_6()
+            .children(rows)
+            .children(empty.map(|empty| line(empty.to_string())))
+            .when(left_out > 0, |list| {
+                list.child(line(format!("… {left_out} more not shown")))
+            })
+            .into_any_element();
+        (top, rows)
     }
 
     /// Every filter back to where it starts, which a pinned row offers.
@@ -474,6 +490,11 @@ impl IssuesView {
         }
         self.filter(|f| *f = Filters::default(), cx);
     }
+}
+
+/// `inner` in the column the workspace pages keep to, centred.
+fn column(inner: gpui::Div) -> gpui::Div {
+    inner.w_full().max_w(PAGE_WIDE).mx_auto()
 }
 
 /// The work of every issue of `root`, by the file the page keys them with.

@@ -7,6 +7,7 @@ use gpui::{
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::chat::ConvMeta;
+use onehand_plugin_host::PAGE_WIDE;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
@@ -32,10 +33,6 @@ const PAGE_ISSUES: usize = 100;
 /// moving between them does not move the column. In rems, so it follows the
 /// pane's zoom with the text inside it.
 pub(super) const PAGE_COLUMN: f32 = 35.;
-
-/// The widest the workspace page grows, in rems: room for two cards side by
-/// side and a few project tiles to a row, without lines too long to read.
-pub(super) const PAGE_WIDE: f32 = 64.;
 
 /// The width a workspace page card starts from before it grows into its row,
 /// in rems. Two fit side by side within the page, and a narrower panel wraps
@@ -716,7 +713,7 @@ impl ChatPane {
                                 .v_flex()
                                 .gap_6()
                                 .w_full()
-                                .max_w(rems(PAGE_WIDE))
+                                .max_w(PAGE_WIDE)
                                 .text_sm()
                                 .child(pair(waiting, working))
                                 .children(projects)
