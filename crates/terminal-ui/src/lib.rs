@@ -47,7 +47,7 @@ pub struct PtyTab {
     /// `Arc<Mutex<_>>` rather than owned outright — see [`spawn_pty`]. The
     /// callback is `Send + Sync`, and a `Mutex` is what makes a `MasterPty`
     /// that is only `Send` usable from one.
-    _pty: Arc<Mutex<Box<dyn portable_pty::MasterPty + Send>>>,
+    pty: Arc<Mutex<Box<dyn portable_pty::MasterPty + Send>>>,
     child: Box<dyn portable_pty::Child + Send + Sync>,
 }
 
@@ -78,6 +78,22 @@ impl PtyTab {
     /// app ends.
     pub fn finished(&mut self) -> bool {
         matches!(self.child.try_wait(), Ok(Some(_)))
+    }
+
+    /// Whether a command is running in the foreground, `None` when the
+    /// system does not say: the PTY's foreground process group against the
+    /// child's own, as [`foreground_busy`] reads them.
+    pub fn busy(&self) -> Option<bool> {
+        #[cfg(unix)]
+        let foreground = self
+            .pty
+            .lock()
+            .ok()?
+            .process_group_leader()
+            .and_then(|pid| u32::try_from(pid).ok());
+        #[cfg(not(unix))]
+        let foreground = None;
+        foreground_busy(self.child.process_id(), foreground)
     }
 
     /// Re-apply a font size to this grid.
@@ -111,6 +127,15 @@ impl PtyTab {
             );
         });
     }
+}
+
+/// Whether a command is running in the foreground of a terminal whose child
+/// is `shell`, with `foreground` the process group the terminal says is in
+/// front. A shell at its prompt is its own foreground group; anything else in
+/// front (a build, a server, an editor, `ssh`) is a command running, while the
+/// shell's background jobs never are. `None` when either id is unknown.
+fn foreground_busy(shell: Option<u32>, foreground: Option<u32>) -> Option<bool> {
+    Some(foreground? != shell?)
 }
 
 /// Close the tab's child for real.
@@ -351,7 +376,7 @@ pub fn spawn_pty(
     Ok(PtyTab {
         view,
         label,
-        _pty: master,
+        pty: master,
         child,
     })
 }
@@ -431,4 +456,19 @@ pub fn terminal_palette(surface: gpui::Hsla, cx: &App) -> ColorPalette {
         .bright_cyan(cyan_b.0, cyan_b.1, cyan_b.2)
         .bright_white(bright_white.0, bright_white.1, bright_white.2)
         .build()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::foreground_busy;
+
+    /// A shell at its prompt is its own foreground group; a command in front
+    /// is a different one; and a terminal that will not say is neither.
+    #[test]
+    fn busy_is_a_foreground_group_other_than_the_shell() {
+        assert_eq!(foreground_busy(Some(100), Some(100)), Some(false));
+        assert_eq!(foreground_busy(Some(100), Some(240)), Some(true));
+        assert_eq!(foreground_busy(Some(100), None), None);
+        assert_eq!(foreground_busy(None, Some(240)), None);
+    }
 }

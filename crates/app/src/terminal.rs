@@ -29,11 +29,47 @@ use std::path::PathBuf;
 /// The tab set one project root has open.
 #[derive(Default)]
 struct RootShells {
-    tabs: Vec<PtyTab>,
+    tabs: Vec<Tab>,
     active: usize,
+    /// The id the next tab takes.
+    next: u64,
+}
+
+/// One shell, and the id it keeps for its life.
+///
+/// **By id and not by place**, because a question can be on screen while the
+/// strip changes under it: a tab before it exits, or the window moves to
+/// another project. The answer looks its tab up again by the id it was asked
+/// about, and a place would by then name a different shell.
+struct Tab {
+    id: u64,
+    shell: PtyTab,
+}
+
+impl std::ops::Deref for Tab {
+    type Target = PtyTab;
+    fn deref(&self) -> &PtyTab {
+        &self.shell
+    }
+}
+
+impl std::ops::DerefMut for Tab {
+    fn deref_mut(&mut self) -> &mut PtyTab {
+        &mut self.shell
+    }
 }
 
 impl RootShells {
+    /// Add `shell` as the newest tab, and select it.
+    fn push(&mut self, shell: PtyTab) {
+        self.tabs.push(Tab {
+            id: self.next,
+            shell,
+        });
+        self.next += 1;
+        self.active = self.tabs.len() - 1;
+    }
+
     /// Drop every tab `goes` answers true for, and keep the selection on the
     /// same *shell* it was on.
     ///
@@ -76,6 +112,14 @@ impl RootShells {
 fn selection_after(active: usize, dropped: &[usize], left: usize) -> usize {
     let ahead = dropped.iter().filter(|&&ix| ix < active).count();
     (active - ahead).min(left.saturating_sub(1))
+}
+
+/// Where the tab `id` is now in `ids`, if it is still there.
+///
+/// Pure for the reason [`selection_after`] is: a closing question answered
+/// after the strip changed has to find the shell it asked about, or nothing.
+fn place_of(ids: &[u64], id: u64) -> Option<usize> {
+    ids.iter().position(|&each| each == id)
 }
 
 pub struct TerminalPanel {
@@ -175,9 +219,7 @@ impl TerminalPanel {
         );
         match spawned {
             Ok(shell) => {
-                let set = self.shells.entry(root).or_default();
-                set.tabs.push(shell);
-                set.active = set.tabs.len() - 1;
+                self.shells.entry(root).or_default().push(shell);
                 self.status = None;
             }
             Err(e) => self.status = Some(e),
@@ -215,7 +257,46 @@ impl TerminalPanel {
         cx.notify();
     }
 
-    /// Close one tab, ending its shell.
+    /// Close tab `idx` of the project on screen, ending its shell — at once
+    /// when it sits at its prompt, after asking when a command is running in
+    /// it or the system will not say.
+    ///
+    /// **A running command is never ended unasked**: a build, a server, an
+    /// editor or an `ssh` session is work the ✕ beside it does not name.
+    pub fn close_tab(&mut self, idx: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(root) = self.root.clone() else {
+            return;
+        };
+        let Some(tab) = self.shells.get(&root).and_then(|set| set.tabs.get(idx)) else {
+            return;
+        };
+        let id = tab.id;
+        let description = match tab.busy() {
+            Some(false) => return self.close_tab_id(&root, id, window, cx),
+            Some(true) => "A command is still running in it. Closing the terminal ends it.",
+            None => {
+                "Whether a command is running in it cannot be told. Closing the terminal ends \
+                 whatever is."
+            }
+        };
+        crate::shell::ask_on(
+            cx.entity(),
+            crate::shell::Ask {
+                id: "close-terminal",
+                title: "Close this terminal?".into(),
+                description: description.into(),
+                act: "Close",
+                ..Default::default()
+            },
+            window,
+            cx,
+            move |panel, window, cx| panel.close_tab_id(&root, id, window, cx),
+        );
+    }
+
+    /// Close the tab `id` of `root`'s set, ending its shell, if it is still
+    /// there: one that exited or was closed while the question was open is
+    /// gone, and nothing else closes in its place.
     ///
     /// Takes the window for the same reason [`Self::reap`] does, and it is not
     /// optional here: the ✕ is pressed with the caret in the very grid about to
@@ -226,15 +307,24 @@ impl TerminalPanel {
     /// Asked *before* the drop, since a handle that is not on screen cannot
     /// answer, and only acted on when focus was inside this panel to begin
     /// with.
-    pub fn close_tab(&mut self, idx: usize, window: &mut Window, cx: &mut Context<Self>) {
+    fn close_tab_id(
+        &mut self,
+        root: &PathBuf,
+        id: u64,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let held_focus = self.focus_handle.contains_focused(window, cx);
+        let Some(set) = self.shells.get_mut(root) else {
+            return;
+        };
+        let ids: Vec<u64> = set.tabs.iter().map(|tab| tab.id).collect();
+        let Some(at) = place_of(&ids, id) else {
+            return;
+        };
         // Dropping the tab drops its PTY, which ends the child.
-        let closed = self
-            .root
-            .as_ref()
-            .and_then(|r| self.shells.get_mut(r))
-            .is_some_and(|set| set.drop_where(|i, _| i == idx));
-        if closed && held_focus {
+        let closed = set.drop_where(|i, _| i == at);
+        if closed && held_focus && self.root.as_ref() == Some(root) {
             self.focus_active(window, cx);
         }
         cx.notify();
@@ -645,7 +735,7 @@ impl TerminalPanel {
 
 #[cfg(test)]
 mod tests {
-    use super::selection_after;
+    use super::{place_of, selection_after};
 
     /// Closing a tab ahead of the selected one must move the selection back by
     /// one, not leave the index where it was.
@@ -700,5 +790,26 @@ mod tests {
     fn a_sweep_counts_only_what_was_ahead() {
         assert_eq!(selection_after(3, &[0, 4], 3), 2);
         assert_eq!(selection_after(3, &[4, 5], 4), 3);
+    }
+
+    /// A closing question answered after the strip changed finds the shell
+    /// it asked about, or nothing at all, and the selection stays on the shell
+    /// it was on either way.
+    #[test]
+    fn an_answer_finds_its_tab_by_id_or_nothing() {
+        // Three shells with ids 1, 2 and 3, the third selected; the question
+        // is about the second.
+        let (mut ids, mut active) = (vec![1, 2, 3], 2);
+        // The first exits while the question is open.
+        ids.remove(0);
+        active = selection_after(active, &[0], ids.len());
+        assert_eq!((ids[active], place_of(&ids, 2)), (3, Some(0)));
+        // The answer closes the second, and the third stays selected.
+        let at = place_of(&ids, 2).unwrap();
+        ids.remove(at);
+        active = selection_after(active, &[at], ids.len());
+        assert_eq!(ids[active], 3);
+        // A tab already gone answers nothing, so nothing else closes.
+        assert_eq!(place_of(&ids, 2), None);
     }
 }
