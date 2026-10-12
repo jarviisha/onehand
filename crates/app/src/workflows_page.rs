@@ -122,7 +122,7 @@ impl Render for WorkflowsPage {
             .size_full()
             .overflow_y_scroll()
             .child(
-                div().h_flex().justify_center().px_4().py_6().child(
+                div().h_flex().justify_center().p_6().child(
                     div()
                         .v_flex()
                         .gap_6()

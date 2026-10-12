@@ -56,5 +56,5 @@ Several builders draw one thing. Use the first one named; add no other.
 - **A line filling an empty panel**: `hint`. Copied into `crates/app/src/terminal.rs`.
 - **A well**: `well`. `mono_well` and `plain_box` build on it; the Issues review and diff views
   still draw their own.
-- **A confirmation**: `Confirm` (`Ask` in the app). Drawn by hand with `open_alert_dialog` on the project page, in
-  Workflows, Settings, the editor, Plugins and Issues.
+- **A confirmation**: `Confirm` (`Ask` in the app). Drawn by hand with `open_alert_dialog` in
+  Settings, the editor, Plugins and Issues.

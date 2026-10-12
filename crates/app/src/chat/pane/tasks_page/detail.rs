@@ -534,12 +534,8 @@ fn visit_body(
                 let drawn = crate::chat::transcript::diff_rows(rows, &mut budget, cx);
                 let cut = rows.len().saturating_sub(DIFF_LINES);
                 out.push(
-                    div()
+                    onehand_plugin_host::well(cx)
                         .v_flex()
-                        .w_full()
-                        .min_w_0()
-                        .rounded(cx.theme().radius)
-                        .bg(cx.theme().muted)
                         .children(drawn)
                         .into_any_element(),
                 );

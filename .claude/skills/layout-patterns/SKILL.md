@@ -59,7 +59,7 @@ let layout = list_detail(self.split.read(cx), &DOC_LIST, self.width.get(), rem);
 ```
 
 ```rust
-// Wrong (chat/pane/header.rs): each strip with its own padding
+// Wrong: each strip with its own padding
 .h(BAR_H).px_4()
 // Right: every strip
 .h(BAR_H).px_3()
@@ -73,7 +73,7 @@ row.child(div().h_flex().justify_center().child(div().w_full().max_w(CONTENT_COL
 ```
 
 ```rust
-// Wrong (workflows_page.rs): a page padded its own way, its width a bare number
+// Wrong: a page padded its own way, its width a bare number
 div().px_4().py_6().child(div().max_w(rems(EDITOR_COLUMN)))
 // Right
 div().p_6().child(div().max_w(tokens::PAGE_PROSE))

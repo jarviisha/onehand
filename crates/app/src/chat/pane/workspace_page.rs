@@ -3,7 +3,7 @@ use super::{ChatPane, ChatPaneEvent, Page, SessionSignal, rel_time};
 use crate::tokens::PAGE_WIDE;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, Context, Div, InteractiveElement, IntoElement, ParentElement, SharedString,
+    App, Context, Div, InteractiveElement, IntoElement, ParentElement, Rems, SharedString,
     StatefulInteractiveElement, Styled, Window, div, rems,
 };
 use gpui_component::button::ButtonVariants as _;
@@ -29,23 +29,23 @@ const PAGE_RECENT: usize = 5;
 /// many that a workspace of busy projects builds a thousand rows nobody reaches.
 const PAGE_ISSUES: usize = 100;
 
-/// The width a workspace page card starts from before it grows into its row,
-/// in rems. Two fit side by side within the page, and a narrower panel wraps
-/// them one under the other.
-const PAGE_CARD: f32 = 22.;
+/// The width a workspace page card starts from before it grows into its row.
+/// Two fit side by side within the page, and a narrower panel wraps them one
+/// under the other.
+const PAGE_CARD: Rems = rems(22.);
 
-/// The width a project tile starts from, in rems.
-const PAGE_TILE: f32 = 14.;
+/// The width a project tile starts from.
+const PAGE_TILE: Rems = rems(14.);
 
-/// The widest a project tile grows into its row, in rems, so a short last row
-/// does not stretch one tile across the page.
-const PAGE_TILE_MAX: f32 = 21.;
+/// The widest a project tile grows into its row, so a short last row does not
+/// stretch one tile across the page.
+const PAGE_TILE_MAX: Rems = rems(21.);
 
-/// How tall the open-issues card's list grows before it scrolls, in rems.
-const PAGE_ISSUES_H: f32 = 24.;
+/// How tall the open-issues card's list grows before it scrolls.
+const PAGE_ISSUES_H: Rems = rems(24.);
 
-/// The height of a workspace page card's title row, in rems.
-const PAGE_TITLE_H: f32 = 1.75;
+/// The height of a workspace page card's title row.
+const PAGE_TITLE_H: Rems = rems(1.75);
 
 /// What a project filter reads while it is not narrowing the list at all:
 /// the workspace page's issues, or the Tasks page.
@@ -317,7 +317,7 @@ impl ChatPane {
                         .h_flex()
                         .items_center()
                         .h(crate::controls::BAR_H)
-                        .px_4()
+                        .px_3()
                         .child(super::header::show_rail(cx)),
                 )
             })
@@ -488,8 +488,8 @@ impl ChatPane {
                 card_box(cx)
                     .id(("workspace-project", i))
                     .flex_grow_1()
-                    .flex_basis(rems(PAGE_TILE))
-                    .max_w(rems(PAGE_TILE_MAX))
+                    .flex_basis(PAGE_TILE)
+                    .max_w(PAGE_TILE_MAX)
                     .gap_1()
                     .cursor_pointer()
                     .hover(|tile| tile.bg(cx.theme().list_hover))
@@ -574,7 +574,7 @@ impl ChatPane {
             })
             .collect();
         let recent = page_card("Recent conversations", None, None, cx).child(match page.recent {
-            None => div().child(muted_line("Looking for past conversations…".to_string())),
+            None => div().child(muted_line("Reading past conversations…".to_string())),
             Some(_) => list(
                 recent,
                 PAGE_RECENT,
@@ -676,7 +676,7 @@ impl ChatPane {
             div()
                 .id("workspace-issues")
                 .v_flex()
-                .max_h(rems(PAGE_ISSUES_H))
+                .max_h(PAGE_ISSUES_H)
                 .overflow_y_scroll()
                 .children(rows)
         }))
@@ -697,8 +697,8 @@ impl ChatPane {
                 .items_start()
                 .gap_4()
                 .w_full()
-                .child(left.flex_grow_1().flex_basis(rems(PAGE_CARD)))
-                .child(right.flex_grow_1().flex_basis(rems(PAGE_CARD)))
+                .child(left.flex_grow_1().flex_basis(PAGE_CARD))
+                .child(right.flex_grow_1().flex_basis(PAGE_CARD))
         };
 
         div()
@@ -756,7 +756,7 @@ pub(super) fn card_box(cx: &App) -> Div {
         .gap_2()
         .min_w_0()
         .p_3()
-        .rounded(cx.theme().radius)
+        .rounded(cx.theme().radius_lg)
         .border_1()
         .border_color(cx.theme().border)
 }
@@ -776,7 +776,7 @@ fn card_title(
         .gap_2()
         // The control's own height must not change the title row's, or a card
         // with a filter sits taller than the one beside it.
-        .h(rems(PAGE_TITLE_H))
+        .h(PAGE_TITLE_H)
         .child(div().font_semibold().child(title.into()))
         .children(count.map(|n| div().text_xs().text_color(muted).child(n.to_string())))
         .child(div().flex_1())

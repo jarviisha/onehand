@@ -2,9 +2,8 @@
 //! duplicated, imported or own workflow, saving and deleting, and exporting.
 
 use super::{WorkflowDraft, WorkflowsPage};
-use gpui::{App, Context, ParentElement as _, Window};
+use gpui::{Context, Window};
 use gpui_component::WindowExt as _;
-use gpui_component::button::ButtonVariants as _;
 use gpui_component::notification::Notification;
 use onehand_core::workflow::{self as core, StepKind, Template};
 use std::path::PathBuf;
@@ -147,39 +146,24 @@ impl WorkflowsPage {
             cx.notify();
             return;
         }
-        let page = cx.entity();
-        window.open_alert_dialog(cx, move |alert, _, _| {
-            let (page, template, file) = (page.clone(), template.clone(), file.clone());
-            alert
-                .title("Discard the workflow being edited?")
-                .description(
-                    "Its changes are not saved. Opening another workflow throws them away.",
-                )
-                .footer(
-                    gpui_component::dialog::DialogFooter::new()
-                        .child(
-                            gpui_component::dialog::DialogClose::new().child(
-                                crate::controls::action("keep-workflow-edit")
-                                    .ghost()
-                                    .label("Keep editing"),
-                            ),
-                        )
-                        .child(
-                            crate::controls::action("discard-workflow-edit")
-                                .danger()
-                                .label("Discard")
-                                .on_click(move |_, window: &mut Window, cx: &mut App| {
-                                    window.close_dialog(cx);
-                                    let (template, file) = (template.clone(), file.clone());
-                                    page.update(cx, |page: &mut Self, cx| {
-                                        page.draft =
-                                            Some(WorkflowDraft::load(&template, file, window, cx));
-                                        cx.notify();
-                                    });
-                                }),
-                        ),
-                )
-        });
+        crate::shell::ask_on(
+            cx.entity(),
+            crate::shell::Ask {
+                id: "discard-workflow-edit",
+                title: "Discard the workflow being edited?".into(),
+                description: "Its changes are not saved. Opening another workflow throws them \
+                              away."
+                    .into(),
+                act: "Discard",
+                ..Default::default()
+            },
+            window,
+            cx,
+            move |page, window, cx| {
+                page.draft = Some(WorkflowDraft::load(&template, file.clone(), window, cx));
+                cx.notify();
+            },
+        );
     }
 
     /// Change the open form with `edit`.

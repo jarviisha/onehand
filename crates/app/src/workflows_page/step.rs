@@ -4,13 +4,18 @@ use super::{click, row_delete, row_icon};
 use crate::settings::{about, field};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, rems,
+    AnyElement, App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div,
 };
 
 use gpui_component::input::{Input, Textarea};
 use gpui_component::switch::Switch;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::workflow::{GateKind, Place};
+
+/// How tall a step's prompt stands before it scrolls: a paragraph in view, so
+/// a step reads without opening it, and a form of several steps still fits a
+/// screen.
+const PROMPT_H: gpui::Rems = gpui::rems(8.);
 
 /// What a later step's menus need to know of an earlier one.
 pub(super) struct Earlier {
@@ -158,7 +163,7 @@ pub(super) fn step_box(
                 .child(field(
                     "Prompt",
                     None,
-                    Textarea::new(&step.prompt).h(rems(8.)),
+                    Textarea::new(&step.prompt).h(PROMPT_H),
                     cx,
                 ))
                 .child(
@@ -260,7 +265,7 @@ pub(super) fn step_box(
         .gap_3()
         .w_full()
         .p_3()
-        .rounded(cx.theme().radius)
+        .rounded(cx.theme().radius_lg)
         .border_1()
         .border_color(cx.theme().border)
         .child(head)

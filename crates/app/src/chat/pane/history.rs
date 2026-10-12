@@ -119,7 +119,7 @@ impl ChatPane {
         // menu that gives the second while the first is true tells somebody with
         // a hundred conversations that they have none.
         let standing = match held {
-            None => Some(SharedString::from("Reading conversations…")),
+            None => Some(SharedString::from("Reading past conversations…")),
             Some(all) if all.is_empty() => {
                 Some(SharedString::from("No conversations in this project yet"))
             }

@@ -7,8 +7,7 @@ use gpui::{
     Stateful, StatefulInteractiveElement, Styled, Window, div,
 };
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::dialog::{DialogClose, DialogFooter};
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt, WindowExt as _};
+use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::chat::ConvMeta;
 use std::path::{Path, PathBuf};
 
@@ -168,49 +167,23 @@ impl ChatPane {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let pane = cx.entity();
-        window.open_alert_dialog(cx, move |alert, _, _| {
-            // Cloned per build: a dialog's builder runs again on every frame it
-            // is on screen, so nothing captured here can be consumed by one.
-            let (pane, dir, name) = (pane.clone(), dir.clone(), name.clone());
-            alert
-                // The library's own title and description survive here, unlike
-                // on a dialog opened from a trigger: this builder is what the
-                // window keeps, so both are rebuilt with the rest of it.
-                .title("Delete this conversation?")
-                .description(format!(
-                    "“{name}” will be removed from disk, with every message and \
-                     image in it. This cannot be undone."
-                ))
-                // Ours rather than the default pair, for the reason every button
-                // in this app is ours: the library draws its own with the arrow
-                // cursor, and the one dialog that asks before destroying
-                // something is the last place to say "this does nothing" with
-                // the pointer. Keep is first and plain, Delete last and in the
-                // danger tint.
-                .footer(
-                    DialogFooter::new()
-                        .child(
-                            DialogClose::new().child(
-                                crate::controls::action("keep-conversation")
-                                    .ghost()
-                                    .label("Keep"),
-                            ),
-                        )
-                        .child(
-                            crate::controls::action("confirm-delete-conversation")
-                                .danger()
-                                .label("Delete")
-                                .on_click(move |_, window: &mut Window, cx: &mut App| {
-                                    window.close_dialog(cx);
-                                    let dir = dir.clone();
-                                    pane.update(cx, |pane: &mut Self, cx| {
-                                        pane.delete_conversation(dir, cx);
-                                    });
-                                }),
-                        ),
+        crate::shell::ask_on(
+            cx.entity(),
+            crate::shell::Ask {
+                id: "delete-conversation",
+                title: "Delete this conversation?".into(),
+                description: format!(
+                    "“{name}” will be removed from disk, with every message and image in it. \
+                     This cannot be undone."
                 )
-        });
+                .into(),
+                act: "Delete",
+                ..Default::default()
+            },
+            window,
+            cx,
+            move |pane, _, cx| pane.delete_conversation(dir.clone(), cx),
+        );
     }
 
     /// Delete an archived conversation, the question already answered.
@@ -408,8 +381,8 @@ impl ChatPane {
         // none, for the half-second a directory read takes, is worse than
         // saying nothing.
         let note = match &project.history {
-            None => Some("Looking for past conversations…"),
-            Some(all) if all.is_empty() => Some("No conversations in this project yet."),
+            None => Some("Reading past conversations…"),
+            Some(all) if all.is_empty() => Some("No conversations in this project yet"),
             Some(_) => None,
         };
 
@@ -671,7 +644,7 @@ fn conversation_card(
         .gap_2()
         .w_full()
         .p_2()
-        .rounded(cx.theme().radius)
+        .rounded(cx.theme().radius_lg)
         .border_1()
         .border_color(cx.theme().border)
         .cursor_pointer()

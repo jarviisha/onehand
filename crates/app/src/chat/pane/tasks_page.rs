@@ -316,7 +316,7 @@ fn row_actions(
     };
     let open = open_session(&format!("{key}-open"), row, cx);
     let retry = |cx: &mut Context<ChatPane>| {
-        button("retry", "Retry")
+        button("retry", "Retry…")
             .tooltip("Run it again in a new run")
             .on_click(emit(&id, cx, ChatPaneEvent::RetryTask))
             .into_any_element()
