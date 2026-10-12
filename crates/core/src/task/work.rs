@@ -439,7 +439,7 @@ impl Act {
             Self::Resume => "Resume",
             Self::Retry => "Retry…",
             Self::RetryCurrent => "Retry with current settings…",
-            Self::AnswerReview => "Answer the pull request review",
+            Self::AnswerReview => "Answer the pull request review…",
             Self::RemoveWorktree => "Remove worktree…",
             Self::OpenPullRequest => "Open pull request",
             Self::OpenBranch => "Open branch",

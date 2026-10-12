@@ -9,7 +9,6 @@ use crate::workbench::Workbench;
 use gpui::{App, AppContext, BorrowAppContext, Context, Focusable as _, Window, px};
 use gpui_component::dock::{DockArea, DockEvent, DockItem, DockPlacement};
 use gpui_component::input::{InputEvent, InputState};
-use gpui_component::notification::Notification;
 use gpui_component::{ResizableState, Root, WindowExt as _};
 use onehand_core::config::WorkspaceConfig;
 use onehand_core::config::{AppConfig, Appearance};
@@ -196,14 +195,14 @@ impl Shell {
                     // for a stronger reason: a workspace that will not save can
                     // be described again, a conversation cannot.
                     E::ArchiveFailed(why) => window.push_notification(
-                        Notification::error(format!("Conversation not saved — {why}")),
+                        crate::toast::failed("Saving the conversation", why),
                         cx,
                     ),
                     // A warning rather than an error: nothing went wrong and
                     // nothing was lost -- the conversation is exactly where it
                     // was, which is the opposite of the message above.
                     E::ConversationNotDeleted(why) => window.push_notification(
-                        Notification::warning(format!("Conversation not deleted — {why}")),
+                        crate::toast::failed("Deleting the conversation", why),
                         cx,
                     ),
                     E::OpenIssue { root, number } => shell.open_issue(root, *number, window, cx),

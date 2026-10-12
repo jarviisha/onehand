@@ -6,7 +6,6 @@ use crate::state::Shared;
 use gpui::{AppContext as _, Context, Entity, SharedString, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::input::{InputState, TextareaState};
-use gpui_component::notification::Notification;
 use onehand_core::preflight::{self, Check, found_late};
 use onehand_core::task::{Source, Task};
 use onehand_core::workflow::{self as core, Brief, Failure, Place, Setup, Template};
@@ -47,7 +46,7 @@ impl Shell {
     pub fn begin_workflow(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(root) = self.window.workspace.active_root() else {
             window.push_notification(
-                Notification::warning("Add a project before running a workflow"),
+                crate::toast::warning("Add a project before running a workflow"),
                 cx,
             );
             return;
@@ -371,7 +370,7 @@ impl Shell {
             // An issue's run that cannot start ends failed, so its issue is
             // told rather than left claimed with nothing after the claim.
             let issue = crate::task::task(&id, cx).is_some_and(|task| task.issue().is_some());
-            window.push_notification(Notification::warning(why.clone()), cx);
+            window.push_notification(crate::toast::warning(why.clone()), cx);
             // Deferred: handing the place on may start a task in this shell.
             let id = id.clone();
             cx.defer(move |cx| match issue {
@@ -483,7 +482,7 @@ impl Shell {
     pub fn run_check(&mut self, root: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         let Some(check) = self.check_of(&root) else {
             window.push_notification(
-                Notification::warning("This project has no check command to run"),
+                crate::toast::warning("This project has no check command to run"),
                 cx,
             );
             return;

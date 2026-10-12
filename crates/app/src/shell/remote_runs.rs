@@ -3,7 +3,6 @@ use crate::state::Shared;
 use gpui::{App, AppContext as _, BorrowAppContext, Context, Entity, SharedString, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::input::{InputState, TextareaState};
-use gpui_component::notification::Notification;
 use onehand_core::config::AgentSpec;
 use std::path::{Path, PathBuf};
 
@@ -300,7 +299,7 @@ impl Shell {
     ) {
         let path = crate::state::Shared::global(cx).config_path.clone();
         let saved = crate::unattended::set_workflows(default, by_label, &path, cx);
-        self.report_write("Unattended runs", saved, window, cx);
+        self.report_write("the unattended runs", saved, window, cx);
         cx.notify();
     }
 
@@ -433,7 +432,7 @@ impl Shell {
             handle,
             cx,
         ) {
-            window.push_notification(Notification::warning(why), cx);
+            window.push_notification(crate::toast::warning(why), cx);
         }
     }
 

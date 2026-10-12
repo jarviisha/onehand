@@ -4,7 +4,6 @@ use crate::state::Shared;
 use gpui::{App, BorrowAppContext, Context, SharedString, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::dock::DockPlacement;
-use gpui_component::notification::Notification;
 use onehand_core::gitstat;
 use std::path::PathBuf;
 
@@ -70,7 +69,7 @@ impl Shell {
         cx: &mut Context<Self>,
     ) {
         self.select_root_session(root_idx, session_idx, window, cx);
-        self.chat.update(cx, |pane, cx| pane.export(cx));
+        self.chat.update(cx, |pane, cx| pane.export(window, cx));
     }
 
     /// Open the rename field on the conversation showing.
@@ -169,7 +168,7 @@ impl Shell {
                         // conversation is exactly where it was, which is the
                         // opposite of a failed save.
                         window.push_notification(
-                            Notification::warning(format!("Conversation not deleted — {e}")),
+                            crate::toast::failed("Deleting the conversation", e),
                             cx,
                         );
                     })
@@ -517,13 +516,16 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> Option<u64> {
         let Some(spec) = Shared::global(cx).agents.get(idx).cloned() else {
-            window.push_notification(Notification::warning("No agents configured"), cx);
+            window.push_notification(
+                crate::toast::warning("Add an agent in Settings before starting a session"),
+                cx,
+            );
             return None;
         };
         let uid = cx.update_global::<Shared, _>(|shared, _| shared.next_uid());
         if self.window.workspace.add_session(spec, uid).is_none() {
             window.push_notification(
-                Notification::warning("Add a project before starting a session"),
+                crate::toast::warning("Add a project before starting a session"),
                 cx,
             );
             return None;
@@ -577,7 +579,7 @@ impl Shell {
     fn restart_now(&mut self, uid: u64, window: &mut Window, cx: &mut Context<Self>) {
         match self.chat.update(cx, |pane, cx| pane.restart(uid, cx)) {
             crate::chat::pane::Restart::Restarted => {
-                window.push_notification(Notification::info("Restarting the agent"), cx);
+                window.push_notification(crate::toast::info("Restarting the agent"), cx);
             }
             crate::chat::pane::Restart::Nothing => {}
         }

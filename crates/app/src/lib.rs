@@ -33,6 +33,7 @@ mod state;
 mod task;
 mod terminal;
 mod theme;
+mod toast;
 mod unattended;
 mod workbench;
 mod workflow;

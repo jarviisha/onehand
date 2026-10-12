@@ -4,12 +4,11 @@
 use super::{WorkflowDraft, WorkflowsPage};
 use gpui::{Context, Window};
 use gpui_component::WindowExt as _;
-use gpui_component::notification::Notification;
 use onehand_core::workflow::{self as core, StepKind, Template};
 use std::path::PathBuf;
 
 /// What a save says, done or not.
-const SAVED: (&str, &str) = ("Workflow saved", "Workflow not saved");
+const SAVED: (&str, &str) = ("Workflow saved", "Saving the workflow");
 
 impl WorkflowsPage {
     /// Open the form on a new template, one agent step to start from.
@@ -74,7 +73,7 @@ impl WorkflowsPage {
             };
             let _ = page.update_in(cx, |page: &mut Self, window, cx| {
                 page.report(
-                    ("Workflow exported", "Workflow not exported"),
+                    ("Workflow exported", "Exporting the workflow"),
                     written,
                     window,
                     cx,
@@ -107,12 +106,8 @@ impl WorkflowsPage {
             let _ = page.update_in(cx, |page: &mut Self, window, cx| {
                 match read {
                     Ok(template) => page.open_workflow_form(template, None, window, cx),
-                    Err(why) => window.push_notification(
-                        gpui_component::notification::Notification::error(format!(
-                            "Workflow not imported — {why}"
-                        )),
-                        cx,
-                    ),
+                    Err(why) => window
+                        .push_notification(crate::toast::failed("Importing the workflow", why), cx),
                 }
                 cx.notify();
             });
@@ -288,7 +283,7 @@ impl WorkflowsPage {
                     page.draft = None;
                 }
                 page.report(
-                    ("Workflow deleted", "Workflow not deleted"),
+                    ("Workflow deleted", "Deleting the workflow"),
                     gone,
                     window,
                     cx,
@@ -300,18 +295,19 @@ impl WorkflowsPage {
         .detach();
     }
 
-    /// Say how a write went, in a toast, by `said`'s two words: done, or
-    /// not done and why. The page has no line of its own to say it on.
+    /// Say how a write went, in a toast: `done` when it went, and the
+    /// failure of `what` and why when it did not. The page has no line of its
+    /// own to say it on.
     fn report<E: std::fmt::Display>(
         &mut self,
-        (done, not): (&str, &str),
+        (done, what): (&str, &str),
         written: Result<(), E>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let note = match written {
-            Ok(()) => Notification::success(done.to_string()),
-            Err(why) => Notification::error(format!("{not} — {why}")),
+            Ok(()) => crate::toast::success(done.to_string()),
+            Err(why) => crate::toast::failed(what, why),
         };
         window.push_notification(note, cx);
     }

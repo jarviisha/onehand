@@ -407,8 +407,8 @@ impl ChatPane {
                     .item(
                         crate::controls::menu_item("Export as Markdown…")
                             .icon(Icon::new(IconName::ExternalLink))
-                            .on_click(move |_, _, cx: &mut App| {
-                                export.update(cx, |pane: &mut Self, cx| pane.export(cx));
+                            .on_click(move |_, window, cx: &mut App| {
+                                export.update(cx, |pane: &mut Self, cx| pane.export(window, cx));
                             }),
                     )
                     .separator()
@@ -560,7 +560,7 @@ fn project_menu(
         .separator()
         .item(
             crate::controls::menu_row(move |_, _| {
-                div().text_color(danger).child("Remove from workspace")
+                div().text_color(danger).child("Remove from workspace…")
             })
             .icon(Icon::new(IconName::Delete).text_color(danger))
             .on_click(act(ProjectAction::Remove, pane.clone())),

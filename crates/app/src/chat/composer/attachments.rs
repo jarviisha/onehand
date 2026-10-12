@@ -98,23 +98,24 @@ impl Composer {
                     )
                 })
                 .await;
-            let Ok(path) = written else {
-                // A toast and not a line in the card: nothing said about the
-                // composer may move it.
-                let _ = cx.update(|cx| {
-                    window
-                        .update(cx, |_, window, cx| {
-                            gpui_component::WindowExt::push_notification(
-                                window,
-                                gpui_component::notification::Notification::warning(
-                                    "Could not attach the pasted image",
-                                ),
-                                cx,
-                            );
-                        })
-                        .ok()
-                });
-                return;
+            let path = match written {
+                Ok(path) => path,
+                Err(why) => {
+                    // A toast and not a line in the card: nothing said about
+                    // the composer may move it.
+                    let _ = cx.update(|cx| {
+                        window
+                            .update(cx, |_, window, cx| {
+                                gpui_component::WindowExt::push_notification(
+                                    window,
+                                    crate::toast::failed("Attaching the pasted image", why),
+                                    cx,
+                                );
+                            })
+                            .ok()
+                    });
+                    return;
+                }
             };
             let _ = composer.update(cx, |composer: &mut Self, cx| {
                 composer.stage(vec![path], AttachmentSource::Clipboard, cx);

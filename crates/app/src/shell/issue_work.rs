@@ -6,7 +6,6 @@ use super::Shell;
 use crate::chat::session::ChatEvent;
 use gpui::{Context, SharedString, Window};
 use gpui_component::WindowExt as _;
-use gpui_component::notification::Notification;
 use onehand_core::chat::Link;
 use std::path::Path;
 
@@ -39,7 +38,7 @@ impl Shell {
         };
         let Some(session) = self.chat.read(cx).session_entity(uid) else {
             window.push_notification(
-                Notification::warning("The session for this issue did not start"),
+                crate::toast::error("Starting the session for this issue failed"),
                 cx,
             );
             return;
@@ -116,7 +115,7 @@ impl Shell {
             let _ = shell.update_in(cx, |shell, window, cx| {
                 let Some(((root, conv), there)) = found else {
                     window.push_notification(
-                        Notification::warning("That session's conversation was not saved"),
+                        crate::toast::warning("That session's conversation was not saved"),
                         cx,
                     );
                     return;
@@ -131,7 +130,7 @@ impl Shell {
                     }
                     None => {
                         window.push_notification(
-                            Notification::warning(format!(
+                            crate::toast::warning(format!(
                                 "The folder that conversation ran in is gone: {}",
                                 root.display()
                             )),

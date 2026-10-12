@@ -3,7 +3,6 @@ use super::storage::pick_folder;
 use gpui::{App, Context, Entity, Focusable as _, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::input::InputState;
-use gpui_component::notification::Notification;
 use onehand_core::workspace::{self};
 use onehand_core::worktree;
 use std::path::PathBuf;
@@ -309,7 +308,7 @@ impl Shell {
                             // screen anywhere until one runs.
                             shell.refresh_git(cx);
                             window.push_notification(
-                                Notification::info(format!("Renamed {from} to {name}")),
+                                crate::toast::info(format!("Renamed {from} to {name}")),
                                 cx,
                             );
                         }
@@ -473,7 +472,7 @@ impl Shell {
                             shell.refresh_git(cx);
                             shell.save_workspace(window, cx);
                             window.push_notification(
-                                Notification::info(format!("Added {label}, on {branch}")),
+                                crate::toast::info(format!("Added {label}, on {branch}")),
                                 cx,
                             );
                         }

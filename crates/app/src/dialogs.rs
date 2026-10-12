@@ -320,11 +320,8 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
                 .child({
                     let run = crate::controls::action("run-workflow")
                         .primary()
-                        .label(if busy {
-                            "Making the worktree…"
-                        } else {
-                            "Run"
-                        });
+                        .label("Run")
+                        .loading(busy);
                     match busy || blocking > 0 {
                         true => run.refuses(true),
                         false => run.on_click(cx.listener(
@@ -648,14 +645,10 @@ pub fn new_worktree(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                     // work from: cloning a working tree takes long enough that
                     // a button still offering itself invites the second press
                     // that would ask for the same folder twice.
-                    let create =
-                        crate::controls::action("create-worktree")
-                            .primary()
-                            .label(if busy {
-                                "Creating…"
-                            } else {
-                                "Create worktree"
-                            });
+                    let create = crate::controls::action("create-worktree")
+                        .primary()
+                        .label("Create worktree")
+                        .loading(busy);
                     match busy || !named {
                         true => create.refuses(true),
                         false => create.on_click(cx.listener(
@@ -731,7 +724,8 @@ pub fn rename_branch(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                 .child({
                     let rename = crate::controls::action("commit-branch-rename")
                         .primary()
-                        .label(if busy { "Renaming…" } else { "Rename" });
+                        .label("Rename")
+                        .loading(busy);
                     match busy {
                         true => rename.refuses(true),
                         false => rename.on_click(cx.listener(

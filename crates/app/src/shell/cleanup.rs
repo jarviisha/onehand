@@ -12,7 +12,6 @@ use super::Shell;
 use crate::state::Shared;
 use gpui::{App, Context, Window};
 use gpui_component::WindowExt as _;
-use gpui_component::notification::Notification;
 use onehand_core::connector::PrState;
 use onehand_core::task::Task;
 use onehand_core::worktree::removal::{self, Judged, Merged, Process};
@@ -176,7 +175,7 @@ impl Shell {
                     Judged::Remove { branch, .. } => branch,
                     Judged::Refused(why) => {
                         let why = format!("Not removed, as things stand now: {}", why.join(" "));
-                        window.push_notification(Notification::warning(why), cx);
+                        window.push_notification(crate::toast::warning(why), cx);
                         return;
                     }
                 };
@@ -196,18 +195,18 @@ impl Shell {
                             Ok((folder, branch, removed)) => {
                                 let folder = folder.display();
                                 match (branch, removed.branch_kept) {
-                                    (Some(branch), Some(why)) => Notification::warning(format!(
+                                    (Some(branch), Some(why)) => crate::toast::warning(format!(
                                         "Removed {folder}; the branch {branch} was kept: {why}"
                                     )),
-                                    (Some(branch), None) => Notification::success(format!(
+                                    (Some(branch), None) => crate::toast::success(format!(
                                         "Removed {folder} and {branch}."
                                     )),
                                     (None, _) => {
-                                        Notification::success(format!("Removed {folder}."))
+                                        crate::toast::success(format!("Removed {folder}."))
                                     }
                                 }
                             }
-                            Err(why) => Notification::warning(why),
+                            Err(why) => crate::toast::failed("Removing the worktree", why),
                         };
                         window.push_notification(said, cx);
                     });

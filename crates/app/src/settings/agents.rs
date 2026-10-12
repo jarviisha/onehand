@@ -122,7 +122,7 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
                     .ghost()
                     .small()
                     .text_color(ink.danger)
-                    .label("Delete")
+                    .label("Delete…")
                     .on_click({
                         let shell = shell.clone();
                         move |_: &ClickEvent, window: &mut Window, cx: &mut App| {

@@ -98,7 +98,9 @@ box (*Nothing needs you*).
 
 ### Toasts
 
-Transient news goes in a toast, `window.push_notification`, its kind chosen by what it means:
+Transient news goes in a toast, `window.push_notification` with a notification built by
+`crate::toast` (which gives a failure its form and trims the period), its kind chosen by what it
+means:
 
 - `error`: an action failed;
 - `warning`: done only in part, or something now needs the person;

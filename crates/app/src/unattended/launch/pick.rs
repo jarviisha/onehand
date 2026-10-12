@@ -210,7 +210,7 @@ pub fn start_picked(
 pub(super) fn warn(window: gpui::AnyWindowHandle, why: String, cx: &mut App) {
     use gpui_component::WindowExt as _;
     let _ = window.update(cx, |_, window, cx| {
-        window.push_notification(gpui_component::notification::Notification::warning(why), cx);
+        window.push_notification(crate::toast::warning(why), cx);
     });
 }
 

@@ -539,7 +539,7 @@ impl ChatPane {
                                                 .ghost()
                                                 .small()
                                                 .text_color(danger)
-                                                .label("Delete")
+                                                .label("Delete…")
                                                 .tooltip("Delete this conversation")
                                                 .on_click(cx.listener(
                                                     move |pane: &mut Self, _, window, cx| {

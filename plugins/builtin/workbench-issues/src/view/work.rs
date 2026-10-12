@@ -105,7 +105,7 @@ pub(super) fn progress_view(
                     .min_w_0()
                     .truncate()
                     .text_color(muted)
-                    .child("Issue is closed; this run is still active."),
+                    .child("Issue is closed; this run is still active"),
             )
         });
     Some(

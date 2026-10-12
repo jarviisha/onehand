@@ -341,7 +341,7 @@ fn row_delete(
         .ghost()
         .small()
         .text_color(crate::theme::status_ink(cx).danger)
-        .label("Delete")
+        .label("Delete…")
         .on_click(click(handle, act))
 }
 

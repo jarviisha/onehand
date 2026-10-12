@@ -280,7 +280,7 @@ fn project_menu(
         .separator()
         .item(
             crate::controls::menu_row(move |_, _| {
-                div().text_color(danger).child("Remove from workspace")
+                div().text_color(danger).child("Remove from workspace…")
             })
             .icon(Icon::new(IconName::Delete).text_color(danger))
             .on_click(move |_, window, cx: &mut App| {

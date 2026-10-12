@@ -427,7 +427,7 @@ fn issue_list(
         Some(Ok((rows, _, _))) if rows.is_empty() => {
             return div()
                 .text_color(muted)
-                .child("There are no open issues.")
+                .child("No open issues")
                 .into_any_element();
         }
         Some(Ok((rows, cut, unread))) => (rows, *cut, unread.clone()),

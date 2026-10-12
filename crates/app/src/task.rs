@@ -10,7 +10,6 @@ use gpui::{
     WeakEntity, Window,
 };
 use gpui_component::WindowExt as _;
-use gpui_component::notification::Notification;
 use onehand_core::task::work::UnderReview;
 use onehand_core::task::{Group, Task, Working, files, history, marks, queue};
 use onehand_core::workflow::{Action, Failure, Run, Stop, Template, run_command_blocking};
@@ -254,7 +253,7 @@ pub(crate) fn request(id: String, window: &mut Window, cx: &mut Context<Shell>) 
                 t.save(&id);
             }
         });
-        window.push_notification(Notification::warning(why), cx);
+        window.push_notification(crate::toast::warning(why), cx);
         cx.refresh_windows();
         return;
     }
@@ -305,7 +304,7 @@ pub(crate) fn request(id: String, window: &mut Window, cx: &mut Context<Shell>) 
                         holder.map(|holder| holder.brief.title.as_str()),
                         &at,
                     );
-                    window.push_notification(Notification::info(said), cx);
+                    window.push_notification(crate::toast::info(said), cx);
                     cx.refresh_windows();
                 }
                 None => {}
@@ -690,8 +689,8 @@ pub(crate) fn drive_check(id: String, window: AnyWindowHandle, cx: &mut App) {
             cx.update_global::<Tasks, _>(|t, _| t.store_run(&id, run));
             if let Some(passed) = said {
                 let note = match passed {
-                    true => Notification::success(format!("Check passed in {project}")),
-                    false => Notification::warning(format!("Check failed in {project}")),
+                    true => crate::toast::success(format!("Check passed in {project}")),
+                    false => crate::toast::warning(format!("Check failed in {project}")),
                 };
                 let _ = window.update(cx, |_, window, cx| window.push_notification(note, cx));
             }

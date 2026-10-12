@@ -30,6 +30,7 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | A condition standing under a view | `status_line` | `crates/plugin-host/src/lib.rs` |
 | Status ink, a dock's surface | `status_ink`, `dock_surface` | `crates/plugin-host/src/lib.rs` |
 | Chat or Workbench in the area | `presentation` | `crates/app/src/shell/presentation.rs` |
+| A toast | `toast::failed(what, why)`, `toast::error`, `warning`, `success`, `info` | `crates/app/src/toast.rs` |
 | A confirmation | `Confirm` with `confirm_on`; in the app `Ask` with `Shell::ask` or `ask_on` | `crates/plugin-host/src/confirm.rs`, named in `crates/app/src/shell/confirm.rs` |
 | A dialog's title row | `title_row` | `crates/app/src/dialogs.rs` |
 | A form field | `field` (its line about the setting in meta text) | `crates/plugin-host/src/lib.rs`, re-exported by `crates/app/src/settings.rs` |

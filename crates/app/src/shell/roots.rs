@@ -5,7 +5,6 @@ use crate::state::Shared;
 use gpui::{Context, SharedString, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::dock::DockPlacement;
-use gpui_component::notification::Notification;
 use onehand_core::gitstat;
 use std::path::{Path, PathBuf};
 
@@ -326,7 +325,7 @@ impl Shell {
         };
         let label = self.window.workspace.roots[idx].label.clone();
         self.forget_root(idx, cx);
-        window.push_notification(Notification::info(format!("Removed {label}")), cx);
+        window.push_notification(crate::toast::info(format!("Removed {label}")), cx);
         self.show_active_session(window, cx);
         self.save_workspace(window, cx);
         cx.notify();
@@ -411,7 +410,7 @@ impl Shell {
         };
         let path = root.path.display().to_string();
         cx.write_to_clipboard(gpui::ClipboardItem::new_string(path.clone()));
-        window.push_notification(Notification::info(format!("Copied {path}")), cx);
+        window.push_notification(crate::toast::info(format!("Copied {path}")), cx);
     }
 
     /// Where the project at `root` sits in this window's list of roots.

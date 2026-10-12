@@ -3,7 +3,6 @@ use super::confirm::Ask;
 use crate::settings::{AgentCheck, AgentDraft, DraftShift, SettingsPage};
 use crate::state::Shared;
 use gpui::{App, BorrowAppContext, Context, Entity, Window, WindowAppearance};
-use gpui_component::notification::Notification;
 use gpui_component::{Theme, ThemeMode, WindowExt as _};
 use onehand_core::config::{AgentSpec, AppConfig, Appearance};
 
@@ -53,7 +52,7 @@ impl Shell {
         cx: &mut Context<Self>,
     ) {
         if let Err(e) = saved {
-            window.push_notification(Notification::error(format!("{what} not saved — {e}")), cx);
+            window.push_notification(crate::toast::failed(&format!("Saving {what}"), e), cx);
         }
     }
 
@@ -252,7 +251,7 @@ impl Shell {
 
         let path = Shared::global(cx).config_path.clone();
         let saved = AppConfig::update_in_place(&path, |cfg| cfg.appearance = choice);
-        self.report_write("Appearance", saved, window, cx);
+        self.report_write("the appearance", saved, window, cx);
         cx.notify();
     }
 
@@ -262,7 +261,7 @@ impl Shell {
         let shared = Shared::global(cx);
         let (path, agents) = (shared.config_path.clone(), shared.agents.clone());
         let saved = AppConfig::update_in_place(&path, |cfg| cfg.agents = agents);
-        self.report_write("Agents", saved, window, cx);
+        self.report_write("the agents", saved, window, cx);
     }
 }
 

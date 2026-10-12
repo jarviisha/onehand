@@ -247,7 +247,7 @@ pub(super) fn task_detail(
             crate::controls::action("task-answer-review")
                 .ghost()
                 .small()
-                .label("Answer the pull request review")
+                .label("Answer the pull request review…")
                 .tooltip(
                     "Run it again from its repair step with the review as its note, as putting \
                      the label back does",
@@ -350,7 +350,7 @@ fn timeline(
     let muted = cx.theme().muted_foreground;
     let visits = run.visits();
     if visits.is_empty() {
-        return vec![muted_line("It has not started.", cx)];
+        return vec![muted_line("It has not started", cx)];
     }
     let hidden = visits.len().saturating_sub(VISITS_SHOWN);
     let now = now_secs();
@@ -480,7 +480,7 @@ fn visit_body(
         }
     };
     if changes.is_empty() {
-        out.push(muted_line("No files changed.", cx));
+        out.push(muted_line("No files changed", cx));
     }
     let muted = cx.theme().muted_foreground;
     for (i, change) in changes.iter().take(FILES_SHOWN).enumerate() {
@@ -634,7 +634,7 @@ fn review_card(
     let open = open_session("task-review-open", row, cx).map(IntoElement::into_any_element);
     let (shown, left_out) = last_lines(&review.answer, ANSWER_LINES);
     let said = match review.answer.trim().is_empty() {
-        true => vec![muted_line("The step kept no answer.", cx)],
+        true => vec![muted_line("The step kept no answer", cx)],
         false => mono_well(shown, cx),
     };
     let lines = review.answer.lines().count();

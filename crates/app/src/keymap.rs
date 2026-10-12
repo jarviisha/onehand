@@ -12,7 +12,6 @@ use gpui::{
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{Input, InputState};
-use gpui_component::notification::Notification;
 use gpui_component::{ActiveTheme, Sizable as _, StyledExt, WindowExt as _};
 use onehand_core::config::AppConfig;
 

@@ -368,7 +368,7 @@ impl IssuesView {
         block = block.child(match read.answer.trim().is_empty() {
             true => div()
                 .text_color(muted)
-                .child("The step kept no answer.")
+                .child("The step kept no answer")
                 .into_any_element(),
             false => div()
                 .v_flex()

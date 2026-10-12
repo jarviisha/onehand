@@ -207,7 +207,7 @@ pub(super) fn open_review(
         let body = match review.answer.trim().is_empty() {
             true => div()
                 .text_color(cx.theme().muted_foreground)
-                .child("The step kept no answer.")
+                .child("The step kept no answer")
                 .into_any_element(),
             false => gpui_component::text::TextView::markdown(
                 "workflow-review-body",

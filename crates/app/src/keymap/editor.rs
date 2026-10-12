@@ -58,10 +58,7 @@ impl Editor {
         let path = Shared::global(cx).config_path.clone();
         if let Err(error) = AppConfig::update_in_place(&path, |cfg| cfg.keymap = overrides.clone())
         {
-            window.push_notification(
-                Notification::error(format!("Shortcuts not saved — {error}")),
-                cx,
-            );
+            window.push_notification(crate::toast::failed("Saving the shortcuts", error), cx);
             return;
         }
         cx.update_global::<Shared, _>(|shared, _| shared.keymap = overrides);

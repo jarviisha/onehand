@@ -33,7 +33,7 @@ div().px_2().py_1().text_xs().text_color(cx.theme().muted_foreground).child("No 
 
 ```rust
 // An action the person started failed
-window.push_notification(Notification::error(format!("Export failed: {e}")), cx);
+window.push_notification(crate::toast::failed("Exporting the conversation", e), cx);
 // A condition standing until something answers it, under a plugin's view
 onehand_plugin_host::status_line(message, cx)
 // Cannot act yet: refuse, and say why
