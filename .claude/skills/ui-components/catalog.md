@@ -47,9 +47,3 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 
 The app has no shared page section yet: take the nearest one above, and when a second
 page needs the same thing, lift it into a shared module in that change rather than copying it.
-
-## Being merged
-
-Several builders draw one thing. Use the first one named; add no other.
-
-- **A well**: `well`. `mono_well`, `plain_box` and the Issues review and diff views build on it.

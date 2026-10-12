@@ -462,7 +462,7 @@ impl ChatPane {
                         // header, so the two are never one press apart.
                         {
                             let row = move |_: &mut Window, _: &mut App| {
-                                div().text_color(danger).child("Delete conversation")
+                                div().text_color(danger).child("Delete conversation…")
                             };
                             // Nothing on disk to remove until the first turn has
                             // ended, so until then this refuses -- and a refusal

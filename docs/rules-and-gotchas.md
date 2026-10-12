@@ -94,7 +94,11 @@ Review the uncovered part when changing the relevant area:
 | Fields have readers | Scans field-name uses; comments in the guard explain exceptions | Collection mutation counted as a read and unrelated fields sharing a name |
 | Registry icons and button wrapper | Finds listed glyph literals and direct `Button::new(` spelling | Other glyphs, aliases and differently formatted construction |
 | English documents | Detects selected Vietnamese diacritics | Other languages and quoted data |
-| Named sizes | Finds a non-zero number written as the first argument of `rems(` or `px(` outside a `const`, ratcheted per file for the files that predate the rule | Arithmetic on a number (`x * 0.5`), sizes passed through other helpers, and the listed files until their counts reach zero |
+| Named sizes | Finds a non-zero number written as the first argument of `rems(` or `px(` outside a `const` | Arithmetic on a number (`x * 0.5`) and sizes passed through other helpers |
+| Colours from the palette | Finds a `"#rrggbb"` string or a call to `rgb(`, `rgba(` or `hsla(` outside the palette file and the terminal's grid | Colours built from numbers some other way, and hex written without quotes |
+| Spacing on the steps | Finds gpui's spacing methods with a step off the scale (`_2p5`, `_5`, `_10`…) | Lengths handed to `p(`, `gap(` and the like, which the named-size rule sees only when written as a number |
+| Shadows | Finds gpui's own shadow steps (`shadow_md()`…) | A `BoxShadow` built by hand |
+| Type on the scale | Finds `text_2xl` and above, bold and heavier, and `text_size(rems(` with a number | A size or weight reached through a named constant or a style refinement |
 | Theme, bounded rendering, module size and UI contract | Dedicated tests cover individual behaviours | No general guard proves these rules or synchronizes documentation with code |
 
 Keep the checks that catch real regressions. Add a targeted check when a concrete failure

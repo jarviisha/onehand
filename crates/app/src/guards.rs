@@ -638,11 +638,6 @@ mod tests {
         }
     }
 
-    /// Lengths written as numbers where they are drawn, per file, that predate
-    /// the rule below. A file may only go down; once it does, lower its entry
-    /// here, and remove it at zero.
-    const LENGTHS_BEFORE_THE_RULE: &[(&str, usize)] = &[];
-
     /// The lengths written into `rems(` or `px(` on one line, unless the line
     /// declares a constant or is a comment. Zero is not a length anyone tunes.
     fn written_lengths(line: &str) -> Vec<String> {
@@ -682,19 +677,11 @@ mod tests {
         found
     }
 
-    /// Holds each file of `sources` to the number of `find`'s hits listed for
-    /// it, tests left out: a file not listed may have none, a file over its
-    /// count fails with `what`, and a file under it fails until its entry is
-    /// lowered, so a count can only go down.
-    fn ratchet(
-        sources: Vec<(String, String)>,
-        listed: &[(&str, usize)],
-        find: impl Fn(&str) -> Vec<String>,
-        what: &str,
-    ) {
+    /// Fails with `what` on every line of `sources` that `find` finds
+    /// something on, tests and comments left out.
+    fn forbid(sources: Vec<(String, String)>, find: impl Fn(&str) -> Vec<String>, what: &str) {
         let root = workspace_root().display().to_string();
-        let mut over = Vec::new();
-        let mut under = Vec::new();
+        let mut found = Vec::new();
         for (path, source) in sources {
             let rel = path
                 .strip_prefix(&root)
@@ -705,33 +692,19 @@ mod tests {
                 continue;
             }
             let code = source.split("#[cfg(test)]\nmod tests").next().unwrap_or("");
-            let lines: Vec<String> = code
-                .lines()
-                .enumerate()
-                .filter(|(_, line)| !line.trim_start().starts_with("//"))
-                .flat_map(|(n, line)| {
-                    let rel = &rel;
-                    find(line)
-                        .into_iter()
-                        .map(move |v| format!("{rel}:{}: {v} in {}", n + 1, line.trim()))
-                })
-                .collect();
-            let allowed = listed
-                .iter()
-                .find(|(file, _)| *file == rel)
-                .map_or(0, |(_, n)| *n);
-            if lines.len() > allowed {
-                over.extend(lines);
-            } else if lines.len() < allowed {
-                under.push(format!("{rel}: {} now, listed as {allowed}", lines.len()));
-            }
+            found.extend(
+                code.lines()
+                    .enumerate()
+                    .filter(|(_, line)| !line.trim_start().starts_with("//"))
+                    .flat_map(|(n, line)| {
+                        let rel = &rel;
+                        find(line)
+                            .into_iter()
+                            .map(move |v| format!("{rel}:{}: {v} in {}", n + 1, line.trim()))
+                    }),
+            );
         }
-        assert!(over.is_empty(), "{what}:\n{}", over.join("\n"));
-        assert!(
-            under.is_empty(),
-            "fewer than listed; lower these entries in the rule's list:\n{}",
-            under.join("\n")
-        );
+        assert!(found.is_empty(), "{what}:\n{}", found.join("\n"));
     }
 
     /// Every length is named where the theme and gpui's spacing scale give it
@@ -739,14 +712,10 @@ mod tests {
     /// comment. A number at the call site says neither what it is for nor
     /// that the same number two files away is the same decision, and it is how
     /// one size drifts into three.
-    ///
-    /// Ratcheted rather than all at once: the files that already wrote numbers
-    /// are listed with how many, and a file may only lose them.
     #[test]
     fn every_length_has_a_name() {
-        ratchet(
+        forbid(
             ui_sources(),
-            LENGTHS_BEFORE_THE_RULE,
             written_lengths,
             "a length written as a number; name it in a const beside its use, with its reason",
         );
@@ -1137,9 +1106,8 @@ mod tests {
                 !path.ends_with("crates/app/src/theme.rs") && !path.contains("crates/terminal-ui/")
             })
             .collect();
-        ratchet(
+        forbid(
             sources,
-            &[],
             colour_literals,
             "a colour written out; read it from the theme, or add it to the palette in theme.rs",
         );
@@ -1164,15 +1132,12 @@ mod tests {
     }
 
     /// Spacing a step apart from its neighbours rather than a near-miss:
-    /// half a step is a difference nobody sees and everybody copies. Counts
-    /// from before the rule; a file may only go down.
-    const SPACING_BEFORE_THE_RULE: &[(&str, usize)] = &[];
+    /// half a step is a difference nobody sees and everybody copies.
 
     #[test]
     fn spacing_stays_on_the_steps() {
-        ratchet(
+        forbid(
             ui_sources(),
-            SPACING_BEFORE_THE_RULE,
             off_scale_spacing,
             "spacing off the steps; take 0p5, 1, 1p5, 2, 3, 4, 6 or 8, or name the length",
         );
@@ -1189,14 +1154,11 @@ mod tests {
 
     /// gpui's shadows are black at a tenth of an alpha, which cannot be seen
     /// on the dark palette; a floating surface takes the tokens' `lift`.
-    /// Counts from before the rule; a file may only go down.
-    const SHADOWS_BEFORE_THE_RULE: &[(&str, usize)] = &[];
 
     #[test]
     fn no_shadow_from_gpuis_steps() {
-        ratchet(
+        forbid(
             ui_sources(),
-            SHADOWS_BEFORE_THE_RULE,
             gpui_shadows,
             "a gpui shadow step, invisible on the dark palette; use tokens::lift",
         );
@@ -1226,15 +1188,12 @@ mod tests {
     /// Type stays on the scale: the library's sizes up to `text_xl`, and
     /// semibold at the heaviest. A step above is a second page title on a
     /// screen that has one, and a number is a size the zoom and the next
-    /// reader cannot place. Counts from before the rule; a file may only go
-    /// down.
-    const TYPE_BEFORE_THE_RULE: &[(&str, usize)] = &[];
+    /// reader cannot place.
 
     #[test]
     fn type_stays_on_the_scale() {
-        ratchet(
+        forbid(
             ui_sources(),
-            TYPE_BEFORE_THE_RULE,
             off_scale_type,
             "type off the scale; take text_xs to text_xl and at most semibold, or a named size",
         );

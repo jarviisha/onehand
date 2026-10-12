@@ -27,9 +27,8 @@ description: Review checklist for UI changes in crates/app, plugins/builtin and 
    checks run and their results; what the user should look at when they open the app (`make dev`,
    `make showcase`). Build and test, and leave the window to the user.
 
-Code written before a rule keeps its old form until the migration reaches it (its order:
-`docs/proposals/design-system-migration.md`). Lines the change touches take the new form, and no
-line it adds breaks a rule.
+No line a change adds breaks a rule, and the guards in `crates/app/src/guards.rs` hold the
+colour, length, spacing, shadow and type rules across every UI crate.
 
 Done when every checklist item has an answer, the scan prints nothing left unexplained, and every
 check passes.
