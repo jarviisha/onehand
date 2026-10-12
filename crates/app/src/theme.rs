@@ -143,15 +143,16 @@ const LIGHT: Ramp = Ramp {
     // the completion popup, still reads as selected.
     selected: "#d0d0d0",
     selected_ink: "#1f1f1f",
-    // A hover tint over the well the rail is drawn in.
+    // Its own step, darker than `hover`, so a marked rail row shows on the
+    // well the rail is drawn in.
     marked: "#dedede",
     hairline: "#d4d4d4",
     floating: "#ffffff",
     raised: "#ffffff",
     control: "#c7c7c7",
     ring: "#888888",
-    // A shade under `#007acc`, which inline code tempered toward the
-    // meta ink drew under AA in a well.
+    // Darker than the usual editor blue, which inline code tempered toward
+    // the meta ink drew under AA in a well.
     accent: "#006eb8",
     warning: "#854f0b",
     success: "#16825d",
@@ -170,8 +171,8 @@ const DARK: Ramp = Ramp {
     foreground: "#ececec",
     panel: "#202020",
     well: "#282828",
-    // A notch over a plain secondary grey: that value fell under AA on
-    // the bubble, which the ramp's own test caught.
+    // Light enough to clear AA on the bubble as well as the well, which the
+    // ramp's own test checks.
     well_ink: "#a0a0a0",
     bubble: "#333333",
     bubble_ink: "#ececec",
@@ -182,7 +183,7 @@ const DARK: Ramp = Ramp {
     // rail row did not show on a dark screen at all.
     marked: "#404040",
     hairline: "#404040",
-    // The well's grey: the panel sits too close to the surface for a
+    // The well's grey: `panel` sits too close to the surface for a
     // card that has no visible shadow to stand on.
     floating: "#282828",
     raised: "#303030",

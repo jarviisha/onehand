@@ -5,7 +5,7 @@ const RAIL: f32 = 14.5;
 /// The width the Workbench opens at.
 const DOCK_PREF: f32 = 30.;
 
-/// What the rule shows, in plain rems, so the cases read plainly.
+/// What the rule shows, in plain rems.
 #[derive(Debug, PartialEq)]
 enum Shown {
     Conversation,

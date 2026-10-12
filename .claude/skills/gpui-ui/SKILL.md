@@ -5,12 +5,16 @@ description: Use when creating or changing any view, panel, card, popup, dialog,
 
 # UI work in onehand
 
-## 1. Route
+## 1. Where the rules are
 
-| Editing | Binding contract | Every value comes from | Checks |
-|---|---|---|---|
-| `crates/app`, `plugins/builtin/*`, `crates/plugin-host` | `DESIGN.md` at the root, plus the `design-contract` skill; a feature's own screens are in `docs/tasks.md`, `docs/workflows.md`, `docs/unattended.md` | `cx.theme()` for colour and radius; the surface ramp in `crates/app/src/theme.rs`; for spacing and every other size, root `DESIGN.md`, *Typography and spacing* | `cargo test -p onehand` (its `guards` included), the touched plugin's tests, `make clippy CLIPPY_EXTRA="-- -D warnings"`, `make fmt` |
-
+- **Applies to:** `crates/app`, `plugins/builtin/*`, `crates/plugin-host`.
+- **Binding contract:** `DESIGN.md` at the root, plus the `design-contract` skill; a feature's own
+  screens are in `docs/tasks.md`, `docs/workflows.md`, `docs/unattended.md`.
+- **Values come from:** `cx.theme()` for colour and radius; the surface ramp in
+  `crates/app/src/theme.rs`; for spacing and every other size, root `DESIGN.md`, *Typography and
+  spacing*.
+- **Checks:** `cargo test -p onehand` (its `guards` included), the touched plugin's tests,
+  `make clippy CLIPPY_EXTRA="-- -D warnings"`, `make fmt`.
 - **Don't launch the window to check your work.** Build and test, then stop; the user looks
   (`make dev`, `make showcase`).
 
