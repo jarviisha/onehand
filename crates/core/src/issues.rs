@@ -164,6 +164,11 @@ impl Note {
 }
 
 impl LocalIssue {
+    /// When it last changed, its opening counted as a change.
+    pub fn changed(&self) -> u64 {
+        self.updated.max(self.created)
+    }
+
     /// How it came to be kept here, for the first line of its history, which
     /// `created` dates: brought in from a forge, or opened here.
     pub fn arrival(&self) -> String {

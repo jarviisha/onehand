@@ -1,4 +1,4 @@
-use super::list::{chip, identity};
+use super::list::{chip, identity, plain_tag};
 use super::mentions::FILE_LINK;
 use super::work;
 use super::{FILES_SHOWN, HISTORY_SHOWN, IssuesView};
@@ -73,21 +73,20 @@ pub(super) struct Doing<'a> {
     pub(super) nav: Option<AnyElement>,
 }
 
-/// The sections an issue's head switches between: what it says, what its work
-/// left behind, and everything that happened to it.
+/// The sections an issue's head switches between: what it says and what its
+/// work left behind, and everything that happened to it.
 #[derive(Clone, Copy, Default, PartialEq)]
 pub(super) enum IssueTab {
     #[default]
     Description,
-    Work,
     Activity,
 }
 
 /// One issue, read: a trail naming it with its actions at the end; its state,
 /// project and labels; the title; one line of facts; then, before any of
 /// what it says, what it waits on (a conflict, where its work stands, the
-/// review); and under tabs its description, what its work left and its
-/// activity.
+/// review); and under two tabs its description with what its work left, and
+/// its activity.
 pub(super) fn issue_view(
     root: &Path,
     issue: &LocalIssue,
@@ -148,7 +147,7 @@ pub(super) fn issue_view(
         .items_center()
         .gap_1p5()
         .child(state_badge(issue.open, cx))
-        .child(chip(doing.project.to_string(), cx))
+        .child(plain_tag(doing.project.to_string(), cx))
         .children(issue.labels.iter().map(|label| chip(label.clone(), cx)));
 
     // The title, the largest words on the issue: the whole of it, wrapped.
@@ -176,7 +175,7 @@ pub(super) fn issue_view(
     };
     let fact = |text: String| div().flex_none().child(text).into_any_element();
     let mut said: Vec<AnyElement> = vec![reference, fact(doing.project.to_string())];
-    let changed = issue.updated.max(issue.created);
+    let changed = issue.changed();
     if changed > 0 {
         said.push(fact(format!(
             "Updated {}",
@@ -225,21 +224,12 @@ pub(super) fn issue_view(
         facts = facts.child(said);
     }
 
-    // The sections, each offered only while it has something to show.
-    let left = work::left_view(&doing, cx);
-    let before = doing.work.as_ref().and_then(|w| work::before_view(w, cx));
-    let worked = left.is_some() || before.is_some();
     let events = usize::from(issue.created > 0) + issue.notes.len();
-    let tabs: Vec<IssueTab> = [IssueTab::Description]
-        .into_iter()
-        .chain(worked.then_some(IssueTab::Work))
-        .chain([IssueTab::Activity])
-        .collect();
+    let tabs = [IssueTab::Description, IssueTab::Activity];
     let at = tabs.iter().position(|tab| *tab == doing.tab).unwrap_or(0);
     let shown = tabs[at];
     let view = cx.entity();
     let picker = {
-        let tabs = tabs.clone();
         TabBar::new(("issue-tabs", number))
             .underline()
             .small()
@@ -247,7 +237,6 @@ pub(super) fn issue_view(
             .children(tabs.iter().map(|tab| {
                 let (name, count) = match tab {
                     IssueTab::Description => ("Description", None),
-                    IssueTab::Work => ("Work", None),
                     IssueTab::Activity => ("Activity", Some(events)),
                 };
                 Tab::new().label(name).when_some(count, |tab, count| {
@@ -296,8 +285,10 @@ pub(super) fn issue_view(
                     .child("No description")
                     .into_any_element(),
             })
-            .children(body.and_then(|(_, files)| referenced(files, cx))),
-        IssueTab::Work => div().v_flex().children(left).children(before),
+            .children(body.and_then(|(_, files)| referenced(files, cx)))
+            // What the work left follows what the issue asked for.
+            .children(work::left_view(&doing, cx))
+            .children(doing.work.as_ref().and_then(|w| work::before_view(w, cx))),
         IssueTab::Activity => div().v_flex().child(activity(issue, cx)),
     };
 
@@ -348,16 +339,14 @@ fn centred(inner: gpui::Div) -> gpui::Div {
 /// the success tint while open, on the neutral fill once closed.
 fn state_badge(open: bool, cx: &App) -> AnyElement {
     let theme = cx.theme();
-    let (icon, fill, ink, word) = if open {
-        let Tint { fill, ink } = tint(theme.green, cx);
-        (Icon::new(AppIcon::CircleDot), fill, ink, "Open")
+    let (icon, Tint { fill, ink }, word) = if open {
+        (Icon::new(AppIcon::CircleDot), tint(theme.green, cx), "Open")
     } else {
-        (
-            Icon::new(IconName::CircleCheck),
-            theme.secondary,
-            theme.secondary_foreground,
-            "Closed",
-        )
+        let neutral = Tint {
+            fill: theme.secondary,
+            ink: theme.secondary_foreground,
+        };
+        (Icon::new(IconName::CircleCheck), neutral, "Closed")
     };
     div()
         .h_flex()

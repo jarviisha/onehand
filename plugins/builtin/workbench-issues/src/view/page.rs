@@ -62,6 +62,9 @@ pub(super) struct PageState {
     /// Where the arrow keys and Esc land: the page itself, once a row is
     /// picked.
     focus: Option<FocusHandle>,
+    /// An issue was opened from outside the page: the page takes the
+    /// keyboard on its next draw, so Esc and the arrow keys answer at once.
+    claim_focus: bool,
     /// Each project's pull requests, as last read.
     pub(super) prs: HashMap<PathBuf, PrReads>,
     /// The generation of each project's pull request read, so an answer to
@@ -132,6 +135,7 @@ impl IssuesView {
         page.held.pinned = key;
         page.open = true;
         page.reveal = true;
+        page.claim_focus = true;
         self.root = Some(root.to_path_buf());
         if let Some(state) = self.state_for(root, cx) {
             state.selected = Some(number);
@@ -287,10 +291,16 @@ impl IssuesView {
         self.read_prs_if_due(cx);
 
         let selected = self.selected_key();
-        let focus = match self.page.as_mut() {
-            Some(page) => page.focus.get_or_insert_with(|| cx.focus_handle()).clone(),
+        let (focus, claim) = match self.page.as_mut() {
+            Some(page) => (
+                page.focus.get_or_insert_with(|| cx.focus_handle()).clone(),
+                std::mem::take(&mut page.claim_focus),
+            ),
             None => return hint("No page", cx),
         };
+        if claim {
+            window.focus(&focus, cx);
+        }
         let (top, rows) = self.page_list(&projects, selected.as_ref(), window, cx);
         let open = self.page.as_ref().is_some_and(|page| page.open);
         let panel = (open && self.has_page_issue()).then(|| self.page_panel(window, cx));

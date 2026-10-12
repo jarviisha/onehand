@@ -6,12 +6,15 @@ use super::IssuesView;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, AppContext as _, ClickEvent, Context, DragMoveEvent, Empty,
-    InteractiveElement as _, IntoElement, ParentElement, Render, StatefulInteractiveElement as _,
-    Styled, Window, div, rems,
+    InteractiveElement as _, IntoElement, ParentElement, Rems, Render,
+    StatefulInteractiveElement as _, Styled, Window, div, rems,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme, IconName, Sizable as _, StyledExt};
 use onehand_plugin_host::{BAR_H, action, hint};
+
+// The widths below are plain rems rather than `Rems`: the drag works them out
+// against the pointer in that unit.
 
 /// The panel's width before anybody drags it, in rems: a description's
 /// reading measure, narrow enough that the titles stay readable beside it on
@@ -29,7 +32,7 @@ const LIST_MIN: f32 = 16.;
 
 /// The gap the panel keeps from the area's edges, in rems: the list shows
 /// round it, so it reads as lifted over the list rather than set in it.
-const INSET: f32 = 1.;
+const INSET: Rems = rems(1.);
 
 /// What a drag of the panel's edge carries: nothing, the width is read off
 /// the pointer.
@@ -120,12 +123,12 @@ impl IssuesView {
             // Set down into the first row rather than on the columns' names'
             // foot, so the panel's top edge never runs along a line of the
             // table and reads as a lid on it.
-            .top(rems(INSET))
-            .right(rems(INSET))
-            .bottom(rems(INSET))
+            .top(INSET)
+            .right(INSET)
+            .bottom(INSET)
             .map(|panel| {
                 if whole {
-                    panel.left(rems(INSET))
+                    panel.left(INSET)
                 } else {
                     panel.w(rems(width))
                 }
@@ -196,7 +199,7 @@ impl IssuesView {
         cx: &mut Context<Self>,
     ) {
         let rem = window.rem_size();
-        let right = event.bounds.right() - rem * INSET;
+        let right = event.bounds.right() - rem * INSET.0;
         let wanted = (right - event.event.position.x) / rem;
         let area = event.bounds.size.width / rem;
         if let Some(page) = self.page.as_mut() {
@@ -209,7 +212,7 @@ impl IssuesView {
 /// `width` kept between the narrowest the panel is drawn and what leaves
 /// [`LIST_MIN`] of an `area` that wide showing beside it.
 fn clamp(width: f32, area: f32) -> f32 {
-    width.min(area - LIST_MIN - INSET).max(PANEL_MIN)
+    width.min(area - LIST_MIN - INSET.0).max(PANEL_MIN)
 }
 
 #[cfg(test)]
@@ -220,7 +223,7 @@ mod tests {
     fn a_dragged_panel_keeps_to_its_range() {
         assert_eq!(clamp(PANEL_W, 100.), PANEL_W);
         // Wider than leaves the list showing: stopped there.
-        assert_eq!(clamp(90., 100.), 100. - LIST_MIN - INSET);
+        assert_eq!(clamp(90., 100.), 100. - LIST_MIN - INSET.0);
         // Narrower than the floor, or an area too small for both: the floor.
         assert_eq!(clamp(4., 100.), PANEL_MIN);
         assert_eq!(clamp(PANEL_W, 20.), PANEL_MIN);

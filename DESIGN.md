@@ -23,6 +23,7 @@ hex literal in the render layer is a bug even when it looks right, as no theme s
 3. **Colour means state.** One accent, from the theme. Danger, warning and success ink mark
    failure, in-flight and done; in the rail, warning waits on the person and the accent runs.
    Anything else is `muted_foreground`, or the transcript's `meta_ink`, a step nearer full ink.
+   One exception: an issue's labels are tinted by kind, so a list of them reads at a glance.
 4. **Mono for machines, sans for people.** Code, paths, terminal output and diffs use
    `mono_font_family`. Anything a person wrote uses the default family.
 5. **Icons are registry SVGs, never glyphs.**
@@ -94,9 +95,9 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   live shell; last, the Workbench. The two dock buttons are filled while their dock is open. On
   the overview, Tasks and Workflows it reads the page's name, with no dots menu and no dock
   buttons; the Issues page names itself in its own head, so there the header shows only while
-  the rail is hidden, as the way back to it. As the pane narrows, the name gives way first, down to a minimum. Without a
-  session it names the project, its dots menu holding the project's actions but *New session*
-  and *Open terminal*, which the page and the header already offer.
+  the rail is hidden, as the way back to it. As the pane narrows, the name gives way first, down
+  to a minimum. Without a session it names the project, its dots menu holding the project's
+  actions but *New session* and *Open terminal*, which the page and the header already offer.
 - **Step strip.** Under the header, only while a run drives the session on screen: the workflow's
   name muted, each step's label between chevrons (done ones with a muted check, the current one in
   full ink), then *Review…*, *Revise…* and *Continue* (primary) while it waits for approval, and
@@ -121,16 +122,10 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
     terminal's: shell tabs (capped, scrolling), `+`, maximize, hide. Crowded file tabs: a select.
   - A list beside its detail (files, documents, issues) only while the dock holds both; else one at
     a time, the detail under a link back naming the list. Picking shows it; going back keeps it.
-  - The Issues tab's issue: a trail bar (project › reference) with its actions at the end (at
-    most one primary, one other that does not move, then ⋯ with *Edit* and the rest); its tags
-    (*Open*/*Closed* badge, project, labels); the title, large and whole; one line of facts
-    (reference to the forge, project, *Updated …*, how its work stands, the priority in its
-    urgency's ink, what a template body lacks); what it waits on (a conflict, *Step N of M* and
-    the next action, the review); then underlined tabs: *Description* (the body at the UI's
-    size, headings stepped down, the files it names), *Work* only while the work left something
-    (branch, pull request with *read 2m ago* and *Refresh*, *Before*), *Activity N* (the history,
-    capped). Under the trail all of it scrolls as one, at a centred reading measure; the tab
-    picked holds from one issue to the next.
+  - The Issues tab's issue: a trail (project › reference) with its actions (one primary, one
+    other, ⋯); its tags (state badge, project, labels); the title, large; one line of facts; what
+    it waits on (a conflict, where its work stands, the review); then tabs: *Description* (the
+    body, the files it names, what the work left, *Before*) and *Activity N* (the history).
     ⋯ ▸ *Open in Issues* and *Review…* open it on the Issues page, the latter with its review open.
   - Hiding a dock keeps its buffers and processes; the terminal's open state follows the project.
 - **Pages without a session.**
@@ -146,23 +141,12 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
     *Finished*, each with a count, an empty line and a cap. A row is the title over workflow, step
     or outcome and project, with ghost actions by state (*Open session*, *Stop*, *Resume*, *Retry*,
     *Dismiss*); its text opens the task's detail in the same column.
-  - *Issues*, in the overview's column: a head with *Issues*, *N open* muted, an icon-only
-    *Refresh* (the pull request reading's age in its tooltip) and *New issue* (primary; *Template*
-    row while the body is empty); under it the search taking the room left, then edged chips with
-    a caret for open/closed, progress, project and label, a chip set away from its start in full
-    ink with a stronger edge. A hairline box names its columns *Title*, *Labels*, *Updated*. A row
-    is one line: the reference muted in mono, the title (whole on hover), the priority as a muted
-    arrow (its name on hover), what its work needs (warning ink), *running* or *now …*; two labels
-    and *+N* (the rest on hover), each on its hue's tint (asking for something blue, enhancement
-    green, structure violet, documentation yellow, an agent's report cyan, else neutral); the age,
-    its date on hover. Narrow, the labels go. The picked row takes the selected fill, ringed
-    while the page holds the keys. Rows keep their place: one that stops matching says *now …*
-    until another is picked, new matches go below, one opened from elsewhere outside the filters
-    is pinned on top with *Clear filters*. Nothing is open on arrival; a picked issue floats over
-    the list's right side under the filters, the list still: reference, *N of M*, `×`, then the
-    tab's order plus the steps to come and *What the work left* (check, diffs, commits).
-    Its left edge drags its width for the session; too narrow, it covers the list. `×`/Esc close
-    it, the row kept; ↑/↓ step. Filters, search, selection, the open issue and scroll persist.
+  - *Issues*, in the overview's column: a head (*Issues*, *N open*, *Refresh*, *New issue*); a
+    filter bar (search, then chips for open/closed, progress, project, label); a hairline table,
+    *Title*, *Labels*, *Updated*, a row a line, rows keeping their place while a person reads.
+    Nothing is open on arrival; a picked issue floats over the list's right side, its width
+    dragged for the session; `×`/Esc close it, ↑/↓ step. *No issues yet* or *No issues match*
+    when empty. Filters, search, selection, the open issue and scroll persist.
   - The **review block** opens below where the work stands only on *Review…*, never by itself,
     and closes only by *Close* or another issue. A hairline box scrolling past its cap: *Review:
     <step>*, the answer (last 60 lines, *Show all N lines*), the files the step changed (each a

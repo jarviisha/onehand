@@ -116,7 +116,7 @@ pub(super) fn page_row(
     } else {
         None
     };
-    let changed = issue.updated.max(issue.created);
+    let changed = issue.changed();
     let updated = div()
         .id(("issues-page-updated", i))
         .flex_none()

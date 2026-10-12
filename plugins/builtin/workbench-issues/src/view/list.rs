@@ -606,7 +606,7 @@ pub(super) fn identity(issue: &LocalIssue, cx: &App) -> AnyElement {
             .text_color(cx.theme().muted_foreground)
             .child(reference.to_string())
             .into_any_element(),
-        None => chip("Draft".to_string(), cx).into_any_element(),
+        None => plain_tag("Draft".to_string(), cx).into_any_element(),
     }
 }
 
@@ -619,30 +619,46 @@ const CHIP_TEXT: gpui::Rems = gpui::rems(0.6875);
 const CHIP_PAD_X: gpui::Rems = gpui::rems(0.4375);
 const CHIP_PAD_Y: gpui::Rems = gpui::rems(0.125);
 
-/// A small tag: a label, or the *Draft* mark, on a tint of its own hue with
-/// that hue's ink and no edge. A label that asks for something is blue, an
-/// enhancement green, one about the code's structure violet, one about the
-/// documents yellow, an agent's report cyan; a label that only files the
-/// issue, and the mark, stay neutral.
-pub(super) fn chip(text: String, cx: &App) -> gpui::Div {
+/// A label as a small tag, on a tint of its kind's hue with that hue's ink
+/// and no edge. A label that asks for something is blue, an enhancement
+/// green, one about the code's structure violet, one about the documents
+/// yellow, an agent's report cyan; a label that only files the issue stays
+/// neutral.
+pub(super) fn chip(label: String, cx: &App) -> gpui::Div {
     let theme = cx.theme();
-    let tinted = |base| {
-        let Tint { fill, ink } = tint(base, cx);
-        (fill, ink)
+    let kind = match LabelKind::of(&label) {
+        LabelKind::Category => neutral(cx),
+        LabelKind::Action => tint(theme.blue, cx),
+        LabelKind::Enhancement => tint(theme.green, cx),
+        LabelKind::Structure => tint(theme.magenta, cx),
+        LabelKind::Docs => tint(theme.yellow, cx),
+        LabelKind::Report => tint(theme.cyan, cx),
     };
-    let (fill, ink) = match LabelKind::of(&text) {
-        LabelKind::Category => (theme.secondary, theme.secondary_foreground),
-        LabelKind::Action => tinted(theme.blue),
-        LabelKind::Enhancement => tinted(theme.green),
-        LabelKind::Structure => tinted(theme.magenta),
-        LabelKind::Docs => tinted(theme.yellow),
-        LabelKind::Report => tinted(theme.cyan),
-    };
+    tag(label, kind, cx)
+}
+
+/// A tag that is not a label (the *Draft* mark, a project's name), always
+/// neutral, so a name that happens to read like a label is never drawn as
+/// one.
+pub(super) fn plain_tag(text: String, cx: &App) -> gpui::Div {
+    tag(text, neutral(cx), cx)
+}
+
+/// The tint a tag takes when it says nothing about state.
+fn neutral(cx: &App) -> Tint {
+    let theme = cx.theme();
+    Tint {
+        fill: theme.secondary,
+        ink: theme.secondary_foreground,
+    }
+}
+
+fn tag(text: String, Tint { fill, ink }: Tint, cx: &App) -> gpui::Div {
     div()
         .flex_none()
         .px(CHIP_PAD_X)
         .py(CHIP_PAD_Y)
-        .rounded(theme.radius)
+        .rounded(cx.theme().radius)
         .bg(fill)
         .text_size(CHIP_TEXT)
         .line_height(CHIP_TEXT)

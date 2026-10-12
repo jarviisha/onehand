@@ -326,11 +326,12 @@ impl IssuesView {
 
 /// A filter's trigger: an edged chip naming what it is set to, then the
 /// caret that opens it, so it reads as a control. Set away from where it
-/// starts, its edge and its words go to full ink, so a narrowed list says so.
+/// starts, its edge goes a step stronger and its words take the primary
+/// ink, so a narrowed list says so.
 fn trigger(id: &'static str, label: &str, set: bool, cx: &App) -> gpui_component::button::Button {
     let theme = cx.theme();
     let (edge, ink) = match set {
-        true => (theme.muted_foreground, theme.foreground),
+        true => (theme.muted_foreground, theme.primary),
         false => (theme.border, theme.muted_foreground),
     };
     action(id)
