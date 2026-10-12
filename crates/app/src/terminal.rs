@@ -482,7 +482,7 @@ impl TerminalPanel {
                     .items_center()
                     .h(crate::controls::BAR_H)
                     .gap_1()
-                    .px_2()
+                    .px_3()
                     .border_b_1()
                     .border_color(cx.theme().border)
                     // The tabs live in a box of their own that scrolls sideways,

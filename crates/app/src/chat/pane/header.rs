@@ -109,7 +109,7 @@ impl ChatPane {
             // taking the top of the conversation with it.
             .flex_none()
             .h(crate::controls::BAR_H)
-            .px_4()
+            .px_3()
             // **No rule under it.** A hairline is an edge between two surfaces,
             // and there are not two here: the header and the transcript are one
             // reading surface, and what separates them is that one is a row of

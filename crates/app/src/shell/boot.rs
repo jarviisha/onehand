@@ -550,6 +550,11 @@ pub fn open_or_focus(workspace: Workspace, cx: &mut App) {
     open_window(workspace, cx);
 }
 
+/// The smallest the window may be dragged to: the rail's minimum beside the
+/// conversation's, and a transcript still a few turns tall. Pixels, because it
+/// is a bound measured against the screen, not something drawn inside a zoom.
+const WINDOW_MIN: gpui::Size<gpui::Pixels> = gpui::size(gpui::px(720.), gpui::px(480.));
+
 /// Open a window for `workspace` and register it.
 fn open_window(workspace: Workspace, cx: &mut App) {
     let storage_dir = workspace.storage_dir.clone();
@@ -566,6 +571,7 @@ fn open_window(workspace: Workspace, cx: &mut App) {
             // match, so every entry on disk is unreachable and the result is
             // the generic placeholder no matter how many icons are installed.
             app_id: Some(APP_ID.into()),
+            window_min_size: Some(WINDOW_MIN),
             ..Default::default()
         };
         // Filled in by the window builder below and read out after it, because
