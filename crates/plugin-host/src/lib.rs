@@ -229,7 +229,8 @@ impl gpui_component::IconNamed for AppIcon {
     }
 }
 
-/// A mode's empty state: one muted line, centred in the body it would fill.
+/// A mode's empty state: one line of meta text, centred in the body it would
+/// fill.
 ///
 /// Here rather than copied into each mode for the reason [`action`] is. Four
 /// copies of a centred muted line is four places for one of them to drift into
@@ -241,6 +242,7 @@ pub fn hint(text: &'static str, cx: &App) -> AnyElement {
         .v_flex()
         .items_center()
         .justify_center()
+        .text_xs()
         .text_color(cx.theme().muted_foreground)
         .child(text)
         .into_any_element()

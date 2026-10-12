@@ -431,7 +431,7 @@ impl TerminalPanel {
         // shell map, and it is the one case with nothing for a strip to sit
         // over: no project means no shell to start and nowhere to start it.
         if self.root.is_none() {
-            return hint("No project root", cx).into_any_element();
+            return onehand_plugin_host::hint("No project root", cx);
         }
 
         let set = self.active_set().filter(|set| !set.tabs.is_empty());
@@ -633,16 +633,6 @@ impl TerminalPanel {
             })
             .into_any_element()
     }
-}
-
-fn hint(text: &'static str, cx: &App) -> impl IntoElement + use<> {
-    div()
-        .size_full()
-        .v_flex()
-        .items_center()
-        .justify_center()
-        .text_color(cx.theme().muted_foreground)
-        .child(text)
 }
 
 #[cfg(test)]

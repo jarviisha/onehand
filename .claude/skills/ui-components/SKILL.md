@@ -42,14 +42,14 @@ crate::controls::action("retry-task").ghost().small().label("Retry…").on_click
 ```
 
 ```rust
-// Wrong (workbench-plugins/src/view/rows.rs): refuses the press, still shows the pointer
+// Wrong: refuses the press, still shows the pointer
 action(("plugin-update", i)).xsmall().outline().disabled(busy)
 // Right: refusing in one call, cursor included
 action(("plugin-update", i)).xsmall().outline().refuses(busy)
 ```
 
 ```rust
-// Wrong (workbench-issues/src/view/list.rs, `tag`): a label drawn by hand
+// Wrong: a label drawn by hand
 div().px(CHIP_PAD_X).py(CHIP_PAD_Y).rounded(cx.theme().radius).bg(fill).text_color(ink)
 // Right: the library's label, at the small corner
 Tag::custom(tint.fill, tint.ink, tint.fill).small().child(text)

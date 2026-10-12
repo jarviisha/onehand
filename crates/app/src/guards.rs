@@ -650,9 +650,6 @@ mod tests {
         ("crates/app/src/dialogs/issue.rs", 2),
         ("crates/app/src/settings.rs", 9),
         ("crates/app/src/settings/pages.rs", 1),
-        ("plugins/builtin/workbench-files/src/view.rs", 1),
-        ("plugins/builtin/workbench-markdown/src/document.rs", 1),
-        ("plugins/builtin/workbench-plugins/src/view/details.rs", 1),
     ];
 
     /// The lengths written into `rems(` or `px(` on one line, unless the line
@@ -1178,10 +1175,7 @@ mod tests {
     /// Spacing a step apart from its neighbours rather than a near-miss:
     /// half a step is a difference nobody sees and everybody copies. Counts
     /// from before the rule; a file may only go down.
-    const SPACING_BEFORE_THE_RULE: &[(&str, usize)] = &[
-        ("crates/app/src/settings.rs", 2),
-        ("plugins/builtin/workbench-plugins/src/view/rows.rs", 2),
-    ];
+    const SPACING_BEFORE_THE_RULE: &[(&str, usize)] = &[("crates/app/src/settings.rs", 2)];
 
     #[test]
     fn spacing_stays_on_the_steps() {

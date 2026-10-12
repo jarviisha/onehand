@@ -302,6 +302,22 @@ pub const COMMANDS: &[Command] = &[
         "IssuesPage && !Dialog && !Input",
         "Issues page"
     ),
+    command!(
+        "plugin_open",
+        "Open the plugin's details",
+        ["enter"],
+        onehand_workbench_plugins::PluginOpen,
+        "PluginList && !Input",
+        "Plugins list"
+    ),
+    command!(
+        "plugin_flip",
+        "Turn the plugin on or off here",
+        ["space"],
+        onehand_workbench_plugins::PluginFlip,
+        "PluginList && !Input",
+        "Plugins list"
+    ),
     // `A > B` scores at `B`'s depth, so these tie with the input's own arrow
     // and Tab bindings and win by being registered later. The composer adds
     // `ChatComposer` only while a list is open, so otherwise the keys still
@@ -795,6 +811,21 @@ mod tests {
         assert_eq!(
             action_at(&map, "escape", &page),
             Some(onehand_workbench_issues::IssuesClose.name().into())
+        );
+        // A Plugins row opens on Enter and flips on Space, but never while a
+        // field holds the caret.
+        let list = ["Shell", "Workbench", "PluginList"];
+        assert_eq!(
+            action_at(&map, "enter", &list),
+            Some(onehand_workbench_plugins::PluginOpen.name().into())
+        );
+        assert_eq!(
+            action_at(&map, "space", &list),
+            Some(onehand_workbench_plugins::PluginFlip.name().into())
+        );
+        assert_eq!(
+            action_at(&map, "space", &[&list[..], &["Input"]].concat()),
+            None
         );
         // The rail's list and the composer's suggestions share the arrows,
         // each only where it has focus.

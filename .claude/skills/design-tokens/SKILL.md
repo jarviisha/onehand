@@ -23,28 +23,28 @@ prints nothing for its lines, and `cargo test -p onehand --locked guards` passes
 ## Right and wrong
 
 ```rust
-// Wrong (workbench-markdown/src/document.rs): a size nobody can find again
+// Wrong: a size nobody can find again
 .text_size(rems(0.8125))
 // Right
 .text_size(tokens::CODE_TEXT)
 ```
 
 ```rust
-// Wrong (workbench-plugins/src/view/rows.rs): 10px, between two steps
+// Wrong: 10px, between two steps
 .py_2p5()
 // Right
 .py_2()
 ```
 
 ```rust
-// Wrong (workbench-issues/src/view/page/panel.rs): gpui's shadow, unseen on the dark palette
+// Wrong: gpui's shadow, unseen on the dark palette
 .shadow_lg()
 // Right
 .shadow(tokens::lift(cx))
 ```
 
 ```rust
-// Wrong (chat/pane/workspace_page.rs, card_box): a standing box at a control's corner
+// Wrong: a standing box at a control's corner
 .rounded(cx.theme().radius)
 // Right
 .rounded(cx.theme().radius_lg)

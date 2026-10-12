@@ -678,7 +678,7 @@ impl PluginsView {
                     action("plugins-restart")
                         .small()
                         .outline()
-                        .label("Restart agent")
+                        .label("Restart the agent")
                         .refuses(self.busy.is_some())
                         .on_click(move |_, window, cx| ask(&Request::RestartAgent, window, cx)),
                 )

@@ -7,10 +7,8 @@ use gpui::{
     App, AppContext as _, Context, Entity, Focusable as _, IntoElement, ParentElement, Render,
     SharedString, Styled, Window, div,
 };
-use gpui_component::button::ButtonVariants as _;
-use gpui_component::dialog::{DialogClose, DialogFooter};
+use gpui_component::StyledExt;
 use gpui_component::input::InputEvent;
-use gpui_component::{StyledExt, WindowExt as _};
 use onehand_core::editor::SaveOutcome;
 use onehand_plugin_host::{hint, status_line};
 use std::collections::HashMap;
@@ -38,6 +36,8 @@ pub(crate) struct EditorView {
     /// dropped either — it is remembered here and re-run once the first lands,
     /// which is what makes it pick up the keystrokes that prompted it.
     saving: HashMap<u64, bool>,
+    /// A file being read to open it, which the body says until it lands.
+    opening: Option<PathBuf>,
     /// The width the strip leaves its tabs, in rems, as last laid out.
     /// Infinite until measured, so the first frame draws tabs, not a select.
     tabs_w: onehand_plugin_host::Measured,
@@ -66,6 +66,7 @@ impl EditorView {
             buffers: HashMap::new(),
             status: None,
             saving: HashMap::new(),
+            opening: None,
             tabs_w: onehand_plugin_host::unmeasured(),
             tree_shown: true,
             detail: false,
@@ -148,6 +149,8 @@ impl EditorView {
             return true;
         }
 
+        self.opening = Some(path.clone());
+        cx.notify();
         // `spawn_in`, not `spawn`: building an `EditorState` needs a `&mut
         // Window`, and the read has to happen off the UI loop first.
         cx.spawn_in(window, async move |view, cx| {
@@ -159,40 +162,45 @@ impl EditorView {
                 })
                 .await;
 
-            let _ = view.update_in(cx, |view: &mut Self, window, cx| match read {
-                Ok((text, mtime)) => {
-                    // A read that worked answers whatever the last failure said.
-                    // Left set, the message outlived its subject and read as a
-                    // complaint about the file now on screen.
-                    view.status = None;
-                    let uid = next_buffer_uid();
-                    let state = new_buffer(&path, &text, window, cx);
-                    // Typing is what makes a buffer dirty, and nothing was
-                    // listening for it. Subscribed *after* `new_buffer`, whose
-                    // `set_value` seeds the text -- gpui-component's
-                    // `set_value` does not emit `Change`, but ordering it this
-                    // way means a tab is never born dirty even if that changes
-                    // upstream.
-                    let watch = cx.subscribe(&state, {
-                        let root = root.clone();
-                        move |view: &mut Self, _, event: &InputEvent, cx| {
-                            if matches!(event, InputEvent::Change) {
-                                view.mark_dirty(&root, uid, cx);
-                            }
-                        }
-                    });
-                    let buffers = view.buffers.entry(root).or_default();
-                    // Core decides whether this is a new tab; a buffer is only
-                    // adopted when it is, so a re-open keeps its edits.
-                    let (_, is_new) = buffers.tabs.open(path.clone(), mtime, uid);
-                    if is_new {
-                        buffers.insert(uid, state, watch);
-                    }
-                    cx.notify();
+            let _ = view.update_in(cx, |view: &mut Self, window, cx| {
+                if view.opening.as_ref() == Some(&path) {
+                    view.opening = None;
                 }
-                Err(e) => {
-                    view.status = Some(format!("{} — {e}", path.display()));
-                    cx.notify();
+                match read {
+                    Ok((text, mtime)) => {
+                        // A read that worked answers whatever the last failure said.
+                        // Left set, the message outlived its subject and read as a
+                        // complaint about the file now on screen.
+                        view.status = None;
+                        let uid = next_buffer_uid();
+                        let state = new_buffer(&path, &text, window, cx);
+                        // Typing is what makes a buffer dirty, and nothing was
+                        // listening for it. Subscribed *after* `new_buffer`, whose
+                        // `set_value` seeds the text -- gpui-component's
+                        // `set_value` does not emit `Change`, but ordering it this
+                        // way means a tab is never born dirty even if that changes
+                        // upstream.
+                        let watch = cx.subscribe(&state, {
+                            let root = root.clone();
+                            move |view: &mut Self, _, event: &InputEvent, cx| {
+                                if matches!(event, InputEvent::Change) {
+                                    view.mark_dirty(&root, uid, cx);
+                                }
+                            }
+                        });
+                        let buffers = view.buffers.entry(root).or_default();
+                        // Core decides whether this is a new tab; a buffer is only
+                        // adopted when it is, so a re-open keeps its edits.
+                        let (_, is_new) = buffers.tabs.open(path.clone(), mtime, uid);
+                        if is_new {
+                            buffers.insert(uid, state, watch);
+                        }
+                        cx.notify();
+                    }
+                    Err(e) => {
+                        view.status = Some(format!("{} — {e}", path.display()));
+                        cx.notify();
+                    }
                 }
             });
         })
@@ -414,38 +422,19 @@ impl EditorView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let view = cx.entity();
-        window.open_alert_dialog(cx, move |alert, _, _| {
-            // Cloned per build: the builder runs again on every frame the
-            // dialog is on screen, so nothing captured can be consumed by one.
-            let (view, close) = (view.clone(), close.clone());
-            alert
-                .title(title.clone())
-                .description(description.clone())
-                // Our own pair rather than the library's OK/Cancel, which draw
-                // the arrow cursor over controls that act. Keep is first and
-                // plain, Discard last and in the danger tint.
-                .footer(
-                    DialogFooter::new()
-                        .child(
-                            DialogClose::new().child(
-                                onehand_plugin_host::action("keep-edits")
-                                    .ghost()
-                                    .label("Keep"),
-                            ),
-                        )
-                        .child(
-                            onehand_plugin_host::action("discard-edits")
-                                .danger()
-                                .label("Discard")
-                                .on_click(move |_, window: &mut Window, cx: &mut App| {
-                                    window.close_dialog(cx);
-                                    let close = close.clone();
-                                    view.update(cx, |view: &mut Self, cx| view.discard(close, cx));
-                                }),
-                        ),
-                )
-        });
+        onehand_plugin_host::confirm_on(
+            cx.entity(),
+            onehand_plugin_host::Confirm {
+                id: "discard-edits",
+                title,
+                description: description.into(),
+                act: "Discard",
+                ..Default::default()
+            },
+            window,
+            cx,
+            move |view, _, cx| view.discard(close.clone(), cx),
+        );
     }
 
     /// Close without asking; the question, if there was one, is answered.
@@ -539,6 +528,7 @@ impl Render for EditorView {
             cx,
         );
         let body = match buffer {
+            _ if self.opening.is_some() => hint("Opening the file…", cx),
             None => hint("Open a file from the tree, or from a tool card", cx),
             Some(state) => div()
                 .flex_1()

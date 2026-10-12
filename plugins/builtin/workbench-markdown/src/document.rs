@@ -26,6 +26,12 @@ use std::time::SystemTime;
 /// The widest a document's column runs: a comfortable line of prose, so a
 /// wide dock does not stretch a paragraph into lines too long to follow.
 const DOC_MEASURE: Rems = rems(34.);
+/// A document's headings on the type scale: `text_xl`, `text_lg`, then the
+/// body's own size, so a deep heading is told apart by weight. The renderer
+/// asks a size of each level and keeps its own weights.
+const HEADING_1: Rems = rems(1.25);
+const HEADING_2: Rems = rems(1.125);
+const HEADING_REST: Rems = rems(1.);
 /// Where a row's content starts, and how far each level of the tree steps in.
 const ROW_INSET: f32 = 0.5;
 const TREE_INDENT: f32 = 0.875;
@@ -373,40 +379,42 @@ pub(crate) fn reader(
 
 /// Document styling.
 ///
-/// The renderer's own defaults are a document's, which is what is wanted here —
-/// unlike in the transcript, where the same renderer is drawing one message and
-/// its headings have to be pulled back down. Two things still have to be said.
-/// The heading base is an absolute pixel value in the renderer, which is exactly
-/// what a rem-base override cannot reach, so the panel's zoom has to be written
-/// into it by hand — that is what `rem` is, and why it is a parameter rather
-/// than a reading off the window. And the code block's text size is in rems,
-/// which the override *does* reach.
+/// The renderer's headings run to twice the body, which over a dock reads as a
+/// page title shouting from inside the document, so each level is sized off the
+/// type scale instead. The heading base is an absolute pixel value in the
+/// renderer, which is exactly what a rem-base override cannot reach, so the
+/// panel's zoom has to be written into it by hand — that is what `rem` is, and
+/// why it is a parameter rather than a reading off the window. The code block's
+/// text size is in rems, which the override *does* reach.
 fn doc_style(rem: gpui::Pixels, cx: &App) -> TextViewStyle {
-    let mut style = TextViewStyle::default().code_block(
-        gpui::StyleRefinement::default()
-            .p(rems(0.75))
-            .text_size(tokens::CODE_TEXT)
-            // **The fill is named here rather than left to the library**, and
-            // it is the step past the well: the dock this document is read on
-            // sits so near the well that a block filled with it showed only its
-            // padding. Written out, a panel that changes surface again is one
-            // edit in one place rather than a block that quietly disappears.
-            .bg(cx.theme().secondary),
-    );
+    let mut style = TextViewStyle::default()
+        .code_block(
+            gpui::StyleRefinement::default()
+                .p_3()
+                .text_size(tokens::CODE_TEXT)
+                // **The fill is named here rather than left to the library**, and
+                // it is the step past the well: the dock this document is read on
+                // sits so near the well that a block filled with it showed only its
+                // padding. Written out, a panel that changes surface again is one
+                // edit in one place rather than a block that quietly disappears.
+                .bg(cx.theme().secondary),
+        )
+        .heading_font_size(|level, rem| {
+            rem * match level {
+                1 => HEADING_1.0,
+                2 => HEADING_2.0,
+                _ => HEADING_REST.0,
+            }
+        });
     style.heading_base_font_size = rem;
     style
 }
 
-/// A line where the list would be, for the two states that are not a list.
+/// The mode's empty line, filling a body that is not a flex column itself.
 fn note(text: &'static str, cx: &App) -> gpui::AnyElement {
     div()
         .size_full()
         .v_flex()
-        .items_center()
-        .justify_center()
-        .px_2()
-        .text_xs()
-        .text_color(cx.theme().muted_foreground)
-        .child(text)
+        .child(onehand_plugin_host::hint(text, cx))
         .into_any_element()
 }

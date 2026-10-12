@@ -155,6 +155,11 @@ impl Render for FilesView {
         let Some(tree) = self.trees.get(&root) else {
             return hint("No project root", cx).into_any_element();
         };
+        // Until the root's first listing lands there is nothing to draw, and a
+        // blank panel reads as an empty project.
+        if !tree.listings.contains_key(&root) {
+            return hint("Reading the project's files…", cx).into_any_element();
+        }
         div()
             .flex_1()
             .min_h_0()
@@ -278,7 +283,7 @@ fn rows(
                     row.child(if entry.is_dir {
                         div()
                             .flex_none()
-                            .size(rems(0.375))
+                            .size_1p5()
                             .rounded_full()
                             .bg(color)
                             .into_any_element()

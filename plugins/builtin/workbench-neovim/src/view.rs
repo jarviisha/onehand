@@ -12,7 +12,7 @@ use gpui::{
 };
 use gpui_component::StyledExt;
 use gpui_component::button::ButtonVariants as _;
-use onehand_plugin_host::{Ask, Request, action, hint, status_line};
+use onehand_plugin_host::{Ask, Request, action, hint, status_ink};
 use onehand_terminal_ui::{Program, PtyTab, TerminalThemeKey, spawn_pty, terminal_palette};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -35,7 +35,7 @@ pub(crate) struct NeovimView {
     /// What the palette was last built from, so a live grid is recoloured once
     /// per appearance change instead of on every frame.
     theme: TerminalThemeKey,
-    /// A Neovim that would not start, shown as a line under the grid.
+    /// A Neovim that would not start, shown under the button that tried.
     ///
     /// The empty state is where a failure has to be readable: the button that
     /// tried is right above it, and there is no other surface saying why
@@ -195,12 +195,7 @@ impl Render for NeovimView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.sync_theme(cx);
         let body = self.body(cx);
-        div()
-            .flex_1()
-            .min_h_0()
-            .v_flex()
-            .child(body)
-            .children(self.status.clone().map(|status| status_line(status, cx)))
+        div().flex_1().min_h_0().v_flex().child(body)
     }
 }
 
@@ -214,8 +209,8 @@ impl NeovimView {
             // The button and not an automatic spawn, for the same reason
             // switching to this mode does not spawn: arriving at a tab should
             // not start a process. It also gives the failure somewhere to be
-            // read — a Neovim that would not start leaves its reason in the
-            // line below this.
+            // read — a Neovim that would not start leaves its reason under it,
+            // in the danger ink, as the terminal's shell does.
             return div()
                 .flex_1()
                 .v_flex()
@@ -233,6 +228,12 @@ impl NeovimView {
                             }
                         })),
                 )
+                .children(self.status.clone().map(|status| {
+                    div()
+                        .text_xs()
+                        .text_color(status_ink(cx).danger)
+                        .child(status)
+                }))
                 .into_any_element();
         };
 

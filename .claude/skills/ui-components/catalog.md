@@ -50,9 +50,8 @@ page needs the same thing, lift it into a shared module in that change rather th
 
 Several builders draw one thing. Use the first one named; add no other.
 
-- **A small label**: `Tag` at `.small()`, as the transcript's `pill` and the Issues labels draw
-  it. Drawn by hand today in `chip` (`workbench-plugins/src/view/details.rs`).
-- **A line filling an empty panel**: `hint`. Copied into `crates/app/src/terminal.rs`.
+- **A small label**: `Tag` at `.small()`, as the transcript's `pill`, the Issues labels and the
+  Plugins chips draw it. Drawn by hand today in the issue picker's labels.
 - **A well**: `well`. `mono_well`, `plain_box` and the Issues review and diff views build on it.
 - **A confirmation**: `Confirm` (`Ask` in the app). Drawn by hand with `open_alert_dialog` in
-  Settings, the editor and Plugins.
+  Settings.
