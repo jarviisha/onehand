@@ -93,7 +93,7 @@ impl IssuesView {
         }
         // The page narrows to a reference; only the tab jumps to it.
         let hint = match self.page {
-            Some(_) => "Search titles, or #6",
+            Some(_) => "Search issues or #number",
             None => "Search titles, or #6 to jump",
         };
         let query = cx.new(|cx| InputState::new(window, cx).placeholder(hint));
@@ -606,15 +606,25 @@ pub(super) fn identity(issue: &LocalIssue, cx: &App) -> AnyElement {
             .text_color(cx.theme().muted_foreground)
             .child(reference.to_string())
             .into_any_element(),
-        None => chip("Draft".to_string(), cx),
+        None => chip("Draft".to_string(), cx).into_any_element(),
     }
 }
 
-/// A small tag: a label, or the *Draft* mark. A label that asks for
-/// something takes the accent's tint, an enhancement the success one and an
-/// agent's report the warning one; a label that only files the issue, and
-/// the mark, stay neutral.
-pub(super) fn chip(text: String, cx: &App) -> AnyElement {
+/// A label's text, a notch under the UI's small size: a tag is read after
+/// the title it sits beside, never instead of it.
+const CHIP_TEXT: gpui::Rems = gpui::rems(0.6875);
+
+/// A label's inset: wide enough at the sides that the tint reads as a shape
+/// round the word, shallow enough that a row of tags stays one line.
+const CHIP_PAD_X: gpui::Rems = gpui::rems(0.4375);
+const CHIP_PAD_Y: gpui::Rems = gpui::rems(0.125);
+
+/// A small tag: a label, or the *Draft* mark, on a tint of its own hue with
+/// that hue's ink and no edge. A label that asks for something is blue, an
+/// enhancement green, one about the code's structure violet, one about the
+/// documents yellow, an agent's report cyan; a label that only files the
+/// issue, and the mark, stay neutral.
+pub(super) fn chip(text: String, cx: &App) -> gpui::Div {
     let theme = cx.theme();
     let tinted = |base| {
         let Tint { fill, ink } = tint(base, cx);
@@ -624,17 +634,20 @@ pub(super) fn chip(text: String, cx: &App) -> AnyElement {
         LabelKind::Category => (theme.secondary, theme.secondary_foreground),
         LabelKind::Action => tinted(theme.blue),
         LabelKind::Enhancement => tinted(theme.green),
-        LabelKind::Report => tinted(theme.yellow),
+        LabelKind::Structure => tinted(theme.magenta),
+        LabelKind::Docs => tinted(theme.yellow),
+        LabelKind::Report => tinted(theme.cyan),
     };
     div()
         .flex_none()
-        .px_1()
+        .px(CHIP_PAD_X)
+        .py(CHIP_PAD_Y)
         .rounded(theme.radius)
         .bg(fill)
-        .text_xs()
+        .text_size(CHIP_TEXT)
+        .line_height(CHIP_TEXT)
         .text_color(ink)
         .child(text)
-        .into_any_element()
 }
 
 #[cfg(test)]

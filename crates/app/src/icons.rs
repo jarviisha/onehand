@@ -110,6 +110,7 @@ icons! {
     LogOut => "log-out",
     Paperclip => "paperclip",
     PlusLight => "plus-light",
+    RefreshCw => "refresh-cw",
     Shield => "shield",
     Square => "square",
     SquarePen => "square-pen",
@@ -128,6 +129,7 @@ mod tests {
     fn a_plugin_names_an_app_icon_by_the_path_it_is_served_at() {
         use onehand_plugin_host::AppIcon;
         assert_eq!(AppIcon::CircleDot.path(), Icon::CircleDot.path());
+        assert_eq!(AppIcon::Refresh.path(), Icon::RefreshCw.path());
     }
 
     /// The registry, the pinned manifest and the checked-in SVGs must agree:

@@ -247,6 +247,8 @@ fn a_label_is_told_by_what_it_asks_for() {
     assert_eq!(LabelKind::of("auto"), LabelKind::Action);
     assert_eq!(LabelKind::of("enhancement"), LabelKind::Enhancement);
     assert_eq!(LabelKind::of("agent-report"), LabelKind::Report);
-    assert_eq!(LabelKind::of("architecture"), LabelKind::Category);
-    assert_eq!(LabelKind::of("documentation"), LabelKind::Category);
+    assert_eq!(LabelKind::of("architecture"), LabelKind::Structure);
+    assert_eq!(LabelKind::of("Refactor"), LabelKind::Structure);
+    assert_eq!(LabelKind::of("documentation"), LabelKind::Docs);
+    assert_eq!(LabelKind::of("bug"), LabelKind::Category);
 }

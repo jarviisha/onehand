@@ -379,6 +379,11 @@ impl IssuesView {
         let query = self.query(window, cx);
         let text = query.read(cx).value().to_string();
         let columns = self.width.get().0 >= row::COLUMNS_MIN;
+        let page_focused = self
+            .page
+            .as_ref()
+            .and_then(|page| page.focus.as_ref())
+            .is_some_and(|focus| focus.is_focused(window));
         let Some(page) = self.page.as_mut() else {
             return (hint("No page", cx), div().into_any_element());
         };
@@ -443,6 +448,9 @@ impl IssuesView {
                 .iter()
                 .any(|row| row.item.root != listed.rows[0].item.root);
         let last = listed.rows.len().saturating_sub(1);
+        // The columns are named over rows, never over an empty list.
+        let head = !listed.rows.is_empty();
+        let focused = page_focused;
         let rows: Vec<AnyElement> = listed
             .rows
             .iter()
@@ -450,7 +458,14 @@ impl IssuesView {
             .map(|(i, row)| {
                 let picked = selected == Some(&row.item.key);
                 let project = mixed.then(|| label_of(row.item.root));
-                page_row(i, i == last, row, project, picked, columns, cx)
+                let place = row::Place {
+                    first: i == 0 && !head,
+                    last: i == last,
+                    picked,
+                    focused,
+                    columns,
+                };
+                page_row(i, place, row, project, cx)
             })
             .collect();
         let left_out = listed.left_out;
@@ -461,10 +476,14 @@ impl IssuesView {
             .flex_none()
             .px_4()
             .pt_6()
-            .pb_3()
             .child(column(
                 div().v_flex().gap_2().child(toolbar).children(notices),
             ))
+            // Outside the scroll, so the names stay over the rows they name.
+            .map(|top| match head {
+                true => top.child(div().mt_6().child(row::columns_head(columns, cx))),
+                false => top.pb_6(),
+            })
             .into_any_element();
         let rows = div()
             .id("issues-page-list")

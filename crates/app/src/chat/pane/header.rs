@@ -134,15 +134,7 @@ impl ChatPane {
             // comes back on: filed among the window controls on the right it
             // had to be found rather than reached for, a control restoring the
             // left panel from the opposite edge of the row.
-            .when(self.rail_hidden, |header| {
-                header.child(
-                    header_control("show-rail", IconName::PanelLeftOpen, cx)
-                        .tooltip("Show the navigation rail")
-                        .on_click(cx.listener(|_: &mut Self, _, _, cx| {
-                            cx.emit(ChatPaneEvent::ShowRail);
-                        })),
-                )
-            })
+            .when(self.rail_hidden, |header| header.child(show_rail(cx)))
             // **The name gives way before the controls do, and it stops at a
             // floor.** What held the whole row open was the library drawing a
             // button's label in a `flex_none` box with nothing to ellipsize it:
@@ -573,6 +565,15 @@ fn project_menu(
             .on_click(act(ProjectAction::Remove, pane.clone())),
         )
     }
+}
+
+/// The way back to a hidden rail.
+pub(super) fn show_rail(cx: &mut Context<ChatPane>) -> gpui_component::button::Button {
+    header_control("show-rail", IconName::PanelLeftOpen, cx)
+        .tooltip("Show the navigation rail")
+        .on_click(cx.listener(|_: &mut ChatPane, _, _, cx| {
+            cx.emit(ChatPaneEvent::ShowRail);
+        }))
 }
 
 /// One of the header's controls.

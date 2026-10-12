@@ -105,6 +105,10 @@ keyboard = "lucide:keyboard"
 # something passed, and `inbox`, which the *Tasks* row right above it already
 # wears.
 circle-dot = "lucide:circle-dot"
+# The Issues page's *Refresh*. The bundled set draws no refresh mark: its
+# nearest shapes are `redo`, which reads as stepping an edit forward, and
+# `loader-circle`, which already means running.
+refresh-cw = "lucide:refresh-cw"
 # The rail's status marks and row actions. The bundled set draws no hand, no
 # bare circle, no archive box, no stop square and no filter of any kind: its
 # nearest shapes are `circle-check` and `circle-x`, which already mean done and

@@ -1,5 +1,6 @@
 use super::project_page::count_of;
 use super::{ChatPane, ChatPaneEvent, Page, SessionSignal, rel_time};
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, Context, Div, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, Window, div, rems,
@@ -301,15 +302,31 @@ impl ChatPane {
 
     /// A page that is a view of its own (Issues, Workflows) under the
     /// pane's header, as the other pages are drawn.
+    ///
+    /// The Issues page names itself in its own head, beside its actions, so
+    /// the header would say *Issues* a second time: it is left off, but for
+    /// the way back to a hidden rail.
     pub(super) fn view_page(
         &self,
         view: gpui::AnyView,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
+        let issues = self.showing_issues();
         div()
             .size_full()
             .v_flex()
-            .child(self.header(cx))
+            .when(!issues, |page| page.child(self.header(cx)))
+            .when(issues && self.rail_hidden, |page| {
+                page.child(
+                    div()
+                        .flex_none()
+                        .h_flex()
+                        .items_center()
+                        .h(crate::controls::BAR_H)
+                        .px_4()
+                        .child(super::header::show_rail(cx)),
+                )
+            })
             .child(div().flex_1().min_h_0().v_flex().child(view))
             .into_any_element()
     }

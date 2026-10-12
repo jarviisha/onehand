@@ -49,20 +49,78 @@ impl IssuesView {
         let width = clamp(wanted.unwrap_or(PANEL_W), area);
         let whole = area < width + LIST_MIN;
         let (reference, place) = self.panel_head(cx);
-        let body = match self.root.clone() {
-            Some(root) => match self.issues_of(&root, cx).cloned() {
-                Some(issues) => self.detail(&root, &issues, window, cx),
-                None => hint("Reading issues…", cx),
-            },
-            None => hint("Pick an issue", cx),
-        };
         let theme = cx.theme();
         let muted = theme.muted_foreground;
+        let mono = theme.mono_font_family.clone();
+        // Where the issue stands in the list, and the way to close the panel.
+        let nav = div()
+            .h_flex()
+            .flex_none()
+            .items_center()
+            .gap_2()
+            .text_xs()
+            .text_color(muted)
+            .children(place.map(|place| div().flex_none().child(place)))
+            .child(
+                action("issues-page-close")
+                    .small()
+                    .ghost()
+                    .icon(IconName::Close)
+                    .tooltip("Close (Esc)")
+                    .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
+                        if let Some(page) = view.page.as_mut() {
+                            page.open = false;
+                        }
+                        cx.notify();
+                    })),
+            )
+            .into_any_element();
+        // An issue heads itself with its trail, the way to close at its end;
+        // the form has no trail, so the panel draws one over it.
+        let (bar, body) = match self.root.clone() {
+            Some(root) if !self.drafting() && self.selected_number().is_some() => {
+                match self.issues_of(&root, cx).cloned() {
+                    Some(issues) => (None, self.detail(&root, &issues, Some(nav), window, cx)),
+                    None => (None, hint("Reading issues…", cx)),
+                }
+            }
+            Some(root) => {
+                let body = match self.issues_of(&root, cx).cloned() {
+                    Some(issues) => self.detail(&root, &issues, None, window, cx),
+                    None => hint("Reading issues…", cx),
+                };
+                let bar = div()
+                    .flex_none()
+                    .h_flex()
+                    .items_center()
+                    .gap_2()
+                    .h(BAR_H)
+                    .pl_4()
+                    .pr_2()
+                    .text_xs()
+                    .text_color(muted)
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .font_family(mono)
+                            .child(reference),
+                    )
+                    .child(nav);
+                (Some(bar), body)
+            }
+            None => (None, hint("Pick an issue", cx)),
+        };
+        let theme = cx.theme();
         div()
             .id("issues-page-panel")
             .occlude()
             .absolute()
-            .top_0()
+            // Set down into the first row rather than on the columns' names'
+            // foot, so the panel's top edge never runs along a line of the
+            // table and reads as a lid on it.
+            .top(rems(INSET))
             .right(rems(INSET))
             .bottom(rems(INSET))
             .map(|panel| {
@@ -80,40 +138,7 @@ impl IssuesView {
             .text_color(theme.popover_foreground)
             .shadow_lg()
             .overflow_hidden()
-            .child(
-                div()
-                    .flex_none()
-                    .h_flex()
-                    .items_center()
-                    .gap_2()
-                    .h(BAR_H)
-                    .pl_4()
-                    .pr_2()
-                    .text_xs()
-                    .text_color(muted)
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .truncate()
-                            .font_family(theme.mono_font_family.clone())
-                            .child(reference),
-                    )
-                    .children(place.map(|place| div().flex_none().child(place)))
-                    .child(
-                        action("issues-page-close")
-                            .small()
-                            .ghost()
-                            .icon(IconName::Close)
-                            .tooltip("Close (Esc)")
-                            .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
-                                if let Some(page) = view.page.as_mut() {
-                                    page.open = false;
-                                }
-                                cx.notify();
-                            })),
-                    ),
-            )
+            .children(bar)
             .child(div().flex_1().min_h_0().v_flex().child(body))
             // The edge a drag sizes the panel by; covering the area, the
             // panel has no edge to drag.

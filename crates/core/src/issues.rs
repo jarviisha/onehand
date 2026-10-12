@@ -614,8 +614,8 @@ pub fn now() -> u64 {
 
 /// What a label says about an issue, which is how it is drawn: one that asks
 /// for something to happen (`ready-for-agent`, `auto`, `needs-triage`) apart
-/// from one that only files it (`architecture`, `documentation`), and the two
-/// filings read often enough to be told at a glance.
+/// from one that only files it, and the filings read often enough to be told
+/// at a glance (`enhancement`, `architecture`, `documentation`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LabelKind {
     /// Asks for something: a person or an agent picks the issue up by it.
@@ -624,6 +624,10 @@ pub enum LabelKind {
     Category,
     /// Asks for something new rather than a repair.
     Enhancement,
+    /// About how the code is put together rather than what it does.
+    Structure,
+    /// About the documents rather than the code.
+    Docs,
     /// Written by an agent about its own work.
     Report,
 }
@@ -634,6 +638,8 @@ impl LabelKind {
         let label = label.trim().to_ascii_lowercase();
         match label.as_str() {
             "enhancement" | "feature" => Self::Enhancement,
+            "architecture" | "refactor" => Self::Structure,
+            "documentation" | "docs" => Self::Docs,
             "agent-report" => Self::Report,
             "auto" | "blocked" | "in-progress" | "wip" => Self::Action,
             _ if label.starts_with("ready-") || label.starts_with("needs-") => Self::Action,

@@ -161,18 +161,20 @@ pub fn tint_over(base: Hsla, surface: Hsla, foreground: Hsla) -> Tint {
 }
 
 /// A mark the app's own icon set draws for a plugin, where the bundled set
-/// has no drawing: an open issue's circle with a dot. The app serves these
-/// under its own prefix, and its registry test holds each path to the one it
-/// serves.
+/// has no drawing: an open issue's circle with a dot, and a refresh. The app
+/// serves these under its own prefix, and its registry test holds each path to
+/// the one it serves.
 #[derive(Clone, Copy)]
 pub enum AppIcon {
     CircleDot,
+    Refresh,
 }
 
 impl gpui_component::IconNamed for AppIcon {
     fn path(self) -> SharedString {
         match self {
             Self::CircleDot => "onehand/icons/circle-dot.svg".into(),
+            Self::Refresh => "onehand/icons/refresh-cw.svg".into(),
         }
     }
 }

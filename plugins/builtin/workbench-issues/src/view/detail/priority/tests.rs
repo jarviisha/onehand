@@ -18,7 +18,9 @@ fn a_priority_presses_by_its_words() {
     assert_eq!(urgency("P0 — now"), 2);
     assert_eq!(urgency("High: the footer lies"), 1);
     assert_eq!(urgency("p1"), 1);
-    assert_eq!(urgency("Low"), 0);
+    assert_eq!(urgency("Low"), -1);
+    assert_eq!(urgency("Lowest of the medium items"), -1);
+    assert_eq!(urgency("Medium"), 0);
     // A word inside another is not that word.
     assert_eq!(urgency("Highlight later"), 0);
     assert_eq!(priority_name("High: the footer lies"), "High");

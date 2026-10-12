@@ -130,9 +130,9 @@ pub(crate) struct IssuesView {
     /// What the Issues page holds beside what the tab does: `None` for the
     /// Workbench's Issues mode, which draws one project at the dock's width.
     page: Option<page::PageState>,
-    /// The issue, by project and number, whose history is open. Every other
-    /// issue's starts folded.
-    history_open: Option<(PathBuf, u64)>,
+    /// Which of an issue's sections shows: kept from one issue to the next,
+    /// so stepping through the list reads the same section of each.
+    issue_tab: detail::IssueTab,
 }
 
 /// One project's issues file, shared with every other view of it, and what
@@ -181,7 +181,7 @@ impl IssuesView {
             status: None,
             connectors,
             query: None,
-            history_open: None,
+            issue_tab: detail::IssueTab::default(),
             showing: Showing::default(),
             label: None,
             ask,
@@ -560,6 +560,7 @@ impl IssuesView {
         &mut self,
         root: &Path,
         issues: &Issues,
+        nav: Option<AnyElement>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -601,7 +602,13 @@ impl IssuesView {
             pr: self.pr_seen(work.as_ref()),
             last: self.pr_value(work.as_ref()),
             templates,
-            history_open: self.history_open.as_ref() == Some(&(root.to_path_buf(), issue.number)),
+            project: self
+                .page
+                .as_ref()
+                .and_then(|page| page.label_of(root))
+                .unwrap_or_else(|| project_name(root)),
+            tab: self.issue_tab,
+            nav,
             work,
         };
         issue_view(root, &issue, body, publish_to, doing, window, cx)
@@ -778,3 +785,11 @@ fn working_in<'a>(issue: &'a LocalIssue, live: &[String]) -> Option<&'a str> {
 
 #[cfg(test)]
 mod tests;
+
+/// What a project is called where the page has not named it: its folder.
+fn project_name(root: &Path) -> gpui::SharedString {
+    root.file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_default()
+        .into()
+}

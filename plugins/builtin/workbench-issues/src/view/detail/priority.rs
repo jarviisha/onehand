@@ -1,12 +1,13 @@
 //! What an issue's body says about its priority, and how hard that presses.
 
 use gpui::App;
-use gpui_component::ActiveTheme;
+use gpui_component::{ActiveTheme, IconName};
 use onehand_plugin_host::status_ink;
 
 /// How hard a priority presses: 2 for one that cannot wait, 1 for a high
-/// one, 0 for the rest, read off its words whatever the team calls them.
-fn urgency(priority: &str) -> u8 {
+/// one, -1 for a low one and 0 for the rest, read off its words whatever the
+/// team calls them.
+fn urgency(priority: &str) -> i8 {
     let lower = priority.to_lowercase();
     let says = |words: &[&str]| {
         lower
@@ -17,8 +18,20 @@ fn urgency(priority: &str) -> u8 {
         2
     } else if says(&["high", "p1"]) {
         1
+    } else if says(&["low", "lowest", "minor", "trivial", "p3", "p4"]) {
+        -1
     } else {
         0
+    }
+}
+
+/// A priority's mark beside a title: up for one that presses, down for a
+/// low one, level for the rest.
+pub(in crate::view) fn priority_icon(priority: &str) -> IconName {
+    match urgency(priority) {
+        1.. => IconName::ArrowUp,
+        ..0 => IconName::ArrowDown,
+        0 => IconName::Minus,
     }
 }
 

@@ -35,7 +35,7 @@ impl IssuesView {
 
         let halves = if layout.side_by_side {
             let list = self.list(issues, window, cx);
-            let detail = self.detail(root, issues, window, cx);
+            let detail = self.detail(root, issues, None, window, cx);
             div().flex_1().min_h_0().child(
                 h_resizable("issues-split")
                     .with_state(&self.split)
@@ -68,7 +68,7 @@ impl IssuesView {
                     cx.notify();
                 },
             ));
-            let detail = self.detail(root, issues, window, cx);
+            let detail = self.detail(root, issues, None, window, cx);
             div()
                 .flex_1()
                 .min_h_0()

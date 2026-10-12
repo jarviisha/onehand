@@ -475,9 +475,9 @@ hierarchy are identical in both.
 | Markdown lists its documents flat, each with its title | a folder tree of the documents, each by its file name |
 | The Files tree has a search reaching into closed folders | Files has no search yet |
 | `CHAT_MIN` scales with the reading zoom | it scales with the conversation's own zoom, since the app zooms per panel |
-| An Issues row's labels are muted facts, never pills | labels that ask for something, enhancements and agents' reports are tinted chips; the picked row carries an accent line down its left edge |
+| An Issues row's labels are muted facts, never pills | two labels and *+N*, each on its hue's tint by kind (asking blue, enhancement green, structure violet, documentation yellow, report cyan, else neutral) |
 | An issue's *Open* is a plain fact; *Where it stands* holds its one primary | *Open* and *Closed* are a badge; the actions sit at the end of the title's row |
-| The floating issue is `PEEK_W` wide; an Issues row has no priority | its left edge drags its width for the session; a row shows the priority its body names |
+| The floating issue is `PEEK_W` wide; the Issues page has no head of its own and its columns no names; a row leads with its state dot and ends on its work | the panel's left edge drags its width for the session; a head with *Issues*, *N open*, *Refresh* and *New issue* over a filter bar of edged chips; columns *Title*, *Labels*, *Updated*; a row leads with its reference in mono, the priority a muted arrow and the work's note beside the title |
 | Regions meet at one hairline | the Workbench meets the conversation by its surface alone, with no line; the terminal is a block on its surface, held off its neighbours by a gap |
 
 ## Backlog
