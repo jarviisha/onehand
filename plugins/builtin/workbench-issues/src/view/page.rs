@@ -504,7 +504,7 @@ impl IssuesView {
 
         let top = div()
             .flex_none()
-            .px_6()
+            .px_8()
             .pt_6()
             .child(column(
                 div().v_flex().gap_2().child(toolbar).children(notices),
@@ -521,7 +521,7 @@ impl IssuesView {
             .v_flex()
             .overflow_y_scroll()
             .track_scroll(&scroll)
-            .px_6()
+            .px_8()
             .pb_6()
             .children(rows)
             .children(empty.map(|empty| line(empty.to_string())))

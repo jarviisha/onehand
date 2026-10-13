@@ -408,7 +408,8 @@ impl ChatPane {
                     .v_flex()
                     .items_center()
                     .justify_center()
-                    .p_6()
+                    .px_8()
+                    .py_6()
                     .child(
                         div()
                             .v_flex()

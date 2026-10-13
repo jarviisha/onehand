@@ -241,7 +241,8 @@ impl ChatPane {
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
-                    .p_6()
+                    .px_8()
+                    .py_6()
                     .child(
                         div().h_flex().w_full().justify_center().child(
                             div()

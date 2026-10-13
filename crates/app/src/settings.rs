@@ -420,7 +420,8 @@ fn settings(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                 .flex_none()
                 .w(NAV_W)
                 .h_full()
-                .p_6()
+                .px_8()
+                .py_6()
                 .pr_0()
                 .children(nav)
                 // The build, at the foot of the nav: it is about the app
@@ -444,7 +445,8 @@ fn settings(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                 .min_w_0()
                 .h_full()
                 .overflow_y_scroll()
-                .p_6()
+                .px_8()
+                .py_6()
                 .child(
                     // A reading measure, so a wide window does not stretch a
                     // field across it, centred in whatever room is left.

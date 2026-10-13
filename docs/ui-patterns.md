@@ -140,7 +140,7 @@ width while labels truncate; showing hover actions must not move the text beside
 ### Pages
 
 A page takes the agent pane, its name in the pane's header. Its body scrolls as one column centred
-in the pane, padded `p_6`, its sections `gap_6` apart, as wide as one of the widths below. A page
+in the pane, padded `px_8` at its sides and `py_6` at its ends, its sections `gap_6` apart, as wide as one of the widths below. A page
 with a filter bar keeps its head, filters and a table's column names in place while its content
 scrolls under them, so the filters stay in reach beside what they filter.
 
