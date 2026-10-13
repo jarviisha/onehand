@@ -840,7 +840,9 @@ impl AskForm<'_> {
                                     .small()
                                     // Nothing is picked yet: refusing, and
                                     // the pointer would promise otherwise.
-                                    .refuses(!can_advance)
+                                    .refuses(
+                                        (!can_advance).then_some("Pick or type an answer first"),
+                                    )
                                     .label(match last {
                                         false => "Next →",
                                         true => "Submit",

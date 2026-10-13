@@ -29,19 +29,19 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | A search field | `search_input(&state, cx)`: a `text_input` with the search mark and the clear button; the caller sizes it | `crates/plugin-host/src/lib.rs`, re-exported by `crates/app/src/controls.rs` |
 | A field of several lines | `text_area(&state, cx)`: the library's `Textarea` on a field's corner and surface | `crates/plugin-host/src/lib.rs`, re-exported by `crates/app/src/controls.rs` |
 | A control at a dialog's or a form's scale | `.tall()` (the `Tall` trait, for a button or a field; re-exported by `crates/app/src/controls.rs`) | `crates/plugin-host/src/lib.rs` |
-| A ghost button | `.quiet(cx)` (the `Quiet` trait, re-exported by `crates/app/src/controls.rs`) | `crates/plugin-host/src/lib.rs` |
-| A button that can refuse | `.refuses(bool)` (the `Refuses` trait, re-exported by `crates/app/src/controls.rs`) | `crates/plugin-host/src/lib.rs` |
+| A ghost button | `.quiet(cx)`; an icon with no words `.quiet_icon(on, cx)`, muted at rest and in its fill's ink when hovered or `on` (the `Quiet` trait, re-exported by `crates/app/src/controls.rs`) | `crates/plugin-host/src/lib.rs` |
+| A button that can refuse | `.refuses(why)`: refusing while `why` is `Some`, its reason the tooltip; called after the control's own tooltip (the `Refuses` trait, re-exported by `crates/app/src/controls.rs`) | `crates/plugin-host/src/lib.rs` |
 | A small label, a badge | `Tag` at `.small()` and `.rounded(cx.theme().radius_lg)`; tinted through `Tag::custom` and `tint(base, cx)` | gpui-component; `crates/plugin-host/src/lib.rs` |
 | A menu, its rows, a menu under its control | `menu_item`, `menu_row`, `menu_below` | `crates/plugin-host/src/menu.rs` |
-| One of a few choices, the taken one filled (filter chips) | `choice` (a `quiet` ghost button, `selected` when taken) | `crates/plugin-host/src/lib.rs` |
-| A choice between a few views, every one the same width | `switch` (a `choice` per view at `flex_1`) | `crates/plugin-host/src/lib.rs` |
+| One of a few choices, the taken one filled (filter chips) | `choice` (a `quiet` ghost button, `selected` when taken, at the `ControlSize` its role takes) | `crates/plugin-host/src/lib.rs` |
+| A choice between a few views, every one the same width | `switch` (a `choice` per view at `flex_1`, at one `ControlSize`) | `crates/plugin-host/src/lib.rs` |
 | Tabs that fit their strip, or one select | `tab_strip`, `tab_select`, `tab_menu_rows`, `measure_width` | `crates/plugin-host/src/tabs.rs` |
 | A list beside its detail, or one at a time | `list_detail`, `ListWidths`, `back_link` | `crates/plugin-host/src/list_detail.rs` |
 | A line filling an empty panel | `hint` | `crates/plugin-host/src/lib.rs` |
-| A condition standing under a view | `status_line` | `crates/plugin-host/src/lib.rs` |
-| Status ink, a dock's surface | `status_ink`, `dock_surface` | `crates/plugin-host/src/lib.rs` |
+| A condition standing under a view | `status_line(message, ink)`, in the ink of its state | `crates/plugin-host/src/lib.rs` |
+| Status ink, the middle ink, a dock's surface | `status_ink`, `meta_ink` (`middle_ink` on a fill), `dock_surface` | `crates/plugin-host/src/lib.rs` |
 | Chat or Workbench in the area | `presentation` | `crates/app/src/shell/presentation.rs` |
-| A toast | `toast::failed(what, why)`, `toast::error`, `warning`, `success`, `info` | `crates/app/src/toast.rs` |
+| A toast | `toast::failed(what, why)`, `toast::error`, `warning`, `success`, `info` | `crates/plugin-host/src/toast.rs`; the app says `crate::toast` |
 | A confirmation | `Confirm` with `confirm_on`, or `Shell::confirm` from the shell | `crates/plugin-host/src/confirm.rs`; `crates/app/src/shell/confirm.rs` |
 | A dialog's title row | `title_row` | `crates/app/src/dialogs.rs` |
 | A form field | `field` (its line about the setting in meta text) | `crates/plugin-host/src/lib.rs`, re-exported by `crates/app/src/settings.rs` |

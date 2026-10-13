@@ -60,7 +60,10 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
     let blocking = judged
         .as_ref()
         .map_or(0, |(found, ..)| found.iter().filter(|f| f.blocks).count());
-    let runnable = judged.is_some() && blocking == 0;
+    let refusal = match judged {
+        None => Some("Pick an issue first".to_string()),
+        Some(_) => super::blocks_start(blocking),
+    };
     let danger = crate::theme::status_ink(cx).danger;
     let (margin, room) = super::form_room(window);
     let handle = cx.entity();
@@ -139,9 +142,9 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
                         .tall()
                         .primary()
                         .label("Run");
-                    match runnable {
-                        false => run.refuses(true),
-                        true => run.on_click(cx.listener(
+                    match refusal {
+                        Some(why) => run.refuses(Some(why)),
+                        None => run.on_click(cx.listener(
                             |shell: &mut Shell, _: &ClickEvent, window, cx| {
                                 shell.commit_pick(window, cx);
                             },

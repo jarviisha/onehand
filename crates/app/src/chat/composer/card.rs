@@ -448,10 +448,7 @@ fn send_controls(
     match blocked {
         // No pointer over a button that refuses: the cursor is a promise a
         // press will do something, and this one is here to say it will not.
-        Some(reason) => div().child(
-            send.refuses(true)
-                .tooltip(SharedString::from(reason.hint())),
-        ),
+        Some(reason) => div().child(send.refuses(Some(reason.hint()))),
         None => div().child(
             send.tooltip("Enter sends · Shift+Enter for a newline")
                 .on_click(on_send),

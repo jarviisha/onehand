@@ -354,8 +354,7 @@ pub(super) fn open_revise(approval: Approval, window: &mut Window, cx: &mut Cont
                             .tall()
                             .primary()
                             .label("Send back")
-                            .refuses(empty)
-                            .when(empty, |send| send.tooltip("Say what to change first"))
+                            .refuses(empty.then_some("Say what to change first"))
                             .on_click(send),
                     ),
             )

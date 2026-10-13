@@ -379,7 +379,7 @@ fn row_icon(
     cx: &App,
 ) -> gpui_component::button::Button {
     crate::controls::action(id)
-        .quiet(cx)
+        .quiet_icon(false, cx)
         .small()
         .icon(Icon::new(icon))
         .tooltip(tip)

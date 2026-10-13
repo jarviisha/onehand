@@ -76,10 +76,9 @@ impl Workbench {
             // be pressed.
             .child(
                 crate::controls::action("maximize-workbench")
-                    .quiet(cx)
+                    .quiet_icon(false, cx)
                     .small()
                     .flex_none()
-                    .text_color(cx.theme().muted_foreground)
                     .icon(Icon::new(match full {
                         true => IconName::Minimize,
                         false => IconName::Maximize,
@@ -105,10 +104,9 @@ impl Workbench {
             // ignores `text_color` and comes out invisible on a dark panel.
             .child(
                 crate::controls::action("hide-workbench")
-                    .quiet(cx)
+                    .quiet_icon(false, cx)
                     .small()
                     .flex_none()
-                    .text_color(cx.theme().muted_foreground)
                     .icon(Icon::new(IconName::Minus))
                     .tooltip_with_action(
                         "Hide the Workbench",

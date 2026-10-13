@@ -21,7 +21,8 @@ Check loading-to-content and empty-to-content transitions, not just their final 
 // Content on its way: one meta line where it will appear
 div().text_xs().text_color(cx.theme().muted_foreground).child("Reading the workflows…")
 // An action in flight, on the button that started it
-action("run-check").small().label("Run check").loading(running).refuses(running)
+action("run-check").secondary().tall().label("Run check").loading(running)
+    .refuses(running.then_some("The check is running"))
 ```
 
 ## Immediate feedback
@@ -93,8 +94,8 @@ window.push_notification(crate::toast::failed("Exporting the conversation", e), 
 // A condition standing until something answers it, under a plugin's view
 onehand_plugin_host::status_line(message, cx)
 // Cannot act yet: refuse, and say why
-action("save-agent").primary().label("Save").refuses(!ready)
-    .tooltip(if ready { "Save the agent" } else { "Give it a name and a command first" })
+action("save-agent").primary().tall().label("Save").tooltip("Save the agent")
+    .refuses((!ready).then_some("Give it a name and a command first"))
 ```
 
 A failure reaches the screen once. A log alone leaves the person believing it worked. Apply

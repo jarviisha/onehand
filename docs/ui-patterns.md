@@ -251,14 +251,15 @@ box (*Nothing needs you*).
   on disk, an editor that would not start) is a `status_line` under the view, in the ink of its
   state, cleared by whatever answers it.
 - One failure is said once: a toast or a line, never both.
-- **A press that cannot act yet** refuses (`.refuses(true)`) with a tooltip saying why, and says
-  nothing else.
+- **A press that cannot act yet** refuses (`.refuses(Some(why))`), its tooltip saying why, and
+  says nothing else.
 - Every failure of something a person started reaches the screen; a log line alone is not enough.
 
 ### Toasts
 
 Transient news goes in a toast, `window.push_notification` with a notification built by
-`crate::toast` (which gives a failure its form and trims the period), its kind chosen by what it
+the plugin host's `toast`, `crate::toast` in the app (which gives a failure its form and trims
+the period), its kind chosen by what it
 means:
 
 - `error`: an action failed;

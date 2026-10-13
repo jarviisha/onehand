@@ -10,7 +10,7 @@ use gpui_component::{
 };
 use onehand_plugin_host::Quiet as _;
 use onehand_plugin_host::{
-    Ask, ListWidths, Request, back_link, hint, list_detail, measure_width, status_line,
+    Ask, ListWidths, Request, back_link, hint, list_detail, measure_width, status_ink, status_line,
 };
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -363,7 +363,11 @@ impl Render for MarkdownView {
             .relative()
             .child(measure_width(self.width.clone(), cx.entity().downgrade()))
             .child(body)
-            .children(self.status.clone().map(|status| status_line(status, cx)))
+            .children(
+                self.status
+                    .clone()
+                    .map(|status| status_line(status, status_ink(cx).warning)),
+            )
     }
 }
 
@@ -396,7 +400,7 @@ impl MarkdownView {
                 .into_any_element(),
             false => onehand_plugin_host::action("markdown-toggle-list")
                 .xsmall()
-                .quiet(cx)
+                .quiet_icon(false, cx)
                 .icon(match self.list_shown {
                     true => IconName::PanelLeftClose,
                     false => IconName::PanelLeftOpen,

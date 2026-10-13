@@ -28,7 +28,7 @@ Each section names the document owning its rules; read it before answering.
 10. Every button through `action` and with a variant by role (`primary`, `secondary`, ghost as
     `.quiet(cx)`, `danger`, or `choice` in a pick-one row); no button edged (never the library's
     default nor `outline()`); every field through `text_input`, `search_input` or `text_area`; every
-    refusal through `.refuses()`, with a tooltip saying why?
+    refusal through `.refuses(why)`, its reason the tooltip?
 11. Every state the component can be in: hover, selected or open, keyboard focus, refusing, loading?
 12. Every control at the size its role takes: `.tall()` in a form, a filter bar, a page's head and
     a dialog's footer; `.small()` in a strip, a box and for a row's actions; `.xsmall()` only for a

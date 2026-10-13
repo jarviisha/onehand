@@ -34,7 +34,8 @@ Helpers:
 | `status_ink(cx).danger`, `.warning`, `.success` | status text and marks | `crates/plugin-host/src/lib.rs`; the app says `crate::theme::status_ink` |
 | `tint(base, cx)` | a label's `Tint { fill, ink }` by its hue | `crates/plugin-host/src/lib.rs` |
 | `dock_surface(cx)` | the Workbench's and the terminal's surface | `crates/plugin-host/src/lib.rs` |
-| `meta_ink(cx)` | the middle ink: a detail beside a name, between prose and muted | `crates/app/src/theme.rs` |
+| `meta_ink(cx)` | the middle ink: a detail beside a name, between prose and muted | `crates/plugin-host/src/lib.rs`; the app says `crate::theme::meta_ink` |
+| `middle_ink(full, meta)` | the same step under another full ink: on a fill, under that fill's paired ink | `crates/plugin-host/src/lib.rs` |
 | `hue_ink(base, cx)` | a hue tempered for ink: code inside prose | `crates/app/src/theme.rs` |
 | `raised(cx)` | the composer card's fill | `crates/app/src/theme.rs` |
 | `inset(cx)` | a field with no edge sunk into the well: the rail's search | `crates/app/src/theme.rs` |
@@ -46,7 +47,7 @@ neutral ones, for text on a neutral surface:
 | Ink | Read as | A plugin reaches it |
 |---|---|---|
 | Full | `cx.theme().foreground` | yes |
-| Middle | `crate::theme::meta_ink(cx)` | not yet: it lives in the app |
+| Middle | `meta_ink(cx)`; on a fill, `middle_ink(pair, muted_foreground)` | yes |
 | Muted | `cx.theme().muted_foreground`; the rail's `sidebar_foreground` holds the same step | yes |
 
 Text on a fill takes the ink paired with it:
@@ -55,6 +56,7 @@ Text on a fill takes the ink paired with it:
 |---|---|
 | `primary`, a solid `danger` | `primary_foreground`, `danger_foreground`, set by the button's variant |
 | `button_secondary`; a `quiet` ghost | `button_secondary_foreground`; `secondary_foreground`, set by the builder |
+| a ghost's hover or selected step, under an icon alone (`quiet_icon`) | `secondary_foreground`; at rest, with no fill, the icon is muted |
 | `accent`, the selected row | `accent_foreground` |
 | `rail_chosen(cx)`, the rail's current row | `sidebar_accent_foreground` |
 | `muted` (a well, the bubble) | the neutral inks, as on the surface: a neutral fill, not a paired one |
@@ -135,6 +137,12 @@ Moving the library's rev means checking this table.
 
 An icon-only button is square at its height. `.tall()` is the small size given the default's
 height (`Tall` in `crates/plugin-host/src/lib.rs`), so its words and icon stay the small ones.
+A builder that sizes the controls it makes (`choice`, `switch`) takes one of the three as a
+`ControlSize`.
+
+A field of several lines (`text_area`) is the library's `Textarea`, which takes no size: its text
+sits at the default's inset, 10 **px**, which no wrapper reaches, so it starts 2px inside a
+`.tall()` field's above it.
 
 Components that keep geometry of their own, centred in their row rather than sized to it:
 

@@ -3,7 +3,7 @@ use crate::controls::Quiet as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{App, Context, Entity, IntoElement, ParentElement, Rems, Styled, Window, div, rems};
 use gpui_component::menu::PopupMenuItem;
-use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::chat::{Chat, ConvMeta};
 use std::path::PathBuf;
 
@@ -186,7 +186,7 @@ impl ChatPane {
                     // reach says "dismiss this" -- beside two dock toggles it
                     // read as closing a panel, and a power mark read as
                     // quitting the whole app.
-                    header_control("close-session", crate::icons::Icon::LogOut, cx)
+                    header_control("close-session", crate::icons::Icon::LogOut, false, cx)
                         .tooltip_with_action(
                             "Close this session and its agent",
                             &crate::shell::CloseSession,
@@ -221,27 +221,31 @@ impl ChatPane {
             // the same mapping that puts the rail's button at the left.
             .when(self.page.is_none(), |row| {
                 row.child(
-                    header_control("workbench", IconName::PanelRight, cx)
-                        // Lit while its dock is open, so the button says which
-                        // way the next press goes.
-                        .selected(self.docks_open.workbench)
-                        // **Both directions, because the button does both.** It
-                        // said "Show the Workbench" while it was a three-state
-                        // control that could only ever open from here, and kept
-                        // saying it after it became a plain toggle -- so the one
-                        // press a user most wants named, the one that puts the
-                        // panel away, was the press the tooltip denied existed.
-                        // Which way it will go this time is not said, since that
-                        // needs a dock fact pushed down here and the panel on
-                        // screen already answers it.
-                        .tooltip_with_action(
-                            "Show or hide the Workbench",
-                            &crate::shell::ToggleWorkbenchVisibility,
-                            None,
-                        )
-                        .on_click(cx.listener(|_: &mut Self, _, _, cx| {
-                            cx.emit(ChatPaneEvent::ToggleWorkbench);
-                        })),
+                    // Lit while its dock is open, so the button says which
+                    // way the next press goes.
+                    header_control(
+                        "workbench",
+                        IconName::PanelRight,
+                        self.docks_open.workbench,
+                        cx,
+                    )
+                    // **Both directions, because the button does both.** It
+                    // said "Show the Workbench" while it was a three-state
+                    // control that could only ever open from here, and kept
+                    // saying it after it became a plain toggle -- so the one
+                    // press a user most wants named, the one that puts the
+                    // panel away, was the press the tooltip denied existed.
+                    // Which way it will go this time is not said, since that
+                    // needs a dock fact pushed down here and the panel on
+                    // screen already answers it.
+                    .tooltip_with_action(
+                        "Show or hide the Workbench",
+                        &crate::shell::ToggleWorkbenchVisibility,
+                        None,
+                    )
+                    .on_click(cx.listener(|_: &mut Self, _, _, cx| {
+                        cx.emit(ChatPaneEvent::ToggleWorkbench);
+                    })),
                 )
             })
     }
@@ -268,8 +272,7 @@ impl ChatPane {
             .relative()
             .flex_none()
             .child(
-                header_control("terminal", IconName::SquareTerminal, cx)
-                    .selected(open)
+                header_control("terminal", IconName::SquareTerminal, open, cx)
                     // What it says is about the *shell*, which is the fact
                     // this pane is pushed and the one the icon cannot carry.
                     // Which way the press will go is left out for the reason
@@ -383,12 +386,11 @@ impl ChatPane {
         // the dropdown's every anchor opens the menu *over* its trigger and
         // the ask here is that the popup land under the dots that were
         // pressed.
-        let trigger = header_control("conversation-menu", IconName::EllipsisVertical, cx).tooltip(
-            match project.is_some() {
+        let trigger = header_control("conversation-menu", IconName::EllipsisVertical, false, cx)
+            .tooltip(match project.is_some() {
                 true => "Everything done to this project",
                 false => "Everything done to this conversation",
-            },
-        );
+            });
         let row = div().h_flex().items_center().gap_1().min_w_0().child(name);
 
         // Two names as well as two keys: the project page's menu and a
@@ -582,7 +584,7 @@ fn project_menu(
 
 /// The way back to a hidden rail.
 pub(super) fn show_rail(cx: &mut Context<ChatPane>) -> gpui_component::button::Button {
-    header_control("show-rail", IconName::PanelLeftOpen, cx)
+    header_control("show-rail", IconName::PanelLeftOpen, false, cx)
         .tooltip_with_action("Show the navigation rail", &crate::shell::ToggleRail, None)
         .on_click(cx.listener(|_: &mut ChatPane, _, _, cx| {
             cx.emit(ChatPaneEvent::ShowRail);
@@ -597,18 +599,19 @@ pub(super) fn show_rail(cx: &mut Context<ChatPane>) -> gpui_component::button::B
 /// icons in a row out-shouted the conversation's own name two inches to their
 /// left. A step up in size makes them easy to hit; a step down in tone puts them
 /// behind the name, which is what the header is for. What brings the ink back is
-/// hovering one — the fill arrives and says which is about to be pressed.
+/// hovering one, or its being `on` — the fill arrives and says which is about to
+/// be pressed, or which dock is open.
 ///
 /// Built in one place because the alternative is four call sites that each have
 /// to remember two things, and the one that forgets is the one that looks wrong.
 pub(super) fn header_control(
     id: &'static str,
     icon: impl Into<Icon>,
+    on: bool,
     cx: &App,
 ) -> gpui_component::button::Button {
     crate::controls::action(id)
-        .quiet(cx)
+        .quiet_icon(on, cx)
         .small()
         .icon(icon.into())
-        .text_color(cx.theme().muted_foreground)
 }

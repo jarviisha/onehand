@@ -615,10 +615,9 @@ impl TerminalPanel {
                     // to be pressed.
                     .child(
                         crate::controls::action("add-shell")
-                            .quiet(cx)
+                            .quiet_icon(false, cx)
                             .small()
                             .flex_none()
-                            .text_color(cx.theme().muted_foreground)
                             .icon(Icon::new(IconName::Plus))
                             .tooltip("New shell in this project")
                             .on_click(cx.listener(|panel: &mut Self, _, window, cx| {
@@ -631,10 +630,9 @@ impl TerminalPanel {
                     .child({
                         let full = self.maximized;
                         crate::controls::action("maximize-terminal")
-                            .quiet(cx)
+                            .quiet_icon(false, cx)
                             .small()
                             .flex_none()
-                            .text_color(cx.theme().muted_foreground)
                             .icon(Icon::new(match full {
                                 true => IconName::Minimize,
                                 false => IconName::Maximize,
@@ -657,10 +655,9 @@ impl TerminalPanel {
                     // ignores `text_color`.
                     .child(
                         crate::controls::action("hide-terminal")
-                            .quiet(cx)
+                            .quiet_icon(false, cx)
                             .small()
                             .flex_none()
-                            .text_color(cx.theme().muted_foreground)
                             .icon(Icon::new(IconName::Minus))
                             .tooltip_with_action(
                                 "Hide the terminal",

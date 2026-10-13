@@ -364,7 +364,7 @@ fn more_menu(
     let in_tab = doing.full.is_none();
     let trigger = action("issue-more")
         .small()
-        .quiet(cx)
+        .quiet_icon(false, cx)
         .loading(doing.publishing)
         .icon(Icon::new(IconName::Ellipsis))
         .tooltip("More actions");

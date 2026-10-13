@@ -1215,6 +1215,29 @@ mod tests {
         );
     }
 
+    /// An animation started in code: a call that animates an element, or one
+    /// that builds gpui's `Animation`.
+    fn animations(line: &str) -> Vec<String> {
+        ["with_animation(", "Animation::new("]
+            .iter()
+            .filter(|call| line.contains(*call))
+            .map(|call| call.to_string())
+            .collect()
+    }
+
+    /// Nothing moves for show: a hover, a fold or a new state lands in the
+    /// frame it happens in, and says itself in ink and a word. The one motion
+    /// is a `Spinner` on work still running, which the library draws, as it
+    /// draws its own overlays.
+    #[test]
+    fn nothing_animates() {
+        forbid(
+            ui_sources(),
+            animations,
+            "an animation; a state lands in the frame it happens in, and only a Spinner moves",
+        );
+    }
+
     /// Text sized or weighted off the scale: `text_2xl` and above, bold and
     /// heavier, and a size written as a number.
     fn off_scale_type(line: &str) -> Vec<String> {
@@ -1263,6 +1286,12 @@ mod tests {
 
         assert_eq!(gpui_shadows(".shadow_md()"), vec!["shadow_md"]);
         assert!(gpui_shadows(".shadow(lift(cx))").is_empty());
+
+        assert_eq!(
+            animations(r#"row.with_animation("in", Animation::new(d), f)"#),
+            vec!["with_animation(", "Animation::new("]
+        );
+        assert!(animations("Spinner::new().small()").is_empty());
 
         assert_eq!(
             off_scale_type(".text_2xl().font_bold()"),

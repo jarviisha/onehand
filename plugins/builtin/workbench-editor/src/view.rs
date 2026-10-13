@@ -10,7 +10,7 @@ use gpui::{
 use gpui_component::StyledExt;
 use gpui_component::input::InputEvent;
 use onehand_core::editor::SaveOutcome;
-use onehand_plugin_host::{hint, status_line};
+use onehand_plugin_host::{hint, status_ink, status_line};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -550,6 +550,10 @@ impl Render for EditorView {
             .v_flex()
             .child(strip)
             .child(body)
-            .children(self.status.clone().map(|status| status_line(status, cx)))
+            .children(
+                self.status
+                    .clone()
+                    .map(|status| status_line(status, status_ink(cx).warning)),
+            )
     }
 }

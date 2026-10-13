@@ -16,7 +16,9 @@ use gpui_component::text::TextViewState;
 use onehand_core::connector::{Connector, PullRequest};
 use onehand_core::issues::{self, IssueKey, Issues, LocalIssue};
 use onehand_core::task::work::{IssueWork, Reading};
-use onehand_plugin_host::{Ask, Confirm, Request, confirm_on, hint, measure_width, status_line};
+use onehand_plugin_host::{
+    Ask, Confirm, Request, confirm_on, hint, measure_width, status_ink, status_line,
+};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -518,7 +520,10 @@ impl Render for IssuesView {
             .relative()
             .child(measure_width(self.width.clone(), cx.entity().downgrade()))
             .child(body)
-            .children(self.standing(cx).map(|status| status_line(status, cx)))
+            .children(
+                self.standing(cx)
+                    .map(|status| status_line(status, status_ink(cx).warning)),
+            )
     }
 }
 

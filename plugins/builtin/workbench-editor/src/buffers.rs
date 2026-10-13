@@ -160,10 +160,9 @@ pub(crate) fn tab_strip<T: 'static>(
                 false => (IconName::PanelLeftOpen, "Show the file tree"),
             };
             onehand_plugin_host::action("toggle-file-tree")
-                .quiet(cx)
+                .quiet_icon(false, cx)
                 .xsmall()
                 .flex_none()
-                .text_color(cx.theme().muted_foreground)
                 .icon(Icon::new(icon))
                 .tooltip(hint)
                 .on_click(on_toggle_tree)
@@ -291,10 +290,9 @@ pub(crate) fn tab_strip<T: 'static>(
         .when(!files.is_empty(), |strip| {
             strip.child(
                 onehand_plugin_host::action("close-all-files")
-                    .quiet(cx)
+                    .quiet_icon(false, cx)
                     .xsmall()
                     .flex_none()
-                    .text_color(cx.theme().muted_foreground)
                     .icon(Icon::new(IconName::Close))
                     .tooltip("Close all files")
                     .on_click(on_close_all),

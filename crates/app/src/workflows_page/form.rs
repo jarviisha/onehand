@@ -145,7 +145,7 @@ pub(super) fn form(
             "workflow-place",
             &places,
             place_at,
-            gpui_component::Size::Small,
+            onehand_plugin_host::ControlSize::Small,
             pick_place,
             cx,
         ),
@@ -204,7 +204,7 @@ pub(super) fn form(
                 crate::controls::action("save-workflow")
                     .tall()
                     .primary()
-                    .refuses(!problems.is_empty())
+                    .refuses((!problems.is_empty()).then_some("Fix the problems above first"))
                     .label("Save")
                     .on_click(click(handle, |page, window, cx| {
                         page.save_workflow_draft(window, cx)

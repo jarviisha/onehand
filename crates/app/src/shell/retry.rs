@@ -486,7 +486,7 @@ fn footer(
                 .primary()
                 .label(confirm);
             match blocked {
-                true => button.refuses(true),
+                true => button.refuses(Some("A finding above blocks it")),
                 false => button.on_click(move |_, window: &mut Window, cx: &mut App| {
                     window.close_dialog(cx);
                     run(window, cx);

@@ -37,7 +37,7 @@ that applies to the component is drawn.
 | Hover | it can be pressed or picked | the pointer cursor (`action` sets it) and a `list_hover` fill on a row, its inks unchanged; the selected step on a ghost button (`quiet`); the library's own on its other controls |
 | Selected or open | one of several is chosen, or its menu is open | the `accent` fill |
 | Focus | the keyboard reaches it | the keyboard ring; row actions become available without moving content; custom elements use `.focus_visible(\|s\| s.border_color(cx.theme().ring))`, library controls draw theirs |
-| Refusing | it cannot act now | `.refuses(true)`: no press, the arrow cursor, and a tooltip saying why |
+| Refusing | it cannot act now | `.refuses(Some(why))`: no press, the arrow cursor, and `why` as its tooltip |
 | Loading | it started work still running | `.loading(true)` on the button that started it, its label kept |
 | Waiting, empty, failed | it shows content | the `ux-patterns` skill |
 
@@ -55,7 +55,7 @@ Every button names one, by role (the rule is in `DESIGN.md` *Components*):
 |---|---|
 | `primary` | the view's one main action |
 | `secondary` | a weighed alternative beside the primary; a picker's trigger; every button on the Settings page |
-| ghost, `.quiet(cx)` | dismissing, a strip's or a row's actions, an icon-only control; hovers on the selected step, never a bare `ghost()` |
+| ghost, `.quiet(cx)` | dismissing, a strip's or a row's actions; hovers on the selected step, never a bare `ghost()`; an icon with no words through `.quiet_icon(on, cx)`, muted at rest |
 | `danger` | only the two listed under *Exceptions* in `DESIGN.md` |
 | `choice` | each option of a pick-one row |
 
@@ -80,10 +80,10 @@ action("run-check").secondary().small().label("Run check")
 ```
 
 ```rust
-// Wrong: refuses the press, still shows the pointer
+// Wrong: refuses the press, still shows the pointer, and says nothing of why
 action(("plugin-update", i)).small().secondary().disabled(busy)
-// Right: refusing in one call, cursor included
-action(("plugin-update", i)).small().secondary().refuses(busy)
+// Right: refusing in one call, cursor and reason included
+action(("plugin-update", i)).small().secondary().refuses(busy.then_some("Another change is running"))
 ```
 
 ```rust

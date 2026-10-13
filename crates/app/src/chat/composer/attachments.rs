@@ -262,7 +262,7 @@ impl Composer {
                         // without it the press that unstages a file also
                         // asks the Workbench to open the file just removed.
                         let unstage = crate::controls::action(("unstage", i))
-                            .quiet(cx)
+                            .quiet_icon(false, cx)
                             .xsmall()
                             .icon(Icon::new(IconName::Close))
                             .tooltip("Remove this attachment")
@@ -382,7 +382,7 @@ impl Composer {
                             .unwrap_or_else(|| "Size unavailable".to_string());
                         let name = attachment.name.clone();
                         let remove = crate::controls::action(("remove-managed-attachment", i))
-                            .quiet(cx)
+                            .quiet_icon(false, cx)
                             .xsmall()
                             .icon(Icon::new(IconName::Close))
                             .tooltip("Remove this attachment")

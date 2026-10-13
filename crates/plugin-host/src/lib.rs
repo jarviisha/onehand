@@ -13,6 +13,7 @@ mod confirm;
 mod list_detail;
 mod menu;
 mod tabs;
+pub mod toast;
 pub mod tokens;
 mod workbench;
 pub use confirm::{Confirm, confirm_on};
@@ -25,6 +26,7 @@ pub use tabs::{
 };
 pub use workbench::{Ask, Request, WorkbenchMode};
 
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, Div, ElementId, Entity, Hsla, IntoElement, ParentElement as _, SharedString,
     Styled as _, Window, div,
@@ -32,8 +34,7 @@ use gpui::{
 use gpui_component::button::{Button, ButtonCustomVariant, ButtonRounded, ButtonVariants as _};
 use gpui_component::input::{Input, InputState, Textarea, TextareaState};
 use gpui_component::{
-    ActiveTheme as _, Colorize as _, Icon, IconName, Selectable as _, Sizable as _, Size,
-    StyledExt as _,
+    ActiveTheme as _, Colorize as _, Icon, IconName, Selectable as _, Sizable as _, StyledExt as _,
 };
 use std::rc::Rc;
 
@@ -109,20 +110,27 @@ fn resting(button: Button) -> Button {
 /// beckons. Taking the pointer back in the same call that refuses is what stops
 /// the two halves drifting apart again.
 ///
+/// **It takes the reason, and shows it as the tooltip**, so a refusal cannot
+/// go without saying why: a control that only goes quiet leaves the person
+/// to guess what it waits for. So the refusal is the reason being there, and
+/// it is called after the control's own tooltip, which it replaces for as
+/// long as it refuses.
+///
 /// Here rather than in the app for the reason [`action`] is: a built-in plugin
 /// draws buttons that refuse while they work.
 pub trait Refuses: Sized {
-    /// Refuse presses while `refusing` holds, and say so in the cursor.
-    fn refuses(self, refusing: bool) -> Self;
+    /// Refuse presses while there is a reason to, say so in the cursor, and
+    /// say why in the tooltip.
+    fn refuses(self, why: Option<impl Into<SharedString>>) -> Self;
 }
 
 impl Refuses for Button {
-    fn refuses(self, refusing: bool) -> Self {
+    fn refuses(self, why: Option<impl Into<SharedString>>) -> Self {
         use gpui_component::Disableable as _;
 
-        match refusing {
-            true => resting(self).disabled(true),
-            false => self,
+        match why {
+            Some(why) => resting(self).disabled(true).tooltip(why.into()),
+            None => self,
         }
     }
 }
@@ -237,6 +245,51 @@ pub fn status_hue(base: Hsla, foreground: Hsla) -> Hsla {
     base.mix_oklab(foreground, 0.70)
 }
 
+/// The middle ink, the step between prose and meta ink, on a neutral surface.
+///
+/// **Why two steps are not enough in one place.** A completion row stacks three
+/// kinds of text and they are not equal: the name, which is what the row is;
+/// the detail lying on the same line beside it — a folder, a description, a
+/// type icon, an issue's number — which is context for that name; and the label
+/// naming the run of rows the whole thing sits in.
+///
+/// The name has to be at full strength, because a list is read as a column of
+/// names and everything else second. The label has to be at the bottom, because
+/// it is found when looked for and ignored the rest of the time. That leaves
+/// the detail, and it can be at neither end: level with the name it competes
+/// with the thing it is describing, and down at the label it is the same ink as
+/// a heading two lines up while sitting immediately beside a name at full
+/// strength — a gap that reads as the row trailing off.
+///
+/// So it sits here, and this step is what makes the row three things in order
+/// rather than two things and a repeat.
+///
+/// (The run of a name a query matched is *not* one of these. It has nowhere
+/// above full strength to go, so it is carried by weight instead — which is
+/// why four roles fit in three inks.)
+///
+/// Derived rather than named as a ramp step: both palettes get it from values
+/// they already hold, so there is no second ramp to keep in step by hand and no
+/// library token borrowed for a meaning it does not have.
+///
+/// Here rather than in the app for the reason [`action`] is: a plugin sets a
+/// detail beside a name too (an issue's number beside its title, a plugin's
+/// version beside its name), and a second copy of the derivation is a second
+/// place for the step to drift.
+pub fn meta_ink(cx: &App) -> Hsla {
+    middle_ink(cx.theme().foreground, cx.theme().muted_foreground)
+}
+
+/// The step halfway from `full` to `meta`, mixed rather than thinned so it is
+/// one solid colour wherever it lands. On a fill, `full` is the ink paired with
+/// that fill, so the step stays a step there too.
+///
+/// `pub` for the reason [`status_hue`] is: the app's contrast test asserts this
+/// derivation from a resolved ramp.
+pub fn middle_ink(full: Hsla, meta: Hsla) -> Hsla {
+    full.mix_oklab(meta, 0.5)
+}
+
 /// How much of a hue a pale fill keeps; the rest is the surface it sits on.
 const TINT: f32 = 0.16;
 
@@ -316,13 +369,16 @@ pub fn hint(text: &'static str, cx: &App) -> AnyElement {
 ///
 /// Drawn by the mode and not by the panel, because the panel no longer knows
 /// what any of them mean — which is what makes one definition worth having.
-pub fn status_line(message: String, cx: &App) -> AnyElement {
+///
+/// In the ink of the state it reports, one of [`status_ink`]'s, and on the
+/// strip's inset, so its words start where the strip's above them do.
+pub fn status_line(message: impl Into<SharedString>, ink: Hsla) -> AnyElement {
     div()
-        .px_2()
+        .px_3()
         .py_1()
         .text_xs()
-        .text_color(status_ink(cx).warning)
-        .child(message)
+        .text_color(ink)
+        .child(message.into())
         .into_any_element()
 }
 
@@ -362,6 +418,19 @@ pub fn text_area(state: &Entity<TextareaState>, cx: &App) -> Textarea {
 pub trait Quiet {
     /// The ghost variant, hovering on the selected step.
     fn quiet(self, cx: &App) -> Self;
+
+    /// The ghost of an icon with no words: the muted ink at rest, as an icon
+    /// at rest is, and its fill's ink when hovered or `on`.
+    ///
+    /// **Its own call, because a bare icon is no label.** A word in a ghost
+    /// reads at full ink; the same ink on a lone mark makes it the brightest
+    /// thing on a chrome row. The library's hover takes the variant's ink, so
+    /// the mark comes up under the pointer by itself, but it replays the
+    /// caller's ink inside `selected`, which is why `on` is taken here and
+    /// set with it: a muted mark would otherwise sit on the selected fill.
+    /// A menu's trigger, which the library marks open on its own, keeps the
+    /// muted mark while its menu shows, for that same replay.
+    fn quiet_icon(self, on: bool, cx: &App) -> Self;
 }
 
 impl Quiet for Button {
@@ -373,6 +442,13 @@ impl Quiet for Button {
                 .hover(theme.secondary_active)
                 .active(theme.secondary_active),
         )
+    }
+
+    fn quiet_icon(self, on: bool, cx: &App) -> Self {
+        let rest = cx.theme().muted_foreground;
+        self.quiet(cx)
+            .selected(on)
+            .when(!on, |button| button.text_color(rest))
     }
 }
 
@@ -415,6 +491,30 @@ impl Tall for Input {
     }
 }
 
+/// The three sizes a control takes, each the role it serves: `.xsmall()` for
+/// a secondary action inside dense content, `.small()` the compact default,
+/// `.tall()` in a form, a filter bar, a page's head and a dialog's footer.
+///
+/// For a builder that sizes the controls it makes, so a caller names one of
+/// the three: the library's own scale also holds its default size, which
+/// letters a button at the reading size and is never used.
+#[derive(Clone, Copy)]
+pub enum ControlSize {
+    XSmall,
+    Small,
+    Tall,
+}
+
+impl ControlSize {
+    fn on(self, button: Button) -> Button {
+        match self {
+            Self::XSmall => button.xsmall(),
+            Self::Small => button.small(),
+            Self::Tall => button.tall(),
+        }
+    }
+}
+
 /// One of a few choices, the one taken among them filled: a ghost button,
 /// `selected` on the choice that holds. Every pick-one row draws its choices
 /// with this, the halves of a [`switch`] and a row of filter chips alike, so
@@ -428,9 +528,10 @@ pub fn choice(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
     on: bool,
+    size: ControlSize,
     cx: &App,
 ) -> Button {
-    action(id).quiet(cx).label(label.into()).selected(on)
+    size.on(action(id).quiet(cx).label(label.into()).selected(on))
 }
 
 /// A choice between a few views of one panel: a [`choice`] per view, every
@@ -447,13 +548,13 @@ pub fn choice(
 /// built-in plugin both draw one, and a plugin cannot reach into the binary
 /// hosting it.
 ///
-/// `size` is the library's own scale, so a switch sits level with the buttons
-/// and inputs of that size beside it.
+/// `size` is the role's, so a switch sits level with the buttons and inputs
+/// of that role beside it.
 pub fn switch(
     id: &'static str,
     labels: &[SharedString],
     active: usize,
-    size: Size,
+    size: ControlSize,
     pick: impl Fn(&usize, &mut Window, &mut App) + 'static,
     cx: &App,
 ) -> AnyElement {
@@ -465,10 +566,9 @@ pub fn switch(
         .gap_1()
         .children(labels.iter().enumerate().map(|(i, label)| {
             let pick = pick.clone();
-            choice((id, i), label.clone(), i == active, cx)
+            choice((id, i), label.clone(), i == active, size, cx)
                 .flex_1()
                 .min_w_0()
-                .with_size(size)
                 .on_click(move |_, window, cx| pick(&i, window, cx))
         }))
         .into_any_element()

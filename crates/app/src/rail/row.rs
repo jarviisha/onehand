@@ -128,9 +128,9 @@ pub(super) fn on_hover(group: &SharedString, shown: bool, child: impl IntoElemen
 /// A control the rail draws: ghost, extra small, icon-only, in muted ink.
 pub(super) fn rail_control(id: impl Into<ElementId>, icon: impl Into<Icon>, cx: &App) -> Button {
     crate::controls::action(id)
-        .quiet(cx)
+        .quiet_icon(false, cx)
         .xsmall()
-        .icon(icon.into().text_color(cx.theme().muted_foreground))
+        .icon(icon.into())
 }
 
 /// A row's `⋯`: the same builder its right-click menu is handed. The wrap is

@@ -1,5 +1,5 @@
-use super::PluginsView;
 use super::details::{compact, component_chips, counted, note, open_details, tally};
+use super::{ONE_AT_A_TIME, PluginsView};
 use crate::cli::{self, Available, Catalog, Change, Plugin, Scope, Verb};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -65,11 +65,11 @@ impl PluginsView {
             "plugin-menu-button-{}",
             plugin.id
         )))
-        .quiet(cx)
+        .quiet_icon(false, cx)
         .xsmall()
         .icon(Icon::new(IconName::Ellipsis))
-        .refuses(busy)
-        .tooltip("Where it is on, and removing it");
+        .tooltip("Where it is on, and removing it")
+        .refuses(busy.then_some(ONE_AT_A_TIME));
         let menu = self.row_menu(plugin, trigger, cx);
 
         // The version: monospace, a commit cut to seven characters with what
@@ -110,7 +110,7 @@ impl PluginsView {
                 .secondary()
                 .label(format!("Update {}", update.to))
                 .loading(self.running(&change))
-                .refuses(busy)
+                .refuses(busy.then_some(ONE_AT_A_TIME))
                 .on_click(
                     cx.listener(move |view, _: &ClickEvent, _, cx| view.change(change.clone(), cx)),
                 )
@@ -398,7 +398,7 @@ impl PluginsView {
                     .label("Enable")
                     .tooltip("Installed but off here — turn it on on this machine only")
                     .loading(self.running(&enable))
-                    .refuses(busy)
+                    .refuses(busy.then_some(ONE_AT_A_TIME))
                     .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
                         view.change(enable.clone(), cx)
                     }))
@@ -509,7 +509,7 @@ impl PluginsView {
             .label("Install")
             .tooltip(format!("Install for: {}", scope.meaning()))
             .loading(running)
-            .refuses(busy)
+            .refuses(busy.then_some(ONE_AT_A_TIME))
             .on_click(
                 cx.listener(move |view, _: &ClickEvent, _, cx| view.change(install.clone(), cx)),
             );
@@ -520,8 +520,8 @@ impl PluginsView {
         .xsmall()
         .secondary()
         .icon(Icon::new(IconName::ChevronDown))
-        .refuses(busy)
-        .tooltip("Install for…");
+        .tooltip("Install for…")
+        .refuses(busy.then_some(ONE_AT_A_TIME));
         let (id, view) = (plugin.id.clone(), cx.entity());
         let menu = menu_below(
             SharedString::from(format!("plugin-install-menu-{}", plugin.id)),

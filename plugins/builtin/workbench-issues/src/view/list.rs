@@ -10,11 +10,13 @@ use gpui::{
 use gpui_component::input::{InputEvent, InputState};
 use gpui_component::tag::Tag;
 use gpui_component::tooltip::Tooltip;
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, Size, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::issues::{self, Issues, LabelKind, LocalIssue};
 use onehand_plugin_host::Quiet as _;
 use onehand_plugin_host::search_input;
-use onehand_plugin_host::{Tint, action, menu_below, menu_item, status_ink, switch, tint};
+use onehand_plugin_host::{
+    ControlSize, Tint, action, menu_below, menu_item, status_ink, switch, tint,
+};
 use std::collections::BTreeSet;
 
 /// How many labels the label filter offers, in name order. A project with more
@@ -239,7 +241,7 @@ impl IssuesView {
                     Showing::Open => 0,
                     Showing::Closed => 1,
                 },
-                Size::XSmall,
+                ControlSize::XSmall,
                 move |picked, _, cx| {
                     view.update(cx, |view, cx| {
                         view.showing = if *picked == 0 {
@@ -470,7 +472,7 @@ impl IssuesView {
                     } else {
                         action("issues-sync-now")
                             .xsmall()
-                            .quiet(cx)
+                            .quiet_icon(false, cx)
                             .icon(Icon::new(IconName::Redo))
                             .tooltip("Sync now")
                     }
@@ -480,7 +482,7 @@ impl IssuesView {
             .child(if on {
                 action("issues-sync-pause")
                     .xsmall()
-                    .quiet(cx)
+                    .quiet_icon(false, cx)
                     .icon(Icon::new(IconName::Pause))
                     .tooltip("Pause auto-sync; links to issues are kept")
                     .on_click(
@@ -489,7 +491,7 @@ impl IssuesView {
             } else {
                 action("issues-sync-resume")
                     .xsmall()
-                    .quiet(cx)
+                    .quiet_icon(false, cx)
                     .icon(Icon::new(IconName::Play))
                     .tooltip(if paused {
                         format!("Resume auto-sync with {name}")

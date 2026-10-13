@@ -34,11 +34,16 @@ fn appearance_picker(
         .gap_1()
         .children(Appearance::ALL.into_iter().enumerate().map(|(i, choice)| {
             let shell = shell.clone();
-            onehand_plugin_host::choice(("appearance", i), choice.label(), choice == current, cx)
-                .tall()
-                .on_click(move |_, window: &mut Window, cx: &mut App| {
-                    shell.update(cx, |shell, cx| shell.set_appearance(choice, window, cx));
-                })
+            onehand_plugin_host::choice(
+                ("appearance", i),
+                choice.label(),
+                choice == current,
+                onehand_plugin_host::ControlSize::Tall,
+                cx,
+            )
+            .on_click(move |_, window: &mut Window, cx: &mut App| {
+                shell.update(cx, |shell, cx| shell.set_appearance(choice, window, cx));
+            })
         }))
 }
 
@@ -130,7 +135,7 @@ pub(super) fn workspace_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                     crate::controls::action("unbind-storage")
                         .tall()
                         .secondary()
-                        .refuses(!bound)
+                        .refuses((!bound).then_some("No storage folder is bound"))
                         .label("Unbind")
                         .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
                             unbind.update(cx, |shell, cx| shell.unbind_storage(window, cx));
@@ -251,7 +256,7 @@ pub(super) fn connections_page(cx: &App) -> AnyElement {
                         crate::controls::action("connections-recheck")
                             .tall()
                             .secondary()
-                            .refuses(checking)
+                            .refuses(checking.then_some("A check is running"))
                             .label(if checking {
                                 "Checking…"
                             } else {

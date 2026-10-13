@@ -127,7 +127,7 @@ impl ChatPane {
         };
         let this = cx.entity();
 
-        header_control("history", IconName::GalleryVerticalEnd, cx)
+        header_control("history", IconName::GalleryVerticalEnd, false, cx)
             .tooltip("Open a past conversation in a new session")
             // Anchored to its own right-hand corner: this button sits at the end
             // of the header, and a menu hanging rightwards from it opens off the

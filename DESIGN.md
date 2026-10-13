@@ -271,7 +271,7 @@ the main action, `secondary` an alternative beside it, a picker's trigger and ev
 `choice` in a pick-one row, `danger` only under *Exceptions*, and ghost (`.quiet(cx)`, whose hover
 is the selected step) the rest. **No button draws an edge** (no default variant, no `outline()`): a
 field is the one control marked by its edge, on no fill of its own. A control that refuses says so
-(`.refuses()`) and goes back to the arrow.
+and why (`.refuses(why)`, the reason its tooltip) and goes back to the arrow.
 
 **A size names a role, and means one height and one text size in every control.** The library's
 sizes disagree across components (its default button letters at the reading size beside a field

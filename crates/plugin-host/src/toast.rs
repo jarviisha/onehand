@@ -6,6 +6,9 @@
 //! trailing period, which is trimmed here rather than at every source: much of
 //! what a toast says is a reason written for other places too (a log line, an
 //! issue comment), where the sentence keeps its period.
+//!
+//! Here rather than in the app for the reason [`crate::action`] is: a built-in
+//! plugin's press can fail too, and says so the way the app's does.
 
 use gpui::{App, Window};
 use gpui_component::WindowExt as _;
@@ -13,34 +16,34 @@ use gpui_component::notification::Notification;
 use std::fmt::Display;
 
 /// An action a person started that failed: *<What> failed: <why>*.
-pub(crate) fn failed(what: &str, why: impl Display) -> Notification {
+pub fn failed(what: &str, why: impl Display) -> Notification {
     Notification::error(failed_line(what, &why.to_string()))
 }
 
 /// An action that failed with no reason to give beyond its own name.
-pub(crate) fn error(text: impl Display) -> Notification {
+pub fn error(text: impl Display) -> Notification {
     Notification::error(line(&text.to_string()))
 }
 
 /// Done only in part, or something that now needs the person.
-pub(crate) fn warning(text: impl Display) -> Notification {
+pub fn warning(text: impl Display) -> Notification {
     Notification::warning(line(&text.to_string()))
 }
 
 /// A long or background action finished, which the screen does not already
 /// show.
-pub(crate) fn success(text: impl Display) -> Notification {
+pub fn success(text: impl Display) -> Notification {
     Notification::success(line(&text.to_string()))
 }
 
 /// News that asks for nothing.
-pub(crate) fn info(text: impl Display) -> Notification {
+pub fn info(text: impl Display) -> Notification {
     Notification::info(line(&text.to_string()))
 }
 
 /// Say how a write went, once: what `doing` failed at and why, or `done`
 /// when it went and the screen does not already show it.
-pub(crate) fn report<E: Display>(
+pub fn report<E: Display>(
     window: &mut Window,
     cx: &mut App,
     doing: &str,

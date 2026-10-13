@@ -43,6 +43,10 @@ pub(crate) use onehand_plugin_host::status_ink;
 /// a panel and the shell inside it disagreeing about what colour the panel is.
 pub(crate) use onehand_plugin_host::dock_surface;
 
+/// The middle ink is the plugin host's too, since a plugin sets a detail beside
+/// a name as well, and named through this module like the two above.
+pub(crate) use onehand_plugin_host::meta_ink;
+
 /// One mode's surfaces, and the ink that has to be legible on each.
 ///
 /// Named by what the step is *for* rather than by the token it lands in: the
@@ -432,41 +436,6 @@ pub(crate) fn rail_chosen(cx: &App) -> Hsla {
 
 fn chosen_over(marked: Hsla, ink: Hsla) -> Hsla {
     marked.mix_oklab(ink, 0.95)
-}
-
-/// The step between prose and meta ink.
-///
-/// **Why two steps are not enough in one place.** A completion row stacks three
-/// kinds of text and they are not equal: the name, which is what the row is;
-/// the detail lying on the same line beside it — a folder, a description, a
-/// type icon — which is context for that name; and the label naming the run of
-/// rows the whole thing sits in.
-///
-/// The name has to be at full strength, because a list is read as a column of
-/// names and everything else second. The label has to be at the bottom, because
-/// it is found when looked for and ignored the rest of the time. That leaves
-/// the detail, and it can be at neither end: level with the name it competes
-/// with the thing it is describing, and down at the label it is the same ink as
-/// a heading two lines up while sitting immediately beside a name at full
-/// strength — a gap that reads as the row trailing off.
-///
-/// So it sits here, and this step is what makes the row three things in order
-/// rather than two things and a repeat.
-///
-/// (The run of a name a query matched is *not* one of these. It has nowhere
-/// above full strength to go, so it is carried by weight instead — which is
-/// why four roles fit in three inks.)
-///
-/// Derived rather than named as a ramp step, for the reason [`hue_ink`] is
-/// derived: both palettes get it from values they already hold, so there is no
-/// second ramp to keep in step by hand and no library token borrowed for a
-/// meaning it does not have.
-pub(crate) fn meta_ink(cx: &App) -> Hsla {
-    between(cx.theme().foreground, cx.theme().muted_foreground)
-}
-
-fn between(prose: Hsla, meta: Hsla) -> Hsla {
-    prose.mix_oklab(meta, 0.5)
 }
 
 /// The composer card's fill. No library token holds it, so it is read off the
@@ -1098,16 +1067,19 @@ mod tests {
     /// this is the third value the description beside that name is drawn in —
     /// so a step landing on either end would make the description
     /// indistinguishable from one half of the name, which is the state it
-    /// exists to prevent. And it is small text on a floating card, so it owes
-    /// the same legibility every other ink here does.
+    /// exists to prevent. And it is small text on a floating card, on the
+    /// reading surface, and on the selected fill under that fill's own ink, so
+    /// it owes the same legibility every other ink here does on each.
     #[test]
     fn the_middle_ink_reads_and_stays_between_the_two_it_divides() {
+        use onehand_plugin_host::middle_ink;
+
         for (name, ramp, mode) in [
             ("light", &LIGHT, ThemeMode::Light),
             ("dark", &DARK, ThemeMode::Dark),
         ] {
             let theme = resolve(ramp, mode);
-            let middle = between(theme.foreground, theme.muted_foreground);
+            let middle = middle_ink(theme.foreground, theme.muted_foreground);
 
             let ratio = contrast(middle, theme.popover);
             assert!(
@@ -1122,6 +1094,20 @@ mod tests {
             assert!(
                 ratio < prose && ratio > meta,
                 "{name}: the middle ink is not between prose ({prose:.2}) and meta ({meta:.2}), it is {ratio:.2}"
+            );
+
+            let on_surface = contrast(middle, theme.background);
+            assert!(
+                on_surface >= AA,
+                "{name}: the middle ink on the reading surface is {on_surface:.2}, under {AA}"
+            );
+
+            // On the selected fill the step is taken under that fill's own ink.
+            let picked = middle_ink(theme.accent_foreground, theme.muted_foreground);
+            let on_picked = contrast(picked, theme.accent);
+            assert!(
+                on_picked >= AA,
+                "{name}: the middle ink on the selected fill is {on_picked:.2}, under {AA}"
             );
         }
     }

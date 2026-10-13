@@ -233,11 +233,12 @@ pub(super) fn new_button(
         .filter_map(|idx| Some((idx, ellipsize(&roots.get(idx)?.label, MAX_LABEL))))
         .collect();
     let build = new_session_menu(projects, target, agents, cx.entity().downgrade());
+    let refusal = target.is_none().then(|| hint.clone());
     let new = crate::controls::action("new-session")
         .icon(IconName::Plus)
         .label("New")
         .tooltip_with_action(hint, &crate::shell::NewSession, None)
-        .refuses(target.is_none())
+        .refuses(refusal)
         .on_click(
             cx.listener(move |shell: &mut Shell, _: &ClickEvent, window, cx| {
                 if let Some(root) = target {

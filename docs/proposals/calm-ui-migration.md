@@ -206,8 +206,8 @@ How the steps read rules that are unclear or pull two ways, agreed with the user
   documents' quotes included. *Keep* answers every confirmation. *Task* is the glossary's, so
   the running line counts tools, not tasks.
 - **File size.** A step that adds to a file past about 800 lines (`ask.rs`, `tool.rs`,
-  `viewport.rs`) or at the line (`workspace_page.rs`, the Issues `view.rs`) splits it first,
-  along a seam the survey found.
+  `viewport.rs`) or at the line (`workspace_page.rs`, the Issues `view.rs`, `dialogs.rs`)
+  splits it first, along a seam the survey found.
 - **Motion.** A state that leaves on a timer (*Copied*) is not motion.
 
 ## Order
@@ -238,33 +238,33 @@ rarer screens; saves last, as they move nothing on screen.
 ### 0. Foundation (M)
 
 - **Inks.** `meta_ink` and `middle_ink(full, meta)` move into the plugin host, the app
-  re-exporting them; the stashed Issues trial (*issues page trial on the calm contract*) holds
-  both hunks, and they apply to `main` as they are. A well on a floating surface gets a ramp
-  step of its own, mixed, since the dark palette's floating step equals its well. Contrast is
-  asserted for every pairing a later step lands: the middle ink on the reading surface, a well,
-  a floating surface and `accent`; muted meta mixed on `accent`, `rail_chosen` and
-  `sidebar_accent`; the neutral badge fill on the rail's two fills; the danger ink on
-  `button_secondary`.
+  re-exporting them, from the stashed Issues trial (*issues page trial on the calm contract*),
+  whose two hunks apply to `main` as they are; the middle ink is asserted on the reading surface
+  and, under its ink, on `accent`. Every other pairing is asserted by the step that draws it.
 - **Shared defaults** every caller already goes through:
-  - an icon-only quiet ghost rests in the muted ink and takes its fill's paired ink when hovered
-    or on, set once rather than at each call (the hand-set ones go as their steps come);
-  - `choice` and `switch` take the role sizes rather than the library's `Size`; `text_area`
-    starts its text where a `.tall()` `text_input` does;
+  - `.quiet_icon(on, cx)`: an icon with no words rests in the muted ink and takes its fill's ink
+    when hovered or `on`, which the header's dock buttons pass; every icon-only ghost goes
+    through it but the rail's filter, whose state step 1 settles;
+  - `choice` and `switch` take a `ControlSize` (`XSmall`, `Small`, `Tall`) rather than the
+    library's `Size`, which held its default; each caller keeps its size until its step;
   - `.refuses(why)` takes the reason it shows as its tooltip, so no refusal goes without one;
     its 25 callers say why (the Workflows *Save*, the dialogs' *Run* and *Create worktree*,
     `Confirm`'s go, the question card's *Next*, *Unbind* among them);
-  - `status_line` takes the state it reports and stands at the strip's inset; `toast` moves
-    into the plugin host, the app re-exporting it, so a plugin reports a failed press as the app
-    does.
+  - `status_line(message, ink)` takes the ink of the state it reports and stands at the strip's
+    inset; `toast` moves into the plugin host, the app re-exporting it, so a plugin reports a
+    failed press as the app does.
+- `text_area` stays as it is: the library's `Textarea` takes no size, and its text inset (the
+  default's 10px) is out of a wrapper's reach; the token reference says so.
 - New builders land with their first caller, named in its step, and enter `catalog.md` then.
 - Guard: nothing animates (`with_animation`, `Animation::new`), a plain rule, as nothing does.
-- Contract: `reference.md` (the middle ink within a plugin's reach; a ghost's inks),
-  `catalog.md`, and the `.refuses(true)` examples in `docs/ui-patterns.md` and the skills.
-- Acceptance: icon-only ghosts muted at rest in every strip, the dialog ✕, the Markdown
-  toggle and the Plugins ⋯ included, and inked when hovered or on; each refusing control's
-  tooltip says why; Settings' appearance choices, the Plugins filters and the Workflows *Where
-  it works* at their role sizes; a description field's text on the edge of the name field's
-  above it; both palettes.
+- Contract: `reference.md` (the middle ink within a plugin's reach; a ghost's inks; the
+  textarea's inset), `catalog.md`, DESIGN *Components* and the `.refuses` examples in
+  `docs/ui-patterns.md` and the skills.
+- Acceptance: icon-only ghosts muted at rest (the dialog ✕, the Markdown and file-tree toggles,
+  the Plugins and issue `⋯`, the transcript's and the composer's Copy and ×, the Issues sync
+  controls, every dock strip's) and inked when hovered; the header's Workbench and terminal
+  buttons inked while their dock is open; each refusing control's tooltip says why; a status
+  line's words on the strip's inset; nothing else moves; both palettes.
 
 ### 1. Rail (L)
 
@@ -272,7 +272,8 @@ rarer screens; saves last, as they move nothing on screen.
   `sidebar_accent_foreground`; a meta or git line on a fill in the mixed step. A session's
   state word in its state's ink (*Needs input*, *Failed*, *Disconnected*; running keeps `link`,
   what runs). The tile's letter in its fill's ink. Weight by role only: the shown and the unread
-  session lose theirs, the *Sessions* label takes none.
+  session lose theirs, the *Sessions* label takes none. Asserted in `theme.rs`: muted meta mixed
+  on `rail_chosen` and `sidebar_accent`; the neutral badge fill on both.
 - **One axis.** `slot` lands here: every mark down the rail in one slot on one centre line (the
   tile, the nav icons, the chevron's icon, the folder, the state marks, *Add project*'s `+`), its
   label on one edge; a session's title and meta line on its project name's axis. Rows `px_2`,
@@ -285,7 +286,8 @@ rarer screens; saves last, as they move nothing on screen.
 - **Keys.** The keyboard's row draws the ring, apart from the chosen fill, which marks the
   session on screen and a project whose page shows; `docs/known-gaps.md` loses *The rail's
   keyboard row shows after a click too*.
-- The *Sessions* header is a label line over the list, its chip and filter `.small()`. The
+- The *Sessions* header is a label line over the list, its chip and filter `.small()`, the
+  filter's icon through `quiet_icon`, on while a filter other than *By project* holds. The
   foot's *Settings* becomes a page row like *Overview*, filled while it shows, with no hairline.
   The Tasks count and the *auto* pills go through `badge` (lands here: a `Tag` at `.small()`
   and `radius_lg` on a `Tint`), legible on both rail fills.
@@ -367,10 +369,12 @@ rarer screens; saves last, as they move nothing on screen.
   finished step a muted check, a running one a `Spinner` while the turn runs; code in a plan
   step `hue_ink`; a denied grant's badge neutral; the skipped-run line muted.
 - Wells and code at `CODE_TEXT` through `well`, the command gutter recomputed; the permission
-  well on its ramp step, with no edge. One copy control (`.xsmall()`, quiet, its tooltip, a
-  column of its own) for code blocks, a tool's well, the turn's footer, the permission command
-  and the prompt, whose Copy shows on hover and on keyboard focus and keeps its width as it says
-  *Copied*. One show-more control. The diff's path header an `.xsmall()` quiet action.
+  well on a ramp step of its own for a well on a floating surface (the dark palette's floating
+  step equals its well), mixed and asserted, with no edge. One copy control (`.xsmall()`,
+  quiet, its tooltip, a column of its own) for code blocks, a tool's well, the turn's footer,
+  the permission command and the prompt, whose Copy shows on hover and on keyboard focus and
+  keeps its width as it says *Copied*. One show-more control. The diff's path header an
+  `.xsmall()` quiet action.
 - Pinned cards: one shell for both (header, `p_3`, footer), controls `.small()`, the dismissing
   answer a quiet ghost on both (*Deny*, *Skip*). Choices are `choice` rows, the taken one on
   `accent`, a destructive one marked by its danger word, with no edges; the library's `Radio`,
@@ -523,6 +527,7 @@ rarer screens; saves last, as they move nothing on screen.
 - *Check again* and *Test* `.loading(true)`, their labels kept; a signed-in account and a found
   agent muted at rest; *Default* a `badge`, as *Built in* is; the config path and keys in mono;
   every list capped; hints without periods; the scope line no longer repeating the name field.
+- A danger word on a `secondary` button keeps the danger ink, asserted on `button_secondary`.
 - Shortcuts: *Save*, *Cancel*, *Reset* and *Edit* `secondary` (Settings has no primary); editing
   a shortcut keeps the page and its nav, with no page-sized title; meta lines `text_xs`.
 - Contract: DESIGN *Layout* (Settings' sub-pages).

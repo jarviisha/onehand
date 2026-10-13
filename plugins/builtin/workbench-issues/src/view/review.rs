@@ -590,8 +590,7 @@ fn answers(
                             .xsmall()
                             .primary()
                             .label("Send back")
-                            .refuses(empty)
-                            .when(empty, |send| send.tooltip("Say what to change first"))
+                            .refuses(empty.then_some("Say what to change first"))
                             .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
                                 view.send_revise(window, cx)
                             })),

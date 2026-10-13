@@ -165,10 +165,10 @@ pub fn tab_chip(
 /// should stop the click there, or it also picks the tab it closes.
 pub fn tab_close(id: impl Into<ElementId>, hint: &'static str, cx: &App) -> Button {
     crate::action(id)
-        .quiet(cx)
+        .quiet_icon(false, cx)
         .xsmall()
         .flex_none()
-        .icon(Icon::new(IconName::Close).text_color(cx.theme().muted_foreground))
+        .icon(Icon::new(IconName::Close))
         .tooltip(hint)
 }
 

@@ -13,7 +13,9 @@ use gpui_component::input::{InputEvent, InputState};
 use gpui_component::{ActiveTheme, Selectable as _, Sizable as _, StyledExt};
 use onehand_plugin_host::Quiet as _;
 use onehand_plugin_host::search_input;
-use onehand_plugin_host::{Ask, Refuses as _, Request, action, choice, hint, status_line, switch};
+use onehand_plugin_host::{
+    Ask, ControlSize, Refuses as _, Request, action, choice, hint, status_ink, status_line, switch,
+};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -32,6 +34,11 @@ const INSTALLED_CAP: usize = 200;
 /// of is not worth building to the end — the search is how the rest are
 /// reached, and the list says how many it left out.
 const MARKET_CAP: usize = 60;
+
+/// Why a control that changes a plugin refuses while another change runs:
+/// the command line takes one change at a time, and what is running is said
+/// above the list.
+const ONE_AT_A_TIME: &str = "Another change is running";
 
 /// Which of the mode's two lists is showing.
 ///
@@ -370,12 +377,11 @@ impl Render for PluginsView {
             self.list(cx);
         }
         let body = self.body(window, cx);
-        div()
-            .flex_1()
-            .min_h_0()
-            .v_flex()
-            .child(body)
-            .children(self.status.clone().map(|status| status_line(status, cx)))
+        div().flex_1().min_h_0().v_flex().child(body).children(
+            self.status
+                .clone()
+                .map(|status| status_line(status, status_ink(cx).warning)),
+        )
     }
 }
 
@@ -423,7 +429,7 @@ impl PluginsView {
                 .iter()
                 .position(|tab| *tab == self.tab)
                 .unwrap_or(0),
-            gpui_component::Size::Small,
+            ControlSize::Small,
             cx.listener(|view: &mut Self, i: &usize, _, cx| {
                 view.tab = Tab::ALL[*i];
                 cx.notify();
@@ -580,7 +586,7 @@ impl PluginsView {
             .v_flex()
             .gap_2()
             .p_2()
-            .child(status_line(why, cx))
+            .child(status_line(why, status_ink(cx).warning))
             .child(
                 div().px_2().child(
                     action("plugins-retry")
@@ -614,20 +620,30 @@ impl PluginsView {
         markets.dedup();
         let current = self.market.clone();
         let chips = (markets.len() > 1).then(|| {
-            let all = choice("plugins-market-all", "All", current.is_none(), cx)
-                .xsmall()
-                .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
-                    view.market = None;
-                    cx.notify();
-                }));
+            let all = choice(
+                "plugins-market-all",
+                "All",
+                current.is_none(),
+                ControlSize::XSmall,
+                cx,
+            )
+            .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
+                view.market = None;
+                cx.notify();
+            }));
             let each = markets.into_iter().enumerate().map(|(i, market)| {
                 let on = current.as_deref() == Some(market.as_str());
-                choice(("plugins-market", i), market.clone(), on, cx)
-                    .xsmall()
-                    .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
-                        view.market = Some(market.clone());
-                        cx.notify();
-                    }))
+                choice(
+                    ("plugins-market", i),
+                    market.clone(),
+                    on,
+                    ControlSize::XSmall,
+                    cx,
+                )
+                .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
+                    view.market = Some(market.clone());
+                    cx.notify();
+                }))
             });
             div().h_flex().flex_wrap().gap_1().child(all).children(each)
         });
@@ -675,7 +691,7 @@ impl PluginsView {
                         .small()
                         .secondary()
                         .label("Restart the agent")
-                        .refuses(self.busy.is_some())
+                        .refuses(self.busy.is_some().then_some(ONE_AT_A_TIME))
                         .on_click(move |_, window, cx| ask(&Request::RestartAgent, window, cx)),
                 )
                 .into_any_element(),

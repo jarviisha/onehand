@@ -112,7 +112,7 @@ pub(super) fn copy_button(
 ) -> Button {
     let text = text.into();
     crate::controls::action(id)
-        .quiet(cx)
+        .quiet_icon(false, cx)
         .xsmall()
         // Square at the shared control height, so a copy offered on a fenced
         // block and one offered at the end of an answer are the same target.
@@ -133,7 +133,7 @@ pub(super) fn copy_turn_button(
 ) -> Button {
     let session = session.clone();
     crate::controls::action("copy-answer")
-        .quiet(cx)
+        .quiet_icon(false, cx)
         .xsmall()
         .icon(IconName::Copy)
         .on_click(move |_, _, cx: &mut App| {

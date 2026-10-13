@@ -82,7 +82,7 @@ pub(super) fn title_row(name: impl Into<SharedString>, cx: &App) -> impl IntoEle
                 DialogClose::new().child(
                     crate::controls::action("dialog-close")
                         .small()
-                        .quiet(cx)
+                        .quiet_icon(false, cx)
                         .icon(Icon::new(IconName::Close)),
                 ),
             ),
@@ -320,7 +320,7 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
                         .tall()
                         .quiet(cx)
                         .label("Cancel")
-                        .refuses(busy)
+                        .refuses(busy.then_some(STARTING))
                         .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
                             shell.cancel_workflow(cx);
                         })),
@@ -331,9 +331,13 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
                         .primary()
                         .label("Run")
                         .loading(busy);
-                    match busy || blocking > 0 {
-                        true => run.refuses(true),
-                        false => run.on_click(cx.listener(
+                    let why = match busy {
+                        true => Some(STARTING.to_string()),
+                        false => blocks_start(blocking),
+                    };
+                    match why {
+                        Some(why) => run.refuses(Some(why)),
+                        None => run.on_click(cx.listener(
                             |shell: &mut Shell, _: &ClickEvent, window, cx| {
                                 shell.commit_workflow(window, cx);
                             },
@@ -457,13 +461,24 @@ pub(crate) fn finding_line(
 /// Why *Run* is spent, said beside it: how many things above block the
 /// start. What each is, and where it is changed, is in the form.
 fn blocking_note(blocking: usize, danger: gpui::Hsla) -> Option<impl IntoElement> {
-    (blocking > 0).then(|| {
-        div().text_xs().text_color(danger).child(match blocking {
-            1 => "One thing above blocks the start.".to_string(),
-            n => format!("{n} things above block the start."),
-        })
-    })
+    blocks_start(blocking).map(|why| div().text_xs().text_color(danger).child(why))
 }
+
+/// How many things above block the start, in the words *Run*'s refusal and
+/// the note beside it share; none when nothing does.
+fn blocks_start(blocking: usize) -> Option<String> {
+    match blocking {
+        0 => None,
+        1 => Some("One thing above blocks the start".to_string()),
+        n => Some(format!("{n} things above block the start")),
+    }
+}
+
+// Why a dialog's buttons refuse while its work runs: the work cannot be called
+// back, nor asked for a second time.
+const STARTING: &str = "The run is starting";
+const MAKING_WORKTREE: &str = "The worktree is being made";
+const RENAMING_BRANCH: &str = "The branch is being renamed";
 
 /// The launcher's margin above it, and the least below it, in rems.
 const LAUNCHER_MARGIN: f32 = 3.;
@@ -632,7 +647,7 @@ pub fn new_worktree(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                         .tall()
                         .quiet(cx)
                         .label("Put it somewhere else…")
-                        .refuses(busy)
+                        .refuses(busy.then_some(MAKING_WORKTREE))
                         .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
                             shell.pick_worktree_parent(cx);
                         })),
@@ -646,7 +661,7 @@ pub fn new_worktree(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                         .tall()
                         .quiet(cx)
                         .label("Cancel")
-                        .refuses(busy)
+                        .refuses(busy.then_some(MAKING_WORKTREE))
                         .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
                             shell.cancel_worktree(cx);
                         })),
@@ -661,9 +676,14 @@ pub fn new_worktree(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                         .primary()
                         .label("Create worktree")
                         .loading(busy);
-                    match busy || !named {
-                        true => create.refuses(true),
-                        false => create.on_click(cx.listener(
+                    let why = match (busy, named) {
+                        (true, _) => Some(MAKING_WORKTREE),
+                        (false, false) => Some("Name the branch first"),
+                        (false, true) => None,
+                    };
+                    match why {
+                        Some(why) => create.refuses(Some(why)),
+                        None => create.on_click(cx.listener(
                             |shell: &mut Shell, _: &ClickEvent, _, cx| {
                                 shell.commit_worktree(cx);
                             },
@@ -730,7 +750,7 @@ pub fn rename_branch(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                         .tall()
                         .quiet(cx)
                         .label("Cancel")
-                        .refuses(busy)
+                        .refuses(busy.then_some(RENAMING_BRANCH))
                         .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
                             shell.cancel_branch_rename(cx);
                         })),
@@ -742,7 +762,7 @@ pub fn rename_branch(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                         .label("Rename")
                         .loading(busy);
                     match busy {
-                        true => rename.refuses(true),
+                        true => rename.refuses(Some(RENAMING_BRANCH)),
                         false => rename.on_click(cx.listener(
                             |shell: &mut Shell, _: &ClickEvent, _, cx| {
                                 shell.commit_branch_rename(cx);
