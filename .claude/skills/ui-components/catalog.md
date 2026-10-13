@@ -5,7 +5,7 @@ it in the same change.
 
 ## gpui-component
 
-The app uses the library for: `Button` (always through `action`), `Input` and `InputState`,
+The app uses the library for: `Button` (always through `action`), `Input` (always through `text_input`) and `InputState`,
 `Textarea`, `Switch`, `Tag`, `Kbd`, `Spinner`, `Tooltip`, `Dialog` (`window.open_dialog`,
 `window.open_alert_dialog`, with `DialogFooter` and `DialogClose`), `Notification`
 (`window.push_notification`), `PopupMenu` and `DropdownMenu` (through the menu builders below),
@@ -19,11 +19,13 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 
 | Need | Use | Where |
 |---|---|---|
-| Any button | `action` | `crates/app/src/controls.rs` (the app), `crates/plugin-host/src/lib.rs` (a plugin) |
+| Any button | `action` (sets the pointer and the control's `sm` corner) | `crates/app/src/controls.rs` (the app), `crates/plugin-host/src/lib.rs` (a plugin) |
+| Any text field | `text_input(&state, cx)` (sets the control's `sm` corner) | `crates/app/src/controls.rs` (the app), `crates/plugin-host/src/lib.rs` (a plugin) |
 | A button that can refuse | `.refuses(bool)` (the `Refuses` trait, re-exported by `crates/app/src/controls.rs`) | `crates/plugin-host/src/lib.rs` |
-| A small label | `Tag` at `.small()`; tinted through `Tag::custom` and `tint(base, cx)` | gpui-component; `crates/plugin-host/src/lib.rs` |
+| A small label, a badge | `Tag` at `.small()` and `.rounded(cx.theme().radius_lg)`; tinted through `Tag::custom` and `tint(base, cx)` | gpui-component; `crates/plugin-host/src/lib.rs` |
 | A menu, its rows, a menu under its control | `menu_item`, `menu_row`, `menu_below` | `crates/plugin-host/src/menu.rs` |
-| A segmented switch | `switch` | `crates/plugin-host/src/lib.rs` |
+| One of a few choices, the taken one filled (filter chips) | `choice` (a ghost button, `selected` when taken) | `crates/plugin-host/src/lib.rs` |
+| A choice between a few views, every one the same width | `switch` (a `choice` per view at `flex_1`) | `crates/plugin-host/src/lib.rs` |
 | Tabs that fit their strip, or one select | `tab_strip`, `tab_select`, `tab_menu_rows`, `measure_width` | `crates/plugin-host/src/tabs.rs` |
 | A list beside its detail, or one at a time | `list_detail`, `ListWidths`, `back_link` | `crates/plugin-host/src/list_detail.rs` |
 | A line filling an empty panel | `hint` | `crates/plugin-host/src/lib.rs` |

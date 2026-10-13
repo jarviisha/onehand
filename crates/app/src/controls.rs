@@ -41,6 +41,11 @@ pub(crate) fn action(id: impl Into<ElementId>) -> Button {
 /// second copy is a second place for the arrow cursor to come back.
 pub(crate) use onehand_plugin_host::{menu_below, menu_item, menu_row};
 
+/// A text field at a control's corner. The rule and its reasoning live with
+/// the definition in [`onehand_plugin_host`], where a built-in plugin's fields
+/// reach it too.
+pub(crate) use onehand_plugin_host::text_input;
+
 /// Refusing, and looking like it: the cursor half and the behaviour half in
 /// one call. The rule and its reasoning live with the definitions in
 /// [`onehand_plugin_host`], where a built-in plugin's buttons reach them too.

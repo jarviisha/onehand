@@ -9,6 +9,7 @@ use super::parts::{
 use super::{fold_key, live_index};
 use crate::chat::session::ChatSession;
 use crate::controls::Refuses as _;
+use crate::controls::text_input;
 use crate::tokens::{CODE_TEXT, CONTROL_H, LEADING_TIGHT};
 use gpui::Focusable as _;
 use gpui::prelude::FluentBuilder as _;
@@ -17,7 +18,6 @@ use gpui::{
     StatefulInteractiveElement, Styled, Window, div, relative,
 };
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::input::Input;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::acp::ElicitKind;
 use onehand_core::chat::{AskItem, TranscriptItemId};
@@ -767,7 +767,7 @@ impl AskForm<'_> {
                     div()
                         .flex_1()
                         .min_w_0()
-                        .child(Input::new(&state).appearance(false)),
+                        .child(text_input(&state, cx).appearance(false)),
                 )
                 .children(ask_key_hint(self.a.row_count(self.active), cx)),
         )

@@ -8,11 +8,12 @@ use gpui::{
     IntoElement, ParentElement, SharedString, StatefulInteractiveElement as _, Styled, Window, div,
 };
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::input::{Input, InputEvent, InputState};
+use gpui_component::input::{InputEvent, InputState};
 use gpui_component::tag::Tag;
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, Size, StyledExt};
 use onehand_core::issues::{self, Issues, LabelKind, LocalIssue};
+use onehand_plugin_host::text_input;
 use onehand_plugin_host::{Tint, action, menu_below, menu_item, status_ink, switch, tint};
 use std::collections::BTreeSet;
 
@@ -170,7 +171,7 @@ impl IssuesView {
             .border_color(cx.theme().border)
             .child(
                 div().flex_1().min_w_0().child(
-                    Input::new(&query)
+                    text_input(&query, cx)
                         .small()
                         .prefix(Icon::new(IconName::Search).xsmall().text_color(muted))
                         .cleanable(true),
@@ -252,7 +253,6 @@ impl IssuesView {
                         cx.notify();
                     })
                 },
-                cx,
             )))
             .children(self.label_menu(issues, cx));
 
@@ -626,14 +626,14 @@ pub(super) fn chip(label: String, cx: &App) -> Tag {
         LabelKind::Docs => tint(theme.yellow, cx),
         LabelKind::Report => tint(theme.cyan, cx),
     };
-    tag(label, kind)
+    tag(label, kind, cx)
 }
 
 /// A tag that is not a label (the *Draft* mark, a project's name), always
 /// neutral, so a name that happens to read like a label is never drawn as
 /// one.
 pub(super) fn plain_tag(text: String, cx: &App) -> Tag {
-    tag(text, neutral(cx))
+    tag(text, neutral(cx), cx)
 }
 
 /// The tint a tag takes when it says nothing about state.
@@ -647,8 +647,12 @@ fn neutral(cx: &App) -> Tint {
 
 /// The library's small label on `fill`, edged in the same fill so it reads as
 /// one shape round the word.
-fn tag(text: String, Tint { fill, ink }: Tint) -> Tag {
-    Tag::custom(fill, ink, fill).small().flex_none().child(text)
+fn tag(text: String, Tint { fill, ink }: Tint, cx: &App) -> Tag {
+    Tag::custom(fill, ink, fill)
+        .small()
+        .rounded(cx.theme().radius_lg)
+        .flex_none()
+        .child(text)
 }
 
 #[cfg(test)]

@@ -1,5 +1,6 @@
 use super::{APP, about, field, list_row, page_head, section};
 use crate::controls::Refuses as _;
+use crate::controls::text_input;
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -7,7 +8,6 @@ use gpui::{
     div,
 };
 use gpui_component::button::{ButtonGroup, ButtonVariants};
-use gpui_component::input::Input;
 use gpui_component::switch::Switch;
 use gpui_component::{ActiveTheme, Icon, IconName, Selectable, Sizable as _, StyledExt};
 use onehand_core::config::Appearance;
@@ -113,7 +113,7 @@ pub(super) fn workspace_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         .child(field(
             "Name",
             about("Written at the top of the rail."),
-            Input::new(&name),
+            text_input(&name, cx),
             cx,
         ))
         .child(field(
@@ -531,7 +531,7 @@ fn workflow_labels(handle: &Entity<Shell>, cx: &App) -> impl IntoElement {
                 .h_flex()
                 .items_center()
                 .gap_2()
-                .child(div().w(LABEL_FIELD_W).child(Input::new(&input).small()))
+                .child(div().w(LABEL_FIELD_W).child(text_input(&input, cx).small()))
                 .child(pick)
                 .child(add),
         )

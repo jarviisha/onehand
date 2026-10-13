@@ -51,6 +51,6 @@ action(("plugin-update", i)).xsmall().outline().refuses(busy)
 ```rust
 // Wrong: a label drawn by hand
 div().px(CHIP_PAD_X).py(CHIP_PAD_Y).rounded(cx.theme().radius).bg(fill).text_color(ink)
-// Right: the library's label, at the small corner
-Tag::custom(tint.fill, tint.ink, tint.fill).small().child(text)
+// Right: the library's label, at a badge's corner
+Tag::custom(tint.fill, tint.ink, tint.fill).small().rounded(cx.theme().radius_lg).child(text)
 ```

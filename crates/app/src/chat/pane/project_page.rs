@@ -1,6 +1,7 @@
 use super::header::Archives;
 use super::{ChatPane, ChatPaneEvent, ProjectFacts, rel_time};
 use crate::chat::conversation::Conversation;
+use crate::controls::text_input;
 use crate::tokens::PAGE_NARROW;
 use gpui::{
     App, Context, Div, ElementId, InteractiveElement, IntoElement, ParentElement, SharedString,
@@ -464,7 +465,7 @@ impl ChatPane {
                                         "Check command: what Run check and a command step \
                                          naming none run here",
                                     ))
-                                    .child(gpui_component::input::Input::new(input).small())
+                                    .child(text_input(input, cx).small())
                             }))
                             // What this project's tasks need, as one line to
                             // the Tasks page. Above the conversations: one is

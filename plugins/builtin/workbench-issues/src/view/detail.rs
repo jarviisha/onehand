@@ -342,6 +342,7 @@ fn state_badge(open: bool, cx: &App) -> Tag {
     };
     Tag::custom(fill, ink, fill)
         .small()
+        .rounded(cx.theme().radius_lg)
         .flex_none()
         .gap_1()
         .child(icon.xsmall())

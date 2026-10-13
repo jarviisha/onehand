@@ -9,10 +9,11 @@ use gpui::{
     ParentElement, Rems, SharedString, StatefulInteractiveElement as _, Styled, Window, div, rems,
 };
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::input::{Input, InputState};
+use gpui_component::input::InputState;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::issues;
 use onehand_core::task::work::list::{Filters, Incomplete, Listed, Progress};
+use onehand_plugin_host::text_input;
 use onehand_plugin_host::{AppIcon, action, menu_below, menu_item, status_ink};
 use std::path::PathBuf;
 
@@ -242,7 +243,7 @@ impl IssuesView {
             // the row wraps.
             .child(
                 div().flex_1().min_w(SEARCH_W).child(
-                    Input::new(query)
+                    text_input(query, cx)
                         .prefix(Icon::new(IconName::Search).small().text_color(muted))
                         .cleanable(true),
                 ),

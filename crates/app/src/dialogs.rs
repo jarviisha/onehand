@@ -4,6 +4,7 @@
 //! The component library owns overlays, focus traps and Escape handling.
 
 use crate::controls::Refuses as _;
+use crate::controls::text_input;
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -12,7 +13,6 @@ use gpui::{
 };
 use gpui_component::button::ButtonVariants;
 use gpui_component::dialog::{Dialog, DialogClose, DialogTitle};
-use gpui_component::input::Input;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 
 mod issue;
@@ -104,10 +104,14 @@ pub fn rename_session(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
 
     Dialog::new(cx)
         .close_button(false)
-        .content(move |content, _, _: &mut App| {
-            content
-                .child(title_row("Rename conversation"))
-                .child(div().v_flex().gap_1().w_full().child(Input::new(&input)))
+        .content(move |content, _, cx: &mut App| {
+            content.child(title_row("Rename conversation")).child(
+                div()
+                    .v_flex()
+                    .gap_1()
+                    .w_full()
+                    .child(text_input(&input, cx)),
+            )
         })
         .footer(
             div()
@@ -286,7 +290,7 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
                             .child(div().text_xs().text_color(muted).child(about.clone()))
                             .children(shown)
                             .child(label("Title"))
-                            .child(Input::new(&title))
+                            .child(text_input(&title, cx))
                             .child(label("Details"))
                             .child(gpui_component::input::Textarea::new(&body).h(DETAILS_H))
                             .child(label("Instructions"))
@@ -582,7 +586,7 @@ pub fn new_worktree(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
 
     Dialog::new(cx)
         .close_button(false)
-        .content(move |content, _, _: &mut App| {
+        .content(move |content, _, cx: &mut App| {
             content.child(title_row("New worktree")).child(
                 div()
                     .v_flex()
@@ -594,7 +598,7 @@ pub fn new_worktree(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                             .text_color(muted)
                             .child(format!("A second checkout of {label}, on its own branch.")),
                     )
-                    .child(Input::new(&input))
+                    .child(text_input(&input, cx))
                     // Where it lands, in full. A worktree is a folder that
                     // appears on disk without anyone browsing to it, so the one
                     // thing this form owes the reader is the path it is about
@@ -685,7 +689,7 @@ pub fn rename_branch(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
 
     Dialog::new(cx)
         .close_button(false)
-        .content(move |content, _, _: &mut App| {
+        .content(move |content, _, cx: &mut App| {
             content.child(title_row("Rename branch")).child(
                 div()
                     .v_flex()
@@ -697,7 +701,7 @@ pub fn rename_branch(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                             .text_color(muted)
                             .child(format!("The branch checked out here is {from}.")),
                     )
-                    .child(Input::new(&input))
+                    .child(text_input(&input, cx))
                     // git's own words where git refused, and the name rule's
                     // where it never got that far. Shown against the name that
                     // caused it, which is why the form is still up.

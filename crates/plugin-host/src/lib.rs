@@ -25,13 +25,15 @@ pub use tabs::{
 };
 pub use workbench::{Ask, Request, WorkbenchMode};
 
-use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, Div, ElementId, Hsla, InteractiveElement as _, IntoElement,
-    ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div,
+    AnyElement, App, Div, ElementId, Entity, Hsla, IntoElement, ParentElement as _, SharedString,
+    Styled as _, Window, div,
 };
-use gpui_component::button::Button;
-use gpui_component::{ActiveTheme as _, Colorize as _, Size, StyledExt as _};
+use gpui_component::button::{Button, ButtonRounded, ButtonVariants as _};
+use gpui_component::input::{Input, InputState};
+use gpui_component::{
+    ActiveTheme as _, Colorize as _, Selectable as _, Sizable as _, Size, StyledExt as _,
+};
 use std::rc::Rc;
 
 /// How a remote channel is opened, once its credential has been read.
@@ -52,6 +54,11 @@ pub type RemoteChannelFactory = fn(String) -> Box<dyn onehand_core::remote::type
 /// `cursor_default`, so setting the cursor here wins — which is the whole reason
 /// this can be a wrapper rather than a fork of the control.
 ///
+/// **It also sets the small corner**, half the theme's: a control is pressed
+/// or typed into, and the tighter corner tells it apart from the rows, chips
+/// and blocks around it, which keep the theme's. Here, because every button
+/// passes through here and nowhere else.
+///
 /// **It lives here rather than in the app** because a built-in plugin draws
 /// buttons too and cannot reach into the binary that hosts it. A second copy in
 /// each half is two places for the library's default to be let through, and the
@@ -59,7 +66,19 @@ pub type RemoteChannelFactory = fn(String) -> Box<dyn onehand_core::remote::type
 /// guard counts the call sites and why there must be only one of these to count
 /// against.
 pub fn action(id: impl Into<ElementId>) -> Button {
-    Button::new(id).cursor_pointer()
+    Button::new(id)
+        .cursor_pointer()
+        .rounded(ButtonRounded::Small)
+}
+
+/// A text field at a control's corner: the small one [`action`] gives a
+/// button, so a field and the button beside it are one shape. The library
+/// draws a field at the theme's full corner, the one rows and blocks keep.
+///
+/// Here rather than in the app for the reason [`action`] is: a plugin draws
+/// fields too, and one wrapper is one place for the corner to hold.
+pub fn text_input(state: &Entity<InputState>, cx: &App) -> Input {
+    Input::new(state).rounded(cx.theme().radius_tokens().sm)
 }
 
 /// The cursor for an action that is currently refusing.
@@ -301,26 +320,28 @@ pub fn status_line(message: String, cx: &App) -> AnyElement {
         .into_any_element()
 }
 
-/// A choice between a few views of one panel: a track with a filled plate in
-/// the half that is showing, every half the same width.
+/// One of a few choices, the one taken among them filled: a ghost button,
+/// `selected` on the choice that holds. Every pick-one row draws its choices
+/// with this, the halves of a [`switch`] and a row of filter chips alike, so
+/// one condition keeps one shape.
 ///
-/// **Drawn here, after both of the library's answers were tried.** The shape
-/// needs a fill, an inset and halves of equal width, and neither component
-/// gives all three. A `ButtonGroup` splits evenly but has no track, so it reads
-/// as two outlined controls that happen to disagree. A segmented `TabBar` is
-/// the track and the plate exactly, but sizes every tab to its own label inside
-/// a `flex_shrink_0` nothing outside the library can stretch — so one label
-/// came out two thirds the width of the other, both against the left edge of a
-/// bar as wide as its panel. So the track is the library's own segmented fill
-/// and the halves are `flex_1`; the fills and the radius are the theme's.
+/// The library's selected ghost fills with the theme's selected step, the one
+/// `accent` is too, with no edge and no reaction to the pointer: a fill that
+/// differs lifts by itself, and pressing what is already chosen changes
+/// nothing.
+pub fn choice(id: impl Into<ElementId>, label: impl Into<SharedString>, on: bool) -> Button {
+    action(id).ghost().label(label.into()).selected(on)
+}
+
+/// A choice between a few views of one panel: a [`choice`] per view, every
+/// one the same width across the row.
 ///
-/// **The selected half is `accent`**, which is the app's own "this one, among
-/// several" — what the terminal's tabs and the Workbench's modes take, so
-/// one condition keeps one spelling. It is not the reading surface: on a panel
-/// drawn in the well, a plate in the reading surface is a step *below* what it
-/// sits on, a hole rather than a plate. And there is no shadow under it: a fill
-/// that differs lifts by itself, and a drop shadow over a near-black surface is
-/// invisible anyway.
+/// **Drawn here, after both of the library's answers were tried.** A
+/// `ButtonGroup` joins its buttons into one outlined block. A segmented
+/// `TabBar` sizes every tab to its own label inside a `flex_shrink_0` nothing
+/// outside the library can stretch, so one label came out two thirds the width
+/// of the other, both against the left edge of a bar as wide as its panel. So
+/// each view is a choice at `flex_1`.
 ///
 /// **Here rather than in the app** for the reason [`action`] is: the rail and a
 /// built-in plugin both draw one, and a plugin cannot reach into the binary
@@ -335,41 +356,20 @@ pub fn switch(
     active: usize,
     size: Size,
     pick: impl Fn(&usize, &mut Window, &mut App) + 'static,
-    cx: &App,
 ) -> AnyElement {
-    let theme = cx.theme();
-    let (track, plate, radius) = (theme.tokens.tab_bar_segmented, theme.accent, theme.radius);
-    let (ink, ink_on) = (theme.muted_foreground, theme.accent_foreground);
     let pick = Rc::new(pick);
 
     div()
         .h_flex()
         .w_full()
-        .gap_0p5()
-        .p_0p5()
-        .rounded(radius)
-        .bg(track)
+        .gap_1()
         .children(labels.iter().enumerate().map(|(i, label)| {
-            let on = i == active;
             let pick = pick.clone();
-            div()
-                .id((id, i))
-                .h_flex()
-                .justify_center()
+            choice((id, i), label.clone(), i == active)
                 .flex_1()
                 .min_w_0()
-                .rounded(radius)
-                .cursor_pointer()
-                .map(|half| match size {
-                    Size::XSmall => half.text_xs(),
-                    Size::Small => half.py_0p5().text_xs(),
-                    Size::Medium | Size::Size(_) => half.py_1().text_sm(),
-                    Size::Large => half.py_1p5().text_base(),
-                })
-                .text_color(if on { ink_on } else { ink })
-                .when(on, |half| half.bg(plate))
+                .with_size(size)
                 .on_click(move |_, window, cx| pick(&i, window, cx))
-                .child(label.clone())
         }))
         .into_any_element()
 }

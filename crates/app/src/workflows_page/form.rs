@@ -3,12 +3,12 @@ use super::click;
 use super::draft::Kind;
 use super::step::{Earlier, step_box};
 use crate::controls::Refuses as _;
+use crate::controls::text_input;
 use crate::settings::{about, field, section};
 use gpui::{
     AnyElement, App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div,
 };
 use gpui_component::button::ButtonVariants;
-use gpui_component::input::Input;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::workflow::Place;
 
@@ -124,13 +124,13 @@ pub(super) fn form(
     .child(field(
         "Name",
         about("What the launcher lists it as."),
-        Input::new(&draft.name),
+        text_input(&draft.name, cx),
         cx,
     ))
     .child(field(
         "Description",
         None,
-        Input::new(&draft.description),
+        text_input(&draft.description, cx),
         cx,
     ))
     .child(field(
@@ -145,7 +145,6 @@ pub(super) fn form(
             place_at,
             gpui_component::Size::Small,
             pick_place,
-            cx,
         ),
         cx,
     ))
@@ -156,13 +155,13 @@ pub(super) fn form(
             .child(div().flex_1().child(field(
                 "Misses allowed",
                 about("Turns that fail their gates before the run stops."),
-                Input::new(&draft.misses),
+                text_input(&draft.misses, cx),
                 cx,
             )))
             .child(div().flex_1().child(field(
                 "Timeout",
                 about("Working time, such as 45m or 2h."),
-                Input::new(&draft.timeout),
+                text_input(&draft.timeout, cx),
                 cx,
             ))),
     )

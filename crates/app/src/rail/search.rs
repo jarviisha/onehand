@@ -4,11 +4,11 @@
 use super::RailState;
 use super::model::{Filter, toggle_attention};
 use super::row::labelled;
+use crate::controls::text_input;
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{Anchor, Context, IntoElement, ParentElement, Styled, div};
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::input::Input;
 use gpui_component::menu::DropdownMenu as _;
 use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, Sizable as _, StyledExt};
 
@@ -16,7 +16,7 @@ use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, Sizable as _,
 pub(super) fn search_field(state: &RailState, cx: &Context<Shell>) -> impl IntoElement + use<> {
     let muted = cx.theme().muted_foreground;
     div().flex_1().min_w_0().child(
-        Input::new(&state.search)
+        text_input(&state.search, cx)
             .small()
             .bordered(false)
             .prefix(Icon::new(IconName::Search).small().text_color(muted))

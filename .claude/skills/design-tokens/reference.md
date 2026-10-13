@@ -75,8 +75,10 @@ are not steps and stay allowed. A named spacing constant (`BLOCK_GAP`, `TIGHT_GA
 | `cx.theme().radius_lg` | 8 |
 | `.rounded_full()` | round |
 
-The library's controls apply their own: buttons, inputs, tooltips, menus and popovers `radius`;
-`Tag` at `.small()`, checkboxes and `Kbd` half of it (`sm`); dialogs and toasts `radius_lg`.
+The library's controls apply their own: tooltips, menus and popovers `radius`; checkboxes and
+`Kbd` `sm`; dialogs and toasts `radius_lg`. Two are overridden where they are built: a button
+(`action`) and a text field (`text_input`) take `sm` rather than the library's `radius`, and a
+`Tag` takes `radius_lg` through `.rounded(cx.theme().radius_lg)` after `.small()`.
 
 ## Elevation
 

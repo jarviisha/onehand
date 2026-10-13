@@ -427,6 +427,7 @@ fn page_row<F: Fn(&mut Shell, &mut Window, &mut Context<Shell>) + 'static>(
             let fill = cx.theme().secondary;
             Tag::custom(fill, cx.theme().secondary_foreground, fill)
                 .small()
+                .rounded(cx.theme().radius_lg)
                 .child(n)
         }))
 }

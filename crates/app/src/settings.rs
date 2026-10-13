@@ -141,7 +141,12 @@ pub(crate) fn page_head(
                 .items_center()
                 .gap_2()
                 .child(page_title(name))
-                .child(Tag::secondary().small().child(scope.into())),
+                .child(
+                    Tag::secondary()
+                        .small()
+                        .rounded(cx.theme().radius_lg)
+                        .child(scope.into()),
+                ),
         )
         .child(
             div()

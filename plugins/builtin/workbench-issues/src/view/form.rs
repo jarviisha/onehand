@@ -6,11 +6,12 @@ use gpui::{
     SharedString, Styled, Window, div,
 };
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::input::{Input, InputState, Textarea, TextareaState};
+use gpui_component::input::{InputState, Textarea, TextareaState};
 use gpui_component::{ActiveTheme, Sizable as _, StyledExt};
 use onehand_core::issues::template::IssueTemplate;
 use onehand_core::issues::{self, Draft};
 use onehand_plugin_host::action;
+use onehand_plugin_host::text_input;
 
 /// The form a new issue or an edit is written in.
 pub(super) struct Form {
@@ -247,8 +248,8 @@ pub(super) fn form_view(
                     }
                 }),
         )
-        .child(Input::new(&form.title))
-        .child(Input::new(&form.labels))
+        .child(text_input(&form.title, cx))
+        .child(text_input(&form.labels, cx))
         .children(templates_row(form, templates, cx))
         .child(
             div()

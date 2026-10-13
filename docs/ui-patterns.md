@@ -51,8 +51,8 @@ going back keeps the list's place.
 ### Forms
 
 Each input is a `field`: its title in chrome text, an optional hint under it in meta text, `gap_2`
-to the control. Fields stand `gap_4` apart. An input takes the library's default size, `small`
-when it sits inside a row. Problems stand above the submit button in the danger ink. The submit
+to the control. Fields stand `gap_4` apart. An input is built with `text_input`, at a control's
+corner, and takes the library's default size, `small` when it sits inside a row. Problems stand above the submit button in the danger ink. The submit
 is the form's one primary action; while the form cannot be sent it refuses, its tooltip saying why.
 
 ### Dialogs

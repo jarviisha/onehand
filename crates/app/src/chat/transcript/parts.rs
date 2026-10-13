@@ -722,6 +722,7 @@ pub(super) fn pill(label: impl Into<SharedString>, ink: gpui::Hsla, cx: &App) ->
     Tag::custom(ink, ink, cx.theme().border)
         .outline()
         .small()
+        .rounded(cx.theme().radius_lg)
         .flex_none()
         .whitespace_nowrap()
         .overflow_hidden()

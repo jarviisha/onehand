@@ -343,6 +343,7 @@ pub(crate) fn issue_row(
         .children(labels.iter().take(3).map(|label| {
             Tag::custom(fill, ink, fill)
                 .small()
+                .rounded(cx.theme().radius_lg)
                 .flex_none()
                 .child(label.clone())
         }))

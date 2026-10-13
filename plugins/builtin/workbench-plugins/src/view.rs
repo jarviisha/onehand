@@ -9,9 +9,10 @@ use gpui::{
     StatefulInteractiveElement as _, Styled, Task, Window, div,
 };
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::input::{Input, InputEvent, InputState};
+use gpui_component::input::{InputEvent, InputState};
 use gpui_component::{ActiveTheme, Selectable as _, Sizable as _, StyledExt};
-use onehand_plugin_host::{Ask, Refuses as _, Request, action, hint, status_line, switch};
+use onehand_plugin_host::text_input;
+use onehand_plugin_host::{Ask, Refuses as _, Request, action, choice, hint, status_line, switch};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -426,7 +427,6 @@ impl PluginsView {
                 view.tab = Tab::ALL[*i];
                 cx.notify();
             }),
-            cx,
         );
 
         // Only the list on screen is built: the other is a click away and
@@ -612,22 +612,16 @@ impl PluginsView {
         markets.dedup();
         let current = self.market.clone();
         let chips = (markets.len() > 1).then(|| {
-            let all = action("plugins-market-all")
+            let all = choice("plugins-market-all", "All", current.is_none())
                 .xsmall()
-                .ghost()
-                .label("All")
-                .selected(current.is_none())
                 .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
                     view.market = None;
                     cx.notify();
                 }));
             let each = markets.into_iter().enumerate().map(|(i, market)| {
                 let on = current.as_deref() == Some(market.as_str());
-                action(("plugins-market", i))
+                choice(("plugins-market", i), market.clone(), on)
                     .xsmall()
-                    .ghost()
-                    .label(market.clone())
-                    .selected(on)
                     .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
                         view.market = Some(market.clone());
                         cx.notify();
@@ -638,7 +632,7 @@ impl PluginsView {
         div()
             .v_flex()
             .gap_2()
-            .child(Input::new(query).small())
+            .child(text_input(query, cx).small())
             .children(chips)
             .into_any_element()
     }
@@ -715,7 +709,7 @@ impl PluginsView {
         div()
             .v_flex()
             .gap_2()
-            .child(Input::new(query).small())
+            .child(text_input(query, cx).small())
             .child(div().h_flex().flex_wrap().gap_1().children(chips))
             .into_any_element()
     }

@@ -194,7 +194,12 @@ fn list(
                     .items_center()
                     .gap_1()
                     .when(shipped, |row| {
-                        row.child(Tag::secondary().small().child("Built in"))
+                        row.child(
+                            Tag::secondary()
+                                .small()
+                                .rounded(cx.theme().radius_lg)
+                                .child("Built in"),
+                        )
                     })
                     .when_some(entry.template.as_ref().ok(), |row, template| {
                         row.child(run_menu(handle, i, &template.id, choices))

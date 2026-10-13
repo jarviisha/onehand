@@ -564,7 +564,12 @@ pub(super) fn project_row(
                         div()
                             .id(("project-auto", root_idx))
                             .flex_none()
-                            .child(Tag::custom(chip, ink, chip).small().child(auto.badge))
+                            .child(
+                                Tag::custom(chip, ink, chip)
+                                    .small()
+                                    .rounded(cx.theme().radius_lg)
+                                    .child(auto.badge),
+                            )
                             .when_some(pill_issue, |pill, number| {
                                 pill.cursor_pointer()
                                     .on_mouse_up(gpui::MouseButton::Left, |_, _, cx| {

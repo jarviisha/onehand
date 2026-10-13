@@ -2,6 +2,7 @@
 //! one at a time.
 
 use super::*;
+use crate::controls::text_input;
 
 pub struct Editor {
     editing: Option<usize>,
@@ -108,7 +109,7 @@ impl Render for Editor {
                              Enter saves; Escape cancels."
                                     .into_any_element(),
                             ),
-                            Input::new(&self.input),
+                            text_input(&self.input, cx),
                             cx,
                         ))
                         .child(

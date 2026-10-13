@@ -1,5 +1,6 @@
 use super::{APP, about, field, list_row, page_head, section};
 use crate::controls::Refuses as _;
+use crate::controls::text_input;
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -7,7 +8,6 @@ use gpui::{
     div,
 };
 use gpui_component::button::ButtonVariants;
-use gpui_component::input::Input;
 use gpui_component::{ActiveTheme, Icon, Sizable as _, StyledExt};
 use onehand_core::config::AgentSpec;
 
@@ -208,7 +208,7 @@ pub(super) fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     .child(field(
         "Name",
         about("What the New session menu calls it."),
-        Input::new(&name),
+        text_input(&name, cx),
         cx,
     ))
     .child(field(
@@ -217,13 +217,13 @@ pub(super) fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
             "The program to run. It has to speak the Agent Client Protocol over standard \
              input and output.",
         ),
-        Input::new(&command),
+        text_input(&command, cx),
         cx,
     ))
     .child(field(
         "Arguments",
         about("Separated by spaces; quote one that holds a space."),
-        Input::new(&args),
+        text_input(&args, cx),
         cx,
     ))
     .child(
