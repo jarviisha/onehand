@@ -158,9 +158,10 @@ heading identifies its own content. Reuse the same column width for the same kin
 
 A page that has a head and filters draws them in one order, the Issues page's:
 
-- **The head**: what the page counts at the start, in muted ink (*12 open*); its actions at the
-  end at `.small()`, icon-only ghost buttons first (*Refresh*), the page's one primary last
-  (*New issue*).
+- **The head**: the page's creating action at the start, `.small()` on the secondary fill (*New
+  issue*); at the end its icon-only ghost buttons (*Refresh*), then what the page counts, in
+  muted ink (*12 open*). The head holds no primary, so a panel floating over the page never has
+  one to outweigh.
 - **The filter bar**, under the head: the search first at `.small()`, taking the free width, then
   each filter as a `.small()` `picker` with its caret, its label naming what it is set to: a
   ghost in the muted ink while it is where it starts, on the secondary fill in that fill's ink

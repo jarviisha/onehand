@@ -161,11 +161,11 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
     *Finished*, each with a count, an empty line and a cap. A row is the title over workflow, step
     or outcome and project, with ghost actions by state (*Open session*, *Stop*, *Resume*, *Retry*,
     *Dismiss*); its text opens the task's detail in the same column.
-  - *Issues*, in the overview's column: a head (*N open*, *Refresh*, *New issue*); a
+  - *Issues*, in the overview's column: a head (*New issue*, then *Refresh* and *N open*); a
     filter bar (search, then pickers for open/closed, progress, project, label); a hairline table,
     *Title*, *Labels*, *Updated*, a row a line, rows keeping their place while a person reads.
-    *Reading the issues…* until the first read lands; *Refresh* spins while it reads, and *New
-    issue* steps down to secondary while an issue or a form floats.
+    *Reading the issues…* until the first read lands; *Refresh* spins while it reads; *New issue*
+    is secondary, the page holding no primary.
     Nothing is open on arrival; a picked issue floats over the list's right side, its width
     dragged for the session; `×`/Esc close it, ↑/↓ step. *No issues yet* or *No issues match*
     when empty. Filters, search, selection, the open issue and scroll persist.

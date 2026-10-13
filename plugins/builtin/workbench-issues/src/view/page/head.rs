@@ -205,28 +205,26 @@ impl IssuesView {
             },
         );
         let pr_reading = self.page.as_ref().is_some_and(|page| page.pr_reading > 0);
-        // What waits on the person holds the primary while it shows: an
-        // issue or a form floating over the list.
-        let floating = self.page.as_ref().is_some_and(|page| page.open) && self.has_page_issue();
         let theme = cx.theme();
         let muted = theme.muted_foreground;
+        // *New issue* leads, on the secondary fill: the page holds no
+        // primary, so what floats over the list never has one to outweigh.
+        // The count and the way to read it again end the row together.
         let header = div()
             .h_flex()
             .items_center()
             .gap_2()
             .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .text_sm()
-                    .text_color(muted)
-                    // Nothing until the first read lands: *0 open* over an
-                    // empty list would say there are none.
-                    .when(!reading, |count| {
-                        count.child(format!("{} open", listed.open))
-                    }),
+                action("issues-page-new")
+                    .small()
+                    .secondary()
+                    .label("New issue")
+                    .tooltip("In the project filtered to, or the one picked")
+                    .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
+                        view.new_issue_on_page(window, cx)
+                    })),
             )
+            .child(div().flex_1())
             // Named for assistive technology in a box of its own: the
             // library's button takes a name only from a text label.
             .child(
@@ -248,17 +246,16 @@ impl IssuesView {
                     ),
             )
             .child(
-                action("issues-page-new")
-                    .small()
-                    .map(|button| match floating {
-                        true => button.secondary(),
-                        false => button.primary(),
-                    })
-                    .label("New issue")
-                    .tooltip("In the project filtered to, or the one picked")
-                    .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
-                        view.new_issue_on_page(window, cx)
-                    })),
+                div()
+                    .flex_none()
+                    .whitespace_nowrap()
+                    .text_sm()
+                    .text_color(muted)
+                    // Nothing until the first read lands: *0 open* over an
+                    // empty list would say there are none.
+                    .when(!reading, |count| {
+                        count.child(format!("{} open", listed.open))
+                    }),
             );
         let filters = div()
             .h_flex()
