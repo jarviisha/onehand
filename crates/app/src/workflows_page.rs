@@ -29,8 +29,8 @@ use gpui::{
     Focusable, InteractiveElement as _, IntoElement, ParentElement, Render, SharedString,
     StatefulInteractiveElement as _, Styled, Window, div,
 };
-use gpui_component::tag::Tag;
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::button::ButtonVariants as _;
+use gpui_component::{ActiveTheme, Icon, Sizable as _, StyledExt};
 use onehand_core::workflow as core;
 use std::path::PathBuf;
 
@@ -49,6 +49,9 @@ pub(crate) struct WorkflowsPage {
     /// selected in the rail, which *Run…* offers first.
     projects: Vec<(PathBuf, SharedString)>,
     selected: Option<PathBuf>,
+    /// A save is being written: *Save* spins and takes no second press, so
+    /// one write lands at a time.
+    writing: bool,
 }
 
 impl EventEmitter<WorkflowsPageEvent> for WorkflowsPage {}
@@ -66,6 +69,7 @@ impl WorkflowsPage {
             draft: None,
             projects: Vec::new(),
             selected: None,
+            writing: false,
         })
     }
 
@@ -117,7 +121,7 @@ impl Render for WorkflowsPage {
         let form = self
             .draft
             .as_ref()
-            .map(|draft| form::form(&handle, draft, cx));
+            .map(|draft| form::form(&handle, draft, self.writing, cx));
         // A bare page, so it tracks its own focus: a field typed in here
         // must be inside this, or the window's keys land elsewhere.
         div()
@@ -138,6 +142,7 @@ impl Render for WorkflowsPage {
                         .gap_6()
                         .w_full()
                         .max_w(crate::tokens::PAGE_PROSE)
+                        .child(head(&handle, cx))
                         .child(
                             div()
                                 .text_sm()
@@ -155,8 +160,49 @@ impl Render for WorkflowsPage {
     }
 }
 
-/// Every workflow on offer, capped and saying what it left out, each with
-/// *Run…* and what may be done to it, then *New workflow* and *Import…*.
+/// The page's head: the actions that make a workflow at the start, *New
+/// workflow* on the secondary fill, and how many there are at the end. No
+/// primary, so the form, when it is open, never has one to outweigh.
+fn head(handle: &Entity<WorkflowsPage>, cx: &App) -> AnyElement {
+    let count = crate::workflow::templates(cx).len();
+    div()
+        .h_flex()
+        .items_center()
+        .gap_2()
+        .child(
+            crate::controls::action("new-workflow")
+                .small()
+                .secondary()
+                .label("New workflow")
+                .on_click(click(handle, |page, window, cx| {
+                    page.new_workflow(window, cx)
+                })),
+        )
+        .child(
+            crate::controls::action("import-workflow")
+                .small()
+                .quiet(cx)
+                .label("Import…")
+                .on_click(click(handle, |page, window, cx| {
+                    page.import_workflow(window, cx)
+                })),
+        )
+        .child(div().flex_1())
+        .children((count > 0).then(|| {
+            div()
+                .text_sm()
+                .text_color(cx.theme().muted_foreground)
+                .child(match count {
+                    1 => "1 workflow".to_string(),
+                    n => format!("{n} workflows"),
+                })
+        }))
+        .into_any_element()
+}
+
+/// Every workflow on offer, capped and saying what it left out: a row each,
+/// its name over what it does, *Built in* in a slot of its own, and *Run…*
+/// and what may be done to it while it is pointed at.
 fn list(
     handle: &Entity<WorkflowsPage>,
     choices: &[(PathBuf, SharedString)],
@@ -177,6 +223,7 @@ fn list(
             let about = match &entry.template {
                 Ok(template) => div()
                     .text_xs()
+                    .text_color(muted)
                     .child(template.description.clone())
                     .into_any_element(),
                 Err(why) => div()
@@ -186,114 +233,122 @@ fn list(
                     .into_any_element(),
             };
             let readable = entry.template.is_ok();
-            crate::settings::list_row(
-                entry.name(),
-                Some(about),
-                div()
-                    .h_flex()
-                    .items_center()
-                    .gap_1()
-                    .when(shipped, |row| {
-                        row.child(
-                            Tag::secondary()
-                                .small()
-                                .rounded(crate::tokens::BADGE_CORNER)
-                                .child("Built in"),
+            let group = SharedString::from(format!("workflow-row-{i}"));
+            let actions = div()
+                .h_flex()
+                .items_center()
+                .gap_1()
+                .when_some(entry.template.as_ref().ok(), |row, template| {
+                    row.child(run_menu(handle, i, &template.id, choices, cx))
+                })
+                .when(readable, |row| {
+                    row.child(row_action(
+                        handle,
+                        ("duplicate-workflow", i),
+                        "Duplicate",
+                        move |page, window, cx| page.duplicate_workflow(i, window, cx),
+                        cx,
+                    ))
+                })
+                .when(readable, |row| {
+                    row.child(row_action(
+                        handle,
+                        ("export-workflow", i),
+                        "Export…",
+                        move |page, window, cx| page.export_workflow(i, window, cx),
+                        cx,
+                    ))
+                })
+                .when(readable && !shipped, |row| {
+                    row.child(
+                        row_icon(
+                            ("edit-workflow", i),
+                            crate::icons::Icon::SquarePen,
+                            "Edit",
+                            cx,
                         )
-                    })
-                    .when_some(entry.template.as_ref().ok(), |row, template| {
-                        row.child(run_menu(handle, i, &template.id, choices, cx))
-                    })
-                    .when(readable, |row| {
-                        row.child(row_action(
-                            handle,
-                            ("duplicate-workflow", i),
-                            "Duplicate",
-                            move |page, window, cx| page.duplicate_workflow(i, window, cx),
-                            cx,
-                        ))
-                    })
-                    .when(readable, |row| {
-                        row.child(row_action(
-                            handle,
-                            ("export-workflow", i),
-                            "Export…",
-                            move |page, window, cx| page.export_workflow(i, window, cx),
-                            cx,
-                        ))
-                    })
-                    .when(readable && !shipped, |row| {
-                        row.child(
-                            row_icon(
-                                ("edit-workflow", i),
-                                crate::icons::Icon::SquarePen,
-                                "Edit",
-                                cx,
+                        .on_click(click(handle, move |page, window, cx| {
+                            page.edit_workflow(i, window, cx)
+                        })),
+                    )
+                })
+                .when(!shipped, |row| {
+                    row.child(row_delete(
+                        handle,
+                        ("delete-workflow", i),
+                        move |page, window, cx| page.confirm_delete_workflow(i, window, cx),
+                        cx,
+                    ))
+                });
+            onehand_plugin_host::row(false, cx)
+                .cursor_default()
+                .group(group.clone())
+                .h_flex()
+                .items_center()
+                .gap_2()
+                .py_1p5()
+                .child(
+                    div()
+                        .v_flex()
+                        .gap_0p5()
+                        .flex_1()
+                        .min_w_0()
+                        .child(div().truncate().child(entry.name()))
+                        .child(about),
+                )
+                // A content slot, always drawn and as wide whether or not it
+                // holds the badge, so the actions after it never move.
+                .child(div().flex_none().w(BUILT_IN_W).h_flex().justify_end().when(
+                    shipped,
+                    |slot| {
+                        slot.child(
+                            onehand_plugin_host::badge(
+                                "Built in",
+                                onehand_plugin_host::Tint {
+                                    fill: cx.theme().secondary,
+                                    ink: cx.theme().secondary_foreground,
+                                },
                             )
-                            .on_click(click(handle, move |page, window, cx| {
-                                page.edit_workflow(i, window, cx)
-                            })),
+                            .flex_none(),
                         )
-                    })
-                    .when(!shipped, |row| {
-                        row.child(row_delete(
-                            handle,
-                            ("delete-workflow", i),
-                            move |page, window, cx| page.confirm_delete_workflow(i, window, cx),
-                            cx,
-                        ))
-                    }),
-                cx,
-            )
-            .into_any_element()
+                    },
+                ))
+                .child(onehand_plugin_host::hover_slot(group, false, actions))
+                .into_any_element()
         })
         .collect::<Vec<_>>();
+    let meta = |text: String| div().text_xs().text_color(muted).child(text);
     div()
         .v_flex()
-        .gap_3()
         .w_full()
         .children(rows)
         .when(left_out > 0, |list| {
-            list.child(div().text_sm().text_color(muted).child(format!(
-                "{left_out} more workflows not shown; remove some from {}",
-                core::store::dir().display()
-            )))
-        })
-        .when(entries.is_empty(), |list| {
             list.child(
                 div()
-                    .text_sm()
+                    .h_flex()
+                    .flex_wrap()
+                    .gap_1()
+                    .text_xs()
                     .text_color(muted)
-                    .child("Reading the workflows…"),
+                    .child(format!(
+                        "{left_out} more workflows not shown; remove some from"
+                    ))
+                    .child(
+                        div()
+                            .font_family(cx.theme().mono_font_family.clone())
+                            .child(core::store::dir().display().to_string()),
+                    ),
             )
         })
-        .child(
-            div()
-                .h_flex()
-                .gap_1()
-                .child(
-                    crate::controls::action("new-workflow")
-                        .small()
-                        .quiet(cx)
-                        .icon(Icon::new(IconName::Plus))
-                        .label("New workflow")
-                        .on_click(click(handle, |page, window, cx| {
-                            page.new_workflow(window, cx)
-                        })),
-                )
-                .child(
-                    crate::controls::action("import-workflow")
-                        .small()
-                        .quiet(cx)
-                        .icon(Icon::new(IconName::FolderOpen))
-                        .label("Import…")
-                        .on_click(click(handle, |page, window, cx| {
-                            page.import_workflow(window, cx)
-                        })),
-                ),
-        )
+        .when(entries.is_empty(), |list| {
+            list.child(meta("Reading the workflows…".to_string()))
+        })
         .into_any_element()
 }
+
+/// The slot *Built in* stands in on every row, held whether or not a row
+/// carries it.
+const BUILT_IN_W: gpui::Rems = gpui::rems(4.5);
 
 /// *Run…* on row `i`: which project to start workflow `workflow` on, the
 /// rail's selection first, then the launcher.

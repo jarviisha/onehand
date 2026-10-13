@@ -50,9 +50,14 @@ fn margin(back: Option<usize>, from: &[usize], muted: gpui::Hsla) -> impl IntoEl
 pub(super) fn form(
     handle: &Entity<WorkflowsPage>,
     draft: &super::WorkflowDraft,
+    writing: bool,
     cx: &App,
 ) -> AnyElement {
-    let problems = draft.problems(cx);
+    // What is wrong with it, said above *Save* before the press: a name
+    // another workflow has is one of them, since the launcher lists them by
+    // name.
+    let mut problems = draft.problems(cx);
+    problems.extend(super::actions::name_clash(draft, cx));
     let danger = crate::theme::status_ink(cx).danger;
     let muted = cx.theme().muted_foreground;
     let editing = draft.file.is_some();
@@ -106,6 +111,7 @@ pub(super) fn form(
                 .child(div().flex_1().min_w_0().child(step_box(
                     handle,
                     i,
+                    i + 1 == draft.steps.len(),
                     step,
                     &ids[..i],
                     place,
@@ -125,7 +131,7 @@ pub(super) fn form(
     )
     .child(field(
         "Name",
-        about("What the launcher lists it as."),
+        about("What the launcher lists it as"),
         text_input(&draft.name, cx).tall(),
         cx,
     ))
@@ -139,13 +145,13 @@ pub(super) fn form(
         "Where it works",
         about(
             "In the checkout leaves the change uncommitted for you; a new worktree gets a \
-             branch of its own, and the work is committed there.",
+             branch of its own, and the work is committed there",
         ),
         onehand_plugin_host::switch(
             "workflow-place",
             &places,
             place_at,
-            onehand_plugin_host::ControlSize::Small,
+            onehand_plugin_host::ControlSize::Tall,
             pick_place,
             cx,
         ),
@@ -157,21 +163,18 @@ pub(super) fn form(
             .gap_4()
             .child(div().flex_1().child(field(
                 "Misses allowed",
-                about("Turns that fail their gates before the run stops."),
+                about("Turns that fail their gates before the run stops"),
                 text_input(&draft.misses, cx).tall(),
                 cx,
             )))
             .child(div().flex_1().child(field(
                 "Timeout",
-                about("Working time, such as 45m or 2h."),
+                about("Working time, such as 45m or 2h"),
                 text_input(&draft.timeout, cx).tall(),
                 cx,
             ))),
     )
-    .child(div().text_sm().text_color(muted).child(
-        "A prompt may use {brief}, {instructions}, {check_output}, {revise} and \
-                 {output.<step id>} for what an earlier step kept.",
-    ))
+    .child(variables_hint(muted, cx))
     .children(steps)
     .child(
         div()
@@ -181,9 +184,8 @@ pub(super) fn form(
             .children(Kind::ALL.into_iter().enumerate().map(|(at, kind)| {
                 crate::controls::action(("add-step", at))
                     .quiet(cx)
-                    .small()
-                    .icon(Icon::new(IconName::Plus))
-                    .label(format!("{} step", kind.label()))
+                    .tall()
+                    .label(format!("Add {} step", kind.label().to_lowercase()))
                     .on_click(click(handle, move |page, window, cx| {
                         page.edit_workflow_draft(window, cx, |d, window, cx| {
                             d.add_step(kind, window, cx)
@@ -194,7 +196,7 @@ pub(super) fn form(
     .children(
         problems
             .iter()
-            .map(|problem| div().text_sm().text_color(danger).child(problem.clone())),
+            .map(|problem| div().text_xs().text_color(danger).child(problem.clone())),
     )
     .child(
         div()
@@ -204,8 +206,9 @@ pub(super) fn form(
                 crate::controls::action("save-workflow")
                     .tall()
                     .primary()
-                    .refuses((!problems.is_empty()).then_some("Fix the problems above first"))
+                    .loading(writing)
                     .label("Save")
+                    .refuses(problems.first().cloned())
                     .on_click(click(handle, |page, window, cx| {
                         page.save_workflow_draft(window, cx)
                     })),
@@ -215,8 +218,32 @@ pub(super) fn form(
                     .tall()
                     .quiet(cx)
                     .label("Cancel")
-                    .on_click(click(handle, |page, _, cx| page.clear_workflow_draft(cx))),
+                    // Asks first when the form holds changes, as Esc does.
+                    .on_click(click(handle, |page, window, cx| {
+                        page.close_workflow_form(window, cx)
+                    })),
             ),
     )
     .into_any_element()
+}
+
+/// What a prompt may use, a hint in meta text with each variable in mono, so
+/// it reads as something to type.
+fn variables_hint(muted: gpui::Hsla, cx: &App) -> impl IntoElement {
+    let mono = cx.theme().mono_font_family.clone();
+    let code = |text: &'static str| div().font_family(mono.clone()).child(text);
+    div()
+        .h_flex()
+        .flex_wrap()
+        .gap_x_1()
+        .text_xs()
+        .text_color(muted)
+        .child("A prompt may use")
+        .child(code("{brief}"))
+        .child(code("{instructions}"))
+        .child(code("{check_output}"))
+        .child(code("{revise}"))
+        .child("and")
+        .child(code("{output.<step id>}"))
+        .child("for what an earlier step kept")
 }

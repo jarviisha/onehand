@@ -55,11 +55,11 @@ impl Shell {
                     page,
                     crate::shell::Confirm {
                         id: "close-workflow-draft",
-                        title: "Drop the workflow being written?".into(),
+                        title: "Discard the workflow being written?".into(),
                         description: "Its changes are not saved. Closing the window throws \
                                       them away."
                             .into(),
-                        act: "Drop and close",
+                        act: "Discard",
                         ..Default::default()
                     },
                     window,

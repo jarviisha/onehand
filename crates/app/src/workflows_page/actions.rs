@@ -202,6 +202,10 @@ impl WorkflowsPage {
     /// again. Refused while the template has problems, or shares its name
     /// with another, since the launcher lists them by name.
     pub(crate) fn save_workflow_draft(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // One write at a time: *Save* spins until this one lands.
+        if self.writing {
+            return;
+        }
         let Some(draft) = self.draft.as_ref() else {
             return;
         };
@@ -211,20 +215,16 @@ impl WorkflowsPage {
         if !core::validate(&template).is_empty() {
             return;
         }
+        // The form says a clash above *Save*, which refuses while it stands.
+        if name_clash(draft, cx).is_some() {
+            return;
+        }
         let file = draft.file.clone();
         // Which form this save is for: each form is made anew, with inputs of
         // its own, so its name input says which one it is.
         let form = draft.name.entity_id();
-        let same = |entry: &crate::workflow::Entry| file.is_some() && entry.file == file;
-        let clash = crate::workflow::templates(cx)
-            .iter()
-            .any(|entry| !same(entry) && entry.name() == template.name);
-        if clash {
-            let why = format!("another workflow is already called {}", template.name);
-            crate::toast::report(window, cx, "Saving the workflow", None, Err(why));
-            cx.notify();
-            return;
-        }
+        self.writing = true;
+        cx.notify();
         cx.spawn_in(window, async move |page, cx| {
             let saved = cx
                 .background_executor()
@@ -233,6 +233,7 @@ impl WorkflowsPage {
                 })
                 .await;
             let _ = page.update_in(cx, |page: &mut Self, window, cx| {
+                page.writing = false;
                 match saved {
                     Ok((path, written)) => {
                         // Only the form that was saved learns its file: one
@@ -322,4 +323,16 @@ impl WorkflowsPage {
         })
         .detach();
     }
+}
+
+/// That another workflow already has `draft`'s name, said as a problem: the
+/// launcher lists them by name, so two of one name are one too many.
+pub(super) fn name_clash(draft: &super::WorkflowDraft, cx: &gpui::App) -> Option<String> {
+    let template = draft.to_template(cx).ok()?;
+    let file = draft.file.clone();
+    let same = |entry: &crate::workflow::Entry| file.is_some() && entry.file == file;
+    crate::workflow::templates(cx)
+        .iter()
+        .any(|entry| !same(entry) && entry.name() == template.name)
+        .then(|| format!("Another workflow is already called {}", template.name))
 }

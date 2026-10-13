@@ -176,9 +176,12 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
     when empty. Filters, search, selection, the open issue and scroll persist.
   - The **review block** opens below where the work stands only on *Review…*, as
     `docs/unattended.md` draws it.
-  - *Workflows* lists the workflows, capped (shipped ones *Built in*, read-only), each with
-    *Run…* (projects, the rail's first). *New workflow* or *Edit* opens a form below, one hairline
-    box per step, a margin marking where a failure goes back to, problems above a spent *Save*.
+  - *Workflows*: a head (*New workflow* on the secondary fill, *Import…*, then how many), then
+    the workflows as rows, capped, shipped ones *Built in* (read-only) in a slot of their own,
+    *Run…* (projects, the rail's first) and the rest shown on hover. *New workflow* or *Edit*
+    opens a form below, one box per step (its kind its first field, one ⋯ to move or remove it),
+    a margin marking where a failure goes back to, problems (a name clash among them) above a
+    *Save* that refuses with the first and spins while it writes.
 - **No top bar, no status bar, no right toolbar.** Transient status goes in a toast; modals are
   `Dialog`s. Settings is a page: a nav column with Appearance, Workspace, Agents, Connections and
   Shortcuts, its groups split by hairlines, not boxes.
