@@ -237,14 +237,21 @@ pub struct Draft {
     pub labels: Vec<String>,
 }
 
+/// Why a draft with `title` cannot be kept, or `None` when it can: the one
+/// rule a form says above its submit before it is pressed, and the write
+/// holds to after. An issue with no title is a row with nothing to click on.
+pub fn title_problem(title: &str) -> Option<&'static str> {
+    title.trim().is_empty().then_some("An issue needs a title")
+}
+
 impl Draft {
     /// The draft as it will be kept — title and body trimmed — or why it cannot
-    /// be. An issue with no title is a row with nothing to click on.
+    /// be.
     fn settled(self) -> Result<Self, String> {
-        let title = self.title.trim().to_string();
-        if title.is_empty() {
-            return Err("An issue needs a title.".to_string());
+        if let Some(problem) = title_problem(&self.title) {
+            return Err(problem.to_string());
         }
+        let title = self.title.trim().to_string();
         Ok(Self {
             title,
             body: self.body.trim().to_string(),

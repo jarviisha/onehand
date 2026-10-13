@@ -348,6 +348,10 @@ fn more_menu(
     let forge = issue.link.as_ref().map(|link| link.connector.clone());
     let view = cx.entity();
     let danger = status_ink(cx).danger;
+    // Closing asks only while a run works on the issue, which it does not stop.
+    let asks = doing.work.as_ref().is_some_and(|work| {
+        work.work.active() || work.earlier.iter().any(|earlier| earlier.active)
+    });
     let overflow: Vec<(&'static str, bool, Pressed)> = overflow
         .into_iter()
         .map(|act| {
@@ -416,7 +420,7 @@ fn more_menu(
             if !overflow.is_empty() || publish_to.is_some() || in_tab {
                 menu = menu.separator();
             }
-            issue_items(menu, &view, number, open, forge.as_deref(), danger)
+            issue_items(menu, &view, number, open, forge.as_deref(), asks)
         }))
         .into_any_element()
 }
@@ -428,7 +432,7 @@ fn issue_items(
     number: u64,
     open: bool,
     forge: Option<&str>,
-    danger: gpui::Hsla,
+    asks: bool,
 ) -> PopupMenu {
     if let Some(forge) = forge {
         let (open_view, copy_view) = (view.clone(), view.clone());
@@ -461,13 +465,17 @@ fn issue_items(
     }
     let view = view.clone();
     // Reopening is a secondary action of a closed issue's work instead.
+    // A plain word: closing can be taken back, so it neither warns nor asks,
+    // but where a run still works on the issue, when it asks first.
     if open {
         menu = menu.item(
-            menu_row(move |_, _| div().text_color(danger).child("Close issue…")).on_click(
-                move |_, window, cx: &mut App| {
-                    view.update(cx, |view, cx| view.confirm_close(number, window, cx))
-                },
-            ),
+            menu_item(match asks {
+                true => "Close issue…",
+                false => "Close issue",
+            })
+            .on_click(move |_, window, cx: &mut App| {
+                view.update(cx, |view, cx| view.confirm_close(number, window, cx))
+            }),
         );
     }
     menu

@@ -15,7 +15,8 @@ use onehand_core::issues::{self, Issues, LabelKind, LocalIssue};
 use onehand_plugin_host::Quiet as _;
 use onehand_plugin_host::search_input;
 use onehand_plugin_host::{
-    ControlSize, Tint, action, menu_below, menu_item, status_ink, switch, tint,
+    ControlSize, Tint, action, menu_below, menu_item, middle_ink, picker, row as row_surface,
+    status_ink, switch, tint,
 };
 use std::collections::BTreeSet;
 
@@ -160,16 +161,16 @@ impl IssuesView {
     /// issue both, so they stay in reach while the two show one at a time.
     pub(super) fn search_bar(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let query = self.query(window, cx);
+        // A filter bar, as a page's is, with no line under it: the space and
+        // the change from controls to rows part the two.
         div()
             .h_flex()
             .items_center()
-            .gap_1()
+            .gap_2()
             .w_full()
             .flex_none()
             .px_3()
             .py_2()
-            .border_b_1()
-            .border_color(cx.theme().border)
             .child(
                 div()
                     .flex_1()
@@ -224,13 +225,11 @@ impl IssuesView {
         let filters = div()
             .h_flex()
             .items_center()
-            .gap_1()
+            .gap_2()
             .w_full()
             .flex_none()
             .px_3()
-            .py_1p5()
-            .border_b_1()
-            .border_color(cx.theme().border)
+            .pb_2()
             .child(div().flex_1().min_w_0().child(switch(
                 "issues-showing",
                 &[
@@ -241,7 +240,7 @@ impl IssuesView {
                     Showing::Open => 0,
                     Showing::Closed => 1,
                 },
-                ControlSize::XSmall,
+                ControlSize::Small,
                 move |picked, _, cx| {
                     view.update(cx, |view, cx| {
                         view.showing = if *picked == 0 {
@@ -324,12 +323,14 @@ impl IssuesView {
         }
         let left_out = labels.len().saturating_sub(LABELS_SHOWN);
         let picked = self.label.clone();
-        let trigger = action("issues-label-filter")
-            .xsmall()
-            .quiet(cx)
-            .label(picked.clone().unwrap_or_else(|| "Label".to_string()))
-            .icon(Icon::new(IconName::ChevronDown))
-            .tooltip("Show only issues with a label");
+        let trigger = picker(
+            "issues-label-filter",
+            picked.clone().unwrap_or_else(|| "Label".to_string()),
+            picked.is_some(),
+            ControlSize::Small,
+            cx,
+        )
+        .tooltip("Show only issues with a label");
         let root = self.root.as_ref()?.display().to_string();
         let view = cx.entity();
         let pick = move |label: Option<String>| {
@@ -386,15 +387,13 @@ impl IssuesView {
         // A project that was kept in step once still holds its links, which is
         // what tells a pause from never having started.
         let paused = issues.listed().iter().any(|issue| issue.link.is_some());
-        let (icon, ink, line, detail) = match (on, syncing, &synced) {
+        let (ink, line, detail) = match (on, syncing, &synced) {
             (true, true, _) => (
-                IconName::LoaderCircle,
                 muted,
                 format!("Syncing with {name}…"),
                 format!("Bringing in what changed on {name} and sending what changed here"),
             ),
             (true, false, Some((at, Ok(said)))) => (
-                IconName::CircleCheck,
                 muted,
                 format!(
                     "Synced with {name} · {}",
@@ -403,19 +402,16 @@ impl IssuesView {
                 said.clone(),
             ),
             (true, false, Some((_, Err(why)))) => (
-                IconName::TriangleAlert,
                 warning,
                 why.lines().next().unwrap_or_default().to_string(),
                 why.clone(),
             ),
             (true, false, None) => (
-                IconName::CircleCheck,
                 muted,
                 format!("Kept in step with {name}"),
                 format!("No sync with {name} has finished since onehand started"),
             ),
             (false, _, _) if paused => (
-                IconName::Pause,
                 muted,
                 format!("Sync with {name} paused"),
                 format!(
@@ -423,7 +419,6 @@ impl IssuesView {
                 ),
             ),
             (false, _, _) => (
-                IconName::Info,
                 muted,
                 format!("Not synced with {name}"),
                 format!("These issues are kept here only; resume to keep them in step with {name}"),
@@ -437,7 +432,6 @@ impl IssuesView {
             .h_flex()
             .items_center()
             .gap_1()
-            .child(Icon::new(icon).xsmall().text_color(ink))
             .child(
                 div()
                     .flex_1()
@@ -454,14 +448,13 @@ impl IssuesView {
             .gap_1()
             .w_full()
             .flex_none()
-            .px_2()
+            .px_3()
             .py_1()
-            .border_t_1()
-            .border_color(cx.theme().border)
             .child(status)
-            // A sync is not offered while one runs: pressed then it would do
-            // nothing, and a control that answers with nothing reads as broken.
-            .when(on && !syncing, |footer| {
+            // *Sync now* stays where it is while a sync runs, spinning: a
+            // control that leaves as it is pressed moves the one beside it
+            // under the pointer.
+            .when(on, |footer| {
                 footer.child(
                     if failed {
                         action("issues-sync-retry")
@@ -474,6 +467,7 @@ impl IssuesView {
                             .xsmall()
                             .quiet_icon(false, cx)
                             .icon(Icon::new(IconName::Redo))
+                            .loading(syncing)
                             .tooltip("Sync now")
                     }
                     .on_click(cx.listener(|view, _: &ClickEvent, _, cx| view.sync(true, cx))),
@@ -517,7 +511,12 @@ impl IssuesView {
     ) -> AnyElement {
         let number = issue.number;
         let theme = cx.theme();
-        let muted = theme.muted_foreground;
+        // On the selected fill the quieter ink is taken under that fill's
+        // own, so it stays a step quieter there rather than sinking into it.
+        let muted = match selected {
+            true => middle_ink(theme.accent_foreground, theme.muted_foreground),
+            false => theme.muted_foreground,
+        };
         let conflicted = issue.link.as_ref().is_some_and(|l| l.conflict.is_some());
         let working = super::working_in(issue, &self.live).is_some();
         let meta = div()
@@ -527,7 +526,7 @@ impl IssuesView {
             .min_w_0()
             .text_xs()
             .text_color(muted)
-            .child(identity(issue, cx))
+            .child(identity(issue, muted, cx))
             .when_some(issue.labels.first(), |meta, label| {
                 meta.child("·")
                     .child(chip(label.clone(), cx))
@@ -548,35 +547,15 @@ impl IssuesView {
                     .child(div().text_color(status_ink(cx).warning).child("decide"))
             })
             // One a live session is on, so it is not started a second time.
-            .when(working, |meta| {
-                meta.child("·").child(
-                    div()
-                        .h_flex()
-                        .items_center()
-                        .gap_0p5()
-                        .child(Icon::new(IconName::Bot).xsmall())
-                        .child("working"),
-                )
-            });
-        div()
+            .when(working, |meta| meta.child("·").child("working"));
+        // A selection is a fill and only a fill, the selected step the ramp
+        // holds clear of the hover step: no bar or ring beside it.
+        row_surface(selected, cx)
             .id(("issue-row", number))
             .v_flex()
             .gap_0p5()
             .w_full()
-            .px_2()
             .py_1p5()
-            .rounded(theme.radius)
-            .cursor_pointer()
-            // A selection is a fill and only a fill: the selected step, which
-            // the ramp holds clear of the hover step, so a row that is both
-            // does not read as merely hovered. No bar or ring beside it.
-            .map(|row| {
-                if selected {
-                    row.bg(theme.accent).text_color(theme.accent_foreground)
-                } else {
-                    row.hover(|row| row.bg(theme.list_hover))
-                }
-            })
             .child(
                 div()
                     .text_sm()
@@ -596,15 +575,15 @@ impl IssuesView {
     }
 }
 
-/// How an issue is named on screen: its forge's reference, muted, or a *Draft*
-/// tag for one that has not left onehand. Its number here is a key and is never
-/// shown.
-pub(super) fn identity(issue: &LocalIssue, cx: &App) -> AnyElement {
+/// How an issue is named on screen: its forge's reference in `ink`, or a
+/// *Draft* tag for one that has not left onehand. Its number here is a key and
+/// is never shown.
+fn identity(issue: &LocalIssue, ink: gpui::Hsla, cx: &App) -> AnyElement {
     match issue.reference() {
         Some(reference) => div()
             .flex_none()
             .text_xs()
-            .text_color(cx.theme().muted_foreground)
+            .text_color(ink)
             .child(reference.to_string())
             .into_any_element(),
         None => plain_tag("Draft".to_string(), cx).into_any_element(),

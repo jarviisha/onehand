@@ -50,7 +50,9 @@ impl IssuesView {
                 .await;
             let _ = view.update(cx, |view: &mut Self, cx| {
                 view.publishing = None;
-                view.status = done.err();
+                if let Err(why) = done {
+                    view.failed = Some(("Publishing the issue", why));
+                }
                 file.update(cx, |file, cx| file.load(cx));
             });
         })
@@ -111,7 +113,7 @@ impl IssuesView {
                     }
                     // The form stays open with what was typed in it: a refusal
                     // is something to correct, not a reason to start again.
-                    Err(why) => view.status = Some(why),
+                    Err(why) => view.failed = Some(("Saving the issue", why)),
                 }
                 cx.notify();
             });

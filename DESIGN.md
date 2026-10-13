@@ -142,10 +142,11 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
     hide. Crowded file tabs: a select.
   - A list beside its detail (files, documents, issues) only while the dock holds both; else one at
     a time, the detail under a link back naming the list. Picking shows it; going back keeps it.
-  - The Issues tab's issue: a trail (project › reference) with its actions (one primary, one
-    other, ⋯); its tags (state badge, project, labels); the title, large; one line of facts; what
-    it waits on (a conflict, where its work stands, the review); then tabs: *Description* (the
-    body, the files it names, what the work left, *Before*) and *Activity N* (the history).
+  - The Issues tab's issue: a trail (project › reference, linked to its forge, or *Draft*) with
+    its actions (one primary, one other, ⋯); its tags (a neutral state badge, labels); the title,
+    large; one line of facts; what it waits on (a conflict, where its work stands, the review);
+    then two chips: *Description* (the body as a document, the files it names, what the work
+    left, *Before*) and *Activity N* (the history). Sections are parted by space, not rules.
     ⋯ ▸ *Open in Issues* and *Review…* open it on the Issues page, the latter with its review open.
   - Hiding a dock keeps its buffers and processes; the terminal's open state follows the project.
 - **Pages without a session.**

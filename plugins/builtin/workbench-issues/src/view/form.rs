@@ -11,10 +11,11 @@ use gpui_component::{ActiveTheme, Sizable as _, StyledExt};
 use onehand_core::issues::template::IssueTemplate;
 use onehand_core::issues::{self, Draft};
 use onehand_plugin_host::Quiet as _;
+use onehand_plugin_host::Refuses as _;
 use onehand_plugin_host::Tall as _;
-use onehand_plugin_host::action;
 use onehand_plugin_host::text_area;
 use onehand_plugin_host::text_input;
+use onehand_plugin_host::{action, field, status_ink};
 
 /// The form a new issue or an edit is written in.
 pub(super) struct Form {
@@ -226,40 +227,58 @@ pub(super) fn form_view(
     writing: bool,
     cx: &mut Context<IssuesView>,
 ) -> AnyElement {
+    let muted = cx.theme().muted_foreground;
+    // The one rule core holds a draft to, said above the submit once the
+    // person has written something, and the reason the submit refuses.
+    let problem = issues::title_problem(&form.title.read(cx).value());
+    let shown = problem.filter(|_| form.changed(cx));
     div()
         .flex_1()
         .min_w_0()
         .h_full()
         .v_flex()
-        .gap_2()
-        .p_2()
-        .child(
-            div()
-                .text_xs()
-                .text_color(cx.theme().muted_foreground)
-                .child({
-                    let said = match form.editing {
-                        Some(_) => match &form.editing_reference {
-                            Some(reference) => format!("Editing {reference}"),
-                            None => "Editing draft".to_string(),
-                        },
-                        None => "New issue".to_string(),
-                    };
-                    match project {
-                        Some(project) => format!("{said} in {project}"),
-                        None => said,
-                    }
-                }),
-        )
-        .child(text_input(&form.title, cx).tall())
-        .child(text_input(&form.labels, cx).tall())
+        .gap_4()
+        .p_4()
+        .child(div().text_xs().text_color(muted).child({
+            let said = match form.editing {
+                Some(_) => match &form.editing_reference {
+                    Some(reference) => format!("Editing {reference}"),
+                    None => "Editing draft".to_string(),
+                },
+                None => "New issue".to_string(),
+            };
+            match project {
+                Some(project) => format!("{said} in {project}"),
+                None => said,
+            }
+        }))
+        .child(field("Title", None, text_input(&form.title, cx).tall(), cx))
+        .child(field(
+            "Labels",
+            Some("Separated by commas".into_any_element()),
+            text_input(&form.labels, cx).tall(),
+            cx,
+        ))
         .children(templates_row(form, templates, cx))
         .child(
-            div()
-                .flex_1()
-                .min_h_0()
-                .child(text_area(&form.body, cx).h_full()),
+            field(
+                "Description",
+                None,
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .child(text_area(&form.body, cx).h_full()),
+                cx,
+            )
+            .flex_1()
+            .min_h_0(),
         )
+        .children(shown.map(|problem| {
+            div()
+                .text_xs()
+                .text_color(status_ink(cx).danger)
+                .child(problem)
+        }))
         .child(
             div()
                 .h_flex()
@@ -267,20 +286,21 @@ pub(super) fn form_view(
                 .justify_end()
                 .child(
                     action("issue-form-cancel")
-                        .small()
+                        .tall()
                         .quiet(cx)
                         .label("Cancel")
                         .on_click(cx.listener(|view, _: &ClickEvent, _, cx| view.cancel_form(cx))),
                 )
                 .child(
                     action("issue-form-save")
-                        .small()
+                        .tall()
                         .primary()
                         .loading(writing)
                         .label(match form.editing {
                             Some(_) => "Save",
                             None => "Create issue",
                         })
+                        .refuses(problem)
                         .on_click(cx.listener(|view, _: &ClickEvent, _, cx| view.save_form(cx))),
                 ),
         )

@@ -476,6 +476,12 @@ rarer screens; saves last, as they move nothing on screen.
   *Activity* switched, nothing sliding; the form with a problem; a failed publish (one toast);
   the tab narrow (list and detail one at a time); both palettes; zoom.
 
+- As built: the Issues tab's search and filters are `.small()`, by the rule decided after step
+  5 (a filter bar is `.small()`); the label filter is a `picker`. The form says its one problem
+  (an issue needs a title, `issues::title_problem` in core) once something is written. A failed
+  write, publish or link is one `failed` toast, pushed on the next frame. The view's requests to
+  the app moved to `view/requests.rs`.
+
 ### 7. The overview and a project's page (M)
 
 - The overview: *Waiting on you* and *Working* stay boxes; *Recent conversations* and *Open

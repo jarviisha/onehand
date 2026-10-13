@@ -31,6 +31,7 @@ mod list;
 mod mentions;
 mod page;
 mod reads;
+mod requests;
 mod review;
 mod store;
 mod tab;
@@ -91,9 +92,12 @@ pub(crate) struct IssuesView {
     /// The tab's width in rems as last laid out. Infinite until measured, so
     /// the first frame draws the two side by side.
     width: onehand_plugin_host::Measured,
-    /// A read or a write that could not be done, as a standing line under the
-    /// body. Cleared by the next one that works.
+    /// A read that could not be done, as a standing line under the body.
+    /// Cleared by the next one that works.
     status: Option<String>,
+    /// A press that failed, what it was and why, said once as a toast on the
+    /// next frame, where the window is to hand.
+    failed: Option<(&'static str, String)>,
     /// The connectors a project may be kept in step with, in the order one is
     /// offered them.
     connectors: &'static [&'static dyn Connector],
@@ -184,6 +188,7 @@ impl IssuesView {
             detail: false,
             width: onehand_plugin_host::unmeasured(),
             status: None,
+            failed: None,
             connectors,
             query: None,
             issue_tab: detail::IssueTab::default(),
@@ -394,29 +399,30 @@ impl IssuesView {
         cx.notify();
     }
 
-    /// Ask before closing issue `number`: closing is the one way an issue
-    /// leaves the work, and on a project kept in step it closes on the forge
-    /// too. Reopening is not asked about — it takes nothing away.
+    /// Close issue `number`. It can be reopened, so it goes ahead without
+    /// asking, unless a run is still working on it, which closing does not
+    /// stop: that is asked about first.
     fn confirm_close(&mut self, number: u64, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.work_active(number) {
+            self.set_open(number, false, cx);
+            return;
+        }
         let Some(root) = self.root.clone() else {
             return;
         };
         let Some(issue) = self.issues_of(&root, cx).and_then(|kept| kept.get(number)) else {
             return;
         };
-        let mut description = match &issue.link {
+        let description = match &issue.link {
             Some(link) => format!(
-                "\u{201c}{}\u{201d} moves to the closed list here and closes on {} at the next sync. It can be reopened.",
+                "\u{201c}{}\u{201d} moves to the closed list here and closes on {} at the next sync. A run is still working on it; closing does not stop it.",
                 issue.title, link.connector
             ),
             None => format!(
-                "\u{201c}{}\u{201d} moves to the closed list. It can be reopened.",
+                "\u{201c}{}\u{201d} moves to the closed list. A run is still working on it; closing does not stop it.",
                 issue.title
             ),
         };
-        if self.work_active(number) {
-            description.push_str(" A run is still working on it; closing does not stop it.");
-        }
         // The project is held so a dialog left open across a switch closes the
         // issue it was opened for, never the same number in another project.
         let root = self.root.clone();
@@ -463,9 +469,12 @@ impl IssuesView {
             .forge(cx)
             .filter(|forge| forge.name() == link.connector)
         else {
-            self.status = Some(format!(
-                "{} {} cannot be reached from this project",
-                link.connector, link.reference
+            self.failed = Some((
+                "Reaching the issue",
+                format!(
+                    "{} {} cannot be reached from this project",
+                    link.connector, link.reference
+                ),
             ));
             cx.notify();
             return;
@@ -478,7 +487,7 @@ impl IssuesView {
             let _ = view.update(cx, |view: &mut Self, cx| match url {
                 Ok(url) => then(url, cx),
                 Err(why) => {
-                    view.status = Some(why);
+                    view.failed = Some(("Reaching the issue", why));
                     cx.notify();
                 }
             });
@@ -509,6 +518,14 @@ impl Render for IssuesView {
                     cx.notify();
                 }
             }));
+        }
+        // Deferred: the toast layer is drawn by the window's root, which is
+        // not to be updated from inside one of its children's renders.
+        if let Some((what, why)) = self.failed.take() {
+            window.defer(cx, move |window, cx| {
+                use gpui_component::WindowExt as _;
+                window.push_notification(onehand_plugin_host::toast::failed(what, why), cx)
+            });
         }
         let body = self.body(window, cx);
         // Coming back to the front reads only what is on screen then.
@@ -617,94 +634,6 @@ impl IssuesView {
             work,
         };
         issue_view(root, &issue, body, publish_to, doing, window, cx)
-    }
-
-    /// Put a request to the Workbench about the project on screen, once this
-    /// view is no longer being updated: the Workbench puts what it is asked to
-    /// every mode, this one included, and a press inside this view lands while
-    /// the view is mid-update.
-    fn ask_later(
-        &self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-        put: impl FnOnce(&Ask, &Path, &mut Window, &mut App) + 'static,
-    ) {
-        let Some(root) = self.root.clone() else {
-            return;
-        };
-        let ask = self.ask.clone();
-        window.defer(cx, move |window, cx| put(&ask, &root, window, cx));
-    }
-
-    /// Start a session on the project on screen, in the checkout it is open
-    /// on, with issue `number` as its first message.
-    fn work_here(&mut self, number: u64, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(prompt) = self
-            .root
-            .as_deref()
-            .and_then(|root| self.issues_of(root, cx)?.get(number))
-            .map(issues::work_here_prompt)
-        else {
-            return;
-        };
-        self.ask_later(window, cx, move |ask, root, window, cx| {
-            let request = Request::WorkIssueHere {
-                root,
-                number,
-                prompt: &prompt,
-            };
-            ask(&request, window, cx)
-        });
-    }
-
-    /// Choose a workflow and work issue `number` of the project on screen
-    /// with it, on a worktree of its own.
-    fn run_workflow(&mut self, number: u64, window: &mut Window, cx: &mut Context<Self>) {
-        self.ask_later(window, cx, move |ask, root, window, cx| {
-            ask(&Request::RunIssueWorkflow { root, number }, window, cx)
-        });
-    }
-
-    /// Put issue `number` of the project on screen on the Issues page.
-    fn open_in_issues(&mut self, number: u64, window: &mut Window, cx: &mut Context<Self>) {
-        self.ask_later(window, cx, move |ask, root, window, cx| {
-            ask(&Request::OpenInIssues { root, number }, window, cx)
-        });
-    }
-
-    /// Ask the app about task `id`, by `request`.
-    fn ask_task(
-        &mut self,
-        id: String,
-        request: fn(&str) -> Request<'_>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.ask_later(window, cx, move |ask, _, window, cx| {
-            ask(&request(&id), window, cx)
-        });
-    }
-
-    /// Put task `id` on screen, on the Tasks page.
-    fn open_task(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
-        self.ask_later(window, cx, move |ask, _, window, cx| {
-            ask(&Request::OpenTask(&id), window, cx)
-        });
-    }
-
-    /// Put the conversation the agent named `session` on screen.
-    fn open_session(&mut self, session: String, window: &mut Window, cx: &mut Context<Self>) {
-        self.ask_later(window, cx, move |ask, _, window, cx| {
-            ask(&Request::OpenConversation(&session), window, cx)
-        });
-    }
-
-    /// Open `path`, relative to the project on screen, in the editor.
-    fn open_path(&mut self, path: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let path = path.to_string();
-        self.ask_later(window, cx, move |ask, root, window, cx| {
-            ask(&Request::OpenFile(&root.join(&path)), window, cx)
-        });
     }
 
     /// The selected issue's body as parsed markdown and the files it names,

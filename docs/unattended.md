@@ -327,8 +327,10 @@ Retry replaced are all dropped the same way. A read that fails keeps the
 last value, marked stale in the warning ink with the failure beside it.
 *Before* counts the task's earlier runs and lists its earlier tasks, five at
 most, one needing attention in the warning ink, each leading to its task.
-Closing an issue whose run is active says *A run is still working on it;
-closing does not stop it*; closing never stops a run.
+Closing an issue goes ahead without asking, as a plain *Close issue* in ⋯, since
+it can be reopened; only an issue whose run is active asks first (*Close
+issue…*), saying *A run is still working on it; closing does not stop it*.
+Closing never stops a run.
 
 **Where an issue's runs are seen with many issues: the Issues page.** The rail's
 *Issues* opens a page of the agent pane listing the issues every project of the
@@ -715,8 +717,8 @@ save the user a `git worktree remove` is the app throwing away work nobody asked
 it to.
 
 **Once its pull request is merged, a person may ask.** The issue's view offers
-*Remove worktree…* beside *Run workflow…* when the pull request reads merged
-(`Act::RemoveWorktree`), and the task detail by the same rule, on the pull
+*Remove worktree…* in its ⋯ menu, in the danger ink, when the pull request
+reads merged (`Act::RemoveWorktree`), and the task detail by the same rule, on the pull
 request it reads when it opens. Its modal names the folder and the branch, in the danger tint. The
 judgement is core's (`worktree::removal::judge`), on facts read off the UI
 thread when the modal opens and again when *Remove* is pressed: it refuses

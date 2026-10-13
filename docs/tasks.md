@@ -399,7 +399,7 @@ migration it protects.
 - **After a restart nothing starts by itself.** A task that was running or queued comes back
   interrupted, under *Needs attention*, and waits for Resume.
 - **Worktrees are never removed unasked.** A task's worktree may hold unpushed commits. Once its
-  pull request is merged a person may press *Remove worktree…* (on the issue, and on the task
+  pull request is merged a person may press *Remove worktree…* (in the issue's ⋯, and on the task
   detail once it has read the pull request), which is judged and asked in a modal
   ([unattended.md](unattended.md#the-report)); the task's marks stay until the history cap drops
   them.
