@@ -16,12 +16,14 @@ How the repository is held together:
 
 - [CONTEXT.md](CONTEXT.md): the glossary; use its terms and never the words it says to avoid.
 - [DESIGN.md](DESIGN.md): the **binding** UI overview (layout, transcript, the visual system
-  and its exceptions), structure and behaviour only.
+  and its exceptions), structure and behaviour only. It defines onehand's own visual language;
+  implementation may lag the contract and must not be treated as its authority.
 - [docs/ui-patterns.md](docs/ui-patterns.md): the patterns every screen repeats (pages, boxes,
   lists, forms, dialogs) and how they behave (waiting, empty, failing, confirming, keys, words).
 - **Every UI change** follows the `design-tokens`, `ui-components`, `layout-patterns` and
   `ux-patterns` skills, and runs the `ui-review` checklist before it is finished. Read their
   files under [.claude/skills/](.claude/skills/) when your host does not load skills.
+  Contract-only work follows `ui-review`'s document path; it does not imply a UI migration.
 - [docs/rules-and-gotchas.md](docs/rules-and-gotchas.md): the full reasons behind the short rules
   and gotchas below.
 - [docs/known-gaps.md](docs/known-gaps.md): what this build deliberately does not do yet, and why.

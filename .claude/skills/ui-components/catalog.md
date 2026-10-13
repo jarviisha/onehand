@@ -3,6 +3,10 @@
 Reuse what is listed here before writing a builder of your own. When this file is out of date, fix
 it in the same change.
 
+This is an implementation inventory. Choose the container through
+[UI patterns](../../../docs/ui-patterns.md#choose-the-container), then find its builder here.
+An existing use may still need migration to the contract; copying it is not a consistency check.
+
 ## gpui-component
 
 The app uses the library for: `Button` (always through `action`), `Input` (always through

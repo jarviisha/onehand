@@ -4,6 +4,10 @@ A lookup, not the rules: which token serves which role is ruled in `DESIGN.md`. 
 the ones the code holds; when this file and the code disagree, the code is right and this file is
 fixed in the same change.
 
+For role selection, start with [the UI contract](../../../DESIGN.md); for spacing relationships
+and density, use [UI patterns](../../../docs/ui-patterns.md#spacing-and-density). The contract
+refresh does not change the values below or certify that existing call sites conform.
+
 ## Colour
 
 Read from `cx.theme()`. The ramp in `crates/app/src/theme.rs` writes them for both palettes, with
@@ -30,11 +34,34 @@ Helpers:
 | `status_ink(cx).danger`, `.warning`, `.success` | status text and marks | `crates/plugin-host/src/lib.rs`; the app says `crate::theme::status_ink` |
 | `tint(base, cx)` | a label's `Tint { fill, ink }` by its hue | `crates/plugin-host/src/lib.rs` |
 | `dock_surface(cx)` | the Workbench's and the terminal's surface | `crates/plugin-host/src/lib.rs` |
-| `meta_ink(cx)` | the transcript's meta text, between prose and muted | `crates/app/src/theme.rs` |
+| `meta_ink(cx)` | the middle ink: a detail beside a name, between prose and muted | `crates/app/src/theme.rs` |
 | `hue_ink(base, cx)` | a hue tempered for ink: code inside prose | `crates/app/src/theme.rs` |
 | `raised(cx)` | the composer card's fill | `crates/app/src/theme.rs` |
 | `inset(cx)` | a field with no edge sunk into the well: the rail's search | `crates/app/src/theme.rs` |
 | `rail_chosen(cx)` | the rail's chosen row | `crates/app/src/theme.rs` |
+
+Inks (roles: `DESIGN.md`, *Type, space and shape*; by place: UI patterns, *Hierarchy*). The three
+neutral ones, for text on a neutral surface:
+
+| Ink | Read as | A plugin reaches it |
+|---|---|---|
+| Full | `cx.theme().foreground` | yes |
+| Middle | `crate::theme::meta_ink(cx)` | not yet: it lives in the app |
+| Muted | `cx.theme().muted_foreground`; the rail's `sidebar_foreground` holds the same step | yes |
+
+Text on a fill takes the ink paired with it:
+
+| Fill | Its ink |
+|---|---|
+| `primary`, a solid `danger` | `primary_foreground`, `danger_foreground`, set by the button's variant |
+| `button_secondary`; a `quiet` ghost | `button_secondary_foreground`; `secondary_foreground`, set by the builder |
+| `accent`, the selected row | `accent_foreground` |
+| `rail_chosen(cx)`, the rail's current row | `sidebar_accent_foreground` |
+| `muted` (a well, the bubble) | the neutral inks, as on the surface: a neutral fill, not a paired one |
+| a badge's `Tint` fill | that `Tint`'s `ink` |
+
+Semantic inks, on any surface: `status_ink(cx)` for a state, `link` for a link or what runs,
+`hue_ink(base, cx)` for code in prose.
 
 ## Spacing
 
@@ -65,8 +92,9 @@ are not steps and stay allowed. A named spacing constant (`BLOCK_GAP`, `TIGHT_GA
 
 - Weights: `.font_medium()` (500), `.font_semibold()` (600).
 - Line height: gpui's default is 1.618; `tokens::LEADING` 1.6; `tokens::LEADING_TIGHT` 1.4.
-- Families: `cx.theme().font_family` (Inter) and `cx.theme().mono_font_family` (JetBrains Mono,
-  unless `[font].monospace` names another).
+- Families: `cx.theme().font_family` (the bundled UI family, `fonts::UI_FAMILY`) and
+  `cx.theme().mono_font_family` (the bundled mono family, `fonts::MONO_FAMILY`, unless
+  `[font].monospace` names another).
 
 ## Corners
 

@@ -1,24 +1,34 @@
 ---
 name: design-tokens
-description: Tokens for colour, spacing, type, corners, shadows and fixed sizes in crates/app, plugins/builtin and crates/plugin-host. Use when writing any style value (a colour, gap, padding, text size, weight, line height, corner, shadow, border or width), or adding a constant, palette step or token.
+description: Apply onehand's visual roles consistently through theme and size tokens. Use for colour, spacing, density, typography, corners, shadows and dimensions in the app and plugins, or when auditing drift between equivalent components.
 ---
 
 # Design tokens
 
 Every value a view draws with is a token: a theme slot, a gpui scale method, or a named constant.
-`DESIGN.md` rules which token serves which role (*Type, space and shape*, *Colour and state*,
-*Exceptions*); read the section for what you draw. [reference.md](reference.md) looks every token
-up by name: where it lives, its value, the slot names that mislead, and what each old value
-becomes.
+[DESIGN.md](../../../DESIGN.md) owns visual roles (*Principles*, *Type, space and shape*,
+*Colour and state*, *Exceptions*). [UI patterns](../../../docs/ui-patterns.md) owns spacing
+relationships and density. [reference.md](reference.md) maps those decisions to existing tokens;
+its values describe the code, not a promise that every caller uses them correctly.
 
 ## Writing a value
 
-1. Name the role: meta text, a row's gap, a box's corner, a floating shadow.
-2. Write the token `DESIGN.md` gives that role, spelled as reference.md spells it.
-3. When no token fits, add one (below).
+1. Name the content role and its context: navigation, reading content, metadata, control,
+   independent summary, well or overlay. Determine its states and the surface it sits on.
+2. Find an equivalent component elsewhere in the app or plugins. Compare spacing, height,
+   type, corner, fill and state treatment against the contract, not just against current code.
+3. Use the pattern's token choices through its shared builder. Repair a shared default at its
+   owner when that is the cause; avoid per-screen overrides that leave peers inconsistent.
+4. For text on a neutral surface, take one of the three neutral inks by its role; on a fill, the
+   ink paired with that fill; for a state, a link or code in prose, its semantic ink (UI
+   patterns, *Hierarchy*). For a colour the ramp lacks between two it holds, mix those two
+   (`mix_oklab`) rather than thinning one with an alpha or picking a value of your own.
+5. Add a token only for a missing role. A new name for an existing value does not justify a new
+   visual treatment. If a shared change affects other callers, include them in the review.
 
-Done when the change writes only tokens and named constants: `.claude/skills/ui-review/scan.sh`
-prints nothing for its lines, and `cargo test -p onehand --locked guards` passes.
+For implementation changes, run the token scan and source guards through `ui-review`. They catch
+literal values, not incorrect role assignments. Report which equivalent components were compared;
+passing a scan alone is not completion. Documentation-only work follows that skill's document path.
 
 ## Right and wrong
 
@@ -78,17 +88,26 @@ Tag::custom(fill, ink, fill).small().rounded(cx.theme().radius_lg).child(text)
 .hover(|row| row.bg(cx.theme().list_hover))
 ```
 
+```rust
+// Wrong: a quieter ink made see-through, a different shade on every fill under it
+.text_color(cx.theme().foreground.opacity(0.6))
+// Right: the ink the role names, a solid step
+.text_color(crate::theme::meta_ink(cx))
+```
+
 ## Adding a token
 
 - **A colour**: a step in both palettes of `Ramp` in `crates/app/src/theme.rs`, written into its
   slot in `paint`, its contrast asserted in that file's tests against every surface it lands on.
-  A plugin reads it through the theme slot.
+  A plugin reads it through the theme slot. A step between two the ramp holds is derived from
+  them with `mix_oklab`, as `meta_ink` and `tint` are, not written as a value of its own.
 - **A size one module uses**: a `const` of type `Rems` beside its use, its reason in its doc
   comment. A spacing value equals a step.
 - **A size a second module needs**: move the constant into `onehand_plugin_host::tokens` in that
   change, and point both modules at it.
-- **A new step in a scale** (a type size, a corner, a spacing step, an elevation): a change to the
-  system. Agree it with the user first, then change `DESIGN.md` with it.
+- **A new step in a scale** (a type size, a corner, a spacing step, an elevation): a system change.
+  Use the user's authorized scope; when it covers the system, update the owning contract and
+  implementation together. Otherwise use an existing role or raise the specific unresolved decision.
 - Add the token to reference.md in the same change.
 
 A file written before the rules names a number when a change touches its line:
