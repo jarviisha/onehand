@@ -438,10 +438,18 @@ pub(in crate::chat) fn floating_card(pinned: bool, cx: &App) -> gpui::Div {
         .when(pinned, |card| card.shadow(crate::tokens::lift(cx)))
 }
 
-/// The shell both pinned cards share: the floating surface, padded by
-/// [`CARD_PAD`], its head, body and foot a step apart.
+/// The shell both pinned cards share: the floating surface holding a head, a
+/// body and a foot, each inset by [`CARD_PAD`] and parted from the next by a
+/// hairline that runs the card's whole width. It clips, so the hairlines end
+/// on the rounded edge rather than a pixel past it.
 pub(super) fn pinned_card(pinned: bool, cx: &App) -> gpui::Div {
-    floating_card(pinned, cx).v_flex().gap_3().p(CARD_PAD)
+    floating_card(pinned, cx).v_flex().overflow_hidden()
+}
+
+/// A pinned card's body, between its head and its foot. The caller sets the
+/// gap between what it holds.
+pub(super) fn card_body() -> gpui::Div {
+    div().v_flex().w_full().px(CARD_PAD).py_3()
 }
 
 /// A pinned card's head: what it asks, in the weight that says nothing
@@ -458,6 +466,10 @@ pub(super) fn card_head(
         .items_center()
         .gap_2()
         .w_full()
+        .px(CARD_PAD)
+        .py_3()
+        .border_b_1()
+        .border_color(cx.theme().border)
         .children(mark.map(|mark| mark.small().flex_none()))
         .child(
             div()
@@ -480,7 +492,7 @@ pub(super) fn card_head(
 /// A pinned card's foot: its answers at the end, wrapping onto a second line
 /// before a label is cut, since a cut grant is one nobody can read the reach
 /// of.
-pub(super) fn card_foot() -> gpui::Div {
+pub(super) fn card_foot(cx: &App) -> gpui::Div {
     div()
         .h_flex()
         .items_center()
@@ -488,6 +500,10 @@ pub(super) fn card_foot() -> gpui::Div {
         .flex_wrap()
         .gap_2()
         .w_full()
+        .px(CARD_PAD)
+        .py_2()
+        .border_t_1()
+        .border_color(cx.theme().border)
 }
 
 // ── shared bits ─────────────────────────────────────────────────────────────

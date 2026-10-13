@@ -2,8 +2,8 @@ use super::metrics::{
     ASK_CHOICE_DOT, ASK_CHOICE_MARK, ASK_MARK_RING, ASK_ROW_MIN, ASK_TAB_W, CARD_PAD, PART_GAP,
 };
 use super::parts::{
-    ActivityRow, BlockingBody, Object, RowMark, activity_row, card_foot, card_head, detail_well,
-    grows, pill, pinned_card,
+    ActivityRow, BlockingBody, Object, RowMark, activity_row, card_body, card_foot, card_head,
+    detail_well, grows, pill, pinned_card,
 };
 use super::{fold_key, live_index};
 use crate::chat::session::ChatSession;
@@ -381,7 +381,7 @@ impl AskForm<'_> {
         let can_advance = self.a.field_answered(active);
         let last = self.a.is_last(active);
 
-        card_foot()
+        card_foot(cx)
             .children((!quick).then(|| {
                 crate::controls::action(("ask-skip", idx))
                     .quiet(cx)
@@ -537,12 +537,10 @@ fn ask_form(
         .is_some_and(|c| !c.trim().is_empty());
 
     let body = card
-        .children(multi_field.then(|| form.tabs(cx)))
         .child(
-            div()
-                .v_flex()
+            card_body()
                 .gap_3()
-                .w_full()
+                .children(multi_field.then(|| form.tabs(cx)))
                 .children(form.question().map(|line| {
                     div()
                         .w_full()

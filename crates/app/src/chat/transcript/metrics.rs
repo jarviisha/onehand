@@ -135,9 +135,10 @@ pub(super) const LINE_SM: Rems = rems(TEXT_SM.0 * crate::tokens::LEADING);
 pub(super) const COMMAND_H: Rems = rems(LINE_SM.0 * 8.);
 
 // The question and permission cards pinned above the composer.
-/// A pinned card's padding, which a question's choices' scroll frame reaches
-/// back through to put the thumb on the card's edge.
-pub(super) const CARD_PAD: Rems = rems(0.75);
+/// A pinned card's side padding, which a question's choices' scroll frame
+/// reaches back through to put the thumb in it: wide enough that the thumb
+/// has room of its own beside the rows.
+pub(super) const CARD_PAD: Rems = rems(1.);
 /// Left and right inside a frame that lays its contents out in columns.
 pub(super) const FRAME_PAD: Rems = rems(0.75);
 /// The radio or checkbox at the head of a choice row, and the mark inside it

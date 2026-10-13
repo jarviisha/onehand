@@ -1,8 +1,8 @@
 use super::ask::user_icon;
 use super::metrics::{FRAME_PAD, STACK_GAP};
 use super::parts::{
-    ActivityRow, Object, RowMark, activity_row, card_foot, card_head, detail_well, grows, pill,
-    pinned_card, plain_box, tool_label,
+    ActivityRow, Object, RowMark, activity_row, card_body, card_foot, card_head, detail_well,
+    grows, pill, pinned_card, plain_box, tool_label,
 };
 use super::tool::{CommandBlock, command_cwd};
 use super::{fold_key, live_index};
@@ -161,10 +161,8 @@ pub(in crate::chat) fn permission(
             cx,
         ))
         .child(
-            div()
-                .v_flex()
+            card_body()
                 .gap_2()
-                .w_full()
                 .child(block)
                 .children(cwd.map(|(shown, full)| {
                     div()
@@ -278,7 +276,7 @@ fn permission_footer(
         PermissionWeight::AllowOnce => 2,
     });
 
-    card_foot().children(options.into_iter().map(|(i, option)| {
+    card_foot(cx).children(options.into_iter().map(|(i, option)| {
         let (id, session) = (option.id.clone(), session.clone());
         let name = option.name.clone();
         grows(crate::controls::action(("perm", i)))

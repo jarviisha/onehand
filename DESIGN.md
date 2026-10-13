@@ -204,7 +204,8 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   neutral. A live failure is a solid danger wash with no edge, and a lost agent's names the key
   that restarts it.
 - **The pinned cards** (a permission, a question) share one shell: a head, the body, the
-  answers at the end at `.small()`, the dismissing one a quiet ghost. A choice is a row on a well
+  answers at the end at `.small()` (a hairline under the head and over the answers, the sides
+  padded `p_4` so a scrolling body's thumb has room), the dismissing one a quiet ghost. A choice is a row on a well
   of its own at rest and on the selected step when taken, a radio or checkbox drawn in ink at
   its head (the library's rings vanish on the selected step) and its number as a `Kbd`; a typed answer is a plain field. Their keys are named in tooltips, never in a label.
   The card holds the one primary while it shows.
