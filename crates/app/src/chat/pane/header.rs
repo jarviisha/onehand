@@ -1,10 +1,10 @@
 use super::{ChatPane, ChatPaneEvent, ProjectAction, ProjectFacts};
-use crate::controls::Quiet as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{App, Context, Entity, IntoElement, ParentElement, Rems, Styled, Window, div, rems};
 use gpui_component::menu::PopupMenuItem;
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, IconName, StyledExt};
 use onehand_core::chat::{Chat, ConvMeta};
+use onehand_plugin_host::strip_control;
 use std::path::PathBuf;
 
 /// How little the header will settle for before it stops taking room from the
@@ -76,7 +76,7 @@ impl ChatPane {
         let chat = self.active_chat(cx);
         let title = chat.and_then(Chat::conversation_title).unwrap_or_else(|| {
             match (&self.page, &self.empty) {
-                (Some(super::Page::Workspace(_)), _) => "Workspace".to_string(),
+                (Some(super::Page::Workspace(_)), _) => "Overview".to_string(),
                 (Some(super::Page::Tasks(_)), _) => "Tasks".to_string(),
                 (Some(super::Page::Issues(_)), _) => "Issues".to_string(),
                 (Some(super::Page::Workflows(_)), _) => "Workflows".to_string(),
@@ -98,19 +98,12 @@ impl ChatPane {
         // entry behind it would be about something that does not exist yet.
         let live = chat.is_some();
 
-        div()
-            .h_flex()
-            .items_center()
-            .gap_2()
-            .w_full()
-            // **A fixed height, not one the tallest control happens to make.**
-            // It is the one row that never scrolls, so it is the edge every
-            // other measurement in the panel is taken from -- and sized by its
-            // contents it moved whenever a badge appeared or a title wrapped,
-            // taking the top of the conversation with it.
-            .flex_none()
-            .h(crate::tokens::BAR_H)
-            .px_3()
+        // **A strip, at a fixed height rather than one the tallest control
+        // happens to make.** It is the one row that never scrolls, so it is
+        // the edge every other measurement in the panel is taken from -- and
+        // sized by its contents it moved whenever a badge appeared or a title
+        // wrapped, taking the top of the conversation with it.
+        onehand_plugin_host::strip(cx)
             // **No rule under it.** A hairline is an edge between two surfaces,
             // and there are not two here: the header and the transcript are one
             // reading surface, and what separates them is that one is a row of
@@ -124,7 +117,6 @@ impl ChatPane {
             // costs is a rule drawn permanently for a state the reader is only
             // in while scrolling -- and the fade at the other end of the list is
             // the answer that shape of problem actually takes.
-            .text_color(cx.theme().muted_foreground)
             // Hiding the rail must not be a one-way door: with it gone there is
             // no workspace name, no project list and no session list, and the
             // way back would be a keystroke the user would have had to already
@@ -186,7 +178,7 @@ impl ChatPane {
                     // reach says "dismiss this" -- beside two dock toggles it
                     // read as closing a panel, and a power mark read as
                     // quitting the whole app.
-                    header_control("close-session", crate::icons::Icon::LogOut, false, cx)
+                    strip_control("close-session", crate::icons::Icon::LogOut, false, cx)
                         .tooltip_with_action(
                             "Close this session and its agent",
                             &crate::shell::CloseSession,
@@ -223,7 +215,7 @@ impl ChatPane {
                 row.child(
                     // Lit while its dock is open, so the button says which
                     // way the next press goes.
-                    header_control(
+                    strip_control(
                         "workbench",
                         IconName::PanelRight,
                         self.docks_open.workbench,
@@ -250,19 +242,19 @@ impl ChatPane {
             })
     }
 
-    /// The way to the terminal, and whether a shell is already running in it.
+    /// The way to the terminal, and whether a command is running in it.
     ///
     /// **The dot is the whole reason this is not one more plain button.** A
-    /// shell outliving a closed dock is the one fact the icon cannot carry: the
-    /// child is still running, it is still holding whatever it was doing, and
-    /// closing the window is what would end it. It rides at the corner rather
-    /// than inside the button so the button keeps the square metrics its
-    /// neighbours have — a child in the content row would make this one control
-    /// wider than the three beside it, which reads as a mistake.
+    /// command still running behind a closed dock is the one fact the icon
+    /// cannot carry: it is still doing whatever it was doing, and closing the
+    /// window is what would end it. A shell idle at its prompt is not that, and
+    /// a dot lit for it would never go out. It rides at the corner rather than
+    /// inside the button so the button keeps the square metrics its neighbours
+    /// have — a child in the content row would make this one control wider than
+    /// the three beside it, which reads as a mistake.
     ///
-    /// The accent, the ink of something running: the dot is about a process
-    /// still going, and shows only while the dock is closed, since an open
-    /// terminal shows the shell itself.
+    /// The accent, the ink of something running, and only while the dock is
+    /// closed, since an open terminal shows the command itself.
     fn terminal_control(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let live = self.terminal_live;
         let open = self.docks_open.terminal;
@@ -272,7 +264,7 @@ impl ChatPane {
             .relative()
             .flex_none()
             .child(
-                header_control("terminal", IconName::SquareTerminal, open, cx)
+                strip_control("terminal", IconName::SquareTerminal, open, cx)
                     // What it says is about the *shell*, which is the fact
                     // this pane is pushed and the one the icon cannot carry.
                     // Which way the press will go is left out for the reason
@@ -281,9 +273,9 @@ impl ChatPane {
                     // keep in step.
                     .tooltip_with_action(
                         if live {
-                            "A shell is running here — show or hide the terminal"
+                            "A command is running in a shell here — show or hide the terminal"
                         } else {
-                            "Open a shell in this project"
+                            "Show or hide the terminal"
                         },
                         &crate::shell::ToggleTerminal,
                         None,
@@ -386,7 +378,7 @@ impl ChatPane {
         // the dropdown's every anchor opens the menu *over* its trigger and
         // the ask here is that the popup land under the dots that were
         // pressed.
-        let trigger = header_control("conversation-menu", IconName::EllipsisVertical, false, cx)
+        let trigger = strip_control("conversation-menu", IconName::EllipsisVertical, false, cx)
             .tooltip(match project.is_some() {
                 true => "Everything done to this project",
                 false => "Everything done to this conversation",
@@ -410,21 +402,16 @@ impl ChatPane {
                     let (rename, export, history) = (this.clone(), this.clone(), this.clone());
                     let (restart, remove) = (this.clone(), this.clone());
                     let archive = archive.clone();
-                    menu.item(
-                        crate::controls::menu_item("Rename…")
-                            .icon(Icon::new(crate::icons::Icon::SquarePen))
-                            .on_click(move |_, _, cx: &mut App| {
-                                rename
-                                    .update(cx, |_: &mut Self, cx| cx.emit(ChatPaneEvent::Rename));
-                            }),
-                    )
-                    .item(
-                        crate::controls::menu_item("Export as Markdown…")
-                            .icon(Icon::new(IconName::ExternalLink))
-                            .on_click(move |_, window, cx: &mut App| {
-                                export.update(cx, |pane: &mut Self, cx| pane.export(window, cx));
-                            }),
-                    )
+                    menu.item(crate::controls::menu_item("Rename…").on_click(
+                        move |_, _, cx: &mut App| {
+                            rename.update(cx, |_: &mut Self, cx| cx.emit(ChatPaneEvent::Rename));
+                        },
+                    ))
+                    .item(crate::controls::menu_item("Export as Markdown…").on_click(
+                        move |_, window, cx: &mut App| {
+                            export.update(cx, |pane: &mut Self, cx| pane.export(window, cx));
+                        },
+                    ))
                     .separator()
                     .item(
                         // Named for what it does *to this session*, because the
@@ -442,19 +429,19 @@ impl ChatPane {
                             true => PopupMenuItem::new("Resume in this session…"),
                             false => crate::controls::menu_item("Resume in this session…"),
                         }
-                        .icon(Icon::new(IconName::Undo))
                         .disabled(busy)
                         .on_click(move |_, _, cx: &mut App| {
                             history.update(cx, |pane: &mut Self, cx| pane.show_history(cx));
                         }),
                     )
                     .item(
-                        crate::controls::menu_item("Restart the agent")
-                            .icon(Icon::new(IconName::Redo))
-                            .on_click(move |_, _, cx: &mut App| {
-                                restart
-                                    .update(cx, |_: &mut Self, cx| cx.emit(ChatPaneEvent::Restart));
-                            }),
+                        crate::controls::menu_command(
+                            "Restart the agent",
+                            Box::new(crate::shell::RestartSession),
+                        )
+                        .on_click(move |_, _, cx: &mut App| {
+                            restart.update(cx, |_: &mut Self, cx| cx.emit(ChatPaneEvent::Restart));
+                        }),
                     )
                     .separator()
                     .item(
@@ -475,7 +462,6 @@ impl ChatPane {
                                 false => crate::controls::menu_row(row),
                             }
                         }
-                        .icon(Icon::new(IconName::Delete).text_color(danger))
                         // An entry that can only report that it has nothing to do is
                         // one the eye has to learn to skip, so it is refused rather
                         // than hidden -- the menu keeps its shape between one turn
@@ -536,7 +522,6 @@ fn project_menu(
             // marker anywhere on this page, a project would otherwise only say
             // it is pinned by where it sits in a rail that may be hidden.
             crate::controls::menu_item(if pinned { "Unpin" } else { "Pin to top" })
-                .icon(Icon::new(IconName::Star))
                 .on_click(act(ProjectAction::TogglePin, pane.clone())),
         )
         .when_some(unattended, |menu, on| {
@@ -557,18 +542,15 @@ fn project_menu(
         .when(is_repo, |menu| {
             menu.item(
                 crate::controls::menu_item("New worktree…")
-                    .icon(Icon::new(crate::icons::Icon::GitBranch))
                     .on_click(act(ProjectAction::Worktree, pane.clone())),
             )
         })
         .item(
             crate::controls::menu_item("Copy project path")
-                .icon(Icon::new(IconName::Copy))
                 .on_click(act(ProjectAction::CopyPath, pane.clone())),
         )
         .item(
             crate::controls::menu_item("Refresh Git status")
-                .icon(Icon::new(IconName::Redo))
                 .on_click(act(ProjectAction::RefreshGit, pane.clone())),
         )
         .separator()
@@ -576,7 +558,6 @@ fn project_menu(
             crate::controls::menu_row(move |_, _| {
                 div().text_color(danger).child("Remove from workspace…")
             })
-            .icon(Icon::new(IconName::Delete).text_color(danger))
             .on_click(act(ProjectAction::Remove, pane.clone())),
         )
     }
@@ -584,34 +565,9 @@ fn project_menu(
 
 /// The way back to a hidden rail.
 pub(super) fn show_rail(cx: &mut Context<ChatPane>) -> gpui_component::button::Button {
-    header_control("show-rail", IconName::PanelLeftOpen, false, cx)
+    strip_control("show-rail", IconName::PanelLeftOpen, false, cx)
         .tooltip_with_action("Show the navigation rail", &crate::shell::ToggleRail, None)
         .on_click(cx.listener(|_: &mut ChatPane, _, _, cx| {
             cx.emit(ChatPaneEvent::ShowRail);
         }))
-}
-
-/// One of the header's controls.
-///
-/// **Bigger and quieter than the library's default.** Two changes that pull in
-/// opposite directions and are one decision: at the smallest size these were
-/// three glyphs the pointer had to be aimed at, and at full-strength ink four
-/// icons in a row out-shouted the conversation's own name two inches to their
-/// left. A step up in size makes them easy to hit; a step down in tone puts them
-/// behind the name, which is what the header is for. What brings the ink back is
-/// hovering one, or its being `on` — the fill arrives and says which is about to
-/// be pressed, or which dock is open.
-///
-/// Built in one place because the alternative is four call sites that each have
-/// to remember two things, and the one that forgets is the one that looks wrong.
-pub(super) fn header_control(
-    id: &'static str,
-    icon: impl Into<Icon>,
-    on: bool,
-    cx: &App,
-) -> gpui_component::button::Button {
-    crate::controls::action(id)
-        .quiet_icon(on, cx)
-        .small()
-        .icon(icon.into())
 }

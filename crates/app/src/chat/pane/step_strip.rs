@@ -46,29 +46,20 @@ impl ChatPane {
                 .items_center()
                 .gap_1()
                 .when(i > 0, |row| {
-                    row.child(Icon::new(IconName::ChevronRight).size_3().text_color(muted))
+                    row.child(Icon::new(IconName::ChevronRight).xsmall().text_color(muted))
                 })
                 .when(i < at_step, |row| {
-                    row.child(Icon::new(IconName::CircleCheck).size_3().text_color(muted))
+                    row.child(Icon::new(IconName::CircleCheck).xsmall().text_color(muted))
                 })
                 .child(
                     div()
                         .child(label)
-                        .text_color(if i == at_step { foreground } else { muted })
-                        .when(i == at_step, |label| label.font_semibold()),
+                        .text_color(if i == at_step { foreground } else { muted }),
                 )
         });
         Some(
-            div()
-                .h_flex()
-                .flex_none()
-                .items_center()
-                .gap_1()
-                .px_4()
-                .py_1()
-                .text_xs()
-                .text_color(muted)
-                .child(div().flex_none().mr_1().child(shown.name))
+            onehand_plugin_host::strip(cx)
+                .child(div().flex_none().child(shown.name))
                 .child(
                     div()
                         .h_flex()
@@ -82,7 +73,7 @@ impl ChatPane {
                         .h_flex()
                         .flex_none()
                         .ml_auto()
-                        .gap_1()
+                        .gap_2()
                         .when_some(shown.review, |row, review| {
                             let task = shown.task.to_string();
                             let pressed = Approval {
@@ -92,7 +83,7 @@ impl ChatPane {
                             let (read, revised) = (review, pressed.clone());
                             row.child(
                                 crate::controls::action("workflow-review")
-                                    .xsmall()
+                                    .small()
                                     .quiet(cx)
                                     .label("Review…")
                                     .tooltip("Read what is waiting for approval")
@@ -103,7 +94,7 @@ impl ChatPane {
                             )
                             .child(
                                 crate::controls::action("workflow-revise")
-                                    .xsmall()
+                                    .small()
                                     .quiet(cx)
                                     .label("Revise…")
                                     .on_click(cx.listener(move |_, _, window, cx| {
@@ -112,9 +103,8 @@ impl ChatPane {
                             )
                             .child(
                                 crate::controls::action("workflow-continue")
-                                    .xsmall()
+                                    .small()
                                     .primary()
-                                    .icon(Icon::new(IconName::Check))
                                     .label("Continue")
                                     .tooltip("Approve it and go on to the next step")
                                     .on_click(cx.listener(move |_, _, window, cx| {
@@ -125,7 +115,7 @@ impl ChatPane {
                         })
                         .child(
                             crate::controls::action("workflow-stop")
-                                .xsmall()
+                                .small()
                                 .quiet(cx)
                                 .label("Stop")
                                 .tooltip("Cancel the turn and end the run here")
@@ -259,7 +249,6 @@ pub(super) fn open_review(
                         crate::controls::action("workflow-review-continue")
                             .tall()
                             .primary()
-                            .icon(Icon::new(IconName::Check))
                             .label("Continue")
                             .on_click(move |_, window: &mut Window, cx: &mut App| {
                                 window.close_dialog(cx);

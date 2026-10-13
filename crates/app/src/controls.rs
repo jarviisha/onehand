@@ -39,7 +39,7 @@ pub(crate) fn action(id: impl Into<ElementId>) -> Button {
 /// [`onehand_plugin_host`], which is where a built-in plugin can reach them too
 /// — a plugin that draws a menu cannot reach into the binary hosting it, and a
 /// second copy is a second place for the arrow cursor to come back.
-pub(crate) use onehand_plugin_host::{menu_below, menu_item, menu_row};
+pub(crate) use onehand_plugin_host::{menu_below, menu_command, menu_item, menu_row};
 
 /// A text field at a control's corner. The rule and its reasoning live with
 /// the definition in [`onehand_plugin_host`], where a built-in plugin's fields

@@ -112,7 +112,7 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   this session…*, refused mid-turn, and *Restart the agent*; *Delete conversation* in the danger
   tint, refused until the first turn ends); a spacer; past conversations and *Close session*
   (only while a session shows); the terminal, an accent dot on it while its dock is closed over a
-  live shell; last, the Workbench. The two dock buttons are filled while their dock is open. On
+  shell running a command; last, the Workbench. The two dock buttons are filled while their dock is open. On
   a page (the overview, Tasks, Issues, Workflows, Settings) it reads the page's name, with no dots
   menu and no dock buttons. As the pane narrows, the name gives way first, down to a minimum.
   Without a session it names the project, its dots menu holding the project's
@@ -138,7 +138,8 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   conversation a readable height (its dragged height kept).
   - Strips as tall as the header. The Workbench's: *← Conversation* while it has the area, the
     modes (Editor, Markdown, Issues, Plugins, Neovim; a select when narrow), maximize, hide. The
-    terminal's: shell tabs (capped, scrolling), `+`, maximize, hide. Crowded file tabs: a select.
+    terminal's: shell tabs (each capped in width, scrolling, so none is left out), `+`, maximize,
+    hide. Crowded file tabs: a select.
   - A list beside its detail (files, documents, issues) only while the dock holds both; else one at
     a time, the detail under a link back naming the list. Picking shows it; going back keeps it.
   - The Issues tab's issue: a trail (project › reference) with its actions (one primary, one

@@ -5,10 +5,7 @@ use crate::document::{RootDocs, list, reader};
 use gpui::{
     App, AppContext as _, Context, Entity, IntoElement, ParentElement, Render, Styled, Window, div,
 };
-use gpui_component::{
-    ActiveTheme, IconName, Sizable as _, StyledExt, h_resizable, resizable_panel,
-};
-use onehand_plugin_host::Quiet as _;
+use gpui_component::{ActiveTheme, IconName, StyledExt, h_resizable, resizable_panel};
 use onehand_plugin_host::{
     Ask, ListWidths, Request, back_link, hint, list_detail, measure_width, status_ink, status_line,
 };
@@ -398,19 +395,21 @@ impl MarkdownView {
                     cx.notify();
                 }))
                 .into_any_element(),
-            false => onehand_plugin_host::action("markdown-toggle-list")
-                .xsmall()
-                .quiet_icon(false, cx)
-                .icon(match self.list_shown {
+            false => onehand_plugin_host::strip_control(
+                "markdown-toggle-list",
+                match self.list_shown {
                     true => IconName::PanelLeftClose,
                     false => IconName::PanelLeftOpen,
-                })
-                .tooltip(match self.list_shown {
-                    true => "Hide the document list",
-                    false => "Show the document list",
-                })
-                .on_click(cx.listener(|view: &mut Self, _, _, cx| view.toggle_list(cx)))
-                .into_any_element(),
+                },
+                false,
+                cx,
+            )
+            .tooltip(match self.list_shown {
+                true => "Hide the document list",
+                false => "Show the document list",
+            })
+            .on_click(cx.listener(|view: &mut Self, _, _, cx| view.toggle_list(cx)))
+            .into_any_element(),
         };
         let reader = {
             let path = docs.open.as_ref().map(|doc| doc.path.clone());

@@ -320,10 +320,12 @@ rarer screens; saves last, as they move nothing on screen.
   in their fill's ink while on; the terminal's dot by decision 10; *Restart the agent* shows its
   key; icons by decision 7.
 - The step strip: its labels at chrome size, the current one in full ink and no extra weight;
-  `.small()` controls; *Continue* without its icon, primary by decision 2; its *Stop* a quiet
-  word, as a run can be resumed.
-- The docks: the Workbench's modes as `choice` buttons; `tab_select` `.small()`, its caret drawn
-  in the builder; `tab_chip`'s chosen ink paired with its fill; the editor's and Markdown's
+  `.small()` controls; *Continue* without its icon, primary by decision 2 (*Send* steps down
+  beside it in step 3, where the composer is drawn); its *Stop* a quiet word, as a run can be
+  resumed.
+- The docks: the Workbench's modes stay the quiet, selected buttons they are (a `choice` drawn
+  inline, so its name can truncate); `tab_select` `.small()`, its caret the library's, in the
+  builder; `tab_chip`'s chosen ink paired with its fill; the editor's and Markdown's
   controls `.small()`, *Edit source* in a reserved slot. A shell failing to start beside open
   tabs is an `error` toast; an empty dock that cannot start one, a `status_line`. *New terminal*
   without its icon.
@@ -344,6 +346,7 @@ rarer screens; saves last, as they move nothing on screen.
   commands match*).
 - The attachment manager: its rows are `popup_row`s at `ROW_H`, no row at the library's default
   size, capped at six with *N more*; the unreadable mark in a `slot`.
+- *Send* steps down to `secondary` while the run on screen waits at an approval (decision 2).
 - The chips by decision 6: one `chip` at one size, a caret on every picker, its glyph in its
   words' ink, the paired ink while open; the model and effort chips `gap_2` apart; *Queue* and
   *Stop* `gap_2`; the narrow stack `gap_2`; the `+` glyph at its button's size.
@@ -476,7 +479,8 @@ rarer screens; saves last, as they move nothing on screen.
   `.loading(true)` while its check runs. The check command a `field`, `.tall()`. Past
   conversations as `row`s, *Delete…* by decision 3; the confirmation's title names the
   conversation; the resume picker capped; the line without a project a `hint`; icons by
-  decision 7.
+  decision 7; its menu's *Remove from workspace* takes its ellipsis only when it asks, as the
+  rail's does.
 - Contract: DESIGN *Layout* (the overview's sections; a project's page and its head).
 - Acceptance: the overview with no project, one and many (tiles wrapping); its filter set, the
   page left and shown again; a project with sessions and without, its check run once and

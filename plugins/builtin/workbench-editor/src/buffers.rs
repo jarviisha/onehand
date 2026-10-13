@@ -12,9 +12,8 @@ use gpui::{
     StatefulInteractiveElement, Styled, WeakEntity, Window, div, rems,
 };
 use gpui_component::input::{Editor, EditorState};
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, IconName, StyledExt};
 use onehand_core::editor::{RootEditors, SaveOutcome};
-use onehand_plugin_host::Quiet as _;
 use onehand_plugin_host::{Measured, TabStrip, menu_below, menu_row, tab_strip as tab_strip_rule};
 use std::collections::HashMap;
 use std::path::Path;
@@ -159,11 +158,7 @@ pub(crate) fn tab_strip<T: 'static>(
                 true => (IconName::PanelLeftClose, "Hide the file tree"),
                 false => (IconName::PanelLeftOpen, "Show the file tree"),
             };
-            onehand_plugin_host::action("toggle-file-tree")
-                .quiet_icon(false, cx)
-                .xsmall()
-                .flex_none()
-                .icon(Icon::new(icon))
+            onehand_plugin_host::strip_control("toggle-file-tree", icon, false, cx)
                 .tooltip(hint)
                 .on_click(on_toggle_tree)
                 .into_any_element()
@@ -222,7 +217,7 @@ pub(crate) fn tab_strip<T: 'static>(
             let select = on_select.clone();
             let menu = menu_below(
                 menu_id,
-                onehand_plugin_host::tab_select("editor-tab-select", label, hint, cx).xsmall(),
+                onehand_plugin_host::tab_select("editor-tab-select", label, hint, cx),
                 move |mut menu, _, _| {
                     let (shown, left_out) = onehand_plugin_host::tab_menu_rows(rows.len(), active);
                     for i in shown {
@@ -261,15 +256,7 @@ pub(crate) fn tab_strip<T: 'static>(
         }
     };
 
-    div()
-        .h_flex()
-        .items_center()
-        .gap_2()
-        .w_full()
-        .px_3()
-        .py_1p5()
-        .border_b_1()
-        .border_color(cx.theme().border)
+    onehand_plugin_host::strip(cx)
         .child(lead)
         // The one part of the row that gives way, and the box the tabs are
         // laid out to: `flex_1` + `min_w_0`, so its width is what is left
@@ -283,17 +270,11 @@ pub(crate) fn tab_strip<T: 'static>(
                 .child(onehand_plugin_host::measure_width(measured.clone(), view))
                 .child(tab_list),
         )
-        // Muted like the other strips' controls: a ghost button in full ink is
-        // the brightest thing on the row, out-shouting the file names beside it.
         // Its tooltip is what tells it from a tab's own cross, which is the
         // same glyph.
         .when(!files.is_empty(), |strip| {
             strip.child(
-                onehand_plugin_host::action("close-all-files")
-                    .quiet_icon(false, cx)
-                    .xsmall()
-                    .flex_none()
-                    .icon(Icon::new(IconName::Close))
+                onehand_plugin_host::strip_control("close-all-files", IconName::Close, false, cx)
                     .tooltip("Close all files")
                     .on_click(on_close_all),
             )

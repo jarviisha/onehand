@@ -33,10 +33,11 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | A button that can refuse | `.refuses(why)`: refusing while `why` is `Some`, its reason the tooltip; called after the control's own tooltip (the `Refuses` trait, re-exported by `crates/app/src/controls.rs`) | `crates/plugin-host/src/lib.rs` |
 | A small label, a badge | `badge(text, tint, cx)`: the library's `Tag` at `.small()` on the large corner, in a `Tint`'s fill and ink (`tint(base, cx)` for a hue) | `crates/plugin-host/src/lib.rs` |
 | A mark down a column (an icon, a state's mark, a dot) | `mark_slot(mark)`: one icon wide, centred, so marks share a line and labels an edge | `crates/plugin-host/src/lib.rs` |
-| A menu, its rows, a menu under its control | `menu_item`, `menu_row`, `menu_below` | `crates/plugin-host/src/menu.rs` |
+| A menu, its rows, a menu under its control | `menu_item`, `menu_row`, `menu_below`; `menu_command(label, action)` for a row that runs a keymap command and shows its key | `crates/plugin-host/src/menu.rs` |
+| A strip along the top of a region, and its icon control | `strip(cx)`, `strip_control(id, icon, on, cx)` | `crates/plugin-host/src/strip.rs` |
 | One of a few choices, the taken one filled (filter chips) | `choice` (a `quiet` ghost button, `selected` when taken, at the `ControlSize` its role takes) | `crates/plugin-host/src/lib.rs` |
 | A choice between a few views, every one the same width | `switch` (a `choice` per view at `flex_1`, at one `ControlSize`) | `crates/plugin-host/src/lib.rs` |
-| Tabs that fit their strip, or one select | `tab_strip`, `tab_select`, `tab_menu_rows`, `measure_width` | `crates/plugin-host/src/tabs.rs` |
+| Tabs that fit their strip, or one select | `tab_strip`, `tab_chip`, `tab_close`, `tab_select` (at a strip's size, with the picker's caret), `tab_menu_rows`, `measure_width` | `crates/plugin-host/src/tabs.rs` |
 | A list beside its detail, or one at a time | `list_detail`, `ListWidths`, `back_link` | `crates/plugin-host/src/list_detail.rs` |
 | A line filling an empty panel | `hint` | `crates/plugin-host/src/lib.rs` |
 | A condition standing under a view | `status_line(message, ink)`, in the ink of its state | `crates/plugin-host/src/lib.rs` |

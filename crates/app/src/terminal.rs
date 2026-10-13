@@ -13,7 +13,6 @@
 //! PTY/grid ownership is shared with the Neovim plugin through
 //! `onehand-terminal-ui`.
 
-use crate::controls::Quiet as _;
 use crate::controls::Tall as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -23,7 +22,7 @@ use gpui::{
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::dock::{Panel, PanelControl, PanelEvent};
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, IconName, StyledExt};
 use onehand_terminal_ui::{Program, PtyTab, TerminalThemeKey, spawn_pty, terminal_palette};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -190,7 +189,7 @@ impl TerminalPanel {
     ///
     /// Always a new one — shells are what somebody opens several of on purpose,
     /// one per thing they are watching.
-    pub fn open_shell(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+    pub fn open_shell(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(root) = self.root.clone() else {
             return;
         };
@@ -206,10 +205,18 @@ impl TerminalPanel {
                 let _ = panel.update(cx, |panel: &mut Self, cx| panel.reap(window, cx));
             },
         );
+        // Beside open tabs a failed start is a press that failed, said once
+        // as a toast; with none, the dock has nothing to show but why, which
+        // stands under its *New terminal* until a start goes through.
+        let had_tabs = self.has_shell();
         match spawned {
             Ok(shell) => {
                 self.shells.entry(root).or_default().push(shell);
                 self.status = None;
+            }
+            Err(e) if had_tabs => {
+                use gpui_component::WindowExt as _;
+                window.push_notification(crate::toast::failed("Opening a shell", e), cx);
             }
             Err(e) => self.status = Some(e),
         }
@@ -383,6 +390,14 @@ impl TerminalPanel {
         self.active_set().is_some_and(|set| !set.tabs.is_empty())
     }
 
+    /// Whether a shell of the active root has a command in its foreground: a
+    /// build, a server, an editor. A shell idle at its prompt is not running
+    /// anything, and one whose system will not say is not counted either.
+    pub fn running(&self) -> bool {
+        self.active_set()
+            .is_some_and(|set| set.tabs.iter().any(|tab| tab.shell.busy() == Some(true)))
+    }
+
     /// Focus the active shell, not the panel: the point of reaching for the
     /// terminal is to type into it.
     pub fn focus_active(&self, window: &mut Window, cx: &mut App) {
@@ -552,18 +567,10 @@ impl TerminalPanel {
                 // Drawn here rather than with the library's `TabBar`, whose
                 // variants each bring a plate, a capsule, a ring or a border of
                 // their own: a tab here is a flat label on the dock, the chosen
-                // one on the selected fill, and nothing else. A bar as tall as
-                // the header, ruled under, so the shell below reads as content.
-                div()
+                // one on the selected fill, and nothing else. A strip like every
+                // other, the shell below it parted from it by the space.
+                onehand_plugin_host::strip(cx)
                     .id("terminal-tabs")
-                    .h_flex()
-                    .flex_none()
-                    .items_center()
-                    .h(crate::tokens::BAR_H)
-                    .gap_1()
-                    .px_3()
-                    .border_b_1()
-                    .border_color(cx.theme().border)
                     // The tabs live in a box of their own that scrolls sideways,
                     // and that box is what gives way, so `+` and the controls at
                     // the end stay on screen at any count.
@@ -614,11 +621,7 @@ impl TerminalPanel {
                     // the panel. The hover fill brings it back on the one about
                     // to be pressed.
                     .child(
-                        crate::controls::action("add-shell")
-                            .quiet_icon(false, cx)
-                            .small()
-                            .flex_none()
-                            .icon(Icon::new(IconName::Plus))
+                        onehand_plugin_host::strip_control("add-shell", IconName::Plus, false, cx)
                             .tooltip("New shell in this project")
                             .on_click(cx.listener(|panel: &mut Self, _, window, cx| {
                                 panel.open_shell(window, cx);
@@ -629,44 +632,46 @@ impl TerminalPanel {
                     // user looking for the way back.
                     .child({
                         let full = self.maximized;
-                        crate::controls::action("maximize-terminal")
-                            .quiet_icon(false, cx)
-                            .small()
-                            .flex_none()
-                            .icon(Icon::new(match full {
+                        onehand_plugin_host::strip_control(
+                            "maximize-terminal",
+                            match full {
                                 true => IconName::Minimize,
                                 false => IconName::Maximize,
-                            }))
-                            .tooltip_with_action(
-                                match full {
-                                    true => "Back to the dock",
-                                    false => "Fill the window",
-                                },
-                                &crate::shell::ToggleMaximize,
-                                None,
-                            )
-                            .on_click(cx.listener(|_: &mut Self, _, _, cx| {
-                                cx.emit(TerminalPanelEvent::ToggleMaximize);
-                            }))
+                            },
+                            false,
+                            cx,
+                        )
+                        .tooltip_with_action(
+                            match full {
+                                true => "Back to the dock",
+                                false => "Fill the window",
+                            },
+                            &crate::shell::ToggleMaximize,
+                            None,
+                        )
+                        .on_click(cx.listener(|_: &mut Self, _, _, cx| {
+                            cx.emit(TerminalPanelEvent::ToggleMaximize);
+                        }))
                     })
                     // A minus, as the Workbench's: the shells are not being
                     // ended, which the cross on every tab is for. `Minus` and
                     // never `Dash`, whose stroke is written as literal black and
                     // ignores `text_color`.
                     .child(
-                        crate::controls::action("hide-terminal")
-                            .quiet_icon(false, cx)
-                            .small()
-                            .flex_none()
-                            .icon(Icon::new(IconName::Minus))
-                            .tooltip_with_action(
-                                "Hide the terminal",
-                                &crate::shell::ToggleTerminal,
-                                None,
-                            )
-                            .on_click(cx.listener(|_: &mut Self, _, _, cx| {
-                                cx.emit(TerminalPanelEvent::Hide);
-                            })),
+                        onehand_plugin_host::strip_control(
+                            "hide-terminal",
+                            IconName::Minus,
+                            false,
+                            cx,
+                        )
+                        .tooltip_with_action(
+                            "Hide the terminal",
+                            &crate::shell::ToggleTerminal,
+                            None,
+                        )
+                        .on_click(cx.listener(|_: &mut Self, _, _, cx| {
+                            cx.emit(TerminalPanelEvent::Hide);
+                        })),
                     ),
             )
             .children(body.map(|view| {
@@ -702,17 +707,16 @@ impl TerminalPanel {
                             crate::controls::action("new-shell")
                                 .tall()
                                 .primary()
-                                .icon(Icon::new(IconName::SquareTerminal))
                                 .label("New terminal")
                                 .on_click(cx.listener(|panel: &mut Self, _, window, cx| {
                                     panel.open_shell(window, cx);
                                 })),
                         )
                         .children(self.status.clone().map(|status| {
-                            div()
-                                .text_xs()
-                                .text_color(crate::theme::status_ink(cx).danger)
-                                .child(status)
+                            onehand_plugin_host::status_line(
+                                format!("Opening a shell failed: {status}"),
+                                crate::theme::status_ink(cx).danger,
+                            )
                         })),
                 )
             })

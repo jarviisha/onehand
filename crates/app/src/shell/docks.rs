@@ -20,14 +20,16 @@ impl Shell {
         }
     }
 
-    /// Tell the conversation header whether the active root has a shell alive.
+    /// Tell the conversation header whether a shell of the active root is
+    /// running a command.
     ///
     /// One fact and one reader: the terminal button's dot, which is the only
-    /// thing on screen that can say a child process outlived a closed dock. The
-    /// push is guarded on the pane's side, because this runs on every chunk a
-    /// build prints into the terminal.
+    /// thing on screen that can say a command is still going behind a closed
+    /// dock. The push is guarded on the pane's side, because this runs on every
+    /// chunk a shell prints, and that is also what keeps it true: a command
+    /// ending prints the prompt back.
     pub(super) fn sync_terminal_live(&mut self, cx: &mut Context<Self>) {
-        let live = self.terminal.read(cx).has_shell();
+        let live = self.terminal.read(cx).running();
         self.chat
             .update(cx, |pane, cx| pane.set_terminal_live(live, cx));
     }

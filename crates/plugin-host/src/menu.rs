@@ -2,11 +2,12 @@
 //! pointer, and a menu that opens below its trigger.
 
 use gpui::{
-    App, Context, DismissEvent, ElementId, Entity, Focusable as _, IntoElement, ParentElement as _,
-    SharedString, Styled as _, Window, div, px,
+    Action, App, Context, DismissEvent, ElementId, Entity, Focusable as _, IntoElement,
+    ParentElement as _, SharedString, Styled as _, Window, div, px,
 };
 use gpui_component::StyledExt as _;
 use gpui_component::button::Button;
+use gpui_component::kbd::Kbd;
 use gpui_component::menu::{PopupMenu, PopupMenuItem};
 use gpui_component::popover::Popover;
 use std::rc::Rc;
@@ -59,6 +60,26 @@ pub fn menu_row<E: IntoElement>(
 pub fn menu_item(label: impl Into<SharedString>) -> PopupMenuItem {
     let label = label.into();
     menu_row(move |_, _| div().child(label.clone()))
+}
+
+/// A worded menu row that runs what a keymap command runs, showing that
+/// command's key at its end, as a control bound to a command shows its key.
+///
+/// The library's own rows show a key only for its plain items, which take no
+/// pointer; this is [`menu_item`] with the key looked up the way the library
+/// looks it up, so a rebound key is the one shown. The row's press still goes
+/// through `on_click`, which acts on what the menu is about.
+pub fn menu_command(label: impl Into<SharedString>, action: Box<dyn Action>) -> PopupMenuItem {
+    let label = label.into();
+    menu_row(move |window, _| {
+        div()
+            .h_flex()
+            .items_center()
+            .w_full()
+            .gap_3()
+            .child(div().flex_1().child(label.clone()))
+            .children(Kbd::binding_for_action(action.as_ref(), None, window))
+    })
 }
 
 /// A menu that opens *below* its trigger, left-aligned to it.

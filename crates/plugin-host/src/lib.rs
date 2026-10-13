@@ -12,14 +12,16 @@
 mod confirm;
 mod list_detail;
 mod menu;
+mod strip;
 mod tabs;
 pub mod toast;
 pub mod tokens;
 mod workbench;
 pub use confirm::{Confirm, confirm_on};
 pub use list_detail::{ListDetail, ListWidths, back_link, list_detail};
-pub use menu::{menu_below, menu_item, menu_row};
+pub use menu::{menu_below, menu_command, menu_item, menu_row};
 pub use onehand_core::worktree::removal::Process;
+pub use strip::{strip, strip_control};
 pub use tabs::{
     Measured, TAB_MAX_W, TabStrip, measure_width, tab_chip, tab_close, tab_menu_rows, tab_select,
     tab_strip, unmeasured,

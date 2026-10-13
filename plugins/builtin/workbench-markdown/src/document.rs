@@ -308,24 +308,15 @@ pub(crate) fn reader(
         .h_full()
         .v_flex()
         .child(
-            div()
-                .h_flex()
-                .items_center()
-                .gap_2()
-                .w_full()
-                .flex_none()
-                .px_3()
-                .py_1p5()
-                .border_b_1()
-                .border_color(cx.theme().border)
+            onehand_plugin_host::strip(cx)
                 .child(lead)
+                // What the strip names: the document, in full ink.
                 .child(
                     div()
                         .flex_1()
                         .min_w_0()
                         .truncate()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
+                        .text_color(cx.theme().foreground)
                         .child(match doc {
                             Some(doc) => doc.label.clone(),
                             None => String::new(),
@@ -337,8 +328,9 @@ pub(crate) fn reader(
                 // where there is a document for it to act on.
                 .children(doc.map(|_| {
                     onehand_plugin_host::action("markdown-edit")
-                        .xsmall()
+                        .small()
                         .quiet(cx)
+                        .flex_none()
                         .label("Edit source")
                         .tooltip("Open this file in the editor")
                         .on_click(on_edit)
