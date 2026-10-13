@@ -104,6 +104,9 @@ impl ChatPane {
         // sized by its contents it moved whenever a badge appeared or a title
         // wrapped, taking the top of the conversation with it.
         onehand_plugin_host::strip(cx)
+            // On a page, the name stands as far off the pane's edge as the
+            // page's body does, so the two start on one line.
+            .when(self.page.is_some(), |header| header.px_8())
             // **No rule under it.** A hairline is an edge between two surfaces,
             // and there are not two here: the header and the transcript are one
             // reading surface, and what separates them is that one is a row of
