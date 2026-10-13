@@ -391,7 +391,15 @@ impl Shell {
     /// exactly as they were, so nothing keyed by position has to be told.
     pub fn toggle_pin(&mut self, root_idx: usize, window: &mut Window, cx: &mut Context<Self>) {
         self.window.workspace.toggle_pin(root_idx);
-        self.save_workspace(window, cx);
+        // Put back, alone, if its write fails: pinning is its own toggle.
+        self.save_change(
+            Box::new(move |shell, _, cx| {
+                shell.window.workspace.toggle_pin(root_idx);
+                shell.sync_project_facts(cx);
+            }),
+            window,
+            cx,
+        );
         // The project page's menu is the other place that says whether this is
         // pinned, and it says it in the label of the entry that was just used.
         self.sync_project_facts(cx);
@@ -413,7 +421,12 @@ impl Shell {
         cx: &mut Context<Self>,
     ) {
         self.window.workspace.move_root(from, to);
-        self.save_workspace(window, cx);
+        // Put back, alone, if its write fails: the move made the other way.
+        self.save_change(
+            Box::new(move |shell, _, _| shell.window.workspace.move_root(to, from)),
+            window,
+            cx,
+        );
         cx.notify();
     }
 

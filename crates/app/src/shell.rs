@@ -263,6 +263,14 @@ pub struct Shell {
     /// A pending workspace write. Replacing it cancels the one before, which
     /// is the whole debounce — see [`Shell::save_workspace_soon`].
     _pending_save: Option<gpui::Task<()>>,
+    /// What puts the debounced change back if its write fails: the first
+    /// one of the burst, so the value before the burst comes back.
+    pending_undo: Option<storage::WorkspaceUndo>,
+    /// The newest workspace write, so only its failure puts anything back.
+    workspace_writes: u64,
+    /// The docks' open state as last saved, so opening or closing one
+    /// schedules a save.
+    docks_saved: Option<crate::chat::DocksOpen>,
     /// A pending agent pre-start, cancelled the same way — see
     /// [`Shell::warm_default_agent`].
     _pending_warm: Option<gpui::Task<()>>,

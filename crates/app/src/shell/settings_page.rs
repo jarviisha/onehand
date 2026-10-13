@@ -4,7 +4,7 @@ use crate::settings::{AgentCheck, AgentDraft, DraftShift, SettingsPage};
 use crate::state::Shared;
 use gpui::{App, BorrowAppContext, Context, Entity, Window, WindowAppearance};
 use gpui_component::{Theme, ThemeMode};
-use onehand_core::config::{AgentSpec, AppConfig, Appearance};
+use onehand_core::config::{AgentSpec, Appearance};
 
 impl Shell {
     // ── Agents ──────────────────────────────────────────────────────────────
@@ -220,34 +220,48 @@ impl Shell {
     ///
     /// Saved to the same file the agent list is in, through the edit-in-place
     /// path that keeps every other section — so choosing a mode never costs
-    /// somebody their agents. A failed write still leaves the choice showing:
-    /// it is what the user asked for, and saying so beats reverting the screen
-    /// under them.
+    /// somebody their agents. Shown at once and written after; a write that
+    /// fails puts the mode back, as every change to a settings file does.
     pub fn set_appearance(
         &mut self,
         choice: Appearance,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if Shared::global(cx).appearance == choice {
+        let before = Shared::global(cx).appearance;
+        if before == choice {
             return;
         }
         cx.update_global::<Shared, _>(|shared, _| shared.appearance = choice);
         apply_appearance(choice, Some(window), cx);
-
-        let path = Shared::global(cx).config_path.clone();
-        let saved = AppConfig::update_in_place(&path, |cfg| cfg.appearance = choice);
-        crate::toast::report(window, cx, "Saving the appearance", None, saved);
+        crate::saves::write_config(
+            "appearance",
+            "Saving the appearance",
+            move |cfg| cfg.appearance = choice,
+            Some(Box::new(move |window, cx| {
+                cx.update_global::<Shared, _>(|shared, _| shared.appearance = before);
+                apply_appearance(before, Some(window), cx);
+            })),
+            window,
+            cx,
+        );
         cx.notify();
     }
 
     /// Write the agent list back to the file the config was loaded from,
     /// preserving every other section.
     fn persist_agents(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let shared = Shared::global(cx);
-        let (path, agents) = (shared.config_path.clone(), shared.agents.clone());
-        let saved = AppConfig::update_in_place(&path, |cfg| cfg.agents = agents);
-        crate::toast::report(window, cx, "Saving the agents", None, saved);
+        let agents = Shared::global(cx).agents.clone();
+        // Off the UI thread and in order; the form already waited on its
+        // press, so a failure is said and the list stands.
+        crate::saves::write_config(
+            "agents",
+            "Saving the agents",
+            move |cfg| cfg.agents = agents,
+            None,
+            window,
+            cx,
+        );
     }
 }
 

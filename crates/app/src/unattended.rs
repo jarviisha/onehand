@@ -625,17 +625,34 @@ pub fn issue_workflows(cx: &App) -> Vec<(String, String, bool)> {
 pub fn set_workflows(
     default: String,
     by_label: BTreeMap<String, String>,
-    path: &Path,
+    window: &mut gpui::Window,
     cx: &mut App,
-) -> Result<(), String> {
+) {
+    let before = workflows(cx);
+    apply_workflows(default.clone(), by_label.clone(), cx);
+    // Shown at once and written after; a write that fails puts both back.
+    crate::saves::write_config(
+        "unattended-workflows",
+        "Saving the unattended runs",
+        move |cfg| {
+            cfg.unattended.workflow = default;
+            cfg.unattended.workflows = by_label;
+        },
+        Some(Box::new(move |_, cx| {
+            let (default, by_label) = before;
+            apply_workflows(default, by_label, cx);
+        })),
+        window,
+        cx,
+    );
+}
+
+/// Put `default` and `by_label` in force for every run from now on.
+fn apply_workflows(default: String, by_label: BTreeMap<String, String>, cx: &mut App) {
     with(cx, |u| {
-        u.workflow = default.clone();
-        u.workflows = by_label.clone();
+        u.workflow = default;
+        u.workflows = by_label;
     });
-    onehand_core::config::AppConfig::update_in_place(path, |cfg| {
-        cfg.unattended.workflow = default;
-        cfg.unattended.workflows = by_label;
-    })
 }
 
 /// Act on the unattended state, if there is one.

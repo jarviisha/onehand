@@ -47,7 +47,13 @@ impl Shell {
         // picking another one does: the edit is the page's, and goes with it.
         {
             let page = workflows_page.downgrade();
+            let shell = cx.entity().downgrade();
             window.on_window_should_close(cx, move |window, cx| {
+                // A save still waiting on its debounce is written now, or the
+                // change made just before closing goes with the window.
+                if let Some(shell) = shell.upgrade() {
+                    shell.update(cx, |shell, cx| shell.flush_workspace(cx));
+                }
                 let Some(page) = page.upgrade().filter(|page| page.read(cx).dirty(cx)) else {
                     return true;
                 };
@@ -412,8 +418,17 @@ impl Shell {
                 if matches!(event, InputEvent::Change) {
                     let name = state.read(cx).value().trim().to_string();
                     if !name.is_empty() && name != shell.window.workspace.name {
-                        shell.window.workspace.name = name;
-                        shell.save_workspace_soon(cx);
+                        let before = std::mem::replace(&mut shell.window.workspace.name, name);
+                        // Put back, field and all, if its write fails.
+                        shell.save_change_soon(
+                            Box::new(move |shell, window, cx| {
+                                shell.window.workspace.name = before.clone();
+                                shell
+                                    .workspace_name
+                                    .update(cx, |input, cx| input.set_value(before, window, cx));
+                            }),
+                            cx,
+                        );
                         cx.notify();
                     }
                 }
@@ -493,6 +508,9 @@ impl Shell {
             workflows_page,
             terminal,
             _pending_save: None,
+            pending_undo: None,
+            workspace_writes: 0,
+            docks_saved: None,
             _pending_warm: None,
             git_generation: 0,
             rail_sessions: Vec::new(),

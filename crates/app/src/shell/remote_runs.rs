@@ -40,7 +40,15 @@ impl Shell {
         {
             crate::unattended::check_now(self.project_for_runs(&root.path), cx);
         }
-        self.save_workspace(window, cx);
+        // Put back, alone, if its write fails: the switch flipped again.
+        self.save_change(
+            Box::new(move |shell, _, cx| {
+                shell.window.workspace.toggle_unattended(root_idx);
+                shell.sync_project_facts(cx);
+            }),
+            window,
+            cx,
+        );
         // The project page's menu says whether this is on, in the entry that was
         // just used.
         self.sync_project_facts(cx);
@@ -297,9 +305,7 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let path = crate::state::Shared::global(cx).config_path.clone();
-        let saved = crate::unattended::set_workflows(default, by_label, &path, cx);
-        crate::toast::report(window, cx, "Saving the unattended runs", None, saved);
+        crate::unattended::set_workflows(default, by_label, window, cx);
         cx.notify();
     }
 

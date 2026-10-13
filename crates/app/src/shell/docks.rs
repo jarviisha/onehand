@@ -45,6 +45,15 @@ impl Shell {
         };
         self.chat
             .update(cx, |pane, cx| pane.set_docks_open(open, cx));
+        // Opening or closing a dock is saved, as a dragged size is, and never
+        // put back. The first frame only learns the state it opened with.
+        if self
+            .docks_saved
+            .replace(open)
+            .is_some_and(|was| was != open)
+        {
+            self.save_workspace_soon(cx);
+        }
     }
 
     /// Read the dock's current geometry back out.

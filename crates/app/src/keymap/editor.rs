@@ -57,12 +57,21 @@ impl Editor {
             cx.notify();
             return;
         }
-        let path = Shared::global(cx).config_path.clone();
-        if let Err(error) = AppConfig::update_in_place(&path, |cfg| cfg.keymap = overrides.clone())
-        {
-            window.push_notification(crate::toast::failed("Saving the shortcuts", error), cx);
-            return;
-        }
+        // Shown at once and written after; a write that fails puts the keys
+        // back as they were, said once.
+        let before = Shared::global(cx).keymap.clone();
+        let written = overrides.clone();
+        crate::saves::write_config(
+            "keymap",
+            "Saving the shortcuts",
+            move |cfg| cfg.keymap = written,
+            Some(Box::new(move |_, cx| {
+                cx.update_global::<Shared, _>(|shared, _| shared.keymap = before);
+                install(cx);
+            })),
+            window,
+            cx,
+        );
         cx.update_global::<Shared, _>(|shared, _| shared.keymap = overrides);
         cx.global_mut::<LoadWarning>().0 = None;
         install(cx);

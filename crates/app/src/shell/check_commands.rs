@@ -59,8 +59,28 @@ impl Shell {
                         return;
                     };
                     if root.check != check {
-                        root.check = check;
-                        shell.save_workspace_soon(cx);
+                        let before = std::mem::replace(&mut root.check, check);
+                        // Put back, field and all, if its write fails.
+                        let at = at.clone();
+                        shell.save_change_soon(
+                            Box::new(move |shell, window, cx| {
+                                if let Some(root) = shell
+                                    .window
+                                    .workspace
+                                    .roots
+                                    .iter_mut()
+                                    .find(|r| r.path == at)
+                                {
+                                    root.check = before.clone();
+                                }
+                                if let Some(input) = shell.check_inputs.get(&at).cloned() {
+                                    let text = before.unwrap_or_default();
+                                    input.update(cx, |input, cx| input.set_value(text, window, cx));
+                                }
+                                shell.sync_project_facts(cx);
+                            }),
+                            cx,
+                        );
                         // *Run check* comes and goes with the command.
                         shell.sync_project_facts(cx);
                     }
