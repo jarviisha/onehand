@@ -7,7 +7,6 @@ use gpui::{
     IntoElement, MouseButton, ParentElement, SharedString, StatefulInteractiveElement as _, Styled,
     Window, div,
 };
-use gpui_component::button::ButtonVariants as _;
 use gpui_component::menu::{PopupMenu, PopupMenuItem};
 use gpui_component::switch::Switch;
 use gpui_component::tooltip::Tooltip;
@@ -48,13 +47,16 @@ impl PluginsView {
         let busy = self.busy.is_some();
         let here = plugin.flip(Scope::Local);
 
+        // Always drawn: whether it is on here is a state, which is content.
+        // While another change runs it refuses, its tooltip saying why.
         let switch = Switch::new(("plugin-on", i))
             .checked(on_here)
+            .small()
             .disabled(busy)
-            .tooltip(if on_here {
-                "On in this project — turn it off on this machine only"
-            } else {
-                "Off in this project — turn it on on this machine only"
+            .tooltip(match (busy, on_here) {
+                (true, _) => ONE_AT_A_TIME,
+                (false, true) => "On in this project — turn it off on this machine only",
+                (false, false) => "Off in this project — turn it on on this machine only",
             })
             .on_click({
                 let here = here.clone();
@@ -66,7 +68,7 @@ impl PluginsView {
             plugin.id
         )))
         .quiet_icon(false, cx)
-        .xsmall()
+        .small()
         .icon(Icon::new(IconName::Ellipsis))
         .tooltip("Where it is on, and removing it")
         .refuses(busy.then_some(ONE_AT_A_TIME));
@@ -89,9 +91,9 @@ impl PluginsView {
             div()
                 .id(("plugin-version", i))
                 .flex_none()
-                .text_xs()
+                .text_size(onehand_plugin_host::tokens::CODE_TEXT)
                 .font_family(cx.theme().mono_font_family.clone())
-                .text_color(muted)
+                .text_color(onehand_plugin_host::meta_ink(cx))
                 .child(shown)
                 .when_some(full, |v, full| {
                     v.tooltip(move |window, cx| Tooltip::new(full.clone()).build(window, cx))
@@ -106,8 +108,8 @@ impl PluginsView {
                 verb: Verb::Update,
             };
             action(("plugin-update", i))
-                .xsmall()
-                .secondary()
+                .small()
+                .quiet(cx)
                 .label(format!("Update {}", update.to))
                 .loading(self.running(&change))
                 .refuses(busy.then_some(ONE_AT_A_TIME))
@@ -125,26 +127,15 @@ impl PluginsView {
         let origin = div()
             .h_flex()
             .items_center()
-            .gap_1p5()
+            .gap_1()
             .text_xs()
             .text_color(muted)
             .child(format!("{} · {scopes}", plugin.marketplace()))
-            .when(plugin.official(), |line| {
-                line.child(
-                    div()
-                        .h_flex()
-                        .items_center()
-                        .gap_0p5()
-                        .child(Icon::new(IconName::CircleCheck).xsmall())
-                        .child("Official"),
-                )
-            })
+            .when(plugin.official(), |line| line.child("· Official"))
+            // Muted, as the line is: a fact about where it is decided, not a
+            // warning.
             .when(plugin.decided_elsewhere(), |line| {
-                line.child(
-                    div()
-                        .text_color(status_ink(cx).warning)
-                        .child("· set elsewhere"),
-                )
+                line.child("· set elsewhere")
             });
 
         let chips = component_chips(plugin, cx);
@@ -153,13 +144,15 @@ impl PluginsView {
         let key_plugin = plugin.clone();
         let key_flip = here;
 
+        let group = SharedString::from(format!("plugin-row-group-{}", plugin.id));
         div()
             .id(SharedString::from(format!("plugin-row-{}", plugin.id)))
+            .group(group.clone())
             .when_some(handle, |row, handle| row.track_focus(&handle))
             .v_flex()
             .gap_1()
             .w_full()
-            .px_3()
+            .px_2()
             .py_2()
             .border_1()
             .border_color(gpui::transparent_black())
@@ -178,32 +171,43 @@ impl PluginsView {
                     .h_flex()
                     .items_center()
                     .gap_2()
+                    // Its name in full ink whether on or off: off is a state
+                    // the switch says, not a reason to read it less.
                     .child(
                         div()
                             .flex_1()
                             .min_w_0()
                             .truncate()
                             .text_sm()
-                            .when(!on_here, |name| name.text_color(muted))
                             .child(plugin.name().to_string()),
                     )
                     .children(version)
                     .child(
                         // The controls keep their presses: without this, the
                         // press that flips the switch also opens the details.
+                        // The row's actions show while it is pointed at; the
+                        // switch, a state, always.
                         div()
                             .h_flex()
                             .items_center()
-                            .gap_1()
+                            .gap_2()
                             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                            .children(update)
+                            .child(onehand_plugin_host::hover_slot(
+                                group,
+                                false,
+                                div()
+                                    .h_flex()
+                                    .items_center()
+                                    .gap_1()
+                                    .children(update)
+                                    .child(menu),
+                            ))
                             .child(
                                 div()
                                     .flex_none()
                                     .when(!busy, |d| d.cursor_pointer())
                                     .child(switch),
-                            )
-                            .child(menu),
+                            ),
                     ),
             )
             .child(origin)
@@ -393,8 +397,8 @@ impl PluginsView {
             Some(have) => {
                 let enable = have.flip(Scope::Local);
                 action(("plugin-enable", i))
-                    .xsmall()
-                    .secondary()
+                    .small()
+                    .quiet(cx)
                     .label("Enable")
                     .tooltip("Installed but off here — turn it on on this machine only")
                     .loading(self.running(&enable))
@@ -410,15 +414,9 @@ impl PluginsView {
         // Official and the count, and nothing else: which marketplace it is
         // from is the chip above the list.
         let meta: Vec<AnyElement> = [
-            plugin.official().then(|| {
-                div()
-                    .h_flex()
-                    .items_center()
-                    .gap_0p5()
-                    .child(Icon::new(IconName::CircleCheck).xsmall())
-                    .child("Official")
-                    .into_any_element()
-            }),
+            plugin
+                .official()
+                .then(|| div().child("Official").into_any_element()),
             plugin.install_count.map(|count| {
                 div()
                     .child(format!("{} installs", compact(count)))
@@ -432,7 +430,7 @@ impl PluginsView {
             let mut line = div()
                 .h_flex()
                 .items_center()
-                .gap_1p5()
+                .gap_1()
                 .text_xs()
                 .text_color(muted);
             for (n, part) in meta.into_iter().enumerate() {
@@ -444,11 +442,16 @@ impl PluginsView {
             line
         });
 
+        // *Installed* is a fact, always drawn; *Enable* and *Install* are the
+        // row's actions, shown while it is pointed at.
+        let shown = installed.is_some_and(|have| have.in_force(Scope::Local));
+        let group = SharedString::from(format!("plugin-available-{i}"));
         div()
+            .group(group.clone())
             .v_flex()
             .w_full()
             .min_w_0()
-            .px_3()
+            .px_2()
             .py_2()
             .gap_1()
             .child(
@@ -464,7 +467,7 @@ impl PluginsView {
                             .text_sm()
                             .child(plugin.name.clone()),
                     )
-                    .child(control),
+                    .child(onehand_plugin_host::hover_slot(group, shown, control)),
             )
             // Two lines, then an ellipsis. Clipped as well as clamped: a
             // description can hold a word with nowhere to break — a URL — and
@@ -504,8 +507,8 @@ impl PluginsView {
             })
         });
         let main = action(("plugin-install", i))
-            .xsmall()
-            .secondary()
+            .small()
+            .quiet(cx)
             .label("Install")
             .tooltip(format!("Install for: {}", scope.meaning()))
             .loading(running)
@@ -517,8 +520,8 @@ impl PluginsView {
             "plugin-install-scope-{}",
             plugin.id
         )))
-        .xsmall()
-        .secondary()
+        .small()
+        .quiet_icon(false, cx)
         .icon(Icon::new(IconName::ChevronDown))
         .tooltip("Install for…")
         .refuses(busy.then_some(ONE_AT_A_TIME));

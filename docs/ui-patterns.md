@@ -68,7 +68,9 @@ A boundary is drawn once: no line along a change of surface, no edge doubled by 
 | Row inset | `px_2` |
 | Strip inset; box padding | `px_3`; `p_3` |
 | Form fields | `gap_4` |
-| Page sections; page outer padding | `gap_6`; `p_6` |
+| Page sections; page outer padding | `gap_6`; `px_8` `py_6` |
+| A tree row's inset; its step per level | `tokens::ROW_INSET`; `tokens::TREE_INDENT` |
+| A live grid (the terminal, Neovim) | `px_3` `py_2` |
 
 Smaller steps are for component internals; the largest step is for a deliberate major grouping,
 not a second page-padding convention. Use the named pattern's defaults before another legal step.

@@ -142,6 +142,12 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
     hide. Crowded file tabs: a select.
   - A list beside its detail (files, documents, issues) only while the dock holds both; else one at
     a time, the detail under a link back naming the list. Picking shows it; going back keeps it.
+    Files and Markdown draw one tree row (`tree_row`); the file or document open beside the tree
+    is its picked row, a changed file's letter in its state's ink at the row's end.
+  - A failed open or save in the Editor or Markdown is a toast; a file changed on disk, a
+    Neovim that would not start and a listing that failed stand as a status line under the mode.
+  - Plugins: the search and filters a filter bar; a row's actions on hover, its switch always;
+    what runs and what waits on a restart under the list, so neither moves it.
   - The Issues tab's issue: a trail (project › reference, linked to its forge, or *Draft*) with
     its actions (one primary, one other, ⋯); its tags (a neutral state badge, labels); the title,
     large; one line of facts; what it waits on (a conflict, where its work stands, the review);
