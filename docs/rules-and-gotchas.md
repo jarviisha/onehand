@@ -95,6 +95,7 @@ Review the uncovered part when changing the relevant area:
 | Registry icons and button wrapper | Finds listed glyph literals and direct `Button::new(` spelling | Other glyphs, aliases and differently formatted construction |
 | Text fields through `text_input`, `search_input` and `text_area` | Finds direct `Input::new(` and `Textarea::new(` spelling | Aliases and differently formatted construction |
 | Ghost buttons through `quiet` | Finds `.ghost()` on any line | A ghost variant reached through `with_variant` |
+| An icon alone rests muted | Reads the chain from an `action(` to its press handler round each `.quiet(cx)`, and finds one with an `.icon(` and no `.label(` or `.child(` | A chain more than four lines above its `.quiet(cx)` or twelve below, and an icon-only ghost built without `action` |
 | English documents | Detects selected Vietnamese diacritics | Other languages and quoted data |
 | Named sizes | Finds a non-zero number written as the first argument of `rems(` or `px(` outside a `const` | Arithmetic on a number (`x * 0.5`) and sizes passed through other helpers |
 | Colours from the palette | Finds a `"#rrggbb"` string or a call to `rgb(`, `rgba(` or `hsla(` outside the palette file and the terminal's grid | Colours built from numbers some other way, and hex written without quotes |

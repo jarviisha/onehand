@@ -1298,6 +1298,63 @@ mod tests {
         );
     }
 
+    /// The builder chain a `.quiet(cx)` on line `at` belongs to: from the
+    /// `action(` that starts it, a few lines up, to the first press handler.
+    /// `None` where no `action(` is near enough to be its start.
+    fn quiet_chain(lines: &[&str], at: usize) -> Option<String> {
+        let start = (at.saturating_sub(4)..=at)
+            .rev()
+            .find(|&n| lines[n].contains("action("))?;
+        let chain: String = lines[start..lines.len().min(at + 12)].join(" ");
+        Some(match chain.find(".on_click") {
+            Some(end) => chain[..end].to_string(),
+            None => chain,
+        })
+    }
+
+    /// An icon alone rests in the muted ink, as every icon at rest does: a
+    /// ghost with an icon and no words goes through `quiet_icon`, which mutes
+    /// it until it is hovered or on. `.quiet(cx)` letters it at full ink, the
+    /// brightest mark on its row. The chain is read across lines, since a
+    /// button is built over several; one that carries a label or children of
+    /// its own has words, and is left alone.
+    #[test]
+    fn an_icon_alone_rests_muted() {
+        let root = workspace_root().display().to_string();
+        let mut found = Vec::new();
+        for (path, source) in ui_sources() {
+            let rel = path
+                .strip_prefix(&root)
+                .unwrap_or(&path)
+                .trim_start_matches('/')
+                .to_string();
+            if rel.contains("/tests/") || rel.ends_with("/tests.rs") {
+                continue;
+            }
+            let code = source.split("#[cfg(test)]\nmod tests").next().unwrap_or("");
+            let lines: Vec<&str> = code.lines().collect();
+            for (n, line) in lines.iter().enumerate() {
+                if line.trim_start().starts_with("//") || !line.contains(".quiet(cx)") {
+                    continue;
+                }
+                let Some(chain) = quiet_chain(&lines, n) else {
+                    continue;
+                };
+                if chain.contains(".icon(")
+                    && !chain.contains(".label(")
+                    && !chain.contains(".child(")
+                {
+                    found.push(format!("{rel}:{}: {}", n + 1, line.trim()));
+                }
+            }
+        }
+        assert!(
+            found.is_empty(),
+            "an icon-only ghost through `.quiet(cx)`; use `.quiet_icon(on, cx)`:\n{}",
+            found.join("\n")
+        );
+    }
+
     /// Text sized or weighted off the scale: `text_2xl` and above, bold and
     /// heavier, and a size written as a number.
     fn off_scale_type(line: &str) -> Vec<String> {
