@@ -14,7 +14,6 @@ use gpui::{
 use gpui_component::button::ButtonVariants;
 use gpui_component::dialog::Dialog;
 use gpui_component::input::TextareaState;
-use gpui_component::tag::Tag;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::issues::template;
 use onehand_core::preflight::{Check, Finding};
@@ -331,9 +330,10 @@ where
     )
 }
 
-/// One issue as a pressable row: how it is shown muted — the forge's number, or
-/// *Draft* — then the title, a few labels as pills, and a muted word at the end
-/// saying where it lives or whose it is.
+/// One issue as a pressable row: how it is named — the forge's number, or
+/// *Draft* — in its slot in the middle ink, then the title, a few labels
+/// tinted by kind, and a muted word at the end saying where it lives or whose
+/// it is.
 ///
 /// One builder for every list of issues, so an issue reads the same in the
 /// picker and on the workspace page.
@@ -346,17 +346,15 @@ pub(crate) fn issue_row(
     cx: &App,
 ) -> gpui::Stateful<gpui::Div> {
     let muted = cx.theme().muted_foreground;
-    let (fill, ink) = (cx.theme().secondary, cx.theme().secondary_foreground);
     row_shell(id, shown, title, cx)
         // A few labels, not all: the row is for telling issues apart, and the
         // title is what does most of that.
-        .children(labels.iter().take(3).map(|label| {
-            Tag::custom(fill, ink, fill)
-                .small()
-                .rounded(crate::tokens::BADGE_CORNER)
-                .flex_none()
-                .child(label.clone())
-        }))
+        .children(
+            labels
+                .iter()
+                .take(3)
+                .map(|label| onehand_plugin_host::label_badge(label.clone(), cx)),
+        )
         .child(
             div()
                 .flex_none()
@@ -367,8 +365,8 @@ pub(crate) fn issue_row(
 }
 
 /// A row in the issue row's shape with something other than a number at its
-/// head — a session's mark, a project's folder, a conversation's age — and no
-/// labels. What the workspace page lists that is not an issue.
+/// head — a session's mark, a conversation's age — and no labels. What the
+/// workspace page lists that is not an issue.
 pub(crate) fn page_row(
     id: impl Into<gpui::ElementId>,
     lead: impl IntoElement,
@@ -386,31 +384,32 @@ pub(crate) fn page_row(
     )
 }
 
-/// What both row shapes share: the pressable line, its muted head and its
-/// truncated title.
+/// The slot a row's head stands in — a five-digit reference, *Draft*, an
+/// age, a mark — so every title starts on one edge.
+const LEAD_W: gpui::Rems = gpui::rems(3.);
+
+/// What both row shapes share: a list row's surface, its head in a slot of
+/// its own in the middle ink, and its truncated title.
 fn row_shell(
     id: impl Into<gpui::ElementId>,
     lead: impl IntoElement,
     title: String,
     cx: &App,
 ) -> gpui::Stateful<gpui::Div> {
-    let (muted, radius, hover) = (
-        cx.theme().muted_foreground,
-        cx.theme().radius,
-        cx.theme().list_hover,
-    );
-    div()
+    onehand_plugin_host::row(false, cx)
         .id(id)
         .h_flex()
         .items_center()
         .gap_2()
         .w_full()
-        .px_2()
-        .py_1()
-        .rounded(radius)
-        .cursor_pointer()
-        .hover(move |row| row.bg(hover))
-        .child(div().flex_none().text_color(muted).child(lead))
+        .child(
+            div()
+                .flex_none()
+                .w(LEAD_W)
+                .text_xs()
+                .text_color(crate::theme::meta_ink(cx))
+                .child(lead),
+        )
         .child(div().flex_1().min_w_0().truncate().child(title))
 }
 

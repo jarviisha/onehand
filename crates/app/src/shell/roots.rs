@@ -21,7 +21,12 @@ impl Shell {
             return;
         };
         let status = self.window.git.get(&root.path);
-        let facts = crate::chat::pane::ProjectFacts::of(root, status.is_some());
+        let facts = crate::chat::pane::ProjectFacts {
+            asks: !self
+                .removal_losses(self.window.workspace.active_root, cx)
+                .is_empty(),
+            ..crate::chat::pane::ProjectFacts::of(root, status.is_some())
+        };
         // The same line the rail prints beside the project's name, from core's
         // own rule rather than composed again here.
         let line = status.map(|status| gpui::SharedString::from(status.label()));

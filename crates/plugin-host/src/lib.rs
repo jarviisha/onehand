@@ -346,6 +346,30 @@ pub fn mark_slot(mark: impl IntoElement) -> Div {
         .child(mark)
 }
 
+/// An issue's label as a badge, on a tint of its kind's hue with that hue's
+/// ink: a label that asks for something is blue, an enhancement green, one
+/// about the code's structure violet, one about the documents yellow, an
+/// agent's report cyan; one that only files the issue stays neutral. Every
+/// list of issues draws its labels through this, so a label reads one way
+/// wherever it is.
+pub fn label_badge(label: impl Into<SharedString>, cx: &App) -> gpui_component::tag::Tag {
+    use onehand_core::issues::LabelKind;
+    let label = label.into();
+    let theme = cx.theme();
+    let kind = match LabelKind::of(&label) {
+        LabelKind::Category => Tint {
+            fill: theme.secondary,
+            ink: theme.secondary_foreground,
+        },
+        LabelKind::Action => tint(theme.blue, cx),
+        LabelKind::Enhancement => tint(theme.green, cx),
+        LabelKind::Structure => tint(theme.magenta, cx),
+        LabelKind::Docs => tint(theme.yellow, cx),
+        LabelKind::Report => tint(theme.cyan, cx),
+    };
+    badge(label, kind).flex_none()
+}
+
 /// A small label on a fill, the shape every badge takes: the library's `Tag`
 /// at its small size, on [`tokens::BADGE_CORNER`], in the `tint`'s fill and ink.
 pub fn badge(text: impl Into<SharedString>, tint: Tint) -> gpui_component::tag::Tag {
@@ -587,6 +611,20 @@ pub fn fold_toggle(
             false => IconName::ChevronRight,
         }))
         .label(label.into())
+}
+
+/// A row's actions, in a trailing slot that keeps its width: hidden until
+/// the pointer is on the row named `group`, unless `shown` (the selected row,
+/// or one whose next action is earned), so nothing beside it moves when it
+/// appears.
+pub fn hover_slot(group: impl Into<SharedString>, shown: bool, child: impl IntoElement) -> Div {
+    let group = group.into();
+    div()
+        .flex_none()
+        .when(!shown, |slot| {
+            slot.invisible().group_hover(group, |s| s.visible())
+        })
+        .child(child)
 }
 
 /// A picker's trigger: a button naming what it is set to, then the caret that

@@ -509,6 +509,7 @@ fn project_menu(
         is_repo,
         unattended,
         check: _,
+        asks,
     }: ProjectFacts,
     pane: Entity<ChatPane>,
 ) -> impl Fn(
@@ -565,7 +566,10 @@ fn project_menu(
         .separator()
         .item(
             crate::controls::menu_row(move |_, _| {
-                div().text_color(danger).child("Remove from workspace…")
+                div().text_color(danger).child(match asks {
+                    true => "Remove from workspace…",
+                    false => "Remove from workspace",
+                })
             })
             .on_click(act(ProjectAction::Remove, pane.clone())),
         )

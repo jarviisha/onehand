@@ -174,6 +174,7 @@ fn project_menu(
         is_repo,
         unattended,
         check: _,
+        asks: _,
     }: ProjectFacts,
     asks: bool,
     shell: WeakEntity<Shell>,

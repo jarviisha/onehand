@@ -150,14 +150,16 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
     ⋯ ▸ *Open in Issues* and *Review…* open it on the Issues page, the latter with its review open.
   - Hiding a dock keeps its buffers and processes; the terminal's open state follows the project.
 - **Pages without a session.**
-  - A project with no session shows *New session*, *Run check* when the project has a check
-    command, its *Check command* field, one line counting its tasks that need attention, run or
-    wait (not drawn at zero, and opening the Tasks page narrowed to the project), and its past
-    conversations: capped, scrolling, each with a *Delete* word.
-  - *Workspace overview* shows, across all projects, the cards *Waiting on you* (runs waiting
+  - A project with no session shows one column from the top: a head, the line counting its
+    tasks that need attention, run or wait at the start (not drawn at zero, and opening the
+    Tasks page narrowed to the project), *Run check* (spinning while a check runs) and *New
+    session* (primary) at the end; its *Check command* field; and its past conversations as
+    rows, capped, each with *Delete…* on hover. The page scrolls as one.
+  - *Workspace overview* shows, across all projects, the boxes *Waiting on you* (runs waiting
     for an answer or an approval, and sessions waiting, finished or lost) and *Working*, then
-    *Projects* as a grid of tiles (not drawn without projects), then *Recent conversations* and
-    *Open issues*.
+    *Projects* as a grid of tiles (not drawn without projects), then the sections *Recent
+    conversations* and *Open issues* (its project picker kept while the page is left), plain
+    lists on the page's surface. The page scrolls as one.
   - *Tasks*: four cards, *Needs attention* (with the project filter), *Running*, *Queued*,
     *Finished*, each with a count, an empty line and a cap. A row is the title over workflow, step
     or outcome and project, with ghost actions by state (*Open session*, *Stop*, *Resume*, *Retry*,

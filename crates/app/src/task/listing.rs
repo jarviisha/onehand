@@ -30,6 +30,16 @@ pub(crate) struct Row {
     pub(crate) stoppable: bool,
 }
 
+/// Whether a check is running on the project at `root`, so its *Run check*
+/// says it is busy.
+pub(crate) fn checking(root: &std::path::Path, cx: &App) -> bool {
+    cx.try_global::<Tasks>().is_some_and(|t| {
+        t.tasks
+            .iter()
+            .any(|task| task.setup.repo == root && t.checks.contains_key(&task.id))
+    })
+}
+
 /// Every task of the projects at `roots`: finished ones newest first, every
 /// other group oldest first.
 pub(crate) fn rows(roots: &[PathBuf], cx: &App) -> Vec<Row> {

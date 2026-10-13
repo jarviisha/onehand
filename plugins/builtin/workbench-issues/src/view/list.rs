@@ -11,12 +11,12 @@ use gpui_component::input::{InputEvent, InputState};
 use gpui_component::tag::Tag;
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
-use onehand_core::issues::{self, Issues, LabelKind, LocalIssue};
+use onehand_core::issues::{self, Issues, LocalIssue};
 use onehand_plugin_host::Quiet as _;
 use onehand_plugin_host::search_input;
 use onehand_plugin_host::{
     ControlSize, Tint, action, menu_below, menu_item, middle_ink, picker, row as row_surface,
-    status_ink, switch, tint,
+    status_ink, switch,
 };
 use std::collections::BTreeSet;
 
@@ -590,22 +590,9 @@ fn identity(issue: &LocalIssue, ink: gpui::Hsla, cx: &App) -> AnyElement {
     }
 }
 
-/// A label as a small tag, on a tint of its kind's hue with that hue's ink
-/// and no edge. A label that asks for something is blue, an enhancement
-/// green, one about the code's structure violet, one about the documents
-/// yellow, an agent's report cyan; a label that only files the issue stays
-/// neutral.
+/// A label as a small tag, on a tint of its kind's hue.
 pub(super) fn chip(label: String, cx: &App) -> Tag {
-    let theme = cx.theme();
-    let kind = match LabelKind::of(&label) {
-        LabelKind::Category => neutral(cx),
-        LabelKind::Action => tint(theme.blue, cx),
-        LabelKind::Enhancement => tint(theme.green, cx),
-        LabelKind::Structure => tint(theme.magenta, cx),
-        LabelKind::Docs => tint(theme.yellow, cx),
-        LabelKind::Report => tint(theme.cyan, cx),
-    };
-    tag(label, kind)
+    onehand_plugin_host::label_badge(label, cx)
 }
 
 /// A tag that is not a label (the *Draft* mark, a project's name), always

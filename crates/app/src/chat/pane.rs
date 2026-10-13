@@ -205,6 +205,8 @@ pub struct ProjectFacts {
     pub unattended: Option<bool>,
     /// It has a check command, so its page offers to run it.
     pub check: bool,
+    /// Removing it asks first, which its menu's ellipsis says.
+    pub asks: bool,
 }
 
 impl ProjectFacts {
@@ -218,6 +220,7 @@ impl ProjectFacts {
             is_repo,
             unattended: (!root.transient).then_some(root.unattended),
             check: root.check.is_some(),
+            asks: false,
         }
     }
 }
@@ -235,6 +238,9 @@ pub struct ChatPane {
     /// task detail: clicking through the cards moves no focus, and a page that
     /// held none would hear no key at all.
     tasks_focus: FocusHandle,
+    /// The project the overview's issues are narrowed to, kept while the
+    /// overview is left and shown again.
+    workspace_filter: Option<std::path::PathBuf>,
     /// Every session the user has opened, in whatever phase it has reached.
     ///
     /// One map, not six. What each session's phase means, and why the parallel
@@ -408,6 +414,7 @@ impl ChatPane {
             Self {
                 focus_handle: cx.focus_handle(),
                 tasks_focus: cx.focus_handle(),
+                workspace_filter: None,
                 conversations: HashMap::new(),
                 active: None,
                 composer,

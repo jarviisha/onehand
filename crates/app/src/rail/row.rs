@@ -2,7 +2,6 @@
 //! name, the controls a row carries, and the drags that reorder the tree.
 
 use crate::controls::Quiet as _;
-use gpui::prelude::FluentBuilder as _;
 use gpui::{
     Anchor, App, Context, Div, ElementId, Hsla, InteractiveElement, IntoElement, MouseButton,
     ParentElement, Rems, Render, SharedString, Stateful, StatefulInteractiveElement, Styled,
@@ -145,12 +144,7 @@ pub(super) fn labelled(
 /// Hidden until the pointer is on the row, unless `shown`; the space stays,
 /// so nothing beside it moves when it appears.
 pub(super) fn on_hover(group: &SharedString, shown: bool, child: impl IntoElement) -> Div {
-    div()
-        .flex_none()
-        .when(!shown, |d| {
-            d.invisible().group_hover(group.clone(), |s| s.visible())
-        })
-        .child(child)
+    onehand_plugin_host::hover_slot(group.clone(), shown, child)
 }
 
 /// A row's own control: a fold, a new session, a `⋯`. Ghost and icon-only, at
