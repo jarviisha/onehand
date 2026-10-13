@@ -72,7 +72,7 @@ impl ChatPane {
     /// edge, so the outermost control moves the outermost panel. The dots are
     /// the row's one menu mark, and everything behind them is something done
     /// to the conversation the name beside them is.
-    pub(super) fn header(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+    pub(super) fn header(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let chat = self.active_chat(cx);
         let title = chat.and_then(Chat::conversation_title).unwrap_or_else(|| {
             match (&self.page, &self.empty) {
@@ -97,13 +97,37 @@ impl ChatPane {
         // a project with no session the same line names the project, and every
         // entry behind it would be about something that does not exist yet.
         let live = chat.is_some();
+        // **On a page, the name stands on the page's column**: the body is a
+        // column centred in the pane, and a name held to the pane's edge read
+        // as the page pushed away from it. With the rail hidden its button
+        // takes that edge, and the name stays beside it.
+        let column = match (&self.page, live || self.rail_hidden) {
+            (_, true) | (None, _) => None,
+            (
+                Some(super::Page::Workspace(_) | super::Page::Tasks(_) | super::Page::Issues(_)),
+                _,
+            ) => Some(crate::tokens::PAGE_WIDE),
+            (Some(super::Page::Workflows(_) | super::Page::Settings(_)), _) => {
+                Some(crate::tokens::PAGE_PROSE)
+            }
+        };
+        let name = div()
+            .h_flex()
+            .items_center()
+            .flex_initial()
+            .min_w(HEADER_NAME_MIN)
+            .child(self.title_control(title, busy, archive, cx));
+        let (name, aligned) = match column {
+            Some(width) => (None, Some(page_name(name, width))),
+            None => (Some(name), None),
+        };
 
         // **A strip, at a fixed height rather than one the tallest control
         // happens to make.** It is the one row that never scrolls, so it is
         // the edge every other measurement in the panel is taken from -- and
         // sized by its contents it moved whenever a badge appeared or a title
         // wrapped, taking the top of the conversation with it.
-        onehand_plugin_host::strip(cx)
+        let bar = onehand_plugin_host::strip(cx)
             // **No rule under it.** A hairline is an edge between two surfaces,
             // and there are not two here: the header and the transcript are one
             // reading surface, and what separates them is that one is a row of
@@ -146,14 +170,7 @@ impl ChatPane {
             // bounds this box rather than the name alone, so what the name
             // itself keeps is that figure less the menu mark and the gap
             // before it.
-            .child(
-                div()
-                    .h_flex()
-                    .items_center()
-                    .flex_initial()
-                    .min_w(HEADER_NAME_MIN)
-                    .child(self.title_control(title, busy, archive, cx)),
-            )
+            .children(name)
             .child(div().flex_1())
             // Only while a session is showing, and for a reason worth stating:
             // this is the same list the project page draws, and that page is
@@ -239,7 +256,19 @@ impl ChatPane {
                         cx.emit(ChatPaneEvent::ToggleWorkbench);
                     })),
                 )
-            })
+            });
+        match aligned {
+            // The name on a layer under the strip, so the strip's controls
+            // keep the pane's edge and stay pressable over it.
+            Some(layer) => div()
+                .relative()
+                .flex_none()
+                .w_full()
+                .child(layer)
+                .child(bar)
+                .into_any_element(),
+            None => bar.into_any_element(),
+        }
     }
 
     /// The way to the terminal, and whether a command is running in it.
@@ -570,4 +599,27 @@ pub(super) fn show_rail(cx: &mut Context<ChatPane>) -> gpui_component::button::B
         .on_click(cx.listener(|_: &mut ChatPane, _, _, cx| {
             cx.emit(ChatPaneEvent::ShowRail);
         }))
+}
+
+/// A page's name, laid out as the page's body is: inset `p_6` from the pane's
+/// sides and centred at `width`, so it starts where the column does.
+fn page_name(name: gpui::Div, width: Rems) -> gpui::Div {
+    div()
+        .absolute()
+        .top_0()
+        .bottom_0()
+        .left_0()
+        .right_0()
+        .px_6()
+        .h_flex()
+        .justify_center()
+        .text_sm()
+        .child(
+            div()
+                .w_full()
+                .max_w(width)
+                .h_flex()
+                .items_center()
+                .child(name),
+        )
 }
