@@ -185,11 +185,29 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
 - **A centred reading column**, narrowed on small panels, read a step over the chrome; what is
   wider scrolls inside its well. A scrollbar runs on the panel's edge down to the composer.
 - **One turn, many blocks**: prose, thoughts, plans, activity clusters (tools only), commands,
-  diffs, answered permissions and questions, notices and errors. A workflow's steps and an
-  interrupted turn are notices, never prompts.
+  diffs, answered permissions and questions, notices and errors, the files the turn changed,
+  and, while it runs, the running line (a spinner, its clock, *N running*, what the agent says it
+  is doing). A workflow's steps and an interrupted turn are notices, never prompts.
 - **Folding blocks open from one line**, the chevron first: what runs is open until done, the
-  plan stays open, and a reader's fold wins. Long output folds and is capped. Wells are filled
-  with no edge. A finished turn ends on Copy (its closing paragraph) and how long it took.
+  plan stays open, and a reader's fold wins. Long output folds and is capped, an opened cluster
+  too, each saying what it holds back. Wells are filled with no edge, their text at
+  `CODE_TEXT`. A finished turn ends on Copy (its closing paragraph) and how long it took.
+- **Its rows are lines, not list rows**: a fold line or an activity row is as tall as its text,
+  answers the pointer by raising its ink rather than with a fill, leads with an `.xsmall()` mark
+  in one slot (a spinner while it runs, so nothing moves as it settles), and takes no focus. A
+  path or a command is mono; the agent's own wording, a folder and what the agent did (a
+  thought, a command's output, a read or search list) read in the middle ink. One copy control
+  (`.xsmall()`, quiet, named in its tooltip, in a column of its own) and one show-more control
+  serve every block.
+- **Calm once it is past**: a failure a later prompt has moved past keeps its words in the
+  muted ink, with no fill; a settled *N failed* drops the danger ink; a refusal's badge is
+  neutral. A live failure is a solid danger wash with no edge, and a lost agent's names the key
+  that restarts it.
+- **The pinned cards** (a permission, a question) share one shell: a head, the body, the
+  answers at the end at `.small()`, the dismissing one a quiet ghost. A choice is a row on the
+  selected step when taken, the library's radio or checkbox at its head and its number as a
+  `Kbd`; a typed answer is a plain field. Their keys are named in tooltips, never in a label.
+  The card holds the one primary while it shows.
 
 ## Type, space and shape
 

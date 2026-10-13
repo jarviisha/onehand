@@ -137,9 +137,9 @@ impl Refuses for Button {
     }
 }
 
-/// A sunk box of machine text: full width, the muted fill, the theme's corner
-/// and the mono family, clipped so a long line cannot push the column wider.
-/// The caller sets the text size and the padding, which differ by what is in it.
+/// A sunk box of machine text: full width, the muted fill, the theme's corner,
+/// the mono family at [`tokens::CODE_TEXT`], clipped so a long line cannot push
+/// the column wider. The caller sets the padding, which differs by what is in it.
 ///
 /// Here rather than in the app for the reason [`action`] is: the Issues mode
 /// draws the same well as the conversation's, and a second copy is a second
@@ -153,6 +153,7 @@ pub fn well(cx: &App) -> Div {
         .rounded(theme.radius)
         .bg(theme.muted)
         .font_family(theme.mono_font_family.clone())
+        .text_size(tokens::CODE_TEXT)
 }
 
 /// One setting, stacked: its name, a line about it in meta text, and the

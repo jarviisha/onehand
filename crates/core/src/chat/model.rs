@@ -46,7 +46,7 @@ pub enum Link {
     Connecting,
     /// Live.
     Connected,
-    /// The adapter went away. Restartable with `Ctrl+Shift+R`.
+    /// The adapter went away. A restart brings it back.
     Lost,
 }
 

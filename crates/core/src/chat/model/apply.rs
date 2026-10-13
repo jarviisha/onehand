@@ -327,9 +327,10 @@ impl Chat {
                 // No live adapter to answer — but the cards must not keep
                 // offering buttons whose rpc ids died with the connection.
                 self.cancel_pending_permissions();
-                self.items.push(ChatItem::error(format!(
-                    "Disconnected: {e} — Ctrl+Shift+R to restart"
-                )));
+                // No key in the words: the front end names the one its keymap
+                // binds, which the person may have changed.
+                self.items
+                    .push(ChatItem::error(format!("Disconnected: {e}")));
             }
         }
 

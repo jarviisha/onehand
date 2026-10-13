@@ -1238,6 +1238,44 @@ mod tests {
         );
     }
 
+    /// A colour or a box thinned by an alpha: `.alpha(…)` past the two ends a
+    /// fade runs between, `.opacity(…)` and `.fade_out(…)`.
+    fn thinned(line: &str) -> Vec<String> {
+        let mut found: Vec<String> = [".opacity(", ".fade_out("]
+            .iter()
+            .filter(|call| line.contains(*call))
+            .map(|call| call.to_string())
+            .collect();
+        for (at, _) in line.match_indices(".alpha(") {
+            let arg = &line[at + ".alpha(".len()..];
+            if !(arg.starts_with("0.)") || arg.starts_with("1.)")) {
+                found.push(".alpha(".to_string());
+            }
+        }
+        found
+    }
+
+    /// Never an alpha on text or a box: a see-through colour takes whatever is
+    /// under it, so one ink reads one shade here and another there. A missing
+    /// step is mixed into the ramp instead. The palette's own shadows, which
+    /// are an alpha by nature, are the one exception, and a fade runs from
+    /// `alpha(0.)` to a solid colour.
+    #[test]
+    fn nothing_is_see_through() {
+        let sources = ui_sources()
+            .into_iter()
+            .filter(|(path, _)| {
+                !path.ends_with("crates/app/src/theme.rs")
+                    && !path.ends_with("crates/plugin-host/src/tokens.rs")
+            })
+            .collect();
+        forbid(
+            sources,
+            thinned,
+            "an alpha on a colour; mix the step into the ramp instead",
+        );
+    }
+
     /// Text sized or weighted off the scale: `text_2xl` and above, bold and
     /// heavier, and a size written as a number.
     fn off_scale_type(line: &str) -> Vec<String> {

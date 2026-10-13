@@ -7,6 +7,7 @@ use gpui::{
     App, Entity, HighlightStyle, IntoElement, ParentElement, StatefulInteractiveElement, Styled,
     StyledText, div,
 };
+use gpui_component::spinner::Spinner;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::acp::PlanStatus;
 use onehand_core::chat::{PlanItem, TranscriptItemId};
@@ -34,8 +35,8 @@ pub(super) fn plan(
         .filter(|e| e.status == PlanStatus::Completed)
         .count();
     let hidden = p.entries.len().saturating_sub(MAX_TODO_ITEMS);
-    let status = crate::theme::status_ink(cx);
     let muted = cx.theme().muted_foreground;
+    let busy = session.read(cx).chat.busy;
 
     let line = fold_line(("plan", fold_key(target)), open, cx)
         .on_click({
@@ -70,17 +71,27 @@ pub(super) fn plan(
                     .children(p.entries.iter().take(MAX_TODO_ITEMS).map(|entry| {
                         // **The glyph changes, never the row**: a plan is
                         // worked through while it is on screen.
-                        let (icon, ink, struck) = match entry.status {
-                            PlanStatus::Completed => (IconName::Check, status.success, true),
-                            PlanStatus::InProgress => (IconName::LoaderCircle, accent(cx), false),
-                            PlanStatus::Pending => (IconName::Dash, muted, false),
+                        // A finished step is calm, a muted check; the one in
+                        // hand turns while the turn runs and rests after.
+                        let (icon, struck) = match entry.status {
+                            PlanStatus::Completed => (Some(IconName::Check), true),
+                            PlanStatus::InProgress if busy => (None, false),
+                            PlanStatus::InProgress => (Some(IconName::LoaderCircle), false),
+                            PlanStatus::Pending => (Some(IconName::Dash), false),
+                        };
+                        let mark = match icon {
+                            Some(icon) => Icon::new(icon)
+                                .xsmall()
+                                .text_color(muted)
+                                .into_any_element(),
+                            None => Spinner::new().xsmall().color(accent(cx)).into_any_element(),
                         };
                         div()
                             .h_flex()
                             .items_center()
                             .gap_2()
                             .min_w_0()
-                            .child(Icon::new(icon).xsmall().text_color(ink))
+                            .child(mark)
                             .child(
                                 div()
                                     .min_w_0()
@@ -107,12 +118,13 @@ pub(super) fn plan(
         })
 }
 
-/// A step's words with what it set in backticks in the accent, the marks
-/// themselves taken out: inline code in a label too short to be markdown.
+/// A step's words with what it set in backticks in code's ink, as prose sets
+/// it, the marks themselves taken out: inline code in a label too short to be
+/// markdown.
 fn label(text: &str, cx: &App) -> StyledText {
     let (text, spans) = code_spans(text);
     let ink = HighlightStyle {
-        color: Some(accent(cx)),
+        color: Some(crate::theme::hue_ink(cx.theme().blue, cx)),
         ..Default::default()
     };
     StyledText::new(text).with_highlights(spans.into_iter().map(|r| (r, ink)))

@@ -461,6 +461,22 @@ pub(crate) fn inset(cx: &App) -> Hsla {
     Hsla::parse_hex(ramp.inset).unwrap_or(cx.theme().background)
 }
 
+/// A well on a floating card: the command a pinned permission asks to run.
+///
+/// Its own step because the dark palette floats its cards on the well's own
+/// grey, where a well drawn in `muted` would vanish into the card. Mixed from
+/// the card's fill toward the ink, so both palettes sink it by one rule.
+pub(crate) fn floating_well(cx: &App) -> Hsla {
+    floating_well_on(cx.theme().popover, cx.theme().foreground)
+}
+
+fn floating_well_on(card: Hsla, ink: Hsla) -> Hsla {
+    card.mix_oklab(ink, FLOATING_WELL)
+}
+
+/// How much of the card's own fill a floating well keeps.
+const FLOATING_WELL: f32 = 0.93;
+
 /// The composer's lift, in pixels as a hairline is: the tight shadow's blur,
 /// then the soft one's drop and blur.
 const COMPOSER_EDGE_BLUR: f32 = 1.5;
@@ -976,6 +992,8 @@ mod tests {
                 ("accent", theme.blue),
                 ("success", theme.green),
                 ("warning", theme.yellow),
+                // A failure's banner.
+                ("danger", theme.red),
                 // A label about the code's structure, and an agent's report.
                 ("violet", theme.magenta),
                 ("cyan", theme.cyan),
@@ -990,6 +1008,33 @@ mod tests {
                     contrast(tint.fill, theme.background) > 1.0,
                     "{name}: the {hue} tint is the surface"
                 );
+            }
+        }
+    }
+
+    /// A changed line in a diff lies on its hue's wash, mixed into the well:
+    /// the wash shows against the well, and the line's words and its sign
+    /// read on it.
+    #[test]
+    fn a_diff_line_reads_on_its_wash() {
+        for (name, ramp, mode) in [
+            ("light", &LIGHT, ThemeMode::Light),
+            ("dark", &DARK, ThemeMode::Dark),
+        ] {
+            let theme = resolve(ramp, mode);
+            for (side, base) in [("added", theme.green), ("removed", theme.red)] {
+                let wash = onehand_plugin_host::tint_over(base, theme.muted, theme.foreground);
+                assert!(
+                    contrast(wash.fill, theme.muted) > 1.0,
+                    "{name}: the {side} wash is the well"
+                );
+                for (label, ink) in [("words", theme.foreground), ("sign", wash.ink)] {
+                    let ratio = contrast(ink, wash.fill);
+                    assert!(
+                        ratio >= AA,
+                        "{name}: an {side} line's {label} are {ratio:.2} on its wash"
+                    );
+                }
             }
         }
     }
@@ -1300,6 +1345,34 @@ mod tests {
                 assert!(
                     ratio >= AA,
                     "{name}: {label} on the inset field is {ratio:.2}"
+                );
+            }
+        }
+    }
+
+    /// A well on a floating card has its fill alone to be found by, as the
+    /// inset field has, and the command and the gutter in it have to read.
+    #[test]
+    fn a_floating_well_stands_off_its_card() {
+        for (name, ramp, mode) in [
+            ("light", &LIGHT, ThemeMode::Light),
+            ("dark", &DARK, ThemeMode::Dark),
+        ] {
+            let theme = resolve(ramp, mode);
+            let well = floating_well_on(theme.popover, theme.foreground);
+            let ratio = contrast(well, theme.popover);
+            assert!(
+                ratio >= 1.1,
+                "{name}: the floating well is {ratio:.2} from its card"
+            );
+            for (label, ink) in [
+                ("prose", theme.foreground),
+                ("meta ink", theme.muted_foreground),
+            ] {
+                let ratio = contrast(ink, well);
+                assert!(
+                    ratio >= AA,
+                    "{name}: {label} on the floating well is {ratio:.2}"
                 );
             }
         }

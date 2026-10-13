@@ -40,7 +40,8 @@ impl RenderOnce for CommandBlock {
         // them the reader's doing. The width is the digits of the count, so the
         // one-line case costs a single character.
         let total = self.lines.len().max(1);
-        let gutter = rems(MONO_ADVANCE * TEXT_SM.0 * total.to_string().len() as f32);
+        let gutter =
+            rems(MONO_ADVANCE * crate::tokens::CODE_TEXT.0 * total.to_string().len() as f32);
         // **A share of the panel this is drawn in, not of the window.** What
         // the bound is for is the card's own heading staying on screen with the
         // command it belongs to, and the card is in the conversation -- so with
@@ -67,22 +68,23 @@ impl RenderOnce for CommandBlock {
         let overflows = scroll.max_offset().y > gpui::px(0.);
         let more_below = scroll.max_offset().y - scroll.offset().y.abs() > SCROLL_SLACK;
 
+        let well = crate::theme::floating_well(cx);
         plain_box(cx)
             .relative()
-            .rounded(cx.theme().radius)
-            .border_1()
-            .border_color(cx.theme().border)
+            .h_flex()
+            .items_start()
+            // **No edge, and a step of its own**: the card floats on the
+            // well's own grey in the dark palette, so its fill alone sets the
+            // command off the card.
+            .bg(well)
             .py_2()
             .pl_3()
-            // The copy button's own column, kept clear of the text rather than
-            // laid over it: a button that covers the first line of a command
-            // covers the part of it somebody is most likely to be reading.
-            .pr(COPY_SIZE + BLOCK_INSET + BLOCK_INSET)
             .child(
                 div()
                     .id(("perm-command-scroll", key))
                     .v_flex()
-                    .w_full()
+                    .flex_1()
+                    .min_w_0()
                     // **A bound on drawn rows rather than on the agent's
                     // newlines**, which is the only kind that holds for a
                     // command of one very long line: one line of a base64 blob
@@ -123,32 +125,18 @@ impl RenderOnce for CommandBlock {
             // the mask takes the wheel in the capture phase and nothing else,
             // so a press still reaches whatever is drawn on top of it.
             .child(ScrollableMask::new(Axis::Vertical, &scroll).id(("perm-command-mask", key)))
-            .child(
-                crate::controls::action(("perm-copy", key))
-                    .quiet(cx)
-                    .absolute()
-                    .top(BLOCK_INSET)
-                    .right(BLOCK_INSET)
-                    .size(COPY_SIZE)
-                    .icon(Icon::new(IconName::Copy).size(COPY_ICON))
-                    .tooltip("Copy the whole command")
-                    // **Drawn on every command, never waiting to be hovered.**
-                    // It was hidden until the pointer arrived on anything short,
-                    // as one more thing beside a command that fits whole -- but
-                    // a control that appears under the pointer is a control
-                    // nobody finds who was not already reaching for it, and this
-                    // is the card where the text is most likely to be wanted
-                    // somewhere else: read elsewhere, pasted into a shell, kept
-                    // for the record of what was approved. A command that
-                    // scrolls cannot be selected out by dragging either, since
-                    // the drag that reaches its end is the drag that moves the
-                    // box.
-                    .on_click(move |_, _, cx: &mut App| {
-                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(
-                            self.command.to_string(),
-                        ));
-                    }),
-            )
+            // In a column of its own, kept clear of the text rather than laid
+            // over it: a button that covers the first line of a command covers
+            // the part somebody is most likely to be reading. Drawn on every
+            // command, never waiting to be hovered: this is the card whose
+            // text is most likely wanted elsewhere, and a command that scrolls
+            // cannot be selected out by dragging.
+            .child(div().flex_none().px(TIGHT_GAP).child(copy_button(
+                ("perm-copy", key),
+                self.command,
+                "Copy the whole command",
+                cx,
+            )))
             // **What says the command does not end where the box does.** It goes
             // as soon as the end is reached, so
             // it is never a gradient laid over the last line of a command
@@ -163,8 +151,8 @@ impl RenderOnce for CommandBlock {
                         .h(COMMAND_FADE)
                         .bg(gpui::linear_gradient(
                             180.,
-                            gpui::linear_color_stop(cx.theme().muted.alpha(0.), 0.),
-                            gpui::linear_color_stop(cx.theme().muted, 0.75),
+                            gpui::linear_color_stop(well.alpha(0.), 0.),
+                            gpui::linear_color_stop(well, 0.75),
                         )),
                 )
             })

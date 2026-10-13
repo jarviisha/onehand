@@ -1,8 +1,8 @@
 use super::ask::user_icon;
 use super::metrics::{FRAME_PAD, STACK_GAP};
 use super::parts::{
-    ActivityRow, Object, RowMark, activity_row, detail_well, floating_card, grows, pill, plain_box,
-    tool_label,
+    ActivityRow, Object, RowMark, activity_row, card_foot, card_head, detail_well, grows, pill,
+    pinned_card, plain_box, tool_label,
 };
 use super::tool::{CommandBlock, command_cwd};
 use super::{fold_key, live_index};
@@ -49,7 +49,6 @@ fn permission_record(
         .iter()
         .find(|option| option.name == choice)
         .is_some_and(|option| option.weight() == PermissionWeight::Deny);
-    let status = crate::theme::status_ink(cx);
     let toggle = {
         let session = session.clone();
         move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
@@ -79,17 +78,7 @@ fn permission_record(
         p.command(),
         160,
     ))))
-    .meta(Some(
-        pill(
-            choice.to_string(),
-            match denied {
-                true => status.danger,
-                false => cx.theme().muted_foreground,
-            },
-            cx,
-        )
-        .into_any_element(),
-    ))
+    .meta(Some(pill(choice.to_string(), cx).into_any_element()))
     .fold(Some(p.expanded));
     let mut row = row;
     row.struck = denied;
@@ -158,75 +147,24 @@ pub(in crate::chat) fn permission(
     let kind = (p.req.kind != ToolKind::Other).then(|| tool_label(p.req.kind));
     let cwd = command_cwd(&session.read(cx).chat.root);
 
-    floating_card(idx.is_some(), cx)
-        .v_flex()
-        // The card's own padding goes to the rows inside it, because the
-        // footer's rule has to run edge to edge and a rule inside a padded box
-        // stops short of the corners it is squaring off. The corners clip for
-        // the other half of that: without it the rule ends in a square nib a
-        // pixel outside the rounded edge above it.
-        .p_0()
-        .overflow_hidden()
-        .child(
-            div()
-                .h_flex()
-                .items_center()
-                .justify_between()
-                .gap_2()
-                .w_full()
-                .px_4()
-                .pt_3()
-                .child(
-                    div()
-                        .h_flex()
-                        .items_center()
-                        .gap_2()
-                        .flex_1()
-                        .min_w_0()
-                        .child(
-                            Icon::new(IconName::TriangleAlert)
-                                .size_4()
-                                .flex_none()
-                                .text_color(crate::theme::status_ink(cx).warning),
-                        )
-                        // **The weight and the mark carry it, not the size.**
-                        // This and the question card are the two blocks where
-                        // nothing proceeds until the user acts, and they were
-                        // set at the answer's own size to say so. What that
-                        // bought was a heading that was the largest text on
-                        // screen over the largest controls on screen, floating
-                        // an inch above a composer where everything had come
-                        // down a step.
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w_0()
-                                .truncate()
-                                .text_sm()
-                                .font_semibold()
-                                .child("Permission required"),
-                        ),
-                )
-                // What kind of work it is, opposite the heading — the same
-                // slot and the same voice the question card puts its counter
-                // in, because the two cards are read as one family and this is
-                // the corner a reader has already learned to check.
-                .children(kind.map(|word| {
-                    div()
-                        .flex_none()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(word)
-                })),
-        )
+    pinned_card(idx.is_some(), cx)
+        // The one card that keeps its mark: a grant is the block where a
+        // misread costs most.
+        .child(card_head(
+            Some(
+                Icon::new(IconName::TriangleAlert).text_color(crate::theme::status_ink(cx).warning),
+            ),
+            "Permission required",
+            // The only word the protocol offers about *what* is asked for,
+            // opposite the heading where the question card keeps its count.
+            kind.map(SharedString::from),
+            cx,
+        ))
         .child(
             div()
                 .v_flex()
                 .gap_2()
                 .w_full()
-                .px_4()
-                .pt_3()
-                .pb_3()
                 .child(block)
                 .children(cwd.map(|(shown, full)| {
                     div()
@@ -234,7 +172,7 @@ pub(in crate::chat) fn permission(
                         .w_full()
                         .truncate()
                         .text_xs()
-                        .text_color(cx.theme().muted_foreground)
+                        .text_color(crate::theme::meta_ink(cx))
                         .child(format!("in {shown}"))
                         .tooltip(move |window, cx| Tooltip::new(full.clone()).build(window, cx))
                 })),
@@ -321,18 +259,8 @@ fn permission_keys(
         .into_any_element()
 }
 
-/// The strip that answers the card.
-///
-/// **A strip of its own over a rule that spans the card**, which is the
-/// question card's footer drawn again and deliberately so: both end the one
-/// block everything is waiting on, and left inside the body's padding the
-/// buttons read as the last row of the card rather than as what closes it.
-///
-/// **The buttons wrap before a label is cut.** A narrow pane drops the key
-/// hints first — they name keys that still work — and then lets the row fold
-/// onto a second, still right-aligned line. A truncated *Always allow* is a
-/// grant nobody can read the reach of, which is the one thing on this card
-/// that must never happen.
+/// The answers that close the card, the keys that reach them named in their
+/// tooltips.
 fn permission_footer(
     session: &Entity<ChatSession>,
     p: &PermItem,
@@ -350,66 +278,34 @@ fn permission_footer(
         PermissionWeight::AllowOnce => 2,
     });
 
-    div()
-        .v_flex()
-        .w_full()
-        .child(div().w_full().h_px().bg(cx.theme().border))
-        .child(
-            div()
-                .h_flex()
-                .items_center()
-                .justify_between()
-                .flex_wrap()
-                .gap_2()
-                .w_full()
-                .px_4()
-                .py_2()
-                .child(
-                    div()
-                        // The first thing to give way when the row runs out of
-                        // room, because the keys it names keep working whether
-                        // or not they are printed. Squeezed to nothing, the
-                        // buttons wrap onto a line of their own rather than
-                        // losing a character of a label.
-                        .flex_shrink(1.)
-                        .min_w_0()
-                        .truncate()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child("Enter allow · Esc deny"),
-                )
-                .child(
-                    div()
-                        .h_flex()
-                        .items_center()
-                        .justify_end()
-                        .flex_wrap()
-                        .gap_2()
-                        .flex_none()
-                        .children(options.into_iter().map(|(i, option)| {
-                            let (id, session) = (option.id.clone(), session.clone());
-                            let weight = option.weight();
-                            grows(crate::controls::action(("perm", i)))
-                                // One primary per card, and it is the grant
-                                // that expires with this call. "Always allow"
-                                // is the same word with a far longer reach:
-                                // drawn as loudly as "allow once" it is the
-                                // one that gets clicked by muscle memory, and
-                                // it is the one that cannot be taken back from
-                                // the card. It stays reachable, on the neutral
-                                // secondary fill — a decision, not a reflex.
-                                .map(|b| match weight {
-                                    PermissionWeight::AllowOnce => b.primary(),
-                                    PermissionWeight::AllowAlways => b.secondary(),
-                                    PermissionWeight::Deny => b.quiet(cx),
-                                })
-                                .label(option.name.clone())
-                                .on_click(move |_, _, cx: &mut App| {
-                                    answer_permission(&session, idx, &id, cx);
-                                })
-                        })),
+    card_foot().children(options.into_iter().map(|(i, option)| {
+        let (id, session) = (option.id.clone(), session.clone());
+        let name = option.name.clone();
+        grows(crate::controls::action(("perm", i)))
+            // One primary per card, and it is the grant that expires with this
+            // call. "Always allow" is the same word with a far longer reach:
+            // drawn as loudly it is the one clicked by muscle memory, and the
+            // one that cannot be taken back from the card. It stays reachable
+            // on the neutral secondary fill -- a decision, not a reflex. The
+            // answer that dismisses is a quiet ghost, as Skip is.
+            .map(|b| match option.weight() {
+                PermissionWeight::AllowOnce => b.primary().tooltip_with_action(
+                    name.clone(),
+                    &super::PermissionAllow,
+                    Some("PermissionCard"),
                 ),
-        )
+                PermissionWeight::AllowAlways => b.secondary(),
+                PermissionWeight::Deny => b.quiet(cx).tooltip_with_action(
+                    name.clone(),
+                    &super::PermissionDeny,
+                    Some("PermissionCard"),
+                ),
+            })
+            .label(name)
+            .on_click(move |_, _, cx: &mut App| {
+                answer_permission(&session, idx, &id, cx);
+            })
+    }))
 }
 
 /// Settle the card at `idx` on `option`.

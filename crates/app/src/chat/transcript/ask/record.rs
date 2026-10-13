@@ -30,7 +30,7 @@ pub(super) fn ask_record(
         user_icon(),
         "Asked",
     )
-    .object(Some(Object::plain(match many {
+    .object(Some(Object::words(match many {
         // The prompt that introduced the form, with the answers in the
         // column beside it -- a strip of question titles would be the
         // form's own chrome rather than what came of it.
@@ -41,13 +41,8 @@ pub(super) fn ask_record(
             .unwrap_or_else(|| a.req.message.to_string()),
     })))
     .meta(Some(match many {
-        true => pill(
-            format!("{} answers", pairs.len()),
-            cx.theme().muted_foreground,
-            cx,
-        )
-        .into_any_element(),
-        false => pill(answer.to_string(), cx.theme().muted_foreground, cx).into_any_element(),
+        true => pill(format!("{} answers", pairs.len()), cx).into_any_element(),
+        false => pill(answer.to_string(), cx).into_any_element(),
     }))
     .fold(many.then_some(a.expanded));
 
@@ -83,11 +78,12 @@ pub(super) fn ask_record(
                                     .text_color(cx.theme().muted_foreground)
                                     .child(question),
                             )
-                            .child(div().flex_none().max_w(relative(0.5)).child(pill(
-                                chosen,
-                                cx.theme().foreground,
-                                cx,
-                            )))
+                            .child(
+                                div()
+                                    .flex_none()
+                                    .max_w(relative(0.5))
+                                    .child(pill(chosen, cx)),
+                            )
                     })),
             ))
         })

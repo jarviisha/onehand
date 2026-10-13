@@ -2,6 +2,7 @@ use super::fold_key;
 use super::metrics::{
     FOLD_INDENT, HEADING_1, HEADING_2, MAX_CODE_BLOCK_H, PARAGRAPH_GAP, TEXT, TIGHT_GAP,
 };
+use super::parts::spinner_slot;
 use super::parts::{accent, copy_button, copy_turn_button, fold_line};
 use crate::chat::session::ChatSession;
 use crate::tokens::LEADING;
@@ -10,9 +11,8 @@ use gpui::{
     App, ClickEvent, Entity, HighlightStyle, IntoElement, ParentElement,
     StatefulInteractiveElement, StyleRefinement, Styled, Window, div, relative,
 };
-use gpui_component::spinner::Spinner;
 use gpui_component::text::{TextView, TextViewStyle};
-use gpui_component::{ActiveTheme, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::chat::{Md, Thought, TranscriptItemId, TurnAnswer};
 
 // ── agent answer ────────────────────────────────────────────────────────────
@@ -53,7 +53,7 @@ pub(super) fn agent(
                 .gap_2()
                 .text_xs()
                 .text_color(cx.theme().muted_foreground)
-                .child(copy_turn_button(session, target, cx).tooltip("Copy the closing paragraph"))
+                .child(copy_turn_button(session, target, cx))
                 .children(
                     elapsed.map(|secs| format!("Processed in {}", onehand_core::duration(secs))),
                 )
@@ -90,7 +90,7 @@ fn md_view(
                             .text_color(cx.theme().muted_foreground)
                             .child(lang)
                     }))
-                    .child(copy_button("copy-code", block.code(), cx))
+                    .child(copy_button("copy-code", block.code(), "Copy the code", cx))
             })
             .into_any_element(),
         None => div().child(md.source.clone()).into_any_element(),
@@ -129,7 +129,7 @@ fn prose_style(window: &Window, cx: &App) -> TextViewStyle {
             ..HighlightStyle::default()
         })
         // A fenced block sits in the same well as a tool's output: the sunk
-        // fill, no edge, the size under the body.
+        // fill, no edge, the code size.
         .code_block(
             StyleRefinement::default()
                 .max_h(MAX_CODE_BLOCK_H)
@@ -137,7 +137,7 @@ fn prose_style(window: &Window, cx: &App) -> TextViewStyle {
                 .p_3()
                 .rounded(cx.theme().radius)
                 .bg(cx.theme().muted)
-                .text_sm()
+                .text_size(crate::tokens::CODE_TEXT)
                 .line_height(relative(LEADING)),
         )
         // A table is read across, so its cells are wider than they are tall.
@@ -167,12 +167,11 @@ pub(super) fn thought(
             });
         }
     };
-    let line = fold_line(("thought", fold_key(target)), open, cx).on_click(toggle);
+    let line = fold_line(("thought", fold_key(target)), open, cx)
+        .on_click(toggle)
+        .child(spinner_slot(th.is_running(), cx));
     let line = match (th.is_running(), th.elapsed_secs) {
-        (true, _) => line
-            .text_color(accent(cx))
-            .child(Spinner::new().xsmall().color(accent(cx)))
-            .child("Thinking…"),
+        (true, _) => line.text_color(accent(cx)).child("Thinking…"),
         (false, Some(secs)) => line.child(format!("Thought for {}", onehand_core::duration(secs))),
         (false, None) => line.child("Thought"),
     };
@@ -190,7 +189,9 @@ pub(super) fn thought(
                     .min_w_0()
                     .pl(FOLD_INDENT)
                     .text_sm()
-                    .text_color(cx.theme().muted_foreground)
+                    // What the agent did, a step under what it said: the
+                    // middle ink, readable at length.
+                    .text_color(crate::theme::meta_ink(cx))
                     .child(md_view(session, &th.md, window, cx)),
             )
         })

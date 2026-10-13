@@ -1,8 +1,9 @@
 use super::fold_key;
 use super::metrics::FOLD_INDENT;
+use super::parts::spinner_slot;
 use super::parts::{
-    ActivityRow, Object, RowMark, accent, activity_row, chevron, detail_well, fold_line,
-    line_counts, plain_box, sideways,
+    ActivityRow, Object, RowMark, activity_row, chevron, detail_well, fold_line, line_counts,
+    plain_box, show_more, sideways,
 };
 use super::tool::diff_rows;
 use crate::chat::session::ChatSession;
@@ -12,7 +13,6 @@ use gpui::{
     App, ClickEvent, Entity, InteractiveElement, IntoElement, ParentElement, Rems, SharedString,
     StatefulInteractiveElement, Styled, Window, div, rems,
 };
-use gpui_component::spinner::Spinner;
 use gpui_component::{ActiveTheme, IconName, Sizable as _, StyledExt};
 use onehand_core::chat::activity;
 use onehand_core::chat::{ChatItem, TranscriptItemId};
@@ -152,16 +152,18 @@ fn cluster_line(
     let running = summary.running.is_some();
     fold_line(id, open, cx)
         .on_click(move |event, window, cx| on_click(event, window, cx))
-        .when(running, |line| {
-            line.child(Spinner::new().xsmall().color(accent(cx)))
-        })
+        .child(spinner_slot(running, cx))
         .child(div().min_w_0().truncate().child(summary.plain()))
+        // In the danger ink while the cluster runs; once it has settled the
+        // count is the record, in the line's own ink.
         .when(summary.errors > 0, |line| {
             line.child(div().flex_none().child("·")).child(
                 div()
                     .flex_none()
                     .whitespace_nowrap()
-                    .text_color(crate::theme::status_ink(cx).danger)
+                    .when(running, |n| {
+                        n.text_color(crate::theme::status_ink(cx).danger)
+                    })
                     .child(format!("{} failed", summary.errors)),
             )
         })
@@ -173,7 +175,6 @@ fn cluster_line(
             div()
                 .flex_none()
                 .whitespace_nowrap()
-                .font_family(cx.theme().mono_font_family.clone())
                 .child(onehand_core::duration(summary.seconds))
         }))
         .into_any_element()
@@ -260,7 +261,6 @@ pub(in crate::chat) fn turn_summary(
     let all_open = paths
         .iter()
         .all(|path| session.read(cx).file_is_open(anchor, path));
-    let lit = cx.theme().foreground;
 
     block
         .child(
@@ -278,12 +278,15 @@ pub(in crate::chat) fn turn_summary(
                 )
                 // **What was left out says so, says how many, and opens.**
                 .children((over > 0).then(|| {
-                    div()
-                        .id(("turn-rest", key))
-                        .cursor_pointer()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .hover(move |row| row.text_color(lit))
+                    div().h_flex().child(
+                        show_more(
+                            ("turn-rest", key),
+                            match rest_open {
+                                true => "Show the most changed only".to_string(),
+                                false => format!("Show {over} more, least changed"),
+                            },
+                            cx,
+                        )
                         .on_click({
                             let session = session.clone();
                             move |_, _, cx: &mut App| {
@@ -292,11 +295,8 @@ pub(in crate::chat) fn turn_summary(
                                     cx.notify();
                                 });
                             }
-                        })
-                        .child(match rest_open {
-                            true => "Show the most changed only".to_string(),
-                            false => format!("and {over} more, least changed"),
-                        })
+                        }),
+                    )
                 }))
                 .child(
                     div().h_flex().child(
@@ -391,7 +391,15 @@ fn file_row(
                 .whitespace_nowrap()
                 .font_family(cx.theme().mono_font_family.clone())
                 .when(gone, |path| path.line_through())
-                .child(div().min_w_0().truncate().child(folder.to_string()))
+                .child(
+                    div()
+                        .min_w_0()
+                        .truncate()
+                        .when(!gone, |folder| {
+                            folder.text_color(crate::theme::meta_ink(cx))
+                        })
+                        .child(folder.to_string()),
+                )
                 .child(
                     div()
                         .flex_none()
@@ -483,7 +491,7 @@ pub fn activity_group(
         .gap_2()
         .child(activity_row(
             ActivityRow::new(id, RowMark::of_run(section.outcome), icon, name)
-                .object(Some(Object::plain(section.summary.clone())))
+                .object(Some(Object::words(section.summary.clone())))
                 .meta((section.outcome.errors > 0).then(|| {
                     div()
                         .flex_none()

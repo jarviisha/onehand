@@ -162,21 +162,22 @@ pub(super) fn diff_path(
     // process working directory.
     let full = onehand_core::editor::resolve_in_root(root, path);
     let session = session.clone();
-    crate::controls::action(("diff-path", key))
-        .quiet(cx)
-        .w_full()
-        .min_w_0()
-        .h_auto()
-        .py(TIGHT_GAP)
+    div()
+        .h_flex()
         .px_3()
-        .rounded_none()
-        .label(shown)
-        .text_color(accent(cx))
-        .on_click(move |_, _, cx: &mut App| {
-            session.update(cx, |_, cx| {
-                cx.emit(crate::chat::session::ChatEvent::OpenFile(full.clone()))
-            });
-        })
+        .child(
+            crate::controls::action(("diff-path", key))
+                .quiet(cx)
+                .xsmall()
+                .min_w_0()
+                .label(shown)
+                .text_color(accent(cx))
+                .on_click(move |_, _, cx: &mut App| {
+                    session.update(cx, |_, cx| {
+                        cx.emit(crate::chat::session::ChatEvent::OpenFile(full.clone()))
+                    });
+                }),
+        )
         .into_any_element()
 }
 
@@ -192,6 +193,11 @@ pub(in crate::chat) fn diff_rows(
 ) -> Vec<gpui::AnyElement> {
     let status = crate::theme::status_ink(cx);
     let muted = cx.theme().muted_foreground;
+    // A changed line's wash: its hue mixed into the well it lies in, one solid
+    // step rather than the hue thinned over whatever is under it.
+    let wash =
+        |base| onehand_plugin_host::tint_over(base, cx.theme().muted, cx.theme().foreground).fill;
+    let (added, removed) = (wash(cx.theme().green), wash(cx.theme().red));
     let mut out = Vec::new();
     let mut number = 1usize;
     for line in hunks {
@@ -200,24 +206,22 @@ pub(in crate::chat) fn diff_rows(
         }
         *budget -= 1;
         let (sign, ink, text) = match line {
-            // **A skipped run is a line of its own, in the ink that means it
-            // can be opened**, the transcript's word for "there is more
-            // behind this".
+            // A skipped run is a line of its own in meta text: nothing opens
+            // it, so it says how much is behind it and takes no fill.
             DiffRow::Skipped(count) => {
                 out.push(
                     div()
                         .px_3()
-                        .bg(accent(cx).opacity(STATE_TINT))
                         .text_xs()
-                        .text_color(accent(cx))
+                        .text_color(muted)
                         .child(format!("{count} unchanged lines"))
                         .into_any_element(),
                 );
                 number += count;
                 continue;
             }
-            DiffRow::Added(l) => ("+", Some(status.success), l),
-            DiffRow::Removed(l) => ("−", Some(status.danger), l),
+            DiffRow::Added(l) => ("+", Some((status.success, added)), l),
+            DiffRow::Removed(l) => ("−", Some((status.danger, removed)), l),
             DiffRow::Context(l) => (" ", None, l),
         };
         let shown = (sign != "−").then(|| {
@@ -228,7 +232,7 @@ pub(in crate::chat) fn diff_rows(
             div()
                 .h_flex()
                 .px_3()
-                .when_some(ink, |row, ink| row.bg(ink.opacity(STATE_TINT)))
+                .when_some(ink, |row, (_, fill)| row.bg(fill))
                 .child(
                     div()
                         .w_12()
@@ -242,7 +246,7 @@ pub(in crate::chat) fn diff_rows(
                     div()
                         .w_4()
                         .flex_none()
-                        .text_color(ink.unwrap_or(muted))
+                        .text_color(ink.map_or(muted, |(ink, _)| ink))
                         .child(sign),
                 )
                 .child(

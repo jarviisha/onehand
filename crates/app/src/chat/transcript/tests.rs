@@ -1,6 +1,4 @@
-use super::metrics::{
-    DETAIL_OPEN_H, HAIR_GAP, LINE_H, MARK_SIZE, PART_GAP, STACK_GAP, THUMB_H, THUMB_W,
-};
+use super::metrics::{DETAIL_OPEN_H, HAIR_GAP, LINE_H, PART_GAP, STACK_GAP, THUMB_H, THUMB_W};
 use super::parts::Object;
 use super::parts::RowMark;
 use super::strip::activity_identity;
@@ -57,7 +55,6 @@ fn steps() -> Vec<(&'static str, f32)> {
         ("TEXT_SM", TEXT_SM.0),
         ("CONTROL_H", CONTROL_H.0),
         ("LINE_H", LINE_H.0),
-        ("MARK_SIZE", MARK_SIZE.0),
         ("THUMB_W", THUMB_W.0),
         ("THUMB_H", THUMB_H.0),
         ("DETAIL_OPEN_H", DETAIL_OPEN_H.0),

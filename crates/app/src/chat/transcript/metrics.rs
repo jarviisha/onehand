@@ -16,9 +16,6 @@ pub(in crate::chat) const TEXT_SM: Rems = rems(0.875);
 /// prose it names.
 pub(super) const HEADING_1: f32 = 1.25;
 pub(super) const HEADING_2: f32 = 1.125;
-/// A state's ink thinned to a fill: a diff line's green or red, an error's
-/// banner. Thin enough that the text on it keeps its own ink.
-pub(super) const STATE_TINT: f32 = 0.1;
 /// How tall a fenced block in an answer stands before it is clipped, rather
 /// than pushing the rest of the answer off the screen; its Copy reaches the
 /// part that is cut.
@@ -64,8 +61,6 @@ pub(super) const STACK_GAP: Rems = rems(0.375);
 pub(super) const FOLD_INDENT: Rems = rems(0.75 + 0.5);
 /// One line of machine text.
 pub(super) const LINE_H: Rems = rems(1.25);
-/// The glyph on a well's copy button.
-pub(super) const MARK_SIZE: Rems = rems(0.75);
 
 /// What a collapsed detail shows before it says there is more.
 ///
@@ -125,10 +120,6 @@ pub(super) const BUBBLE_TAIL_GAP: Rems = rems(0.125);
 /// short for [`COMMAND_H`]: the heading that says what is asked and the
 /// buttons that answer it have to stay on screen with it.
 pub(super) const COMMAND_SHARE: f32 = 0.5;
-/// The block's copy button, and the inset it keeps from the block's corner.
-pub(super) const COPY_SIZE: Rems = rems(1.75);
-pub(super) const COPY_ICON: Rems = rems(0.875);
-pub(super) const BLOCK_INSET: Rems = rems(0.375);
 /// The fade over the foot of a command box that scrolls on past it.
 pub(super) const COMMAND_FADE: Rems = rems(3.);
 /// Roughly one mono character at the well's own size — what a line number's
@@ -144,35 +135,13 @@ pub(super) const LINE_SM: Rems = rems(TEXT_SM.0 * crate::tokens::LEADING);
 pub(super) const COMMAND_H: Rems = rems(LINE_SM.0 * 8.);
 
 // The question and permission cards pinned above the composer.
-/// The question card's side padding, which its choices' scroll frame reaches
+/// A pinned card's padding, which a question's choices' scroll frame reaches
 /// back through to put the thumb on the card's edge.
-pub(super) const ASK_INSET: Rems = rems(1.);
+pub(super) const CARD_PAD: Rems = rems(0.75);
 /// Left and right inside a frame that lays its contents out in columns.
 pub(super) const FRAME_PAD: Rems = rems(0.75);
 /// Width a question's tab label is elided at. Only a *tab* is ever elided.
 pub(super) const ASK_TAB_W: Rems = rems(8.75);
-/// The numbered circle at the head of a question's tab.
-///
-/// Sized to the digit rather than to the row: a strip of four tabs carries four
-/// of these, and a circle as tall as the label beside it is a bullet the eye
-/// reads before the word it belongs to.
-pub(super) const ASK_TAB_MARK: Rems = rems(1.125);
-/// The radio or checkbox at the head of a choice row, and the mark inside it
-/// once the choice is taken.
-///
-/// Two numbers because the inner one is not a fraction of the outer: the ring
-/// has a border of its own, and a dot derived from the outside measurement
-/// would grow into it at one size and float inside it at another.
-pub(super) const ASK_CHOICE_MARK: Rems = rems(1.0);
-pub(super) const ASK_CHOICE_DOT: Rems = rems(0.5);
-/// The ring around that mark, in pixels and not rems: it is a hairline's job
-/// done a touch heavier, and a hairline is the one measurement in the window
-/// that must not scale with a panel's zoom — doubled, it stops being a line.
-pub(super) const ASK_MARK_RING: gpui::Pixels = gpui::px(1.5);
-/// The key-hint chip at the end of a choice row: a floor rather than a size, so
-/// a two-digit hint grows sideways instead of overrunning its border.
-pub(super) const ASK_HINT_SIZE: Rems = rems(1.25);
-pub(super) const ASK_HINT_PAD: Rems = rems(0.25);
 /// The height a choice row stands at whatever it holds.
 ///
 /// A floor, not a height. The label and the description under it are the
@@ -180,9 +149,3 @@ pub(super) const ASK_HINT_PAD: Rems = rems(0.25);
 /// other end — a row whose label is one word, which shrink-wrapped is a target
 /// half the size of the one below it.
 pub(super) const ASK_ROW_MIN: Rems = rems(3.25);
-/// The same floor for the free-text row, a step under it: that row is one line
-/// by construction, and standing it at a two-line height would leave a band of
-/// empty surface under an input that is nowhere near filling it.
-pub(super) const ASK_CUSTOM_ROW_MIN: Rems = rems(2.75);
-/// The height of one tab, which is also the strip's.
-pub(super) const ASK_TAB_H: Rems = rems(2.25);

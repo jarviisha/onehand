@@ -407,6 +407,14 @@ rarer screens; saves last, as they move nothing on screen.
   transcript; a long diff; Copy from each place; zoom; a pane narrower than `NARROW_PANEL`; both
   palettes.
 
+- As built: a choice row is the `choice` treatment drawn by hand (a quiet button on the
+  selected step), since it holds a mark, the agent's words and a key, which `choice`'s label
+  cannot; a row keeps its number on the row as a `Kbd`, and the other keys (Enter and Esc on a
+  permission, Esc on Skip) move to tooltips. A question's tab is the selected step, every tab
+  at one weight. The floating well is `theme::floating_well`, the card's fill mixed toward the
+  ink. An opened cluster draws its latest 40 rows and counts the rest. The disconnect notice
+  leaves core without a key; the app adds the one `RestartSession` is bound to.
+
 ### 5. Issues page (M)
 
 - Starts from the stashed trial, which applies to `main` without conflict, and goes on from

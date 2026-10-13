@@ -1,17 +1,14 @@
-use super::metrics::{
-    ASK_CHOICE_DOT, ASK_CHOICE_MARK, ASK_CUSTOM_ROW_MIN, ASK_HINT_PAD, ASK_HINT_SIZE, ASK_INSET,
-    ASK_MARK_RING, ASK_ROW_MIN, ASK_TAB_H, ASK_TAB_MARK, ASK_TAB_W, PART_GAP,
-};
+use super::metrics::{ASK_ROW_MIN, ASK_TAB_W, CARD_PAD, PART_GAP};
 use super::parts::{
-    ActivityRow, BlockingBody, Object, RowMark, activity_row, detail_well, floating_card, grows,
-    pill,
+    ActivityRow, BlockingBody, Object, RowMark, activity_row, card_foot, card_head, detail_well,
+    grows, pill, pinned_card,
 };
 use super::{fold_key, live_index};
 use crate::chat::session::ChatSession;
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
 use crate::controls::text_input;
-use crate::tokens::{CODE_TEXT, CONTROL_H, LEADING_TIGHT};
+use crate::tokens::{CONTROL_H, LEADING_TIGHT};
 use gpui::Focusable as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -19,7 +16,10 @@ use gpui::{
     StatefulInteractiveElement, Styled, Window, div, relative,
 };
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::checkbox::Checkbox;
+use gpui_component::kbd::Kbd;
+use gpui_component::radio::Radio;
+use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, Sizable as _, StyledExt};
 use onehand_core::acp::ElicitKind;
 use onehand_core::chat::{AskItem, TranscriptItemId};
 
@@ -50,50 +50,16 @@ pub(in crate::chat) fn ask(
         )
     });
 
-    floating_card(live, cx)
-        .v_flex()
-        .p_0()
-        // **The card's own padding goes to the rows inside it.** The heading
-        // and the tab strip are separated by a rule that has to run edge to
-        // edge, and a rule inside a padded box stops short of the corners it is
-        // squaring off -- which reads as a line somebody drew rather than as
-        // the edge of a region.
-        //
-        // The corners clip what is inside them for the same reason from the
-        // other end: the strip's hairline and the footer's both run the full
-        // width, so without it each ends in a square nib a pixel outside the
-        // rounded edge above it.
-        .overflow_hidden()
-        .child(
-            div()
-                .h_flex()
-                .items_center()
-                .gap_2()
-                .w_full()
-                .px_4()
-                .pt_3()
-                .child(Icon::new(IconName::Info).size_4())
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .truncate()
-                        .text_sm()
-                        .font_semibold()
-                        .child(a.req.message.clone()),
-                )
-                // Where the reader is in the form, in words, because the tab
-                // strip says which question is open but not how many are left:
-                // three numbered tabs read as three steps only once you have
-                // counted them.
-                .children(counter.map(|line| {
-                    div()
-                        .flex_none()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(line)
-                })),
-        )
+    // Where the reader is in the form, in words, because the tab strip says
+    // which question is open but not how many are left. No mark: the
+    // permission card keeps the one mark a pinned card carries.
+    pinned_card(live, cx)
+        .child(card_head(
+            None,
+            a.req.message.clone(),
+            counter.map(Into::into),
+            cx,
+        ))
         // A question replayed from the archive carries an rpc id no running
         // adapter issued: showing controls would invite an answer nobody is
         // waiting for. An answered one never reaches here -- it is a row.
@@ -114,127 +80,34 @@ pub(in crate::chat) fn ask(
 /// it lands on `1` and commits the first choice instead.
 const ASK_KEY_ROWS: usize = 9;
 
-/// The key hint at the right-hand end of a row, and the number that reaches it.
+/// The key at the right-hand end of a row, and the number that reaches it.
 ///
-/// **A row a keyboard can reach says so on the row.** The hints at the foot of
-/// the card name the arrows and Enter, which is the walk; this is the jump, and
-/// a jump has to be to something the user can already see a name for. It is
-/// held off shrinking because it is two characters at most and the words beside
-/// it are the agent's -- a paragraph of description would otherwise squeeze the
-/// one part of the row that is fixed-length.
-///
-/// `None` past the ninth row, which is a row with no key rather than a row with
-/// an unusable one: nothing is drawn, and the words beside it take the space.
-fn ask_key_hint(n: usize, cx: &App) -> Option<impl IntoElement + use<>> {
+/// **A row a keyboard can reach says so on the row**: this is the jump, and a
+/// jump has to be to something the user can already see a name for. `None`
+/// past the ninth row, which is a row with no key rather than a row with an
+/// unusable one.
+fn ask_key_hint(n: usize) -> Option<Kbd> {
     if n > ASK_KEY_ROWS {
         return None;
     }
-    Some(ask_key_mark(n, cx))
+    gpui::Keystroke::parse(&n.to_string()).ok().map(Kbd::new)
 }
 
-fn ask_key_mark(n: usize, cx: &App) -> impl IntoElement + use<> {
-    div()
-        .flex_none()
-        .min_w(ASK_HINT_SIZE)
-        .h(ASK_HINT_SIZE)
-        .px(ASK_HINT_PAD)
-        .h_flex()
-        .items_center()
-        .justify_center()
-        .rounded(cx.theme().radius_tokens().sm)
-        .border_1()
-        .border_color(cx.theme().border)
-        .text_xs()
-        .text_color(cx.theme().muted_foreground)
-        .child(format!("{n}"))
-}
-
-/// One numbered step of the tab strip.
-///
-/// **The number is the point, until the question has an answer.** A strip of
-/// titles says these are three things; a strip of *numbered* titles says they
-/// are three things in an order, with a first and a last -- which is the only
-/// question a reader has about a form they are partway through. Once a question
-/// is answered its number has done that job and the tick replaces it: what is
-/// left to do is then readable as the tabs still carrying digits, without
-/// counting anything. The two never show together, because one 18px circle
-/// holds one mark.
-fn ask_tab_mark(index: usize, active: bool, answered: bool, cx: &App) -> impl IntoElement + use<> {
-    let (fill, ink) = match (active, answered) {
-        // Open: the strongest of the three, because it is the one the choices
-        // below belong to.
-        (true, _) => (cx.theme().primary, cx.theme().primary_foreground),
-        // Answered and not open: filled, quietly, so what is left to do is
-        // readable as the ones that are *not* filled.
-        (false, true) => (cx.theme().accent, cx.theme().accent_foreground),
-        (false, false) => (cx.theme().transparent, cx.theme().muted_foreground),
-    };
-    div()
-        .flex_none()
-        .size(ASK_TAB_MARK)
-        .rounded_full()
-        .bg(fill)
-        .when(!active && !answered, |mark| {
-            mark.border_1().border_color(cx.theme().border)
-        })
-        .h_flex()
-        .items_center()
-        .justify_center()
-        .text_xs()
-        .text_color(ink)
-        .map(|mark| match answered {
-            true => mark.child(Icon::new(IconName::Check).size_3()),
-            false => mark.child(format!("{}", index + 1)),
-        })
-}
-
-/// The mark at the head of a choice row.
-///
-/// Round for a single-select and square for a multi-select, which is the one
-/// convention this app inherits rather than invents: a reader who has met a
-/// form before already knows that a circle means *instead of* and a box means
-/// *as well as*, and nothing else on the row says it. Drawn from two divs
-/// rather than an icon because the bundled set has neither shape as a control
-/// -- its `circle-check` is an outcome, not a thing waiting to be chosen.
-///
-/// **Its ring is ink and not the hairline**, which is the difference between a
-/// control and an edge. Drawn in the hairline it vanished the moment the row
-/// was hovered: a ghost button hovers on the ramp's selected step, which in the
-/// dark palette lands within a shade of the hairline, so the ring is painted
-/// onto its own background. A mark
-/// that disappears under the pointer disappears exactly when it is being aimed
-/// at.
-fn ask_choice_mark(on: bool, single: bool, cx: &App) -> impl IntoElement + use<> {
-    div()
-        .flex_none()
-        .size(ASK_CHOICE_MARK)
-        .h_flex()
-        .items_center()
-        .justify_center()
-        // Half a pixel over the hairline everything else on the card is drawn
-        // with, which is the whole of the difference between an edge and a
-        // control: this ring is the thing being aimed at, and at one pixel it
-        // reads as the seam of the row rather than as the mark inside it.
-        .border(ASK_MARK_RING)
-        .border_color(match on {
-            true => cx.theme().primary,
-            false => cx.theme().muted_foreground,
-        })
-        .map(|mark| match single {
-            true => mark.rounded_full(),
-            false => mark.rounded(cx.theme().radius_tokens().sm),
-        })
-        .when(on, |mark| {
-            mark.child(
-                div()
-                    .size(ASK_CHOICE_DOT)
-                    .bg(cx.theme().primary)
-                    .map(|dot| match single {
-                        true => dot.rounded_full(),
-                        false => dot.rounded(cx.theme().radius_tokens().sm),
-                    }),
-            )
-        })
+/// The mark at the head of a choice row: the library's radio for a
+/// single-select and its checkbox for a multi-select, the one convention a
+/// reader already knows. Shown, never pressed: the row is what takes the
+/// press, so the mark keeps out of the tab order.
+fn ask_choice_mark(o: usize, on: bool, single: bool) -> gpui::AnyElement {
+    match single {
+        true => Radio::new(("ask-mark", o))
+            .checked(on)
+            .tab_stop(false)
+            .into_any_element(),
+        false => Checkbox::new(("ask-mark", o))
+            .checked(on)
+            .tab_stop(false)
+            .into_any_element(),
+    }
 }
 
 /// The live form.
@@ -281,6 +154,13 @@ struct AskForm<'a> {
 
 impl AskForm<'_> {
     /// The strip of questions across the top, on a form that has more than one.
+    ///
+    /// **The number is the point, until the question has an answer.** A strip
+    /// of numbered titles says these are things in an order, which is the only
+    /// question a reader has about a form partway through. Once answered, a
+    /// check takes the number's place, so what is left to do reads as the tabs
+    /// still carrying digits. The open tab is the selected one, on the
+    /// selected step, every tab at one weight.
     fn tabs(&self, cx: &App) -> gpui::Stateful<gpui::Div> {
         let (session, a, idx, active) = (self.session, self.a, self.idx, self.active);
         div()
@@ -288,8 +168,6 @@ impl AskForm<'_> {
             .h_flex()
             .gap_1()
             .w_full()
-            .px_3()
-            .pt_2()
             .overflow_x_scroll()
             .children(a.req.fields.iter().enumerate().map(|(f, field)| {
                 let session = session.clone();
@@ -302,47 +180,31 @@ impl AskForm<'_> {
                 crate::controls::action(("ask-tab", f))
                     .quiet(cx)
                     .small()
-                    .h_flex()
-                    .items_center()
-                    .gap_2()
+                    .selected(open)
                     .flex_none()
-                    .h(ASK_TAB_H)
-                    .px_2()
-                    .rounded_none()
-                    // **Underlined rather than filled.** A filled tab in a
-                    // strip that already carries a filled number in each of its
-                    // own tabs is two fills arguing about which one means
-                    // "here"; the rule under the open tab lands on the strip's
-                    // own hairline and reads as the one continuing into the
-                    // body below it.
-                    .border_b_2()
-                    .border_color(match open {
-                        true => cx.theme().primary,
-                        false => cx.theme().transparent,
-                    })
-                    .child(ask_tab_mark(f, open, answered, cx))
                     .child(
                         div()
-                            // Only a *tab* label is cut short; a choice never
-                            // is. It is held to one line as well as to a width:
-                            // a title long enough to wrap turns the strip three
-                            // rows tall while the row height stays at one, so
-                            // the second and third lines are drawn over the
-                            // choices below.
-                            .max_w(ASK_TAB_W)
-                            .whitespace_nowrap()
-                            .overflow_hidden()
-                            .truncate()
-                            .text_sm()
-                            .when(open, |label| {
-                                label.font_semibold().text_color(cx.theme().foreground)
+                            .h_flex()
+                            .items_center()
+                            .gap_1p5()
+                            .map(|tab| match answered {
+                                true => tab.child(Icon::new(IconName::Check).xsmall()),
+                                false => tab.child(format!("{}", f + 1)),
                             })
-                            .when(!open, |label| label.text_color(cx.theme().muted_foreground))
-                            .child(label),
+                            // Only a *tab* label is cut short; a choice never
+                            // is, and one held to a line keeps the strip one
+                            // row tall.
+                            .child(
+                                div()
+                                    .max_w(ASK_TAB_W)
+                                    .whitespace_nowrap()
+                                    .truncate()
+                                    .child(label),
+                            ),
                     )
-                    // Jumping back restores what that question already holds,
-                    // which costs nothing to arrange: every answer is kept per
-                    // field, so the tab only has to move the view.
+                    // Jumping back restores what that question already holds:
+                    // every answer is kept per field, so the tab only moves
+                    // the view.
                     .on_click(move |_, _, cx: &mut App| {
                         session.update(cx, |s, cx| {
                             if let Some(item) = s.chat.ask_at_mut(idx) {
@@ -393,61 +255,45 @@ impl AskForm<'_> {
                     words = words.child(
                         div()
                             .w_full()
-                            .text_size(CODE_TEXT)
-                            .text_color(cx.theme().muted_foreground)
+                            .text_xs()
+                            .text_color(crate::theme::meta_ink(cx))
                             .child(description),
                     );
                 }
                 grows(crate::controls::action(("ask-choice", o)))
                     .quiet(cx)
+                    // **The taken choice is the selected step**, as every
+                    // pick-one row's is, and a destructive one is named by its
+                    // danger word rather than by an edge.
+                    .selected(on)
                     .px_3()
                     .py_2()
                     .w_full()
                     .min_h(ASK_ROW_MIN)
-                    .rounded(cx.theme().radius_tokens().sm)
+                    // The keyboard's own position, which has to show without
+                    // being an answer: an arrow press moves it and settles
+                    // nothing, so it is the focus ring rather than a fill.
                     .border_1()
-                    // **A taken choice is named by its border, and a destructive
-                    // one by the danger step of that same border.** Taking it is
-                    // still one press, so the tint is not a refusal -- it is the
-                    // one row on the card that cannot be pressed a second time to
-                    // undo, and the only place to say so is the row itself.
-                    .border_color(match (on, destructive) {
-                        (true, true) => crate::theme::status_ink(cx).danger,
-                        (true, false) => cx.theme().primary,
-                        // The keyboard's own position, which has to be visible
-                        // without being an answer: an arrow press moves this and
-                        // settles nothing, so it is the hairline lifted to full
-                        // ink rather than a third colour.
-                        (false, _) if cursor == Some(onehand_core::chat::AskRow::Choice(o)) => {
-                            cx.theme().ring
-                        }
-                        (false, _) => cx.theme().border,
-                    })
-                    // **One child, holding the row's own layout.** A `Button` wraps
-                    // whatever the call site gives it in a content box of the
-                    // library's own -- centred, with the gap its `Size` chose -- so
-                    // a flex written out here lands on a box with exactly one thing
-                    // in it and decides nothing at all. That is why the mark sat a
-                    // quarter-rem from the words it belongs to while this said
-                    // `gap_2p5`, and why aligning it to the top of a two-line
-                    // choice did nothing either.
-                    // **The mark and the hint sit on the row's middle, not on its
-                    // first line.** Both are one shape against a text column that
-                    // is one line or three depending on what the agent wrote, so
-                    // pinned to the top they line up with the label on a
-                    // described choice and with nothing at all on a bare one --
-                    // the column of marks down the left comes out ragged for a
-                    // reason that is about the wording rather than about the
-                    // control.
+                    .border_color(
+                        match !on && cursor == Some(onehand_core::chat::AskRow::Choice(o)) {
+                            true => cx.theme().ring,
+                            false => cx.theme().transparent,
+                        },
+                    )
+                    // **One child, holding the row's own layout.** A `Button`
+                    // wraps what it is given in a content box of its own, so a
+                    // flex written on the button decides nothing. The mark and
+                    // the key sit on the row's middle, so the column of marks
+                    // stays straight whatever the agent wrote.
                     .child(
                         div()
                             .h_flex()
                             .items_center()
                             .gap_3()
                             .w_full()
-                            .child(ask_choice_mark(on, single, cx))
+                            .child(ask_choice_mark(o, on, single))
                             .child(words)
-                            .children(ask_key_hint(o + 1, cx)),
+                            .children(ask_key_hint(o + 1)),
                     )
                     .on_click(move |_, window: &mut Window, cx: &mut App| {
                         ask_take(
@@ -488,7 +334,7 @@ impl AskForm<'_> {
     /// The choices above it are what the agent thought of; this is the answer
     /// it did not, and a form that shows only the first is a question the user
     /// cannot actually answer.
-    fn custom_row(&self, cx: &App) -> Option<gpui::Div> {
+    fn custom_row(&self, cx: &App) -> Option<impl IntoElement + use<>> {
         let state = self
             .a
             .has_custom(self.active)
@@ -499,48 +345,12 @@ impl AskForm<'_> {
                     .cloned()
             })
             .flatten()?;
-        let cursor = self.a.cursor_row(self.active);
-        Some(
-            div()
-                .h_flex()
-                .items_center()
-                .gap_3()
-                .w_full()
-                .px_3()
-                .min_h(ASK_CUSTOM_ROW_MIN)
-                .rounded(cx.theme().radius_tokens().sm)
-                .border_1()
-                // **Dashed** rather than solid, which is the one thing that
-                // separates it from the rows above without taking it out of
-                // the list: the agent's wording is fixed and this line is not
-                // yet written.
-                .border_dashed()
-                .border_color(match cursor == Some(onehand_core::chat::AskRow::Custom) {
-                    true => cx.theme().ring,
-                    false => cx.theme().border,
-                })
-                .child(
-                    Icon::new(crate::icons::Icon::SquarePen)
-                        .size_4()
-                        .flex_none()
-                        .text_color(cx.theme().muted_foreground),
-                )
-                // The row is the border, so the field inside it draws none: two
-                // rings around one input read as two inputs, and the inner one
-                // lands a hair inside the outer with the gap between them
-                // reading as a mistake.
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .child(text_input(&state, cx).appearance(false)),
-                )
-                .children(ask_key_hint(self.a.row_count(self.active), cx)),
-        )
+        let key = ask_key_hint(self.a.row_count(self.active));
+        Some(text_input(&state, cx).when_some(key, |field, key| field.suffix(key)))
     }
 
-    /// The strip that closes the card: what the keyboard can do, then Skip and
-    /// the forward button.
+    /// What closes the card: Skip, then the forward button. The keys are
+    /// named in the tooltips; the numbers are on the rows.
     fn footer(&self, cx: &App) -> gpui::Div {
         let (session, idx, active, quick) = (self.session, self.idx, self.active, self.quick);
         // The forward button is about *this* question: a form is walked through
@@ -549,77 +359,48 @@ impl AskForm<'_> {
         let can_advance = self.a.field_answered(active);
         let last = self.a.is_last(active);
 
-        div()
-            // **A strip of its own, over a rule that spans the card.** The
-            // buttons here end the block everything is waiting on, and left
-            // inside the body's padding they read as the last row of the
-            // list rather than as what closes it. The rule is the same
-            // pixel the tab strip's is, for the same reason: it is where a
-            // region ends.
-            .child(div().w_full().h_px().bg(cx.theme().border))
-            .child(
-                div()
-                    .h_flex()
-                    .items_center()
-                    .justify_between()
-                    .gap_2()
-                    .w_full()
-                    .px_4()
-                    .py_2()
-                    // What the keyboard can do, said where the keyboard's
-                    // work ends. The numbers are on the rows themselves --
-                    // this is the walk, which has nowhere else to be named.
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .truncate()
-                            .text_xs()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(match quick {
-                                true => "Enter choose",
-                                false => "↑↓ move · Enter choose · Esc skip",
-                            }),
+        card_foot()
+            .children((!quick).then(|| {
+                crate::controls::action(("ask-skip", idx))
+                    .quiet(cx)
+                    .small()
+                    .label("Skip")
+                    .tooltip_with_action(
+                        "Skip this question",
+                        &super::QuestionSkip,
+                        Some("QuestionCard"),
                     )
-                    .child(
-                        div()
-                            .h_flex()
-                            .items_center()
-                            .gap_2()
-                            .flex_none()
-                            .children((!quick).then(|| {
-                                crate::controls::action(("ask-skip", idx))
-                                    .secondary()
-                                    .small()
-                                    .label("Skip")
-                                    .on_click({
-                                        let session = session.clone();
-                                        move |_, window: &mut Window, cx: &mut App| {
-                                            ask_skip(&session, idx, active, window, cx);
-                                        }
-                                    })
-                            }))
-                            .child(
-                                crate::controls::action(("ask-submit", idx))
-                                    .primary()
-                                    .small()
-                                    // Nothing is picked yet: refusing, and
-                                    // the pointer would promise otherwise.
-                                    .refuses(
-                                        (!can_advance).then_some("Pick or type an answer first"),
-                                    )
-                                    .label(match last {
-                                        false => "Next →",
-                                        true => "Submit",
-                                    })
-                                    .on_click({
-                                        let session = session.clone();
-                                        move |_, _, cx: &mut App| {
-                                            ask_advance(&session, idx, active, cx);
-                                        }
-                                    }),
-                            ),
-                    ),
+                    .on_click({
+                        let session = session.clone();
+                        move |_, window: &mut Window, cx: &mut App| {
+                            ask_skip(&session, idx, active, window, cx);
+                        }
+                    })
+            }))
+            .child(
+                crate::controls::action(("ask-submit", idx))
+                    .primary()
+                    .small()
+                    // Nothing is picked yet: refusing, and the pointer would
+                    // promise otherwise.
+                    .refuses((!can_advance).then_some("Pick or type an answer first"))
+                    .map(|button| match last {
+                        true => button.label("Submit"),
+                        false => button.child(
+                            div()
+                                .h_flex()
+                                .items_center()
+                                .gap_1()
+                                .child("Next")
+                                .child(Icon::new(IconName::ArrowRight).xsmall()),
+                        ),
+                    })
+                    .on_click({
+                        let session = session.clone();
+                        move |_, _, cx: &mut App| {
+                            ask_advance(&session, idx, active, cx);
+                        }
+                    }),
             )
     }
 
@@ -735,19 +516,11 @@ fn ask_form(
 
     let body = card
         .children(multi_field.then(|| form.tabs(cx)))
-        // The strip's rule spans the card and not just the tabs: the tabs are a
-        // label on the body below them, and it is the body that has an edge.
-        .when(multi_field, |card| {
-            card.child(div().w_full().h_px().bg(cx.theme().border))
-        })
         .child(
             div()
                 .v_flex()
                 .gap_3()
                 .w_full()
-                .px(ASK_INSET)
-                .pt_3()
-                .pb_4()
                 .children(form.question().map(|line| {
                     div()
                         .w_full()
@@ -763,14 +536,10 @@ fn ask_form(
                 .children((!rows.is_empty()).then_some(BlockingBody {
                     target,
                     children: rows,
-                    inset: ASK_INSET,
+                    inset: CARD_PAD,
                 }))
                 .children(form.custom_row(cx)),
         )
-        // The rule over the footer is the footer's own, drawn as its first
-        // child. Added again here it came out twice, two pixels apart, which
-        // reads as a border that failed rather than as an edge — and the
-        // permission card beside it draws one.
         .when(!form.quick || typed, |card| card.child(form.footer(cx)));
 
     // No handle means no card on screen to hold the keys -- the boxes and the

@@ -20,8 +20,8 @@ impl ChatPane {
     const CLOCK_W: Rems = rems(3.25);
 
     /// The line under a live turn: a spinner and the turn's clock in the
-    /// accent, then how many steps are running and what the agent says it is
-    /// doing.
+    /// accent, then how many steps run (*N running*) and what the agent says
+    /// it is doing.
     fn working_strip(&self, cx: &App) -> gpui::AnyElement {
         let running = self
             .active_conversation()
@@ -60,10 +60,7 @@ impl ChatPane {
                 div()
                     .flex_none()
                     .whitespace_nowrap()
-                    .child(match running {
-                        1 => "1 running task".to_string(),
-                        n => format!("{n} running tasks"),
-                    })
+                    .child(format!("{running} running"))
                     .into_any_element(),
             );
         }
@@ -86,7 +83,8 @@ impl ChatPane {
             .gap_2()
             .text_size(transcript::TEXT_SM)
             .text_color(accent)
-            .child(Spinner::new().small().color(accent))
+            // At the transcript's mark size, as every spinner above it is.
+            .child(Spinner::new().xsmall().color(accent))
             .child(
                 div()
                     .flex_none()
@@ -312,14 +310,32 @@ impl ChatPane {
         // every step between two paragraphs, which in a long turn is dozens —
         // and a collapsed line that built them all to draw none of them is that
         // cost paid per frame for something nobody asked to see.
-        let inside = match plan.open {
-            false => Vec::new(),
-            true => strip
-                .sections
-                .iter()
-                .map(|section| self.section_element(section, session, &room, window, cx))
-                .collect(),
-        };
+        //
+        // **Opened, it is bounded too**: the latest sections, since the end
+        // is where work is in flight, and the count of the rest above them.
+        let inside =
+            match plan.open {
+                false => Vec::new(),
+                true => {
+                    let over = strip.sections.len().saturating_sub(CLUSTER_SECTIONS);
+                    (over > 0)
+                        .then(|| {
+                            div()
+                                .text_xs()
+                                .text_color(crate::theme::meta_ink(cx))
+                                .child(match over {
+                                    1 => "1 earlier row not shown".to_string(),
+                                    n => format!("{n} earlier rows not shown"),
+                                })
+                                .into_any_element()
+                        })
+                        .into_iter()
+                        .chain(strip.sections[over..].iter().map(|section| {
+                            self.section_element(section, session, &room, window, cx)
+                        }))
+                        .collect()
+                }
+            };
 
         let open = plan.open;
         column(
@@ -412,6 +428,10 @@ impl ChatPane {
             .into_any_element()
     }
 }
+
+/// How many sections an opened cluster draws before the earlier ones are
+/// counted instead.
+const CLUSTER_SECTIONS: usize = 40;
 
 /// What the running line says when the model has nothing to add.
 ///

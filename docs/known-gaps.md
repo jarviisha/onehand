@@ -35,6 +35,11 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   conversation last changed, not when it last changed state.
 - **A rail session row says nothing about the lines it changed.** No source reports a diff per
   session: the git status is the project's, shared by every session working in it.
+- **The keyboard barely reaches into the transcript.** Its fold lines and activity rows take no
+  focus, so a block opens by pointer only. Its buttons (Copy, the show-more controls, a diff's
+  path) take Tab, but only while drawn: the transcript is a `gpui::list` that draws the rows on
+  screen, so a tab order through it skips what is scrolled away. The pinned cards and the
+  composer take the keyboard whole.
 - **There is no search in the transcript**, and the removal was deliberate rather than pending. It
   matched whole *items* and never occurrences, so a word said ten times in one answer was one hit
   with no mark on the word itself, and a hit in text a block had truncated was counted, scrolled to

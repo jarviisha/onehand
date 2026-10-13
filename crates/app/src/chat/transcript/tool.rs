@@ -1,11 +1,11 @@
 use super::fold_key;
 use super::metrics::{
-    BLOCK_INSET, COMMAND_FADE, COMMAND_H, COMMAND_SHARE, COPY_ICON, COPY_SIZE, LARGE_DIFF,
-    MONO_ADVANCE, PREVIEW_DIFF, PREVIEW_OUT, STATE_TINT, TEXT_SM, TIGHT_GAP,
+    COMMAND_FADE, COMMAND_H, COMMAND_SHARE, LARGE_DIFF, MONO_ADVANCE, PREVIEW_DIFF, PREVIEW_OUT,
+    TIGHT_GAP,
 };
 use super::parts::{
     ActivityRow, Object, RowMark, accent, activity_row, copy_button, detail_well, line_counts,
-    plain_box, row_note, scrolled, sideways,
+    plain_box, row_note, scrolled, show_more, sideways,
 };
 use crate::chat::session::ChatSession;
 use crate::controls::Quiet as _;
@@ -15,7 +15,7 @@ use gpui::{
     ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Window, div, rems,
 };
 use gpui_component::scroll::{ScrollableMask, Scrollbar, ScrollbarMode};
-use gpui_component::{ActiveTheme, Icon, IconName, IconNamed as _, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, IconName, IconNamed as _, Sizable as _, StyledExt};
 use onehand_core::acp::{ToolContent, ToolKind, ToolStatus};
 use onehand_core::chat::activity;
 use onehand_core::chat::{ToolItem, TranscriptItemId};
@@ -285,50 +285,51 @@ fn detail_frame(
 ) -> gpui::Div {
     let copy = detail.text(&diff_text(t));
     let key = fold_key(target);
-    plain_box(cx)
-        .relative()
-        .map(|well| match detail {
-            Detail::Command { command, output } => {
-                command_detail(session, t, target, &command, &output, well, cx)
-            }
-            Detail::Diffs => diff_detail(session, t, target, well, cx),
-            Detail::Image(bytes) => well.p_3().map(|well| match session.read(cx).image(&bytes) {
-                Some(handle) => well.child(gpui::img(handle).max_w_full()),
-                None => well
-                    .text_color(cx.theme().muted_foreground)
-                    .child(format!("[unrecognized image, {} bytes]", bytes.len())),
-            }),
-            Detail::Lines { lines, hidden } => well
-                .p_3()
+    let body = div().flex_1().min_w_0().map(|well| match detail {
+        Detail::Command { command, output } => {
+            command_detail(session, t, target, &command, &output, well, cx)
+        }
+        Detail::Diffs => diff_detail(session, t, target, well, cx),
+        Detail::Image(bytes) => well.p_3().map(|well| match session.read(cx).image(&bytes) {
+            Some(handle) => well.child(gpui::img(handle).max_w_full()),
+            None => well
                 .text_color(cx.theme().muted_foreground)
-                .child(sideways(
-                    ("detail-lines", key),
-                    div().v_flex().children(
-                        lines
-                            .into_iter()
-                            .map(|line| div().whitespace_nowrap().child(line)),
-                    ),
-                ))
-                // Bounded, and the bound is counted rather than swallowed.
-                .children((hidden > 0).then(|| {
-                    div()
-                        .text_xs()
-                        .font_family(cx.theme().font_family.clone())
-                        .child(format!("and {hidden} more lines"))
-                })),
-        })
-        // **Drawn always, never waiting to be hovered.** A control that appears
-        // under the pointer is one nobody finds who was not already reaching
-        // for it -- and this is the well whose text is most likely to be
-        // wanted somewhere else: pasted into a shell, quoted in a bug report.
+                .child(format!("[unrecognized image, {} bytes]", bytes.len())),
+        }),
+        Detail::Lines { lines, hidden } => well
+            .p_3()
+            .text_color(crate::theme::meta_ink(cx))
+            .child(sideways(
+                ("detail-lines", key),
+                div().v_flex().children(
+                    lines
+                        .into_iter()
+                        .map(|line| div().whitespace_nowrap().child(line)),
+                ),
+            ))
+            // Bounded, and the bound is counted rather than swallowed.
+            .children((hidden > 0).then(|| {
+                div()
+                    .text_xs()
+                    .font_family(cx.theme().font_family.clone())
+                    .child(format!("and {hidden} more lines"))
+            })),
+    });
+    // **Drawn always, never waiting to be hovered**, and in a column of its
+    // own rather than over the text: a control that appears under the pointer
+    // is one nobody finds who was not already reaching for it, and one laid
+    // over the first line covers the part most likely to be read.
+    plain_box(cx)
+        .h_flex()
+        .items_start()
+        .child(body)
         .children(copy.map(|text| {
-            div()
-                .absolute()
-                .top(TIGHT_GAP)
-                .right(TIGHT_GAP)
-                .rounded(cx.theme().radius_tokens().sm)
-                .bg(cx.theme().muted)
-                .child(copy_button(("detail-copy", key), text, cx).tooltip("Copy this"))
+            div().flex_none().p(TIGHT_GAP).child(copy_button(
+                ("detail-copy", key),
+                text,
+                "Copy this",
+                cx,
+            ))
         }))
 }
 
@@ -400,7 +401,7 @@ fn command_detail(
                             .whitespace_nowrap()
                             .text_color(match is_error_line(line) {
                                 true => danger,
-                                false => cx.theme().muted_foreground,
+                                false => crate::theme::meta_ink(cx),
                             })
                             .child(line.to_string())
                     })),
@@ -421,30 +422,24 @@ pub(super) fn is_error_line(line: &str) -> bool {
         || line.contains("result: FAILED")
 }
 
-/// The link that shows what a well holds back and takes it away again: plain
-/// words in the quiet ink, lit under the pointer.
+/// The [`show_more`] under a well, opening and closing what it holds back.
 fn fold_link(
     session: &Entity<ChatSession>,
     target: TranscriptItemId,
     label: impl Into<SharedString>,
     cx: &App,
-) -> gpui::Stateful<gpui::Div> {
+) -> gpui::Div {
     let session = session.clone();
-    let lit = cx.theme().foreground;
-    div()
-        .id(("detail-fold", fold_key(target)))
-        .cursor_pointer()
-        .font_family(cx.theme().font_family.clone())
-        .text_xs()
-        .text_color(cx.theme().muted_foreground)
-        .hover(move |link| link.text_color(lit))
-        .on_click(move |_, _, cx: &mut App| {
-            session.update(cx, |s, cx| {
-                s.chat.toggle_tool_output(target, 0);
-                cx.notify();
-            });
-        })
-        .child(label.into())
+    div().h_flex().child(
+        show_more(("detail-fold", fold_key(target)), label, cx).on_click(
+            move |_, _, cx: &mut App| {
+                session.update(cx, |s, cx| {
+                    s.chat.toggle_tool_output(target, 0);
+                    cx.notify();
+                });
+            },
+        ),
+    )
 }
 
 fn path_for_display(root: &Path, value: &str) -> String {
