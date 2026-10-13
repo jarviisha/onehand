@@ -160,10 +160,12 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
     *Projects* as a grid of tiles (not drawn without projects), then the sections *Recent
     conversations* and *Open issues* (its project picker kept while the page is left), plain
     lists on the page's surface. The page scrolls as one.
-  - *Tasks*: four cards, *Needs attention* (with the project filter), *Running*, *Queued*,
-    *Finished*, each with a count, an empty line and a cap. A row is the title over workflow, step
-    or outcome and project, with ghost actions by state (*Open session*, *Stop*, *Resume*, *Retry*,
-    *Dismiss*); its text opens the task's detail in the same column.
+  - *Tasks*: a filter bar (the project picker), then four cards two by two, *Needs attention*,
+    *Running*, *Queued*, *Finished*, each with a count, an empty line and a cap. A row is the
+    title over workflow, step or outcome and project, with ghost actions by state (*Open
+    session*, *Stop*, *Resume*, *Retry*, *Dismiss*) shown on hover, kept under *Needs attention*;
+    its text opens the task's detail, a page of its own at the prose width: a trail, the title,
+    then *Awaiting approval*, *Way out* and the runs as plain sections.
   - *Issues*, in the overview's column: a head (*New issue*, then *Refresh* and *N open*); a
     filter bar (search, then pickers for open/closed, progress, project, label); a hairline table,
     *Title*, *Labels*, *Updated*, a row a line, rows keeping their place while a person reads.

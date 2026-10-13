@@ -2,12 +2,14 @@
 //! what it waits on approval for, its last run's visits with what each kept
 //! and changed, and its earlier runs.
 
+use super::super::page_parts::page_section;
 use super::super::step_strip::{open_review, open_revise, press_continue};
-use super::super::workspace_page::{card_box, page_card};
 use super::super::{ChatPane, ChatPaneEvent, rel_time};
-use super::{Page, TasksPage, open_session, row_actions, row_said};
+use super::{Page, Press, TasksPage, open_session, row_said, task_acts};
 use crate::controls::Quiet as _;
+use crate::controls::Refuses as _;
 use crate::task::Row;
+use crate::tokens::LEADING_TIGHT;
 use gpui::{
     App, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, div,
@@ -20,12 +22,12 @@ use onehand_core::task::Approval;
 use onehand_core::task::Group;
 use onehand_core::task::marks::{self, Change};
 use onehand_core::task::work::{
-    ANSWER_LINES, Act, Around, PrSeen, REMOVE_WORKTREE_ABOUT, UnderReview, Work, last_lines,
-    next_action,
+    ANSWER_LINES, Act, Around, PrSeen, UnderReview, Work, last_lines, next_action,
 };
 use onehand_core::workflow::{Run, Visit};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 /// How many visits a run's timeline draws, its newest ones.
 const VISITS_SHOWN: usize = 100;
@@ -42,6 +44,16 @@ const DIFF_LINES: usize = 400;
 
 /// How many earlier runs a task's detail lists, its newest ones.
 const EARLIER_SHOWN: usize = 20;
+
+/// A fold row's chevron, at the dense icon size.
+const CHEVRON_W: gpui::Rems = gpui::rems(0.75);
+
+/// Where what a fold row opens onto starts: past the row's inset, its
+/// chevron and the gap after it, on the label's axis.
+const FOLD_INDENT: gpui::Rems = gpui::rems(0.5 + 0.75 + 0.5);
+
+/// The slot a row's time stands in: *2d · 14m 3s* at most.
+const TIME_W: gpui::Rems = gpui::rems(7.);
 
 /// Something read off the UI thread: `None` while it is being read.
 type Loaded<T> = Option<Result<T, String>>;
@@ -213,9 +225,11 @@ impl ChatPane {
     }
 }
 
-/// Task `task`, listed as `row`: a way back to the cards, its head with what
-/// can be done with it, what it waits on approval for, its last run's
-/// timeline, then its earlier runs.
+/// Task `task`, listed as `row`, read as a page: a trail with the way back
+/// to the cards and what can be done with it (one primary, one other, the
+/// rest in ⋯), its title and one line of facts, what it waits on approval
+/// for, its way out, its last run's timeline, then its earlier runs, each a
+/// plain section.
 pub(super) fn task_detail(
     detail: &TaskDetail,
     task: &onehand_core::task::Task,
@@ -224,52 +238,21 @@ pub(super) fn task_detail(
     cx: &mut Context<ChatPane>,
 ) -> Vec<gpui::AnyElement> {
     let muted = cx.theme().muted_foreground;
-    let back = crate::controls::action("task-back")
-        .quiet(cx)
-        .small()
-        .icon(Icon::new(IconName::ChevronLeft))
-        .label("All tasks")
-        .on_click(cx.listener(|pane: &mut ChatPane, _, _, cx| pane.open_task(None, cx)));
-    let head = card_box(cx)
-        .h_flex()
-        .items_center()
-        .gap_2()
-        .child(
-            div()
-                .v_flex()
-                .gap_0p5()
-                .flex_1()
-                .min_w_0()
-                .child(div().font_semibold().child(row.title.clone()))
-                .child(div().text_xs().text_color(muted).child(row_said(row, page))),
-        )
-        .children(row_actions("task-detail", row, true, cx))
-        .children(answers_review(task).then(|| {
-            crate::controls::action("task-answer-review")
-                .quiet(cx)
-                .small()
-                .label("Answer the pull request review…")
-                .tooltip(
-                    "Run it again from its repair step with the review as its note, as putting \
-                     the label back does",
-                )
-                .on_click(super::emit(&task.id, cx, ChatPaneEvent::AnswerReview))
-        }))
-        // Offered where its issue's view offers it: core's ways out, given
-        // the pull request as read.
-        .children(removable(task, detail).then(|| {
-            crate::controls::action("task-remove-worktree")
-                .quiet(cx)
-                .small()
-                .text_color(crate::theme::status_ink(cx).danger)
-                .label(Act::RemoveWorktree.label())
-                .tooltip(REMOVE_WORKTREE_ABOUT)
-                .on_click(super::emit(&task.id, cx, ChatPaneEvent::RemoveWorktree))
-        }));
-    let mut out = vec![
-        div().h_flex().child(back).into_any_element(),
-        head.into_any_element(),
-    ];
+    let mut out = vec![trail(detail, task, row, cx).into_any_element()];
+    out.push(
+        div()
+            .v_flex()
+            .gap_1()
+            .child(
+                div()
+                    .text_xl()
+                    .font_semibold()
+                    .line_height(gpui::relative(LEADING_TIGHT))
+                    .child(row.title.clone()),
+            )
+            .child(div().text_xs().text_color(muted).child(row_said(row, page)))
+            .into_any_element(),
+    );
     let Some((last, earlier)) = task.runs.split_last() else {
         return out;
     };
@@ -287,13 +270,13 @@ pub(super) fn task_detail(
     };
     let title = format!("Run {}", task.runs.len());
     out.push(
-        page_card(title, Some(last.visits().len()), None, cx)
+        page_section(title, Some(last.visits().len()), None, cx)
             .children(timeline(detail, last, live, cx))
             .into_any_element(),
     );
     if !earlier.is_empty() {
         let now = now_secs();
-        let mut card = page_card("Earlier runs", Some(earlier.len()), None, cx);
+        let mut section = page_section("Earlier runs", Some(earlier.len()), None, cx);
         for (n, run) in earlier.iter().enumerate().rev().take(EARLIER_SHOWN) {
             let open = detail.earlier_open.contains(&run.id);
             let ended = match &run.outcome {
@@ -305,38 +288,142 @@ pub(super) fn task_detail(
                 .last()
                 .map_or_else(String::new, |t| rel_time(now, t.at));
             let id = run.id.clone();
-            card = card.child(
-                div()
-                    .id(SharedString::from(format!("task-earlier-{}", run.id)))
-                    .h_flex()
-                    .items_center()
-                    .gap_2()
-                    .cursor_pointer()
-                    .on_click(cx.listener(move |pane: &mut ChatPane, _, _, cx| {
-                        pane.toggle_earlier(id.clone(), cx)
-                    }))
-                    .child(Icon::new(chevron(open)).small().text_color(muted))
-                    .child(div().font_semibold().child(format!("Run {}", n + 1)))
-                    .child(div().flex_1().min_w_0().truncate().child(ended))
-                    .child(div().text_xs().text_color(muted).child(at)),
+            section = section.child(
+                fold_row(
+                    SharedString::from(format!("task-earlier-{}", run.id)),
+                    open,
+                    cx,
+                )
+                .on_click(cx.listener(move |pane: &mut ChatPane, _, _, cx| {
+                    pane.toggle_earlier(id.clone(), cx)
+                }))
+                .child(
+                    div()
+                        .flex_none()
+                        .font_semibold()
+                        .child(format!("Run {}", n + 1)),
+                )
+                .child(div().flex_1().min_w_0().truncate().child(ended))
+                .child(slot(at, cx)),
             );
             if open {
-                card = card.child(
+                section = section.child(
                     div()
                         .v_flex()
                         .gap_2()
-                        .pl_4()
+                        .pl(FOLD_INDENT)
                         .children(timeline(detail, run, false, cx)),
                 );
             }
         }
         let hidden = earlier.len().saturating_sub(EARLIER_SHOWN);
         if hidden > 0 {
-            card = card.child(muted_line(&format!("{hidden} older runs not shown"), cx));
+            section = section.child(muted_line(&format!("{hidden} older runs not shown"), cx));
         }
-        out.push(card.into_any_element());
+        out.push(section.into_any_element());
     }
     out
+}
+
+/// The detail's trail: the way back to the cards, then what can be done with
+/// the task, the most fitting a primary, the next a secondary, the rest and
+/// the removal of its worktree in ⋯. ⋯ is always drawn, so the removal, which
+/// arrives once the pull request is read, shifts nothing.
+fn trail(
+    detail: &TaskDetail,
+    task: &onehand_core::task::Task,
+    row: &Row,
+    cx: &mut Context<ChatPane>,
+) -> gpui::Div {
+    let back = onehand_plugin_host::back_link("task-back", "Tasks", cx)
+        .on_click(cx.listener(|pane: &mut ChatPane, _, _, cx| pane.open_task(None, cx)));
+    let acts = task_acts(row, true);
+    let mut acts = acts.into_iter();
+    let primary = acts
+        .next()
+        .map(|act| act.button("task-detail", row, cx).primary());
+    let secondary = acts
+        .next()
+        .map(|act| act.button("task-detail", row, cx).secondary());
+    let rest: Vec<(&'static str, Press)> =
+        acts.map(|act| (act.label(), act.press(row, cx))).collect();
+    let answer = answers_review(task).then(|| {
+        (
+            "Answer the pull request review…",
+            Rc::new(super::emit(&task.id, cx, ChatPaneEvent::AnswerReview)) as Press,
+        )
+    });
+    let remove = removable(task, detail)
+        .then(|| Rc::new(super::emit(&task.id, cx, ChatPaneEvent::RemoveWorktree)) as Press);
+    let rest: Vec<_> = rest.into_iter().chain(answer).collect();
+    let empty = rest.is_empty() && remove.is_none();
+    let danger = crate::theme::status_ink(cx).danger;
+    let more = crate::controls::menu_below(
+        SharedString::from(format!("task-more-{}", task.id)),
+        crate::controls::action("task-more")
+            .small()
+            .quiet_icon(false, cx)
+            .icon(IconName::Ellipsis)
+            .tooltip("More actions")
+            .refuses(empty.then_some("Nothing more to do with this task")),
+        move |mut menu, _, _| {
+            for (label, press) in &rest {
+                let press = press.clone();
+                menu = menu.item(
+                    crate::controls::menu_item(*label)
+                        .on_click(move |event, window, cx| press(event, window, cx)),
+                );
+            }
+            if let Some(press) = &remove {
+                let press = press.clone();
+                if !rest.is_empty() {
+                    menu = menu.separator();
+                }
+                menu = menu.item(
+                    crate::controls::menu_row(move |_, _| {
+                        div().text_color(danger).child(Act::RemoveWorktree.label())
+                    })
+                    .on_click(move |event, window, cx| press(event, window, cx)),
+                );
+            }
+            menu
+        },
+    );
+    onehand_plugin_host::strip(cx)
+        .px_0()
+        .child(back)
+        .child(div().flex_1())
+        .children(primary)
+        .children(secondary)
+        .child(more)
+}
+
+/// A row that opens what is under it: the chevron first, in its own slot, so
+/// what it opens onto starts on the label's axis, [`FOLD_INDENT`] in.
+fn fold_row(id: SharedString, open: bool, cx: &App) -> gpui::Stateful<gpui::Div> {
+    onehand_plugin_host::row(false, cx)
+        .id(id)
+        .h_flex()
+        .items_center()
+        .gap_2()
+        .child(
+            Icon::new(chevron(open))
+                .xsmall()
+                .flex_none()
+                .text_color(cx.theme().muted_foreground),
+        )
+}
+
+/// A time or an age at a row's end, in a slot that keeps its width.
+fn slot(text: String, cx: &App) -> gpui::Div {
+    div()
+        .flex_none()
+        .w(TIME_W)
+        .h_flex()
+        .justify_end()
+        .text_xs()
+        .text_color(cx.theme().muted_foreground)
+        .child(text)
 }
 
 /// `run`'s visits, oldest first, each opening onto what it kept and what
@@ -396,38 +483,33 @@ fn timeline(
         let pinned = visit.start.clone().zip(visit.end.clone());
         let dirs = dirs(run);
         out.push(
-            div()
-                .id(SharedString::from(format!(
-                    "task-visit-{}-{}",
-                    run.id, visit.id
-                )))
-                .h_flex()
-                .items_center()
-                .gap_2()
-                .cursor_pointer()
-                .on_click(cx.listener(move |pane: &mut ChatPane, _, _, cx| {
-                    pane.toggle_visit(key.clone(), pinned.clone(), dirs.clone(), cx)
-                }))
-                .child(Icon::new(chevron(open)).small().text_color(muted))
-                .child(div().flex_none().child(label))
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .truncate()
-                        .text_xs()
-                        .text_color(muted)
-                        .child(why),
-                )
-                .child(div().flex_none().text_xs().text_color(muted).child(when))
-                .into_any_element(),
+            fold_row(
+                SharedString::from(format!("task-visit-{}-{}", run.id, visit.id)),
+                open,
+                cx,
+            )
+            .on_click(cx.listener(move |pane: &mut ChatPane, _, _, cx| {
+                pane.toggle_visit(key.clone(), pinned.clone(), dirs.clone(), cx)
+            }))
+            .child(div().flex_none().child(label))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .text_xs()
+                    .text_color(muted)
+                    .child(why),
+            )
+            .child(slot(when, cx))
+            .into_any_element(),
         );
         if open {
             out.push(
                 div()
                     .v_flex()
                     .gap_2()
-                    .pl_6()
+                    .pl(FOLD_INDENT)
                     .children(visit_body(detail, run, visit, live, cx))
                     .into_any_element(),
             );
@@ -463,8 +545,8 @@ fn visit_body(
     let (Some(from), Some(to)) = (visit.start.clone(), visit.end.clone()) else {
         let said = match (visit.ended_at, live) {
             (None, true) => "In progress",
-            (None, false) => "Cut off before its end was pinned.",
-            (Some(_), _) => "No marks were pinned for this visit.",
+            (None, false) => "Cut off before its end was pinned",
+            (Some(_), _) => "No marks were pinned for this visit",
         };
         out.push(muted_line(said, cx));
         return out;
@@ -472,7 +554,10 @@ fn visit_body(
     let changes = match detail.changes.get(&(from.clone(), to.clone())) {
         Some(Some(Ok(changes))) => changes,
         Some(Some(Err(why))) => {
-            out.push(muted_line(&format!("What changed was not read: {why}"), cx));
+            out.push(warning_line(
+                &format!("Reading what changed failed: {why}"),
+                cx,
+            ));
             return out;
         }
         Some(None) | None => {
@@ -494,27 +579,21 @@ fn visit_body(
             None => Some(div().text_color(muted).child("binary")),
         };
         let dirs = dirs(run);
-        let line = div()
-            .id(SharedString::from(format!(
-                "task-file-{}-{}-{i}",
-                run.id, visit.id
-            )))
-            .h_flex()
-            .items_center()
-            .gap_2();
-        // A binary file has no lines to diff: it is listed, never opened.
+        let id = SharedString::from(format!("task-file-{}-{}-{i}", run.id, visit.id));
+        // A binary file has no lines to diff: it is listed, never opened, its
+        // chevron's slot kept so its path starts where the others do.
         let line = match change.lines {
-            Some(_) => line
-                .cursor_pointer()
-                .on_click(cx.listener(move |pane: &mut ChatPane, _, _, cx| {
+            Some(_) => fold_row(id, opened.is_some(), cx).on_click(cx.listener(
+                move |pane: &mut ChatPane, _, _, cx| {
                     pane.toggle_file(key.clone(), dirs.clone(), cx)
-                }))
-                .child(
-                    Icon::new(chevron(opened.is_some()))
-                        .small()
-                        .text_color(muted),
-                ),
-            None => line.pl_4(),
+                },
+            )),
+            None => onehand_plugin_host::row(false, cx)
+                .id(id)
+                .h_flex()
+                .items_center()
+                .gap_2()
+                .child(div().flex_none().w(CHEVRON_W)),
         };
         out.push(
             line.child(
@@ -523,7 +602,7 @@ fn visit_body(
                     .min_w_0()
                     .truncate()
                     .font_family(cx.theme().mono_font_family.clone())
-                    .text_xs()
+                    .text_size(crate::tokens::CODE_TEXT)
                     .child(change.path.clone()),
             )
             .children(counts.map(|counts| counts.text_xs()))
@@ -545,7 +624,7 @@ fn visit_body(
                 }
             }
             Some(Some(Err(why))) => {
-                out.push(muted_line(&format!("The diff was not read: {why}"), cx))
+                out.push(warning_line(&format!("Reading the diff failed: {why}"), cx))
             }
             Some(None) => out.push(muted_line("Reading the diff…", cx)),
             None => {}
@@ -616,7 +695,7 @@ fn way_out(
         button.on_click(super::emit(&task.id, cx, ChatPaneEvent::RetryTaskCurrent))
     });
     Some(
-        page_card("Way out", None, None, cx)
+        page_section("Way out", None, None, cx)
             .child(div().text_sm().child(said))
             .child(div().h_flex().gap_2().children(buttons))
             .into_any_element(),
@@ -644,7 +723,7 @@ fn review_card(
             .text_xs()
             .text_color(crate::theme::status_ink(cx).warning)
             .child(format!(
-                "Showing the last {ANSWER_LINES} of {lines} lines; Review… opens all of it."
+                "Showing the last {ANSWER_LINES} of {lines} lines; Review… opens all of it"
             ))
     });
     let pane = cx.entity().downgrade();
@@ -662,7 +741,7 @@ fn review_card(
             .child(button)
             .child(div().text_xs().text_color(muted).child(said))
     };
-    page_card("Awaiting approval", None, open, cx)
+    page_section("Awaiting approval", None, open, cx)
         .children(said)
         .children(cut)
         .child(
@@ -693,7 +772,6 @@ fn review_card(
             crate::controls::action("task-review-continue")
                 .primary()
                 .small()
-                .icon(Icon::new(IconName::Check))
                 .label("Continue")
                 .on_click(move |_, window, cx| press_continue(pane.clone(), &pressed, window, cx)),
             review.continue_said(),
@@ -707,7 +785,6 @@ fn mono_well(text: &str, cx: &App) -> Vec<gpui::AnyElement> {
     let well = onehand_plugin_host::well(cx)
         .v_flex()
         .p_2()
-        .text_xs()
         .children(shown.lines().map(|line| {
             // An empty line still takes its height.
             div().child(match line.is_empty() {
@@ -721,6 +798,15 @@ fn mono_well(text: &str, cx: &App) -> Vec<gpui::AnyElement> {
     }
     out.push(well.into_any_element());
     out
+}
+
+/// A read that failed, said in the warning ink.
+fn warning_line(text: &str, cx: &App) -> gpui::AnyElement {
+    div()
+        .text_xs()
+        .text_color(crate::theme::status_ink(cx).warning)
+        .child(text.to_string())
+        .into_any_element()
 }
 
 fn muted_line(text: &str, cx: &App) -> gpui::AnyElement {

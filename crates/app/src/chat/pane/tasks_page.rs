@@ -1,4 +1,5 @@
-use super::workspace_page::{ALL_PROJECTS, PageProject, card_box, page_card};
+use super::page_parts::{page_card, pair};
+use super::workspace_page::{ALL_PROJECTS, PageProject};
 use super::{ChatPane, ChatPaneEvent, Page};
 use crate::controls::Quiet as _;
 use crate::task::Row;
@@ -7,9 +8,10 @@ use gpui::{
     App, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, Window, div,
 };
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Sizable as _, StyledExt};
 use onehand_core::task::{Group, Section};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 /// How many rows each card of the Tasks page draws. Finished tasks are kept
 /// by the hundred, and nobody reads that far down a card.
@@ -59,7 +61,12 @@ impl ChatPane {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let filter = filter.filter(|only| projects.iter().any(|project| &project.root == only));
+        // A filter asked for (a project's page's line) wins; else the one left
+        // when the page was last shown is kept.
+        let filter = filter
+            .or_else(|| self.tasks_filter.clone())
+            .filter(|only| projects.iter().any(|project| &project.root == only));
+        self.tasks_filter = filter.clone();
         self.page = Some(Page::Tasks(TasksPage {
             projects,
             filter,
@@ -73,6 +80,7 @@ impl ChatPane {
     }
 
     fn filter_tasks(&mut self, only: Option<PathBuf>, cx: &mut Context<Self>) {
+        self.tasks_filter = only.clone();
         if let Some(Page::Tasks(page)) = self.page.as_mut() {
             page.filter = only;
             cx.notify();
@@ -114,7 +122,7 @@ impl ChatPane {
         });
         if let Some((detail, task, row)) = opened {
             let body = task_detail(detail, &task, row, page, cx);
-            return self.tasks_frame(body, cx);
+            return self.tasks_frame(body, crate::tokens::PAGE_PROSE, cx);
         }
 
         let filter_name = page
@@ -133,12 +141,13 @@ impl ChatPane {
         let this = cx.entity();
         let filter = crate::controls::menu_below(
             "tasks-filter",
-            crate::controls::action("tasks-filter-trigger")
-                .quiet(cx)
-                .small()
-                .label(filter_name)
-                .icon(Icon::new(IconName::ChevronDown))
-                .text_color(muted),
+            onehand_plugin_host::picker(
+                "tasks-filter-trigger",
+                filter_name,
+                page.filter.is_some(),
+                onehand_plugin_host::ControlSize::Small,
+                cx,
+            ),
             move |mut menu, _, _| {
                 for (label, only) in &choices {
                     let (only, this) = (only.clone(), this.clone());
@@ -162,7 +171,6 @@ impl ChatPane {
                     key: &'static str,
                     rows: Vec<Row>,
                     empty: &str,
-                    control: Option<gpui::AnyElement>,
                     cx: &mut Context<Self>| {
             let (count, hidden) = (rows.len(), rows.len().saturating_sub(TASKS_SHOWN));
             let drawn: Vec<gpui::AnyElement> = rows
@@ -171,7 +179,7 @@ impl ChatPane {
                 .enumerate()
                 .map(|(i, row)| task_row((key, i), row, page, cx))
                 .collect();
-            page_card(title, Some(count), control, cx)
+            page_card(title, Some(count), None, cx)
                 .children((count == 0).then(|| muted_line(empty.to_string())))
                 .children(drawn)
                 .children((hidden > 0).then(|| muted_line(format!("{hidden} more not shown"))))
@@ -180,52 +188,49 @@ impl ChatPane {
             "Needs attention",
             "tasks-attention",
             needs_attention,
-            "Nothing needs you.",
-            Some(filter.into_any_element()),
+            "Nothing needs you",
             cx,
         );
         let running = card(
             "Running",
             "tasks-running",
             running,
-            "Nothing is running.",
-            None,
+            "Nothing is running",
             cx,
         );
-        let queued = card(
-            "Queued",
-            "tasks-queued",
-            queued,
-            "Nothing is queued.",
-            None,
-            cx,
-        );
+        let queued = card("Queued", "tasks-queued", queued, "Nothing is queued", cx);
         let finished = card(
             "Finished",
             "tasks-finished",
             finished,
-            "Nothing has finished yet.",
-            None,
+            "Nothing has finished yet",
             cx,
         )
         .children((removed > 0).then(|| {
             muted_line(match removed {
-                1 => "1 older task was removed.".to_string(),
-                n => format!("{n} older tasks were removed."),
+                1 => "1 older task was removed".to_string(),
+                n => format!("{n} older tasks were removed"),
             })
         }));
 
+        // A filter bar over the cards and no head: the cards hold the counts,
+        // and the page has no action of its own. The cards two by two while
+        // the column holds two.
         let body = vec![
-            attention.into_any_element(),
-            running.into_any_element(),
-            queued.into_any_element(),
-            finished.into_any_element(),
+            div().h_flex().child(filter).into_any_element(),
+            pair(attention, running).into_any_element(),
+            pair(queued, finished).into_any_element(),
         ];
-        self.tasks_frame(body, cx)
+        self.tasks_frame(body, PAGE_WIDE, cx)
     }
 
     /// The page around `body`: its header, then one scrolled column.
-    fn tasks_frame(&self, body: Vec<gpui::AnyElement>, cx: &mut Context<Self>) -> gpui::AnyElement {
+    fn tasks_frame(
+        &self,
+        body: Vec<gpui::AnyElement>,
+        width: gpui::Rems,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
         div()
             .key_context("TasksPage")
             .track_focus(&self.tasks_focus)
@@ -249,7 +254,7 @@ impl ChatPane {
                                 .v_flex()
                                 .gap_6()
                                 .w_full()
-                                .max_w(PAGE_WIDE)
+                                .max_w(width)
                                 .text_sm()
                                 .children(body),
                         ),
@@ -285,7 +290,11 @@ fn task_row(
     let muted = cx.theme().muted_foreground;
     let said = row_said(&row, page);
     let (name, i) = key;
-    let actions = row_actions(&format!("{name}-{i}"), &row, false, cx);
+    // A row needing attention keeps its next action drawn: that attention is
+    // earned. Every other row shows its actions while it is pointed at.
+    let earned = row.group.section() == Section::NeedsAttention;
+    let actions = row_actions(&format!("{name}-{i}"), &row, cx);
+    let group = SharedString::from(format!("{name}-row-{i}"));
     let id = row.id.clone();
     let text = div()
         .id(SharedString::from(format!("{name}-open-{i}")))
@@ -299,93 +308,142 @@ fn task_row(
         .on_click(
             cx.listener(move |pane: &mut ChatPane, _, _, cx| pane.open_task(Some(id.clone()), cx)),
         );
-    card_box(cx)
-        .p_2()
+    onehand_plugin_host::row(false, cx)
+        .group(group.clone())
         .h_flex()
         .items_center()
         .gap_2()
+        .py_1p5()
         .child(text)
-        .children(actions)
+        .child(onehand_plugin_host::hover_slot(
+            group,
+            earned,
+            div().h_flex().gap_1().children(actions),
+        ))
         .into_any_element()
 }
 
-/// What can be done with the task `row` from here, keyed by `key`. A
+/// A press, shared by a button and a menu row that do the same thing.
+pub(super) type Press = Rc<dyn Fn(&gpui::ClickEvent, &mut Window, &mut App)>;
+
+/// What can be done with a task from where it is listed.
+#[derive(Clone, Copy, PartialEq)]
+pub(super) enum TaskAct {
+    OpenSession,
+    Stop,
+    Resume,
+    Retry,
+    Dismiss,
+}
+
+impl TaskAct {
+    pub(super) fn label(self) -> &'static str {
+        match self {
+            Self::OpenSession => "Open session",
+            Self::Stop => "Stop",
+            Self::Resume => "Resume",
+            Self::Retry => "Retry…",
+            Self::Dismiss => "Dismiss",
+        }
+    }
+
+    fn tooltip(self) -> Option<&'static str> {
+        match self {
+            Self::Resume => Some("Carry on from that step in a new session"),
+            Self::Retry => Some("Run it again in a new run"),
+            Self::Dismiss => Some("Let this task go; it is kept as history and its work stays"),
+            Self::OpenSession | Self::Stop => None,
+        }
+    }
+
+    /// What a press of it does, for a button or a menu row alike.
+    pub(super) fn press(self, row: &Row, cx: &Context<ChatPane>) -> Press {
+        let id = &row.id;
+        match self {
+            Self::OpenSession => {
+                let session = row.session;
+                let pane = cx.entity().downgrade();
+                Rc::new(move |_, _, cx| {
+                    if let Some((uid, window)) = session {
+                        let _ = pane.update(cx, |_, cx| {
+                            cx.emit(ChatPaneEvent::ShowSession { uid, window })
+                        });
+                    }
+                })
+            }
+            Self::Stop => Rc::new(emit(id, cx, ChatPaneEvent::StopTask)),
+            Self::Resume => Rc::new(emit(id, cx, ChatPaneEvent::ResumeTask)),
+            Self::Retry => Rc::new(emit(id, cx, ChatPaneEvent::RetryTask)),
+            Self::Dismiss => Rc::new(emit(id, cx, ChatPaneEvent::DismissTask)),
+        }
+    }
+
+    /// The act as a quiet button keyed by `key`.
+    pub(super) fn button(
+        self,
+        key: &str,
+        row: &Row,
+        cx: &Context<ChatPane>,
+    ) -> gpui_component::button::Button {
+        let press = self.press(row, cx);
+        let button = crate::controls::action(SharedString::from(format!("{key}-{}", self.label())))
+            .small()
+            .label(self.label());
+        let button = match self.tooltip() {
+            Some(tip) => button.tooltip(tip),
+            None => button,
+        };
+        button.on_click(move |event, window, cx| press(event, window, cx))
+    }
+}
+
+/// What can be done with the task `row` from here, most fitting first. A
 /// finished task offers nothing on a row, and *Retry* in its detail when
 /// `retry_finished`.
-fn row_actions(
-    key: &str,
-    row: &Row,
-    retry_finished: bool,
-    cx: &mut Context<ChatPane>,
-) -> Vec<gpui::AnyElement> {
-    let id = row.id.clone();
-    let button = |what: &'static str, label: &'static str, cx: &App| {
-        crate::controls::action(SharedString::from(format!("{key}-{what}")))
-            .quiet(cx)
-            .small()
-            .label(label)
-    };
-    let open = open_session(&format!("{key}-open"), row, cx);
-    let retry = |cx: &mut Context<ChatPane>| {
-        button("retry", "Retry…", cx)
-            .tooltip("Run it again in a new run")
-            .on_click(emit(&id, cx, ChatPaneEvent::RetryTask))
-            .into_any_element()
-    };
-    let mut actions: Vec<gpui::AnyElement> = Vec::new();
+pub(super) fn task_acts(row: &Row, retry_finished: bool) -> Vec<TaskAct> {
+    let mut acts = Vec::new();
     match row.group {
         Group::Waiting | Group::Running | Group::Queued => {
-            actions.extend(open.map(IntoElement::into_any_element));
+            if row.session.is_some() {
+                acts.push(TaskAct::OpenSession);
+            }
             if row.stoppable {
-                actions.push(
-                    button("stop", "Stop", cx)
-                        .on_click(emit(&id, cx, ChatPaneEvent::StopTask))
-                        .into_any_element(),
-                );
+                acts.push(TaskAct::Stop);
             }
         }
         Group::Ended => {
             if row.resumable {
-                actions.push(
-                    button("resume", "Resume", cx)
-                        .tooltip("Carry on from that step in a new session")
-                        .on_click(emit(&id, cx, ChatPaneEvent::ResumeTask))
-                        .into_any_element(),
-                );
+                acts.push(TaskAct::Resume);
             }
-            actions.push(retry(cx));
-            actions.push(
-                button("dismiss", "Dismiss", cx)
-                    .tooltip("Let this task go; it is kept as history and its work stays")
-                    .on_click(emit(&id, cx, ChatPaneEvent::DismissTask))
-                    .into_any_element(),
-            );
+            acts.push(TaskAct::Retry);
+            acts.push(TaskAct::Dismiss);
         }
         Group::Finished => {
             if retry_finished {
-                actions.push(retry(cx));
+                acts.push(TaskAct::Retry);
             }
         }
     }
-    actions
+    acts
+}
+
+/// What can be done with the task `row` from a row, keyed by `key`: each a
+/// quiet button.
+fn row_actions(key: &str, row: &Row, cx: &mut Context<ChatPane>) -> Vec<gpui::AnyElement> {
+    task_acts(row, false)
+        .into_iter()
+        .map(|act| act.button(key, row, cx).quiet(cx).into_any_element())
+        .collect()
 }
 
 /// *Open session* on the session `row` runs in, if it has one.
-fn open_session(
+pub(super) fn open_session(
     id: &str,
     row: &Row,
     cx: &mut Context<ChatPane>,
 ) -> Option<gpui_component::button::Button> {
-    let (uid, window) = row.session?;
-    Some(
-        crate::controls::action(SharedString::from(id.to_string()))
-            .quiet(cx)
-            .small()
-            .label("Open session")
-            .on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {
-                cx.emit(ChatPaneEvent::ShowSession { uid, window });
-            })),
-    )
+    row.session?;
+    Some(TaskAct::OpenSession.button(id, row, cx).quiet(cx))
 }
 
 /// A press that announces `event` about task `id`.

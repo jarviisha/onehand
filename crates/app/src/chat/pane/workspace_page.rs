@@ -1,8 +1,9 @@
+use super::page_parts::{card_box, card_title, page_card, page_section, pair};
 use super::project_page::count_of;
 use super::{ChatPane, ChatPaneEvent, Page, SessionSignal, rel_time};
 use crate::tokens::PAGE_WIDE;
 use gpui::{
-    App, Context, Div, InteractiveElement, IntoElement, ParentElement, Rems, SharedString,
+    App, Context, InteractiveElement, IntoElement, ParentElement, Rems, SharedString,
     StatefulInteractiveElement, Styled, Window, div, rems,
 };
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
@@ -27,11 +28,6 @@ const PAGE_RECENT: usize = 5;
 /// many that a workspace of busy projects builds a thousand rows nobody reaches.
 const PAGE_ISSUES: usize = 100;
 
-/// The width a workspace page card starts from before it grows into its row.
-/// Two fit side by side within the page, and a narrower panel wraps them one
-/// under the other.
-const PAGE_CARD: Rems = rems(22.);
-
 /// The width a project tile starts from.
 const PAGE_TILE: Rems = rems(14.);
 
@@ -41,9 +37,6 @@ const PAGE_TILE_MAX: Rems = rems(21.);
 
 /// A tile's first line, which the folder beside it is centred on.
 const PAGE_TITLE_LINE: Rems = rems(1.25);
-
-/// The height of a workspace page card's title row.
-const PAGE_TITLE_H: Rems = rems(1.75);
 
 /// What a project filter reads while it is not narrowing the list at all:
 /// the workspace page's issues, or the Tasks page.
@@ -720,19 +713,6 @@ impl ChatPane {
                 n => format!("{n} closed issues are not listed"),
             })
         }));
-        // Two cards to a row where the panel is wide enough, one under the
-        // other where it is not.
-        let pair = |left: gpui::Div, right: gpui::Div| {
-            div()
-                .h_flex()
-                .flex_wrap()
-                .items_start()
-                .gap_4()
-                .w_full()
-                .child(left.flex_grow_1().flex_basis(PAGE_CARD))
-                .child(right.flex_grow_1().flex_basis(PAGE_CARD))
-        };
-
         div()
             .size_full()
             .v_flex()
@@ -767,57 +747,4 @@ impl ChatPane {
             )
             .into_any_element()
     }
-}
-
-/// A card on the workspace page or the Tasks page: a bordered box, its title in bold with a
-/// muted count beside it, an optional control at the far end, and whatever it
-/// holds below.
-pub(super) fn page_card(
-    title: impl Into<SharedString>,
-    count: Option<usize>,
-    control: Option<gpui::AnyElement>,
-    cx: &App,
-) -> Div {
-    card_box(cx).child(card_title(title, count, control, cx))
-}
-
-/// A section of the workspace page that is a list rather than a box: its
-/// title row over what it holds, on the page's own surface.
-fn page_section(
-    title: impl Into<SharedString>,
-    count: Option<usize>,
-    control: Option<gpui::AnyElement>,
-    cx: &App,
-) -> Div {
-    div()
-        .v_flex()
-        .gap_2()
-        .min_w_0()
-        .child(card_title(title, count, control, cx))
-}
-
-/// The hairline box every card on a page is drawn in, the plugin host's so
-/// an issue's boxes are the same one.
-pub(super) use onehand_plugin_host::card_box;
-
-/// A workspace page heading: the title in bold, a muted count beside it and an
-/// optional control at the far end.
-fn card_title(
-    title: impl Into<SharedString>,
-    count: Option<usize>,
-    control: Option<gpui::AnyElement>,
-    cx: &App,
-) -> Div {
-    let muted = cx.theme().muted_foreground;
-    div()
-        .h_flex()
-        .items_center()
-        .gap_2()
-        // The control's own height must not change the title row's, or a card
-        // with a filter sits taller than the one beside it.
-        .h(PAGE_TITLE_H)
-        .child(div().font_semibold().child(title.into()))
-        .children(count.map(|n| div().text_xs().text_color(muted).child(n.to_string())))
-        .child(div().flex_1())
-        .children(control)
 }

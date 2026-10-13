@@ -29,6 +29,7 @@ mod events;
 mod header;
 mod history;
 mod overlay;
+mod page_parts;
 mod project_page;
 mod runs;
 mod sessions;
@@ -241,6 +242,8 @@ pub struct ChatPane {
     /// The project the overview's issues are narrowed to, kept while the
     /// overview is left and shown again.
     workspace_filter: Option<std::path::PathBuf>,
+    /// The project the Tasks page is narrowed to, kept while it is left.
+    tasks_filter: Option<std::path::PathBuf>,
     /// Every session the user has opened, in whatever phase it has reached.
     ///
     /// One map, not six. What each session's phase means, and why the parallel
@@ -415,6 +418,7 @@ impl ChatPane {
                 focus_handle: cx.focus_handle(),
                 tasks_focus: cx.focus_handle(),
                 workspace_filter: None,
+                tasks_filter: None,
                 conversations: HashMap::new(),
                 active: None,
                 composer,
