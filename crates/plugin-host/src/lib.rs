@@ -30,8 +30,8 @@ pub use workbench::{Ask, Request, WorkbenchMode};
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, Div, ElementId, Entity, Hsla, IntoElement, ParentElement as _, SharedString,
-    Styled as _, Window, div,
+    AnyElement, App, Div, ElementId, Entity, Hsla, InteractiveElement as _, IntoElement,
+    ParentElement as _, SharedString, Styled as _, Window, div,
 };
 use gpui_component::button::{Button, ButtonCustomVariant, ButtonRounded, ButtonVariants as _};
 use gpui_component::input::{Input, InputState, Textarea, TextareaState};
@@ -550,6 +550,41 @@ impl ControlSize {
             Self::Tall => button.tall(),
         }
     }
+}
+
+/// A picker's trigger: a filled button naming what it is set to, then the
+/// caret that opens its menu, so it reads as a control. Unset, it names what
+/// it picks; set, the choice, so a narrowed list says so in words. Its ink is
+/// the one its fill is paired with, set or not. `size` is the role's.
+pub fn picker(
+    id: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    size: ControlSize,
+) -> Button {
+    size.on(action(id)
+        .secondary()
+        .label(label.into())
+        .dropdown_caret(true))
+}
+
+/// A list row's surface: at least [`tokens::ROW_H`] tall, inset `px_2`, at
+/// the theme's corner, answering the pointer. The hover fills it with
+/// `list_hover` and leaves its inks; the picked row stands on `accent` in
+/// that fill's paired ink, a quieter ink on it taken through [`middle_ink`]
+/// under that pair. The caller lays it out, a line or a line over a second,
+/// and adds the ring where the keyboard is.
+pub fn row(picked: bool, cx: &App) -> Div {
+    let theme = cx.theme();
+    let hover = theme.list_hover;
+    div()
+        .min_h(tokens::ROW_H)
+        .px_2()
+        .rounded(theme.radius)
+        .cursor_pointer()
+        .map(|row| match picked {
+            true => row.bg(theme.accent).text_color(theme.accent_foreground),
+            false => row.hover(move |row| row.bg(hover)),
+        })
 }
 
 /// One of a few choices, the one taken among them filled: a ghost button,

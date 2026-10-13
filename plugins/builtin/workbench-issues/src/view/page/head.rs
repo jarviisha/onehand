@@ -10,13 +10,15 @@ use gpui::{
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::InputState;
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, Sizable as _, StyledExt};
 use onehand_core::issues;
 use onehand_core::task::work::list::{Filters, Incomplete, Listed, Progress};
 use onehand_plugin_host::Quiet as _;
 use onehand_plugin_host::Tall as _;
 use onehand_plugin_host::search_input;
-use onehand_plugin_host::{AppIcon, action, menu_below, menu_item, status_ink};
+use onehand_plugin_host::{
+    AppIcon, ControlSize, action, menu_below, menu_item, picker, status_ink,
+};
 use std::path::PathBuf;
 
 /// How many labels the label filter offers.
@@ -40,6 +42,7 @@ impl IssuesView {
         query: &Entity<InputState>,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let reading = listed.open + listed.closed == 0 && self.reading_issues(projects, cx);
         let showing = {
             let closed = filters.closed;
             // The count of open issues heads the page; the menu keeps both.
@@ -51,11 +54,10 @@ impl IssuesView {
             let view = cx.entity();
             menu_below(
                 "issues-page-showing",
-                trigger(
+                picker(
                     "issues-page-showing-trigger",
                     if closed { "Closed" } else { "Open" },
-                    closed,
-                    cx,
+                    ControlSize::Tall,
                 ),
                 move |mut menu, _, _| {
                     for (i, choice) in choices.iter().enumerate() {
@@ -78,14 +80,13 @@ impl IssuesView {
             menu_below(
                 "issues-page-progress",
                 // Unset, the trigger names what it filters by.
-                trigger(
+                picker(
                     "issues-page-progress-trigger",
                     match picked {
                         Progress::All => "Progress",
                         picked => picked.label(),
                     },
-                    picked != Progress::All,
-                    cx,
+                    ControlSize::Tall,
                 ),
                 move |mut menu, _, _| {
                     for choice in Progress::ALL {
@@ -117,7 +118,7 @@ impl IssuesView {
             let view = cx.entity();
             menu_below(
                 "issues-page-project",
-                trigger("issues-page-project-trigger", &name, picked.is_some(), cx),
+                picker("issues-page-project-trigger", name, ControlSize::Tall),
                 move |menu, _, _| {
                     let pick = |only: Option<PathBuf>| {
                         let view = view.clone();
@@ -148,11 +149,10 @@ impl IssuesView {
             let view = cx.entity();
             menu_below(
                 "issues-page-label",
-                trigger(
+                picker(
                     "issues-page-label-trigger",
-                    picked.as_deref().unwrap_or("Label"),
-                    picked.is_some(),
-                    cx,
+                    picked.clone().unwrap_or_else(|| "Label".to_string()),
+                    ControlSize::Tall,
                 ),
                 move |menu, window, _| {
                     let pick = |label: Option<String>| {
@@ -193,6 +193,10 @@ impl IssuesView {
                 )
             },
         );
+        let pr_reading = self.page.as_ref().is_some_and(|page| page.pr_reading > 0);
+        // What waits on the person holds the primary while it shows: an
+        // issue or a form floating over the list.
+        let floating = self.page.as_ref().is_some_and(|page| page.open) && self.has_page_issue();
         let theme = cx.theme();
         let muted = theme.muted_foreground;
         let header = div()
@@ -206,7 +210,11 @@ impl IssuesView {
                     .truncate()
                     .text_sm()
                     .text_color(muted)
-                    .child(format!("{} open", listed.open)),
+                    // Nothing until the first read lands: *0 open* over an
+                    // empty list would say there are none.
+                    .when(!reading, |count| {
+                        count.child(format!("{} open", listed.open))
+                    }),
             )
             // Named for assistive technology in a box of its own: the
             // library's button takes a name only from a text label.
@@ -220,6 +228,7 @@ impl IssuesView {
                             .tall()
                             .quiet(cx)
                             .icon(Icon::new(AppIcon::Refresh))
+                            .loading(pr_reading)
                             .tooltip(read)
                             .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
                                 view.read_prs(cx);
@@ -230,8 +239,10 @@ impl IssuesView {
             .child(
                 action("issues-page-new")
                     .tall()
-                    .primary()
-                    .icon(Icon::new(IconName::Plus))
+                    .map(|button| match floating {
+                        true => button.secondary(),
+                        false => button.primary(),
+                    })
                     .label("New issue")
                     .tooltip("In the project filtered to, or the one picked")
                     .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
@@ -326,21 +337,4 @@ impl IssuesView {
                 .into_any_element(),
         )
     }
-}
-
-/// A filter's trigger: a filled chip naming what it is set to, then the
-/// caret that opens it, so it reads as a control. Set away from where it
-/// starts, its words take the primary ink, so a narrowed list says so.
-fn trigger(id: &'static str, label: &str, set: bool, cx: &App) -> gpui_component::button::Button {
-    let theme = cx.theme();
-    let ink = match set {
-        true => theme.primary,
-        false => theme.secondary_foreground,
-    };
-    action(id)
-        .tall()
-        .secondary()
-        .label(label.to_string())
-        .dropdown_caret(true)
-        .text_color(ink)
 }

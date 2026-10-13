@@ -645,14 +645,9 @@ fn neutral(cx: &App) -> Tint {
     }
 }
 
-/// The library's small label on `fill`, edged in the same fill so it reads as
-/// one shape round the word.
-fn tag(text: String, Tint { fill, ink }: Tint) -> Tag {
-    Tag::custom(fill, ink, fill)
-        .small()
-        .rounded(onehand_plugin_host::tokens::BADGE_CORNER)
-        .flex_none()
-        .child(text)
+/// A badge that keeps its width in a row.
+fn tag(text: String, tint: Tint) -> Tag {
+    onehand_plugin_host::badge(text, tint).flex_none()
 }
 
 #[cfg(test)]

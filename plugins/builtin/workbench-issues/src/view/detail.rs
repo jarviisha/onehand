@@ -18,7 +18,7 @@ use onehand_core::issues::{LocalIssue, sync};
 use onehand_core::task::Group;
 use onehand_core::task::work::{IssueWork, PrSeen};
 use onehand_plugin_host::Quiet as _;
-use onehand_plugin_host::tokens::{BAR_H, CODE_TEXT, PAGE_PROSE};
+use onehand_plugin_host::tokens::{CODE_TEXT, PAGE_PROSE};
 use onehand_plugin_host::{AppIcon, Tint, action, status_ink, tint};
 use priority::{priority, priority_ink};
 use std::path::Path;
@@ -93,23 +93,16 @@ pub(super) fn issue_view(
     let number = issue.number;
     let theme = cx.theme();
     let muted = theme.muted_foreground;
-    let border = theme.border;
     let next = work::next_for(issue, &doing);
     let named = issue
         .reference()
         .map_or_else(|| format!("#{number}"), str::to_string);
 
     // The trail: the project, then the issue, and its actions at the end of
-    // the same bar, so what to do is found where the issue is named.
-    let trail = div()
-        .h_flex()
-        .items_center()
-        .gap_2()
-        .flex_none()
-        .min_h(BAR_H)
-        .px_4()
-        .border_b_1()
-        .border_color(border)
+    // the same bar, so what to do is found where the issue is named. Where it
+    // sits is muted; the issue itself, the place the person is, takes the
+    // full ink.
+    let trail = onehand_plugin_host::strip(cx)
         .child(
             div()
                 .h_flex()
@@ -125,6 +118,7 @@ pub(super) fn issue_view(
                     div()
                         .flex_none()
                         .font_family(theme.mono_font_family.clone())
+                        .text_color(theme.foreground)
                         .child(named.clone()),
                 ),
         )
@@ -146,8 +140,9 @@ pub(super) fn issue_view(
     let title = div().text_xl().font_semibold().child(issue.title.clone());
 
     // Its facts on one line: the reference (to the forge, where it is
-    // linked), the project, when it changed, how its work stands, how urgent
-    // the body says it is, and what a template-written body left out.
+    // linked), when it changed, how its work stands, how urgent the body says
+    // it is, and what a template-written body left out. The project is not
+    // among them: the trail and the tags over it already name it.
     let reference = match (issue.reference(), &issue.link) {
         (Some(reference), Some(link)) => div()
             .id("issue-reference")
@@ -166,7 +161,7 @@ pub(super) fn issue_view(
         _ => identity(issue, cx),
     };
     let fact = |text: String| div().flex_none().child(text).into_any_element();
-    let mut said: Vec<AnyElement> = vec![reference, fact(doing.project.to_string())];
+    let mut said: Vec<AnyElement> = vec![reference];
     let changed = issue.changed();
     if changed > 0 {
         said.push(fact(format!(

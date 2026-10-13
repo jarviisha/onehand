@@ -140,7 +140,11 @@ width while labels truncate; showing hover actions must not move the text beside
 ### Pages
 
 A page takes the agent pane, its name in the pane's header. Its body scrolls as one column centred
-in the pane, padded `p_6`, its sections `gap_6` apart, as wide as one of:
+in the pane, padded `p_6`, its sections `gap_6` apart, as wide as one of the widths below. A page
+with a filter bar keeps its head, filters and a table's column names in place while its content
+scrolls under them, so the filters stay in reach beside what they filter.
+
+Widths:
 
 - `PAGE_NARROW`: one column of fields or rows (a project's page);
 - `PAGE_PROSE`: an editor, or one thing read in full (Workflows, an issue);
@@ -174,7 +178,8 @@ Boxes sit side by side while the measured column holds two, and stack when it do
 A single-line row is `ROW_H` tall, padded `px_2` with `gap_2`, at `radius`. Hover fills it with
 `list_hover`, the selected row with `accent`. A row's own actions are `.small()` ghost buttons, shown
 on hover and on the selected row; `.xsmall()` only for one inside the row's line of meta text. Every list has a named cap, and its last line says how many more
-there are, in meta text. A table is a box of rows split by hairlines, under a head row in meta text.
+there are, in meta text. A table is a box of rows split by hairlines, under a head row in meta text
+on the box's own surface, its rows `row`s at the box's inset, square but at the box's ends.
 Keep metadata and actions in stable trailing slots. Multi-line row variants align their primary
 labels and secondary lines across peers. A hovered selected row remains recognizably selected;
 keyboard focus remains separately visible. Hover actions are also available on keyboard focus.
@@ -296,7 +301,8 @@ danger tint.
 - **Keyboard focus shows the ring**, only when the keyboard moved it there. A field shows focus by
   its edge alone, turned the `ring` ink; one with no edge at rest gains one while focused.
 - A dialog, a popup or a floating panel opens with focus on its first field, or on its primary
-  action when it has none, and closes on Esc, asking first when a form in it holds unsaved
+  action when it has none. A panel floating beside the list it was picked from (the Issues
+  page's issue) leaves focus on the list, so ↑ and ↓ keep stepping it. Each closes on Esc, asking first when a form in it holds unsaved
   changes. On closing, focus goes back to what opened it, or to the conversation when that is gone.
 - Esc closes the innermost layer only. A page is a place, not a layer: Esc leaves it where it is.
 - A key with no modifier that a region handles never fires while a field inside it holds the

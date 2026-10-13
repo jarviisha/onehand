@@ -71,6 +71,9 @@ pub(super) struct PageState {
     /// The generation of each project's pull request read, so an answer to
     /// an older read is dropped.
     pub(super) pr_asked: HashMap<PathBuf, u64>,
+    /// How many projects' pull request reads are out, so *Refresh* says it
+    /// is reading.
+    pub(super) pr_reading: usize,
     /// The page was just shown: its pull requests are read.
     pub(super) arrived: bool,
     /// What the issue on screen left, as read off git.
@@ -320,6 +323,9 @@ impl IssuesView {
             .on_action(cx.listener(|view, _: &IssuesClose, window, cx| view.page_close(window, cx)))
             .size_full()
             .v_flex()
+            // Chrome, as every page's body is: the rows and the head at the
+            // chrome size, the issue's own text at its own.
+            .text_sm()
             .child(top)
             .child(
                 // The panel is placed on the list's area, under the toolbar,
@@ -444,10 +450,13 @@ impl IssuesView {
             .into_iter()
             .collect();
 
+        let reading = items.is_empty() && self.reading_issues(projects, cx);
         let toolbar = self.page_head(&listed, &filters, projects, labels, &query, cx);
         let notices = self.page_notices(&listed, projects, cx);
         let muted = cx.theme().muted_foreground;
-        let empty = if items.is_empty() {
+        let empty = if reading {
+            Some("Reading the issues…")
+        } else if items.is_empty() {
             Some("No issues yet")
         } else if listed.rows.is_empty() {
             Some("No issues match")
@@ -495,7 +504,7 @@ impl IssuesView {
 
         let top = div()
             .flex_none()
-            .px_4()
+            .px_6()
             .pt_6()
             .child(column(
                 div().v_flex().gap_2().child(toolbar).children(notices),
@@ -512,7 +521,7 @@ impl IssuesView {
             .v_flex()
             .overflow_y_scroll()
             .track_scroll(&scroll)
-            .px_4()
+            .px_6()
             .pb_6()
             .children(rows)
             .children(empty.map(|empty| line(empty.to_string())))
@@ -521,6 +530,17 @@ impl IssuesView {
             })
             .into_any_element();
         (top, rows)
+    }
+
+    /// Whether a project's issues have not landed yet, nor failed: until
+    /// then an empty list cannot say there are none.
+    fn reading_issues(&self, projects: &[(PathBuf, SharedString)], cx: &gpui::App) -> bool {
+        projects.iter().any(|(root, _)| {
+            self.roots.get(root).is_some_and(|state| {
+                let file = state.file.read(cx);
+                file.issues.is_none() && file.failed.is_none()
+            })
+        })
     }
 
     /// Every filter back to where it starts, which a pinned row offers.

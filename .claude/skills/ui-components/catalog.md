@@ -33,6 +33,8 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | A button that can refuse | `.refuses(why)`: refusing while `why` is `Some`, its reason the tooltip; called after the control's own tooltip (the `Refuses` trait, re-exported by `crates/app/src/controls.rs`) | `crates/plugin-host/src/lib.rs` |
 | A small label, a badge | `badge(text, tint)`: the library's `Tag` at `.small()` on `tokens::BADGE_CORNER`, in a `Tint`'s fill and ink (`tint(base, cx)` for a hue) | `crates/plugin-host/src/lib.rs` |
 | A mark down a column (an icon, a state's mark, a dot) | `mark_slot(mark)`: one icon wide, centred, so marks share a line and labels an edge | `crates/plugin-host/src/lib.rs` |
+| A picker's trigger | `picker(id, label, size)`: a secondary button naming its setting, with the caret | `crates/plugin-host/src/lib.rs` |
+| A list or table row's surface | `row(picked, cx)`: `ROW_H`, `px_2`, the hover and picked fills with their inks; the caller lays it out | `crates/plugin-host/src/lib.rs` |
 | A menu, its rows, a menu under its control | `menu_item`, `menu_row`, `menu_below`; `menu_command(label, action)` for a row that runs a keymap command and shows its key | `crates/plugin-host/src/menu.rs` |
 | A strip along the top of a region, and its icon control | `strip(cx)`, `strip_control(id, icon, on, cx)` | `crates/plugin-host/src/strip.rs` |
 | One of a few choices, the taken one filled (filter chips) | `choice` (a `quiet` ghost button, `selected` when taken, at the `ControlSize` its role takes) | `crates/plugin-host/src/lib.rs` |
