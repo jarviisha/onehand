@@ -125,6 +125,8 @@ pub enum ChatEvent {
     /// A path in the transcript was clicked. The chat has no business opening
     /// files -- it says what was asked for and the shell decides where it goes.
     OpenFile(std::path::PathBuf),
+    /// The agent refused a pick, put back to what it last confirmed: why.
+    PickRefused(String),
 }
 
 /// The widget behind one question field's free-text box, and the subscription
@@ -332,6 +334,9 @@ impl ChatSession {
                             }
                             if let Some(ask) = outcome.asked_user {
                                 cx.emit(ChatEvent::AwaitingUser(ask));
+                            }
+                            if let Some(why) = outcome.pick_refused.clone() {
+                                cx.emit(ChatEvent::PickRefused(why));
                             }
                             // What the agent offers is kept for every start
                             // that asks before it brings an agent up.

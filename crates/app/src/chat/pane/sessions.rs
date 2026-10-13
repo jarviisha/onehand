@@ -233,6 +233,10 @@ impl ChatPane {
                         pane.link_lost_detached(uid, &agent, &root_label, cx);
                     }
                     ChatEvent::Appended => {}
+                    ChatEvent::PickRefused(why) => {
+                        cx.emit(ChatPaneEvent::PickRefused(why.clone()));
+                        cx.notify();
+                    }
                 }
                 cx.notify();
             },
@@ -636,12 +640,65 @@ impl ChatPane {
         let Some(session) = self.session_of(uid).cloned() else {
             return false;
         };
+        let before = session.read(cx).chat.custom_title.clone();
         if !session.update(cx, |session, _| session.chat.rename(title)) {
             return false;
         }
-        Self::archive_meta_detached(uid, &session, cx);
+        self.save_title(uid, before, &session, cx);
         cx.notify();
         true
+    }
+
+    /// Write a new name for `uid` in order after every rename before it, and
+    /// put the last saved name back if this one, as the newest, fails, said
+    /// once. `before` is the name the change replaced.
+    fn save_title(
+        &mut self,
+        uid: u64,
+        before: Option<String>,
+        session: &Entity<ChatSession>,
+        cx: &mut Context<Self>,
+    ) {
+        let now = session.read(cx).chat.custom_title.clone();
+        let Some(conv) = self.conversations.get_mut(&uid) else {
+            return;
+        };
+        let this = conv
+            .title
+            .get_or_insert_with(|| onehand_core::saving::Saving::new(before))
+            .change(now.clone());
+        let Some(pending) = session.update(cx, |session, _| session.chat.flush_meta()) else {
+            return;
+        };
+        let written = crate::state::Shared::global(cx)
+            .writer
+            .write(move || onehand_core::chat::commit(&pending).map_err(|why| why.to_string()));
+        cx.spawn(async move |pane, cx| {
+            let result = written.await;
+            let _ = pane.update(cx, |pane: &mut Self, cx| {
+                let Some(conv) = pane.conversations.get_mut(&uid) else {
+                    return;
+                };
+                let Some(title) = conv.title.as_mut() else {
+                    return;
+                };
+                let Some(why) = title.landed(this, now, result) else {
+                    return;
+                };
+                let shown = title.shown().clone();
+                if let Some(session) = conv.session() {
+                    session.update(cx, |session, _| match shown {
+                        Some(name) => {
+                            session.chat.rename(&name);
+                        }
+                        None => session.chat.reset_title(),
+                    });
+                }
+                cx.emit(ChatPaneEvent::RenameFailed(why));
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     /// Drop a custom name and go back to the title derived from the first
@@ -650,8 +707,9 @@ impl ChatPane {
         let Some(session) = self.session_of(uid).cloned() else {
             return;
         };
+        let before = session.read(cx).chat.custom_title.clone();
         session.update(cx, |session, _| session.chat.reset_title());
-        Self::archive_meta_detached(uid, &session, cx);
+        self.save_title(uid, before, &session, cx);
         cx.notify();
     }
 

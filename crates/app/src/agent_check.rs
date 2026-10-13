@@ -100,6 +100,8 @@ fn check(ask: &Ask, cx: &mut App) {
                     | AcpEvent::Elicitation(_)
                     | AcpEvent::AvailableCommands(_)
                     | AcpEvent::ModeChanged(_)
+                    | AcpEvent::PickConfirmed { .. }
+                    | AcpEvent::PickRefused { .. }
                     | AcpEvent::ConfigOptions(_)
                     | AcpEvent::TerminalOutput { .. }
                     | AcpEvent::TerminalExit { .. }

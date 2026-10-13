@@ -1939,3 +1939,47 @@ fn a_thought_cut_off_by_a_disconnect_is_finished() {
     };
     assert!(!th.is_running());
 }
+
+#[test]
+fn a_refused_pick_goes_back_to_what_the_agent_last_confirmed() {
+    let mut chat = Chat::default();
+    let effort = |current: &str| ConfigOption {
+        id: "effort".into(),
+        name: "Effort".into(),
+        current: Some(current.into()),
+        choices: ["low", "high"]
+            .into_iter()
+            .map(|value| ConfigChoice {
+                value: value.into(),
+                name: value.into(),
+                description: None,
+            })
+            .collect(),
+    };
+    chat.apply(AcpEvent::ConfigOptions(vec![effort("low")]));
+    chat.set_config_option("effort", "high");
+    assert_eq!(chat.config_options[0].current.as_deref(), Some("high"));
+    let outcome = chat.apply(AcpEvent::PickRefused {
+        group: "effort".into(),
+        why: "not on this plan".into(),
+    });
+    assert_eq!(chat.config_options[0].current.as_deref(), Some("low"));
+    assert_eq!(outcome.pick_refused.as_deref(), Some("not on this plan"));
+
+    chat.apply(AcpEvent::ModeChanged("default".into()));
+    chat.set_mode("plan");
+    chat.apply(AcpEvent::PickConfirmed {
+        group: MODE_SELECTOR.into(),
+        value: "plan".into(),
+    });
+    chat.set_mode("auto");
+    chat.apply(AcpEvent::PickRefused {
+        group: MODE_SELECTOR.into(),
+        why: "no".into(),
+    });
+    assert_eq!(
+        chat.current_mode.as_deref(),
+        Some("plan"),
+        "the last confirmed"
+    );
+}

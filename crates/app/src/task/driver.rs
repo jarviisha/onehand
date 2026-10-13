@@ -316,7 +316,7 @@ fn on_event(uid: u64, session: &Entity<ChatSession>, event: &ChatEvent, cx: &mut
             }
         }
         ChatEvent::Disconnected => end(uid, Stop::LinkLost, cx),
-        ChatEvent::OpenFile(_) => {}
+        ChatEvent::OpenFile(_) | ChatEvent::PickRefused(_) => {}
     }
 }
 

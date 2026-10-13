@@ -480,6 +480,12 @@ pub enum AcpEvent {
     },
     /// The current mode changed.
     ModeChanged(String),
+    /// The agent took a pick: `group` is the mode selector or a config
+    /// option's id, now at `value`.
+    PickConfirmed { group: String, value: String },
+    /// The agent refused a pick, and why: what is shown goes back to the
+    /// value it last confirmed.
+    PickRefused { group: String, why: String },
     /// The session's config options (model/effort/agent), from `session/new`
     /// and `config_option_update`.
     ConfigOptions(Vec<ConfigOption>),

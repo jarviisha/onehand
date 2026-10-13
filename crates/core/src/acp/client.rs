@@ -389,6 +389,11 @@ enum Pending {
     NewSession,
     LoadSession,
     PromptTurn,
+    /// A mode or a config option asked for: its group and the value.
+    Pick {
+        group: String,
+        value: String,
+    },
 }
 
 async fn run(
@@ -510,6 +515,10 @@ async fn run(
                     Some(AcpRequest::SetMode(mode_id)) => {
                         if let Some(sid) = &session_id {
                             let id = alloc(&mut next_id);
+                            pending.insert(id, Pending::Pick {
+                                group: crate::chat::MODE_SELECTOR.to_string(),
+                                value: mode_id.clone(),
+                            });
                             let params = json!({ "sessionId": sid, "modeId": mode_id });
                             write_msg(stdin, &request(id, "session/set_mode", params)).await?;
                         }
@@ -517,6 +526,10 @@ async fn run(
                     Some(AcpRequest::SetConfigOption { config_id, value }) => {
                         if let Some(sid) = &session_id {
                             let id = alloc(&mut next_id);
+                            pending.insert(id, Pending::Pick {
+                                group: config_id.clone(),
+                                value: value.clone(),
+                            });
                             let params =
                                 json!({ "sessionId": sid, "configId": config_id, "value": value });
                             write_msg(stdin, &request(id, "session/set_config_option", params))
@@ -732,6 +745,21 @@ async fn handle_message(
                     })
                     .await;
                 *ready = true;
+            }
+            // The agent's answer to a pick is its confirmation or its
+            // refusal: what is shown follows it.
+            Some(Pending::Pick { group, value }) => {
+                let event = match msg.get("error") {
+                    Some(err) => AcpEvent::PickRefused {
+                        group,
+                        why: err
+                            .get("message")
+                            .and_then(Value::as_str)
+                            .map_or_else(|| err.to_string(), str::to_string),
+                    },
+                    None => AcpEvent::PickConfirmed { group, value },
+                };
+                let _ = output.send(event).await;
             }
             Some(Pending::PromptTurn) => {
                 if let Some(err) = msg.get("error") {

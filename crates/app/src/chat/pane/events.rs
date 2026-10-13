@@ -244,6 +244,10 @@ pub enum ChatPaneEvent {
     /// work was not thrown away. Reporting a refusal as a failure to save would
     /// send the reader looking for the wrong thing entirely.
     ConversationNotDeleted(String),
+    /// A rename's write failed, its name put back: why.
+    RenameFailed(String),
+    /// The agent refused a pick, put back to what it last confirmed: why.
+    PickRefused(String),
     /// Open issue `number` of the project at `root` — a row of the workspace
     /// page. Selecting a project and opening the Workbench are both the
     /// shell's.

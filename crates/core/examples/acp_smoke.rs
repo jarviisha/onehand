@@ -114,6 +114,12 @@ async fn main() {
                 eprintln!("== MODES: current={current:?} of {} ==", available.len());
             }
             AcpEvent::ModeChanged(id) => eprintln!("== MODE -> {id} =="),
+            AcpEvent::PickConfirmed { group, value } => {
+                eprintln!("== PICK {group} -> {value} ==");
+            }
+            AcpEvent::PickRefused { group, why } => {
+                eprintln!("== PICK {group} REFUSED: {why} ==");
+            }
             AcpEvent::ConfigOptions(opts) => {
                 for o in &opts {
                     eprintln!(

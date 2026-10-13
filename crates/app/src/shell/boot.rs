@@ -207,6 +207,12 @@ impl Shell {
                     // A warning rather than an error: nothing went wrong and
                     // nothing was lost -- the conversation is exactly where it
                     // was, which is the opposite of the message above.
+                    E::PickRefused(why) => window.push_notification(
+                        crate::toast::failed("Changing the agent's setting", why),
+                        cx,
+                    ),
+                    E::RenameFailed(why) => window
+                        .push_notification(crate::toast::failed("Renaming the session", why), cx),
                     E::ConversationNotDeleted(why) => window.push_notification(
                         crate::toast::failed("Deleting the conversation", why),
                         cx,
