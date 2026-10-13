@@ -339,7 +339,13 @@ impl ChatPane {
             .font_medium()
             .child(title);
         if !live && project.is_none() {
-            return div().min_w_0().child(name).into_any_element();
+            // A page's name is the page's title, at the size a page's title
+            // takes: the page draws none of its own in its body.
+            return div()
+                .min_w_0()
+                .when(self.page.is_some(), |title| title.text_xl())
+                .child(name)
+                .into_any_element();
         }
         // **What the menu's state is keyed by, and why it is not a constant.**
         // The popover holds its open flag and the menu it built under this
