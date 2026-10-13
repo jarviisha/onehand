@@ -92,8 +92,8 @@ size it takes; `design-tokens/reference.md` holds what each size measures in eac
 
 | Role | Component | Size |
 |---|---|---|
-| A form's fields and buttons; a filter bar's search and pickers; a page head's actions; a dialog's footer | Button, Input | `.tall()` |
-| A strip's controls; a box's control; a row's actions | Button | `.small()` |
+| A form's fields and buttons; a dialog's footer | Button, Input | `.tall()` |
+| A page head's actions; a filter bar's search and pickers; a strip's controls; a box's control; a row's actions | Button, Input | `.small()`, a step under a row, so the controls never outweigh what they act on |
 | A field in a strip or the rail | Input | `.small()` |
 | A secondary action inside dense content: a line of meta text, a transcript block, a chip | Button | `.xsmall()` |
 | An icon in a button | Icon | the button's own: `small` in a `.small()` or `.tall()` button, `xsmall` in an `.xsmall()` one |
@@ -159,10 +159,11 @@ heading identifies its own content. Reuse the same column width for the same kin
 A page that has a head and filters draws them in one order, the Issues page's:
 
 - **The head**: what the page counts at the start, in muted ink (*12 open*); its actions at the
-  end at `.tall()`, icon-only ghost buttons first (*Refresh*), the page's one primary last
+  end at `.small()`, icon-only ghost buttons first (*Refresh*), the page's one primary last
   (*New issue*).
-- **The filter bar**, under the head: the search first, taking the free width, then each filter
-  as a `.tall()` secondary picker with its caret, its label naming what it is set to.
+- **The filter bar**, under the head: the search first at `.small()`, taking the free width, then
+  each filter as a `.small()` `picker` with its caret, its label naming what it is set to: a
+  quiet ghost while it is where it starts, on the secondary fill once it narrows the list.
 - **The content** they filter. A filter's choice and the search are kept while the page is left
   and shown again.
 

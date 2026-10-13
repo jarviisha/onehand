@@ -299,7 +299,8 @@ Reuse gpui-component before building anything: `Root`, `DockArea`, `Sidebar`, `D
 the plugin host's builders, which set the pointer cursor and the `sm` corner: buttons through
 `action`; fields through `text_input`, `search_input` (the search mark, the clear button; the rail's
 alone has no edge, on `theme::inset`) and `text_area`. A button names its variant by role: `primary`
-the main action, `secondary` an alternative beside it, a picker's trigger and every Settings button,
+the main action, `secondary` an alternative beside it, a set picker's trigger (an unset one is a ghost, through
+`picker`) and every Settings button,
 `choice` in a pick-one row, `danger` only under *Exceptions*, and ghost (`.quiet(cx)`, whose hover
 is the selected step) the rest. **No button draws an edge** (no default variant, no `outline()`): a
 field is the one control marked by its edge, on no fill of its own. A control that refuses says so
@@ -308,8 +309,8 @@ and why (`.refuses(why)`, the reason its tooltip) and goes back to the arrow.
 **A size names a role, and means one height and one text size in every control.** The library's
 sizes disagree across components (its default button letters at the reading size beside a field
 at the chrome size), so the app uses three: `.small()` (`CONTROL_H`), the compact default, in a
-strip, a box and for a row's actions; `.tall()` (`FIELD_H`, chrome-size words) in a form, a filter
-bar, a page's head and a dialog's footer; `.xsmall()` only for a secondary action inside dense
+strip, a box, a page's head, a filter bar and for a row's actions; `.tall()` (`FIELD_H`,
+chrome-size words) in a form and a dialog's footer; `.xsmall()` only for a secondary action inside dense
 content: a line of meta text, a transcript block, a chip. Never the library's default. A
 correction a component needs lives in its shared wrapper (`Tall`), never at a call site. An icon
 keeps its role's size whatever the hit area round it, and a badge, a checkbox or a switch keeps
@@ -346,9 +347,10 @@ The whole list: any other departure from a rule above is a bug until agreed and 
   its own lift (`composer_lift`).
 - **A solid danger fill marks two buttons**: *Stop* in the composer, and the button confirming a
   removal inside its modal. Anywhere else a destructive action is a word in the danger tint.
-- **The composer's chips are quiet.** Its pickers (the model, the effort, the mode, *Fast*, the
-  branch) are `.small()` ghosts with a caret, not the filled trigger a picker takes elsewhere: a
-  fill on every chip would crowd the field they sit under.
+- **The composer's chips are quiet even when set.** Its pickers (the model, the effort, the mode,
+  *Fast*, the branch) are `.small()` ghosts with a caret whatever they hold, where a picker
+  elsewhere takes the secondary fill once set: each always holds a choice, and a fill on every
+  chip would crowd the field they sit under.
 - **The library draws its own controls' states**: a refusing or loading button, a picker's caret,
   a badge under the pointer and a switch's thumb keep the alpha or the motion it gives them, as
   its overlays keep theirs.

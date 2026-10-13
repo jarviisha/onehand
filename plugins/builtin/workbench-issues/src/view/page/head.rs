@@ -14,7 +14,6 @@ use gpui_component::{ActiveTheme, Icon, Sizable as _, StyledExt};
 use onehand_core::issues;
 use onehand_core::task::work::list::{Filters, Incomplete, Listed, Progress};
 use onehand_plugin_host::Quiet as _;
-use onehand_plugin_host::Tall as _;
 use onehand_plugin_host::search_input;
 use onehand_plugin_host::{
     AppIcon, ControlSize, action, menu_below, menu_item, picker, status_ink,
@@ -57,7 +56,9 @@ impl IssuesView {
                 picker(
                     "issues-page-showing-trigger",
                     if closed { "Closed" } else { "Open" },
-                    ControlSize::Tall,
+                    closed,
+                    ControlSize::Small,
+                    cx,
                 ),
                 move |mut menu, _, _| {
                     for (i, choice) in choices.iter().enumerate() {
@@ -86,7 +87,9 @@ impl IssuesView {
                         Progress::All => "Progress",
                         picked => picked.label(),
                     },
-                    ControlSize::Tall,
+                    picked != Progress::All,
+                    ControlSize::Small,
+                    cx,
                 ),
                 move |mut menu, _, _| {
                     for choice in Progress::ALL {
@@ -118,7 +121,13 @@ impl IssuesView {
             let view = cx.entity();
             menu_below(
                 "issues-page-project",
-                picker("issues-page-project-trigger", name, ControlSize::Tall),
+                picker(
+                    "issues-page-project-trigger",
+                    name,
+                    picked.is_some(),
+                    ControlSize::Small,
+                    cx,
+                ),
                 move |menu, _, _| {
                     let pick = |only: Option<PathBuf>| {
                         let view = view.clone();
@@ -152,7 +161,9 @@ impl IssuesView {
                 picker(
                     "issues-page-label-trigger",
                     picked.clone().unwrap_or_else(|| "Label".to_string()),
-                    ControlSize::Tall,
+                    picked.is_some(),
+                    ControlSize::Small,
+                    cx,
                 ),
                 move |menu, window, _| {
                     let pick = |label: Option<String>| {
@@ -225,7 +236,7 @@ impl IssuesView {
                     .aria_label("Refresh")
                     .child(
                         action("issues-page-refresh")
-                            .tall()
+                            .small()
                             .quiet(cx)
                             .icon(Icon::new(AppIcon::Refresh))
                             .loading(pr_reading)
@@ -238,7 +249,7 @@ impl IssuesView {
             )
             .child(
                 action("issues-page-new")
-                    .tall()
+                    .small()
                     .map(|button| match floating {
                         true => button.secondary(),
                         false => button.primary(),
@@ -260,7 +271,7 @@ impl IssuesView {
                 div()
                     .flex_1()
                     .min_w(SEARCH_W)
-                    .child(search_input(query, cx).tall()),
+                    .child(search_input(query, cx).small()),
             )
             .child(showing)
             .child(progress)

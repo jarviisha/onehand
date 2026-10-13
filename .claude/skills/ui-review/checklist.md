@@ -29,8 +29,8 @@ Each section names the document owning its rules; read it before answering.
     default nor `outline()`); every field through `text_input`, `search_input` or `text_area`; every
     refusal through `.refuses(why)`, its reason the tooltip?
 11. Every state the component can be in: hover, selected or open, keyboard focus, refusing, loading?
-12. Every control at the size its role takes: `.tall()` in a form, a filter bar, a page's head and
-    a dialog's footer; `.small()` in a strip, a box and for a row's actions; `.xsmall()` only for a
+12. Every control at the size its role takes: `.tall()` in a form and a dialog's footer;
+    `.small()` in a page's head, a filter bar, a strip, a box and for a row's actions; `.xsmall()` only for a
     secondary action inside meta text, a transcript block or a chip; never the library's default;
     an icon at its role's size, not grown with the hit area; a badge, checkbox or switch at the
     library's own geometry, centred; any size correction in the shared wrapper, not the call site?

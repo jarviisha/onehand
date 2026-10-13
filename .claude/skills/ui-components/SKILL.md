@@ -54,7 +54,7 @@ Every button names one, by role (the rule is in `DESIGN.md` *Components*):
 | Variant | For |
 |---|---|
 | `primary` | the view's one main action |
-| `secondary` | a weighed alternative beside the primary; a picker's trigger; every button on the Settings page |
+| `secondary` | a weighed alternative beside the primary; a set picker's trigger (`picker`; unset it is a ghost); every button on the Settings page |
 | ghost, `.quiet(cx)` | dismissing, a strip's or a row's actions; hovers on the selected step, never a bare `ghost()`; an icon with no words through `.quiet_icon(on, cx)`, muted at rest |
 | `danger` | only the two listed under *Exceptions* in `DESIGN.md` |
 | `choice` | each option of a pick-one row |
@@ -96,10 +96,10 @@ action("save-agent").primary().tall().label("Save")
 ```
 
 ```rust
-// Wrong: the library's default size for a taller hit area, which grows the icon with it
-action("refresh").quiet(cx).with_size(Size::Medium).icon(Icon::new(AppIcon::Refresh))
+// Wrong: the library's default size for a form's taller hit area, which grows the icon with it
+action("browse-folder").quiet(cx).with_size(Size::Medium).icon(IconName::FolderOpen)
 // Right: the tall size keeps the small icon in the taller box
-action("refresh").quiet(cx).tall().icon(Icon::new(AppIcon::Refresh))
+action("browse-folder").quiet(cx).tall().icon(IconName::FolderOpen)
 ```
 
 ```rust

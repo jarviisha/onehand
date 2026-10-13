@@ -23,7 +23,6 @@ pub(crate) use draft::WorkflowDraft;
 gpui::actions!(workflows_page, [CloseWorkflowForm]);
 
 use crate::controls::Quiet as _;
-use crate::controls::Tall as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, AppContext as _, ClickEvent, Context, Entity, EventEmitter, FocusHandle,
@@ -274,7 +273,7 @@ fn list(
                 .gap_1()
                 .child(
                     crate::controls::action("new-workflow")
-                        .tall()
+                        .small()
                         .quiet(cx)
                         .icon(Icon::new(IconName::Plus))
                         .label("New workflow")
@@ -284,7 +283,7 @@ fn list(
                 )
                 .child(
                     crate::controls::action("import-workflow")
-                        .tall()
+                        .small()
                         .quiet(cx)
                         .icon(Icon::new(IconName::FolderOpen))
                         .label("Import…")

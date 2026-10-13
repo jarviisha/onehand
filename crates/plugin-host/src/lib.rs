@@ -552,19 +552,23 @@ impl ControlSize {
     }
 }
 
-/// A picker's trigger: a filled button naming what it is set to, then the
-/// caret that opens its menu, so it reads as a control. Unset, it names what
-/// it picks; set, the choice, so a narrowed list says so in words. Its ink is
-/// the one its fill is paired with, set or not. `size` is the role's.
+/// A picker's trigger: a button naming what it is set to, then the caret that
+/// opens its menu, so it reads as a control. Unset, it names what it picks,
+/// as a quiet ghost; `set` away from where it starts, it names the choice on
+/// the secondary fill, so the picker narrowing a list is the one that stands
+/// out. Its ink is the one its variant is paired with. `size` is the role's.
 pub fn picker(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
+    set: bool,
     size: ControlSize,
+    cx: &App,
 ) -> Button {
-    size.on(action(id)
-        .secondary()
-        .label(label.into())
-        .dropdown_caret(true))
+    let button = action(id).label(label.into()).dropdown_caret(true);
+    size.on(match set {
+        true => button.secondary(),
+        false => button.quiet(cx),
+    })
 }
 
 /// A list row's surface: at least [`tokens::ROW_H`] tall, inset `px_2`, at

@@ -437,7 +437,7 @@ impl ChatPane {
                                     .gap_2()
                                     .child(
                                         crate::controls::action("project-new-session")
-                                            .tall()
+                                            .small()
                                             .primary()
                                             .icon(Icon::new(IconName::Plus))
                                             .label("New session")
@@ -450,7 +450,7 @@ impl ChatPane {
                                     )
                                     .children(project.facts.check.then(|| {
                                         crate::controls::action("project-run-check")
-                                            .tall()
+                                            .small()
                                             .secondary()
                                             .label("Run check")
                                             .tooltip("Run the project's check command")
