@@ -77,8 +77,8 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
                     .w_full()
                     .when(!narrowed, |col| {
                         col.child(div().text_xs().text_color(cx.theme().muted_foreground).child(
-                            "Choose an issue to start a run on. Starting claims it where it \
-                             lives and starts an agent on it in a worktree of its own.",
+                            "Choose an issue to start a run on; starting claims it where it \
+                             lives and starts an agent on it in a worktree of its own",
                         ))
                     })
                     .child(issue_list(found.as_deref(), at, &handle, cx))
@@ -111,7 +111,7 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
                     .child(
                         div()
                             .v_flex()
-                            .gap_3()
+                            .gap_4()
                             .w_full()
                             .children(list)
                             .children(form),
@@ -119,11 +119,8 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
             )
         })
         .footer(
-            div()
-                .h_flex()
-                .gap_2()
-                .justify_end()
-                .w_full()
+            super::footer_row()
+                .child(div().flex_1())
                 // Why *Run* is spent, beside it; what each block is, and
                 // where it is changed, is in the form above.
                 .children(super::blocking_note(blocking, danger))
@@ -186,7 +183,6 @@ fn start_form(
         cx.theme().muted_foreground,
         crate::theme::status_ink(cx).danger,
     );
-    let label = |text: &'static str| div().text_sm().child(text);
     let shell = handle.clone();
     let menu = issue_workflow_menu(
         "pick-workflow",
@@ -195,18 +191,16 @@ fn start_form(
         move |id, _, cx| shell.update(cx, |shell, cx| shell.pick_issue_workflow(id, cx)),
         cx,
     );
-    let about = template.as_ref().ok().map(|template| {
-        div()
-            .text_xs()
-            .text_color(muted)
-            .child(template.description.trim().to_string())
-    });
+    let about = template
+        .as_ref()
+        .ok()
+        .map(|template| div().child(template.description.trim().to_string()));
     let agent = crate::unattended::run_agent(cx).map_or_else(
         || "no agent configured".to_string(),
         |name| format!("with {name}"),
     );
     let place = format!(
-        "On a new branch, {}, in a worktree of its own, {agent}.",
+        "On a new branch, {}, in a worktree of its own, {agent}",
         core::branch_for(tracker, &row.issue)
     );
     let base = findings
@@ -225,22 +219,40 @@ fn start_form(
     // said, never in the way.
     let lacks = template::lacking(row.issue.body_text(), templates)
         .map(|lacks| div().text_xs().text_color(muted).child(lacks.said()));
+    // Fields, as every form's are, `gap_4` apart; what blocks the start
+    // stands above the footer's primary.
     let column = div()
         .v_flex()
-        .gap_2()
+        .gap_4()
         .w_full()
         .children(lacks)
-        .child(label("Workflow"))
-        .child(div().h_flex().child(menu))
-        .children(about)
-        .child(label("Where it works"))
-        .child(div().text_xs().text_color(muted).child(place))
+        .child(onehand_plugin_host::field(
+            "Workflow",
+            about.map(IntoElement::into_any_element),
+            div().h_flex().child(menu),
+            cx,
+        ))
+        .child(onehand_plugin_host::field(
+            "Where it works",
+            Some(place.into_any_element()),
+            div(),
+            cx,
+        ))
         .children(base)
         .when(!lines.is_empty(), |col| {
-            col.child(label("Before it starts")).children(lines)
+            col.child(onehand_plugin_host::field(
+                "Before it starts",
+                None,
+                div().v_flex().gap_2().children(lines),
+                cx,
+            ))
         })
-        .child(label("Instructions for this run"))
-        .child(text_area(instructions, cx).h(super::INSTRUCTIONS_H));
+        .child(onehand_plugin_host::field(
+            "Instructions for this run",
+            None,
+            text_area(instructions, cx).h(super::INSTRUCTIONS_H),
+            cx,
+        ));
     let Ok(template) = template else {
         return column.into_any_element();
     };
@@ -423,24 +435,32 @@ fn issue_list(
     handle: &Entity<Shell>,
     cx: &App,
 ) -> AnyElement {
-    let (muted, active) = (cx.theme().muted_foreground, cx.theme().list_active);
+    let theme = cx.theme();
+    let (muted, accent, accent_ink) = (
+        theme.muted_foreground,
+        theme.accent,
+        theme.accent_foreground,
+    );
     let (rows, cut, unread) = match found {
         None => {
             return div()
+                .text_xs()
                 .text_color(muted)
                 .child("Reading the open issues…")
                 .into_any_element();
         }
         Some(Err(why)) => {
             return div()
+                .text_xs()
                 .text_color(crate::theme::status_ink(cx).warning)
                 .child(format!("Nothing to pick: {why}"))
                 .into_any_element();
         }
         Some(Ok((rows, _, _))) if rows.is_empty() => {
             return div()
+                .text_xs()
                 .text_color(muted)
-                .child("No open issues")
+                .child("No open issues yet")
                 .into_any_element();
         }
         Some(Ok((rows, cut, unread))) => (rows, *cut, unread.clone()),
@@ -482,7 +502,10 @@ fn issue_list(
                         trailing,
                         cx,
                     )
-                    .when(chosen == Some(i), |row| row.bg(active))
+                    // The chosen one on the selected step, in its ink.
+                    .when(chosen == Some(i), |row| {
+                        row.bg(accent).text_color(accent_ink)
+                    })
                     .on_click(
                         move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
                             handle.update(cx, |shell, cx| shell.choose_issue(i, window, cx));
@@ -503,7 +526,7 @@ fn issue_list(
         // Said, not hidden: a list cut silently reads as the whole of it.
         .when(cut, |list| {
             list.child(div().text_xs().text_color(muted).child(format!(
-                "Showing the newest {}; close some to reach the rest.",
+                "Showing the newest {}; close some to reach the rest",
                 onehand_core::unattended::ISSUES_SHOWN
             )))
         })

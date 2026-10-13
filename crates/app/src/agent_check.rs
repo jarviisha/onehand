@@ -179,10 +179,7 @@ pub(crate) fn button(id: usize, ask: &Ask, cx: &App) -> AnyElement {
                 .quiet(cx)
                 .small()
                 .loading(running)
-                .label(match running {
-                    true => "Checking…",
-                    false => "Check the agent",
-                })
+                .label("Check the agent")
                 .on_click(move |_, _: &mut Window, cx: &mut App| check(&ask, cx)),
         )
         .into_any_element()

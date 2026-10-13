@@ -303,11 +303,16 @@ impl Shell {
                             };
                             shell.start_workflow(setup, template, brief, window, cx);
                         }
+                        // The launcher stays up with what was written in it,
+                        // and the failure is said once.
                         Err(why) => {
                             if let Some(launcher) = shell.workflow_launcher.as_mut() {
                                 launcher.busy = false;
-                                launcher.error = Some(format!("The worktree was not made: {why}"));
                             }
+                            window.push_notification(
+                                crate::toast::failed("Making the worktree", why),
+                                cx,
+                            );
                             cx.notify();
                         }
                     });

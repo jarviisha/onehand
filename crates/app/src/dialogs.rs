@@ -83,11 +83,21 @@ pub(super) fn title_row(name: impl Into<SharedString>, cx: &App) -> impl IntoEle
                     crate::controls::action("dialog-close")
                         .small()
                         .quiet_icon(false, cx)
-                        .icon(Icon::new(IconName::Close)),
+                        .icon(Icon::new(IconName::Close))
+                        .tooltip("Close"),
                 ),
             ),
         )
 }
+
+/// A dialog's footer: a third action at its start, where there is one, then
+/// a spacer, then the dismissing button and the primary at its end.
+pub(crate) fn footer_row() -> gpui::Div {
+    div().h_flex().items_center().gap_2().w_full()
+}
+
+/// One field of a dialog's form: the plugin host's, as Settings' are.
+use onehand_plugin_host::field;
 
 /// The conversation-rename window.
 ///
@@ -104,6 +114,7 @@ pub(super) fn title_row(name: impl Into<SharedString>, cx: &App) -> impl IntoEle
 pub fn rename_session(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
     let input = shell.rename_input().clone();
     let resettable = shell.rename_is_override(cx);
+    let empty = input.read(cx).value().trim().is_empty();
 
     Dialog::new(cx)
         .close_button(false)
@@ -117,15 +128,12 @@ pub fn rename_session(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
             )
         })
         .footer(
-            div()
-                .h_flex()
-                .gap_2()
-                .justify_end()
-                .w_full()
+            footer_row()
                 // Offered only when there is an override to drop. On a
                 // conversation that never had one this button would look like
                 // it clears the title, and it does not: the title comes back,
-                // derived from the first prompt.
+                // derived from the first prompt. A third action, so at the
+                // footer's start, apart from the two that close it.
                 .when(resettable, |row| {
                     row.child(
                         crate::controls::action("reset-title")
@@ -137,6 +145,7 @@ pub fn rename_session(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                             })),
                     )
                 })
+                .child(div().flex_1())
                 .child(
                     crate::controls::action("cancel-rename")
                         .tall()
@@ -151,6 +160,7 @@ pub fn rename_session(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                         .tall()
                         .primary()
                         .label("Rename")
+                        .refuses(empty.then_some("Name it first"))
                         .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
                             shell.commit_rename(cx);
                         })),
@@ -193,7 +203,7 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
     );
     let about = match picked.as_ref().map(|entry| &entry.template) {
         Some(Ok(template)) => format!(
-            "{} {}.",
+            "{} {}",
             template.description.trim(),
             match template.place {
                 onehand_core::workflow::Place::Checkout => "It works in this checkout",
@@ -203,7 +213,7 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
             }
         ),
         Some(Err(why)) => format!("This workflow cannot be read: {why}"),
-        None => "No workflow is on offer yet.".to_string(),
+        None => "No workflow is on offer yet".to_string(),
     };
     let handle = cx.entity();
     let left_out = entries
@@ -249,11 +259,13 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
             let names = names.clone();
             let picker = crate::controls::menu_below(
                 "workflow-template",
-                crate::controls::action("workflow-template-trigger")
-                    .secondary()
-                    .small()
-                    .label(picker_name.clone())
-                    .icon(Icon::new(IconName::ChevronDown)),
+                onehand_plugin_host::picker(
+                    "workflow-template-trigger",
+                    picker_name.clone(),
+                    true,
+                    onehand_plugin_host::ControlSize::Tall,
+                    cx,
+                ),
                 move |mut menu, _, _| {
                     for (at, name, shipped) in &names {
                         let (at, handle) = (*at, handle.clone());
@@ -277,7 +289,6 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
                     menu
                 },
             );
-            let label = |text: &'static str| div().text_sm().child(text);
             // The column sits in the scrolling box rather than being it, or
             // its fields would shrink to fit instead of scrolling.
             content.child(title_row(heading.clone(), cx)).child(
@@ -289,18 +300,29 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
                     .child(
                         div()
                             .v_flex()
-                            .gap_2()
+                            .gap_4()
                             .w_full()
-                            .child(label("Workflow"))
-                            .child(div().h_flex().child(picker))
-                            .child(div().text_xs().text_color(muted).child(about.clone()))
+                            .child(field(
+                                "Workflow",
+                                Some(about.clone().into_any_element()),
+                                div().h_flex().child(picker),
+                                cx,
+                            ))
                             .children(shown)
-                            .child(label("Title"))
-                            .child(text_input(&title, cx).tall())
-                            .child(label("Details"))
-                            .child(text_area(&body, cx).h(DETAILS_H))
-                            .child(label("Instructions"))
-                            .child(text_area(&instructions, cx).h(INSTRUCTIONS_H))
+                            .child(field("Title", None, text_input(&title, cx).tall(), cx))
+                            .child(field(
+                                "Details",
+                                None,
+                                text_area(&body, cx).h(DETAILS_H),
+                                cx,
+                            ))
+                            .child(field(
+                                "Instructions",
+                                None,
+                                text_area(&instructions, cx).h(INSTRUCTIONS_H),
+                                cx,
+                            ))
+                            // What blocks it, above the footer's primary.
                             .children(lines)
                             .when_some(error.clone(), |col, why| {
                                 col.child(div().text_xs().text_color(danger).child(why))
@@ -309,11 +331,8 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
             )
         })
         .footer(
-            div()
-                .h_flex()
-                .gap_2()
-                .justify_end()
-                .w_full()
+            footer_row()
+                .child(div().flex_1())
                 .children(blocking_note(blocking, danger))
                 .child(
                     crate::controls::action("cancel-workflow")
@@ -504,24 +523,14 @@ fn workflow_preview(
     handle: &Entity<Shell>,
     cx: &App,
 ) -> AnyElement {
-    let (muted, border, radius) = (
-        cx.theme().muted_foreground,
-        cx.theme().border,
-        cx.theme().radius,
-    );
+    let muted = cx.theme().muted_foreground;
     let toggle = {
         let handle = handle.clone();
-        crate::controls::action("workflow-preview")
-            .quiet(cx)
-            .small()
-            .label("Preview")
-            .icon(Icon::new(match open {
-                true => IconName::ChevronDown,
-                false => IconName::ChevronRight,
-            }))
-            .on_click(move |_, _, cx: &mut App| {
+        onehand_plugin_host::fold_toggle("workflow-preview", "Preview", open, cx).on_click(
+            move |_, _, cx: &mut App| {
                 handle.update(cx, toggle);
-            })
+            },
+        )
     };
     let column = div()
         .v_flex()
@@ -552,7 +561,7 @@ fn workflow_preview(
                 .child(format!("{}. {}: {}", at + 1, step.label, step.summary()))
         });
     let prompt = onehand_core::workflow::first_prompt(template, brief)
-        .unwrap_or_else(|| "No step prompts the agent.".to_string());
+        .unwrap_or_else(|| "No step prompts the agent".to_string());
     column
         .children(head.map(|head| div().text_xs().text_color(muted).child(head)))
         .children(steps)
@@ -565,17 +574,13 @@ fn workflow_preview(
             )
         })
         .child(div().text_xs().text_color(muted).child("The first prompt"))
+        // The prompt as the agent receives it: machine text, in a well.
         .child(
-            div()
+            onehand_plugin_host::well(cx)
                 .id("workflow-preview-prompt")
-                .w_full()
                 .max_h(PREVIEW_MAX_H)
                 .overflow_y_scroll()
                 .p_2()
-                .border_1()
-                .border_color(border)
-                .rounded(radius)
-                .text_xs()
                 .child(prompt),
         )
         .into_any_element()
@@ -616,32 +621,34 @@ pub fn new_worktree(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                         div()
                             .text_sm()
                             .text_color(muted)
-                            .child(format!("A second checkout of {label}, on its own branch.")),
+                            .child(format!("A second checkout of {label}, on its own branch")),
                     )
                     .child(text_input(&input, cx).tall())
-                    // Where it lands, in full. A worktree is a folder that
-                    // appears on disk without anyone browsing to it, so the one
-                    // thing this form owes the reader is the path it is about
-                    // to create -- before it exists, not in a toast afterwards.
-                    .child(
-                        div()
+                    // Where it lands, in full, in the face a path is set in. A
+                    // worktree is a folder that appears on disk without anyone
+                    // browsing to it, so the one thing this form owes the reader
+                    // is the path it is about to create -- before it exists, not
+                    // in a toast afterwards.
+                    .child(match target.clone() {
+                        Some(path) => div()
                             .text_xs()
                             .text_color(muted)
-                            .child(target.clone().unwrap_or_else(|| {
-                                SharedString::from("Name the branch to see where its folder goes.")
-                            })),
-                    )
+                            .font_family(cx.theme().mono_font_family.clone())
+                            .child(path),
+                        None => div()
+                            .text_xs()
+                            .text_color(muted)
+                            .child("Name the branch to see where its folder goes"),
+                    })
                     .when_some(error.clone(), |col, why| {
                         col.child(div().text_xs().text_color(danger).child(why))
                     }),
             )
         })
         .footer(
-            div()
-                .h_flex()
-                .gap_2()
-                .justify_end()
-                .w_full()
+            footer_row()
+                // A third action, at the footer's start, apart from the two
+                // that close it.
                 .child(
                     crate::controls::action("worktree-parent")
                         .tall()
@@ -652,6 +659,7 @@ pub fn new_worktree(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                             shell.pick_worktree_parent(cx);
                         })),
                 )
+                .child(div().flex_1())
                 .child(
                     // Spent while git is working, for the same reason Create is
                     // and one more: the command cannot be called back, so a
@@ -727,7 +735,7 @@ pub fn rename_branch(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                         div()
                             .text_sm()
                             .text_color(muted)
-                            .child(format!("The branch checked out here is {from}.")),
+                            .child(format!("The branch checked out here is {from}")),
                     )
                     .child(text_input(&input, cx).tall())
                     // git's own words where git refused, and the name rule's
@@ -741,10 +749,8 @@ pub fn rename_branch(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
             )
         })
         .footer(
-            div()
-                .h_flex()
-                .gap_2()
-                .justify_end()
+            footer_row()
+                .child(div().flex_1())
                 .child(
                     crate::controls::action("cancel-branch-rename")
                         .tall()

@@ -454,11 +454,11 @@ fn kept_lines(last: &Run, differs: &[Changed]) -> Vec<(String, bool)> {
         .collect()
 }
 
-/// A retry dialog's footer: *Cancel*, an action beside, and the confirm,
-/// spent while something blocks it. Wrapped, for a narrow window. Cancel
-/// closes through the library's close box, as every cancel here does; that
-/// box is full width, so a box of its own sized to the button keeps it on
-/// the row.
+/// A retry dialog's footer: the third action at its start, then *Cancel* and
+/// the confirm at its end, spent while something blocks it. Wrapped, for a
+/// narrow window. Cancel closes through the library's close box, as every
+/// cancel here does; that box is full width, so a box of its own sized to the
+/// button keeps it on the row.
 fn footer(
     id: &'static str,
     beside: Option<gpui_component::button::Button>,
@@ -469,6 +469,9 @@ fn footer(
 ) -> gpui_component::dialog::DialogFooter {
     gpui_component::dialog::DialogFooter::new()
         .flex_wrap()
+        .w_full()
+        .children(beside)
+        .child(gpui::div().flex_1())
         .child(
             gpui::div().flex_none().child(
                 gpui_component::dialog::DialogClose::new().child(
@@ -479,7 +482,6 @@ fn footer(
                 ),
             ),
         )
-        .children(beside)
         .child({
             let button = crate::controls::action(SharedString::from(format!("{id}-confirm")))
                 .tall()

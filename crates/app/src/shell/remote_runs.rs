@@ -422,6 +422,7 @@ impl Shell {
         let has_check = self.check_of(&picker.root).is_some();
         let workflow = picker.workflow_for(&row, cx);
         let instructions = picker.instructions.read(cx).value().to_string();
+        let number = row.issue.number;
         if let Err(why) = crate::unattended::start_picked(
             picker.root,
             tracker,
@@ -432,7 +433,10 @@ impl Shell {
             handle,
             cx,
         ) {
-            window.push_notification(crate::toast::warning(why), cx);
+            window.push_notification(
+                crate::toast::failed(&format!("Starting on issue {number}"), why),
+                cx,
+            );
         }
     }
 
