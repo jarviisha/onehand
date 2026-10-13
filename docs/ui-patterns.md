@@ -64,7 +64,7 @@ A boundary is drawn once: no line along a change of surface, no edge doubled by 
 | Relationship | Default |
 |---|---|
 | Compact metadata or a tightly coupled mark and label | `gap_1` |
-| Icon and label; adjacent controls; parts within a box | `gap_2` |
+| Icon and label in a row the app draws; adjacent controls; parts within a box | `gap_2` |
 | Row inset | `px_2` |
 | Strip inset; box padding | `px_3`; `p_3` |
 | Form fields | `gap_4` |
@@ -81,8 +81,44 @@ longer value does not push its neighbours.
 Density follows the task: chrome and lists are compact, forms leave room for labels, and prose
 keeps its reading size and line height. Do not make a crowded panel fit by shrinking its font,
 icons or hit targets. Use the existing overflow, wrapping and list/detail patterns instead.
-Same-role peers keep the same control size. Single-line rows use `ROW_H`; a row with secondary
-text grows to fit its lines at shared padding and leading, rather than clipping to that height.
+Same-role peers keep the same control size (*Control sizes*). A single-line row is `ROW_H` tall; a
+row with a second line takes `ROW_H` as its minimum and grows to fit its lines at shared padding
+and leading, rather than clipping to that height.
+
+### Control sizes
+
+A size names a role (`DESIGN.md`, *Components*). Each role, the component that serves it, and the
+size it takes; `design-tokens/reference.md` holds what each size measures in each component.
+
+| Role | Component | Size |
+|---|---|---|
+| A form's fields and buttons; a filter bar's search and pickers; a page head's actions; a dialog's footer | Button, Input | `.tall()` |
+| A strip's controls; a box's control; a row's actions | Button | `.small()` |
+| A field in a strip or the rail | Input | `.small()` |
+| A secondary action inside dense content: a line of meta text, a transcript block, a chip | Button | `.xsmall()` |
+| An icon in a button | Icon | the button's own: `small` in a `.small()` or `.tall()` button, `xsmall` in an `.xsmall()` one |
+| An icon leading a label the app draws: a row, a menu item | Icon | `.small()` |
+| A mark inside a line of meta text | Icon | `.xsmall()` |
+| A badge | Tag | `.small()`, at its own height |
+| A checkbox, a switch | Checkbox, Switch | `.small()` beside chrome text, at the library's own geometry |
+| A single-line row; a row with a second line | drawn by the app | `ROW_H`; at least `ROW_H` |
+| A strip along the top of a region | drawn by the app | `BAR_H` |
+
+- **One size, one measure.** `.small()` and `.xsmall()` already give a Button and an Input the
+  same height and words; the library's default does not, so it is never used, and `.tall()` is
+  the wrapper that gives both the form's height at the chrome size. A size a component gets
+  wrong is corrected in its shared wrapper, never at the call site.
+- **The hit area is not the icon.** A taller control keeps the icon its role takes: a `.tall()`
+  button carries the same small icon as a `.small()` one. Nothing is enlarged to fill its box.
+- **Some components keep their own geometry**: a badge, a checkbox, a switch, a key cap. Centre
+  them in their row (`items_center`); never stretch them to the height of the controls beside
+  them.
+- **Spacing inside a library control is the library's** (a small button's icon and label sit
+  `gap_1` apart). The table above governs the space between controls, `gap_2` between two.
+- **Zoom.** What the app draws is in rems and follows per-panel zoom. Some library sizes are
+  pixels (a switch's track and thumb, a field's inner padding, the library's table rows), so a
+  part equal to one of them at 100% parts from it at another zoom: line such parts up by centring
+  them, never by matching a number.
 
 ### Window
 
@@ -132,8 +168,8 @@ Boxes sit side by side while the measured column holds two, and stack when it do
 ### Lists
 
 A single-line row is `ROW_H` tall, padded `px_2` with `gap_2`, at `radius_tokens().sm`. Hover fills it with
-`list_hover`, the selected row with `accent`. A row's own actions are `xsmall` ghost buttons, shown
-on hover and on the selected row. Every list has a named cap, and its last line says how many more
+`list_hover`, the selected row with `accent`. A row's own actions are `.small()` ghost buttons, shown
+on hover and on the selected row; `.xsmall()` only for one inside the row's line of meta text. Every list has a named cap, and its last line says how many more
 there are, in meta text. A table is a box of rows split by hairlines, under a head row in meta text.
 Keep metadata and actions in stable trailing slots. Multi-line row variants align their primary
 labels and secondary lines across peers. A hovered selected row remains recognizably selected;

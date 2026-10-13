@@ -6,7 +6,8 @@ description: Build and normalize onehand controls and content containers through
 # Components
 
 Read [DESIGN.md](../../../DESIGN.md) (*Components*, *Icons*, *Exceptions*) and
-[UI patterns](../../../docs/ui-patterns.md) (*Choose the container*) for the role being built.
+[UI patterns](../../../docs/ui-patterns.md) (*Choose the container*, *Control sizes*) for the role
+being built.
 The catalog describes available implementation, not permission to copy a mismatched caller.
 
 ## Building one
@@ -19,8 +20,9 @@ The catalog describes available implementation, not permission to copy a mismatc
    shared builder in that change, into `crates/plugin-host` when a plugin draws it too.
 3. **Choose the container and variant by role.** A related group may need only a heading and
    space. Do not add a card, badge, icon or filled control solely to make it look finished.
-4. **Draw every state it can be in** (below), at the size `DESIGN.md` gives its place
-   (*Components*). Keep the same geometry across states and compare with same-role peers.
+4. **Draw every state it can be in** (below), at the size its role takes (UI patterns, *Control
+   sizes*). Keep the same geometry across states and compare with same-role peers. A size a
+   component gets wrong is fixed in its shared wrapper, never at the call site.
 5. **List a new builder in catalog.md** in the same change. Distinguish a builder that exists
    from one being proposed; never document an unimplemented helper as available.
 
@@ -70,17 +72,41 @@ crate::controls::action("retry-task").quiet(cx).small().label("Retry…").on_cli
 ```
 
 ```rust
-// Wrong: no variant, so the library's default, edged and filled apart from its surface
+// Wrong: no variant and no size, so the library's default, edged, filled apart from its
+// surface and lettered at the reading size
 action("run-check").label("Run check")
-// Right: a weighed alternative beside the primary
-action("run-check").secondary().label("Run check")
+// Right: a weighed alternative beside the primary, at the size its role takes
+action("run-check").secondary().small().label("Run check")
 ```
 
 ```rust
 // Wrong: refuses the press, still shows the pointer
-action(("plugin-update", i)).xsmall().secondary().disabled(busy)
+action(("plugin-update", i)).small().secondary().disabled(busy)
 // Right: refusing in one call, cursor included
-action(("plugin-update", i)).xsmall().secondary().refuses(busy)
+action(("plugin-update", i)).small().secondary().refuses(busy)
+```
+
+```rust
+// Wrong: a row's everyday action at the dense size, and a form's button at the library's default
+action(("session-more", i)).quiet(cx).xsmall().icon(IconName::Ellipsis)
+action("save-agent").primary().label("Save")
+// Right: the size each role takes
+action(("session-more", i)).quiet(cx).small().icon(IconName::Ellipsis)
+action("save-agent").primary().tall().label("Save")
+```
+
+```rust
+// Wrong: the library's default size for a taller hit area, which grows the icon with it
+action("refresh").quiet(cx).with_size(Size::Medium).icon(Icon::new(AppIcon::Refresh))
+// Right: the tall size keeps the small icon in the taller box
+action("refresh").quiet(cx).tall().icon(Icon::new(AppIcon::Refresh))
+```
+
+```rust
+// Wrong: a switch stretched to the controls beside it
+Switch::new("keep").small().h(tokens::FIELD_H)
+// Right: the library's own geometry, centred in its row
+div().h_flex().items_center().gap_2().child(Switch::new("keep").small()).child(field)
 ```
 
 ```rust

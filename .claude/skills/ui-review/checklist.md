@@ -22,7 +22,7 @@ Each section names the document owning its rules; read it before answering.
 8. Token values kept in code and its token reference, with no duplicate palette or scale in
    contracts, skills or call-site comments?
 
-## Components: `DESIGN.md` (*Components*, *Icons*), the `ui-components` skill
+## Components: `DESIGN.md` (*Components*, *Icons*), `docs/ui-patterns.md` (*Control sizes*), the `ui-components` skill
 
 9. Nothing drawn by hand that the library or `catalog.md` draws?
 10. Every button through `action` and with a variant by role (`primary`, `secondary`, ghost as
@@ -30,9 +30,11 @@ Each section names the document owning its rules; read it before answering.
     default nor `outline()`); every field through `text_input`, `search_input` or `text_area`; every
     refusal through `.refuses()`, with a tooltip saying why?
 11. Every state the component can be in: hover, selected or open, keyboard focus, refusing, loading?
-12. Every control at the size its place takes: `.tall()` in a dialog's footer, a form and a page's
-    head, `small` in a box or a strip, `xsmall` on a row, in a transcript block and as a chip; never
-    the library's default size?
+12. Every control at the size its role takes: `.tall()` in a form, a filter bar, a page's head and
+    a dialog's footer; `.small()` in a strip, a box and for a row's actions; `.xsmall()` only for a
+    secondary action inside meta text, a transcript block or a chip; never the library's default;
+    an icon at its role's size, not grown with the hit area; a badge, checkbox or switch at the
+    library's own geometry, centred; any size correction in the shared wrapper, not the call site?
 13. Every icon an `IconName` or registry SVG; every icon-only button with a tooltip?
 14. A new builder listed in `catalog.md`, duplicating none listed there?
 

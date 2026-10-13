@@ -118,14 +118,33 @@ file rows); a `Tag` takes `radius_lg` through `.rounded(cx.theme().radius_lg)` a
 | `tokens::lift(cx)` | anything the app floats | `crates/plugin-host/src/tokens.rs` |
 | `composer_lift(cx)` | the composer card | `crates/app/src/theme.rs` |
 
-## Control heights
+## Control sizes
 
-| Size | Height |
+What each size measures in each component, as the pinned `gpui-component` draws it (its
+`sizing.rs`, `button/button.rs`, `icon.rs`, `tag.rs`, `checkbox.rs`, `switch.rs`, `kbd.rs`); which
+role takes which size is UI patterns, *Control sizes*. Pixels at the 16px base. **px** marks a size
+the library holds in pixels, which per-panel zoom does not scale; everything else is in rems.
+Moving the library's rev means checking this table.
+
+| Size | Button: height / words / icon / icon–label gap / inset | Input: height / words / inset | Icon alone |
+|---|---|---|---|
+| `.xsmall()` | 20 / 12 / 12 / 4 / 4 | 20 / 12 / 4 **px** | 12 |
+| `.small()` (`CONTROL_H`) | 24 / 14 / 14 / 4 / 8 | 24 / 14 / 8 **px** | 14 |
+| `.tall()` (`FIELD_H`) | 32 / 14 / 14 / 4 / 12 | 32 / 14 / 8 **px** | none |
+| the library's default | 32 / 16 / 16 / 8 / 10: never used | 32 / 14 / 10 **px** | 16 |
+
+An icon-only button is square at its height. `.tall()` is the small size given the default's
+height (`Tall` in `crates/plugin-host/src/lib.rs`), so its words and icon stay the small ones.
+
+Components that keep geometry of their own, centred in their row rather than sized to it:
+
+| Component | Geometry |
 |---|---|
-| `.xsmall()` | 1.25rem (20px) |
-| `.small()` | 1.5rem (24px), `CONTROL_H` |
-| `.tall()` | 2rem (32px), `FIELD_H`: the small size at the default height, its words at `text_sm` |
-| the library's default | 2rem (32px); not used: its button letters at `text_base` |
+| `Tag` at `.small()` | words 12, inset 6 × 2; its height follows its line |
+| `Checkbox` | box 12 / 14 / 16 at `.xsmall()` / `.small()` / default; its label 12 / 14 / 16 |
+| `Switch` | track 28 × 16 **px** at `.xsmall()` and `.small()`, 36 × 20 **px** at the default; thumb 12 / 16 **px** |
+| `Kbd` | words 12, inset 4 × 2 |
+| The library's table rows | 26 / 30 / 32 **px** at `.xsmall()` / `.small()` / default; the app draws its own rows at `ROW_H` |
 
 ## Shared sizes
 

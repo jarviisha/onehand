@@ -271,10 +271,20 @@ the main action, `secondary` an alternative beside it, a picker's trigger and ev
 `choice` in a pick-one row, `danger` only under *Exceptions*, and ghost (`.quiet(cx)`, whose hover
 is the selected step) the rest. **No button draws an edge** (no default variant, no `outline()`): a
 field is the one control marked by its edge, on no fill of its own. A control that refuses says so
-(`.refuses()`) and goes back to the arrow. Sizes: `.tall()` (`FIELD_H`, chrome-size words) in a
-dialog's footer, a form and a page's head; `small` in a box or a strip; `xsmall` on a row, in a
-transcript block and as a chip; never the library's default, which letters a button at the reading
-size. The app owns only its own: the transcript renderers, the icon registry, the terminal panel,
+(`.refuses()`) and goes back to the arrow.
+
+**A size names a role, and means one height and one text size in every control.** The library's
+sizes disagree across components (its default button letters at the reading size beside a field
+at the chrome size), so the app uses three: `.small()` (`CONTROL_H`), the compact default, in a
+strip, a box and for a row's actions; `.tall()` (`FIELD_H`, chrome-size words) in a form, a filter
+bar, a page's head and a dialog's footer; `.xsmall()` only for a secondary action inside dense
+content: a line of meta text, a transcript block, a chip. Never the library's default. A
+correction a component needs lives in its shared wrapper (`Tall`), never at a call site. An icon
+keeps its role's size whatever the hit area round it, and a badge, a checkbox or a switch keeps
+the library's own geometry, centred in its row. `docs/ui-patterns.md` (*Control sizes*) maps each
+role to its component and size.
+
+The app owns only its own: the transcript renderers, the icon registry, the terminal panel,
 per-panel zoom, and the composer popup (one shell for `@`, `/`, the pickers, the `+` and branch
 menus and the attachment tray, with a pinned title and no key hints, at most six rows, grouped, then
 how many more; a menu opens just above the control that opened it).
