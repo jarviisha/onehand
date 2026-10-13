@@ -457,7 +457,7 @@ pub(super) fn project_row(
     let (shell, hover) = (cx.entity().downgrade(), hover_fill(cx));
     let muted = cx.theme().muted_foreground;
     let (radius, chip, chip_ink) = (
-        cx.theme().radius,
+        cx.theme().radius_tokens().sm,
         cx.theme().secondary,
         cx.theme().secondary_foreground,
     );

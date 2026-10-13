@@ -65,7 +65,7 @@ fn popup_row(id: usize, highlighted: bool, cx: &App) -> Button {
         .overflow_hidden()
         .px_2()
         .text_sm()
-        .rounded(cx.theme().radius)
+        .rounded(cx.theme().radius_tokens().sm)
         // No border and no ring, on either state. The library leaves a ghost
         // button's border transparent already, so what is turned off here is
         // the focus ring it would draw over the top — a second rectangle around

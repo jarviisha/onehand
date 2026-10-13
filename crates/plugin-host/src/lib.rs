@@ -30,9 +30,10 @@ use gpui::{
     Styled as _, Window, div,
 };
 use gpui_component::button::{Button, ButtonCustomVariant, ButtonRounded, ButtonVariants as _};
-use gpui_component::input::{Input, InputState};
+use gpui_component::input::{Input, InputState, Textarea, TextareaState};
 use gpui_component::{
-    ActiveTheme as _, Colorize as _, Selectable as _, Sizable as _, Size, StyledExt as _,
+    ActiveTheme as _, Colorize as _, Icon, IconName, Selectable as _, Sizable as _, Size,
+    StyledExt as _,
 };
 use std::rc::Rc;
 
@@ -323,6 +324,29 @@ pub fn status_line(message: String, cx: &App) -> AnyElement {
         .text_color(status_ink(cx).warning)
         .child(message)
         .into_any_element()
+}
+
+/// A search field: a [`text_input`] led by the search mark and ended by the
+/// library's clear button, so every search in the app and its plugins is one
+/// shape. The caller sizes it, as it would a field.
+pub fn search_input(state: &Entity<InputState>, cx: &App) -> Input {
+    text_input(state, cx)
+        .prefix(
+            Icon::new(IconName::Search)
+                .small()
+                .text_color(cx.theme().muted_foreground),
+        )
+        .cleanable(true)
+}
+
+/// A field of several lines, on the corner and the surface [`text_input`]
+/// gives a field of one: the library draws a textarea at the theme's full
+/// corner on a fill of its own, and beside a single-line field in the same
+/// form the two read as different controls.
+pub fn text_area(state: &Entity<TextareaState>, cx: &App) -> Textarea {
+    Textarea::new(state)
+        .rounded(cx.theme().radius_tokens().sm)
+        .bg(cx.theme().transparent)
 }
 
 /// A ghost button whose hover is the fill a selected one shows.

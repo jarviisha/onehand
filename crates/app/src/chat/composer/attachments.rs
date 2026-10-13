@@ -178,7 +178,7 @@ impl Composer {
             cx.theme().muted_foreground,
             cx.theme().danger,
             crate::theme::status_ink(cx).danger,
-            cx.theme().radius,
+            cx.theme().radius_tokens().sm,
             cx.theme().muted,
         );
         let hover = cx.theme().list_hover;
@@ -510,7 +510,7 @@ pub(super) fn chip(id: impl Into<gpui::ElementId>, open: bool, cx: &App) -> Butt
     let (open_fill, fg, radius) = (
         cx.theme().accent,
         cx.theme().muted_foreground,
-        cx.theme().radius,
+        cx.theme().radius_tokens().sm,
     );
     crate::controls::action(id)
         .quiet(cx)

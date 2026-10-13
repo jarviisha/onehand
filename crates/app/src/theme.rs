@@ -103,6 +103,12 @@ struct Ramp {
     /// light palette, where the lift carries it; in the dark one a clear step
     /// above the well, because a shadow barely shows on near-black.
     raised: &'static str,
+    /// A field with no edge sunk into the well: the rail's search. It has its
+    /// fill alone to be found by, so it steps away from the well the other way
+    /// from a row lifting off it. White in the light palette, where the panel
+    /// step sat too close to the well to see; in the dark one the panel step,
+    /// because the reading surface cut a hole the eye went to first.
+    inset: &'static str,
     /// A control's edge, and the scrollbar thumb.
     control: &'static str,
     /// The border marking where the keyboard is.
@@ -149,6 +155,7 @@ const LIGHT: Ramp = Ramp {
     hairline: "#d4d4d4",
     floating: "#ffffff",
     raised: "#ffffff",
+    inset: "#ffffff",
     control: "#c7c7c7",
     ring: "#888888",
     // Darker than the usual editor blue, which inline code tempered toward
@@ -187,6 +194,7 @@ const DARK: Ramp = Ramp {
     // card that has no visible shadow to stand on.
     floating: "#282828",
     raised: "#303030",
+    inset: "#202020",
     control: "#404040",
     ring: "#767676",
     // Blue in both modes, lifted to read on near-black: running and waiting
@@ -469,6 +477,16 @@ pub(crate) fn raised(cx: &App) -> Hsla {
         false => &LIGHT,
     };
     Hsla::parse_hex(ramp.raised).unwrap_or(cx.theme().popover)
+}
+
+/// The fill of a field with no edge sunk into the well. No library token
+/// holds it, so it is read off the ramp by mode, as [`raised`] is.
+pub(crate) fn inset(cx: &App) -> Hsla {
+    let ramp = match cx.theme().mode.is_dark() {
+        true => &DARK,
+        false => &LIGHT,
+    };
+    Hsla::parse_hex(ramp.inset).unwrap_or(cx.theme().background)
 }
 
 /// The composer's lift, in pixels as a hairline is: the tight shadow's blur,
@@ -1250,6 +1268,39 @@ mod tests {
             ] {
                 let ratio = contrast(ink, raised);
                 assert!(ratio >= AA, "{name}: {label} on the card is {ratio:.2}");
+            }
+        }
+    }
+
+    /// An edgeless field in the well has its fill alone to be found by, so the
+    /// fill has to differ from the well it is sunk into, and what is written in
+    /// it, the typed words and the placeholder in meta ink, has to read.
+    #[test]
+    fn an_inset_field_stands_off_the_well() {
+        for (name, ramp, mode) in [
+            ("light", &LIGHT, ThemeMode::Light),
+            ("dark", &DARK, ThemeMode::Dark),
+        ] {
+            let theme = resolve(ramp, mode);
+            let inset = Hsla::parse_hex(ramp.inset).unwrap();
+            // A notch under a surface step, as the composer card's: the field
+            // is small and has a mark and words in it, so the fill only has
+            // to differ.
+            const FIELD_STEP: f32 = 1.1;
+            let ratio = contrast(inset, theme.muted);
+            assert!(
+                ratio >= FIELD_STEP,
+                "{name}: the inset field is {ratio:.2} from the well"
+            );
+            for (label, ink) in [
+                ("prose", theme.foreground),
+                ("meta ink", theme.muted_foreground),
+            ] {
+                let ratio = contrast(ink, inset);
+                assert!(
+                    ratio >= AA,
+                    "{name}: {label} on the inset field is {ratio:.2}"
+                );
             }
         }
     }

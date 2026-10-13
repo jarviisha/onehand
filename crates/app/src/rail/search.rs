@@ -5,21 +5,25 @@ use super::RailState;
 use super::model::{Filter, toggle_attention};
 use super::row::labelled;
 use crate::controls::Quiet as _;
-use crate::controls::text_input;
+use crate::controls::search_input;
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{Anchor, Context, IntoElement, ParentElement, Styled, div};
 use gpui_component::menu::DropdownMenu as _;
-use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, Selectable as _, Sizable as _, StyledExt};
 
 /// The search field: borderless, with the key that reaches it from anywhere.
+///
+/// With no edge it needs a fill to be found by, and the rail is drawn in the
+/// well, so the field takes the ramp's inset step: away from the well the
+/// other way from the rail's hovered and selected rows, which lift off it, so
+/// it reads as a place to type into rather than one more row.
 pub(super) fn search_field(state: &RailState, cx: &Context<Shell>) -> impl IntoElement + use<> {
-    let muted = cx.theme().muted_foreground;
     div().flex_1().min_w_0().child(
-        text_input(&state.search, cx)
+        search_input(&state.search, cx)
             .small()
             .bordered(false)
-            .prefix(Icon::new(IconName::Search).small().text_color(muted))
+            .bg(crate::theme::inset(cx))
             .when_some(
                 crate::keymap::first_key("focus_rail_search", cx),
                 |input, key| input.suffix(gpui_component::kbd::Kbd::new(key)),

@@ -4,13 +4,13 @@ use super::rows::OPTION_MAX_W;
 use super::{Composer, ComposerEvent, Overlay};
 use crate::chat::session::ChatSession;
 use crate::controls::Refuses as _;
+use crate::controls::text_area;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, Context, Entity, InteractiveElement, IntoElement, ParentElement, Rems, SharedString,
     StatefulInteractiveElement, Styled, Window, div, relative, rems,
 };
 use gpui_component::button::{Button, ButtonVariants as _};
-use gpui_component::input::Textarea;
 use gpui_component::{ActiveTheme, Icon, Sizable as _, StyledExt};
 use onehand_core::attachment::AttachmentSource;
 
@@ -172,7 +172,7 @@ impl Composer {
                             composer.commit(&take_row, window, cx);
                         },
                     ))
-                    .child(Textarea::new(&self.state).appearance(false)),
+                    .child(text_area(&self.state, cx).appearance(false)),
             )
             .child(
                 div()

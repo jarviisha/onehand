@@ -15,7 +15,7 @@ use onehand_core::issues;
 use onehand_core::task::work::list::{Filters, Incomplete, Listed, Progress};
 use onehand_plugin_host::Quiet as _;
 use onehand_plugin_host::Tall as _;
-use onehand_plugin_host::text_input;
+use onehand_plugin_host::search_input;
 use onehand_plugin_host::{AppIcon, action, menu_below, menu_item, status_ink};
 use std::path::PathBuf;
 
@@ -246,12 +246,10 @@ impl IssuesView {
             // The search takes what the row leaves, down to its floor, where
             // the row wraps.
             .child(
-                div().flex_1().min_w(SEARCH_W).child(
-                    text_input(query, cx)
-                        .tall()
-                        .prefix(Icon::new(IconName::Search).small().text_color(muted))
-                        .cleanable(true),
-                ),
+                div()
+                    .flex_1()
+                    .min_w(SEARCH_W)
+                    .child(search_input(query, cx).tall()),
             )
             .child(showing)
             .child(progress)

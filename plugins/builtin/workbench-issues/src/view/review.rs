@@ -17,7 +17,7 @@ use gpui::{
     ParentElement, Rems, StatefulInteractiveElement as _, Styled, Window, div, rems,
 };
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::input::{Textarea, TextareaState};
+use gpui_component::input::TextareaState;
 use gpui_component::text::TextView;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::issues::template::section;
@@ -28,6 +28,7 @@ use onehand_core::task::work::{
     ANSWER_CHANGED, ANSWER_LINES, Checked, IssueWork, Reading, UnderReview, Work, last_lines,
 };
 use onehand_plugin_host::Quiet as _;
+use onehand_plugin_host::text_area;
 use onehand_plugin_host::{Refuses as _, Request, action, status_ink};
 use std::path::{Path, PathBuf};
 
@@ -569,7 +570,7 @@ fn answers(
             .v_flex()
             .gap_1()
             .child(div().text_color(muted).child(read.revise_said()))
-            .child(Textarea::new(note).h(NOTE_H))
+            .child(text_area(note, cx).h(NOTE_H))
             .child(
                 div()
                     .h_flex()

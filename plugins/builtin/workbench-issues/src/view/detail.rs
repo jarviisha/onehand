@@ -563,7 +563,7 @@ fn referenced(files: Vec<String>, cx: &mut Context<IssuesView>) -> Option<AnyEle
                             .gap_1()
                             .min_w_0()
                             .px_1()
-                            .rounded(cx.theme().radius)
+                            .rounded(cx.theme().radius_tokens().sm)
                             .cursor_pointer()
                             .hover(|row| row.bg(cx.theme().list_hover))
                             .text_xs()

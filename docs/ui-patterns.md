@@ -37,10 +37,10 @@ Boxes sit side by side while the measured column holds two, and stack when it do
 
 ### Lists
 
-A row is `ROW_H` tall, padded `px_2` with `gap_2`, at `radius`. Hover fills it with `list_hover`,
-the selected row with `accent`. A row's own actions are `xsmall` ghost buttons, shown on hover and
-on the selected row. Every list has a named cap, and its last line says how many more there are,
-in meta text. A table is a box of rows split by hairlines, under a head row in meta text.
+A row is `ROW_H` tall, padded `px_2` with `gap_2`, at `radius_tokens().sm`. Hover fills it with
+`list_hover`, the selected row with `accent`. A row's own actions are `xsmall` ghost buttons, shown
+on hover and on the selected row. Every list has a named cap, and its last line says how many more
+there are, in meta text. A table is a box of rows split by hairlines, under a head row in meta text.
 
 ### List and detail
 

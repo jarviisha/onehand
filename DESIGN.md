@@ -193,13 +193,13 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   pixels, and the terminal's grid, which zooms on its own. Fixed chrome heights stay outside the
   zoom wrapper. A size the steps lack is a named constant (shared ones in
   `onehand_plugin_host::tokens`, others beside their use), its reason in its doc comment.
-- **Corners by role**: `radius_tokens().sm` for a control pressed or typed into (a button, a
-  text field, a checkbox, a key cap), which the button and field wrappers set; `radius` for what
-  is picked from among others (a menu, a row, a chip, an answer in a question card) and every block inside a column (a
-  well, code, a diff, a notice); `radius_lg` for a box standing on its own (a page's box, a table,
-  the bubble, the composer, the terminal, a floating panel, a dialog, a toast) and for a badge (a
-  `Tag`, a state or count pill); `rounded_full` for a dot. A part joined to its container's edge
-  takes its corner there.
+- **Corners by role**: `radius_tokens().sm` for what is pressed, picked, typed into or lifted out by
+  a fill (a control, a row such as the rail's selected project or session, a tab, a chip); the
+  control wrappers set it. `radius` for a block read inside a column (a well, code, a diff, a
+  notice). `radius_lg` for a box standing on its own (a page's box, a table, the bubble, the
+  composer, the terminal, a floating panel, a dialog, a toast) and for a badge (a `Tag`).
+  `rounded_full` for a dot. A part joined to its container's edge takes its corner there; the
+  library's menus keep `radius`.
 - **Lines** are a 1px `border`; the mark under an open tab is 2px.
 
 ## Colour and state
@@ -220,36 +220,31 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
 | `popover` | floating surfaces |
 | `theme::raised` | the composer card |
 | `secondary` | inline code in the prompt bubble, a step off its fill; a document's code on a dock |
-| `button_secondary` | the secondary button: the selected step, the fill `accent` holds |
 
 - Boxes are borders; wells and the bubble are fills.
-- Hover and selection are fills. On a row they are distinct steps (`list_hover`, `accent`); on a
-  ghost button they share the selected step, so a hovered and a selected one are one box. Keyboard
-  focus is the ring.
+- Hover and selection are fills: distinct steps on a row (`list_hover`, `accent`), one step on a
+  ghost button (the selected one). Keyboard focus is the ring.
 - At most one primary in a view; a view needs none (the Settings page has none).
 - A missing surface goes into the ramp with its contrast asserted, never into one view.
 
 ## Components
 
 Reuse gpui-component before building anything: `Root`, `DockArea`, `Sidebar`, `Dialog`, `Switch`,
-`InputState`, `Editor`, `TextView`, plus gpui's own `list` for the transcript. Buttons go through
-the app's action wrapper, which sets the pointer cursor and the control's corner, and text fields
-through `text_input`, which sets the same corner. A button always names its variant, by its role:
-`primary` the view's one main action, `danger` the two listed under *Exceptions*, `secondary` a
-weighed alternative beside the primary, a picker's trigger and every button on the Settings page,
-and ghost (`.quiet(cx)`) everything else (dismissing, a strip's or a row's actions, an icon); a
-pick-one row is `choice`. **No button draws an edge**: neither the library's default variant nor
-`outline()`, so a text field is the one control marked by its edge alone, on no fill of its own. **A
-hovered ghost and a selected one share one fill**, the ramp's selected step, so the two read as the
-same box; `.quiet(cx)` draws it, never the library's bare `ghost()`. A control that refuses says so
-(`.refuses()`) and goes back to the arrow. A control is `.tall()` in a dialog's footer, a form and a
-page's head: `FIELD_H` high, its words at the chrome size. It is `small` in a box and a strip, and
-`xsmall` on a list row, in a transcript block and as a chip. Never the library's default size, whose
-button letters its label at the reading size (`text_base`) while a field of the same size letters at
-the chrome size. The app owns only its own: the transcript renderers, the icon registry, the
-terminal panel, per-panel zoom, and the composer popup (one shell for `@`, `/`, the pickers, the `+`
-and branch menus and the attachment tray, with a pinned title and no key hints, at most six rows,
-grouped, then how many more; a menu opens just above the control that opened it).
+`InputState`, `Editor`, `TextView`, plus gpui's own `list` for the transcript. Controls go through
+the plugin host's builders, which set the pointer cursor and the `sm` corner: buttons through
+`action`; fields through `text_input`, `search_input` (the search mark, the clear button; the rail's
+alone has no edge, on `theme::inset`) and `text_area`. A button names its variant by role: `primary`
+the main action, `secondary` an alternative beside it, a picker's trigger and every Settings button,
+`choice` in a pick-one row, `danger` only under *Exceptions*, and ghost (`.quiet(cx)`, whose hover
+is the selected step) the rest. **No button draws an edge** (no default variant, no `outline()`): a
+field is the one control marked by its edge, on no fill of its own. A control that refuses says so
+(`.refuses()`) and goes back to the arrow. Sizes: `.tall()` (`FIELD_H`, chrome-size words) in a
+dialog's footer, a form and a page's head; `small` in a box or a strip; `xsmall` on a row, in a
+transcript block and as a chip; never the library's default, which letters a button at the reading
+size. The app owns only its own: the transcript renderers, the icon registry, the terminal panel,
+per-panel zoom, and the composer popup (one shell for `@`, `/`, the pickers, the `+` and branch
+menus and the attachment tray, with a pinned title and no key hints, at most six rows, grouped, then
+how many more; a menu opens just above the control that opened it).
 
 Scope: the Workbench editor is a quick editor (tree-sitter, no LSP). Neovim is a mode with a PTY of
 its own per project. Files lives inside Editor, not as a mode. Plugins are built in.

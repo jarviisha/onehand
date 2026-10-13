@@ -46,6 +46,11 @@ pub(crate) use onehand_plugin_host::{menu_below, menu_item, menu_row};
 /// reach it too.
 pub(crate) use onehand_plugin_host::text_input;
 
+/// A search field and a field of several lines, on a field's corner and
+/// surface. The rules and their reasoning live with the definitions in
+/// [`onehand_plugin_host`], where a built-in plugin's fields reach them too.
+pub(crate) use onehand_plugin_host::{search_input, text_area};
+
 /// A ghost button hovering on the selected step. The rule and its reasoning
 /// live with the definition in [`onehand_plugin_host`], where a built-in
 /// plugin's buttons reach it too.

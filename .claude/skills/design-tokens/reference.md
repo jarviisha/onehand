@@ -33,6 +33,7 @@ Helpers:
 | `meta_ink(cx)` | the transcript's meta text, between prose and muted | `crates/app/src/theme.rs` |
 | `hue_ink(base, cx)` | a hue tempered for ink: code inside prose | `crates/app/src/theme.rs` |
 | `raised(cx)` | the composer card's fill | `crates/app/src/theme.rs` |
+| `inset(cx)` | a field with no edge sunk into the well: the rail's search | `crates/app/src/theme.rs` |
 | `rail_chosen(cx)` | the rail's chosen row | `crates/app/src/theme.rs` |
 
 ## Spacing
@@ -76,10 +77,11 @@ are not steps and stay allowed. A named spacing constant (`BLOCK_GAP`, `TIGHT_GA
 | `cx.theme().radius_lg` | 8 |
 | `.rounded_full()` | round |
 
-The library's controls apply their own: tooltips, menus and popovers `radius`; checkboxes and
-`Kbd` `sm`; dialogs and toasts `radius_lg`. Two are overridden where they are built: a button
-(`action`) and a text field (`text_input`) take `sm` rather than the library's `radius`, and a
-`Tag` takes `radius_lg` through `.rounded(cx.theme().radius_lg)` after `.small()`.
+The library's controls apply their own: tooltips, menus and popovers `radius`; checkboxes and `Kbd`
+`sm`; dialogs and toasts `radius_lg`. Overridden where they are built: a button (`action`) and a
+text field (`text_input`, `search_input`, `text_area`) take `sm` rather than the library's `radius`,
+as does every row, tab and chip the app draws (`tab_chip`, the rail's and Settings' rows, picker and
+file rows); a `Tag` takes `radius_lg` through `.rounded(cx.theme().radius_lg)` after `.small()`.
 
 ## Elevation
 

@@ -4,6 +4,7 @@ use super::title_row;
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
 use crate::controls::Tall as _;
+use crate::controls::text_area;
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -12,7 +13,7 @@ use gpui::{
 };
 use gpui_component::button::ButtonVariants;
 use gpui_component::dialog::Dialog;
-use gpui_component::input::{Textarea, TextareaState};
+use gpui_component::input::TextareaState;
 use gpui_component::tag::Tag;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::issues::template;
@@ -237,7 +238,7 @@ fn start_form(
             col.child(label("Before it starts")).children(lines)
         })
         .child(label("Instructions for this run"))
-        .child(Textarea::new(instructions).h(super::INSTRUCTIONS_H));
+        .child(text_area(instructions, cx).h(super::INSTRUCTIONS_H));
     let Ok(template) = template else {
         return column.into_any_element();
     };
@@ -392,7 +393,7 @@ fn row_shell(
 ) -> gpui::Stateful<gpui::Div> {
     let (muted, radius, hover) = (
         cx.theme().muted_foreground,
-        cx.theme().radius,
+        cx.theme().radius_tokens().sm,
         cx.theme().list_hover,
     );
     div()

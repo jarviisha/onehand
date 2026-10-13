@@ -2,6 +2,7 @@ use super::WorkflowsPage;
 use super::draft::{Kind, StepDraft};
 use super::{click, row_delete, row_icon};
 use crate::controls::Tall as _;
+use crate::controls::text_area;
 use crate::controls::text_input;
 use crate::settings::{about, field};
 use gpui::prelude::FluentBuilder as _;
@@ -10,7 +11,6 @@ use gpui::{
 };
 use gpui_component::button::ButtonVariants as _;
 
-use gpui_component::input::Textarea;
 use gpui_component::switch::Switch;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::workflow::{GateKind, Place};
@@ -167,7 +167,7 @@ pub(super) fn step_box(
                 .child(field(
                     "Prompt",
                     None,
-                    Textarea::new(&step.prompt).h(PROMPT_H),
+                    text_area(&step.prompt, cx).h(PROMPT_H),
                     cx,
                 ))
                 .child(

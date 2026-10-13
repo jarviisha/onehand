@@ -144,7 +144,11 @@ pub fn tab_chip(
         .h_6()
         .pl_2()
         .gap_1()
-        .rounded(theme.radius)
+        // Chrome, and said so here: neither strip that holds a tab sets a
+        // size, so a tab took the panel's reading size and stood a step above
+        // the buttons beside it.
+        .text_sm()
+        .rounded(theme.radius_tokens().sm)
         .cursor_pointer()
         .text_color(match chosen {
             true => theme.foreground,

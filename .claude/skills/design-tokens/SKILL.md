@@ -44,10 +44,17 @@ prints nothing for its lines, and `cargo test -p onehand --locked guards` passes
 ```
 
 ```rust
-// Wrong: a standing box at a row's corner
+// Wrong: a standing box at a block's corner
 .rounded(cx.theme().radius)
 // Right
 .rounded(cx.theme().radius_lg)
+```
+
+```rust
+// Wrong: a selected row at a block's corner
+.rounded(cx.theme().radius).bg(chosen_fill(cx))
+// Right: what a fill lifts out takes the small corner
+.rounded(cx.theme().radius_tokens().sm).bg(chosen_fill(cx))
 ```
 
 ```rust

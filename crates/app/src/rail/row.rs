@@ -183,7 +183,7 @@ impl Render for DragGhost {
         div()
             .px_2()
             .py_0p5()
-            .rounded(cx.theme().radius)
+            .rounded(cx.theme().radius_tokens().sm)
             .bg(chosen_fill(cx))
             .text_sm()
             .text_color(cx.theme().sidebar_accent_foreground)

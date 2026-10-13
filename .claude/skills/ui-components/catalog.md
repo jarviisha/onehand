@@ -5,13 +5,14 @@ it in the same change.
 
 ## gpui-component
 
-The app uses the library for: `Button` (always through `action`), `Input` (always through `text_input`) and `InputState`,
-`Textarea`, `Switch`, `Tag`, `Kbd`, `Spinner`, `Tooltip`, `Dialog` (`window.open_dialog`,
-`window.open_alert_dialog`, with `DialogFooter` and `DialogClose`), `Notification`
-(`window.push_notification`), `PopupMenu` and `DropdownMenu` (through the menu builders below),
-`Popover`, `Scrollbar`, the resizable panels, `DockArea`, `Root` and `TextView`; gpui's own `list`
-draws the transcript. Icons are `gpui_component::IconName`; what that set lacks is `crate::icons`
-(synced through `assets/icons/manifest.toml`).
+The app uses the library for: `Button` (always through `action`), `Input` (always through
+`text_input` or `search_input`) and `InputState`, `Textarea` (always through `text_area`), `Switch`,
+`Tag`, `Kbd`, `Spinner`, `Tooltip`, `Dialog` (`window.open_dialog`, `window.open_alert_dialog`, with
+`DialogFooter` and `DialogClose`), `Notification` (`window.push_notification`), `PopupMenu` and
+`DropdownMenu` (through the menu builders below), `Popover`, `Scrollbar`, the resizable panels,
+`DockArea`, `Root` and `TextView`; gpui's own `list` draws the transcript. Icons are
+`gpui_component::IconName`; what that set lacks is `crate::icons` (synced through
+`assets/icons/manifest.toml`).
 
 Draw none of these by hand: a `div` that looks like a button, a label, a key cap spelled in text.
 
@@ -21,6 +22,8 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 |---|---|---|
 | Any button | `action` (sets the pointer and the control's `sm` corner) | `crates/app/src/controls.rs` (the app), `crates/plugin-host/src/lib.rs` (a plugin) |
 | Any text field | `text_input(&state, cx)` (sets the control's `sm` corner, on no fill of its own) | `crates/app/src/controls.rs` (the app), `crates/plugin-host/src/lib.rs` (a plugin) |
+| A search field | `search_input(&state, cx)`: a `text_input` with the search mark and the clear button; the caller sizes it | `crates/plugin-host/src/lib.rs`, re-exported by `crates/app/src/controls.rs` |
+| A field of several lines | `text_area(&state, cx)`: the library's `Textarea` on a field's corner and surface | `crates/plugin-host/src/lib.rs`, re-exported by `crates/app/src/controls.rs` |
 | A control at a dialog's or a form's scale | `.tall()` (the `Tall` trait, for a button or a field; re-exported by `crates/app/src/controls.rs`) | `crates/plugin-host/src/lib.rs` |
 | A ghost button | `.quiet(cx)` (the `Quiet` trait, re-exported by `crates/app/src/controls.rs`) | `crates/plugin-host/src/lib.rs` |
 | A button that can refuse | `.refuses(bool)` (the `Refuses` trait, re-exported by `crates/app/src/controls.rs`) | `crates/plugin-host/src/lib.rs` |

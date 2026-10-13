@@ -12,10 +12,9 @@ document owning its rule; read it before answering.
 3. Every spacing on the steps `0p5`, `1`, `1p5`, `2`, `3`, `4`, `6`, `8`?
 4. Every text size from the six roles, weights only `medium` and `semibold`, line heights only
    gpui's, `LEADING` and `LEADING_TIGHT`?
-5. Every corner by role: `sm` a button, a text field, a checkbox or a key cap (buttons through
-   `action`, fields through `text_input`, a `choice` included), `radius` a row, menu or chip
-   picked among others and a block inside a column, `radius_lg` a standing box and a badge,
-   `rounded_full` a dot?
+5. Every corner by role: `sm` whatever is pressed, picked, typed into or lifted out by a fill (a
+   button, a field, a checkbox, a key cap, a row, a tab, a chip, a `choice`), `radius` a block read
+   inside a column, `radius_lg` a standing box and a badge, `rounded_full` a dot?
 6. Shadows only on what floats, through `lift` (the composer through its own)?
 7. A new colour in both palettes, its contrast asserted in `theme.rs`'s tests?
 8. No number or hex copied into a document or a comment?
@@ -25,14 +24,14 @@ document owning its rule; read it before answering.
 9. Nothing drawn by hand that the library or `catalog.md` draws?
 10. Every button through `action` and with a variant by role (`primary`, `secondary`, ghost as
     `.quiet(cx)`, `danger`, or `choice` in a pick-one row); no button edged (never the library's
-    default nor `outline()`); every field through `text_input`; every refusal through `.refuses()`,
-    with a tooltip saying why?
-11. Every state the component can be in: hover, selected or open, keyboard focus, refusing,
-    loading?
+    default nor `outline()`); every field through `text_input`, `search_input` or `text_area`; every
+    refusal through `.refuses()`, with a tooltip saying why?
+11. Every state the component can be in: hover, selected or open, keyboard focus, refusing, loading?
 12. Every control at the size its place takes: `.tall()` in a dialog's footer, a form and a page's
     head, `small` in a box or a strip, `xsmall` on a row, in a transcript block and as a chip; never
-    the library's default size? 13. Every icon an `IconName` or registry SVG; every icon-only button
-    with a tooltip? 14. A new builder listed in `catalog.md`, duplicating none listed there?
+    the library's default size?
+13. Every icon an `IconName` or registry SVG; every icon-only button with a tooltip?
+14. A new builder listed in `catalog.md`, duplicating none listed there?
 
 ## Layout: `DESIGN.md` (*Layout*), `docs/ui-patterns.md` (*Layout*), the `layout-patterns` skill
 

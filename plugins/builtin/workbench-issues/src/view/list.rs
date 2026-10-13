@@ -13,7 +13,7 @@ use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, Size, StyledExt};
 use onehand_core::issues::{self, Issues, LabelKind, LocalIssue};
 use onehand_plugin_host::Quiet as _;
-use onehand_plugin_host::text_input;
+use onehand_plugin_host::search_input;
 use onehand_plugin_host::{Tint, action, menu_below, menu_item, status_ink, switch, tint};
 use std::collections::BTreeSet;
 
@@ -158,7 +158,6 @@ impl IssuesView {
     /// issue both, so they stay in reach while the two show one at a time.
     pub(super) fn search_bar(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let query = self.query(window, cx);
-        let muted = cx.theme().muted_foreground;
         div()
             .h_flex()
             .items_center()
@@ -170,12 +169,10 @@ impl IssuesView {
             .border_b_1()
             .border_color(cx.theme().border)
             .child(
-                div().flex_1().min_w_0().child(
-                    text_input(&query, cx)
-                        .small()
-                        .prefix(Icon::new(IconName::Search).xsmall().text_color(muted))
-                        .cleanable(true),
-                ),
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .child(search_input(&query, cx).small()),
             )
             .child(
                 action("issues-new")
@@ -566,7 +563,7 @@ impl IssuesView {
             .w_full()
             .px_2()
             .py_1p5()
-            .rounded(theme.radius)
+            .rounded(theme.radius_tokens().sm)
             .cursor_pointer()
             // A selection is a fill and only a fill: the selected step, which
             // the ramp holds clear of the hover step, so a row that is both

@@ -638,25 +638,29 @@ mod tests {
         }
     }
 
-    /// The library draws a text field at the theme's full corner, the one rows
-    /// and blocks keep; a field here takes a control's small corner, so it and
+    /// The library draws a text field, one line or several, at the theme's
+    /// full corner, the one rows and blocks keep, on a fill of its own; a field
+    /// here takes a control's small corner on the surface it sits on, so it and
     /// the button beside it are one shape. The wrapper sets it, and like the
     /// button's it is one line to bypass with code that looks ordinary.
     #[test]
     fn every_text_field_goes_through_the_wrapper() {
         // Assembled at run time so the wrapper's own source, and this test,
         // are not matches for it.
-        let bare = format!("Input{}new(", "::");
+        let bare = [
+            format!("Input{}new(", "::"),
+            format!("Textarea{}new(", "::"),
+        ];
         for (path, source) in ui_sources() {
             if path.ends_with("plugin-host/src/lib.rs") {
                 continue;
             }
             for (n, line) in source.lines().enumerate() {
                 assert!(
-                    !line.contains(&bare),
+                    !bare.iter().any(|b| line.contains(b.as_str())),
                     "{path}:{}: builds a text field straight from the library, \
-                     which draws it at a row's corner. Use the text_input \
-                     wrapper so it takes a control's.\n    {}",
+                     which draws it at a row's corner on a fill of its own. Use \
+                     text_input, search_input or text_area.\n    {}",
                     n + 1,
                     line.trim()
                 );

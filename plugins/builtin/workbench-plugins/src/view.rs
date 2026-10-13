@@ -12,7 +12,7 @@ use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{InputEvent, InputState};
 use gpui_component::{ActiveTheme, Selectable as _, Sizable as _, StyledExt};
 use onehand_plugin_host::Quiet as _;
-use onehand_plugin_host::text_input;
+use onehand_plugin_host::search_input;
 use onehand_plugin_host::{Ask, Refuses as _, Request, action, choice, hint, status_line, switch};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -634,7 +634,7 @@ impl PluginsView {
         div()
             .v_flex()
             .gap_2()
-            .child(text_input(query, cx).small())
+            .child(search_input(query, cx).small())
             .children(chips)
             .into_any_element()
     }
@@ -711,7 +711,7 @@ impl PluginsView {
         div()
             .v_flex()
             .gap_2()
-            .child(text_input(query, cx).small())
+            .child(search_input(query, cx).small())
             .child(div().h_flex().flex_wrap().gap_1().children(chips))
             .into_any_element()
     }

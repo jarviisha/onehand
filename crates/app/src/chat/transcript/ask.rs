@@ -376,7 +376,7 @@ fn ask_key_mark(n: usize, cx: &App) -> impl IntoElement + use<> {
         .h_flex()
         .items_center()
         .justify_center()
-        .rounded(cx.theme().radius)
+        .rounded(cx.theme().radius_tokens().sm)
         .border_1()
         .border_color(cx.theme().border)
         .text_xs()
@@ -639,7 +639,7 @@ impl AskForm<'_> {
                     .py_2()
                     .w_full()
                     .min_h(ASK_ROW_MIN)
-                    .rounded(cx.theme().radius)
+                    .rounded(cx.theme().radius_tokens().sm)
                     .border_1()
                     // **A taken choice is named by its border, and a destructive
                     // one by the danger step of that same border.** Taking it is
@@ -743,7 +743,7 @@ impl AskForm<'_> {
                 .w_full()
                 .px_3()
                 .min_h(ASK_CUSTOM_ROW_MIN)
-                .rounded(cx.theme().radius)
+                .rounded(cx.theme().radius_tokens().sm)
                 .border_1()
                 // **Dashed** rather than solid, which is the one thing that
                 // separates it from the rows above without taking it out of

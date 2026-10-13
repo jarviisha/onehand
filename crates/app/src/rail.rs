@@ -400,7 +400,7 @@ fn page_row<F: Fn(&mut Shell, &mut Window, &mut Context<Shell>) + 'static>(
         .h(ROW_H)
         .px_1p5()
         .gap_2()
-        .rounded(cx.theme().radius)
+        .rounded(cx.theme().radius_tokens().sm)
         .cursor_pointer()
         .when(on, |d| {
             d.bg(row::chosen_fill(cx))
@@ -518,7 +518,7 @@ fn add_project(cx: &mut Context<Shell>) -> AnyElement {
         .mt_3()
         .px_1p5()
         .gap_2()
-        .rounded(cx.theme().radius)
+        .rounded(cx.theme().radius_tokens().sm)
         .cursor_pointer()
         .hover(move |d| d.bg(hover))
         .text_color(cx.theme().muted_foreground)

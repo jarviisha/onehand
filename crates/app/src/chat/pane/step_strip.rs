@@ -5,6 +5,7 @@ use super::{ChatPane, ChatPaneEvent};
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
 use crate::controls::Tall as _;
+use crate::controls::text_area;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, AppContext as _, Context, InteractiveElement as _, IntoElement, ParentElement, Rems,
@@ -12,7 +13,7 @@ use gpui::{
 };
 use gpui_component::WindowExt as _;
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::input::{Textarea, TextareaState};
+use gpui_component::input::TextareaState;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::task::Approval;
 use onehand_core::task::work::{ANSWER_CHANGED, UnderReview};
@@ -333,7 +334,7 @@ pub(super) fn open_revise(approval: Approval, window: &mut Window, cx: &mut Cont
                                 )),
                         )
                     })
-                    .child(Textarea::new(&note).h(NOTE_H)),
+                    .child(text_area(&note, cx).h(NOTE_H)),
             )
             .footer(
                 div()

@@ -6,6 +6,7 @@
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
 use crate::controls::Tall as _;
+use crate::controls::text_area;
 use crate::controls::text_input;
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
@@ -297,12 +298,9 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
                             .child(label("Title"))
                             .child(text_input(&title, cx).tall())
                             .child(label("Details"))
-                            .child(gpui_component::input::Textarea::new(&body).h(DETAILS_H))
+                            .child(text_area(&body, cx).h(DETAILS_H))
                             .child(label("Instructions"))
-                            .child(
-                                gpui_component::input::Textarea::new(&instructions)
-                                    .h(INSTRUCTIONS_H),
-                            )
+                            .child(text_area(&instructions, cx).h(INSTRUCTIONS_H))
                             .children(lines)
                             .when_some(error.clone(), |col, why| {
                                 col.child(div().text_xs().text_color(danger).child(why))
