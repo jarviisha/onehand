@@ -22,13 +22,14 @@ pub(crate) use draft::WorkflowDraft;
 // when it holds changes.
 gpui::actions!(workflows_page, [CloseWorkflowForm]);
 
+use crate::controls::Quiet as _;
+use crate::controls::Tall as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, AppContext as _, ClickEvent, Context, Entity, EventEmitter, FocusHandle,
     Focusable, InteractiveElement as _, IntoElement, ParentElement, Render, SharedString,
     StatefulInteractiveElement as _, Styled, Window, div,
 };
-use gpui_component::button::ButtonVariants;
 use gpui_component::tag::Tag;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::workflow as core;
@@ -194,10 +195,15 @@ fn list(
                     .items_center()
                     .gap_1()
                     .when(shipped, |row| {
-                        row.child(Tag::secondary().small().child("Built in"))
+                        row.child(
+                            Tag::secondary()
+                                .small()
+                                .rounded(cx.theme().radius_lg)
+                                .child("Built in"),
+                        )
                     })
                     .when_some(entry.template.as_ref().ok(), |row, template| {
-                        row.child(run_menu(handle, i, &template.id, choices))
+                        row.child(run_menu(handle, i, &template.id, choices, cx))
                     })
                     .when(readable, |row| {
                         row.child(row_action(
@@ -205,6 +211,7 @@ fn list(
                             ("duplicate-workflow", i),
                             "Duplicate",
                             move |page, window, cx| page.duplicate_workflow(i, window, cx),
+                            cx,
                         ))
                     })
                     .when(readable, |row| {
@@ -213,14 +220,20 @@ fn list(
                             ("export-workflow", i),
                             "Export…",
                             move |page, window, cx| page.export_workflow(i, window, cx),
+                            cx,
                         ))
                     })
                     .when(readable && !shipped, |row| {
                         row.child(
-                            row_icon(("edit-workflow", i), crate::icons::Icon::SquarePen, "Edit")
-                                .on_click(click(handle, move |page, window, cx| {
-                                    page.edit_workflow(i, window, cx)
-                                })),
+                            row_icon(
+                                ("edit-workflow", i),
+                                crate::icons::Icon::SquarePen,
+                                "Edit",
+                                cx,
+                            )
+                            .on_click(click(handle, move |page, window, cx| {
+                                page.edit_workflow(i, window, cx)
+                            })),
                         )
                     })
                     .when(!shipped, |row| {
@@ -261,7 +274,8 @@ fn list(
                 .gap_1()
                 .child(
                     crate::controls::action("new-workflow")
-                        .ghost()
+                        .tall()
+                        .quiet(cx)
                         .icon(Icon::new(IconName::Plus))
                         .label("New workflow")
                         .on_click(click(handle, |page, window, cx| {
@@ -270,7 +284,8 @@ fn list(
                 )
                 .child(
                     crate::controls::action("import-workflow")
-                        .ghost()
+                        .tall()
+                        .quiet(cx)
                         .icon(Icon::new(IconName::FolderOpen))
                         .label("Import…")
                         .on_click(click(handle, |page, window, cx| {
@@ -288,12 +303,13 @@ fn run_menu(
     i: usize,
     workflow: &str,
     choices: &[(PathBuf, SharedString)],
+    cx: &App,
 ) -> impl IntoElement {
     let (handle, choices, workflow) = (handle.clone(), choices.to_vec(), workflow.to_string());
     crate::controls::menu_below(
         ("run-workflow", i),
         crate::controls::action(("run-workflow-trigger", i))
-            .ghost()
+            .quiet(cx)
             .small()
             .label("Run…"),
         move |mut menu, _, _| {
@@ -331,9 +347,10 @@ fn row_action(
     id: (&'static str, usize),
     label: &'static str,
     act: impl Fn(&mut WorkflowsPage, &mut Window, &mut Context<WorkflowsPage>) + 'static,
+    cx: &App,
 ) -> impl IntoElement {
     crate::controls::action(id)
-        .ghost()
+        .quiet(cx)
         .small()
         .label(label)
         .on_click(click(handle, act))
@@ -348,7 +365,7 @@ fn row_delete(
     cx: &App,
 ) -> impl IntoElement {
     crate::controls::action(id)
-        .ghost()
+        .quiet(cx)
         .small()
         .text_color(crate::theme::status_ink(cx).danger)
         .label("Delete…")
@@ -359,9 +376,10 @@ fn row_icon(
     id: (&'static str, usize),
     icon: impl Into<Icon>,
     tip: &'static str,
+    cx: &App,
 ) -> gpui_component::button::Button {
     crate::controls::action(id)
-        .ghost()
+        .quiet(cx)
         .small()
         .icon(Icon::new(icon))
         .tooltip(tip)

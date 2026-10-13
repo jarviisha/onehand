@@ -1,5 +1,7 @@
 use super::{APP, about, field, list_row, page_head, section};
 use crate::controls::Refuses as _;
+use crate::controls::Tall as _;
+use crate::controls::text_input;
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -7,7 +9,6 @@ use gpui::{
     div,
 };
 use gpui_component::button::ButtonVariants;
-use gpui_component::input::Input;
 use gpui_component::{ActiveTheme, Icon, Sizable as _, StyledExt};
 use onehand_core::config::AgentSpec;
 
@@ -72,7 +73,7 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
             .when(!is_default, |row| {
                 row.child(
                     crate::controls::action(("default-agent", idx))
-                        .ghost()
+                        .secondary()
                         .small()
                         .label("Make default")
                         .on_click({
@@ -89,7 +90,7 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
             // looking through the disk for every agent in the list.
             .child(
                 crate::controls::action(("check-agent", idx))
-                    .ghost()
+                    .secondary()
                     .small()
                     .label("Test")
                     .tooltip("Look for the command without starting it")
@@ -102,7 +103,8 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
             )
             .child(
                 crate::controls::action(("edit-agent", idx))
-                    .ghost()
+                    .tall()
+                    .secondary()
                     // Not the bundled `replace`, which is a find-and-replace
                     // mark: it reads as swapping this agent for another one
                     // rather than as opening it in the form below.
@@ -119,7 +121,7 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
             // other control here that removes something for good.
             .child(
                 crate::controls::action(("delete-agent", idx))
-                    .ghost()
+                    .secondary()
                     .small()
                     .text_color(ink.danger)
                     .label("Delete…")
@@ -208,7 +210,7 @@ pub(super) fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     .child(field(
         "Name",
         about("What the New session menu calls it."),
-        Input::new(&name),
+        text_input(&name, cx).tall(),
         cx,
     ))
     .child(field(
@@ -217,13 +219,13 @@ pub(super) fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
             "The program to run. It has to speak the Agent Client Protocol over standard \
              input and output.",
         ),
-        Input::new(&command),
+        text_input(&command, cx).tall(),
         cx,
     ))
     .child(field(
         "Arguments",
         about("Separated by spaces; quote one that holds a space."),
-        Input::new(&args),
+        text_input(&args, cx).tall(),
         cx,
     ))
     .child(
@@ -232,7 +234,8 @@ pub(super) fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
             .gap_2()
             .child(
                 crate::controls::action("save-agent")
-                    .primary()
+                    .tall()
+                    .secondary()
                     // Refused until name and command are both non-blank: an
                     // agent missing either cannot be launched.
                     .refuses(!saveable)
@@ -246,7 +249,8 @@ pub(super) fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
             )
             .child(
                 crate::controls::action("clear-agent")
-                    .ghost()
+                    .tall()
+                    .secondary()
                     .label(if editing { "Cancel edit" } else { "Clear" })
                     .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
                         clear.update(cx, |shell, cx| shell.clear_agent_draft(window, cx));

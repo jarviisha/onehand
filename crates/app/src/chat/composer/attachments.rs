@@ -1,12 +1,13 @@
 use super::popup::{edge_scrolled, more_text, popup_header, popup_surface};
 use super::{Composer, ComposerEvent, Overlay};
+use crate::controls::Quiet as _;
 use crate::tokens::CONTROL_H;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, Context, InteractiveElement, IntoElement, ParentElement, Rems, StatefulInteractiveElement,
     Styled, Window, div, rems,
 };
-use gpui_component::button::{Button, ButtonVariants as _};
+use gpui_component::button::Button;
 use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, Sizable as _, StyledExt};
 use onehand_core::attachment::{
     AttachmentDelivery, AttachmentKind, AttachmentSource, StagedAttachment,
@@ -177,7 +178,7 @@ impl Composer {
             cx.theme().muted_foreground,
             cx.theme().danger,
             crate::theme::status_ink(cx).danger,
-            cx.theme().radius,
+            cx.theme().radius_tokens().sm,
             cx.theme().muted,
         );
         let hover = cx.theme().list_hover;
@@ -261,7 +262,7 @@ impl Composer {
                         // without it the press that unstages a file also
                         // asks the Workbench to open the file just removed.
                         let unstage = crate::controls::action(("unstage", i))
-                            .ghost()
+                            .quiet(cx)
                             .xsmall()
                             .icon(Icon::new(IconName::Close))
                             .tooltip("Remove this attachment")
@@ -332,7 +333,7 @@ impl Composer {
                 .when(cut, |tray| {
                     tray.child(
                         crate::controls::action("all-attachments")
-                            .ghost()
+                            .quiet(cx)
                             .xsmall()
                             .flex_none()
                             .label(format!("Show all {}", self.attachments.len()))
@@ -381,7 +382,7 @@ impl Composer {
                             .unwrap_or_else(|| "Size unavailable".to_string());
                         let name = attachment.name.clone();
                         let remove = crate::controls::action(("remove-managed-attachment", i))
-                            .ghost()
+                            .quiet(cx)
                             .xsmall()
                             .icon(Icon::new(IconName::Close))
                             .tooltip("Remove this attachment")
@@ -413,7 +414,7 @@ impl Composer {
                             .child(remove);
                         match path {
                             Some(path) => crate::controls::action(("open-managed-attachment", i))
-                                .ghost()
+                                .quiet(cx)
                                 .w_full()
                                 .child(row)
                                 .tooltip("Open this file in the Workbench")
@@ -509,10 +510,10 @@ pub(super) fn chip(id: impl Into<gpui::ElementId>, open: bool, cx: &App) -> Butt
     let (open_fill, fg, radius) = (
         cx.theme().accent,
         cx.theme().muted_foreground,
-        cx.theme().radius,
+        cx.theme().radius_tokens().sm,
     );
     crate::controls::action(id)
-        .ghost()
+        .quiet(cx)
         // Not for the geometry -- the height and padding below are set outright
         // and land after the library's own, so they win either way. This is for
         // the **caret**, which takes its size from the button's size rather than

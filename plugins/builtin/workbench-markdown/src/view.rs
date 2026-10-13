@@ -5,10 +5,10 @@ use crate::document::{RootDocs, list, reader};
 use gpui::{
     App, AppContext as _, Context, Entity, IntoElement, ParentElement, Render, Styled, Window, div,
 };
-use gpui_component::button::ButtonVariants as _;
 use gpui_component::{
     ActiveTheme, IconName, Sizable as _, StyledExt, h_resizable, resizable_panel,
 };
+use onehand_plugin_host::Quiet as _;
 use onehand_plugin_host::{
     Ask, ListWidths, Request, back_link, hint, list_detail, measure_width, status_line,
 };
@@ -388,7 +388,7 @@ impl MarkdownView {
         // state is in force: a panel drawn open beside a list that is open is
         // a control that looks like a reading.
         let lead = match alone {
-            true => back_link("markdown-back", "Documents")
+            true => back_link("markdown-back", "Documents", cx)
                 .on_click(cx.listener(|view: &mut Self, _, _, cx| {
                     view.detail = false;
                     cx.notify();
@@ -396,7 +396,7 @@ impl MarkdownView {
                 .into_any_element(),
             false => onehand_plugin_host::action("markdown-toggle-list")
                 .xsmall()
-                .ghost()
+                .quiet(cx)
                 .icon(match self.list_shown {
                     true => IconName::PanelLeftClose,
                     false => IconName::PanelLeftOpen,

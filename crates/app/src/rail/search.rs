@@ -4,22 +4,26 @@
 use super::RailState;
 use super::model::{Filter, toggle_attention};
 use super::row::labelled;
+use crate::controls::Quiet as _;
+use crate::controls::search_input;
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{Anchor, Context, IntoElement, ParentElement, Styled, div};
-use gpui_component::button::ButtonVariants as _;
-use gpui_component::input::Input;
 use gpui_component::menu::DropdownMenu as _;
-use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, Selectable as _, Sizable as _, StyledExt};
 
 /// The search field: borderless, with the key that reaches it from anywhere.
+///
+/// With no edge it needs a fill to be found by, and the rail is drawn in the
+/// well, so the field takes the ramp's inset step: away from the well the
+/// other way from the rail's hovered and selected rows, which lift off it, so
+/// it reads as a place to type into rather than one more row.
 pub(super) fn search_field(state: &RailState, cx: &Context<Shell>) -> impl IntoElement + use<> {
-    let muted = cx.theme().muted_foreground;
     div().flex_1().min_w_0().child(
-        Input::new(&state.search)
+        search_input(&state.search, cx)
             .small()
             .bordered(false)
-            .prefix(Icon::new(IconName::Search).small().text_color(muted))
+            .bg(crate::theme::inset(cx))
             .when_some(
                 crate::keymap::first_key("focus_rail_search", cx),
                 |input, key| input.suffix(gpui_component::kbd::Kbd::new(key)),
@@ -62,7 +66,7 @@ pub(super) fn sessions_header(
             let verb = if waiting == 1 { "needs" } else { "need" };
             d.child(
                 crate::controls::action("rail-attention")
-                    .ghost()
+                    .quiet(cx)
                     .xsmall()
                     .label(format!("{waiting} {verb} attention"))
                     .text_color(warning)
@@ -83,7 +87,7 @@ pub(super) fn sessions_header(
             "rail-filter-name",
             "Filter sessions",
             crate::controls::action("rail-filter")
-                .ghost()
+                .quiet(cx)
                 .xsmall()
                 .icon(
                     Icon::new(crate::icons::Icon::ListFilter).text_color(match filter {

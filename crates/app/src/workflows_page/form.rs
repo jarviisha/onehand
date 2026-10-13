@@ -2,13 +2,15 @@ use super::WorkflowsPage;
 use super::click;
 use super::draft::Kind;
 use super::step::{Earlier, step_box};
+use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
+use crate::controls::Tall as _;
+use crate::controls::text_input;
 use crate::settings::{about, field, section};
 use gpui::{
     AnyElement, App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div,
 };
 use gpui_component::button::ButtonVariants;
-use gpui_component::input::Input;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::workflow::Place;
 
@@ -124,13 +126,13 @@ pub(super) fn form(
     .child(field(
         "Name",
         about("What the launcher lists it as."),
-        Input::new(&draft.name),
+        text_input(&draft.name, cx).tall(),
         cx,
     ))
     .child(field(
         "Description",
         None,
-        Input::new(&draft.description),
+        text_input(&draft.description, cx).tall(),
         cx,
     ))
     .child(field(
@@ -156,13 +158,13 @@ pub(super) fn form(
             .child(div().flex_1().child(field(
                 "Misses allowed",
                 about("Turns that fail their gates before the run stops."),
-                Input::new(&draft.misses),
+                text_input(&draft.misses, cx).tall(),
                 cx,
             )))
             .child(div().flex_1().child(field(
                 "Timeout",
                 about("Working time, such as 45m or 2h."),
-                Input::new(&draft.timeout),
+                text_input(&draft.timeout, cx).tall(),
                 cx,
             ))),
     )
@@ -178,7 +180,7 @@ pub(super) fn form(
             .gap_2()
             .children(Kind::ALL.into_iter().enumerate().map(|(at, kind)| {
                 crate::controls::action(("add-step", at))
-                    .ghost()
+                    .quiet(cx)
                     .small()
                     .icon(Icon::new(IconName::Plus))
                     .label(format!("{} step", kind.label()))
@@ -200,6 +202,7 @@ pub(super) fn form(
             .gap_2()
             .child(
                 crate::controls::action("save-workflow")
+                    .tall()
                     .primary()
                     .refuses(!problems.is_empty())
                     .label("Save")
@@ -209,7 +212,8 @@ pub(super) fn form(
             )
             .child(
                 crate::controls::action("clear-workflow")
-                    .ghost()
+                    .tall()
+                    .quiet(cx)
                     .label("Cancel")
                     .on_click(click(handle, |page, _, cx| page.clear_workflow_draft(cx))),
             ),

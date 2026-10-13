@@ -6,11 +6,15 @@ use gpui::{
     SharedString, Styled, Window, div,
 };
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::input::{Input, InputState, Textarea, TextareaState};
+use gpui_component::input::{InputState, TextareaState};
 use gpui_component::{ActiveTheme, Sizable as _, StyledExt};
 use onehand_core::issues::template::IssueTemplate;
 use onehand_core::issues::{self, Draft};
+use onehand_plugin_host::Quiet as _;
+use onehand_plugin_host::Tall as _;
 use onehand_plugin_host::action;
+use onehand_plugin_host::text_area;
+use onehand_plugin_host::text_input;
 
 /// The form a new issue or an edit is written in.
 pub(super) struct Form {
@@ -202,7 +206,7 @@ fn templates_row(
             .children(templates.iter().enumerate().map(|(at, t)| {
                 action(("issue-form-template", at))
                     .small()
-                    .ghost()
+                    .quiet(cx)
                     .label(t.name.clone())
                     .on_click(cx.listener(move |view, _: &ClickEvent, window, cx| {
                         view.apply_template(at, window, cx)
@@ -247,14 +251,14 @@ pub(super) fn form_view(
                     }
                 }),
         )
-        .child(Input::new(&form.title))
-        .child(Input::new(&form.labels))
+        .child(text_input(&form.title, cx).tall())
+        .child(text_input(&form.labels, cx).tall())
         .children(templates_row(form, templates, cx))
         .child(
             div()
                 .flex_1()
                 .min_h_0()
-                .child(Textarea::new(&form.body).h_full()),
+                .child(text_area(&form.body, cx).h_full()),
         )
         .child(
             div()
@@ -264,7 +268,7 @@ pub(super) fn form_view(
                 .child(
                     action("issue-form-cancel")
                         .small()
-                        .ghost()
+                        .quiet(cx)
                         .label("Cancel")
                         .on_click(cx.listener(|view, _: &ClickEvent, _, cx| view.cancel_form(cx))),
                 )

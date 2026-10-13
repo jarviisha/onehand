@@ -16,7 +16,8 @@ Slot names that mislead (the library's names, kept because its own controls read
 | `accent`, `accent_foreground` | the selected fill and its ink: a fill, not a hue |
 | `link` (also `info`) | the accent hue: what runs, and links |
 | `muted` | the well's fill, and the user's bubble |
-| `secondary` | a step past the well: code inside the bubble, a filled button |
+| `secondary` | a step past the well: code inside the bubble |
+| `button_secondary`, `button_secondary_foreground` | the secondary button: the selected step and its ink, as `accent` |
 | `primary` | the primary action: ink on light, light on dark, not a hue |
 | `danger`, `warning`, `success` | fills with white on them; their text is `status_ink(cx)` |
 | `tiles` | the docks' surface, read through `dock_surface(cx)` |
@@ -32,6 +33,7 @@ Helpers:
 | `meta_ink(cx)` | the transcript's meta text, between prose and muted | `crates/app/src/theme.rs` |
 | `hue_ink(base, cx)` | a hue tempered for ink: code inside prose | `crates/app/src/theme.rs` |
 | `raised(cx)` | the composer card's fill | `crates/app/src/theme.rs` |
+| `inset(cx)` | a field with no edge sunk into the well: the rail's search | `crates/app/src/theme.rs` |
 | `rail_chosen(cx)` | the rail's chosen row | `crates/app/src/theme.rs` |
 
 ## Spacing
@@ -75,8 +77,11 @@ are not steps and stay allowed. A named spacing constant (`BLOCK_GAP`, `TIGHT_GA
 | `cx.theme().radius_lg` | 8 |
 | `.rounded_full()` | round |
 
-The library's controls apply their own: buttons, inputs, tooltips, menus and popovers `radius`;
-`Tag` at `.small()`, checkboxes and `Kbd` half of it (`sm`); dialogs and toasts `radius_lg`.
+The library's controls apply their own: tooltips, menus and popovers `radius`; checkboxes and `Kbd`
+`sm`; dialogs and toasts `radius_lg`. Overridden where they are built: a button (`action`) and a
+text field (`text_input`, `search_input`, `text_area`) take `sm` rather than the library's `radius`,
+as does every row, tab and chip the app draws (`tab_chip`, the rail's and Settings' rows, picker and
+file rows); a `Tag` takes `radius_lg` through `.rounded(cx.theme().radius_lg)` after `.small()`.
 
 ## Elevation
 
@@ -91,7 +96,8 @@ The library's controls apply their own: buttons, inputs, tooltips, menus and pop
 |---|---|
 | `.xsmall()` | 1.25rem (20px) |
 | `.small()` | 1.5rem (24px), `CONTROL_H` |
-| the library's default | 2rem (32px) |
+| `.tall()` | 2rem (32px), `FIELD_H`: the small size at the default height, its words at `text_sm` |
+| the library's default | 2rem (32px); not used: its button letters at `text_base` |
 
 ## Shared sizes
 
@@ -103,6 +109,7 @@ All in `onehand_plugin_host::tokens` (`crates/plugin-host/src/tokens.rs`), which
 | `BAR_H` | 2.75rem | every strip along the top of a region |
 | `ROW_H` | 1.875rem | a list row |
 | `CONTROL_H` | 1.5rem | a small control |
+| `FIELD_H` | 2rem | a control at a dialog's or a form's scale (`.tall()`) |
 | `CODE_TEXT` | 0.8125rem | machine text |
 | `LEADING` | 1.6 | reading text |
 | `LEADING_TIGHT` | 1.4 | a wrapped title |

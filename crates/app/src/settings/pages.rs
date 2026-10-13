@@ -1,15 +1,16 @@
 use super::{APP, about, field, list_row, page_head, section};
 use crate::controls::Refuses as _;
+use crate::controls::Tall as _;
+use crate::controls::text_input;
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, ClickEvent, Entity, IntoElement, ParentElement, SharedString, Styled, Window,
     div,
 };
-use gpui_component::button::{ButtonGroup, ButtonVariants};
-use gpui_component::input::Input;
+use gpui_component::button::ButtonVariants;
 use gpui_component::switch::Switch;
-use gpui_component::{ActiveTheme, Icon, IconName, Selectable, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::config::Appearance;
 use onehand_core::unattended::Slots;
 
@@ -18,33 +19,27 @@ const LABEL_FIELD_W: gpui::Rems = gpui::rems(10.);
 
 /// The light/dark/system picker.
 ///
-/// A button group rather than three loose buttons: the choice is one value with
-/// three answers, and a segmented control is the shape that says so -- one
-/// pressed, the others available, no state where none or two are chosen.
+/// One value with three answers, drawn as the app draws every pick-one row: a
+/// [`choice`](onehand_plugin_host::choice) per answer, the one in force filled.
 ///
 /// App-wide, unlike everything else on the page it sits in, because the theme
 /// it selects is a global: two windows cannot be drawn in two modes.
-fn appearance_picker(shell: &Entity<Shell>, current: Appearance) -> impl IntoElement + use<> {
-    let shell = shell.clone();
-    ButtonGroup::new("appearance")
-        .outline()
+fn appearance_picker(
+    shell: &Entity<Shell>,
+    current: Appearance,
+    cx: &App,
+) -> impl IntoElement + use<> {
+    div()
+        .h_flex()
+        .gap_1()
         .children(Appearance::ALL.into_iter().enumerate().map(|(i, choice)| {
-            crate::controls::action(("appearance", i))
-                .label(choice.label())
-                .selected(choice == current)
+            let shell = shell.clone();
+            onehand_plugin_host::choice(("appearance", i), choice.label(), choice == current, cx)
+                .tall()
+                .on_click(move |_, window: &mut Window, cx: &mut App| {
+                    shell.update(cx, |shell, cx| shell.set_appearance(choice, window, cx));
+                })
         }))
-        .on_click(
-            move |clicked: &Vec<usize>, window: &mut Window, cx: &mut App| {
-                let Some(choice) = clicked
-                    .first()
-                    .and_then(|i| Appearance::ALL.get(*i))
-                    .copied()
-                else {
-                    return;
-                };
-                shell.update(cx, |shell, cx| shell.set_appearance(choice, window, cx));
-            },
-        )
 }
 
 /// The appearance page. One control, and it is app-wide -- said on the page,
@@ -65,7 +60,7 @@ pub(super) fn appearance_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         .child(section(None, None, cx).child(field(
             "Theme",
             about("Following the system keeps up with it as it changes."),
-            appearance_picker(handle, current),
+            appearance_picker(handle, current, cx),
             cx,
         )))
         .into_any_element()
@@ -113,7 +108,7 @@ pub(super) fn workspace_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         .child(field(
             "Name",
             about("Written at the top of the rail."),
-            Input::new(&name),
+            text_input(&name, cx).tall(),
             cx,
         ))
         .child(field(
@@ -124,7 +119,8 @@ pub(super) fn workspace_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                 .gap_2()
                 .child(
                     crate::controls::action("bind-storage")
-                        .outline()
+                        .tall()
+                        .secondary()
                         .label("Choose folder…")
                         .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
                             bind.update(cx, |shell, cx| shell.pick_storage_dir(cx));
@@ -132,7 +128,8 @@ pub(super) fn workspace_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                 )
                 .child(
                     crate::controls::action("unbind-storage")
-                        .ghost()
+                        .tall()
+                        .secondary()
                         .refuses(!bound)
                         .label("Unbind")
                         .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
@@ -156,7 +153,8 @@ pub(super) fn workspace_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
             .gap_2()
             .child(
                 crate::controls::action("new-workspace")
-                    .outline()
+                    .tall()
+                    .secondary()
                     .label("New workspace…")
                     .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
                         new.update(cx, |shell, cx| shell.new_workspace(cx));
@@ -164,7 +162,8 @@ pub(super) fn workspace_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
             )
             .child(
                 crate::controls::action("open-workspace")
-                    .outline()
+                    .tall()
+                    .secondary()
                     .label("Open workspace…")
                     .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
                         open.update(cx, |shell, cx| shell.open_workspace(cx));
@@ -250,7 +249,8 @@ pub(super) fn connections_page(cx: &App) -> AnyElement {
                     .pt_2()
                     .child(
                         crate::controls::action("connections-recheck")
-                            .outline()
+                            .tall()
+                            .secondary()
                             .refuses(checking)
                             .label(if checking {
                                 "Checking…"
@@ -312,7 +312,8 @@ fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         ),
         div().h_flex().child(
             crate::controls::action("unattended-look-now")
-                .outline()
+                .tall()
+                .secondary()
                 .label("Look for an issue now")
                 .on_click(|_: &ClickEvent, window: &mut Window, cx: &mut App| {
                     crate::unattended::look_now(window.window_handle(), cx);
@@ -410,7 +411,7 @@ fn slots_field(handle: &Entity<Shell>, slots: Slots, cx: &App) -> AnyElement {
         .map(|(at, holder)| {
             let (shell, task) = (handle.clone(), holder.task.clone());
             crate::controls::action(("unattended-slot", at))
-                .ghost()
+                .secondary()
                 .small()
                 .label(holder.shown.clone())
                 .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
@@ -492,7 +493,7 @@ fn workflow_labels(handle: &Entity<Shell>, cx: &App) -> impl IntoElement {
             })
             .child(
                 crate::controls::action(("workflow-label-remove", i))
-                    .ghost()
+                    .secondary()
                     .small()
                     .label("Remove")
                     .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
@@ -515,7 +516,7 @@ fn workflow_labels(handle: &Entity<Shell>, cx: &App) -> impl IntoElement {
     let add = {
         let shell = handle.clone();
         crate::controls::action("workflow-label-add")
-            .outline()
+            .secondary()
             .small()
             .label("Add")
             .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
@@ -531,7 +532,7 @@ fn workflow_labels(handle: &Entity<Shell>, cx: &App) -> impl IntoElement {
                 .h_flex()
                 .items_center()
                 .gap_2()
-                .child(div().w(LABEL_FIELD_W).child(Input::new(&input).small()))
+                .child(div().w(LABEL_FIELD_W).child(text_input(&input, cx).small()))
                 .child(pick)
                 .child(add),
         )

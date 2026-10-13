@@ -9,10 +9,13 @@ use gpui::{
     ParentElement, Rems, SharedString, StatefulInteractiveElement as _, Styled, Window, div, rems,
 };
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::input::{Input, InputState};
+use gpui_component::input::InputState;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::issues;
 use onehand_core::task::work::list::{Filters, Incomplete, Listed, Progress};
+use onehand_plugin_host::Quiet as _;
+use onehand_plugin_host::Tall as _;
+use onehand_plugin_host::search_input;
 use onehand_plugin_host::{AppIcon, action, menu_below, menu_item, status_ink};
 use std::path::PathBuf;
 
@@ -214,7 +217,8 @@ impl IssuesView {
                     .aria_label("Refresh")
                     .child(
                         action("issues-page-refresh")
-                            .ghost()
+                            .tall()
+                            .quiet(cx)
                             .icon(Icon::new(AppIcon::Refresh))
                             .tooltip(read)
                             .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
@@ -225,6 +229,7 @@ impl IssuesView {
             )
             .child(
                 action("issues-page-new")
+                    .tall()
                     .primary()
                     .icon(Icon::new(IconName::Plus))
                     .label("New issue")
@@ -241,11 +246,10 @@ impl IssuesView {
             // The search takes what the row leaves, down to its floor, where
             // the row wraps.
             .child(
-                div().flex_1().min_w(SEARCH_W).child(
-                    Input::new(query)
-                        .prefix(Icon::new(IconName::Search).small().text_color(muted))
-                        .cleanable(true),
-                ),
+                div()
+                    .flex_1()
+                    .min_w(SEARCH_W)
+                    .child(search_input(query, cx).tall()),
             )
             .child(showing)
             .child(progress)
@@ -294,7 +298,7 @@ impl IssuesView {
                 .child(
                     action("issues-page-read-them")
                         .xsmall()
-                        .ghost()
+                        .quiet(cx)
                         .label("Read them")
                         .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
                             if stale || again {
@@ -324,20 +328,19 @@ impl IssuesView {
     }
 }
 
-/// A filter's trigger: an edged chip naming what it is set to, then the
+/// A filter's trigger: a filled chip naming what it is set to, then the
 /// caret that opens it, so it reads as a control. Set away from where it
-/// starts, its edge goes a step stronger and its words take the primary
-/// ink, so a narrowed list says so.
+/// starts, its words take the primary ink, so a narrowed list says so.
 fn trigger(id: &'static str, label: &str, set: bool, cx: &App) -> gpui_component::button::Button {
     let theme = cx.theme();
-    let (edge, ink) = match set {
-        true => (theme.muted_foreground, theme.primary),
-        false => (theme.border, theme.muted_foreground),
+    let ink = match set {
+        true => theme.primary,
+        false => theme.secondary_foreground,
     };
     action(id)
-        .outline()
+        .tall()
+        .secondary()
         .label(label.to_string())
         .dropdown_caret(true)
-        .border_color(edge)
         .text_color(ink)
 }

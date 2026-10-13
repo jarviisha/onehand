@@ -13,6 +13,8 @@
 //! PTY/grid ownership is shared with the Neovim plugin through
 //! `onehand-terminal-ui`.
 
+use crate::controls::Quiet as _;
+use crate::controls::Tall as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement,
@@ -613,7 +615,7 @@ impl TerminalPanel {
                     // to be pressed.
                     .child(
                         crate::controls::action("add-shell")
-                            .ghost()
+                            .quiet(cx)
                             .small()
                             .flex_none()
                             .text_color(cx.theme().muted_foreground)
@@ -629,7 +631,7 @@ impl TerminalPanel {
                     .child({
                         let full = self.maximized;
                         crate::controls::action("maximize-terminal")
-                            .ghost()
+                            .quiet(cx)
                             .small()
                             .flex_none()
                             .text_color(cx.theme().muted_foreground)
@@ -655,7 +657,7 @@ impl TerminalPanel {
                     // ignores `text_color`.
                     .child(
                         crate::controls::action("hide-terminal")
-                            .ghost()
+                            .quiet(cx)
                             .small()
                             .flex_none()
                             .text_color(cx.theme().muted_foreground)
@@ -701,6 +703,7 @@ impl TerminalPanel {
                         .gap_2()
                         .child(
                             crate::controls::action("new-shell")
+                                .tall()
                                 .primary()
                                 .icon(Icon::new(IconName::SquareTerminal))
                                 .label("New terminal")

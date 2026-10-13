@@ -37,10 +37,10 @@ Boxes sit side by side while the measured column holds two, and stack when it do
 
 ### Lists
 
-A row is `ROW_H` tall, padded `px_2` with `gap_2`, at `radius`. Hover fills it with `list_hover`,
-the selected row with `accent`. A row's own actions are `xsmall` ghost buttons, shown on hover and
-on the selected row. Every list has a named cap, and its last line says how many more there are,
-in meta text. A table is a box of rows split by hairlines, under a head row in meta text.
+A row is `ROW_H` tall, padded `px_2` with `gap_2`, at `radius_tokens().sm`. Hover fills it with
+`list_hover`, the selected row with `accent`. A row's own actions are `xsmall` ghost buttons, shown
+on hover and on the selected row. Every list has a named cap, and its last line says how many more
+there are, in meta text. A table is a box of rows split by hairlines, under a head row in meta text.
 
 ### List and detail
 
@@ -51,15 +51,16 @@ going back keeps the list's place.
 ### Forms
 
 Each input is a `field`: its title in chrome text, an optional hint under it in meta text, `gap_2`
-to the control. Fields stand `gap_4` apart. An input takes the library's default size, `small`
-when it sits inside a row. Problems stand above the submit button in the danger ink. The submit
-is the form's one primary action; while the form cannot be sent it refuses, its tooltip saying why.
+to the control. Fields stand `gap_4` apart. An input is built with `text_input`, at a control's
+corner and the `.tall()` size its buttons take. Problems stand above the submit button in the danger
+ink. The submit is the form's one primary action; while the form cannot be sent it refuses, its
+tooltip saying why.
 
 ### Dialogs
 
-A dialog is the library's `Dialog` at its own width, titled through `title_row`. Its footer sits
-on the right: the dismissing button first, then the one primary action or the danger word, at the
-default size. It opens with focus on its first field and closes on Esc. A removal asks through the
+A dialog is the library's `Dialog` at its own width, titled through `title_row`. Its footer sits on
+the right: the dismissing button first, then the one primary action or the danger word, at
+`.tall()`. It opens with focus on its first field and closes on Esc. A removal asks through the
 confirmation below, never through a dialog of its own.
 
 ### Details

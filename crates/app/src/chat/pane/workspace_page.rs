@@ -1,11 +1,11 @@
 use super::project_page::count_of;
 use super::{ChatPane, ChatPaneEvent, Page, SessionSignal, rel_time};
+use crate::controls::Quiet as _;
 use crate::tokens::PAGE_WIDE;
 use gpui::{
     App, Context, Div, InteractiveElement, IntoElement, ParentElement, Rems, SharedString,
     StatefulInteractiveElement, Styled, Window, div, rems,
 };
-use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::chat::ConvMeta;
 use std::collections::HashSet;
@@ -617,7 +617,7 @@ impl ChatPane {
         let filter = crate::controls::menu_below(
             "workspace-filter",
             crate::controls::action("workspace-filter-trigger")
-                .ghost()
+                .quiet(cx)
                 .small()
                 .label(filter_name)
                 .icon(Icon::new(IconName::ChevronDown))

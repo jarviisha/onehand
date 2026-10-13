@@ -1,13 +1,16 @@
 use super::WorkflowsPage;
 use super::draft::{Kind, StepDraft};
 use super::{click, row_delete, row_icon};
+use crate::controls::Tall as _;
+use crate::controls::text_area;
+use crate::controls::text_input;
 use crate::settings::{about, field};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div,
 };
+use gpui_component::button::ButtonVariants as _;
 
-use gpui_component::input::{Input, Textarea};
 use gpui_component::switch::Switch;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::workflow::{GateKind, Place};
@@ -38,7 +41,7 @@ pub(super) fn step_box(
         crate::controls::menu_below(
             ("step-kind", i),
             crate::controls::action(("step-kind-trigger", i))
-                .outline()
+                .secondary()
                 .xsmall()
                 .label(step.kind.label())
                 .icon(Icon::new(IconName::ChevronDown)),
@@ -72,7 +75,7 @@ pub(super) fn step_box(
         .child(kind_menu)
         .child(div().flex_1())
         .child(
-            row_icon(("step-up", i), IconName::ArrowUp, "Move up").on_click(click(
+            row_icon(("step-up", i), IconName::ArrowUp, "Move up", cx).on_click(click(
                 handle,
                 move |page, window, cx| {
                     page.edit_workflow_draft(window, cx, |d, _, _| d.move_step(i, true))
@@ -80,7 +83,7 @@ pub(super) fn step_box(
             )),
         )
         .child(
-            row_icon(("step-down", i), IconName::ArrowDown, "Move down").on_click(click(
+            row_icon(("step-down", i), IconName::ArrowDown, "Move down", cx).on_click(click(
                 handle,
                 move |page, window, cx| {
                     page.edit_workflow_draft(window, cx, |d, _, _| d.move_step(i, false))
@@ -103,13 +106,14 @@ pub(super) fn step_box(
         .child(
             div()
                 .flex_1()
-                .child(field("Id", None, Input::new(&step.id).small(), cx)),
+                .child(field("Id", None, text_input(&step.id, cx).small(), cx)),
         )
-        .child(
-            div()
-                .flex_1()
-                .child(field("Label", None, Input::new(&step.label).small(), cx)),
-        );
+        .child(div().flex_1().child(field(
+            "Label",
+            None,
+            text_input(&step.label, cx).small(),
+            cx,
+        )));
 
     let body = match step.kind {
         Kind::Agent => {
@@ -163,7 +167,7 @@ pub(super) fn step_box(
                 .child(field(
                     "Prompt",
                     None,
-                    Textarea::new(&step.prompt).h(PROMPT_H),
+                    text_area(&step.prompt, cx).h(PROMPT_H),
                     cx,
                 ))
                 .child(
@@ -205,7 +209,7 @@ pub(super) fn step_box(
                 crate::controls::menu_below(
                     ("step-target", i),
                     crate::controls::action(("step-target-trigger", i))
-                        .outline()
+                        .secondary()
                         .small()
                         .label(if current.is_empty() {
                             "Pick a step".to_string()
@@ -243,7 +247,7 @@ pub(super) fn step_box(
                     col.child(field(
                         "Command",
                         about("Run by onehand in the work, through sh."),
-                        Input::new(&step.command),
+                        text_input(&step.command, cx).tall(),
                         cx,
                     ))
                 })
@@ -251,7 +255,7 @@ pub(super) fn step_box(
                     col.child(field(
                         "Wait at most",
                         about("Such as 45m or 2h; passing all, the pull request leaves draft."),
-                        Input::new(&step.wait).small(),
+                        text_input(&step.wait, cx).small(),
                         cx,
                     ))
                 })

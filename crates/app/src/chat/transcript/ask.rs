@@ -8,7 +8,9 @@ use super::parts::{
 };
 use super::{fold_key, live_index};
 use crate::chat::session::ChatSession;
+use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
+use crate::controls::text_input;
 use crate::tokens::{CODE_TEXT, CONTROL_H, LEADING_TIGHT};
 use gpui::Focusable as _;
 use gpui::prelude::FluentBuilder as _;
@@ -17,7 +19,6 @@ use gpui::{
     StatefulInteractiveElement, Styled, Window, div, relative,
 };
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::input::Input;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::acp::ElicitKind;
 use onehand_core::chat::{AskItem, TranscriptItemId};
@@ -375,7 +376,7 @@ fn ask_key_mark(n: usize, cx: &App) -> impl IntoElement + use<> {
         .h_flex()
         .items_center()
         .justify_center()
-        .rounded(cx.theme().radius)
+        .rounded(cx.theme().radius_tokens().sm)
         .border_1()
         .border_color(cx.theme().border)
         .text_xs()
@@ -433,9 +434,9 @@ fn ask_tab_mark(index: usize, active: bool, answered: bool, cx: &App) -> impl In
 ///
 /// **Its ring is ink and not the hairline**, which is the difference between a
 /// control and an edge. Drawn in the hairline it vanished the moment the row
-/// was hovered: a ghost button's hover fill is derived from the same step of
-/// the ramp the hairline sits on, so in the dark palette the two land within a
-/// shade of each other and the ring is painted onto its own background. A mark
+/// was hovered: a ghost button hovers on the ramp's selected step, which in the
+/// dark palette lands within a shade of the hairline, so the ring is painted
+/// onto its own background. A mark
 /// that disappears under the pointer disappears exactly when it is being aimed
 /// at.
 fn ask_choice_mark(on: bool, single: bool, cx: &App) -> impl IntoElement + use<> {
@@ -534,7 +535,7 @@ impl AskForm<'_> {
                     .or_else(|| field.description.clone())
                     .unwrap_or_else(|| format!("Question {}", f + 1));
                 crate::controls::action(("ask-tab", f))
-                    .ghost()
+                    .quiet(cx)
                     .small()
                     .h_flex()
                     .items_center()
@@ -633,12 +634,12 @@ impl AskForm<'_> {
                     );
                 }
                 grows(crate::controls::action(("ask-choice", o)))
-                    .ghost()
+                    .quiet(cx)
                     .px_3()
                     .py_2()
                     .w_full()
                     .min_h(ASK_ROW_MIN)
-                    .rounded(cx.theme().radius)
+                    .rounded(cx.theme().radius_tokens().sm)
                     .border_1()
                     // **A taken choice is named by its border, and a destructive
                     // one by the danger step of that same border.** Taking it is
@@ -742,7 +743,7 @@ impl AskForm<'_> {
                 .w_full()
                 .px_3()
                 .min_h(ASK_CUSTOM_ROW_MIN)
-                .rounded(cx.theme().radius)
+                .rounded(cx.theme().radius_tokens().sm)
                 .border_1()
                 // **Dashed** rather than solid, which is the one thing that
                 // separates it from the rows above without taking it out of
@@ -767,7 +768,7 @@ impl AskForm<'_> {
                     div()
                         .flex_1()
                         .min_w_0()
-                        .child(Input::new(&state).appearance(false)),
+                        .child(text_input(&state, cx).appearance(false)),
                 )
                 .children(ask_key_hint(self.a.row_count(self.active), cx)),
         )

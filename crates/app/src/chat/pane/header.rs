@@ -1,7 +1,7 @@
 use super::{ChatPane, ChatPaneEvent, ProjectAction, ProjectFacts};
+use crate::controls::Quiet as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{App, Context, Entity, IntoElement, ParentElement, Rems, Styled, Window, div, rems};
-use gpui_component::button::ButtonVariants as _;
 use gpui_component::menu::PopupMenuItem;
 use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, Sizable as _, StyledExt};
 use onehand_core::chat::{Chat, ConvMeta};
@@ -607,7 +607,7 @@ pub(super) fn header_control(
     cx: &App,
 ) -> gpui_component::button::Button {
     crate::controls::action(id)
-        .ghost()
+        .quiet(cx)
         .small()
         .icon(icon.into())
         .text_color(cx.theme().muted_foreground)

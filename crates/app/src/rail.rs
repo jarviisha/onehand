@@ -16,6 +16,7 @@
 //! What a row *is* — its state, its words, its age — is decided in
 //! [`model`], without drawing, and the same rows are what the keyboard walks.
 
+use crate::controls::Quiet as _;
 use crate::shell::Shell;
 use crate::tokens::ROW_H;
 use gpui::prelude::FluentBuilder as _;
@@ -25,7 +26,6 @@ use gpui::{
     Styled, Subscription, Task, Window, div,
 };
 use gpui::{Rems, rems};
-use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{InputEvent, InputState};
 use gpui_component::tag::Tag;
 use gpui_component::tooltip::Tooltip;
@@ -400,7 +400,7 @@ fn page_row<F: Fn(&mut Shell, &mut Window, &mut Context<Shell>) + 'static>(
         .h(ROW_H)
         .px_1p5()
         .gap_2()
-        .rounded(cx.theme().radius)
+        .rounded(cx.theme().radius_tokens().sm)
         .cursor_pointer()
         .when(on, |d| {
             d.bg(row::chosen_fill(cx))
@@ -427,6 +427,7 @@ fn page_row<F: Fn(&mut Shell, &mut Window, &mut Context<Shell>) + 'static>(
             let fill = cx.theme().secondary;
             Tag::custom(fill, cx.theme().secondary_foreground, fill)
                 .small()
+                .rounded(cx.theme().radius_lg)
                 .child(n)
         }))
 }
@@ -450,7 +451,7 @@ fn foot(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
         .child(div().flex_1())
         .child(
             crate::controls::action("open-settings")
-                .ghost()
+                .quiet(cx)
                 .small()
                 .icon(Icon::new(IconName::Settings).text_color(cx.theme().muted_foreground))
                 .tooltip_with_action(
@@ -494,7 +495,7 @@ fn more(group: Option<PathBuf>, hidden: usize, cx: &mut Context<Shell>) -> AnyEl
         .pl_1p5()
         .child(
             crate::controls::action(gpui::ElementId::Name(id))
-                .ghost()
+                .quiet(cx)
                 .xsmall()
                 .label(format!("{hidden} more"))
                 .text_color(cx.theme().muted_foreground)
@@ -517,7 +518,7 @@ fn add_project(cx: &mut Context<Shell>) -> AnyElement {
         .mt_3()
         .px_1p5()
         .gap_2()
-        .rounded(cx.theme().radius)
+        .rounded(cx.theme().radius_tokens().sm)
         .cursor_pointer()
         .hover(move |d| d.bg(hover))
         .text_color(cx.theme().muted_foreground)

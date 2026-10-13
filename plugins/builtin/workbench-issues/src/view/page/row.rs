@@ -9,12 +9,12 @@ use gpui::{
     AnyElement, ClickEvent, Context, InteractiveElement as _, IntoElement, ParentElement, Rems,
     SharedString, StatefulInteractiveElement as _, Styled, div, rems,
 };
-use gpui_component::button::ButtonVariants as _;
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, Sizable as _, StyledExt};
 use onehand_core::issues::LabelKind;
 use onehand_core::task::Group;
 use onehand_core::task::work::list::Row;
+use onehand_plugin_host::Quiet as _;
 use onehand_plugin_host::{action, status_ink};
 
 /// How many labels a row draws before it counts the rest.
@@ -242,7 +242,7 @@ pub(super) fn page_row(
                     .child(
                         action(("issues-page-clear", i))
                             .xsmall()
-                            .ghost()
+                            .quiet(cx)
                             .label("Clear filters")
                             .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
                                 // The row under it picks the issue; this only

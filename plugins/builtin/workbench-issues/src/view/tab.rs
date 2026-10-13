@@ -62,7 +62,7 @@ impl IssuesView {
                     .child(resizable_panel().child(detail)),
             )
         } else if self.detail && self.has_detail(root, issues) {
-            let back = back_link("issues-back", "Issues").on_click(cx.listener(
+            let back = back_link("issues-back", "Issues", cx).on_click(cx.listener(
                 |view: &mut Self, _, _, cx| {
                     view.detail = false;
                     cx.notify();

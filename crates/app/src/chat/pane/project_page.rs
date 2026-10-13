@@ -1,6 +1,9 @@
 use super::header::Archives;
 use super::{ChatPane, ChatPaneEvent, ProjectFacts, rel_time};
 use crate::chat::conversation::Conversation;
+use crate::controls::Quiet as _;
+use crate::controls::Tall as _;
+use crate::controls::text_input;
 use crate::tokens::PAGE_NARROW;
 use gpui::{
     App, Context, Div, ElementId, InteractiveElement, IntoElement, ParentElement, SharedString,
@@ -322,6 +325,7 @@ impl ChatPane {
                     )
                     .child(
                         crate::controls::action("resume-fresh")
+                            .tall()
                             .primary()
                             .label("Start a new conversation")
                             .on_click(cx.listener(move |pane: &mut Self, _, _, cx| {
@@ -433,6 +437,7 @@ impl ChatPane {
                                     .gap_2()
                                     .child(
                                         crate::controls::action("project-new-session")
+                                            .tall()
                                             .primary()
                                             .icon(Icon::new(IconName::Plus))
                                             .label("New session")
@@ -445,6 +450,8 @@ impl ChatPane {
                                     )
                                     .children(project.facts.check.then(|| {
                                         crate::controls::action("project-run-check")
+                                            .tall()
+                                            .secondary()
                                             .label("Run check")
                                             .tooltip("Run the project's check command")
                                             .on_click(cx.listener(|_: &mut Self, _, _, cx| {
@@ -464,7 +471,7 @@ impl ChatPane {
                                         "Check command: what Run check and a command step \
                                          naming none run here",
                                     ))
-                                    .child(gpui_component::input::Input::new(input).small())
+                                    .child(text_input(input, cx).small())
                             }))
                             // What this project's tasks need, as one line to
                             // the Tasks page. Above the conversations: one is
@@ -536,7 +543,7 @@ impl ChatPane {
                                         // conversation also opens it.
                                         .child(
                                             crate::controls::action(("home-delete", i))
-                                                .ghost()
+                                                .quiet(cx)
                                                 .small()
                                                 .text_color(danger)
                                                 .label("Delete…")
@@ -605,7 +612,7 @@ fn tasks_link(root: &Path, cx: &mut Context<ChatPane>) -> Option<gpui::AnyElemen
     let root = root.to_path_buf();
     Some(
         crate::controls::action("project-tasks")
-            .ghost()
+            .quiet(cx)
             .small()
             .icon(Icon::new(IconName::Inbox))
             .label(said.join(" · "))

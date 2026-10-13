@@ -638,6 +638,59 @@ mod tests {
         }
     }
 
+    /// The library draws a text field, one line or several, at the theme's
+    /// full corner, the one rows and blocks keep, on a fill of its own; a field
+    /// here takes a control's small corner on the surface it sits on, so it and
+    /// the button beside it are one shape. The wrapper sets it, and like the
+    /// button's it is one line to bypass with code that looks ordinary.
+    #[test]
+    fn every_text_field_goes_through_the_wrapper() {
+        // Assembled at run time so the wrapper's own source, and this test,
+        // are not matches for it.
+        let bare = [
+            format!("Input{}new(", "::"),
+            format!("Textarea{}new(", "::"),
+        ];
+        for (path, source) in ui_sources() {
+            if path.ends_with("plugin-host/src/lib.rs") {
+                continue;
+            }
+            for (n, line) in source.lines().enumerate() {
+                assert!(
+                    !bare.iter().any(|b| line.contains(b.as_str())),
+                    "{path}:{}: builds a text field straight from the library, \
+                     which draws it at a row's corner on a fill of its own. Use \
+                     text_input, search_input or text_area.\n    {}",
+                    n + 1,
+                    line.trim()
+                );
+            }
+        }
+    }
+
+    /// The library's ghost hovers on a fill of its own mixing, a shade off the
+    /// selected step a selected ghost shows beside it, so a hovered button
+    /// read as a smaller box than a selected one. The plugin host's `quiet`
+    /// draws the ghost on the ramp's steps, and a bare `ghost()` brings the
+    /// mismatch straight back.
+    #[test]
+    fn every_ghost_button_hovers_on_the_ramp() {
+        // Assembled at run time so the wrapper's own source, and this test,
+        // are not matches for it.
+        let bare = format!(".{}()", "ghost");
+        for (path, source) in ui_sources() {
+            for (n, line) in source.lines().enumerate() {
+                assert!(
+                    !line.contains(&bare),
+                    "{path}:{}: a bare ghost button hovers on the library's own \
+                     fill, a shade off a selected one. Use `.quiet(cx)`.\n    {}",
+                    n + 1,
+                    line.trim()
+                );
+            }
+        }
+    }
+
     /// The lengths written into `rems(` or `px(` on one line, unless the line
     /// declares a constant or is a comment. Zero is not a length anyone tunes.
     fn written_lengths(line: &str) -> Vec<String> {

@@ -7,12 +7,13 @@ use gpui::{
     AnyElement, App, AppContext as _, ClickEvent, Context, Entity, InteractiveElement as _,
     IntoElement, ParentElement, SharedString, StatefulInteractiveElement as _, Styled, Window, div,
 };
-use gpui_component::button::ButtonVariants as _;
-use gpui_component::input::{Input, InputEvent, InputState};
+use gpui_component::input::{InputEvent, InputState};
 use gpui_component::tag::Tag;
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, Size, StyledExt};
 use onehand_core::issues::{self, Issues, LabelKind, LocalIssue};
+use onehand_plugin_host::Quiet as _;
+use onehand_plugin_host::search_input;
 use onehand_plugin_host::{Tint, action, menu_below, menu_item, status_ink, switch, tint};
 use std::collections::BTreeSet;
 
@@ -157,7 +158,6 @@ impl IssuesView {
     /// issue both, so they stay in reach while the two show one at a time.
     pub(super) fn search_bar(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let query = self.query(window, cx);
-        let muted = cx.theme().muted_foreground;
         div()
             .h_flex()
             .items_center()
@@ -169,17 +169,15 @@ impl IssuesView {
             .border_b_1()
             .border_color(cx.theme().border)
             .child(
-                div().flex_1().min_w_0().child(
-                    Input::new(&query)
-                        .small()
-                        .prefix(Icon::new(IconName::Search).xsmall().text_color(muted))
-                        .cleanable(true),
-                ),
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .child(search_input(&query, cx).small()),
             )
             .child(
                 action("issues-new")
                     .small()
-                    .ghost()
+                    .quiet(cx)
                     .icon(Icon::new(IconName::Plus))
                     .tooltip("New issue")
                     .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
@@ -326,7 +324,7 @@ impl IssuesView {
         let picked = self.label.clone();
         let trigger = action("issues-label-filter")
             .xsmall()
-            .ghost()
+            .quiet(cx)
             .label(picked.clone().unwrap_or_else(|| "Label".to_string()))
             .icon(Icon::new(IconName::ChevronDown))
             .tooltip("Show only issues with a label");
@@ -466,13 +464,13 @@ impl IssuesView {
                     if failed {
                         action("issues-sync-retry")
                             .xsmall()
-                            .ghost()
+                            .quiet(cx)
                             .label("Retry")
                             .tooltip(format!("Sync with {name} again"))
                     } else {
                         action("issues-sync-now")
                             .xsmall()
-                            .ghost()
+                            .quiet(cx)
                             .icon(Icon::new(IconName::Redo))
                             .tooltip("Sync now")
                     }
@@ -482,7 +480,7 @@ impl IssuesView {
             .child(if on {
                 action("issues-sync-pause")
                     .xsmall()
-                    .ghost()
+                    .quiet(cx)
                     .icon(Icon::new(IconName::Pause))
                     .tooltip("Pause auto-sync; links to issues are kept")
                     .on_click(
@@ -491,7 +489,7 @@ impl IssuesView {
             } else {
                 action("issues-sync-resume")
                     .xsmall()
-                    .ghost()
+                    .quiet(cx)
                     .icon(Icon::new(IconName::Play))
                     .tooltip(if paused {
                         format!("Resume auto-sync with {name}")
@@ -565,7 +563,7 @@ impl IssuesView {
             .w_full()
             .px_2()
             .py_1p5()
-            .rounded(theme.radius)
+            .rounded(theme.radius_tokens().sm)
             .cursor_pointer()
             // A selection is a fill and only a fill: the selected step, which
             // the ramp holds clear of the hover step, so a row that is both
@@ -626,14 +624,14 @@ pub(super) fn chip(label: String, cx: &App) -> Tag {
         LabelKind::Docs => tint(theme.yellow, cx),
         LabelKind::Report => tint(theme.cyan, cx),
     };
-    tag(label, kind)
+    tag(label, kind, cx)
 }
 
 /// A tag that is not a label (the *Draft* mark, a project's name), always
 /// neutral, so a name that happens to read like a label is never drawn as
 /// one.
 pub(super) fn plain_tag(text: String, cx: &App) -> Tag {
-    tag(text, neutral(cx))
+    tag(text, neutral(cx), cx)
 }
 
 /// The tint a tag takes when it says nothing about state.
@@ -647,8 +645,12 @@ fn neutral(cx: &App) -> Tint {
 
 /// The library's small label on `fill`, edged in the same fill so it reads as
 /// one shape round the word.
-fn tag(text: String, Tint { fill, ink }: Tint) -> Tag {
-    Tag::custom(fill, ink, fill).small().flex_none().child(text)
+fn tag(text: String, Tint { fill, ink }: Tint, cx: &App) -> Tag {
+    Tag::custom(fill, ink, fill)
+        .small()
+        .rounded(cx.theme().radius_lg)
+        .flex_none()
+        .child(text)
 }
 
 #[cfg(test)]

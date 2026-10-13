@@ -11,7 +11,7 @@ use gpui::{
     IntoElement, KeyBinding, Keystroke, ParentElement, Render, Styled, Window, div,
 };
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::input::{Input, InputState};
+use gpui_component::input::InputState;
 use gpui_component::{ActiveTheme, Sizable as _, StyledExt, WindowExt as _};
 use onehand_core::config::AppConfig;
 

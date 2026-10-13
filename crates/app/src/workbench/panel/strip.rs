@@ -2,9 +2,10 @@
 //! maximize and hide fixed at the end, outside anything that gives way.
 
 use super::{Workbench, WorkbenchEvent};
+use crate::controls::Quiet as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{App, Context, IntoElement, ParentElement, Styled, Window, div};
-use gpui_component::button::{Button, ButtonVariants as _};
+use gpui_component::button::Button;
 use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, Sizable as _, StyledExt};
 use onehand_plugin_api::{PluginId, WorkbenchModeSpec};
 
@@ -41,7 +42,7 @@ impl Workbench {
             .when(self.fills_area && !full, |strip| {
                 strip
                     .child(
-                        onehand_plugin_host::back_link("step-aside", "Conversation").on_click(
+                        onehand_plugin_host::back_link("step-aside", "Conversation", cx).on_click(
                             cx.listener(|_: &mut Self, _, _, cx| {
                                 cx.emit(WorkbenchEvent::StepAside);
                             }),
@@ -75,7 +76,7 @@ impl Workbench {
             // be pressed.
             .child(
                 crate::controls::action("maximize-workbench")
-                    .ghost()
+                    .quiet(cx)
                     .small()
                     .flex_none()
                     .text_color(cx.theme().muted_foreground)
@@ -104,7 +105,7 @@ impl Workbench {
             // ignores `text_color` and comes out invisible on a dark panel.
             .child(
                 crate::controls::action("hide-workbench")
-                    .ghost()
+                    .quiet(cx)
                     .small()
                     .flex_none()
                     .text_color(cx.theme().muted_foreground)
@@ -131,7 +132,7 @@ fn mode_tab(
     cx: &mut Context<Workbench>,
 ) -> Button {
     crate::controls::action(which.as_str())
-        .ghost()
+        .quiet(cx)
         .small()
         .max_w(onehand_plugin_host::TAB_MAX_W)
         .selected(which == active)

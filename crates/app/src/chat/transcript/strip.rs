@@ -6,12 +6,12 @@ use super::parts::{
 };
 use super::tool::diff_rows;
 use crate::chat::session::ChatSession;
+use crate::controls::Quiet as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, ClickEvent, Entity, InteractiveElement, IntoElement, ParentElement, Rems, SharedString,
     StatefulInteractiveElement, Styled, Window, div, rems,
 };
-use gpui_component::button::ButtonVariants as _;
 use gpui_component::spinner::Spinner;
 use gpui_component::{ActiveTheme, IconName, Sizable as _, StyledExt};
 use onehand_core::chat::activity;
@@ -301,7 +301,7 @@ pub(in crate::chat) fn turn_summary(
                 .child(
                     div().h_flex().child(
                         crate::controls::action(("turn-diff-all", key))
-                            .ghost()
+                            .quiet(cx)
                             .xsmall()
                             .label(match all_open {
                                 true => "Hide every diff",

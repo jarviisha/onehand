@@ -1,7 +1,10 @@
 //! The issue picker, and the rows every list of issues is drawn with.
 
 use super::title_row;
+use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
+use crate::controls::Tall as _;
+use crate::controls::text_area;
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -10,7 +13,7 @@ use gpui::{
 };
 use gpui_component::button::ButtonVariants;
 use gpui_component::dialog::Dialog;
-use gpui_component::input::{Textarea, TextareaState};
+use gpui_component::input::TextareaState;
 use gpui_component::tag::Tag;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::issues::template;
@@ -96,7 +99,7 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
                 });
             // The column sits in the scrolling box rather than being it, or
             // its fields would shrink to fit instead of scrolling.
-            content.child(title_row(heading.clone())).child(
+            content.child(title_row(heading.clone(), cx)).child(
                 div()
                     .id("issue-picker-body")
                     .track_focus(&focus)
@@ -124,14 +127,18 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
                 .children(super::blocking_note(blocking, danger))
                 .child(
                     crate::controls::action("cancel-pick")
-                        .ghost()
+                        .tall()
+                        .quiet(cx)
                         .label("Cancel")
                         .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
                             shell.cancel_pick(cx);
                         })),
                 )
                 .child({
-                    let run = crate::controls::action("run-pick").primary().label("Run");
+                    let run = crate::controls::action("run-pick")
+                        .tall()
+                        .primary()
+                        .label("Run");
                     match runnable {
                         false => run.refuses(true),
                         true => run.on_click(cx.listener(
@@ -231,7 +238,7 @@ fn start_form(
             col.child(label("Before it starts")).children(lines)
         })
         .child(label("Instructions for this run"))
-        .child(Textarea::new(instructions).h(super::INSTRUCTIONS_H));
+        .child(text_area(instructions, cx).h(super::INSTRUCTIONS_H));
     let Ok(template) = template else {
         return column.into_any_element();
     };
@@ -286,7 +293,7 @@ where
     crate::controls::menu_below(
         id,
         crate::controls::action((id, 0usize))
-            .outline()
+            .secondary()
             .small()
             .label(name)
             .icon(Icon::new(IconName::ChevronDown)),
@@ -343,6 +350,7 @@ pub(crate) fn issue_row(
         .children(labels.iter().take(3).map(|label| {
             Tag::custom(fill, ink, fill)
                 .small()
+                .rounded(cx.theme().radius_lg)
                 .flex_none()
                 .child(label.clone())
         }))
@@ -385,7 +393,7 @@ fn row_shell(
 ) -> gpui::Stateful<gpui::Div> {
     let (muted, radius, hover) = (
         cx.theme().muted_foreground,
-        cx.theme().radius,
+        cx.theme().radius_tokens().sm,
         cx.theme().list_hover,
     );
     div()

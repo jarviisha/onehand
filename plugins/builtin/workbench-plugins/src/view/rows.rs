@@ -12,6 +12,7 @@ use gpui_component::menu::{PopupMenu, PopupMenuItem};
 use gpui_component::switch::Switch;
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Disableable as _, Icon, IconName, Sizable as _, StyledExt};
+use onehand_plugin_host::Quiet as _;
 use onehand_plugin_host::{
     Refuses as _, Request, action, menu_below, menu_item, menu_row, status_ink,
 };
@@ -64,7 +65,7 @@ impl PluginsView {
             "plugin-menu-button-{}",
             plugin.id
         )))
-        .ghost()
+        .quiet(cx)
         .xsmall()
         .icon(Icon::new(IconName::Ellipsis))
         .refuses(busy)
@@ -106,7 +107,7 @@ impl PluginsView {
             };
             action(("plugin-update", i))
                 .xsmall()
-                .outline()
+                .secondary()
                 .label(format!("Update {}", update.to))
                 .loading(self.running(&change))
                 .refuses(busy)
@@ -393,7 +394,7 @@ impl PluginsView {
                 let enable = have.flip(Scope::Local);
                 action(("plugin-enable", i))
                     .xsmall()
-                    .outline()
+                    .secondary()
                     .label("Enable")
                     .tooltip("Installed but off here — turn it on on this machine only")
                     .loading(self.running(&enable))
@@ -504,7 +505,7 @@ impl PluginsView {
         });
         let main = action(("plugin-install", i))
             .xsmall()
-            .outline()
+            .secondary()
             .label("Install")
             .tooltip(format!("Install for: {}", scope.meaning()))
             .loading(running)
@@ -517,7 +518,7 @@ impl PluginsView {
             plugin.id
         )))
         .xsmall()
-        .outline()
+        .secondary()
         .icon(Icon::new(IconName::ChevronDown))
         .refuses(busy)
         .tooltip("Install for…");

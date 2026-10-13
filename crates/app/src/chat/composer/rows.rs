@@ -1,9 +1,10 @@
 use super::SELECTED_ALPHA;
 use super::presentation::Row;
+use crate::controls::Quiet as _;
 use crate::tokens::ROW_H;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{App, ParentElement, Rems, SharedString, Styled, div, rems};
-use gpui_component::button::{Button, ButtonVariants as _};
+use gpui_component::button::Button;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 
 /// The leading column every popup row's name stands in.
@@ -49,7 +50,7 @@ pub(super) const OPTION_MAX_W: Rems = rems(9.);
 /// row.
 fn popup_row(id: usize, highlighted: bool, cx: &App) -> Button {
     crate::controls::action(("candidate", id))
-        .ghost()
+        .quiet(cx)
         // Not for the geometry, which is set outright below and lands after the
         // library's. This is what the row's own `text_sm` could not do: the
         // library letters a button from its `Size`, on the box holding the
@@ -64,7 +65,7 @@ fn popup_row(id: usize, highlighted: bool, cx: &App) -> Button {
         .overflow_hidden()
         .px_2()
         .text_sm()
-        .rounded(cx.theme().radius)
+        .rounded(cx.theme().radius_tokens().sm)
         // No border and no ring, on either state. The library leaves a ghost
         // button's border transparent already, so what is turned off here is
         // the focus ring it would draw over the top — a second rectangle around

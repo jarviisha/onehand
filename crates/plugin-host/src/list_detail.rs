@@ -6,9 +6,10 @@
 //! each frame, never the window's: a dock is dragged and zoomed apart from the
 //! window it sits in. Going back keeps what was picked.
 
-use gpui::{Pixels, Rems, Styled as _};
+use crate::Quiet as _;
+use gpui::{App, Pixels, Rems, Styled as _};
 use gpui_component::ResizableState;
-use gpui_component::button::{Button, ButtonVariants as _};
+use gpui_component::button::Button;
 use gpui_component::{Icon, IconName, Sizable as _};
 use std::ops::Range;
 
@@ -80,9 +81,9 @@ fn fit(dragged: Option<f32>, widths: &ListWidths, container: f32) -> (bool, f32)
 
 /// The way back from a detail shown alone to the list it was picked from,
 /// named for that list. The caller says what a press does.
-pub fn back_link(id: &'static str, list: &'static str) -> Button {
+pub fn back_link(id: &'static str, list: &'static str, cx: &App) -> Button {
     crate::action(id)
-        .ghost()
+        .quiet(cx)
         .small()
         .flex_none()
         .icon(Icon::new(IconName::ArrowLeft))

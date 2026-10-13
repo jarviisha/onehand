@@ -193,11 +193,13 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   pixels, and the terminal's grid, which zooms on its own. Fixed chrome heights stay outside the
   zoom wrapper. A size the steps lack is a named constant (shared ones in
   `onehand_plugin_host::tokens`, others beside their use), its reason in its doc comment.
-- **Corners by role**: `radius_tokens().sm` for a small label read rather than pressed, and a
-  checkbox; `radius` for what is pressed or picked (a control, menu, row, chip) and every block
-  inside a column (a well, code, a diff, a notice); `radius_lg` for a box standing on its own (a
-  page's box, a table, the bubble, the composer, the terminal, a floating panel, a dialog, a
-  toast); `rounded_full` for a dot. A part joined to its container's edge takes its corner there.
+- **Corners by role**: `radius_tokens().sm` for what is pressed, picked, typed into or lifted out by
+  a fill (a control, a row such as the rail's selected project or session, a tab, a chip); the
+  control wrappers set it. `radius` for a block read inside a column (a well, code, a diff, a
+  notice). `radius_lg` for a box standing on its own (a page's box, a table, the bubble, the
+  composer, the terminal, a floating panel, a dialog, a toast) and for a badge (a `Tag`).
+  `rounded_full` for a dot. A part joined to its container's edge takes its corner there; the
+  library's menus keep `radius`.
 - **Lines** are a 1px `border`; the mark under an open tab is 2px.
 
 ## Colour and state
@@ -220,22 +222,29 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
 | `secondary` | inline code in the prompt bubble, a step off its fill; a document's code on a dock |
 
 - Boxes are borders; wells and the bubble are fills.
-- Hover and selection are fills, at distinct steps of the ramp; keyboard focus is the ring.
-- One primary per view.
+- Hover and selection are fills: distinct steps on a row (`list_hover`, `accent`), one step on a
+  ghost button (the selected one). Keyboard focus is the ring.
+- At most one primary in a view; a view needs none (the Settings page has none).
 - A missing surface goes into the ramp with its contrast asserted, never into one view.
 
 ## Components
 
 Reuse gpui-component before building anything: `Root`, `DockArea`, `Sidebar`, `Dialog`, `Switch`,
-`InputState`, `Editor`, `TextView`, plus gpui's own `list` for the transcript. Buttons go through
-the app's action wrapper, which sets the pointer cursor; a control that refuses says so
-(`.refuses()`) and goes back to the arrow. A control takes the library's default
-size in a dialog's footer and a form, `small` on a page, a box or a strip and as a field inside a
-row, `xsmall` on a list row, in a transcript block and as a chip. The app owns only its own: the
-transcript renderers, the icon registry, the terminal panel, per-panel zoom, and the composer
-popup (one shell for `@`, `/`, the pickers, the `+` and branch menus and the attachment tray, with
-a pinned title and no key hints, at most six rows, grouped, then how many more; a menu
-opens just above the control that opened it).
+`InputState`, `Editor`, `TextView`, plus gpui's own `list` for the transcript. Controls go through
+the plugin host's builders, which set the pointer cursor and the `sm` corner: buttons through
+`action`; fields through `text_input`, `search_input` (the search mark, the clear button; the rail's
+alone has no edge, on `theme::inset`) and `text_area`. A button names its variant by role: `primary`
+the main action, `secondary` an alternative beside it, a picker's trigger and every Settings button,
+`choice` in a pick-one row, `danger` only under *Exceptions*, and ghost (`.quiet(cx)`, whose hover
+is the selected step) the rest. **No button draws an edge** (no default variant, no `outline()`): a
+field is the one control marked by its edge, on no fill of its own. A control that refuses says so
+(`.refuses()`) and goes back to the arrow. Sizes: `.tall()` (`FIELD_H`, chrome-size words) in a
+dialog's footer, a form and a page's head; `small` in a box or a strip; `xsmall` on a row, in a
+transcript block and as a chip; never the library's default, which letters a button at the reading
+size. The app owns only its own: the transcript renderers, the icon registry, the terminal panel,
+per-panel zoom, and the composer popup (one shell for `@`, `/`, the pickers, the `+` and branch
+menus and the attachment tray, with a pinned title and no key hints, at most six rows, grouped, then
+how many more; a menu opens just above the control that opened it).
 
 Scope: the Workbench editor is a quick editor (tree-sitter, no LSP). Neovim is a mode with a PTY of
 its own per project. Files lives inside Editor, not as a mode. Plugins are built in.

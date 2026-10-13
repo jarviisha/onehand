@@ -457,7 +457,7 @@ pub(super) fn project_row(
     let (shell, hover) = (cx.entity().downgrade(), hover_fill(cx));
     let muted = cx.theme().muted_foreground;
     let (radius, chip, chip_ink) = (
-        cx.theme().radius,
+        cx.theme().radius_tokens().sm,
         cx.theme().secondary,
         cx.theme().secondary_foreground,
     );
@@ -564,7 +564,12 @@ pub(super) fn project_row(
                         div()
                             .id(("project-auto", root_idx))
                             .flex_none()
-                            .child(Tag::custom(chip, ink, chip).small().child(auto.badge))
+                            .child(
+                                Tag::custom(chip, ink, chip)
+                                    .small()
+                                    .rounded(cx.theme().radius_lg)
+                                    .child(auto.badge),
+                            )
                             .when_some(pill_issue, |pill, number| {
                                 pill.cursor_pointer()
                                     .on_mouse_up(gpui::MouseButton::Left, |_, _, cx| {

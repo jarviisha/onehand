@@ -2,7 +2,10 @@
 //! and the two dialogs its approval controls open.
 
 use super::{ChatPane, ChatPaneEvent};
+use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
+use crate::controls::Tall as _;
+use crate::controls::text_area;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, AppContext as _, Context, InteractiveElement as _, IntoElement, ParentElement, Rems,
@@ -10,7 +13,7 @@ use gpui::{
 };
 use gpui_component::WindowExt as _;
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::input::{Textarea, TextareaState};
+use gpui_component::input::TextareaState;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::task::Approval;
 use onehand_core::task::work::{ANSWER_CHANGED, UnderReview};
@@ -90,7 +93,7 @@ impl ChatPane {
                             row.child(
                                 crate::controls::action("workflow-review")
                                     .xsmall()
-                                    .ghost()
+                                    .quiet(cx)
                                     .label("Review…")
                                     .tooltip("Read what is waiting for approval")
                                     .on_click(cx.listener(move |_, _, window, cx| {
@@ -101,7 +104,7 @@ impl ChatPane {
                             .child(
                                 crate::controls::action("workflow-revise")
                                     .xsmall()
-                                    .ghost()
+                                    .quiet(cx)
                                     .label("Revise…")
                                     .on_click(cx.listener(move |_, _, window, cx| {
                                         open_revise(revised.clone(), window, cx)
@@ -123,7 +126,7 @@ impl ChatPane {
                         .child(
                             crate::controls::action("workflow-stop")
                                 .xsmall()
-                                .ghost()
+                                .quiet(cx)
                                 .label("Stop")
                                 .tooltip("Cancel the turn and end the run here")
                                 .on_click(cx.listener(move |_, _, _, cx| {
@@ -247,12 +250,14 @@ pub(super) fn open_review(
                     .justify_end()
                     .child(
                         crate::controls::action("workflow-review-close")
-                            .ghost()
+                            .tall()
+                            .quiet(cx)
                             .label("Close")
                             .on_click(|_, window, cx| window.close_dialog(cx)),
                     )
                     .child(
                         crate::controls::action("workflow-review-continue")
+                            .tall()
                             .primary()
                             .icon(Icon::new(IconName::Check))
                             .label("Continue")
@@ -329,7 +334,7 @@ pub(super) fn open_revise(approval: Approval, window: &mut Window, cx: &mut Cont
                                 )),
                         )
                     })
-                    .child(Textarea::new(&note).h(NOTE_H)),
+                    .child(text_area(&note, cx).h(NOTE_H)),
             )
             .footer(
                 div()
@@ -339,12 +344,14 @@ pub(super) fn open_revise(approval: Approval, window: &mut Window, cx: &mut Cont
                     .justify_end()
                     .child(
                         crate::controls::action("workflow-revise-cancel")
-                            .ghost()
+                            .tall()
+                            .quiet(cx)
                             .label("Cancel")
                             .on_click(|_, window, cx| window.close_dialog(cx)),
                     )
                     .child(
                         crate::controls::action("workflow-revise-send")
+                            .tall()
                             .primary()
                             .label("Send back")
                             .refuses(empty)
