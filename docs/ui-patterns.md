@@ -163,7 +163,8 @@ A page that has a head and filters draws them in one order, the Issues page's:
   (*New issue*).
 - **The filter bar**, under the head: the search first at `.small()`, taking the free width, then
   each filter as a `.small()` `picker` with its caret, its label naming what it is set to: a
-  quiet ghost while it is where it starts, on the secondary fill once it narrows the list.
+  ghost in the muted ink while it is where it starts, on the secondary fill in that fill's ink
+  once it narrows the list.
 - **The content** they filter. A filter's choice and the search are kept while the page is left
   and shown again.
 

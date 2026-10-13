@@ -554,9 +554,10 @@ impl ControlSize {
 
 /// A picker's trigger: a button naming what it is set to, then the caret that
 /// opens its menu, so it reads as a control. Unset, it names what it picks,
-/// as a quiet ghost; `set` away from where it starts, it names the choice on
-/// the secondary fill, so the picker narrowing a list is the one that stands
-/// out. Its ink is the one its variant is paired with. `size` is the role's.
+/// as a ghost in the muted ink, its caret with it, as a label at rest is;
+/// `set` away from where it starts, it names the choice on the secondary fill
+/// in that fill's ink, so the picker narrowing a list is the one that stands
+/// out. `size` is the role's.
 pub fn picker(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
@@ -567,7 +568,17 @@ pub fn picker(
     let button = action(id).label(label.into()).dropdown_caret(true);
     size.on(match set {
         true => button.secondary(),
-        false => button.quiet(cx),
+        // The variant's own ink rather than one laid over it, so the caret,
+        // which the library inks from the variant, rests with the words.
+        false => {
+            let theme = cx.theme();
+            button.custom(
+                ButtonCustomVariant::new(cx)
+                    .foreground(theme.muted_foreground)
+                    .hover(theme.secondary_active)
+                    .active(theme.secondary_active),
+            )
+        }
     })
 }
 
