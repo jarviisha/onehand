@@ -75,12 +75,6 @@ impl RenderOnce for CommandBlock {
             // well's own grey in the dark palette, so its fill alone sets the
             // command off the card.
             .bg(well)
-            // The scrollbar's own gutter while there is one, so its thumb
-            // runs beside the text rather than over it.
-            .map(|block| match overflows {
-                true => block.pr(SCROLLBAR_W),
-                false => block.pr_3(),
-            })
             .py_2()
             .pl_3()
             .child(
@@ -89,6 +83,15 @@ impl RenderOnce for CommandBlock {
                     .v_flex()
                     .flex_1()
                     .min_w_0()
+                    // The scrollbar's gutter while there is one, held inside
+                    // the scrolled box: the block itself keeps no right
+                    // padding, because the scrollbar lays itself out in the
+                    // block's content box, and a gutter of padding there moved
+                    // the scrollbar in with the text rather than clear of it.
+                    .map(|area| match overflows {
+                        true => area.pr(SCROLLBAR_W),
+                        false => area.pr_3(),
+                    })
                     // **A bound on drawn rows rather than on the agent's
                     // newlines**, which is the only kind that holds for a
                     // command of one very long line: one line of a base64 blob
@@ -148,21 +151,8 @@ impl RenderOnce for CommandBlock {
                 )
             })
             // Over the fade: the one thing that says how far the command runs.
-            //
-            // **On a frame pinned to the block's edges.** The scrollbar sizes
-            // itself to its parent's content box, which stops short of the
-            // gutter held for it, so mounted on the block it landed over the
-            // text's last characters rather than in the gutter.
             .when(overflows, |block| {
-                block.child(
-                    div()
-                        .absolute()
-                        .top_0()
-                        .bottom_0()
-                        .left_0()
-                        .right_0()
-                        .child(Scrollbar::vertical(&scroll).mode(ScrollbarMode::Always)),
-                )
+                block.child(Scrollbar::vertical(&scroll).mode(ScrollbarMode::Always))
             })
     }
 }
