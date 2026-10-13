@@ -278,7 +278,9 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   combine a border, contrasting fill and shadow just to make a group visible.
 - Hover and selection are fills: distinct steps on a row (`list_hover`, `accent`; the rail's own
   `sidebar_accent` and `rail_chosen`), one step on a ghost button (the selected one). Keyboard
-  focus is the ring.
+  focus is the ring, except on a field: a focused field draws no ring, only its edge in the
+  `ring` ink, and a field with no edge at rest shows one while focused (the composer, a card, keeps
+  the caret alone).
 - At most one primary in a view; a view needs none (the Settings page has none). Where layers
   stack, what waits on the person holds it while it shows (a floating issue, an open form, a
   pinned card, a run's approval), and what it covers steps down to `secondary`.

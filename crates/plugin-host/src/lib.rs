@@ -80,12 +80,19 @@ pub fn action(id: impl Into<ElementId>) -> Button {
 /// draws a field on a fill it derives from the control edge rather than from
 /// where the field sits.
 ///
+/// **Focus is the edge alone.** The library marks a focused field twice: its
+/// edge turns the ring ink, and a ring is drawn round it, outside its bounds.
+/// The field clips what lies outside itself, which takes the ring away and
+/// leaves the edge. A field drawn with no edge at rest keeps one, in the
+/// surface's own colour, so the edge still has somewhere to show.
+///
 /// Here rather than in the app for the reason [`action`] is: a plugin draws
 /// fields too, and one wrapper is one place for the corner to hold.
 pub fn text_input(state: &Entity<InputState>, cx: &App) -> Input {
     Input::new(state)
         .rounded(cx.theme().radius)
         .bg(cx.theme().transparent)
+        .overflow_hidden()
 }
 
 /// The cursor for an action that is currently refusing.
@@ -430,6 +437,7 @@ pub fn text_area(state: &Entity<TextareaState>, cx: &App) -> Textarea {
     Textarea::new(state)
         .rounded(cx.theme().radius)
         .bg(cx.theme().transparent)
+        .overflow_hidden()
 }
 
 /// A ghost button whose hover is the fill a selected one shows.

@@ -293,7 +293,8 @@ danger tint.
   it can be rebound; `on_key_down` is for typing only.
 - **A control bound to a command shows its key** in its tooltip (a `Kbd`); a field shows it as a
   `Kbd` at its end. A label's text never spells a key.
-- **Keyboard focus shows the ring**, only when the keyboard moved it there.
+- **Keyboard focus shows the ring**, only when the keyboard moved it there. A field shows focus by
+  its edge alone, turned the `ring` ink; one with no edge at rest gains one while focused.
 - A dialog, a popup or a floating panel opens with focus on its first field, or on its primary
   action when it has none, and closes on Esc, asking first when a form in it holds unsaved
   changes. On closing, focus goes back to what opened it, or to the conversation when that is gone.

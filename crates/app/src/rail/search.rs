@@ -22,7 +22,8 @@ pub(super) fn search_field(state: &RailState, cx: &Context<Shell>) -> impl IntoE
     div().flex_1().min_w_0().child(
         search_input(&state.search, cx)
             .small()
-            .bordered(false)
+            // No edge at rest, but one to turn the ring ink on focus.
+            .border_color(crate::theme::inset(cx))
             .bg(crate::theme::inset(cx))
             .when_some(
                 crate::keymap::first_key("focus_rail_search", cx),
