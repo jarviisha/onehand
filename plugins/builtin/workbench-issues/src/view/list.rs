@@ -179,7 +179,7 @@ impl IssuesView {
             .child(
                 action("issues-new")
                     .small()
-                    .quiet(cx)
+                    .quiet_icon(false, cx)
                     .icon(Icon::new(IconName::Plus))
                     .tooltip("New issue")
                     .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {

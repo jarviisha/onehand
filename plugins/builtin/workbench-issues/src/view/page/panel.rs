@@ -68,7 +68,7 @@ impl IssuesView {
             .child(
                 action("issues-page-close")
                     .small()
-                    .quiet(cx)
+                    .quiet_icon(false, cx)
                     .icon(IconName::Close)
                     .tooltip_with_action("Close", &crate::IssuesClose, Some("IssuesPage"))
                     .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {

@@ -197,7 +197,7 @@ impl ChatPane {
                 )
                 .child(
                     crate::controls::action("drop-queued")
-                        .quiet(cx)
+                        .quiet_icon(false, cx)
                         .small()
                         .icon(Icon::new(IconName::Close))
                         .tooltip("Remove from the queue")
@@ -505,7 +505,7 @@ impl ChatPane {
                                             // and what it means is in the
                                             // tooltip.
                                             crate::controls::action("to-bottom")
-                                                .quiet(cx)
+                                                .quiet_icon(false, cx)
                                                 .small()
                                                 .rounded(cx.theme().radius)
                                                 .icon(Icon::new(IconName::ChevronDown))

@@ -235,7 +235,7 @@ impl IssuesView {
                     .child(
                         action("issues-page-refresh")
                             .small()
-                            .quiet(cx)
+                            .quiet_icon(false, cx)
                             .icon(Icon::new(AppIcon::Refresh))
                             .loading(pr_reading)
                             .tooltip(read)
