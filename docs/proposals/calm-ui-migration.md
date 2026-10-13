@@ -631,6 +631,13 @@ rarer screens; saves last, as they move nothing on screen.
   toast each); a dock dragged wider with the file read-only (it stays, one toast); a pick the
   agent refuses (put back, one toast); a task stopped (waiting until it gives its place up);
   each button above pressed twice.
+- As built: one `OrderedWriter` serves `onehand.toml`, the workspace file, the recents and a
+  conversation's metadata; the Issues plugin keeps one per issues file. Agents are written
+  through it but never put back, since their form waits on its *Save*. An issue's open state,
+  its sync switch and a conflict's choice show at once; its form waits. An Issues write that
+  fails is said once, and the newest one failing reads the file again, which is the last saved
+  value. *Answer the pull request review…* and *Remove worktree…* wait on ⋯ where ⋯ holds them,
+  and on their own button where one is drawn. The Mock UI agent refuses *Max* effort.
 
 ### 14. Close-out (S)
 

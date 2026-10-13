@@ -122,6 +122,9 @@ pub struct Work {
     /// from the one its last run ran with. Told by the app, which knows
     /// Settings; `false` until it does.
     pub timeout_moved: bool,
+    /// What a person pressed on it that is still being done, so its button
+    /// waits. Told by the app; `None` until it does.
+    pub pressed: Option<Act>,
 }
 
 impl Work {
@@ -177,6 +180,7 @@ impl Work {
                 .filter(|_| matches!(stand, Stand::Approval { .. }))
                 .and_then(UnderReview::of),
             timeout_moved: false,
+            pressed: None,
             span: run.and_then(|run| first(run).zip(last(run))),
             base: task.runs.first().and_then(first),
             task: task.id.clone(),

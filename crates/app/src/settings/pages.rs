@@ -333,6 +333,7 @@ fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                 .tall()
                 .secondary()
                 .label("Look for an issue now")
+                .loading(crate::unattended::claiming(cx))
                 .on_click(|_: &ClickEvent, window: &mut Window, cx: &mut App| {
                     crate::unattended::look_now(window.window_handle(), cx);
                 }),

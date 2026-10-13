@@ -11,25 +11,25 @@
 use futures::channel::oneshot;
 use std::sync::mpsc;
 
-/// One write: whatever lands a value on disk, and why it could not.
-type Job = Box<dyn FnOnce() -> Result<(), String> + Send>;
+/// One write, which answers on a channel of its own.
+type Job = Box<dyn FnOnce() + Send>;
 
 /// A thread that runs writes one at a time, in the order sent. A clone hands
 /// work to the same thread, which ends with the last clone.
 #[derive(Clone)]
 pub struct OrderedWriter {
-    tx: mpsc::Sender<(Job, oneshot::Sender<Result<(), String>>)>,
+    tx: mpsc::Sender<Job>,
 }
 
 impl OrderedWriter {
     /// A writer on a thread of its own, named `name`.
     pub fn spawn(name: &str) -> Self {
-        let (tx, rx) = mpsc::channel::<(Job, oneshot::Sender<Result<(), String>>)>();
+        let (tx, rx) = mpsc::channel::<Job>();
         std::thread::Builder::new()
             .name(name.to_string())
             .spawn(move || {
-                for (job, done) in rx {
-                    let _ = done.send(job());
+                for job in rx {
+                    job();
                 }
             })
             .inspect_err(|why| eprintln!("onehand: no thread to write with: {why}"))
@@ -37,18 +37,22 @@ impl OrderedWriter {
         Self { tx }
     }
 
-    /// Run `write` after every write sent before it, and answer how it went.
-    /// The answer is a future any executor can wait on; a writer whose thread
-    /// is gone answers that it is.
-    pub fn write<W>(
+    /// Run `write` after every write sent before it, and answer what it came
+    /// to. The answer is a future any executor can wait on; a writer whose
+    /// thread is gone answers that it is.
+    pub fn write<W, T>(
         &self,
         write: W,
-    ) -> impl std::future::Future<Output = Result<(), String>> + use<W>
+    ) -> impl std::future::Future<Output = Result<T, String>> + use<W, T>
     where
-        W: FnOnce() -> Result<(), String> + Send + 'static,
+        W: FnOnce() -> Result<T, String> + Send + 'static,
+        T: Send + 'static,
     {
         let (done, answer) = oneshot::channel();
-        let sent = self.tx.send((Box::new(write), done)).is_ok();
+        let job: Job = Box::new(move || {
+            let _ = done.send(write());
+        });
+        let sent = self.tx.send(job).is_ok();
         async move {
             match sent {
                 true => answer

@@ -513,12 +513,16 @@ impl Shell {
         };
         let has_check = self.check_of(&task.setup.repo).is_some();
         let reading = crate::unattended::read_review(&id, cx);
+        // Its button waits wherever it is drawn until the review is read.
+        crate::task::set_acting(&id, Some(Act::AnswerReview), cx);
         cx.spawn_in(window, async move |shell, cx| {
             let read = reading.await;
-            let _ = shell.update_in(cx, |shell: &mut Self, window, cx| match read {
-                Ok(read) => shell.confirm_answer(task, read, has_check, window, cx),
-                Err(why) => {
-                    window.push_notification(crate::toast::failed("Reading the review", why), cx)
+            let _ = shell.update_in(cx, |shell: &mut Self, window, cx| {
+                crate::task::set_acting(&id, None, cx);
+                match read {
+                    Ok(read) => shell.confirm_answer(task, read, has_check, window, cx),
+                    Err(why) => window
+                        .push_notification(crate::toast::failed("Reading the review", why), cx),
                 }
             });
         })

@@ -142,6 +142,14 @@ fn slots_of(u: &Unattended, cx: &App) -> Slots {
     }
 }
 
+/// A look or a pick is claiming an issue, so *Look for an issue now* waits.
+pub(crate) fn claiming(cx: &App) -> bool {
+    Shared::global(cx)
+        .unattended
+        .as_ref()
+        .is_some_and(|u| u.claiming)
+}
+
 /// The slots as they stand, if unattended runs are set up.
 pub(crate) fn slots(cx: &App) -> Option<Slots> {
     Shared::global(cx)

@@ -27,44 +27,39 @@ action("run-check").secondary().tall().label("Run check").loading(running)
 
 ## Immediate feedback
 
-A change the person can take back is drawn before it is saved; the save follows off the UI thread
-(the spawn pattern of `crates/app/src/shell/sessions.rs`). Work that leaves the machine waits
-instead.
+A change the person can take back is drawn before it is saved; the save follows off the UI thread.
+Work that leaves the machine waits instead.
 
-Changes come faster than saves: rename A to B, then B to C, while B is still being written. So
-the view keeps, per thing it saves, the value shown, the value known saved, the number of the
-newest change, and the save in flight. Each save waits for the one before it, so they land in
-order; a failure puts the screen back only while its change is still the newest, and then to the
-value known saved, never to the value before that change.
+Changes come faster than saves: rename A to B, then B to C, while B is still being written. Core
+holds the rule (`onehand_core::saving`): an `OrderedWriter` runs saves in the order sent, and a
+`Saving<T>` keeps the value shown, the value known saved and the newest change. A failure puts the
+screen back only while its change is still the newest, and then to the value known saved, never
+to the value before that change. The app keeps the spawn and the toast, as
+`ChatPane::save_title` (`crates/app/src/chat/pane/sessions.rs`) does:
 
 ```rust
-// Fields: title (shown), saved_title (on disk), title_edit: u64, title_save: Option<Task<()>>
-self.title_edit += 1;
-let edit = self.title_edit;
-self.title = title.clone();
+// Show it now, and number the change
+let this = title.change(now.clone());
 cx.notify();
-let earlier = self.title_save.take();
-self.title_save = Some(cx.spawn_in(window, async move |this, cx| {
-    // One save at a time, in the order the changes were made
-    if let Some(earlier) = earlier {
-        earlier.await;
-    }
-    let written = title.clone();
-    let saved = cx.background_executor().spawn(async move { save(&written) }).await;
-    this.update_in(cx, |this, window, cx| match saved {
-        Ok(()) => this.saved_title = title,
-        // Still the newest change: back to what the disk holds, said once
-        Err(why) if this.title_edit == edit => {
-            this.title = this.saved_title.clone();
-            window.push_notification(crate::toast::failed("Renaming the session", why), cx);
+// Written after every save sent before it
+let written = Shared::global(cx).writer.write(move || commit(&pending));
+cx.spawn(async move |pane, cx| {
+    let result = written.await;
+    pane.update(cx, |pane, cx| {
+        // `Some` only when the newest change failed: the shown value is
+        // already back to the one known saved
+        if let Some(why) = pane.title.landed(this, now, result) {
+            cx.emit(ChatPaneEvent::RenameFailed(why)); // one toast, from the shell
             cx.notify();
         }
-        // Superseded: the newer change's own save decides what shows
-        Err(_) => {}
     })
     .ok();
-}));
+})
+.detach();
 ```
+
+`onehand.toml` goes through `saves::write_config`, the workspace file through
+`Shell::save_change`; each takes the one change's undo.
 
 ## Motion
 

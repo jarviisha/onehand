@@ -177,6 +177,9 @@ impl Shell {
         let mut works = crate::task::issue_works(&kept, cx);
         // Whether a retry with current settings would run an ended task with
         // another timeout, which only the app can tell: it knows Settings.
+        for work in &mut works {
+            work.work.pressed = crate::task::pressed(&work.work.task, cx);
+        }
         for work in works.iter_mut().filter(|work| !work.work.active()) {
             work.work.timeout_moved = crate::task::task(&work.work.task, cx)
                 .is_some_and(|task| crate::unattended::timeout_moved(&task, cx));

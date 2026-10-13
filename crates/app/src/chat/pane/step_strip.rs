@@ -118,6 +118,7 @@ impl ChatPane {
                                 .small()
                                 .quiet(cx)
                                 .label("Stop")
+                                .loading(shown.stopping)
                                 .tooltip("Cancel the turn and end the run here")
                                 .on_click(cx.listener(move |_, _, _, cx| {
                                     cx.emit(ChatPaneEvent::StopWorkflow(uid))

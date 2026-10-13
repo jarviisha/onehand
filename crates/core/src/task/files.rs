@@ -18,6 +18,11 @@ pub fn dir() -> PathBuf {
 /// to answer once every save handed over before it has landed.
 enum Op {
     Save(Box<Task>),
+    /// A save whose result is answered, for one a person is told of.
+    SaveSaid(
+        Box<Task>,
+        futures::channel::oneshot::Sender<Result<(), String>>,
+    ),
     Remove(String),
     Mark(mpsc::Sender<()>),
 }
@@ -42,6 +47,9 @@ impl Writer {
                             if let Err(why) = save_blocking(&dir, &task) {
                                 eprintln!("onehand: could not write a task's file: {why}");
                             }
+                        }
+                        Op::SaveSaid(task, said) => {
+                            let _ = said.send(save_blocking(&dir, &task));
                         }
                         Op::Remove(id) => {
                             let file = dir.join(format!("{id}.json"));
@@ -68,6 +76,23 @@ impl Writer {
     pub fn save(&self, task: Task) {
         if self.tx.send(Op::Save(Box::new(task))).is_err() {
             eprintln!("onehand: a task's file was not written: its writer is gone");
+        }
+    }
+
+    /// Save `task` after every save sent before it, and answer how it went.
+    pub fn save_said(
+        &self,
+        task: Task,
+    ) -> impl std::future::Future<Output = Result<(), String>> + use<> {
+        let (said, answer) = futures::channel::oneshot::channel();
+        let sent = self.tx.send(Op::SaveSaid(Box::new(task), said)).is_ok();
+        async move {
+            match sent {
+                true => answer
+                    .await
+                    .unwrap_or_else(|_| Err("the writer stopped".to_string())),
+                false => Err("the tasks' writer is gone".to_string()),
+            }
         }
     }
 

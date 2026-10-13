@@ -388,7 +388,8 @@ impl TaskAct {
         let press = self.press(row, cx);
         let button = crate::controls::action(SharedString::from(format!("{key}-{}", self.label())))
             .small()
-            .label(self.label());
+            .label(self.label())
+            .loading(self == Self::Stop && row.stopping);
         let button = match self.tooltip() {
             Some(tip) => button.tooltip(tip),
             None => button,

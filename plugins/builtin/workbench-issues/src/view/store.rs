@@ -12,6 +12,7 @@ use gpui::{App, AppContext as _, Context, Entity, Global, Task, WeakEntity};
 use onehand_core::connector::{self, Connector};
 use onehand_core::issues::template::{self, IssueTemplate};
 use onehand_core::issues::{self, Issues, sync};
+use onehand_core::saving::OrderedWriter;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -51,6 +52,11 @@ pub(super) struct IssuesFile {
     stale: bool,
     /// The read in flight, held so that starting another drops it.
     _load: Option<Task<()>>,
+    /// Writes the file one change at a time, in the order they were made.
+    writer: OrderedWriter,
+    /// The newest change sent to be written. Only its write is taken as what
+    /// to show, so an older one landing does not hide a newer one on its way.
+    writes: u64,
 }
 
 impl IssuesFile {
@@ -80,6 +86,8 @@ impl IssuesFile {
             synced: None,
             stale: true,
             _load: None,
+            writer: OrderedWriter::spawn("onehand-issues"),
+            writes: 0,
         });
         cx.global_mut::<Files>().0.insert(path, file.downgrade());
         file
@@ -125,6 +133,46 @@ impl IssuesFile {
                 file.sync(false, cx);
             });
         }));
+    }
+
+    /// Show `change` at once, before its write lands. A change that does not
+    /// apply to what is shown is left for its write to refuse.
+    pub(super) fn show<R>(
+        &mut self,
+        change: impl FnOnce(&mut Issues) -> Result<R, String>,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(kept) = self.issues.as_mut()
+            && change(kept).is_ok()
+        {
+            cx.notify();
+        }
+    }
+
+    /// Read, change and write the file after every change made before this
+    /// one. Hands back which change it is, and what its write came to.
+    pub(super) fn write<C, R>(
+        &mut self,
+        change: C,
+    ) -> (
+        u64,
+        impl std::future::Future<Output = Result<(Issues, R), String>> + use<C, R>,
+    )
+    where
+        C: FnOnce(&mut Issues) -> Result<R, String> + Send + 'static,
+        R: Send + 'static,
+    {
+        self.writes += 1;
+        let path = self.path.clone();
+        let written = self
+            .writer
+            .write(move || issues::update_blocking(&path, change));
+        (self.writes, written)
+    }
+
+    /// Whether change `of` is the newest one made.
+    pub(super) fn newest(&self, of: u64) -> bool {
+        of == self.writes
     }
 
     /// Take what a write left on disk.

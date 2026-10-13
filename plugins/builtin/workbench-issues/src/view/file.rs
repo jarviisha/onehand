@@ -20,7 +20,7 @@ impl IssuesView {
         let Some(forge) = self.forge(cx) else {
             return;
         };
-        self.change(
+        self.change_now(
             move |kept| {
                 kept.sync_with(on.then(|| forge.name().to_string()));
                 Ok(None)
@@ -63,57 +63,92 @@ impl IssuesView {
     /// decision reaches the forge.
     pub(super) fn resolve(&mut self, number: u64, keep_mine: bool, cx: &mut Context<Self>) {
         let now = issues::now();
-        self.change(
+        self.change_now(
             move |kept| kept.resolve(number, keep_mine, now).map(|()| Some(number)),
             cx,
         );
     }
 
+    /// Make a change to the active project's issues, show it at once and
+    /// write it after; a write that fails is said once, and the newest one
+    /// failing puts back what is on disk.
+    pub(super) fn change_now(
+        &mut self,
+        change: impl Fn(&mut Issues) -> Result<Option<u64>, String> + Send + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(file) = self.state_mut().map(|state| state.file.clone()) {
+            file.update(cx, |file, cx| file.show(&change, cx));
+        }
+        self.write(change, false, cx);
+    }
+
     /// Make a change to the active project's issues and write it, then show
-    /// what is now kept — selecting the issue the change names, if any.
-    ///
-    /// The whole read-change-write happens off the UI loop in one call, so it
-    /// is made against what is on disk rather than against the copy on screen,
-    /// and nothing else in this process can write in between.
-    ///
-    /// On a project kept in step with its forge the change is then synced
-    /// straight away, so an edit reaches the forge without waiting for the
-    /// timer.
+    /// what is now kept — selecting the issue the change names, if any. The
+    /// form waits on its *Save* meanwhile.
     pub(super) fn change(
         &mut self,
         change: impl FnOnce(&mut Issues) -> Result<Option<u64>, String> + Send + 'static,
         cx: &mut Context<Self>,
     ) {
-        let Some((root, path)) = self.file() else {
-            return;
-        };
         self.writing = true;
         cx.notify();
+        self.write(change, true, cx);
+    }
+
+    /// The whole read-change-write happens off the UI loop in one call, after
+    /// every change made before it, so it is made against what is on disk
+    /// rather than against the copy on screen.
+    ///
+    /// On a project kept in step with its forge the change is then synced
+    /// straight away, so an edit reaches the forge without waiting for the
+    /// timer.
+    fn write(
+        &mut self,
+        change: impl FnOnce(&mut Issues) -> Result<Option<u64>, String> + Send + 'static,
+        waited: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((root, _)) = self.file() else {
+            return;
+        };
+        let Some(file) = self.state_mut().map(|state| state.file.clone()) else {
+            return;
+        };
+        let (of, written) = file.update(cx, |file, _| file.write(change));
         cx.spawn(async move |view, cx| {
-            let done = cx
-                .background_executor()
-                .spawn(async move { issues::update_blocking(&path, change) })
-                .await;
+            let done = written.await;
             let _ = view.update(cx, |view: &mut Self, cx| {
-                view.writing = false;
-                let Some(state) = view.roots.get_mut(&root) else {
-                    return;
-                };
+                if waited {
+                    view.writing = false;
+                }
+                let newest = file.read(cx).newest(of);
                 match done {
                     Ok((kept, number)) => {
-                        if number.is_some() {
-                            state.selected = number;
+                        if let Some(state) = view.roots.get_mut(&root) {
+                            if number.is_some() {
+                                state.selected = number;
+                            }
+                            if waited {
+                                state.form = None;
+                            }
                         }
-                        state.form = None;
-                        state.file.update(cx, |file, cx| {
-                            file.land(kept, cx);
+                        file.update(cx, |file, cx| {
+                            if newest {
+                                file.land(kept, cx);
+                            }
                             file.sync(true, cx);
                         });
                         view.status = None;
                     }
                     // The form stays open with what was typed in it: a refusal
                     // is something to correct, not a reason to start again.
-                    Err(why) => view.failed = Some(("Saving the issue", why)),
+                    Err(why) => {
+                        view.failed = Some(("Saving the issue", why));
+                        if newest {
+                            file.update(cx, |file, cx| file.load(cx));
+                        }
+                    }
                 }
                 cx.notify();
             });

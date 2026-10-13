@@ -108,13 +108,28 @@ impl Shell {
         // Forget the recent too, or the next launch reopens the workspace that
         // was just unbound -- `recent_workspaces[0]` takes precedence over
         // everything, including the CLI root.
+        // Said once if it fails, unlike a touch: the workspace would come
+        // back at the next launch.
         if let Some(dir) = was {
-            cx.update_global::<Shared, _>(|shared, _| {
+            let recents = cx.update_global::<Shared, _>(|shared, _| {
                 shared.recents.forget(&dir);
-                if let Err(e) = shared.recents.save() {
-                    eprintln!("onehand: failed to save recents: {e}");
-                }
+                shared.recents.clone()
             });
+            let written = Shared::global(cx)
+                .writer
+                .write(move || recents.save().map_err(|e| e.to_string()));
+            window
+                .spawn(cx, async move |cx| {
+                    if let Err(why) = written.await {
+                        let _ = cx.update(|window, cx| {
+                            window.push_notification(
+                                crate::toast::failed("Forgetting the unbound workspace", why),
+                                cx,
+                            )
+                        });
+                    }
+                })
+                .detach();
         }
         cx.notify();
     }

@@ -357,6 +357,11 @@ fn trail(
         .then(|| Rc::new(super::emit(&task.id, cx, ChatPaneEvent::RemoveWorktree)) as Press);
     let rest: Vec<_> = rest.into_iter().chain(answer).collect();
     let empty = rest.is_empty() && remove.is_none();
+    // What ⋯ holds and is still being read or done waits on ⋯ itself.
+    let waits = matches!(
+        crate::task::pressed(&task.id, cx),
+        Some(Act::AnswerReview | Act::RemoveWorktree)
+    );
     let danger = crate::theme::status_ink(cx).danger;
     let more = crate::controls::menu_below(
         SharedString::from(format!("task-more-{}", task.id)),
@@ -365,6 +370,7 @@ fn trail(
             .quiet_icon(false, cx)
             .icon(IconName::Ellipsis)
             .tooltip("More actions")
+            .loading(waits)
             .refuses(empty.then_some("Nothing more to do with this task")),
         move |mut menu, _, _| {
             for (label, press) in &rest {

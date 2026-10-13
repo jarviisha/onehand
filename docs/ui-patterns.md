@@ -245,6 +245,17 @@ uses a word or recognizable mark as well as colour. A quieter state must still b
   screen goes back to the last value known saved, not the one before the change, and says so
   once, as an `error` toast (*Renaming the session failed: <why>*). A newer change supersedes it,
   and that change's own save decides what the screen shows.
+- **What goes back is the one change, not the file**: the pin, the order, the theme, each to its
+  own last saved value.
+- **A pick the agent applies** (a mode, a model, an effort, *Fast*) shows at once. The agent
+  refusing it is its failed save: back to the value the agent last confirmed, one toast.
+- **A dragged size and a dock's open state** are saved but never put back, since the layout would
+  move under the pointer; a failed save still says so once.
+- **A rename and a shortcut show at once; a form that writes a file** (a workflow, an issue, an
+  agent) waits on its *Save*.
+- **The rule lives in core** (`onehand_core::saving`): a writer per file that runs saves in the
+  order sent, and the shown, saved and newest-change state, tested without a GUI. The app keeps
+  the spawn and the toast.
 - **Work that leaves the machine or takes its time** (git, the network, an agent) is never drawn
   as done before it is: it waits on the button that started it, as *Waiting* says.
 

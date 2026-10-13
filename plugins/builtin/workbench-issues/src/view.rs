@@ -497,7 +497,7 @@ impl IssuesView {
 
     fn set_open(&mut self, number: u64, open: bool, cx: &mut Context<Self>) {
         let now = issues::now();
-        self.change(
+        self.change_now(
             move |kept| kept.set_open(number, open, now).map(|()| Some(number)),
             cx,
         );

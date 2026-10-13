@@ -220,7 +220,11 @@ fn act_button(
     cx: &mut Context<IssuesView>,
 ) -> Button {
     let pressed = Pressed::of(act, number, doing);
-    let button = action(id).small().label(act.label());
+    let waits = doing
+        .work
+        .as_ref()
+        .is_some_and(|work| work.work.pressed == Some(act));
+    let button = action(id).small().label(act.label()).loading(waits);
     let button = match tooltip(act) {
         Some(tip) => button.tooltip(tip),
         None => button,
@@ -352,6 +356,12 @@ fn more_menu(
     let asks = doing.work.as_ref().is_some_and(|work| {
         work.work.active() || work.earlier.iter().any(|earlier| earlier.active)
     });
+    // What ⋯ holds and is still being read or done waits on ⋯ itself.
+    let waits = doing
+        .work
+        .as_ref()
+        .and_then(|work| work.work.pressed)
+        .is_some_and(|act| overflow.contains(&act));
     let overflow: Vec<(&'static str, bool, Pressed)> = overflow
         .into_iter()
         .map(|act| {
@@ -373,7 +383,7 @@ fn more_menu(
     let trigger = action("issue-more")
         .small()
         .quiet_icon(false, cx)
-        .loading(doing.publishing)
+        .loading(doing.publishing || waits)
         .icon(Icon::new(IconName::Ellipsis))
         .tooltip("More actions");
     // Named by the project and the issue, so a menu held open across a switch

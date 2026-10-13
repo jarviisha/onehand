@@ -14,6 +14,7 @@ use gpui::{App, Context, Window};
 use gpui_component::WindowExt as _;
 use onehand_core::connector::PrState;
 use onehand_core::task::Task;
+use onehand_core::task::work::Act;
 use onehand_core::worktree::removal::{self, Judged, Merged, Process};
 use std::path::{Path, PathBuf};
 
@@ -86,6 +87,11 @@ impl Shell {
         let Some(task) = crate::task::task(id, cx) else {
             return;
         };
+        // *Remove worktree…* waits wherever it is drawn until the judgement
+        // lands. ponytail: a window closed meanwhile leaves it waiting until
+        // the next press elsewhere; clear it from a drop guard if that bites.
+        crate::task::set_acting(id, Some(Act::RemoveWorktree), cx);
+        let id = id.to_string();
         let dir = task.setup.dir.clone();
         cx.spawn_in(window, async move |shell, cx| {
             let top = cx
@@ -106,6 +112,7 @@ impl Shell {
                 })
                 .await;
             let _ = shell.update_in(cx, |shell: &mut Self, window, cx| {
+                crate::task::set_acting(&id, None, cx);
                 done(shell, asked, facts, judged, window, cx)
             });
         })
@@ -179,6 +186,7 @@ impl Shell {
                         return;
                     }
                 };
+                crate::task::set_acting(&id, Some(Act::RemoveWorktree), cx);
                 cx.spawn_in(window, async move |_, cx| {
                     let done = cx
                         .background_executor()
@@ -188,6 +196,7 @@ impl Shell {
                         })
                         .await;
                     let _ = cx.update(|window, cx| {
+                        crate::task::set_acting(&id, None, cx);
                         if done.is_ok() {
                             crate::task::worktree_removed(&id, cx);
                         }

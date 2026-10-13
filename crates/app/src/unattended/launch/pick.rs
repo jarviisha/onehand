@@ -187,6 +187,7 @@ pub fn start_picked(
                 // window it was picked from is where the person is.
                 Err(why) => {
                     with(cx, |u| u.claiming = false);
+                    cx.refresh_windows();
                     warn(window, why, cx);
                     return;
                 }
@@ -239,6 +240,10 @@ pub fn look_now(window: gpui::AnyWindowHandle, cx: &mut App) {
     };
     match why_not {
         Some(why) => warn(window, why, cx),
-        None => tick(Some(window), cx),
+        None => {
+            tick(Some(window), cx);
+            // Its button waits while the look claims what it found.
+            cx.refresh_windows();
+        }
     }
 }
