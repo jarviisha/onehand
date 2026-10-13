@@ -261,7 +261,9 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
 - Hover and selection are fills: distinct steps on a row (`list_hover`, `accent`; the rail's own
   `sidebar_accent` and `rail_chosen`), one step on a ghost button (the selected one). Keyboard
   focus is the ring.
-- At most one primary in a view; a view needs none (the Settings page has none).
+- At most one primary in a view; a view needs none (the Settings page has none). Where layers
+  stack, what waits on the person holds it while it shows (a floating issue, an open form, a
+  pinned card, a run's approval), and what it covers steps down to `secondary`.
 - The palette is neutral: surfaces and inks carry next to no hue, so a hue on screen means
   something. A missing surface or ink goes into the ramp with its contrast asserted, never into
   one view; a step between two the ramp holds is mixed from them perceptually (`mix_oklab`), so
@@ -321,3 +323,9 @@ The whole list: any other departure from a rule above is a bug until agreed and 
   its own lift (`composer_lift`).
 - **A solid danger fill marks two buttons**: *Stop* in the composer, and the button confirming a
   removal inside its modal. Anywhere else a destructive action is a word in the danger tint.
+- **The composer's chips are quiet.** Its pickers (the model, the effort, the mode, *Fast*, the
+  branch) are `.small()` ghosts with a caret, not the filled trigger a picker takes elsewhere: a
+  fill on every chip would crowd the field they sit under.
+- **The library draws its own controls' states**: a refusing or loading button, a picker's caret,
+  a badge under the pointer and a switch's thumb keep the alpha or the motion it gives them, as
+  its overlays keep theirs.

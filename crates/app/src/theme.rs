@@ -150,8 +150,8 @@ const LIGHT: Ramp = Ramp {
     // Dark enough that a hovered row shows on a dock as well as on the surface:
     // a lighter tint vanished on the panel.
     hover: "#e8e8e8",
-    // Far enough past hover that a row both hovered and selected, thinned in
-    // the completion popup, still reads as selected.
+    // Far enough past hover that a row both hovered and selected still reads
+    // as selected.
     selected: "#d0d0d0",
     selected_ink: "#1f1f1f",
     // Its own step, darker than `hover`, so a marked rail row shows on the
@@ -1184,68 +1184,6 @@ mod tests {
             assert!(
                 on_picked >= AA,
                 "{name}: the middle ink on the selected fill is {on_picked:.2}, under {AA}"
-            );
-        }
-    }
-
-    /// A selected row drawn at partial opacity still has to be a selected row.
-    ///
-    /// **The one fill in the completion popup that carries meaning** — it says
-    /// where `Enter` will land, with no ring, no bar and no mark beside it. It
-    /// is drawn under 1.0 alpha because at full strength it read as a text
-    /// field holding the caret rather than as a row picked out of a list, and
-    /// thinning it is what takes that weight off.
-    ///
-    /// What that must not do is walk it into the hover step. A row can be
-    /// hovered and selected at once, and the reader has to be able to see which
-    /// of the two fills is telling them what the keyboard is pointing at. So
-    /// the comparison here is against the *composited* colour rather than
-    /// against `accent`, because the token the fill came from is no longer the
-    /// colour on the glass.
-    ///
-    /// **The light palette is what this is really guarding.** It has about 1.15
-    /// between white and the well to divide among every step, so its selected
-    /// and hover fills start far closer together than the dark palette's, and
-    /// thinning the selected one closes that gap several times faster. A number
-    /// chosen by eye in dark mode is a selection nobody can find in light mode.
-    #[test]
-    fn the_selection_stays_clear_of_hover() {
-        /// What the compositor puts on the glass for `fill` over `under`.
-        fn over(fill: Hsla, alpha: f32, under: Hsla) -> Hsla {
-            let (fill, under) = (gpui::Rgba::from(fill), gpui::Rgba::from(under));
-            let mix = |a: f32, b: f32| b + (a - b) * alpha;
-            gpui::Rgba {
-                r: mix(fill.r, under.r),
-                g: mix(fill.g, under.g),
-                b: mix(fill.b, under.b),
-                a: 1.,
-            }
-            .into()
-        }
-
-        for (name, ramp, mode) in [
-            ("light", &LIGHT, ThemeMode::Light),
-            ("dark", &DARK, ThemeMode::Dark),
-        ] {
-            let theme = resolve(ramp, mode);
-            let drawn = over(
-                theme.accent,
-                crate::chat::composer::SELECTED_ALPHA,
-                theme.popover,
-            );
-
-            let apart = contrast(drawn, theme.list_hover);
-            assert!(
-                apart >= ROW,
-                "{name}: the drawn selection is {apart:.2} from hover, which is not a difference"
-            );
-            assert!(
-                contrast(drawn, theme.popover) >= ROW,
-                "{name}: the drawn selection does not lift off the card it is on"
-            );
-            assert!(
-                contrast(theme.accent_foreground, drawn) >= AA,
-                "{name}: the ink on the drawn selection is not readable"
             );
         }
     }

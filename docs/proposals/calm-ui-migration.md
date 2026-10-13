@@ -338,8 +338,8 @@ rarer screens; saves last, as they move nothing on screen.
 
 ### 3. Composer (M)
 
-- The popup: `popup_row` on a solid `accent`, `list_hover` under the pointer, so a hovered row
-  never out-reads the chosen one; the middle ink mixed on the fill for a detail; `SELECTED_ALPHA`
+- The popup: `popup_row` on a solid `accent`; the pointer moves that fill as the arrows do, so
+  no hover step stands beside it; the middle ink mixed on the fill for a detail; `SELECTED_ALPHA`
   and its compositing test go. Row marks `.small()` in a `slot`, in their text's ink; a
   description beside a name in the middle ink in every list; the surface's edge `border`; its
   waiting and empty lines name their work and follow the pattern (*Looking for files…*, *No
@@ -354,7 +354,8 @@ rarer screens; saves last, as they move nothing on screen.
 - The lines above the card on the card's text axis (*N more requests wait*, the reconnect and
   queue lines); the reconnect hint muted; *Queued* without weight.
 - *Stop* shows `.loading(true)` from the press until the turn ends.
-- Keys: *Send*'s tooltip shows Enter as a `Kbd`; the mode chip's tooltip its cycling key.
+- Keys: the mode chip's tooltip shows its cycling key. *Send*'s Enter is the field's own key, not
+  a keymap command, so its tooltip keeps saying it in words.
 - Words: the effort's qualifier in sentence case; the `/` list's title and the `+` menu's row
   say the same thing.
 - Contract: DESIGN *Exceptions* (decision 6), *Components* (the popup's rows).

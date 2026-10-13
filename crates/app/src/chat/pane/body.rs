@@ -81,7 +81,8 @@ impl ChatPane {
             .collect();
         pinned.extend((waiting > 0).then(|| {
             div()
-                .px_3()
+                // On the composer's text edge, as the lines under it are.
+                .px_1p5()
                 .text_xs()
                 .text_color(cx.theme().muted_foreground)
                 .child(match waiting {
@@ -142,7 +143,7 @@ impl ChatPane {
                     div()
                         .flex_none()
                         .text_xs()
-                        .text_color(crate::theme::meta_ink(cx))
+                        .text_color(cx.theme().muted_foreground)
                         .child("Send waits until it is up"),
                 ),
         )
@@ -171,7 +172,6 @@ impl ChatPane {
                     div()
                         .flex_none()
                         .text_xs()
-                        .font_medium()
                         .text_color(muted)
                         .child("Queued"),
                 )

@@ -53,7 +53,7 @@ fn the_pinned_header_names_what_the_popup_is() {
     );
     assert_eq!(
         popup_title(&Overlay::Completion, Some(TriggerKind::Command), &[]),
-        "Run a command"
+        "Run a slash command"
     );
     // One group: the list takes its name, and the heading that repeated it
     // is dropped by the caller.

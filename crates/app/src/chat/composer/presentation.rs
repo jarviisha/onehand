@@ -289,7 +289,7 @@ pub(super) fn options_action(session: &Entity<ChatSession>, cx: &App) -> Option<
 }
 
 /// The effort in force, as its chip beside the model's says it: the qualifier
-/// in lower case, so the two read as a name and what it is run at. `None`
+/// in the middle ink, so the two read as a name and what it is run at. `None`
 /// where the group has no chip of its own.
 pub(super) fn effort_action(session: &Entity<ChatSession>, cx: &App) -> Option<SharedString> {
     let options = &session.read(cx).chat.config_options;
@@ -298,8 +298,8 @@ pub(super) fn effort_action(session: &Entity<ChatSession>, cx: &App) -> Option<S
         .find(|option| has_own_chip(option))
         .map(|option| {
             in_force(option)
-                .map(|choice| SharedString::from(choice.name.to_lowercase()))
-                .unwrap_or_else(|| SharedString::from("effort"))
+                .map(|choice| SharedString::from(choice.name.clone()))
+                .unwrap_or_else(|| SharedString::from("Effort"))
         })
 }
 
