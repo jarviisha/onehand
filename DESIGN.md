@@ -244,13 +244,12 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   pixels, and the terminal's grid, which zooms on its own. Fixed chrome heights stay outside the
   zoom wrapper. A size the steps lack is a named constant (shared ones in
   `onehand_plugin_host::tokens`, others beside their use), its reason in its doc comment.
-- **Corners by role**: `radius_tokens().sm` for what is pressed, picked, typed into or lifted out by
-  a fill (a control, a row such as the rail's selected project or session, a tab, a chip); the
-  control wrappers set it. `radius` for a block read inside a column (a well, code, a diff, a
-  notice). `radius_lg` for a box standing on its own (a page's box, a table, the bubble, the
-  composer, the terminal, a floating panel, a dialog, a toast) and for a badge (a `Tag`).
-  `rounded_full` for a dot. A part joined to its container's edge takes its corner there; the
-  library's menus keep `radius`.
+- **One corner**: `radius`, 3px (`tokens::CORNER`), for everything: a control, a field, a row,
+  a tab, a chip, a well, the bubble, a box, the composer, the terminal, a floating panel, a
+  dialog, a toast. The theme sets `radius_lg` to the same, so the library's own surfaces follow.
+  Two exceptions: a badge (a `Tag`) keeps a rounder `tokens::BADGE_CORNER`, so it reads as a tag
+  rather than a button, and a dot or a status mark is `rounded_full`. A part joined to its
+  container's edge takes its corner there.
 - **Lines** are a 1px `border`; the mark under an open tab is 2px.
 
 ## Colour and state

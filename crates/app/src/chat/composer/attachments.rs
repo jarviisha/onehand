@@ -177,7 +177,7 @@ impl Composer {
             cx.theme().border,
             cx.theme().muted_foreground,
             crate::theme::status_ink(cx).danger,
-            cx.theme().radius_tokens().sm,
+            cx.theme().radius,
         );
         // An unreadable file's edge in the state's ink, as its name is.
         let danger_border = danger_text;

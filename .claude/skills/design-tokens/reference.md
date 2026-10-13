@@ -102,16 +102,15 @@ are not steps and stay allowed. A named spacing constant (`BLOCK_GAP`, `TIGHT_GA
 
 | Write | px |
 |---|---|
-| `cx.theme().radius_tokens().sm` | 3 |
-| `cx.theme().radius` | 6 |
-| `cx.theme().radius_lg` | 8 |
+| `cx.theme().radius` | 3 (`tokens::CORNER`) |
+| `tokens::BADGE_CORNER` | 8, a badge only |
 | `.rounded_full()` | round |
 
-The library's controls apply their own: tooltips, menus and popovers `radius`; checkboxes and `Kbd`
-`sm`; dialogs and toasts `radius_lg`. Overridden where they are built: a button (`action`) and a
-text field (`text_input`, `search_input`, `text_area`) take `sm` rather than the library's `radius`,
-as does every row, tab and chip the app draws (`tab_chip`, the rail's and Settings' rows, picker and
-file rows); a `Tag` takes `radius_lg` through `.rounded(cx.theme().radius_lg)` after `.small()`.
+The theme sets `radius` and `radius_lg` both to `tokens::CORNER`, so the library's tooltips, menus,
+popovers, dialogs and toasts take the one corner too. What the library draws at half its corner
+(`radius_tokens().sm`: checkboxes, `Kbd`, its tabs) comes out at 1.5px and is left to it. A button
+(`action`, `ButtonRounded::Medium`) and a text field (`text_input`, `search_input`, `text_area`)
+set `radius` where they are built; a `Tag` takes `BADGE_CORNER` through `badge`.
 
 ## Elevation
 

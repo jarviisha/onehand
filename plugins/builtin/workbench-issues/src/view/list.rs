@@ -565,7 +565,7 @@ impl IssuesView {
             .w_full()
             .px_2()
             .py_1p5()
-            .rounded(theme.radius_tokens().sm)
+            .rounded(theme.radius)
             .cursor_pointer()
             // A selection is a fill and only a fill: the selected step, which
             // the ramp holds clear of the hover step, so a row that is both
@@ -626,14 +626,14 @@ pub(super) fn chip(label: String, cx: &App) -> Tag {
         LabelKind::Docs => tint(theme.yellow, cx),
         LabelKind::Report => tint(theme.cyan, cx),
     };
-    tag(label, kind, cx)
+    tag(label, kind)
 }
 
 /// A tag that is not a label (the *Draft* mark, a project's name), always
 /// neutral, so a name that happens to read like a label is never drawn as
 /// one.
 pub(super) fn plain_tag(text: String, cx: &App) -> Tag {
-    tag(text, neutral(cx), cx)
+    tag(text, neutral(cx))
 }
 
 /// The tint a tag takes when it says nothing about state.
@@ -647,10 +647,10 @@ fn neutral(cx: &App) -> Tint {
 
 /// The library's small label on `fill`, edged in the same fill so it reads as
 /// one shape round the word.
-fn tag(text: String, Tint { fill, ink }: Tint, cx: &App) -> Tag {
+fn tag(text: String, Tint { fill, ink }: Tint) -> Tag {
     Tag::custom(fill, ink, fill)
         .small()
-        .rounded(cx.theme().radius_lg)
+        .rounded(onehand_plugin_host::tokens::BADGE_CORNER)
         .flex_none()
         .child(text)
 }

@@ -638,10 +638,9 @@ mod tests {
         }
     }
 
-    /// The library draws a text field, one line or several, at the theme's
-    /// full corner, the one rows and blocks keep, on a fill of its own; a field
-    /// here takes a control's small corner on the surface it sits on, so it and
-    /// the button beside it are one shape. The wrapper sets it, and like the
+    /// The library draws a text field, one line or several, on a fill of its
+    /// own; a field here takes the theme's corner on the surface it sits on, so
+    /// it and the button beside it are one shape. The wrapper sets it, and like the
     /// button's it is one line to bypass with code that looks ordinary.
     #[test]
     fn every_text_field_goes_through_the_wrapper() {
@@ -1273,6 +1272,29 @@ mod tests {
             sources,
             thinned,
             "an alpha on a colour; mix the step into the ramp instead",
+        );
+    }
+
+    /// One corner: the theme's `radius`. `radius_lg` is set to the same and
+    /// `radius_tokens().sm` is half of it, so writing either is a second
+    /// corner by another name.
+    #[test]
+    fn one_corner() {
+        // The palette is where the theme's two corners are set to one.
+        let sources = ui_sources()
+            .into_iter()
+            .filter(|(path, _)| !path.ends_with("crates/app/src/theme.rs"))
+            .collect();
+        forbid(
+            sources,
+            |line| {
+                ["radius_lg", "radius_tokens().sm"]
+                    .iter()
+                    .filter(|name| line.contains(*name))
+                    .map(|name| name.to_string())
+                    .collect()
+            },
+            "a second corner; every box takes `radius`, a badge `tokens::BADGE_CORNER`",
         );
     }
 

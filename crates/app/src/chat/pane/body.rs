@@ -495,7 +495,7 @@ impl ChatPane {
                                     // scrolling beneath cannot show through
                                     // its corners.
                                     div()
-                                        .rounded(cx.theme().radius_lg)
+                                        .rounded(cx.theme().radius)
                                         .bg(cx.theme().popover.alpha(1.))
                                         .shadow(crate::tokens::lift(cx))
                                         .child(
@@ -507,7 +507,7 @@ impl ChatPane {
                                             crate::controls::action("to-bottom")
                                                 .quiet(cx)
                                                 .small()
-                                                .rounded(cx.theme().radius_lg)
+                                                .rounded(cx.theme().radius)
                                                 .icon(Icon::new(IconName::ChevronDown))
                                                 .tooltip("Jump to the latest activity")
                                                 .on_click(cx.listener(

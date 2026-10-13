@@ -386,6 +386,10 @@ pub(crate) fn install(cx: &mut App) {
     for config in [&mut light, &mut dark] {
         config.font_family = Some(crate::fonts::UI_FAMILY.into());
         config.mono_font_family = Some(crate::fonts::MONO_FAMILY.into());
+        // One corner for everything, large surfaces too; a badge keeps its
+        // own, set where it is drawn.
+        config.radius = Some(crate::tokens::CORNER);
+        config.radius_lg = Some(crate::tokens::CORNER);
     }
 
     let theme = Theme::global_mut(cx);

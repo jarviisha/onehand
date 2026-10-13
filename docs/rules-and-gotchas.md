@@ -103,6 +103,7 @@ Review the uncovered part when changing the relevant area:
 | Type on the scale | Finds `text_2xl` and above, bold and heavier, and `text_size(rems(` with a number | A size or weight reached through a named constant or a style refinement |
 | Nothing animates | Finds `with_animation(` and `Animation::new(` | Motion through a library component other than a `Spinner` |
 | Nothing see-through | Finds `.opacity(`, `.fade_out(` and an `.alpha(` other than `alpha(0.)` and `alpha(1.)` outside the palette's shadows | An alpha written into a colour some other way |
+| One corner | Finds `radius_lg` and `radius_tokens().sm` in UI sources | A corner written as a number in a `const`, and `ButtonRounded` other than `Medium` |
 | Theme, bounded rendering, module size and UI contract | Dedicated tests cover individual behaviours | No general guard proves these rules or synchronizes documentation with code |
 
 Keep the checks that catch real regressions. Add a targeted check when a concrete failure

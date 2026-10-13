@@ -401,7 +401,7 @@ fn file_row(
             .gap_2()
             .min_w_0()
             .px_1()
-            .rounded(cx.theme().radius_tokens().sm)
+            .rounded(cx.theme().radius)
             .font_family(cx.theme().mono_font_family.clone())
             .child(
                 div()

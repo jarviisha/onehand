@@ -416,7 +416,7 @@ fn page_row<F: Fn(&mut Shell, &mut Window, &mut Context<Shell>) + 'static>(
         .h(ROW_H)
         .px_2()
         .gap_2()
-        .rounded(cx.theme().radius_tokens().sm)
+        .rounded(cx.theme().radius)
         .cursor_pointer()
         .when(on, |d| {
             d.bg(row::chosen_fill(cx))
@@ -439,7 +439,7 @@ fn page_row<F: Fn(&mut Shell, &mut Window, &mut Context<Shell>) + 'static>(
         )
         .child(mark_slot(icon.small()))
         .child(div().flex_1().child(label))
-        .children(count.map(|n| badge(n, rail_badge(cx.theme().secondary_foreground, cx), cx)))
+        .children(count.map(|n| badge(n, rail_badge(cx.theme().secondary_foreground, cx))))
 }
 
 /// A badge in the rail: sunk on the ramp's inset step, which stands off the
@@ -531,7 +531,7 @@ fn add_project(cx: &mut Context<Shell>) -> AnyElement {
         .mt_3()
         .px_2()
         .gap_2()
-        .rounded(cx.theme().radius_tokens().sm)
+        .rounded(cx.theme().radius)
         .cursor_pointer()
         .hover(move |d| d.bg(hover))
         .text_color(cx.theme().muted_foreground)

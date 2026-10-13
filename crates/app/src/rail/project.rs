@@ -456,7 +456,7 @@ pub(super) fn project_row(
     let (rest, hovered) = row_surfaces(chosen, cx);
     let (name_ink, meta_ink) = row_inks(chosen, cx);
     let (shell, hover) = (cx.entity().downgrade(), hover_fill(cx));
-    let radius = cx.theme().radius_tokens().sm;
+    let radius = cx.theme().radius;
     let (badge_ink, warning) = (
         cx.theme().secondary_foreground,
         crate::theme::status_ink(cx).warning,
@@ -557,7 +557,7 @@ pub(super) fn project_row(
                 .when_some(auto, |row, auto| {
                     let target = shell.clone();
                     let ink = if auto.stuck { warning } else { badge_ink };
-                    let pill = badge(auto.badge, super::rail_badge(ink, cx), cx);
+                    let pill = badge(auto.badge, super::rail_badge(ink, cx));
                     row.child(match pill_issue {
                         Some(number) => labelled(
                             ("project-auto-name", root_idx),

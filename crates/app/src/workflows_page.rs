@@ -198,7 +198,7 @@ fn list(
                         row.child(
                             Tag::secondary()
                                 .small()
-                                .rounded(cx.theme().radius_lg)
+                                .rounded(crate::tokens::BADGE_CORNER)
                                 .child("Built in"),
                         )
                     })

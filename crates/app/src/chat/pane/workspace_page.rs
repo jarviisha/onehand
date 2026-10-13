@@ -771,7 +771,7 @@ pub(super) fn card_box(cx: &App) -> Div {
         .gap_2()
         .min_w_0()
         .p_3()
-        .rounded(cx.theme().radius_lg)
+        .rounded(cx.theme().radius)
         .border_1()
         .border_color(cx.theme().border)
 }

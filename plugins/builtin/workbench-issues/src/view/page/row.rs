@@ -167,7 +167,7 @@ pub(super) fn page_row(
             )
         });
 
-    let radius = theme.radius_lg;
+    let radius = theme.radius;
     let line = div()
         .h_flex()
         .items_center()
@@ -272,7 +272,7 @@ pub(super) fn columns_head(columns: bool, cx: &mut Context<IssuesView>) -> AnyEl
         .py_1p5()
         .border_1()
         .border_color(theme.border)
-        .rounded_t(theme.radius_lg)
+        .rounded_t(theme.radius)
         .bg(theme.muted)
         .text_xs()
         .text_color(theme.muted_foreground)

@@ -260,7 +260,7 @@ pub(super) fn session_row(
         // column, so a chosen row carries no empty band on its left.
         .when(!flat, |d| d.ml(super::INDENT))
         .px_2()
-        .rounded(cx.theme().radius_tokens().sm)
+        .rounded(cx.theme().radius)
         .cursor_pointer()
         .when(chosen, |d| d.bg(super::row::chosen_fill(cx)))
         .when(!chosen, |d| d.hover(move |d| d.bg(hover)))

@@ -229,7 +229,7 @@ fn doc_row(
         .w_full()
         .h(tokens::ROW_H)
         .px_1()
-        .rounded(cx.theme().radius_tokens().sm)
+        .rounded(cx.theme().radius)
         .text_sm()
         .cursor_pointer()
         .when(selected, |row| row.bg(cx.theme().accent))

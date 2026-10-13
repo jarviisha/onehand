@@ -460,7 +460,7 @@ fn ratio_bar(file: &onehand_core::chat::FileChange, cx: &App) -> gpui::Div {
         .items_center()
         .w(RATIO_W)
         .h(RATIO_H)
-        .rounded(cx.theme().radius_tokens().sm)
+        .rounded(cx.theme().radius)
         .overflow_hidden()
         .bg(cx.theme().border)
         .children((file.added > 0).then(|| div().h_full().w(share(file.added)).bg(status.success)))

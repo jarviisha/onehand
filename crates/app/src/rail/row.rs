@@ -62,7 +62,7 @@ pub(super) fn key_ring(cx: &App) -> Div {
     div()
         .absolute()
         .inset_0()
-        .rounded(cx.theme().radius_tokens().sm)
+        .rounded(cx.theme().radius)
         .border_1()
         .border_color(cx.theme().ring)
 }
@@ -221,7 +221,7 @@ impl Render for DragGhost {
         div()
             .px_2()
             .py_0p5()
-            .rounded(cx.theme().radius_tokens().sm)
+            .rounded(cx.theme().radius)
             .bg(chosen_fill(cx))
             .text_sm()
             .text_color(cx.theme().sidebar_accent_foreground)

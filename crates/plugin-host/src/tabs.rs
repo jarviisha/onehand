@@ -137,7 +137,7 @@ pub fn tab_chip(
         // size, so a tab took the panel's reading size and stood a step above
         // the buttons beside it.
         .text_sm()
-        .rounded(theme.radius_tokens().sm)
+        .rounded(theme.radius)
         .cursor_pointer()
         .text_color(match chosen {
             true => theme.accent_foreground,

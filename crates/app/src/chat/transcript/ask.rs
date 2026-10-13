@@ -106,7 +106,7 @@ fn ask_choice_mark(on: bool, single: bool, cx: &App) -> impl IntoElement + use<>
         true => cx.theme().foreground,
         false => cx.theme().muted_foreground,
     };
-    let corner = cx.theme().radius_tokens().sm;
+    let corner = cx.theme().radius;
     div()
         .flex_none()
         .size(ASK_CHOICE_MARK)

@@ -89,7 +89,7 @@ impl Composer {
             .p_1p5()
             .bg(crate::theme::raised(cx))
             .shadow(lift.clone())
-            .rounded(cx.theme().radius_lg)
+            .rounded(cx.theme().radius)
             // Held always, so `Ctrl+V` can be taken from the input wherever the
             // caret is in the prompt. The list context below is the one that
             // comes and goes.

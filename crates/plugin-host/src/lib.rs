@@ -58,10 +58,9 @@ pub type RemoteChannelFactory = fn(String) -> Box<dyn onehand_core::remote::type
 /// `cursor_default`, so setting the cursor here wins — which is the whole reason
 /// this can be a wrapper rather than a fork of the control.
 ///
-/// **It also sets the small corner**, half the theme's: a control is pressed
-/// or typed into, and the tighter corner tells it apart from the rows, chips
-/// and blocks around it, which keep the theme's. Here, because every button
-/// passes through here and nowhere else.
+/// **It also sets the theme's corner**, the one every box, row and field
+/// takes: the library's buttons default to it, but a size can change it, and
+/// every button passes through here and nowhere else.
 ///
 /// **It lives here rather than in the app** because a built-in plugin draws
 /// buttons too and cannot reach into the binary that hosts it. A second copy in
@@ -72,21 +71,20 @@ pub type RemoteChannelFactory = fn(String) -> Box<dyn onehand_core::remote::type
 pub fn action(id: impl Into<ElementId>) -> Button {
     Button::new(id)
         .cursor_pointer()
-        .rounded(ButtonRounded::Small)
+        .rounded(ButtonRounded::Medium)
 }
 
-/// A text field at a control's corner, on no fill of its own: the small
-/// corner [`action`] gives a button, so a field and the button beside it are
-/// one shape, and the surface it sits on, so its edge alone marks it. The
-/// library draws a field at the theme's full corner, the one rows and blocks
-/// keep, on a fill it derives from the control edge rather than from where
-/// the field sits.
+/// A text field at the theme's corner, on no fill of its own: the corner
+/// [`action`] gives a button, so a field and the button beside it are one
+/// shape, and the surface it sits on, so its edge alone marks it. The library
+/// draws a field on a fill it derives from the control edge rather than from
+/// where the field sits.
 ///
 /// Here rather than in the app for the reason [`action`] is: a plugin draws
 /// fields too, and one wrapper is one place for the corner to hold.
 pub fn text_input(state: &Entity<InputState>, cx: &App) -> Input {
     Input::new(state)
-        .rounded(cx.theme().radius_tokens().sm)
+        .rounded(cx.theme().radius)
         .bg(cx.theme().transparent)
 }
 
@@ -342,11 +340,11 @@ pub fn mark_slot(mark: impl IntoElement) -> Div {
 }
 
 /// A small label on a fill, the shape every badge takes: the library's `Tag`
-/// at its small size, on the large corner, in the `tint`'s fill and ink.
-pub fn badge(text: impl Into<SharedString>, tint: Tint, cx: &App) -> gpui_component::tag::Tag {
+/// at its small size, on [`tokens::BADGE_CORNER`], in the `tint`'s fill and ink.
+pub fn badge(text: impl Into<SharedString>, tint: Tint) -> gpui_component::tag::Tag {
     gpui_component::tag::Tag::custom(tint.fill, tint.ink, tint.fill)
         .small()
-        .rounded(cx.theme().radius_lg)
+        .rounded(crate::tokens::BADGE_CORNER)
         .child(text.into())
 }
 
@@ -425,12 +423,12 @@ pub fn search_input(state: &Entity<InputState>, cx: &App) -> Input {
 }
 
 /// A field of several lines, on the corner and the surface [`text_input`]
-/// gives a field of one: the library draws a textarea at the theme's full
-/// corner on a fill of its own, and beside a single-line field in the same
+/// gives a field of one: the library draws a textarea on a fill of its own,
+/// and beside a single-line field in the same
 /// form the two read as different controls.
 pub fn text_area(state: &Entity<TextareaState>, cx: &App) -> Textarea {
     Textarea::new(state)
-        .rounded(cx.theme().radius_tokens().sm)
+        .rounded(cx.theme().radius)
         .bg(cx.theme().transparent)
 }
 

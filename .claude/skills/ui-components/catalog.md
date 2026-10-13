@@ -24,14 +24,14 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 
 | Need | Use | Where |
 |---|---|---|
-| Any button | `action` (sets the pointer and the control's `sm` corner) | `crates/app/src/controls.rs` (the app), `crates/plugin-host/src/lib.rs` (a plugin) |
-| Any text field | `text_input(&state, cx)` (sets the control's `sm` corner, on no fill of its own) | `crates/app/src/controls.rs` (the app), `crates/plugin-host/src/lib.rs` (a plugin) |
+| Any button | `action` (sets the pointer and the theme's corner) | `crates/app/src/controls.rs` (the app), `crates/plugin-host/src/lib.rs` (a plugin) |
+| Any text field | `text_input(&state, cx)` (sets the theme's corner, on no fill of its own) | `crates/app/src/controls.rs` (the app), `crates/plugin-host/src/lib.rs` (a plugin) |
 | A search field | `search_input(&state, cx)`: a `text_input` with the search mark and the clear button; the caller sizes it | `crates/plugin-host/src/lib.rs`, re-exported by `crates/app/src/controls.rs` |
 | A field of several lines | `text_area(&state, cx)`: the library's `Textarea` on a field's corner and surface | `crates/plugin-host/src/lib.rs`, re-exported by `crates/app/src/controls.rs` |
 | A control at a dialog's or a form's scale | `.tall()` (the `Tall` trait, for a button or a field; re-exported by `crates/app/src/controls.rs`) | `crates/plugin-host/src/lib.rs` |
 | A ghost button | `.quiet(cx)`; an icon with no words `.quiet_icon(on, cx)`, muted at rest and in its fill's ink when hovered or `on` (the `Quiet` trait, re-exported by `crates/app/src/controls.rs`) | `crates/plugin-host/src/lib.rs` |
 | A button that can refuse | `.refuses(why)`: refusing while `why` is `Some`, its reason the tooltip; called after the control's own tooltip (the `Refuses` trait, re-exported by `crates/app/src/controls.rs`) | `crates/plugin-host/src/lib.rs` |
-| A small label, a badge | `badge(text, tint, cx)`: the library's `Tag` at `.small()` on the large corner, in a `Tint`'s fill and ink (`tint(base, cx)` for a hue) | `crates/plugin-host/src/lib.rs` |
+| A small label, a badge | `badge(text, tint)`: the library's `Tag` at `.small()` on `tokens::BADGE_CORNER`, in a `Tint`'s fill and ink (`tint(base, cx)` for a hue) | `crates/plugin-host/src/lib.rs` |
 | A mark down a column (an icon, a state's mark, a dot) | `mark_slot(mark)`: one icon wide, centred, so marks share a line and labels an edge | `crates/plugin-host/src/lib.rs` |
 | A menu, its rows, a menu under its control | `menu_item`, `menu_row`, `menu_below`; `menu_command(label, action)` for a row that runs a keymap command and shows its key | `crates/plugin-host/src/menu.rs` |
 | A strip along the top of a region, and its icon control | `strip(cx)`, `strip_control(id, icon, on, cx)` | `crates/plugin-host/src/strip.rs` |

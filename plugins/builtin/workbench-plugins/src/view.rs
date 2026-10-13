@@ -562,7 +562,7 @@ impl PluginsView {
                     .child(
                         div()
                             .v_flex()
-                            .rounded(cx.theme().radius_lg)
+                            .rounded(cx.theme().radius)
                             .border_1()
                             .border_color(cx.theme().border)
                             .overflow_hidden()

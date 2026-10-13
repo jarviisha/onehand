@@ -296,7 +296,7 @@ fn rail(search: &Entity<InputState>, cx: &App) -> impl IntoElement {
                 .child(
                     Tag::custom(theme.transparent, status_ink(cx).warning, theme.transparent)
                         .small()
-                        .rounded(theme.radius_lg)
+                        .rounded(onehand_plugin_host::tokens::BADGE_CORNER)
                         .child("2 need attention"),
                 ),
         )
@@ -344,7 +344,7 @@ fn rail(search: &Entity<InputState>, cx: &App) -> impl IntoElement {
                         .h_flex()
                         .items_center()
                         .gap_2()
-                        .rounded(theme.radius_tokens().sm)
+                        .rounded(theme.radius)
                         .cursor_pointer()
                         .text_color(theme.muted_foreground)
                         .hover(|s| s.bg(cx.theme().sidebar_accent))
@@ -430,7 +430,7 @@ fn nav_row(
         .h_flex()
         .items_center()
         .gap_2()
-        .rounded(theme.radius_tokens().sm)
+        .rounded(theme.radius)
         .cursor_pointer()
         .text_color(match chosen {
             true => theme.accent_foreground,
@@ -447,7 +447,7 @@ fn count_pill(n: usize, cx: &App) -> AnyElement {
     let theme = cx.theme();
     Tag::custom(theme.secondary, theme.secondary_foreground, theme.secondary)
         .small()
-        .rounded(theme.radius_lg)
+        .rounded(onehand_plugin_host::tokens::BADGE_CORNER)
         .child(n.to_string())
         .into_any_element()
 }
@@ -463,7 +463,7 @@ fn project_row(name: &'static str, branch: &'static str, open: bool, cx: &App) -
         .h_flex()
         .items_center()
         .gap_2()
-        .rounded(theme.radius_tokens().sm)
+        .rounded(theme.radius)
         .cursor_pointer()
         .hover(move |s| s.bg(hover))
         .child(slot(
@@ -537,7 +537,7 @@ fn session_row(
         .px_1p5()
         .py_1()
         .v_flex()
-        .rounded(theme.radius_tokens().sm)
+        .rounded(theme.radius)
         .cursor_pointer()
         .when(chosen, |row| {
             row.bg(theme.accent).text_color(theme.accent_foreground)
@@ -610,7 +610,7 @@ fn label_tag(name: &'static str, h: Hue, cx: &App) -> impl IntoElement {
     let t = tint(hue(h, cx), cx);
     Tag::custom(t.fill, t.ink, t.fill)
         .small()
-        .rounded(cx.theme().radius_lg)
+        .rounded(cx.theme().radius)
         .child(name)
 }
 
@@ -731,7 +731,7 @@ fn table(cx: &App) -> impl IntoElement {
         .child(
             div()
                 .v_flex()
-                .rounded(theme.radius_lg)
+                .rounded(theme.radius)
                 .border_1()
                 .border_color(theme.border)
                 .overflow_hidden()
@@ -867,7 +867,7 @@ fn floating_issue(issue: &Issue, cx: &App) -> impl IntoElement {
         .bg(theme.popover)
         .border_1()
         .border_color(theme.border)
-        .rounded(theme.radius_lg)
+        .rounded(theme.radius)
         .shadow(lift(cx))
         .overflow_hidden()
         .text_sm()
@@ -1032,13 +1032,13 @@ fn issue_tags(issue: &Issue, cx: &App) -> impl IntoElement {
         .child(
             Tag::custom(state.fill, state.ink, state.fill)
                 .small()
-                .rounded(theme.radius_lg)
+                .rounded(onehand_plugin_host::tokens::BADGE_CORNER)
                 .child(state_word(issue.state)),
         )
         .child(
             Tag::custom(theme.secondary, theme.secondary_foreground, theme.secondary)
                 .small()
-                .rounded(theme.radius_lg)
+                .rounded(onehand_plugin_host::tokens::BADGE_CORNER)
                 .child("onehand-gpui"),
         )
         .children(issue.labels.iter().map(|(name, h)| label_tag(name, *h, cx)))

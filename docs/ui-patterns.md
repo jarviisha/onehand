@@ -164,14 +164,14 @@ A page that has a head and filters draws them in one order, the Issues page's:
 
 ### Boxes
 
-A box groups the facts about one thing on a page: a hairline at `radius_lg`, padded `p_3`, its
+A box groups the facts about one thing on a page: a hairline at `radius`, padded `p_3`, its
 parts `gap_2` apart (`card_box`). Its title row (`card_title`) holds the title in semibold, a
 muted count, and at most one control at the end, at a fixed height so boxes side by side line up.
 Boxes sit side by side while the measured column holds two, and stack when it does not.
 
 ### Lists
 
-A single-line row is `ROW_H` tall, padded `px_2` with `gap_2`, at `radius_tokens().sm`. Hover fills it with
+A single-line row is `ROW_H` tall, padded `px_2` with `gap_2`, at `radius`. Hover fills it with
 `list_hover`, the selected row with `accent`. A row's own actions are `.small()` ghost buttons, shown
 on hover and on the selected row; `.xsmall()` only for one inside the row's line of meta text. Every list has a named cap, and its last line says how many more
 there are, in meta text. A table is a box of rows split by hairlines, under a head row in meta text.

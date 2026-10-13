@@ -54,24 +54,18 @@ passing a scan alone is not completion. Documentation-only work follows that ski
 ```
 
 ```rust
-// Wrong: a standing box at a block's corner
-.rounded(cx.theme().radius)
-// Right
+// Wrong: a corner of its own, or the library's half step
 .rounded(cx.theme().radius_lg)
+.rounded(cx.theme().radius_tokens().sm)
+// Right: the one corner
+.rounded(cx.theme().radius)
 ```
 
 ```rust
-// Wrong: a selected row at a block's corner
-.rounded(cx.theme().radius).bg(chosen_fill(cx))
-// Right: what a fill lifts out takes the small corner
-.rounded(cx.theme().radius_tokens().sm).bg(chosen_fill(cx))
-```
-
-```rust
-// Wrong: a badge at the library's small-tag corner
+// Wrong: a badge at the library's small-tag corner, or the common one
 Tag::custom(fill, ink, fill).small().child(text)
-// Right: a badge stands at the large corner
-Tag::custom(fill, ink, fill).small().rounded(cx.theme().radius_lg).child(text)
+// Right: a badge keeps its rounder corner (or call `badge`)
+Tag::custom(fill, ink, fill).small().rounded(tokens::BADGE_CORNER).child(text)
 ```
 
 ```rust

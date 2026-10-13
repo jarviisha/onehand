@@ -353,7 +353,7 @@ pub(crate) fn issue_row(
         .children(labels.iter().take(3).map(|label| {
             Tag::custom(fill, ink, fill)
                 .small()
-                .rounded(cx.theme().radius_lg)
+                .rounded(crate::tokens::BADGE_CORNER)
                 .flex_none()
                 .child(label.clone())
         }))
@@ -396,7 +396,7 @@ fn row_shell(
 ) -> gpui::Stateful<gpui::Div> {
     let (muted, radius, hover) = (
         cx.theme().muted_foreground,
-        cx.theme().radius_tokens().sm,
+        cx.theme().radius,
         cx.theme().list_hover,
     );
     div()

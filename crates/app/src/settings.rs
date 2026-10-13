@@ -144,7 +144,7 @@ pub(crate) fn page_head(
                 .child(
                     Tag::secondary()
                         .small()
-                        .rounded(cx.theme().radius_lg)
+                        .rounded(crate::tokens::BADGE_CORNER)
                         .child(scope.into()),
                 ),
         )
@@ -306,7 +306,7 @@ fn nav_row(page: SettingsPage, current: SettingsPage, handle: &Entity<Shell>, cx
         cx.theme().accent_foreground,
         cx.theme().muted_foreground,
         cx.theme().list_hover,
-        cx.theme().radius_tokens().sm,
+        cx.theme().radius,
     );
     let handle = handle.clone();
     let selected = page == current;

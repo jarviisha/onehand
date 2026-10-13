@@ -68,7 +68,7 @@ fn chip(text: String, warn: bool, cx: &App) -> AnyElement {
     Tag::custom(ink, ink, edge)
         .outline()
         .small()
-        .rounded(cx.theme().radius_lg)
+        .rounded(onehand_plugin_host::tokens::BADGE_CORNER)
         .child(text)
         .into_any_element()
 }

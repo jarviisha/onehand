@@ -113,7 +113,7 @@ div().h_flex().items_center().gap_2().child(Switch::new("keep").small()).child(f
 // Wrong: a label drawn by hand
 div().px(CHIP_PAD_X).py(CHIP_PAD_Y).rounded(cx.theme().radius).bg(fill).text_color(ink)
 // Right: the library's label, at a badge's corner
-Tag::custom(tint.fill, tint.ink, tint.fill).small().rounded(cx.theme().radius_lg).child(text)
+Tag::custom(tint.fill, tint.ink, tint.fill).small().rounded(tokens::BADGE_CORNER).child(text)
 ```
 
 ```rust

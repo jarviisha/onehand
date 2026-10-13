@@ -135,7 +135,7 @@ impl IssuesView {
                 }
             })
             .v_flex()
-            .rounded(theme.radius_lg)
+            .rounded(theme.radius)
             .border_1()
             .border_color(theme.border)
             .bg(theme.popover)

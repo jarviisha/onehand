@@ -144,7 +144,7 @@ impl RenderOnce for Prompt {
                     // **Even corners, the well's fill and no edge.** The side
                     // it sits on already says whose words these are; the fill
                     // only has to set them off the page.
-                    .rounded(cx.theme().radius_lg)
+                    .rounded(cx.theme().radius)
                     .bg(cx.theme().muted)
                     .text_color(cx.theme().foreground)
                     .child(prompt_text(&self.text, cx)),

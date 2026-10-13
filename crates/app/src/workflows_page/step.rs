@@ -269,7 +269,7 @@ pub(super) fn step_box(
         .gap_3()
         .w_full()
         .p_3()
-        .rounded(cx.theme().radius_lg)
+        .rounded(cx.theme().radius)
         .border_1()
         .border_color(cx.theme().border)
         .child(head)

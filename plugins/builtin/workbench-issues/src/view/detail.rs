@@ -342,7 +342,7 @@ fn state_badge(open: bool, cx: &App) -> Tag {
     };
     Tag::custom(fill, ink, fill)
         .small()
-        .rounded(cx.theme().radius_lg)
+        .rounded(onehand_plugin_host::tokens::BADGE_CORNER)
         .flex_none()
         .gap_1()
         .child(icon.xsmall())
@@ -563,7 +563,7 @@ fn referenced(files: Vec<String>, cx: &mut Context<IssuesView>) -> Option<AnyEle
                             .gap_1()
                             .min_w_0()
                             .px_1()
-                            .rounded(cx.theme().radius_tokens().sm)
+                            .rounded(cx.theme().radius)
                             .cursor_pointer()
                             .hover(|row| row.bg(cx.theme().list_hover))
                             .text_xs()

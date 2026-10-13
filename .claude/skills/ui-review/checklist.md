@@ -14,9 +14,8 @@ Each section names the document owning its rules; read it before answering.
 3. Every spacing on the steps `0p5`, `1`, `1p5`, `2`, `3`, `4`, `6`, `8`?
 4. Every text size from the six roles, weights only `medium` and `semibold`, line heights only
    gpui's, `LEADING` and `LEADING_TIGHT`?
-5. Every corner by role: `sm` whatever is pressed, picked, typed into or lifted out by a fill (a
-   button, a field, a checkbox, a key cap, a row, a tab, a chip, a `choice`), `radius` a block read
-   inside a column, `radius_lg` a standing box and a badge, `rounded_full` a dot?
+5. Every corner the one `radius`, a badge at `tokens::BADGE_CORNER` and a dot `rounded_full`, with
+   no `radius_lg` or `radius_tokens().sm` written?
 6. Shadows only on what floats, through `lift` (the composer through its own)?
 7. A new colour in both palettes, its contrast asserted in `theme.rs`'s tests?
 8. Token values kept in code and its token reference, with no duplicate palette or scale in

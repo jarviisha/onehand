@@ -66,7 +66,7 @@ pub(super) fn popup_row(id: impl Into<gpui::ElementId>, highlighted: bool, cx: &
         .overflow_hidden()
         .px_2()
         .text_sm()
-        .rounded(cx.theme().radius_tokens().sm)
+        .rounded(cx.theme().radius)
         // No border and no ring, on either state. The library leaves a ghost
         // button's border transparent already, so what is turned off here is
         // the focus ring it would draw over the top — a second rectangle around

@@ -5,7 +5,7 @@
 //! plugin, which cannot reach into the binary hosting it — and two copies of
 //! one number are two places for it to drift.
 
-use gpui::{App, BoxShadow, Rems, rems};
+use gpui::{App, BoxShadow, Pixels, Rems, px, rems};
 use gpui_component::ActiveTheme as _;
 
 /// The height every bar along the top of a region shares: the conversation's
@@ -42,6 +42,15 @@ pub const CONTROL_H: Rems = rems(1.5);
 /// button at the reading size, a step above the field beside it, while a
 /// small one letters at the chrome size every control here reads at.
 pub const FIELD_H: Rems = rems(2.);
+
+/// The one corner, in pixels as the theme holds it: every box, control,
+/// field, row, well and floating surface, the library's own included, which
+/// reads it as `radius` (and `radius`, set to the same).
+pub const CORNER: usize = 3;
+
+/// A badge's corner, the one shape that keeps a rounder one: a small label on
+/// a fill reads as a tag rather than as a button beside it.
+pub const BADGE_CORNER: Pixels = px(8.);
 
 /// Machine text: code, a command, a tool's output, a path.
 ///

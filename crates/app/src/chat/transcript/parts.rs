@@ -428,7 +428,7 @@ pub(super) fn grows(button: Button) -> Button {
 pub(in crate::chat) fn floating_card(pinned: bool, cx: &App) -> gpui::Div {
     div()
         .w_full()
-        .rounded(cx.theme().radius_lg)
+        .rounded(cx.theme().radius)
         .border_1()
         .border_color(cx.theme().border)
         // Opaque, and not the reading surface: the transcript runs underneath
@@ -813,7 +813,7 @@ pub(super) fn pill(label: impl Into<SharedString>, cx: &App) -> Tag {
     let theme = cx.theme();
     Tag::custom(theme.secondary, theme.secondary_foreground, theme.secondary)
         .small()
-        .rounded(theme.radius_lg)
+        .rounded(crate::tokens::BADGE_CORNER)
         .flex_none()
         .whitespace_nowrap()
         .overflow_hidden()

@@ -651,7 +651,7 @@ fn conversation_card(
         .gap_2()
         .w_full()
         .p_2()
-        .rounded(cx.theme().radius_lg)
+        .rounded(cx.theme().radius)
         .border_1()
         .border_color(cx.theme().border)
         .cursor_pointer()

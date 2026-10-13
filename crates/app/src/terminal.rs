@@ -505,7 +505,7 @@ impl Render for TerminalPanel {
                 div()
                     .size_full()
                     .v_flex()
-                    .rounded(cx.theme().radius_lg)
+                    .rounded(cx.theme().radius)
                     .overflow_hidden()
                     .bg(crate::theme::dock_surface(cx))
                     .child(self.body(window, cx)),
