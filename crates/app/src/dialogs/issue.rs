@@ -14,7 +14,7 @@ use gpui::{
 use gpui_component::button::ButtonVariants;
 use gpui_component::dialog::Dialog;
 use gpui_component::input::TextareaState;
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::issues::template;
 use onehand_core::preflight::{Check, Finding};
 use onehand_core::unattended::{self as core, IssueRow, Tracker};
@@ -292,13 +292,16 @@ where
     };
     let picked = picked.map(str::to_string);
     let on_pick = std::rc::Rc::new(on_pick);
+    // A form's picker: at a form's height, filled once it holds a choice.
     crate::controls::menu_below(
         id,
-        crate::controls::action((id, 0usize))
-            .secondary()
-            .small()
-            .label(name)
-            .icon(Icon::new(IconName::ChevronDown)),
+        onehand_plugin_host::picker(
+            (id, 0usize),
+            name,
+            picked.is_some(),
+            onehand_plugin_host::ControlSize::Tall,
+            cx,
+        ),
         move |mut menu, _, _| {
             if let Some(any) = any {
                 let on_pick = on_pick.clone();

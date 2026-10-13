@@ -30,10 +30,8 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
         .agent_check(&check_key(spec))
         .map(|check| match check {
             AgentCheck::Running => ("Checking…".to_string(), muted),
-            AgentCheck::Found(at) => (
-                format!("{} found at {}", spec.command, at.display()),
-                ink.success,
-            ),
+            // Found is the state at rest: muted, as a fact is.
+            AgentCheck::Found(at) => (format!("{} found at {}", spec.command, at.display()), muted),
             AgentCheck::Missing => (
                 format!(
                     "{} was not found — check the command, or give its full path",
@@ -59,6 +57,10 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
     // being the default means; there is no second setting to fall out of step
     // with the order.
     let is_default = idx == 0;
+    let running = matches!(
+        shell.read(cx).agent_check(&check_key(spec)),
+        Some(AgentCheck::Running)
+    );
 
     list_row(
         spec.name.clone(),
@@ -66,9 +68,19 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
         div()
             .h_flex()
             .items_center()
-            .gap_1()
+            .gap_2()
+            // A badge, as *Built in* is on a workflow: a fact about the row.
             .when(is_default, |row| {
-                row.child(div().px_2().text_xs().text_color(muted).child("Default"))
+                row.child(
+                    onehand_plugin_host::badge(
+                        "Default",
+                        onehand_plugin_host::Tint {
+                            fill: cx.theme().secondary,
+                            ink: cx.theme().secondary_foreground,
+                        },
+                    )
+                    .flex_none(),
+                )
             })
             .when(!is_default, |row| {
                 row.child(
@@ -93,6 +105,7 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
                     .secondary()
                     .small()
                     .label("Test")
+                    .loading(running)
                     .tooltip("Look for the command without starting it")
                     .on_click({
                         let shell = shell.clone();
@@ -103,7 +116,7 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
             )
             .child(
                 crate::controls::action(("edit-agent", idx))
-                    .tall()
+                    .small()
                     .secondary()
                     // Not the bundled `replace`, which is a find-and-replace
                     // mark: it reads as swapping this agent for another one
@@ -180,8 +193,10 @@ pub(super) fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     let saveable = draft.to_spec(cx).is_some();
     let editing = draft.editing.is_some();
 
+    let more = specs.len().saturating_sub(super::pages::LIST_SHOWN);
     let rows = specs
         .iter()
+        .take(super::pages::LIST_SHOWN)
         .enumerate()
         .map(|(i, spec)| agent_row(handle, i, spec, cx).into_any_element())
         .collect::<Vec<_>>();
@@ -190,6 +205,14 @@ pub(super) fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     let list = section(None, None, cx)
         .gap_3()
         .children(rows)
+        .when(more > 0, |list| {
+            list.child(
+                div()
+                    .text_xs()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(format!("{more} more not shown")),
+            )
+        })
         .when(specs.is_empty(), |list| {
             list.child(
                 div()
@@ -209,22 +232,22 @@ pub(super) fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     )
     .child(field(
         "Name",
-        about("What the New session menu calls it."),
+        about("What the New session menu calls it"),
         text_input(&name, cx).tall(),
         cx,
     ))
     .child(field(
         "Command",
         about(
-            "The program to run. It has to speak the Agent Client Protocol over standard \
-             input and output.",
+            "The program to run; it has to speak the Agent Client Protocol over standard \
+             input and output",
         ),
         text_input(&command, cx).tall(),
         cx,
     ))
     .child(field(
         "Arguments",
-        about("Separated by spaces; quote one that holds a space."),
+        about("Separated by spaces; quote one that holds a space"),
         text_input(&args, cx).tall(),
         cx,
     ))
@@ -260,8 +283,7 @@ pub(super) fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         .gap_6()
         .w_full()
         .child(page_head(
-            "Agents",
-            "The menu every new session starts from, shared by every workspace.",
+            "The menu every new session starts from, shared by every workspace",
             APP,
             cx,
         ))

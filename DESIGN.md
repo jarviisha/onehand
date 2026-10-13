@@ -184,7 +184,9 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
     *Save* that refuses with the first and spins while it writes.
 - **No top bar, no status bar, no right toolbar.** Transient status goes in a toast; modals are
   `Dialog`s. Settings is a page: a nav column with Appearance, Workspace, Agents, Connections and
-  Shortcuts, its groups split by hairlines, not boxes.
+  Shortcuts (rows as the rail's page rows), and beside it the sub-page, untitled (its nav row
+  names it), opening on its scope as a badge and a hint, its groups split by hairlines with
+  semibold headings, not boxes. Every button there is secondary: Settings holds no primary.
 - **Persistence.** The layout is saved as the Workbench's dragged width, the terminal and rail
   sizes and whether each dock is open, never as the library's `DockAreaState`.
 

@@ -969,8 +969,11 @@ mod tests {
                     ("well", theme.muted),
                     ("dock", theme.tiles),
                 ];
+                // A removal on a secondary button is its word in the danger
+                // ink, on the button's own fill.
                 if role == "danger" {
                     on.push(("bubble", theme.secondary));
+                    on.push(("secondary button", theme.button_secondary));
                 }
                 for (surface, fill) in on {
                     let ratio = contrast(ink, fill);

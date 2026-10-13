@@ -2,7 +2,6 @@
 //! one at a time.
 
 use super::*;
-use crate::controls::Quiet as _;
 use crate::controls::Tall as _;
 use crate::controls::text_input;
 
@@ -101,14 +100,17 @@ impl Render for Editor {
                 .on_action(cx.listener(|editor, _: &CancelShortcut, window, cx| {
                     editor.cancel(window, cx);
                 }))
-                .child(page_head("Edit shortcut", command.label, APP, cx))
+                // The page and its nav stay: the command is named by a line,
+                // not a title the size of a page's.
+                .child(page_head("Edit the keys of a command", APP, cx))
+                .child(div().text_base().font_semibold().child(command.label))
                 .child(
                     section(None, None, cx)
                         .child(field(
                             "Keys",
                             Some(
-                                "Separate alternatives with spaces. Leave empty to unassign. \
-                             Enter saves; Escape cancels."
+                                "Separate alternatives with spaces, or leave it empty to \
+                                 unassign; Enter saves, Escape cancels"
                                     .into_any_element(),
                             ),
                             text_input(&self.input, cx).tall(),
@@ -118,15 +120,15 @@ impl Render for Editor {
                             div()
                                 .h_flex()
                                 .gap_2()
-                                .text_sm()
+                                .text_xs()
                                 .text_color(muted)
-                                .child(format!("Works: {}.", command.scope))
+                                .child(format!("Works: {}", command.scope))
                                 .child(keys(command.defaults.iter().copied(), "none", cx))
                                 .child("by default"),
                         )
                         .children(
                             self.error.as_ref().map(|error| {
-                                div().text_sm().text_color(danger).child(error.clone())
+                                div().text_xs().text_color(danger).child(error.clone())
                             }),
                         )
                         .child(
@@ -136,10 +138,11 @@ impl Render for Editor {
                                 .h_flex()
                                 .gap_2()
                                 .child(
+                                    // Secondary: Settings holds no primary.
                                     crate::controls::action("save-shortcut")
                                         .tall()
                                         .label("Save")
-                                        .primary()
+                                        .secondary()
                                         .on_click(cx.listener(move |editor, _, window, cx| {
                                             editor.save(index, false, window, cx)
                                         })),
@@ -147,7 +150,7 @@ impl Render for Editor {
                                 .child(
                                     crate::controls::action("cancel-shortcut")
                                         .tall()
-                                        .quiet(cx)
+                                        .secondary()
                                         .label("Cancel")
                                         .on_click(cx.listener(|editor, _, window, cx| {
                                             editor.cancel(window, cx)
@@ -175,7 +178,7 @@ impl Render for Editor {
                     .when(overrides.contains_key(command.id), |row| {
                         row.child(
                             crate::controls::action(("reset-shortcut", index))
-                                .quiet(cx)
+                                .secondary()
                                 .small()
                                 .label("Reset")
                                 .on_click(cx.listener(move |editor, _, window, cx| {
@@ -185,7 +188,7 @@ impl Render for Editor {
                     })
                     .child(
                         crate::controls::action(("edit-shortcut", index))
-                            .quiet(cx)
+                            .secondary()
                             .small()
                             .label("Edit")
                             .on_click(cx.listener(move |editor, _, window, cx| {
@@ -208,26 +211,25 @@ impl Render for Editor {
             .gap_6()
             .w_full()
             .child(page_head(
-                "Shortcuts",
-                "The keys for every window. Edit a command to change or unassign them.",
+                "The keys for every window; edit a command to change or unassign them",
                 APP,
                 cx,
             ))
             .children(cx.global::<LoadWarning>().0.as_ref().map(|error| {
-                div().text_sm().text_color(danger).child(format!(
+                div().text_xs().text_color(danger).child(format!(
                     "Loaded defaults because the saved keymap is invalid: {error}"
                 ))
             }))
             .children(
                 self.error
                     .as_ref()
-                    .map(|error| div().text_sm().text_color(danger).child(error.clone())),
+                    .map(|error| div().text_xs().text_color(danger).child(error.clone())),
             )
             .child(section(Some("Window"), None, cx).children(window_rows))
             .child(
                 section(
                     Some("Rail"),
-                    Some("While the rail's list has the keyboard.".into()),
+                    Some("While the rail's list has the keyboard".into()),
                     cx,
                 )
                 .children(rail_rows),
@@ -237,7 +239,7 @@ impl Render for Editor {
                 section(
                     Some("Terminal"),
                     Some(
-                        "Fixed, because a program running in the terminal has a claim on them."
+                        "Fixed, because a program running in the terminal has a claim on them"
                             .into(),
                     ),
                     cx,
@@ -250,7 +252,7 @@ impl Render for Editor {
                 ))
                 .child(list_row(
                     "Focus traversal",
-                    Some("Go to the program in the terminal instead.".into_any_element()),
+                    Some("Go to the program in the terminal instead".into_any_element()),
                     keys(["tab", "shift-tab"], "", cx),
                     cx,
                 )),
@@ -273,7 +275,7 @@ fn keys<'a>(
         .collect::<Vec<_>>();
     if caps.is_empty() {
         return div()
-            .text_sm()
+            .text_xs()
             .text_color(cx.theme().muted_foreground)
             .child(none)
             .into_any_element();
