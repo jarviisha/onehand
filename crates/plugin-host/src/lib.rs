@@ -522,7 +522,9 @@ impl Tall for Button {
 
 impl Tall for Input {
     fn tall(self) -> Self {
-        self.small().h(tokens::FIELD_H)
+        // `Styled::h` by name: the field's own `h` sets a multi-line field's
+        // height only, and a one-line field kept the small size's.
+        gpui::Styled::h(self.small(), tokens::FIELD_H)
     }
 }
 

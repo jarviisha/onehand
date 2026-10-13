@@ -370,12 +370,11 @@ impl AskForm<'_> {
             .flatten()?;
         let key = ask_key_hint(self.a.row_count(self.active));
         Some(
-            text_input(&state, cx)
-                .small()
-                // As tall as a choice of one line and its words on the
-                // choices' edge: it is the last row of the list, written in
-                // rather than picked.
-                .h(ASK_FIELD_H)
+            // As tall as a choice of one line and its words on the choices'
+            // edge: it is the last row of the list, written in rather than
+            // picked. `Styled::h` by name, since the field's own `h` sizes a
+            // multi-line field only.
+            gpui::Styled::h(text_input(&state, cx).small(), ASK_FIELD_H)
                 .px_3()
                 .when_some(key, |field, key| field.suffix(key)),
         )

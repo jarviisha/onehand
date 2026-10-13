@@ -111,6 +111,9 @@ justifies it, and describe its limits rather than treating a source scan as a Ru
 
 ## Gotchas
 
+- **`Input::h` sizes a multi-line field only.** The library's `Input` has an `h` of its own that
+  shadows `Styled::h`, so `.h(…)` on a one-line field does nothing and it keeps its size's height.
+  Call `gpui::Styled::h(field, …)` by name, as `Tall for Input` does.
 - **Key bindings beat `on_key_down`.** GPUI matches bindings against the focus context stack first and
   only delivers the key to focused elements if nothing matched. That is why the app keymap reaches
   over a PTY with no cooperation from the terminal widget — and why binding a key the terminal needs
