@@ -1299,17 +1299,27 @@ mod tests {
     }
 
     /// The builder chain a `.quiet(cx)` on line `at` belongs to: from the
-    /// `action(` that starts it, a few lines up, to the first press handler.
-    /// `None` where no `action(` is near enough to be its start.
+    /// `action(` that starts it to its press handler, or to the statement's
+    /// end where it has none. `None` where no `action(` starts it before the
+    /// statement above ends.
     fn quiet_chain(lines: &[&str], at: usize) -> Option<String> {
-        let start = (at.saturating_sub(4)..=at)
+        let start = (0..=at)
             .rev()
+            .take_while(|&n| n == at || !lines[n].trim_end().ends_with(';'))
             .find(|&n| lines[n].contains("action("))?;
-        let chain: String = lines[start..lines.len().min(at + 12)].join(" ");
-        Some(match chain.find(".on_click") {
-            Some(end) => chain[..end].to_string(),
-            None => chain,
-        })
+        let mut chain = String::new();
+        for line in &lines[start..] {
+            if let Some(end) = line.find(".on_click") {
+                chain.push_str(&line[..end]);
+                break;
+            }
+            chain.push_str(line);
+            chain.push(' ');
+            if line.trim_end().ends_with(';') {
+                break;
+            }
+        }
+        Some(chain)
     }
 
     /// An icon alone rests in the muted ink, as every icon at rest does: a
