@@ -33,7 +33,7 @@ mod sessions;
 mod settings_page;
 mod storage;
 mod workflows;
-pub use boot::{boot, open_or_focus, seed_workspace};
+pub use boot::{boot, install_look, open_or_focus, seed_workspace};
 pub use drafts::{BranchDraft, Draft, WorktreeDraft};
 pub use workflows::WorkflowLauncher;
 pub(crate) use workflows::brief;
