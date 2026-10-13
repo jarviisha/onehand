@@ -13,7 +13,7 @@ use gpui::{
 use gpui_component::StyledExt;
 use gpui_component::button::ButtonVariants as _;
 use onehand_plugin_host::Tall as _;
-use onehand_plugin_host::{Ask, Request, action, hint, status_ink};
+use onehand_plugin_host::{Ask, Request, action, hint, status_ink, status_line};
 use onehand_terminal_ui::{Program, PtyTab, TerminalThemeKey, spawn_pty, terminal_palette};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -196,7 +196,20 @@ impl Render for NeovimView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.sync_theme(cx);
         let body = self.body(cx);
-        div().flex_1().min_h_0().v_flex().child(body)
+        // A start that failed stands under the body, as every condition a
+        // mode reports does, in the danger ink: nothing appeared, and this is
+        // why.
+        let failed = self.status.clone().filter(|_| {
+            self.root
+                .as_ref()
+                .is_some_and(|root| !self.tabs.contains_key(root))
+        });
+        div()
+            .flex_1()
+            .min_h_0()
+            .v_flex()
+            .child(body)
+            .children(failed.map(|status| status_line(status, status_ink(cx).danger)))
     }
 }
 
@@ -210,8 +223,8 @@ impl NeovimView {
             // The button and not an automatic spawn, for the same reason
             // switching to this mode does not spawn: arriving at a tab should
             // not start a process. It also gives the failure somewhere to be
-            // read — a Neovim that would not start leaves its reason under it,
-            // in the danger ink, as the terminal's shell does.
+            // read — a Neovim that would not start leaves its reason in the
+            // status line under the panel, as the terminal's shell does.
             return div()
                 .flex_1()
                 .v_flex()
@@ -230,12 +243,6 @@ impl NeovimView {
                             }
                         })),
                 )
-                .children(self.status.clone().map(|status| {
-                    div()
-                        .text_xs()
-                        .text_color(status_ink(cx).danger)
-                        .child(status)
-                }))
                 .into_any_element();
         };
 
@@ -246,8 +253,10 @@ impl NeovimView {
             // this the first column sits against the panel edge. Costs a column
             // rather than being painted over: the view measures its own bounds
             // and reports the cell count back through the PTY resize, so what it
-            // lays out and what the child believes stay in step.
-            .p_2()
+            // lays out and what the child believes stay in step. The terminal's
+            // own inset, so the two grids sit alike.
+            .px_3()
+            .py_2()
             .child(tab.view().clone())
             .into_any_element()
     }

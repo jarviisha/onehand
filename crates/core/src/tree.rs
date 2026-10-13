@@ -40,11 +40,13 @@ impl FileTree {
     /// Flatten the cached listings into visible rows, depth-first from `root`
     /// through expanded directories. The bool is `true` when the row cap cut
     /// the walk short.
-    pub fn visible_rows(&self, root: &Path) -> (Vec<TreeRow<'_>>, bool) {
+    /// The rows the tree draws, and how many more the cap left out: every
+    /// entry an expanded folder lists past the last row drawn.
+    pub fn visible_rows(&self, root: &Path) -> (Vec<TreeRow<'_>>, usize) {
         let mut rows = Vec::new();
-        let mut truncated = false;
-        self.walk(root, 0, &mut rows, &mut truncated);
-        (rows, truncated)
+        let mut left_out = 0;
+        self.walk(root, 0, &mut rows, &mut left_out);
+        (rows, left_out)
     }
 
     fn walk<'a>(
@@ -52,19 +54,18 @@ impl FileTree {
         dir: &Path,
         depth: u16,
         rows: &mut Vec<TreeRow<'a>>,
-        truncated: &mut bool,
+        left_out: &mut usize,
     ) {
         let Some(list) = self.listings.get(dir) else {
             return;
         };
         for entry in list {
-            if rows.len() >= MAX_VISIBLE_ROWS {
-                *truncated = true;
-                return;
+            match rows.len() >= MAX_VISIBLE_ROWS {
+                true => *left_out += 1,
+                false => rows.push(TreeRow { entry, depth }),
             }
-            rows.push(TreeRow { entry, depth });
             if entry.is_dir && self.expanded.contains(&entry.path) {
-                self.walk(&entry.path, depth + 1, rows, truncated);
+                self.walk(&entry.path, depth + 1, rows, left_out);
             }
         }
     }
@@ -157,8 +158,8 @@ mod tests {
         );
 
         // Collapsed: only the top level shows.
-        let (rows, trunc) = t.visible_rows(&root);
-        assert!(!trunc);
+        let (rows, left_out) = t.visible_rows(&root);
+        assert_eq!(left_out, 0);
         assert_eq!(rows.len(), 2);
 
         // Expanded: the child appears, indented one level deeper.
@@ -179,8 +180,11 @@ mod tests {
             .map(|i| e(&format!("f{i}.rs"), false))
             .collect();
         t.listings.insert(root.clone(), many);
-        let (rows, truncated) = t.visible_rows(&root);
+        let (rows, left_out) = t.visible_rows(&root);
         assert_eq!(rows.len(), MAX_VISIBLE_ROWS);
-        assert!(truncated);
+        assert_eq!(
+            left_out, 50,
+            "what the cap left out is counted, not guessed"
+        );
     }
 }

@@ -52,6 +52,12 @@ pub const CORNER: usize = 3;
 /// a fill reads as a tag rather than as a button beside it.
 pub const BADGE_CORNER: Pixels = px(8.);
 
+/// Where a tree row's content starts from a dock's edge, and how far each
+/// level of the tree steps in: Files and Markdown share both, so their trees
+/// stand on one axis.
+pub const ROW_INSET: Rems = rems(0.5);
+pub const TREE_INDENT: Rems = rems(0.875);
+
 /// Machine text: code, a command, a tool's output, a path.
 ///
 /// A step under the secondary size, so what a program printed reads quieter

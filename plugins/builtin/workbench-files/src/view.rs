@@ -8,12 +8,12 @@
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, AppContext as _, Context, Entity, InteractiveElement, IntoElement, ParentElement, Render,
-    StatefulInteractiveElement, Styled, Window, div, rems,
+    StatefulInteractiveElement, Styled, Window, div,
 };
-use gpui_component::{ActiveTheme, Icon, IconName, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::gitstat::{FileChange, GitStatus};
 use onehand_core::tree::{self, FileTree};
-use onehand_plugin_host::{Ask, Request, hint, status_ink, tokens};
+use onehand_plugin_host::{Ask, Request, hint, mark_slot, status_ink, tokens, tree_row};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -30,6 +30,9 @@ pub(crate) struct FilesView {
     /// How a click on a file reaches the mode that edits files. Opening one is
     /// the quick editor's business, and this tree has no way to reach it.
     ask: Ask,
+    /// The file open in the editor beside the tree: its row is the tree's
+    /// selected one, as the open document is the Markdown list's.
+    active: Option<PathBuf>,
 }
 
 impl FilesView {
@@ -39,7 +42,16 @@ impl FilesView {
             trees: HashMap::new(),
             git: HashMap::new(),
             ask,
+            active: None,
         })
+    }
+
+    /// Mark `path` as the file open beside the tree.
+    pub(crate) fn set_active(&mut self, path: Option<PathBuf>, cx: &mut Context<Self>) {
+        if self.active != path {
+            self.active = path;
+            cx.notify();
+        }
     }
 
     /// Point the tree at a project root, seeding it on first sight.
@@ -167,6 +179,7 @@ impl Render for FilesView {
                 &root,
                 tree,
                 self.git.get(&root),
+                self.active.as_deref(),
                 self.ask.clone(),
                 cx.listener(|view: &mut Self, dir: &PathBuf, _, cx| {
                     view.toggle_dir(dir.clone(), cx)
@@ -177,13 +190,9 @@ impl Render for FilesView {
     }
 }
 
-/// The tint a change badge carries. Severity, not category: red is something
-/// that lost content, amber is something that changed, green is something that
-/// arrived.
-/// Where a row's content starts, and how far each level of the tree steps in.
-const ROW_INSET: f32 = 0.5;
-const TREE_INDENT: f32 = 0.875;
-
+/// The ink a change's letter takes. Severity, not category: red is something
+/// that lost content, amber is something that changed, green is something
+/// that arrived.
 fn change_color(change: FileChange, cx: &App) -> gpui::Hsla {
     let status = status_ink(cx);
     match change {
@@ -193,35 +202,41 @@ fn change_color(change: FileChange, cx: &App) -> gpui::Hsla {
     }
 }
 
-/// Draw the tree for `root`.
+/// The trailing slot a row's change mark stands in, held on every row so the
+/// marks run down one column.
+const MARK_W: gpui::Rems = gpui::rems(1.);
+
+/// Draw the tree for `root`, the file open beside it, `active`, picked.
 ///
 /// `git` is the root's status, if it is a repo at all — a non-repo root simply
-/// draws no badges rather than an empty column.
+/// draws no marks rather than an empty column.
 fn rows(
     root: &Path,
     tree: &FileTree,
     git: Option<&GitStatus>,
+    active: Option<&Path>,
     ask: Ask,
     on_toggle: impl Fn(&PathBuf, &mut Window, &mut App) + 'static,
     cx: &App,
 ) -> gpui::AnyElement {
-    let (rows, truncated) = tree.visible_rows(root);
+    let (rows, left_out) = tree.visible_rows(root);
     let on_toggle = std::rc::Rc::new(on_toggle);
+    let muted = cx.theme().muted_foreground;
 
     div()
         .id("file-tree")
         .v_flex()
         .size_full()
-        .p_2()
-        .gap_0p5()
+        .py_2()
         .overflow_y_scroll()
         .children(rows.into_iter().enumerate().map(|(i, row)| {
             let entry = row.entry;
             let (toggle, ask) = (on_toggle.clone(), ask.clone());
             let path = entry.path.clone();
             let expanded = tree.expanded.contains(&entry.path);
+            let picked = active == Some(entry.path.as_path());
 
-            // Badges are keyed by repo-relative path, which is the only form
+            // Marks are keyed by repo-relative path, which is the only form
             // `git status --porcelain` ever reports.
             let rel = entry.path.strip_prefix(root).unwrap_or(&entry.path);
             let change = git.and_then(|status| {
@@ -231,71 +246,50 @@ fn rows(
                     status.file_change(rel)
                 }
             });
+            let mark = Icon::new(match (entry.is_dir, expanded) {
+                (true, true) => IconName::ChevronDown,
+                (true, false) => IconName::ChevronRight,
+                (false, _) => IconName::File,
+            })
+            .small()
+            .when(!picked, |icon| icon.text_color(muted));
 
-            div()
-                .id(("tree-row", i))
-                .h_flex()
-                .items_center()
-                .gap_2()
-                .w_full()
-                .h(tokens::ROW_H)
-                .px_1()
-                .rounded(cx.theme().radius)
-                .text_sm()
-                .cursor_pointer()
-                // `list_hover`, the theme's hover for a row that is there to be
-                // picked. `accent` is what marks a *selected* thing, so a hover
-                // drawn in it made the row under the pointer read as the one
-                // chosen.
-                .hover(|r| r.bg(cx.theme().list_hover))
-                // Indent by depth, not by nested containers: a 600-row tree
-                // (the core cap) would otherwise be 600 nested elements.
-                .pl(rems(ROW_INSET + row.depth as f32 * TREE_INDENT))
-                .child(
-                    Icon::new(if entry.is_dir {
-                        if expanded {
-                            IconName::ChevronDown
-                        } else {
-                            IconName::ChevronRight
-                        }
-                    } else {
-                        IconName::File
-                    })
-                    .size_3(),
-                )
+            // Indent by depth, not by nested containers: a 600-row tree (the
+            // core cap) would otherwise be 600 nested elements.
+            tree_row(("tree-row", i), row.depth as usize, picked, cx)
+                .pr_2()
+                .child(mark_slot(mark))
+                // The name in the row's own ink, changed or not: the letter at
+                // the end says how it changed.
                 .child(
                     div()
                         .flex_1()
                         .min_w_0()
                         .truncate()
-                        .when_some(change, |name, change| {
-                            name.text_color(change_color(change, cx))
-                        })
                         .child(entry.name.clone()),
                 )
-                .when_some(change, |row, change| {
-                    let color = change_color(change, cx);
-                    // A directory carries a dot for "something under here
-                    // changed"; only a file names *how*. The dot is drawn, not
-                    // typed: a bullet character is an icon wearing text's
-                    // clothes, and it sits on the text baseline instead of the
-                    // row's centre.
-                    row.child(if entry.is_dir {
-                        div()
-                            .flex_none()
-                            .size_1p5()
-                            .rounded_full()
-                            .bg(color)
-                            .into_any_element()
-                    } else {
-                        div()
-                            .flex_none()
-                            .text_xs()
-                            .text_color(color)
-                            .child(change.badge().to_string())
-                            .into_any_element()
-                    })
-                })
+                .child(
+                    div()
+                        .flex_none()
+                        .w(MARK_W)
+                        .h_flex()
+                        .justify_center()
+                        .when_some(change, |slot, change| {
+                            let color = change_color(change, cx);
+                            // A folder carries a dot for "something under here
+                            // changed"; only a file names how. The dot is drawn,
+                            // not typed, so it sits on the row's centre.
+                            slot.child(if entry.is_dir {
+                                div().size_1p5().rounded_full().bg(color).into_any_element()
+                            } else {
+                                div()
+                                    .text_xs()
+                                    .text_color(color)
+                                    .child(change.badge().to_string())
+                                    .into_any_element()
+                            })
+                        }),
+                )
                 .on_click(move |_, window, cx: &mut App| {
                     if entry_is_dir(&path) {
                         toggle(&path, window, cx);
@@ -304,16 +298,16 @@ fn rows(
                     }
                 })
         }))
-        .when(truncated, |tree| {
-            // The cap is core's, and a tree that silently stops is a tree the
-            // user thinks they have seen all of.
+        // The cap is core's, and a tree that silently stops is a tree the user
+        // thinks they have seen all of.
+        .when(left_out > 0, |tree| {
             tree.child(
                 div()
-                    .px_2()
+                    .pl(tokens::ROW_INSET)
                     .py_1()
                     .text_xs()
-                    .text_color(cx.theme().muted_foreground)
-                    .child("… more entries not shown"),
+                    .text_color(muted)
+                    .child(format!("{left_out} more not shown")),
             )
         })
         .into_any_element()

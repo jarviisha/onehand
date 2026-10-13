@@ -36,6 +36,9 @@ use onehand_plugin_host::{ListWidths, Measured, list_detail, measure_width};
 /// least useful width. In rems, so they follow the panel's zoom.
 const TREE: ListWidths = ListWidths::new(12.5, 8.75, 26.25);
 
+/// What tells the tree which file is open.
+type SetActive = Box<dyn Fn(Option<std::path::PathBuf>, &mut App)>;
+
 pub(crate) struct CodeView {
     /// Held as the view rather than the mode: it is the same entity on every
     /// frame, and everything else the file tree is asked is asked through its
@@ -49,12 +52,20 @@ pub(crate) struct CodeView {
     /// Redraws the pair when the buffers' view flips the tree, since what that
     /// view renders is its own and this one reads the flag.
     _tree: Subscription,
+    /// Tells the tree which file is open, so its row is the tree's picked one.
+    set_active: SetActive,
 }
 
 impl CodeView {
-    pub(crate) fn new(files: AnyView, editor: Entity<EditorView>, cx: &mut App) -> Entity<Self> {
+    pub(crate) fn new(
+        files: AnyView,
+        set_active: impl Fn(Option<std::path::PathBuf>, &mut App) + 'static,
+        editor: Entity<EditorView>,
+        cx: &mut App,
+    ) -> Entity<Self> {
         cx.new(|cx| Self {
             files,
+            set_active: Box::new(set_active),
             _tree: cx.observe(&editor, |_, _, cx| cx.notify()),
             editor,
             divider: cx.new(|_| ResizableState::default()),
@@ -74,10 +85,15 @@ impl Render for CodeView {
         let alone = !layout.side_by_side;
         self.editor
             .update(cx, |editor, cx| editor.set_alone(alone, cx));
-        let (tree_shown, showing_file) = {
+        let (tree_shown, showing_file, active) = {
             let editor = self.editor.read(cx);
-            (editor.tree_shown(), editor.showing_file())
+            (
+                editor.tree_shown(),
+                editor.showing_file(),
+                editor.active_path(),
+            )
         };
+        (self.set_active)(active, cx);
         let frame = div()
             .size_full()
             .relative()

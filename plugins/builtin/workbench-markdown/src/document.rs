@@ -18,7 +18,7 @@ use gpui_component::text::{TextView, TextViewState, TextViewStyle};
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_plugin_host::Quiet as _;
-use onehand_plugin_host::tokens;
+use onehand_plugin_host::{mark_slot, tokens, tree_row};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -32,9 +32,6 @@ const DOC_MEASURE: Rems = rems(34.);
 const HEADING_1: Rems = rems(1.25);
 const HEADING_2: Rems = rems(1.125);
 const HEADING_REST: Rems = rems(1.);
-/// Where a row's content starts, and how far each level of the tree steps in.
-const ROW_INSET: f32 = 0.5;
-const TREE_INDENT: f32 = 0.875;
 
 /// One project root's document view: what was found, what is folded away, and
 /// what is being read.
@@ -172,8 +169,7 @@ pub(crate) fn list(
         .id("markdown-list")
         .v_flex()
         .size_full()
-        .p_2()
-        .gap_0p5()
+        .py_2()
         .overflow_y_scroll()
         .children(
             rows.into_iter()
@@ -196,11 +192,11 @@ pub(crate) fn list(
             // reader believes they have seen the whole of.
             list.child(
                 div()
-                    .px_2()
+                    .pl(tokens::ROW_INSET)
                     .py_1()
                     .text_xs()
                     .text_color(cx.theme().muted_foreground)
-                    .child("… more documents not shown"),
+                    .child("More documents not shown"),
             )
         })
         .into_any_element()
@@ -221,41 +217,24 @@ fn doc_row(
     let path = row.path.clone();
     let is_dir = row.is_dir;
 
-    div()
-        .id(("markdown-row", i))
-        .h_flex()
-        .items_center()
-        .gap_2()
-        .w_full()
-        .h(tokens::ROW_H)
-        .px_1()
-        .rounded(cx.theme().radius)
-        .text_sm()
-        .cursor_pointer()
-        .when(selected, |row| row.bg(cx.theme().accent))
-        .when(!selected, |row| {
-            row.hover(|row| row.bg(cx.theme().list_hover))
-        })
+    let muted = cx.theme().muted_foreground;
+    let mark = Icon::new(match (is_dir, shut) {
+        (true, true) => IconName::ChevronRight,
+        (true, false) => IconName::ChevronDown,
+        (false, _) => IconName::File,
+    })
+    .small()
+    .when(!selected, |icon| icon.text_color(muted));
+    // The file tree's row: one axis, one indent, the open document the
+    // picked row, as the open file is the tree's. Indented by depth rather
+    // than by nested containers, for the reason the file tree is.
+    tree_row(("markdown-row", i), row.depth as usize, selected, cx)
+        .pr_2()
         .tooltip({
             let name = row.name.clone();
             move |window, cx| Tooltip::new(name.clone()).build(window, cx)
         })
-        // Indent by depth rather than by nested containers, for the same reason
-        // the file tree does: the cap here is 400 documents, and that many
-        // nested elements is that many wasted.
-        .pl(rems(ROW_INSET + row.depth as f32 * TREE_INDENT))
-        .child(
-            Icon::new(if is_dir {
-                if shut {
-                    IconName::ChevronRight
-                } else {
-                    IconName::ChevronDown
-                }
-            } else {
-                IconName::File
-            })
-            .size_3(),
-        )
+        .child(mark_slot(mark))
         .child(
             div()
                 .flex_1()
@@ -264,7 +243,7 @@ fn doc_row(
                 // A directory here is a heading over what it holds, not a place
                 // to go: the documents are the point of the list, so the
                 // folders stay quieter than they do in the file tree.
-                .when(is_dir, |name| name.text_color(cx.theme().muted_foreground))
+                .when(is_dir && !selected, |name| name.text_color(muted))
                 .child(row.name),
         )
         .on_click(move |_, window, cx: &mut App| {

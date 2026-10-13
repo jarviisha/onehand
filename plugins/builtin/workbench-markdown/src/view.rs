@@ -85,6 +85,9 @@ pub(crate) struct MarkdownView {
     /// leaves the reader believing the document on screen is current. Cleared
     /// by a read that works.
     status: Option<String>,
+    /// An open that failed, what and why, said once as a toast on the next
+    /// frame: a press that failed is news, unlike a document going stale.
+    failed: Option<(String, String)>,
     /// How the header's *Edit source* reaches the mode that edits files.
     ask: Ask,
 }
@@ -102,6 +105,7 @@ impl MarkdownView {
             _scan: None,
             watch: None,
             status: None,
+            failed: None,
             ask,
         })
     }
@@ -235,7 +239,7 @@ impl MarkdownView {
                         }
                         view.watch_doc(cx);
                     }
-                    Err(e) => view.status = Some(format!("{} — {e}", path.display())),
+                    Err(e) => view.failed = Some((format!("Opening {label}"), e.to_string())),
                 }
                 cx.notify();
             });
@@ -352,6 +356,14 @@ impl Render for MarkdownView {
             self.index(cx);
         }
 
+        // Deferred: the toast layer is the window root's, not to be updated
+        // from inside a child's render.
+        if let Some((what, why)) = self.failed.take() {
+            window.defer(cx, move |window, cx| {
+                use gpui_component::WindowExt as _;
+                window.push_notification(onehand_plugin_host::toast::failed(&what, why), cx)
+            });
+        }
         let body = self.body(window, cx);
         div()
             .flex_1()

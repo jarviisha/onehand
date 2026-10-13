@@ -627,6 +627,30 @@ pub fn hover_slot(group: impl Into<SharedString>, shown: bool, child: impl IntoE
         .child(child)
 }
 
+/// A tree's row, as Files and Markdown draw theirs: a list row at
+/// [`tokens::ROW_H`], its content inset [`tokens::ROW_INSET`] and stepped in
+/// [`tokens::TREE_INDENT`] per level, the picked row on the selected fill.
+/// The caller adds its mark in a [`mark_slot`], its name, and its marks in
+/// one trailing slot.
+pub fn tree_row(
+    id: impl Into<ElementId>,
+    depth: usize,
+    picked: bool,
+    cx: &App,
+) -> gpui::Stateful<Div> {
+    row(picked, cx)
+        .id(id)
+        .h_flex()
+        .items_center()
+        .gap_2()
+        .w_full()
+        .h(tokens::ROW_H)
+        .text_sm()
+        .pl(gpui::rems(
+            tokens::ROW_INSET.0 + depth as f32 * tokens::TREE_INDENT.0,
+        ))
+}
+
 /// A picker's trigger: a button naming what it is set to, then the caret that
 /// opens its menu, so it reads as a control. Unset, it names what it picks,
 /// as a ghost in the muted ink, its caret with it, as a label at rest is;

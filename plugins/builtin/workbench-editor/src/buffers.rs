@@ -350,7 +350,9 @@ pub(crate) fn save_status(outcome: &SaveOutcome, label: &str) -> Option<String> 
         SaveOutcome::Conflict { .. } => Some(format!(
             "{label} changed on disk — nothing was written. Save again to overwrite."
         )),
-        SaveOutcome::Failed(e) => Some(format!("{label} not saved — {e}")),
+        // A failure is a toast, said once by the caller: a conflict stands
+        // until a save answers it, and a write that failed does not.
+        SaveOutcome::Failed(_) => None,
     }
 }
 

@@ -38,7 +38,7 @@ impl Mode {
     pub fn new(ask: Ask, cx: &mut App) -> Self {
         let view = EditorView::new(cx);
         let files = onehand_workbench_files::Mode::new(ask, cx);
-        let split = CodeView::new(files.view(), view.clone(), cx);
+        let split = CodeView::new(files.view(), files.active_setter(), view.clone(), cx);
         Self { view, files, split }
     }
 }
