@@ -148,8 +148,21 @@ impl RenderOnce for CommandBlock {
                 )
             })
             // Over the fade: the one thing that says how far the command runs.
+            //
+            // **On a frame pinned to the block's edges.** The scrollbar sizes
+            // itself to its parent's content box, which stops short of the
+            // gutter held for it, so mounted on the block it landed over the
+            // text's last characters rather than in the gutter.
             .when(overflows, |block| {
-                block.child(Scrollbar::vertical(&scroll).mode(ScrollbarMode::Always))
+                block.child(
+                    div()
+                        .absolute()
+                        .top_0()
+                        .bottom_0()
+                        .left_0()
+                        .right_0()
+                        .child(Scrollbar::vertical(&scroll).mode(ScrollbarMode::Always)),
+                )
             })
     }
 }
