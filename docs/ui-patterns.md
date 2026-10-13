@@ -151,8 +151,7 @@ Widths:
 - `PAGE_WIDE`: boxes side by side, or a table (the overview, Tasks, Issues).
 
 A page holding sections of its own (Settings) puts their nav column at its start.
-The pane header owns the page name, set on the column's left edge rather than the pane's (beside
-the rail's button while the rail is hidden); do not repeat it as a large heading in the body. A section
+The pane header owns the page name; do not repeat it as a large heading in the body. A section
 heading identifies its own content. Reuse the same column width for the same kind of page.
 
 ### Page heads and filters
