@@ -268,17 +268,20 @@ rarer screens; saves last, as they move nothing on screen.
 
 ### 1. Rail (L)
 
-- **Inks.** Project names and session titles muted at rest; the current row in
-  `sidebar_accent_foreground`; a meta or git line on a fill in the mixed step. A session's
-  state word in its state's ink (*Needs input*, *Failed*, *Disconnected*; running keeps `link`,
-  what runs). The tile's letter in its fill's ink. Weight by role only: the shown and the unread
-  session lose theirs, the *Sessions* label takes none. Asserted in `theme.rs`: muted meta mixed
-  on `rail_chosen` and `sidebar_accent`; the neutral badge fill on both.
-- **One axis.** `slot` lands here: every mark down the rail in one slot on one centre line (the
-  tile, the nav icons, the chevron's icon, the folder, the state marks, *Add project*'s `+`), its
-  label on one edge; a session's title and meta line on its project name's axis. Rows `px_2`,
-  icon and label `gap_2`, meta `gap_1`, the search and *New* `gap_2`; one folder shape, as the
-  chevron says open or folded.
+- **Inks.** Project names and session titles muted at rest, and still muted under the pointer
+  (hover changes the fill alone; in the dark palette that is 3.96:1 on the hovered row, accepted
+  for a passing state); the chosen row in `sidebar_accent_foreground`, its meta and git line in
+  the step mixed under it. A state's word that waits on the person in its state's ink (*Needs
+  input*, *Failed*, *Disconnected*); running keeps the accent on its dot. The tile's letter in
+  its fill's ink. Weight by role only: the shown and the unread session lose theirs, the
+  *Sessions* label takes none. Asserted in `theme.rs`: the chosen meta step, the state words and
+  the badges on the rail's three fills.
+- **One axis.** `mark_slot` lands here: every mark down the rail in one slot on one centre line
+  (the tile, the nav icons, the chevron's icon, the folder, the state marks, *Add project*'s
+  `+`), its label on one edge; a session's title and meta line on its project name's axis, the
+  indent a slot and its gap. Rows `px_2` in a `px_1p5` list, icon and label `gap_2`, meta `gap_1`,
+  the search and *New* `gap_2`; one folder shape, as the chevron says open or folded. A state's
+  mark is `.xsmall()`, a step under the title, the size *Control sizes* now names for it.
 - **Controls.** The chevron, `+` and `⋯` at `.small()`, the chevron's hit area over its slot;
   *Stop*, *Send the last prompt again* and *Close* stay `.xsmall()` over the meta line. Hover
   actions take the trailing meta's place and never move the name, and show for the keyboard's
@@ -289,14 +292,16 @@ rarer screens; saves last, as they move nothing on screen.
 - The *Sessions* header is a label line over the list, its chip and filter `.small()`, the
   filter's icon through `quiet_icon`, on while a filter other than *By project* holds. The
   foot's *Settings* becomes a page row like *Overview*, filled while it shows, with no hairline.
-  The Tasks count and the *auto* pills go through `badge` (lands here: a `Tag` at `.small()`
-  and `radius_lg` on a `Tint`), legible on both rail fills.
-- Menus: icons by decision 7; a workspace's folder in the middle ink and in mono; a row bound to
-  a command shows its key.
+  The Tasks count and the *auto* pills go through `badge` (lands here), on the `inset` step,
+  which stands off the rail's three fills.
+- Menus: no icons (decision 7); a workspace's folder in the middle ink and in mono. No rail menu
+  row runs a keymap command (each acts on its own row's session or project, a command on the
+  one on screen), so none shows a key; the header's menu does, in step 2. *Close session* is a
+  plain word: the conversation is kept.
 - Words: an open project with no session says *No open sessions*; the switcher's tooltip names
   what its menu lists; *Remove from workspace…* keeps its ellipsis only when it asks.
-- Contract: DESIGN *Layout* (the rail's foot, its *Sessions* header, the empty line) and
-  *Colour and state* (the rail's own fills).
+- Contract: DESIGN *Layout* (the rail's foot, inks, keys, the empty line) and *Colour and state*
+  (the rail's own fills); *Control sizes* (a state's mark).
 - Acceptance: the rail at rest in both palettes, only the current row in full ink; sessions
   needing input, failed, running and done unread; hover and the keys walking the list (the ring
   on the keyboard's row, the fill on the shown session, never two fills); a project folded and

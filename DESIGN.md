@@ -70,7 +70,7 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
 │                  │    branch                mode      │                  │
 │                  ├────────────────────────────────────┤                  │
 │                  │ shell tabs  +                      │                  │
-│         Settings │ terminal (bottom dock)             │                  │
+│ Settings         │ terminal (bottom dock)             │                  │
 └──────────────────┴────────────────────────────────────┴──────────────────┘
         rail                     DockArea
 ```
@@ -83,22 +83,27 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   *Workflows*, each filled while its page shows; *Sessions* with a warning-ink *N need attention*
   chip (shown above zero or while on, toggling that filter and back) and the filter menu (*By
   project*, *All sessions*, *Needs attention*, *Recent activity*) over a hairline; the scrolling
-  list, ending on *Add project…*; a foot with *Settings*, marked while it shows.
+  list, ending on *Add project…*; a foot with *Settings*, a page row like the four above, filled
+  while it shows. Every row at rest is in the muted ink; the one where the person is takes its
+  fill and the ink paired with it. A badge in the rail sinks on the inset step.
 
   *By project* lists pinned projects first, a gap between projects. A project row: the fold
   chevron, folder and name, its git line (branch, uncommitted changes, commits ahead and behind,
   each only above zero and named in full on hover), the pin, the unattended pill (*auto*, *auto ·
   N*, *auto · N waiting*; a run's pill opens its issue on the Issues page), and while folded its
   sessions' most urgent state. Its chevron alone folds it (not during a search); the rest of the
-  row shows the project's last session, or its page. `+` and `⋯` show on hover, right-click opens
-  the same menu. A session row, indented under its project: its state mark, title and `⋯` (on
-  hover, always on the one shown), and under them `state · agent · age` (*waiting Nm* while it
-  needs input), over which hovering lays *Stop* (running), *Send the last prompt again* (failed)
-  and *Close*. The other filters are flat, the project in place of the agent. A group lists six
-  sessions, then *N more*; an open project with none says *Empty*, a search or filter with none *No
+  row shows the project's last session, or its page, which then fills the row. `+` and `⋯` show
+  on hover and on the keyboard's row, right-click opens the same menu. A session row, indented
+  under its project: its state mark, title and `⋯` (on hover, on the keyboard's row, always on
+  the one shown), and under them `state · agent · age` (*waiting Nm* while it needs input, the
+  state's word in its ink while it waits on the person), over which the pointer and the
+  keyboard's row lay *Stop* (running), *Send the last prompt again* (failed) and *Close*. The
+  other filters are flat, the project in place of the agent. A group lists six sessions, then *N
+  more*; an open project with none says *No open sessions*, a search or filter with none *No
   sessions match*. Each state has its own ink and, but for failed and disconnected, its own
-  mark, none animated (running is a filled dot): failed or disconnected danger, needs input warning, running the accent, done unread success, idle
-  muted. `↑`/`↓` move the list's row, `Enter` and `←`/`→` act on it, `Alt+↑`/`↓` step through
+  mark, none animated (running is a filled dot): failed or disconnected danger, needs input
+  warning, running the accent, done unread success, idle muted. `↑`/`↓` move the list's row,
+  ringed while the keys move it, `Enter` and `←`/`→` act on it, `Alt+↑`/`↓` step through
   sessions in its order. The tree's order is the user's, set by dragging; pinned projects stay on
   top and sessions never leave their project. `Ctrl+Shift+B` hides the rail completely, never to an
   icon column. It resizes between 232 and 448px, on the ramp's lifted surface.
@@ -252,8 +257,9 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   inherits its surface unless it has a distinct role: well, selection or floating content.
 - Boxes are borders; wells and the bubble are fills. Ordinary sections remain unboxed. Do not
   combine a border, contrasting fill and shadow just to make a group visible.
-- Hover and selection are fills: distinct steps on a row (`list_hover`, `accent`), one step on a
-  ghost button (the selected one). Keyboard focus is the ring.
+- Hover and selection are fills: distinct steps on a row (`list_hover`, `accent`; the rail's own
+  `sidebar_accent` and `rail_chosen`), one step on a ghost button (the selected one). Keyboard
+  focus is the ring.
 - At most one primary in a view; a view needs none (the Settings page has none).
 - The palette is neutral: surfaces and inks carry next to no hue, so a hue on screen means
   something. A missing surface or ink goes into the ramp with its contrast asserted, never into

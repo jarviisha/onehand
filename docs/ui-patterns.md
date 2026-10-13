@@ -98,6 +98,7 @@ size it takes; `design-tokens/reference.md` holds what each size measures in eac
 | A secondary action inside dense content: a line of meta text, a transcript block, a chip | Button | `.xsmall()` |
 | An icon in a button | Icon | the button's own: `small` in a `.small()` or `.tall()` button, `xsmall` in an `.xsmall()` one |
 | An icon leading a label the app draws: a row, a menu item | Icon | `.small()` |
+| A state's mark leading a row's label (a session's) | Icon | `.xsmall()`, a step under the label |
 | A mark inside a line of meta text | Icon | `.xsmall()` |
 | A badge | Tag | `.small()`, at its own height |
 | A checkbox, a switch | Checkbox, Switch | `.small()` beside chrome text, at the library's own geometry |

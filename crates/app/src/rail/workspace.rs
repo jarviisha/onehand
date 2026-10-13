@@ -15,7 +15,8 @@ use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 /// that opens the workspace menu, and *Hide the rail*.
 ///
 /// The name gets exactly one line, faded, and whole on hover: people write
-/// sentences into it.
+/// sentences into it. The tile stands on the list's marks' line, and the name
+/// a gap after it starts on the edge their labels do.
 pub(super) fn workspace_bar(
     name: SharedString,
     current: Option<std::path::PathBuf>,
@@ -34,30 +35,38 @@ pub(super) fn workspace_bar(
         .gap_2()
         .child(
             div()
-                .size_5()
-                .flex_none()
-                .flex()
+                .h_flex()
                 .items_center()
-                .justify_center()
-                .rounded(cx.theme().radius)
-                .bg(cx.theme().accent)
-                .text_xs()
-                .font_medium()
-                .text_color(cx.theme().foreground)
-                .child(initial),
-        )
-        .child(
-            faded("workspace-name", name, "workspace".into(), well, well)
-                .font_medium()
-                .text_color(cx.theme().foreground)
-                .tooltip(move |window, cx| Tooltip::new(tip.clone()).build(window, cx)),
+                .flex_1()
+                .min_w_0()
+                .gap_1p5()
+                .child(
+                    div()
+                        .size_5()
+                        .flex_none()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded(cx.theme().radius)
+                        .bg(cx.theme().accent)
+                        .text_xs()
+                        .font_medium()
+                        .text_color(cx.theme().accent_foreground)
+                        .child(initial),
+                )
+                .child(
+                    faded("workspace-name", name, "workspace".into(), well, well)
+                        .font_medium()
+                        .text_color(cx.theme().foreground)
+                        .tooltip(move |window, cx| Tooltip::new(tip.clone()).build(window, cx)),
+                ),
         )
         .child(
             crate::controls::action("workspace")
-                .quiet(cx)
+                .quiet_icon(false, cx)
                 .small()
-                .icon(Icon::new(IconName::ChevronsUpDown).text_color(cx.theme().muted_foreground))
-                .tooltip("Workspaces, and the projects in this one")
+                .icon(Icon::new(IconName::ChevronsUpDown))
+                .tooltip("Other workspaces, and opening or starting one")
                 .dropdown_menu_with_anchor(
                     Anchor::TopLeft,
                     workspace_menu(current, recents, cx.entity().downgrade()),
@@ -65,9 +74,9 @@ pub(super) fn workspace_bar(
         )
         .child(
             crate::controls::action("hide-rail")
-                .quiet(cx)
+                .quiet_icon(false, cx)
                 .small()
-                .icon(Icon::new(IconName::PanelLeftClose).text_color(cx.theme().muted_foreground))
+                .icon(Icon::new(IconName::PanelLeftClose))
                 .tooltip_with_action("Hide the rail", &crate::shell::ToggleRail, None)
                 .on_click(
                     cx.listener(|shell: &mut Shell, _, window, cx| shell.toggle_rail(window, cx)),
@@ -115,7 +124,10 @@ fn workspace_menu(
     shell: WeakEntity<Shell>,
 ) -> impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static {
     move |menu, _, cx| {
-        let muted = cx.theme().muted_foreground;
+        let (detail, mono) = (
+            crate::theme::meta_ink(cx),
+            cx.theme().mono_font_family.clone(),
+        );
         let mut menu = menu;
         // No heading over nothing: a workspace that has never been bound
         // has no recents, and the two actions below stand on their own.
@@ -133,23 +145,27 @@ fn workspace_menu(
             let parent = dir
                 .parent()
                 .map(|parent| ellipsize_front(&parent.display().to_string(), MAX_PARENT));
-            let target = shell.clone();
+            let (target, mono) = (shell.clone(), mono.clone());
             let dir = dir.clone();
             // The workspace already on screen keeps the library's own row, and so
             // its cursor: it is checked and unpickable, and a pointer over it
             // would promise a press that is refused.
-            let row =
-                move |_: &mut Window, _: &mut App| {
-                    div()
-                        .h_flex()
-                        .items_center()
-                        .gap_2()
-                        .min_w_0()
-                        .child(div().flex_none().child(label.clone()))
-                        .children(parent.clone().map(|parent| {
-                            div().flex_none().text_xs().text_color(muted).child(parent)
-                        }))
-                };
+            let row = move |_: &mut Window, _: &mut App| {
+                div()
+                    .h_flex()
+                    .items_center()
+                    .gap_2()
+                    .min_w_0()
+                    .child(div().flex_none().child(label.clone()))
+                    .children(parent.clone().map(|parent| {
+                        div()
+                            .flex_none()
+                            .text_xs()
+                            .font_family(mono.clone())
+                            .text_color(detail)
+                            .child(parent)
+                    }))
+            };
             menu = menu.item(
                 match is_current {
                     true => PopupMenuItem::element(row),
@@ -167,22 +183,18 @@ fn workspace_menu(
         }
         let (open, new) = (shell.clone(), shell.clone());
         menu.separator()
-            .item(
-                crate::controls::menu_item("Open workspace…")
-                    .icon(Icon::new(IconName::FolderOpen))
-                    .on_click(move |_, _, cx: &mut App| {
-                        open.update(cx, |shell: &mut Shell, cx| shell.open_workspace(cx))
-                            .ok();
-                    }),
-            )
-            .item(
-                crate::controls::menu_item("New workspace…")
-                    .icon(Icon::new(IconName::Plus))
-                    .on_click(move |_, _, cx: &mut App| {
-                        new.update(cx, |shell: &mut Shell, cx| shell.new_workspace(cx))
-                            .ok();
-                    }),
-            )
+            .item(crate::controls::menu_item("Open workspace…").on_click(
+                move |_, _, cx: &mut App| {
+                    open.update(cx, |shell: &mut Shell, cx| shell.open_workspace(cx))
+                        .ok();
+                },
+            ))
+            .item(crate::controls::menu_item("New workspace…").on_click(
+                move |_, _, cx: &mut App| {
+                    new.update(cx, |shell: &mut Shell, cx| shell.new_workspace(cx))
+                        .ok();
+                },
+            ))
     }
 }
 
@@ -280,7 +292,6 @@ fn new_session_menu(
             let (idx, label, to) = (*idx, label.clone(), shell.clone());
             menu = menu.item(
                 crate::controls::menu_item(label)
-                    .icon(Icon::new(IconName::Folder))
                     .checked(Some(idx) == target)
                     .on_click(move |_, window, cx: &mut App| {
                         to.update(cx, |shell: &mut Shell, cx| {
@@ -296,16 +307,14 @@ fn new_session_menu(
         menu = menu.separator().label("With agent");
         for (i, name) in agents.iter().enumerate() {
             let (name, to) = (name.clone(), shell.clone());
-            menu = menu.item(
-                crate::controls::menu_item(name)
-                    .icon(Icon::new(IconName::Bot))
-                    .on_click(move |_, window, cx: &mut App| {
-                        to.update(cx, |shell: &mut Shell, cx| {
-                            shell.new_session_at(root, i, window, cx);
-                        })
-                        .ok();
-                    }),
-            );
+            menu = menu.item(crate::controls::menu_item(name).on_click(
+                move |_, window, cx: &mut App| {
+                    to.update(cx, |shell: &mut Shell, cx| {
+                        shell.new_session_at(root, i, window, cx);
+                    })
+                    .ok();
+                },
+            ));
         }
         menu
     }

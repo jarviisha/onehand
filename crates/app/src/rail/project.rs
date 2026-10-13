@@ -1,9 +1,10 @@
 use super::row::{
-    DragGhost, MAX_BRANCH_W, ProjectDrag, faded, hover_fill, labelled, menu_button, project_key,
-    rail_control, row_surfaces,
+    DragGhost, MAX_BRANCH_W, ProjectDrag, faded, hover_fill, key_ring, labelled, menu_button,
+    project_key, row_control, row_inks, row_surfaces,
 };
 use super::session::{signal_hint, status_mark};
 use crate::chat::pane::{ProjectFacts, SessionSignal};
+use crate::controls::Quiet as _;
 use crate::shell::Shell;
 use crate::state::WorkspaceWindow;
 use gpui::prelude::FluentBuilder as _;
@@ -12,9 +13,9 @@ use gpui::{
     ParentElement, SharedString, StatefulInteractiveElement, Styled, WeakEntity, Window, div, rems,
 };
 use gpui_component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
-use gpui_component::tag::Tag;
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use onehand_plugin_host::{badge, mark_slot};
 
 /// What a project row says on hover: the whole of everything the row cuts.
 ///
@@ -46,9 +47,7 @@ pub(super) fn project_hint(
 /// Offered where the switch is — on a repository that is not a run's own
 /// worktree — because it starts the same kind of run by a different road.
 pub fn pick_item(click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> PopupMenuItem {
-    crate::controls::menu_item("Work an issue…")
-        .icon(Icon::new(IconName::Inbox))
-        .on_click(click)
+    crate::controls::menu_item("Work an issue…").on_click(click)
 }
 
 /// The entry that turns unattended runs on and off for a project, in both menus
@@ -62,7 +61,6 @@ pub fn unattended_item(
     click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> PopupMenuItem {
     crate::controls::menu_item("Work labelled issues")
-        .icon(Icon::new(IconName::Bot))
         .checked(on)
         .on_click(click)
 }
@@ -167,6 +165,8 @@ pub(super) fn auto_status(
 /// Written against `&mut App` rather than `&mut Context<PopupMenu>` for the
 /// reason `session::session_menu` is: the dropdown host and the context-menu host
 /// disagree about that argument, and `Context` derefs to `App`.
+///
+/// `asks`: removing it asks first, which the word's ellipsis says.
 fn project_menu(
     root_idx: usize,
     ProjectFacts {
@@ -175,6 +175,7 @@ fn project_menu(
         unattended,
         check: _,
     }: ProjectFacts,
+    asks: bool,
     shell: WeakEntity<Shell>,
 ) -> impl Fn(PopupMenu, &mut Window, &mut App) -> PopupMenu + use<> {
     move |menu, _, cx: &mut App| {
@@ -194,14 +195,14 @@ fn project_menu(
             // The label is the state readout as well as the action: with no
             // pin marker of its own a row would otherwise only say it is
             // pinned by *where* it is, which reads as an accident.
-            crate::controls::menu_item(if pinned { "Unpin" } else { "Pin to top" })
-                .icon(Icon::new(IconName::Star))
-                .on_click(move |_, window, cx: &mut App| {
+            crate::controls::menu_item(if pinned { "Unpin" } else { "Pin to top" }).on_click(
+                move |_, window, cx: &mut App| {
                     pin.update(cx, |shell: &mut Shell, cx| {
                         shell.toggle_pin(root_idx, window, cx);
                     })
                     .ok();
-                }),
+                },
+            ),
         )
         .when_some(unattended, |menu, on| {
             menu.item(unattended_item(on, move |_, window, cx: &mut App| {
@@ -220,69 +221,61 @@ fn project_menu(
             }))
         })
         .item(
-            crate::controls::menu_item("New session")
-                .icon(Icon::new(IconName::Plus))
-                .on_click(move |_, window, cx: &mut App| {
-                    start
-                        .update(cx, |shell: &mut Shell, cx| {
-                            shell.new_session_in(root_idx, window, cx);
-                        })
-                        .ok();
-                }),
+            crate::controls::menu_item("New session").on_click(move |_, window, cx: &mut App| {
+                start
+                    .update(cx, |shell: &mut Shell, cx| {
+                        shell.new_session_in(root_idx, window, cx);
+                    })
+                    .ok();
+            }),
         )
         // Only where there is a repository to split. On a plain folder the
         // entry could not do anything but report that git said no, and an
         // entry whose whole job is to fail is one the eye has to learn to
         // skip.
         .when(is_repo, |menu| {
-            menu.item(
-                crate::controls::menu_item("New worktree…")
-                    .icon(Icon::new(crate::icons::Icon::GitBranch))
-                    .on_click(move |_, window, cx: &mut App| {
-                        split
-                            .update(cx, |shell: &mut Shell, cx| {
-                                shell.begin_worktree(root_idx, window, cx);
-                            })
-                            .ok();
-                    }),
-            )
-        })
-        .item(
-            crate::controls::menu_item("Open terminal")
-                .icon(Icon::new(IconName::SquareTerminal))
-                .on_click(move |_, window, cx: &mut App| {
-                    terminal
+            menu.item(crate::controls::menu_item("New worktree…").on_click(
+                move |_, window, cx: &mut App| {
+                    split
                         .update(cx, |shell: &mut Shell, cx| {
-                            shell.open_terminal_in(root_idx, window, cx);
+                            shell.begin_worktree(root_idx, window, cx);
                         })
                         .ok();
-                }),
-        )
-        .item(
-            crate::controls::menu_item("Copy project path")
-                .icon(Icon::new(IconName::Copy))
-                .on_click(move |_, window, cx: &mut App| {
-                    copy.update(cx, |shell: &mut Shell, cx| {
-                        shell.copy_root_path(root_idx, window, cx);
+                },
+            ))
+        })
+        .item(crate::controls::menu_item("Open terminal").on_click(
+            move |_, window, cx: &mut App| {
+                terminal
+                    .update(cx, |shell: &mut Shell, cx| {
+                        shell.open_terminal_in(root_idx, window, cx);
                     })
                     .ok();
-                }),
-        )
-        .item(
-            crate::controls::menu_item("Refresh Git status")
-                .icon(Icon::new(IconName::Redo))
-                .on_click(move |_, _, cx: &mut App| {
-                    refresh
-                        .update(cx, |shell: &mut Shell, cx| shell.refresh_git(cx))
-                        .ok();
-                }),
-        )
+            },
+        ))
+        .item(crate::controls::menu_item("Copy project path").on_click(
+            move |_, window, cx: &mut App| {
+                copy.update(cx, |shell: &mut Shell, cx| {
+                    shell.copy_root_path(root_idx, window, cx);
+                })
+                .ok();
+            },
+        ))
+        .item(crate::controls::menu_item("Refresh Git status").on_click(
+            move |_, _, cx: &mut App| {
+                refresh
+                    .update(cx, |shell: &mut Shell, cx| shell.refresh_git(cx))
+                    .ok();
+            },
+        ))
         .separator()
         .item(
             crate::controls::menu_row(move |_, _| {
-                div().text_color(danger).child("Remove from workspace…")
+                div().text_color(danger).child(match asks {
+                    true => "Remove from workspace…",
+                    false => "Remove from workspace",
+                })
             })
-            .icon(Icon::new(IconName::Delete).text_color(danger))
             .on_click(move |_, window, cx: &mut App| {
                 remove
                     .update(cx, |shell: &mut Shell, cx| {
@@ -353,20 +346,20 @@ impl GitLine {
 /// The dot before a project's change count: a count of what, said on hover.
 const CHANGE_DOT: gpui::Rems = rems(0.375);
 
-/// One part of a project's git line: a mark and its count, named in full on
-/// hover and to assistive technology.
+/// One part of a project's git line: a mark and its count, in the line's
+/// `ink`, named in full on hover and to assistive technology.
 fn git_part(
     id: gpui::ElementId,
     part: GitPart,
     n: usize,
     words: SharedString,
-    cx: &App,
+    ink: gpui::Hsla,
 ) -> impl IntoElement + use<> {
     let mark = match part {
         GitPart::Changed => div()
             .size(CHANGE_DOT)
             .rounded_full()
-            .bg(cx.theme().muted_foreground)
+            .bg(ink)
             .into_any_element(),
         GitPart::Ahead => Icon::new(IconName::ArrowUp).xsmall().into_any_element(),
         GitPart::Behind => Icon::new(IconName::ArrowDown).xsmall().into_any_element(),
@@ -376,7 +369,7 @@ fn git_part(
         .h_flex()
         .items_center()
         .flex_none()
-        .gap_0p5()
+        .gap_1()
         .role(gpui::accesskit::Role::Image)
         .aria_label(words.clone())
         .tooltip(move |window, cx| Tooltip::new(words.clone()).build(window, cx))
@@ -389,10 +382,15 @@ pub(super) struct Place {
     /// Where the row is drawn, which is what a drag hands back.
     pub(super) at: usize,
     pub(super) open: bool,
-    /// The keyboard's row, while the list has focus.
-    pub(super) cursor: bool,
+    /// Its own page is what shows: the chosen fill.
+    pub(super) chosen: bool,
+    /// The keyboard's row, while the list holds the keys and the keys put it
+    /// there: the ring, and its actions as if it were hovered.
+    pub(super) ring: bool,
     /// What its sessions roll up to, drawn only while folded.
     pub(super) badge: Option<SessionSignal>,
+    /// Removing it asks first.
+    pub(super) asks: bool,
 }
 
 /// A project: the fold chevron, its folder, its name fading where its room
@@ -413,8 +411,10 @@ pub(super) fn project_row(
     let Place {
         at,
         open,
-        cursor,
-        badge,
+        chosen,
+        ring,
+        badge: folded,
+        asks,
     } = place;
     let pinned = root.pinned;
     // The issue a run is working on in this project right now, if one is; the
@@ -453,15 +453,14 @@ pub(super) fn project_row(
         hint.insert(1, "Pinned to the top".into());
     }
     let key = project_key(&root.path);
-    let (rest, hovered) = row_surfaces(cursor, cx);
+    let (rest, hovered) = row_surfaces(chosen, cx);
+    let (name_ink, meta_ink) = row_inks(chosen, cx);
     let (shell, hover) = (cx.entity().downgrade(), hover_fill(cx));
-    let muted = cx.theme().muted_foreground;
-    let (radius, chip, chip_ink) = (
-        cx.theme().radius_tokens().sm,
-        cx.theme().secondary,
+    let radius = cx.theme().radius_tokens().sm;
+    let (badge_ink, warning) = (
         cx.theme().secondary_foreground,
+        crate::theme::status_ink(cx).warning,
     );
-    let warning = crate::theme::status_ink(cx).warning;
     let (fold_path, pill_root, ghost) = (root.path.clone(), root.path.clone(), root.label.clone());
     let label = root.label.clone();
 
@@ -472,14 +471,13 @@ pub(super) fn project_row(
         .items_center()
         .relative()
         .h(crate::tokens::ROW_H)
-        .pl_1p5()
-        .pr_1()
-        .gap_1p5()
+        .px_2()
+        .gap_2()
         .rounded(radius)
         .cursor_pointer()
-        .when(cursor, |d| d.bg(super::row::chosen_fill(cx)))
-        .when(!cursor, |d| d.hover(move |d| d.bg(hover)))
-        .text_color(cx.theme().foreground)
+        .when(chosen, |d| d.bg(super::row::chosen_fill(cx)))
+        .when(!chosen, |d| d.hover(move |d| d.bg(hover)))
+        .text_color(name_ink)
         .font_medium()
         .on_click(
             cx.listener(move |shell: &mut Shell, _: &ClickEvent, window, cx| {
@@ -487,11 +485,12 @@ pub(super) fn project_row(
             }),
         )
         // Folding and going to a project are two intentions, so the fold is
-        // a target of its own and the row's click never folds.
-        .child(labelled(
+        // a target of its own and the row's click never folds. Its icon sits
+        // on the marks' line; the control round it spills past the slot.
+        .child(mark_slot(labelled(
             ("project-fold-name", root_idx),
             "Fold or unfold this project",
-            rail_control(
+            row_control(
                 ("project-fold", root_idx),
                 match open {
                     true => IconName::ChevronDown,
@@ -506,14 +505,9 @@ pub(super) fn project_row(
             .on_click(cx.listener(move |shell: &mut Shell, _, _, cx| {
                 shell.rail_fold(fold_path.clone(), open, cx);
             })),
-        ))
-        .child(
-            Icon::new(match open {
-                true => IconName::FolderOpen,
-                false => IconName::Folder,
-            })
-            .small(),
-        )
+        )))
+        // One shape folded or not: the chevron beside it already says which.
+        .child(mark_slot(Icon::new(IconName::Folder).small()))
         .child(
             faded(
                 ("project-name", root_idx),
@@ -533,21 +527,23 @@ pub(super) fn project_row(
                 .h_flex()
                 .items_center()
                 .flex_none()
-                .gap_1p5()
+                .gap_1()
                 .text_xs()
                 .font_normal()
-                .text_color(muted)
+                .text_color(meta_ink)
                 .when_some(git, |row, git| {
                     row.child(
                         div()
                             .max_w(MAX_BRANCH_W)
                             .truncate()
+                            .font_family(cx.theme().mono_font_family.clone())
+                            .text_size(crate::tokens::CODE_TEXT)
                             .child(git.branch.clone()),
                     )
                     .children(git.parts().into_iter().map(
                         |(part, n, words)| {
                             let id = SharedString::from(format!("{key}-{part:?}"));
-                            git_part(gpui::ElementId::Name(id), part, n, words, cx)
+                            git_part(gpui::ElementId::Name(id), part, n, words, meta_ink)
                         },
                     ))
                 })
@@ -556,43 +552,45 @@ pub(super) fn project_row(
                 .when(pinned, |row| row.child(Icon::new(IconName::Star).xsmall()))
                 // Whether its labelled issues are worked unattended, and the
                 // issue a run is on. Stuck takes the warning ink; the hover
-                // says why. A run's pill opens its issue on the Issues page.
+                // says why. A run's pill is a control opening its issue on
+                // the Issues page.
                 .when_some(auto, |row, auto| {
                     let target = shell.clone();
-                    let ink = if auto.stuck { warning } else { chip_ink };
-                    row.child(
-                        div()
-                            .id(("project-auto", root_idx))
-                            .flex_none()
-                            .child(
-                                Tag::custom(chip, ink, chip)
-                                    .small()
-                                    .rounded(cx.theme().radius_lg)
-                                    .child(auto.badge),
-                            )
-                            .when_some(pill_issue, |pill, number| {
-                                pill.cursor_pointer()
-                                    .on_mouse_up(gpui::MouseButton::Left, |_, _, cx| {
-                                        cx.stop_propagation()
-                                    })
-                                    .on_click(move |_, window, cx: &mut App| {
-                                        let root = pill_root.clone();
-                                        target
-                                            .update(cx, |shell: &mut Shell, cx| {
-                                                shell.open_issue_on_page(&root, number, window, cx)
-                                            })
-                                            .ok();
-                                    })
-                            }),
-                    )
+                    let ink = if auto.stuck { warning } else { badge_ink };
+                    let pill = badge(auto.badge, super::rail_badge(ink, cx), cx);
+                    row.child(match pill_issue {
+                        Some(number) => labelled(
+                            ("project-auto-name", root_idx),
+                            "Open the run's issue",
+                            // Small rather than a meta line's extra small: a
+                            // badge keeps its own height, which the smaller
+                            // control is not tall enough to hold.
+                            crate::controls::action(("project-auto", root_idx))
+                                .quiet(cx)
+                                .small()
+                                .child(pill)
+                                .tooltip(format!("Open issue {number} on the Issues page"))
+                                .on_click(move |_, window, cx: &mut App| {
+                                    let root = pill_root.clone();
+                                    target
+                                        .update(cx, |shell: &mut Shell, cx| {
+                                            shell.open_issue_on_page(&root, number, window, cx)
+                                        })
+                                        .ok();
+                                }),
+                        )
+                        .into_any_element(),
+                        None => div().flex_none().child(pill).into_any_element(),
+                    })
                 }),
         )
-        .children(badge.filter(|_| !open).map(|signal| {
+        .children(folded.filter(|_| !open).map(|signal| {
             let label = format!("{}: {}", root.label, signal_hint(Some(signal)));
             status_mark(("badge", root_idx).into(), Some(signal), label.into(), cx)
         }))
-        // Over the end of the row, on its hover fill, so they take no room
-        // from the name while hidden.
+        // Over the end of the row, in the place of its meta, on its fill, so
+        // they take no room from the name while hidden: for the pointer, and
+        // for the keyboard on its row.
         .child(
             div()
                 .h_flex()
@@ -603,13 +601,13 @@ pub(super) fn project_row(
                 .right_0()
                 .px_1()
                 .rounded(radius)
-                .bg(hovered)
-                .invisible()
-                .group_hover(key.clone(), |s| s.visible())
+                .bg(rest)
+                .when(!ring, |d| d.invisible())
+                .group_hover(key.clone(), move |s| s.visible().bg(hovered))
                 .child(labelled(
                     ("project-new-name", root_idx),
                     "New session in this project",
-                    rail_control(("project-new", root_idx), IconName::Plus, cx)
+                    row_control(("project-new", root_idx), IconName::Plus, cx)
                         .tooltip("New session in this project")
                         .on_click(cx.listener(move |shell: &mut Shell, _, window, cx| {
                             shell.new_session_in(root_idx, window, cx);
@@ -619,12 +617,13 @@ pub(super) fn project_row(
                     ("project-menu-name", root_idx),
                     "Project actions",
                     menu_button(
-                        rail_control(("project-menu", root_idx), IconName::Ellipsis, cx),
+                        row_control(("project-menu", root_idx), IconName::Ellipsis, cx),
                         "What can be done with this project",
-                        project_menu(root_idx, facts, shell.clone()),
+                        project_menu(root_idx, facts, asks, shell.clone()),
                     ),
                 )),
         )
+        .when(ring, |row| row.child(key_ring(cx)))
         // Dropped by display position: `Workspace::move_root` writes the
         // permutation back into the roots, and clamps a drop across the pin
         // line rather than refusing it.
@@ -643,7 +642,7 @@ pub(super) fn project_row(
             }
         })
         .context_menu(move |menu, window, cx| {
-            project_menu(root_idx, facts, shell.clone())(menu, window, cx)
+            project_menu(root_idx, facts, asks, shell.clone())(menu, window, cx)
         })
         .into_any_element()
 }

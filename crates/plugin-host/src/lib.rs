@@ -321,6 +321,32 @@ pub fn tint_over(base: Hsla, surface: Hsla, foreground: Hsla) -> Tint {
     }
 }
 
+/// One mark's slot: an icon, a state's mark or a dot, centred in a column one
+/// icon wide. Every mark down a column sits in one, so the marks share a
+/// centre line whatever each is drawn at, and the labels after them start on
+/// one edge.
+///
+/// A control may stand in one too, wider than the slot: it stays centred on
+/// the column's line, its hit area spilling past the slot on both sides.
+pub fn mark_slot(mark: impl IntoElement) -> Div {
+    div()
+        .w_4()
+        .flex_none()
+        .h_flex()
+        .items_center()
+        .justify_center()
+        .child(mark)
+}
+
+/// A small label on a fill, the shape every badge takes: the library's `Tag`
+/// at its small size, on the large corner, in the `tint`'s fill and ink.
+pub fn badge(text: impl Into<SharedString>, tint: Tint, cx: &App) -> gpui_component::tag::Tag {
+    gpui_component::tag::Tag::custom(tint.fill, tint.ink, tint.fill)
+        .small()
+        .rounded(cx.theme().radius_lg)
+        .child(text.into())
+}
+
 /// A mark the app's own icon set draws for a plugin, where the bundled set
 /// has no drawing: an open issue's circle with a dot, and a refresh. The app
 /// serves these under its own prefix, and its registry test holds each path to

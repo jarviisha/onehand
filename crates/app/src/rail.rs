@@ -27,10 +27,10 @@ use gpui::{
 };
 use gpui::{Rems, rems};
 use gpui_component::input::{InputEvent, InputState};
-use gpui_component::tag::Tag;
 use gpui_component::tooltip::Tooltip;
-use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use model::{Filter, Item, Row};
+use onehand_plugin_host::{Tint, badge, mark_slot};
 use std::path::PathBuf;
 
 mod model;
@@ -43,11 +43,11 @@ pub use project::{pick_item, unattended_item};
 pub(crate) use session::{signal_mark, signal_word};
 pub(crate) use workspace::ellipsize_front;
 
-/// How far a session row is set in under its project: the project row's fold
-/// control (an `xsmall` control, 1.25rem) and the gap after it. With the
-/// inset every row keeps, a session's mark stands under its project's folder
-/// and its title under the project's name.
-const INDENT: Rems = rems(1.25 + 0.375);
+/// How far a session row is set in under its project: one mark's slot, the
+/// fold's, and the gap after it. With the inset every row keeps, a session's
+/// mark stands under its project's folder and its title under the project's
+/// name.
+const INDENT: Rems = rems(1. + 0.5);
 
 /// How often a session's age is said again: the finest unit it is said in.
 const AGE_TICK: std::time::Duration = std::time::Duration::from_secs(60);
@@ -66,6 +66,9 @@ pub(crate) struct RailState {
     /// The filter the attention chip replaced, which its second click restores.
     filter_before: Filter,
     cursor: Option<Cursor>,
+    /// The keys put the cursor where it is, rather than a click: only then is
+    /// its ring drawn, as the keyboard's mark is everywhere else.
+    keyed: bool,
     /// Groups shown in full past the cap: a project, or `None` for a flat list.
     uncapped: Vec<Option<PathBuf>>,
     search: Entity<InputState>,
@@ -101,6 +104,7 @@ impl RailState {
             filter: Filter::ByProject,
             filter_before: Filter::ByProject,
             cursor: None,
+            keyed: false,
             uncapped: Vec::new(),
             search,
             focus: cx.focus_handle(),
@@ -206,6 +210,9 @@ impl List {
 pub fn rail(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
     let state = shell.rail_state();
     let focused = state.focus.is_focused(window);
+    // The keyboard's row is ringed only while the list holds the keys and the
+    // keys put it there; a click marks what it picked by what then shows.
+    let keyed = focused && state.keyed;
     let list = List::of(shell, cx);
     let window_state = shell.workspace_window();
     let workspace = &window_state.workspace;
@@ -215,6 +222,11 @@ pub fn rail(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> impl Int
         .active_root()
         .map(|root| (workspace.active_root, root.active_session))
         .filter(|_| !page);
+    // A project with no session shows its own page, which its row marks.
+    let project_page = workspace
+        .active_root()
+        .filter(|root| !page && root.active_session().is_none())
+        .map(|_| workspace.active_root);
     let order = workspace.display_order();
     let mut rows: Vec<AnyElement> = Vec::with_capacity(list.rows.len());
     for row in &list.rows {
@@ -227,10 +239,12 @@ pub fn rail(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> impl Int
                 project::Place {
                     at: order.iter().position(|r| *r == root).unwrap_or(root),
                     open,
-                    cursor: focused
+                    chosen: project_page == Some(root),
+                    ring: keyed
                         && state.cursor
                             == Some(Cursor::Project(workspace.roots[root].path.clone())),
                     badge: model::badge(&list.items, root),
+                    asks: !shell.removal_losses(root, cx).is_empty(),
                 },
                 cx,
             ),
@@ -246,13 +260,13 @@ pub fn rail(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> impl Int
                     flat,
                     session::Mark {
                         shown: shown == Some((it.root, it.session)),
-                        at: focused && state.cursor == Some(Cursor::Session(it.uid)),
+                        at: keyed && state.cursor == Some(Cursor::Session(it.uid)),
                         resend: shell.can_resend(it.uid, cx),
                     },
                     cx,
                 )
             }
-            Row::Empty => note("No sessions yet", true, cx),
+            Row::Empty => note("No open sessions", true, cx),
             Row::More { group, hidden } => more(
                 group.map(|root| workspace.roots[root].path.clone()),
                 hidden,
@@ -268,7 +282,7 @@ pub fn rail(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> impl Int
         .size_full()
         .bg(cx.theme().muted)
         .text_sm()
-        .text_color(cx.theme().foreground)
+        .text_color(cx.theme().muted_foreground)
         .child(workspace::workspace_bar(
             window_state.workspace.name.clone().into(),
             window_state.workspace.storage_dir.clone(),
@@ -283,7 +297,7 @@ pub fn rail(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> impl Int
                 .px_3()
                 .pt_1()
                 .pb_3()
-                .gap_1p5()
+                .gap_2()
                 .child(search::search_field(state, cx))
                 .child(workspace::new_button(shell, window_state, target, cx)),
         )
@@ -317,7 +331,9 @@ pub fn rail(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> impl Int
                 .flex_1()
                 .min_h_0()
                 .overflow_y_scroll()
-                .px_2()
+                // With a row's own inset, a mark's slot is centred on the
+                // workspace tile's line.
+                .px_1p5()
                 .pt_2()
                 .pb_3()
                 .gap_0p5()
@@ -332,7 +348,7 @@ fn pages(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
     div()
         .v_flex()
         .flex_none()
-        .px_2()
+        .px_1p5()
         .pb_3()
         .gap_0p5()
         .child(page_row(
@@ -398,7 +414,7 @@ fn page_row<F: Fn(&mut Shell, &mut Window, &mut Context<Shell>) + 'static>(
         .h_flex()
         .items_center()
         .h(ROW_H)
-        .px_1p5()
+        .px_2()
         .gap_2()
         .rounded(cx.theme().radius_tokens().sm)
         .cursor_pointer()
@@ -421,15 +437,18 @@ fn page_row<F: Fn(&mut Shell, &mut Window, &mut Context<Shell>) + 'static>(
         .on_click(
             cx.listener(move |shell: &mut Shell, _: &ClickEvent, window, cx| go(shell, window, cx)),
         )
-        .child(div().w_4().flex().justify_center().child(icon.small()))
+        .child(mark_slot(icon.small()))
         .child(div().flex_1().child(label))
-        .children(count.map(|n| {
-            let fill = cx.theme().secondary;
-            Tag::custom(fill, cx.theme().secondary_foreground, fill)
-                .small()
-                .rounded(cx.theme().radius_lg)
-                .child(n)
-        }))
+        .children(count.map(|n| badge(n, rail_badge(cx.theme().secondary_foreground, cx), cx)))
+}
+
+/// A badge in the rail: sunk on the ramp's inset step, which stands off the
+/// rail's well, its hovered row and its chosen row alike, in `ink`.
+fn rail_badge(ink: gpui::Hsla, cx: &App) -> Tint {
+    Tint {
+        fill: crate::theme::inset(cx),
+        ink,
+    }
 }
 
 /// What the Tasks row's pill reads for `n` tasks needing a person: nothing
@@ -438,45 +457,37 @@ fn attention_pill(n: usize) -> Option<String> {
     (n > 0).then(|| n.to_string())
 }
 
-/// One row: Settings on the right, marked while it shows.
+/// The foot: Settings, a page like the four above the list and drawn as one,
+/// filled while it shows. Set off from the list by its place at the bottom.
 fn foot(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
-    div()
-        .h_flex()
-        .items_center()
-        .flex_none()
-        .h(crate::tokens::BAR_H)
-        .px_3()
-        .border_t_1()
-        .border_color(cx.theme().border)
-        .child(div().flex_1())
-        .child(
-            crate::controls::action("open-settings")
-                .quiet(cx)
-                .small()
-                .icon(Icon::new(IconName::Settings).text_color(cx.theme().muted_foreground))
-                .tooltip_with_action(
-                    "Appearance, the workspace, agents and connections",
-                    &crate::shell::OpenSettings,
-                    None,
-                )
-                .selected(shell.settings_shown(cx))
-                .on_click(
-                    cx.listener(|shell: &mut Shell, _, window, cx| shell.open_settings(window, cx)),
-                ),
-        )
+    div().flex_none().px_1p5().py_2().child(page_row(
+        ("rail-settings", "Settings"),
+        Icon::new(IconName::Settings),
+        shell.settings_shown(cx),
+        None,
+        (
+            "Appearance, the workspace, agents and connections",
+            Some(&crate::shell::OpenSettings),
+        ),
+        cx,
+        |shell, window, cx| shell.open_settings(window, cx),
+    ))
 }
 
-/// A muted line in the list where rows would be: under a project's name when
-/// it stands for that project's sessions, at the list's edge otherwise.
+/// A muted line in the list where rows would be, on the axis their titles
+/// take: under a project's sessions when it stands for them, at the list's
+/// edge otherwise.
 fn note(text: &'static str, in_project: bool, cx: &App) -> AnyElement {
     div()
         .h_flex()
         .items_center()
         .h(ROW_H)
         .when(in_project, |d| d.ml(INDENT))
-        .pl_1p5()
+        .px_2()
+        .gap_2()
         .text_xs()
         .text_color(cx.theme().muted_foreground)
+        .child(mark_slot(div()))
         .child(text)
         .into_any_element()
 }
@@ -492,7 +503,9 @@ fn more(group: Option<PathBuf>, hidden: usize, cx: &mut Context<Shell>) -> AnyEl
         .items_center()
         .h(ROW_H)
         .when(group.is_some(), |d| d.ml(INDENT))
-        .pl_1p5()
+        .px_2()
+        .gap_2()
+        .child(mark_slot(div()))
         .child(
             crate::controls::action(gpui::ElementId::Name(id))
                 .quiet(cx)
@@ -516,7 +529,7 @@ fn add_project(cx: &mut Context<Shell>) -> AnyElement {
         .items_center()
         .h(ROW_H)
         .mt_3()
-        .px_1p5()
+        .px_2()
         .gap_2()
         .rounded(cx.theme().radius_tokens().sm)
         .cursor_pointer()
@@ -524,13 +537,7 @@ fn add_project(cx: &mut Context<Shell>) -> AnyElement {
         .text_color(cx.theme().muted_foreground)
         .tooltip(|window, cx| Tooltip::new("Add a project to this workspace").build(window, cx))
         .on_click(cx.listener(|shell: &mut Shell, _, _, cx| shell.add_root(cx)))
-        .child(
-            div()
-                .w_4()
-                .flex()
-                .justify_center()
-                .child(Icon::new(IconName::Plus).small()),
-        )
+        .child(mark_slot(Icon::new(IconName::Plus).small()))
         .child("Add project…")
         .into_any_element()
 }
@@ -566,19 +573,23 @@ impl Shell {
         .or_else(|| workspace.active_root().map(|_| workspace.active_root))
     }
 
-    /// Show a session from its row, and put the rail's keyboard row there.
+    /// Show a session from its row, and put the rail's keyboard row there,
+    /// `keyed` when the keys asked for it rather than a click.
     /// The caret goes where showing a session puts it, the composer: whoever
     /// picks a session wants to type to it.
     fn rail_open_session(
         &mut self,
         root: usize,
         session: usize,
+        keyed: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let uid = self.workspace_window().workspace.roots[root].sessions[session].uid;
         self.select_root_session(root, session, window, cx);
-        self.rail_state_mut().cursor = Some(Cursor::Session(uid));
+        let rail = self.rail_state_mut();
+        rail.cursor = Some(Cursor::Session(uid));
+        rail.keyed = keyed;
     }
 
     /// A project row's click: the project's last session shows, or its page
@@ -587,7 +598,9 @@ impl Shell {
     fn rail_click_project(&mut self, root: usize, window: &mut Window, cx: &mut Context<Self>) {
         let path = self.workspace_window().workspace.roots[root].path.clone();
         self.select_root(root, window, cx);
-        self.rail_state_mut().cursor = Some(Cursor::Project(path));
+        let rail = self.rail_state_mut();
+        rail.cursor = Some(Cursor::Project(path));
+        rail.keyed = false;
     }
 
     /// The person folding a project. While a search is on every project
@@ -604,12 +617,13 @@ impl Shell {
         match self.rail_state().cursor.clone() {
             Some(Cursor::Session(uid)) => {
                 if let Some((root, session)) = self.find_session(uid) {
-                    self.rail_open_session(root, session, window, cx);
+                    self.rail_open_session(root, session, true, window, cx);
                 }
             }
             Some(Cursor::Project(path)) => {
                 let fold = self.project_unfolded(&path);
                 self.rail_fold(path, fold, cx);
+                self.rail_state_mut().keyed = true;
             }
             None => {}
         }
@@ -628,8 +642,10 @@ impl Shell {
             None => return,
         };
         self.rail_fold(path.clone(), fold, cx);
+        let rail = self.rail_state_mut();
+        rail.keyed = true;
         if fold {
-            self.rail_state_mut().cursor = Some(Cursor::Project(path));
+            rail.cursor = Some(Cursor::Project(path));
         }
     }
 
@@ -659,7 +675,9 @@ impl Shell {
             (None, false) => rows.last(),
         };
         if let Some(next) = next.cloned() {
-            self.rail_state_mut().cursor = Some(next);
+            let rail = self.rail_state_mut();
+            rail.cursor = Some(next);
+            rail.keyed = true;
             cx.notify();
         }
     }
@@ -689,7 +707,7 @@ impl Shell {
             None => order.first(),
         };
         if let Some(&(root, session, _)) = next {
-            self.rail_open_session(root, session, window, cx);
+            self.rail_open_session(root, session, true, window, cx);
         }
     }
 

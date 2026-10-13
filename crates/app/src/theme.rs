@@ -93,9 +93,9 @@ struct Ramp {
     /// toward the near-black surface.
     ///
     /// It can afford to be quiet where a *surface* could not. A region has only
-    /// its fill to be found by; a row has ink at full strength and a weight the
-    /// library sets from the same token pair, so the fill is the third thing
-    /// saying it and not the only one.
+    /// its fill to be found by; a chosen row has its ink at full strength among
+    /// rows in the muted one, so the fill is the second thing saying it and not
+    /// the only one.
     marked: &'static str,
     /// Every hairline and card border.
     hairline: &'static str,
@@ -107,11 +107,12 @@ struct Ramp {
     /// light palette, where the lift carries it; in the dark one a clear step
     /// above the well, because a shadow barely shows on near-black.
     raised: &'static str,
-    /// A field with no edge sunk into the well: the rail's search. It has its
-    /// fill alone to be found by, so it steps away from the well the other way
-    /// from a row lifting off it. White in the light palette, where the panel
-    /// step sat too close to the well to see; in the dark one the panel step,
-    /// because the reading surface cut a hole the eye went to first.
+    /// A field with no edge sunk into the well: the rail's search, and the
+    /// rail's badges. It has its fill alone to be found by, so it steps away
+    /// from the well the other way from a row lifting off it. White in the
+    /// light palette, where the panel step sat too close to the well to see; in
+    /// the dark one the panel step, because the reading surface cut a hole the
+    /// eye went to first.
     inset: &'static str,
     /// A control's edge, and the scrollbar thumb.
     control: &'static str,
@@ -448,8 +449,10 @@ pub(crate) fn raised(cx: &App) -> Hsla {
     Hsla::parse_hex(ramp.raised).unwrap_or(cx.theme().popover)
 }
 
-/// The fill of a field with no edge sunk into the well. No library token
-/// holds it, so it is read off the ramp by mode, as [`raised`] is.
+/// The fill of a field with no edge sunk into the well, and of a badge in the
+/// rail, which has to stand off the well, a hovered row and a chosen one at
+/// once. No library token holds it, so it is read off the ramp by mode, as
+/// [`raised`] is.
 pub(crate) fn inset(cx: &App) -> Hsla {
     let ramp = match cx.theme().mode.is_dark() {
         true => &DARK,
@@ -515,7 +518,7 @@ mod tests {
     /// floor on purpose.
     ///
     /// A region has only its fill to be found by. A marked row has ink at full
-    /// strength and a weight to go with it, so the fill is the third thing
+    /// strength among rows in the muted one, so the fill is the second thing
     /// saying which row it is and not the only one — and it is read at a glance
     /// down a column of thirty, where the loud answer is worse than the quiet
     /// one. Below this it stops being a fill at all: `hover` against the well is
@@ -834,7 +837,7 @@ mod tests {
     /// Both halves matter. The rail's ink is deliberately below prose strength
     /// — a column of names to aim at, not a body of text — and the fill under a
     /// marked row is the faintest step there is, so what says *which* row is
-    /// selected is the ink and the weight on it rather than a slab of colour.
+    /// selected is the ink on it rather than a slab of colour.
     /// That only works while that ink is legible on that fill and clearly
     /// louder than the rows around it, neither of which the pairing gets for
     /// free: it is the one place in the app where the selected ink lands on the
@@ -1056,6 +1059,79 @@ mod tests {
             assert!(
                 picked > hovered + 0.1,
                 "{name}: the chosen row ({picked:.2}) is not past a hovered one ({hovered:.2})"
+            );
+        }
+    }
+
+    /// Everything a rail row writes on the fills it takes: at rest the well,
+    /// hovered `sidebar_accent`, chosen `rail_chosen`.
+    ///
+    /// A badge sinks on the inset step, which has to stand off all three or it
+    /// reads as loose words on the row it sits in; the words in it read. A
+    /// state's word waiting on the person reads on every fill, and on the
+    /// selected step of the chip that filters by it. The chosen row's meta
+    /// line is the step between its name's ink and muted, so it reads and
+    /// stays under the name.
+    #[test]
+    fn the_rail_reads_on_every_fill_a_row_takes() {
+        const APART: f32 = 1.05;
+        for (name, ramp, mode) in [
+            ("light", &LIGHT, ThemeMode::Light),
+            ("dark", &DARK, ThemeMode::Dark),
+        ] {
+            let theme = resolve(ramp, mode);
+            let chosen = chosen_over(theme.sidebar_accent, theme.sidebar_accent_foreground);
+            let inset = Hsla::parse_hex(ramp.inset).unwrap();
+            let fills = [
+                ("the well", theme.muted),
+                ("a hovered row", theme.sidebar_accent),
+                ("the chosen row", chosen),
+            ];
+            let warning = onehand_plugin_host::status_hue(theme.yellow, theme.foreground);
+            let danger = onehand_plugin_host::status_hue(theme.red, theme.foreground);
+
+            for (row, fill) in fills {
+                let ratio = contrast(inset, fill);
+                assert!(
+                    ratio >= APART,
+                    "{name}: a badge on {row} is {ratio:.2} from it"
+                );
+                for (state, ink) in [("warning", warning), ("danger", danger)] {
+                    let ratio = contrast(ink, fill);
+                    assert!(
+                        ratio >= AA,
+                        "{name}: a {state} word on {row} is {ratio:.2}, under {AA}"
+                    );
+                }
+            }
+            for (label, ink) in [
+                ("its words", theme.secondary_foreground),
+                ("a stuck pill's words", warning),
+            ] {
+                let ratio = contrast(ink, inset);
+                assert!(ratio >= AA, "{name}: {label} on a badge are {ratio:.2}");
+            }
+            let on_chip = contrast(warning, theme.secondary_active);
+            assert!(
+                on_chip >= AA,
+                "{name}: the attention chip's words while on are {on_chip:.2}"
+            );
+
+            let meta = onehand_plugin_host::middle_ink(
+                theme.sidebar_accent_foreground,
+                theme.muted_foreground,
+            );
+            let (line, title) = (
+                contrast(meta, chosen),
+                contrast(theme.sidebar_accent_foreground, chosen),
+            );
+            assert!(
+                line >= AA,
+                "{name}: the chosen row's meta line is {line:.2}, under {AA}"
+            );
+            assert!(
+                line < title,
+                "{name}: the chosen row's meta line ({line:.2}) is as loud as its name ({title:.2})"
             );
         }
     }

@@ -31,7 +31,8 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | A control at a dialog's or a form's scale | `.tall()` (the `Tall` trait, for a button or a field; re-exported by `crates/app/src/controls.rs`) | `crates/plugin-host/src/lib.rs` |
 | A ghost button | `.quiet(cx)`; an icon with no words `.quiet_icon(on, cx)`, muted at rest and in its fill's ink when hovered or `on` (the `Quiet` trait, re-exported by `crates/app/src/controls.rs`) | `crates/plugin-host/src/lib.rs` |
 | A button that can refuse | `.refuses(why)`: refusing while `why` is `Some`, its reason the tooltip; called after the control's own tooltip (the `Refuses` trait, re-exported by `crates/app/src/controls.rs`) | `crates/plugin-host/src/lib.rs` |
-| A small label, a badge | `Tag` at `.small()` and `.rounded(cx.theme().radius_lg)`; tinted through `Tag::custom` and `tint(base, cx)` | gpui-component; `crates/plugin-host/src/lib.rs` |
+| A small label, a badge | `badge(text, tint, cx)`: the library's `Tag` at `.small()` on the large corner, in a `Tint`'s fill and ink (`tint(base, cx)` for a hue) | `crates/plugin-host/src/lib.rs` |
+| A mark down a column (an icon, a state's mark, a dot) | `mark_slot(mark)`: one icon wide, centred, so marks share a line and labels an edge | `crates/plugin-host/src/lib.rs` |
 | A menu, its rows, a menu under its control | `menu_item`, `menu_row`, `menu_below` | `crates/plugin-host/src/menu.rs` |
 | One of a few choices, the taken one filled (filter chips) | `choice` (a `quiet` ghost button, `selected` when taken, at the `ControlSize` its role takes) | `crates/plugin-host/src/lib.rs` |
 | A choice between a few views, every one the same width | `switch` (a `choice` per view at `flex_1`, at one `ControlSize`) | `crates/plugin-host/src/lib.rs` |
@@ -54,7 +55,7 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | Transcript sizes and corners | the constants and `radius_*` | `crates/app/src/chat/transcript/metrics.rs` |
 | The composer card | `card` | `crates/app/src/chat/composer/card.rs` |
 | The composer popup and its parts | `popup_surface`, `popup_header`, `popup_title`, `candidate_row`, `choice_row` | `crates/app/src/chat/composer/popup.rs`, `rows.rs` |
-| A rail row's fills and controls | `row_surfaces`, `hover_fill`, `chosen_fill`, `rail_control`, `menu_button` | `crates/app/src/rail/row.rs` |
+| A rail row's fills, inks and controls | `row_surfaces`, `row_inks`, `hover_fill`, `chosen_fill`, `key_ring`, `row_control`, `meta_control`, `menu_button` | `crates/app/src/rail/row.rs` |
 
 The app has no shared page section yet: take the nearest one above, and when a second
 page needs the same thing, lift it into a shared module in that change rather than copying it.
