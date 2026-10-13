@@ -1,5 +1,6 @@
 use super::metrics::{
-    ASK_CHOICE_DOT, ASK_CHOICE_MARK, ASK_MARK_RING, ASK_ROW_MIN, ASK_TAB_W, CARD_PAD, PART_GAP,
+    ASK_CHOICE_DOT, ASK_CHOICE_MARK, ASK_FIELD_H, ASK_MARK_RING, ASK_ROW_MIN, ASK_TAB_W, CARD_PAD,
+    PART_GAP,
 };
 use super::parts::{
     ActivityRow, BlockingBody, Object, RowMark, activity_row, card_body, card_foot, card_head,
@@ -368,7 +369,16 @@ impl AskForm<'_> {
             })
             .flatten()?;
         let key = ask_key_hint(self.a.row_count(self.active));
-        Some(text_input(&state, cx).when_some(key, |field, key| field.suffix(key)))
+        Some(
+            text_input(&state, cx)
+                .small()
+                // As tall as a choice of one line and its words on the
+                // choices' edge: it is the last row of the list, written in
+                // rather than picked.
+                .h(ASK_FIELD_H)
+                .px_3()
+                .when_some(key, |field, key| field.suffix(key)),
+        )
     }
 
     /// What closes the card: Skip, then the forward button. The keys are
