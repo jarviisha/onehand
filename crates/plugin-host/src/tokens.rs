@@ -33,6 +33,16 @@ pub const ROW_H: Rems = rems(1.875);
 /// floors a pixel or two off read as a line of controls that do not agree.
 pub const CONTROL_H: Rems = rems(1.5);
 
+/// A control at a dialog's or a form's scale: a footer's buttons, a form's
+/// fields and the buttons beside them, a page head's actions.
+///
+/// The library's default height, carried as a number for the reason
+/// [`CONTROL_H`] is, and set by [`crate::Tall`] over the small size rather
+/// than reached through the default one: the library letters a default-size
+/// button at the reading size, a step above the field beside it, while a
+/// small one letters at the chrome size every control here reads at.
+pub const FIELD_H: Rems = rems(2.);
+
 /// Machine text: code, a command, a tool's output, a path.
 ///
 /// A step under the secondary size, so what a program printed reads quieter

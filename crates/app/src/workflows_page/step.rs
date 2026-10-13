@@ -1,12 +1,14 @@
 use super::WorkflowsPage;
 use super::draft::{Kind, StepDraft};
 use super::{click, row_delete, row_icon};
+use crate::controls::Tall as _;
 use crate::controls::text_input;
 use crate::settings::{about, field};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div,
 };
+use gpui_component::button::ButtonVariants as _;
 
 use gpui_component::input::Textarea;
 use gpui_component::switch::Switch;
@@ -39,7 +41,7 @@ pub(super) fn step_box(
         crate::controls::menu_below(
             ("step-kind", i),
             crate::controls::action(("step-kind-trigger", i))
-                .outline()
+                .secondary()
                 .xsmall()
                 .label(step.kind.label())
                 .icon(Icon::new(IconName::ChevronDown)),
@@ -73,7 +75,7 @@ pub(super) fn step_box(
         .child(kind_menu)
         .child(div().flex_1())
         .child(
-            row_icon(("step-up", i), IconName::ArrowUp, "Move up").on_click(click(
+            row_icon(("step-up", i), IconName::ArrowUp, "Move up", cx).on_click(click(
                 handle,
                 move |page, window, cx| {
                     page.edit_workflow_draft(window, cx, |d, _, _| d.move_step(i, true))
@@ -81,7 +83,7 @@ pub(super) fn step_box(
             )),
         )
         .child(
-            row_icon(("step-down", i), IconName::ArrowDown, "Move down").on_click(click(
+            row_icon(("step-down", i), IconName::ArrowDown, "Move down", cx).on_click(click(
                 handle,
                 move |page, window, cx| {
                     page.edit_workflow_draft(window, cx, |d, _, _| d.move_step(i, false))
@@ -207,7 +209,7 @@ pub(super) fn step_box(
                 crate::controls::menu_below(
                     ("step-target", i),
                     crate::controls::action(("step-target-trigger", i))
-                        .outline()
+                        .secondary()
                         .small()
                         .label(if current.is_empty() {
                             "Pick a step".to_string()
@@ -245,7 +247,7 @@ pub(super) fn step_box(
                     col.child(field(
                         "Command",
                         about("Run by onehand in the work, through sh."),
-                        text_input(&step.command, cx),
+                        text_input(&step.command, cx).tall(),
                         cx,
                     ))
                 })

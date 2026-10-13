@@ -4,11 +4,11 @@
 use super::RailState;
 use super::model::{Filter, toggle_attention};
 use super::row::labelled;
+use crate::controls::Quiet as _;
 use crate::controls::text_input;
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{Anchor, Context, IntoElement, ParentElement, Styled, div};
-use gpui_component::button::ButtonVariants as _;
 use gpui_component::menu::DropdownMenu as _;
 use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, Sizable as _, StyledExt};
 
@@ -62,7 +62,7 @@ pub(super) fn sessions_header(
             let verb = if waiting == 1 { "needs" } else { "need" };
             d.child(
                 crate::controls::action("rail-attention")
-                    .ghost()
+                    .quiet(cx)
                     .xsmall()
                     .label(format!("{waiting} {verb} attention"))
                     .text_color(warning)
@@ -83,7 +83,7 @@ pub(super) fn sessions_header(
             "rail-filter-name",
             "Filter sessions",
             crate::controls::action("rail-filter")
-                .ghost()
+                .quiet(cx)
                 .xsmall()
                 .icon(
                     Icon::new(crate::icons::Icon::ListFilter).text_color(match filter {

@@ -9,8 +9,8 @@ use gpui::{
     InteractiveElement as _, IntoElement, ParentElement, Rems, Render,
     StatefulInteractiveElement as _, Styled, Window, div, rems,
 };
-use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme, IconName, Sizable as _, StyledExt};
+use onehand_plugin_host::Quiet as _;
 use onehand_plugin_host::tokens::BAR_H;
 use onehand_plugin_host::{action, hint};
 
@@ -68,7 +68,7 @@ impl IssuesView {
             .child(
                 action("issues-page-close")
                     .small()
-                    .ghost()
+                    .quiet(cx)
                     .icon(IconName::Close)
                     .tooltip("Close (Esc)")
                     .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {

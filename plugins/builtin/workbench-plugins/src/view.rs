@@ -11,6 +11,7 @@ use gpui::{
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{InputEvent, InputState};
 use gpui_component::{ActiveTheme, Selectable as _, Sizable as _, StyledExt};
+use onehand_plugin_host::Quiet as _;
 use onehand_plugin_host::text_input;
 use onehand_plugin_host::{Ask, Refuses as _, Request, action, choice, hint, status_line, switch};
 use std::collections::HashMap;
@@ -427,6 +428,7 @@ impl PluginsView {
                 view.tab = Tab::ALL[*i];
                 cx.notify();
             }),
+            cx,
         );
 
         // Only the list on screen is built: the other is a click away and
@@ -583,7 +585,7 @@ impl PluginsView {
                 div().px_2().child(
                     action("plugins-retry")
                         .xsmall()
-                        .outline()
+                        .secondary()
                         .label("Try again")
                         .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
                             view.catalog = None;
@@ -612,7 +614,7 @@ impl PluginsView {
         markets.dedup();
         let current = self.market.clone();
         let chips = (markets.len() > 1).then(|| {
-            let all = choice("plugins-market-all", "All", current.is_none())
+            let all = choice("plugins-market-all", "All", current.is_none(), cx)
                 .xsmall()
                 .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
                     view.market = None;
@@ -620,7 +622,7 @@ impl PluginsView {
                 }));
             let each = markets.into_iter().enumerate().map(|(i, market)| {
                 let on = current.as_deref() == Some(market.as_str());
-                choice(("plugins-market", i), market.clone(), on)
+                choice(("plugins-market", i), market.clone(), on, cx)
                     .xsmall()
                     .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
                         view.market = Some(market.clone());
@@ -671,7 +673,7 @@ impl PluginsView {
                 .child(
                     action("plugins-restart")
                         .small()
-                        .outline()
+                        .secondary()
                         .label("Restart the agent")
                         .refuses(self.busy.is_some())
                         .on_click(move |_, window, cx| ask(&Request::RestartAgent, window, cx)),
@@ -698,7 +700,7 @@ impl PluginsView {
             .map(|(i, filter)| {
                 action(("plugins-filter", i))
                     .xsmall()
-                    .ghost()
+                    .quiet(cx)
                     .label(filter.label())
                     .selected(filter == current)
                     .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {

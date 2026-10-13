@@ -7,6 +7,7 @@ use super::parts::{
 use super::tool::{CommandBlock, command_cwd};
 use super::{fold_key, live_index};
 use crate::chat::session::ChatSession;
+use crate::controls::Quiet as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, ClickEvent, Entity, InteractiveElement, IntoElement, ParentElement, SharedString,
@@ -395,12 +396,12 @@ fn permission_footer(
                                 // drawn as loudly as "allow once" it is the
                                 // one that gets clicked by muscle memory, and
                                 // it is the one that cannot be taken back from
-                                // the card. It stays reachable, in the neutral
-                                // outline — a decision, not a reflex.
+                                // the card. It stays reachable, on the neutral
+                                // secondary fill — a decision, not a reflex.
                                 .map(|b| match weight {
                                     PermissionWeight::AllowOnce => b.primary(),
-                                    PermissionWeight::AllowAlways => b.outline(),
-                                    PermissionWeight::Deny => b.ghost(),
+                                    PermissionWeight::AllowAlways => b.secondary(),
+                                    PermissionWeight::Deny => b.quiet(cx),
                                 })
                                 .label(option.name.clone())
                                 .on_click(move |_, _, cx: &mut App| {

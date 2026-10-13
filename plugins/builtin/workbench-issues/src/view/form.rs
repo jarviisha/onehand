@@ -10,6 +10,8 @@ use gpui_component::input::{InputState, Textarea, TextareaState};
 use gpui_component::{ActiveTheme, Sizable as _, StyledExt};
 use onehand_core::issues::template::IssueTemplate;
 use onehand_core::issues::{self, Draft};
+use onehand_plugin_host::Quiet as _;
+use onehand_plugin_host::Tall as _;
 use onehand_plugin_host::action;
 use onehand_plugin_host::text_input;
 
@@ -203,7 +205,7 @@ fn templates_row(
             .children(templates.iter().enumerate().map(|(at, t)| {
                 action(("issue-form-template", at))
                     .small()
-                    .ghost()
+                    .quiet(cx)
                     .label(t.name.clone())
                     .on_click(cx.listener(move |view, _: &ClickEvent, window, cx| {
                         view.apply_template(at, window, cx)
@@ -248,8 +250,8 @@ pub(super) fn form_view(
                     }
                 }),
         )
-        .child(text_input(&form.title, cx))
-        .child(text_input(&form.labels, cx))
+        .child(text_input(&form.title, cx).tall())
+        .child(text_input(&form.labels, cx).tall())
         .children(templates_row(form, templates, cx))
         .child(
             div()
@@ -265,7 +267,7 @@ pub(super) fn form_view(
                 .child(
                     action("issue-form-cancel")
                         .small()
-                        .ghost()
+                        .quiet(cx)
                         .label("Cancel")
                         .on_click(cx.listener(|view, _: &ClickEvent, _, cx| view.cancel_form(cx))),
                 )

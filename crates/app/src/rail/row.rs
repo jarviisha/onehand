@@ -1,13 +1,14 @@
 //! What every row of the rail shares: the fills, the fade at the end of a
 //! name, the controls a row carries, and the drags that reorder the tree.
 
+use crate::controls::Quiet as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     Anchor, App, Context, Div, ElementId, Hsla, InteractiveElement, IntoElement, MouseButton,
     ParentElement, Rems, Render, SharedString, Stateful, StatefulInteractiveElement, Styled,
     Window, div, rems,
 };
-use gpui_component::button::{Button, ButtonVariants as _};
+use gpui_component::button::Button;
 use gpui_component::menu::{DropdownMenu as _, PopupMenu};
 use gpui_component::{ActiveTheme, Icon, Sizable as _};
 
@@ -127,7 +128,7 @@ pub(super) fn on_hover(group: &SharedString, shown: bool, child: impl IntoElemen
 /// A control the rail draws: ghost, extra small, icon-only, in muted ink.
 pub(super) fn rail_control(id: impl Into<ElementId>, icon: impl Into<Icon>, cx: &App) -> Button {
     crate::controls::action(id)
-        .ghost()
+        .quiet(cx)
         .xsmall()
         .icon(icon.into().text_color(cx.theme().muted_foreground))
 }

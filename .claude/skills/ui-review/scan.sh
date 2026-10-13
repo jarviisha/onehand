@@ -47,6 +47,8 @@ check "thinned token: a hover or a fill made by alpha" \
   '\.(opacity|alpha)\('
 check "button outside the wrapper, or a refusal without its cursor" \
   'Button::new\(|\.disabled\('
+check "outline: a Tag's alone, no button draws an edge" \
+  '\.outline\(\)'
 check "accent as ink: the selected fill, not a hue" \
   '(text_color|border_color)\([^)]*\.accent\)'
 

@@ -14,10 +14,10 @@ use gpui::{
     App, AppContext as _, Entity, InteractiveElement, IntoElement, ParentElement, Rems,
     StatefulInteractiveElement, Styled, Window, div, relative, rems,
 };
-use gpui_component::button::ButtonVariants as _;
 use gpui_component::text::{TextView, TextViewState, TextViewStyle};
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use onehand_plugin_host::Quiet as _;
 use onehand_plugin_host::tokens;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -338,7 +338,7 @@ pub(crate) fn reader(
                 .children(doc.map(|_| {
                     onehand_plugin_host::action("markdown-edit")
                         .xsmall()
-                        .ghost()
+                        .quiet(cx)
                         .label("Edit source")
                         .tooltip("Open this file in the editor")
                         .on_click(on_edit)

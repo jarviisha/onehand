@@ -5,6 +5,7 @@ use super::{
 use crate::chat::session::ChatSession;
 use crate::chat::transcript::{self};
 use crate::chat::viewport::{self};
+use crate::controls::Quiet as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, Context, Entity, IntoElement, ListState, ParentElement, SharedString, Styled, Window, div,
@@ -187,7 +188,7 @@ impl ChatPane {
                 }))
                 .child(
                     crate::controls::action("edit-queued")
-                        .ghost()
+                        .quiet(cx)
                         .small()
                         .label("Edit")
                         .tooltip("Put it back in the composer")
@@ -197,7 +198,7 @@ impl ChatPane {
                 )
                 .child(
                     crate::controls::action("drop-queued")
-                        .ghost()
+                        .quiet(cx)
                         .small()
                         .icon(Icon::new(IconName::Close))
                         .tooltip("Remove from the queue")
@@ -490,17 +491,17 @@ impl ChatPane {
                                 .h_flex()
                                 .justify_center()
                                 .child(
-                                    // The outline button's own fill is partly
-                                    // transparent. Give the floating control an
-                                    // opaque raised surface so transcript text
-                                    // scrolling beneath cannot show through it.
+                                    // The floating control's lift, on an opaque
+                                    // raised surface, so transcript text
+                                    // scrolling beneath cannot show through
+                                    // its corners.
                                     div()
                                         .rounded(cx.theme().radius_lg)
                                         .bg(cx.theme().popover.alpha(1.))
                                         .shadow(crate::tokens::lift(cx))
                                         .child(
                                             crate::controls::action("to-bottom")
-                                                .outline()
+                                                .secondary()
                                                 .rounded(cx.theme().radius_lg)
                                                 // **The arrow alone.** The
                                                 // words named what was down

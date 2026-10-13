@@ -6,6 +6,7 @@ use super::super::step_strip::{open_review, open_revise, press_continue};
 use super::super::workspace_page::{card_box, page_card};
 use super::super::{ChatPane, ChatPaneEvent, rel_time};
 use super::{Page, TasksPage, open_session, row_actions, row_said};
+use crate::controls::Quiet as _;
 use crate::task::Row;
 use gpui::{
     App, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
@@ -224,7 +225,7 @@ pub(super) fn task_detail(
 ) -> Vec<gpui::AnyElement> {
     let muted = cx.theme().muted_foreground;
     let back = crate::controls::action("task-back")
-        .ghost()
+        .quiet(cx)
         .small()
         .icon(Icon::new(IconName::ChevronLeft))
         .label("All tasks")
@@ -245,7 +246,7 @@ pub(super) fn task_detail(
         .children(row_actions("task-detail", row, true, cx))
         .children(answers_review(task).then(|| {
             crate::controls::action("task-answer-review")
-                .ghost()
+                .quiet(cx)
                 .small()
                 .label("Answer the pull request review…")
                 .tooltip(
@@ -258,7 +259,7 @@ pub(super) fn task_detail(
         // the pull request as read.
         .children(removable(task, detail).then(|| {
             crate::controls::action("task-remove-worktree")
-                .ghost()
+                .quiet(cx)
                 .small()
                 .text_color(crate::theme::status_ink(cx).danger)
                 .label(Act::RemoveWorktree.label())
@@ -610,7 +611,7 @@ fn way_out(
             .label(act.label());
         let button = match Some(act) == next.primary {
             true => button.primary(),
-            false => button.ghost(),
+            false => button.quiet(cx),
         };
         button.on_click(super::emit(&task.id, cx, ChatPaneEvent::RetryTaskCurrent))
     });
@@ -667,7 +668,7 @@ fn review_card(
         .child(
             div().h_flex().child(
                 crate::controls::action("task-review-read")
-                    .ghost()
+                    .quiet(cx)
                     .small()
                     .label("Review…")
                     .on_click({
@@ -680,7 +681,7 @@ fn review_card(
         )
         .child(answer_row(
             crate::controls::action("task-review-revise")
-                .ghost()
+                .quiet(cx)
                 .small()
                 .label("Revise…")
                 .on_click(

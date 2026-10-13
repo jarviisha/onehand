@@ -1,12 +1,12 @@
 use super::workspace_page::{ALL_PROJECTS, PageProject, card_box, page_card};
 use super::{ChatPane, ChatPaneEvent, Page};
+use crate::controls::Quiet as _;
 use crate::task::Row;
 use crate::tokens::PAGE_WIDE;
 use gpui::{
     App, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, Window, div,
 };
-use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::task::{Group, Section};
 use std::path::{Path, PathBuf};
@@ -134,7 +134,7 @@ impl ChatPane {
         let filter = crate::controls::menu_below(
             "tasks-filter",
             crate::controls::action("tasks-filter-trigger")
-                .ghost()
+                .quiet(cx)
                 .small()
                 .label(filter_name)
                 .icon(Icon::new(IconName::ChevronDown))
@@ -318,15 +318,15 @@ fn row_actions(
     cx: &mut Context<ChatPane>,
 ) -> Vec<gpui::AnyElement> {
     let id = row.id.clone();
-    let button = |what: &'static str, label: &'static str| {
+    let button = |what: &'static str, label: &'static str, cx: &App| {
         crate::controls::action(SharedString::from(format!("{key}-{what}")))
-            .ghost()
+            .quiet(cx)
             .small()
             .label(label)
     };
     let open = open_session(&format!("{key}-open"), row, cx);
     let retry = |cx: &mut Context<ChatPane>| {
-        button("retry", "Retry…")
+        button("retry", "Retry…", cx)
             .tooltip("Run it again in a new run")
             .on_click(emit(&id, cx, ChatPaneEvent::RetryTask))
             .into_any_element()
@@ -337,7 +337,7 @@ fn row_actions(
             actions.extend(open.map(IntoElement::into_any_element));
             if row.stoppable {
                 actions.push(
-                    button("stop", "Stop")
+                    button("stop", "Stop", cx)
                         .on_click(emit(&id, cx, ChatPaneEvent::StopTask))
                         .into_any_element(),
                 );
@@ -346,7 +346,7 @@ fn row_actions(
         Group::Ended => {
             if row.resumable {
                 actions.push(
-                    button("resume", "Resume")
+                    button("resume", "Resume", cx)
                         .tooltip("Carry on from that step in a new session")
                         .on_click(emit(&id, cx, ChatPaneEvent::ResumeTask))
                         .into_any_element(),
@@ -354,7 +354,7 @@ fn row_actions(
             }
             actions.push(retry(cx));
             actions.push(
-                button("dismiss", "Dismiss")
+                button("dismiss", "Dismiss", cx)
                     .tooltip("Let this task go; it is kept as history and its work stays")
                     .on_click(emit(&id, cx, ChatPaneEvent::DismissTask))
                     .into_any_element(),
@@ -378,7 +378,7 @@ fn open_session(
     let (uid, window) = row.session?;
     Some(
         crate::controls::action(SharedString::from(id.to_string()))
-            .ghost()
+            .quiet(cx)
             .small()
             .label("Open session")
             .on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {

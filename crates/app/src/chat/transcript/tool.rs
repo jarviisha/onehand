@@ -8,12 +8,12 @@ use super::parts::{
     plain_box, row_note, scrolled, sideways,
 };
 use crate::chat::session::ChatSession;
+use crate::controls::Quiet as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, Axis, ClickEvent, Entity, InteractiveElement, IntoElement, ParentElement, RenderOnce,
     ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Window, div, rems,
 };
-use gpui_component::button::ButtonVariants as _;
 use gpui_component::scroll::{ScrollableMask, Scrollbar, ScrollbarMode};
 use gpui_component::{ActiveTheme, Icon, IconName, IconNamed as _, Sizable as _, StyledExt};
 use onehand_core::acp::{ToolContent, ToolKind, ToolStatus};
@@ -322,7 +322,7 @@ fn detail_frame(
                 .right(TIGHT_GAP)
                 .rounded(cx.theme().radius_tokens().sm)
                 .bg(cx.theme().muted)
-                .child(copy_button(("detail-copy", key), text).tooltip("Copy this"))
+                .child(copy_button(("detail-copy", key), text, cx).tooltip("Copy this"))
         }))
 }
 
@@ -486,7 +486,7 @@ fn diff_detail(
                     .child(div().flex_1())
                     .child(
                         crate::controls::action(("load-diff", key))
-                            .ghost()
+                            .quiet(cx)
                             .xsmall()
                             .label("Load diff")
                             .on_click(move |_, _, cx: &mut App| {
@@ -576,7 +576,7 @@ fn diff_path(
     let full = onehand_core::editor::resolve_in_root(root, path);
     let session = session.clone();
     crate::controls::action(("diff-path", key))
-        .ghost()
+        .quiet(cx)
         .w_full()
         .min_w_0()
         .h_auto()
@@ -829,7 +829,7 @@ impl RenderOnce for CommandBlock {
             .child(ScrollableMask::new(Axis::Vertical, &scroll).id(("perm-command-mask", key)))
             .child(
                 crate::controls::action(("perm-copy", key))
-                    .ghost()
+                    .quiet(cx)
                     .absolute()
                     .top(BLOCK_INSET)
                     .right(BLOCK_INSET)

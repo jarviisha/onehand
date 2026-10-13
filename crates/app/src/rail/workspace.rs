@@ -1,4 +1,5 @@
 use super::row::{MAX_LABEL, ellipsize, faded};
+use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
 use crate::shell::Shell;
 use crate::state::WorkspaceWindow;
@@ -6,7 +7,6 @@ use gpui::{
     Anchor, App, ClickEvent, Context, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, WeakEntity, Window, div,
 };
-use gpui_component::button::ButtonVariants as _;
 use gpui_component::menu::{DropdownMenu as _, PopupMenu, PopupMenuItem};
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
@@ -54,7 +54,7 @@ pub(super) fn workspace_bar(
         )
         .child(
             crate::controls::action("workspace")
-                .ghost()
+                .quiet(cx)
                 .small()
                 .icon(Icon::new(IconName::ChevronsUpDown).text_color(cx.theme().muted_foreground))
                 .tooltip("Workspaces, and the projects in this one")
@@ -65,7 +65,7 @@ pub(super) fn workspace_bar(
         )
         .child(
             crate::controls::action("hide-rail")
-                .ghost()
+                .quiet(cx)
                 .small()
                 .icon(Icon::new(IconName::PanelLeftClose).text_color(cx.theme().muted_foreground))
                 .tooltip_with_action("Hide the rail", &crate::shell::ToggleRail, None)
@@ -251,10 +251,10 @@ pub(super) fn new_button(
         .h_flex()
         .items_center()
         .flex_none()
-        .child(new.ghost().small())
+        .child(new.quiet(cx).small())
         .child(
             crate::controls::action("new-session-target")
-                .ghost()
+                .quiet(cx)
                 .small()
                 .dropdown_caret(true)
                 .tooltip("Start a session in another project, or with another agent")

@@ -16,6 +16,7 @@
 //! What a row *is* — its state, its words, its age — is decided in
 //! [`model`], without drawing, and the same rows are what the keyboard walks.
 
+use crate::controls::Quiet as _;
 use crate::shell::Shell;
 use crate::tokens::ROW_H;
 use gpui::prelude::FluentBuilder as _;
@@ -25,7 +26,6 @@ use gpui::{
     Styled, Subscription, Task, Window, div,
 };
 use gpui::{Rems, rems};
-use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{InputEvent, InputState};
 use gpui_component::tag::Tag;
 use gpui_component::tooltip::Tooltip;
@@ -451,7 +451,7 @@ fn foot(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
         .child(div().flex_1())
         .child(
             crate::controls::action("open-settings")
-                .ghost()
+                .quiet(cx)
                 .small()
                 .icon(Icon::new(IconName::Settings).text_color(cx.theme().muted_foreground))
                 .tooltip_with_action(
@@ -495,7 +495,7 @@ fn more(group: Option<PathBuf>, hidden: usize, cx: &mut Context<Shell>) -> AnyEl
         .pl_1p5()
         .child(
             crate::controls::action(gpui::ElementId::Name(id))
-                .ghost()
+                .quiet(cx)
                 .xsmall()
                 .label(format!("{hidden} more"))
                 .text_color(cx.theme().muted_foreground)

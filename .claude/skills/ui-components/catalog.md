@@ -20,11 +20,13 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | Need | Use | Where |
 |---|---|---|
 | Any button | `action` (sets the pointer and the control's `sm` corner) | `crates/app/src/controls.rs` (the app), `crates/plugin-host/src/lib.rs` (a plugin) |
-| Any text field | `text_input(&state, cx)` (sets the control's `sm` corner) | `crates/app/src/controls.rs` (the app), `crates/plugin-host/src/lib.rs` (a plugin) |
+| Any text field | `text_input(&state, cx)` (sets the control's `sm` corner, on no fill of its own) | `crates/app/src/controls.rs` (the app), `crates/plugin-host/src/lib.rs` (a plugin) |
+| A control at a dialog's or a form's scale | `.tall()` (the `Tall` trait, for a button or a field; re-exported by `crates/app/src/controls.rs`) | `crates/plugin-host/src/lib.rs` |
+| A ghost button | `.quiet(cx)` (the `Quiet` trait, re-exported by `crates/app/src/controls.rs`) | `crates/plugin-host/src/lib.rs` |
 | A button that can refuse | `.refuses(bool)` (the `Refuses` trait, re-exported by `crates/app/src/controls.rs`) | `crates/plugin-host/src/lib.rs` |
 | A small label, a badge | `Tag` at `.small()` and `.rounded(cx.theme().radius_lg)`; tinted through `Tag::custom` and `tint(base, cx)` | gpui-component; `crates/plugin-host/src/lib.rs` |
 | A menu, its rows, a menu under its control | `menu_item`, `menu_row`, `menu_below` | `crates/plugin-host/src/menu.rs` |
-| One of a few choices, the taken one filled (filter chips) | `choice` (a ghost button, `selected` when taken) | `crates/plugin-host/src/lib.rs` |
+| One of a few choices, the taken one filled (filter chips) | `choice` (a `quiet` ghost button, `selected` when taken) | `crates/plugin-host/src/lib.rs` |
 | A choice between a few views, every one the same width | `switch` (a `choice` per view at `flex_1`) | `crates/plugin-host/src/lib.rs` |
 | Tabs that fit their strip, or one select | `tab_strip`, `tab_select`, `tab_menu_rows`, `measure_width` | `crates/plugin-host/src/tabs.rs` |
 | A list beside its detail, or one at a time | `list_detail`, `ListWidths`, `back_link` | `crates/plugin-host/src/list_detail.rs` |

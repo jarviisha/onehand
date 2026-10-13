@@ -11,10 +11,10 @@ use gpui::{
     App, AppContext, Entity, IntoElement, ParentElement, Rems, SharedString,
     StatefulInteractiveElement, Styled, WeakEntity, Window, div, rems,
 };
-use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{Editor, EditorState};
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::editor::{RootEditors, SaveOutcome};
+use onehand_plugin_host::Quiet as _;
 use onehand_plugin_host::{Measured, TabStrip, menu_below, menu_row, tab_strip as tab_strip_rule};
 use std::collections::HashMap;
 use std::path::Path;
@@ -151,7 +151,7 @@ pub(crate) fn tab_strip<T: 'static>(
     // open or shut, and the tooltip says what a press does -- so the two never
     // disagree about which way round it is.
     let lead = match lead {
-        Lead::Back => onehand_plugin_host::back_link("editor-back", "Files")
+        Lead::Back => onehand_plugin_host::back_link("editor-back", "Files", cx)
             .on_click(on_back)
             .into_any_element(),
         Lead::Toggle(shown) => {
@@ -160,7 +160,7 @@ pub(crate) fn tab_strip<T: 'static>(
                 false => (IconName::PanelLeftOpen, "Show the file tree"),
             };
             onehand_plugin_host::action("toggle-file-tree")
-                .ghost()
+                .quiet(cx)
                 .xsmall()
                 .flex_none()
                 .text_color(cx.theme().muted_foreground)
@@ -291,7 +291,7 @@ pub(crate) fn tab_strip<T: 'static>(
         .when(!files.is_empty(), |strip| {
             strip.child(
                 onehand_plugin_host::action("close-all-files")
-                    .ghost()
+                    .quiet(cx)
                     .xsmall()
                     .flex_none()
                     .text_color(cx.theme().muted_foreground)

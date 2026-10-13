@@ -2,6 +2,8 @@
 //! one at a time.
 
 use super::*;
+use crate::controls::Quiet as _;
+use crate::controls::Tall as _;
 use crate::controls::text_input;
 
 pub struct Editor {
@@ -109,7 +111,7 @@ impl Render for Editor {
                              Enter saves; Escape cancels."
                                     .into_any_element(),
                             ),
-                            text_input(&self.input, cx),
+                            text_input(&self.input, cx).tall(),
                             cx,
                         ))
                         .child(
@@ -135,6 +137,7 @@ impl Render for Editor {
                                 .gap_2()
                                 .child(
                                     crate::controls::action("save-shortcut")
+                                        .tall()
                                         .label("Save")
                                         .primary()
                                         .on_click(cx.listener(move |editor, _, window, cx| {
@@ -143,7 +146,8 @@ impl Render for Editor {
                                 )
                                 .child(
                                     crate::controls::action("cancel-shortcut")
-                                        .ghost()
+                                        .tall()
+                                        .quiet(cx)
                                         .label("Cancel")
                                         .on_click(cx.listener(|editor, _, window, cx| {
                                             editor.cancel(window, cx)
@@ -171,7 +175,7 @@ impl Render for Editor {
                     .when(overrides.contains_key(command.id), |row| {
                         row.child(
                             crate::controls::action(("reset-shortcut", index))
-                                .ghost()
+                                .quiet(cx)
                                 .small()
                                 .label("Reset")
                                 .on_click(cx.listener(move |editor, _, window, cx| {
@@ -181,7 +185,7 @@ impl Render for Editor {
                     })
                     .child(
                         crate::controls::action(("edit-shortcut", index))
-                            .ghost()
+                            .quiet(cx)
                             .small()
                             .label("Edit")
                             .on_click(cx.listener(move |editor, _, window, cx| {

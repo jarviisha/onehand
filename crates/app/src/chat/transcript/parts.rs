@@ -1,6 +1,7 @@
 use super::fold_key;
 use super::metrics::{DETAIL_OPEN_H, FOLD_INDENT, MARK_SIZE, TIGHT_GAP};
 use crate::chat::session::ChatSession;
+use crate::controls::Quiet as _;
 use crate::tokens::{CONTROL_H, LEADING};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -8,7 +9,7 @@ use gpui::{
     RenderOnce, ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Window, div,
     relative, rems,
 };
-use gpui_component::button::{Button, ButtonVariants as _};
+use gpui_component::button::Button;
 use gpui_component::scroll::{ScrollableMask, Scrollbar, ScrollbarMode};
 use gpui_component::spinner::Spinner;
 use gpui_component::tag::Tag;
@@ -104,10 +105,14 @@ impl RenderOnce for BlockingBody {
 /// One constructor for both the copies the transcript offers — a fenced block
 /// and a whole answer — because they are the same gesture and the only reason
 /// they ever looked different was that they were written months apart.
-pub(super) fn copy_button(id: impl Into<gpui::ElementId>, text: impl Into<SharedString>) -> Button {
+pub(super) fn copy_button(
+    id: impl Into<gpui::ElementId>,
+    text: impl Into<SharedString>,
+    cx: &App,
+) -> Button {
     let text = text.into();
     crate::controls::action(id)
-        .ghost()
+        .quiet(cx)
         .xsmall()
         // Square at the shared control height, so a copy offered on a fenced
         // block and one offered at the end of an answer are the same target.
@@ -121,10 +126,14 @@ pub(super) fn copy_button(id: impl Into<gpui::ElementId>, text: impl Into<Shared
 /// Copy the paragraph `target`'s turn closes on, gathered **when the button is
 /// clicked**: finding it walks the whole answer, and a redraw is not a reason
 /// to do that.
-pub(super) fn copy_turn_button(session: &Entity<ChatSession>, target: TranscriptItemId) -> Button {
+pub(super) fn copy_turn_button(
+    session: &Entity<ChatSession>,
+    target: TranscriptItemId,
+    cx: &App,
+) -> Button {
     let session = session.clone();
     crate::controls::action("copy-answer")
-        .ghost()
+        .quiet(cx)
         .xsmall()
         .icon(IconName::Copy)
         .on_click(move |_, _, cx: &mut App| {

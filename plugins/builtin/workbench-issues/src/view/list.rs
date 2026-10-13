@@ -7,12 +7,12 @@ use gpui::{
     AnyElement, App, AppContext as _, ClickEvent, Context, Entity, InteractiveElement as _,
     IntoElement, ParentElement, SharedString, StatefulInteractiveElement as _, Styled, Window, div,
 };
-use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{InputEvent, InputState};
 use gpui_component::tag::Tag;
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, Size, StyledExt};
 use onehand_core::issues::{self, Issues, LabelKind, LocalIssue};
+use onehand_plugin_host::Quiet as _;
 use onehand_plugin_host::text_input;
 use onehand_plugin_host::{Tint, action, menu_below, menu_item, status_ink, switch, tint};
 use std::collections::BTreeSet;
@@ -180,7 +180,7 @@ impl IssuesView {
             .child(
                 action("issues-new")
                     .small()
-                    .ghost()
+                    .quiet(cx)
                     .icon(Icon::new(IconName::Plus))
                     .tooltip("New issue")
                     .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
@@ -253,6 +253,7 @@ impl IssuesView {
                         cx.notify();
                     })
                 },
+                cx,
             )))
             .children(self.label_menu(issues, cx));
 
@@ -326,7 +327,7 @@ impl IssuesView {
         let picked = self.label.clone();
         let trigger = action("issues-label-filter")
             .xsmall()
-            .ghost()
+            .quiet(cx)
             .label(picked.clone().unwrap_or_else(|| "Label".to_string()))
             .icon(Icon::new(IconName::ChevronDown))
             .tooltip("Show only issues with a label");
@@ -466,13 +467,13 @@ impl IssuesView {
                     if failed {
                         action("issues-sync-retry")
                             .xsmall()
-                            .ghost()
+                            .quiet(cx)
                             .label("Retry")
                             .tooltip(format!("Sync with {name} again"))
                     } else {
                         action("issues-sync-now")
                             .xsmall()
-                            .ghost()
+                            .quiet(cx)
                             .icon(Icon::new(IconName::Redo))
                             .tooltip("Sync now")
                     }
@@ -482,7 +483,7 @@ impl IssuesView {
             .child(if on {
                 action("issues-sync-pause")
                     .xsmall()
-                    .ghost()
+                    .quiet(cx)
                     .icon(Icon::new(IconName::Pause))
                     .tooltip("Pause auto-sync; links to issues are kept")
                     .on_click(
@@ -491,7 +492,7 @@ impl IssuesView {
             } else {
                 action("issues-sync-resume")
                     .xsmall()
-                    .ghost()
+                    .quiet(cx)
                     .icon(Icon::new(IconName::Play))
                     .tooltip(if paused {
                         format!("Resume auto-sync with {name}")

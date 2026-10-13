@@ -27,6 +27,7 @@ use onehand_core::task::marks::{self, Change};
 use onehand_core::task::work::{
     ANSWER_CHANGED, ANSWER_LINES, Checked, IssueWork, Reading, UnderReview, Work, last_lines,
 };
+use onehand_plugin_host::Quiet as _;
 use onehand_plugin_host::{Refuses as _, Request, action, status_ink};
 use std::path::{Path, PathBuf};
 
@@ -334,7 +335,7 @@ impl IssuesView {
             .child(
                 action("issue-review-close")
                     .xsmall()
-                    .ghost()
+                    .quiet(cx)
                     .label("Close")
                     .on_click(cx.listener(|view, _: &ClickEvent, _, cx| view.close_review(cx))),
             );
@@ -378,7 +379,7 @@ impl IssuesView {
                     column.child(
                         action("issue-review-whole")
                             .xsmall()
-                            .ghost()
+                            .quiet(cx)
                             .label(format!("Show all {total} lines"))
                             .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
                                 view.toggle_review(|review| review.whole = true, cx)
@@ -577,7 +578,7 @@ fn answers(
                     .child(
                         action("issue-review-cancel")
                             .xsmall()
-                            .ghost()
+                            .quiet(cx)
                             .label("Cancel")
                             .on_click(
                                 cx.listener(|view, _: &ClickEvent, _, cx| view.cancel_revise(cx)),
@@ -615,7 +616,7 @@ fn answers(
                 .child(
                     action("issue-review-revise")
                         .xsmall()
-                        .ghost()
+                        .quiet(cx)
                         .label("Revise…")
                         .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
                             view.start_revise(window, cx)

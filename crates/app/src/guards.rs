@@ -664,6 +664,29 @@ mod tests {
         }
     }
 
+    /// The library's ghost hovers on a fill of its own mixing, a shade off the
+    /// selected step a selected ghost shows beside it, so a hovered button
+    /// read as a smaller box than a selected one. The plugin host's `quiet`
+    /// draws the ghost on the ramp's steps, and a bare `ghost()` brings the
+    /// mismatch straight back.
+    #[test]
+    fn every_ghost_button_hovers_on_the_ramp() {
+        // Assembled at run time so the wrapper's own source, and this test,
+        // are not matches for it.
+        let bare = format!(".{}()", "ghost");
+        for (path, source) in ui_sources() {
+            for (n, line) in source.lines().enumerate() {
+                assert!(
+                    !line.contains(&bare),
+                    "{path}:{}: a bare ghost button hovers on the library's own \
+                     fill, a shade off a selected one. Use `.quiet(cx)`.\n    {}",
+                    n + 1,
+                    line.trim()
+                );
+            }
+        }
+    }
+
     /// The lengths written into `rems(` or `px(` on one line, unless the line
     /// declares a constant or is a comment. Zero is not a length anyone tunes.
     fn written_lengths(line: &str) -> Vec<String> {

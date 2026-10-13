@@ -407,8 +407,8 @@ fn effort_chip(
 ///
 /// **While a turn runs, Stop is always there and Queue joins it once there is a
 /// draft.** Stop is the solid danger fill with its word, the one press here
-/// that ends something; Queue is an outline beside it, so the region keeps one
-/// primary and the two are told apart by more than colour.
+/// that ends something; Queue is the neutral secondary fill beside it, so the
+/// region keeps one primary and the two are told apart by more than colour.
 fn send_controls(
     blocked: Option<onehand_core::chat::SubmitBlock>,
     has_draft: bool,
@@ -427,7 +427,7 @@ fn send_controls(
             .gap_1()
             .children(has_draft.then(|| {
                 control("queue")
-                    .outline()
+                    .secondary()
                     .label("Queue")
                     .tooltip("Send this prompt when the current turn finishes")
                     .on_click(on_send)

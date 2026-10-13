@@ -8,6 +8,7 @@ use super::parts::{
 };
 use super::{fold_key, live_index};
 use crate::chat::session::ChatSession;
+use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
 use crate::controls::text_input;
 use crate::tokens::{CODE_TEXT, CONTROL_H, LEADING_TIGHT};
@@ -433,9 +434,9 @@ fn ask_tab_mark(index: usize, active: bool, answered: bool, cx: &App) -> impl In
 ///
 /// **Its ring is ink and not the hairline**, which is the difference between a
 /// control and an edge. Drawn in the hairline it vanished the moment the row
-/// was hovered: a ghost button's hover fill is derived from the same step of
-/// the ramp the hairline sits on, so in the dark palette the two land within a
-/// shade of each other and the ring is painted onto its own background. A mark
+/// was hovered: a ghost button hovers on the ramp's selected step, which in the
+/// dark palette lands within a shade of the hairline, so the ring is painted
+/// onto its own background. A mark
 /// that disappears under the pointer disappears exactly when it is being aimed
 /// at.
 fn ask_choice_mark(on: bool, single: bool, cx: &App) -> impl IntoElement + use<> {
@@ -534,7 +535,7 @@ impl AskForm<'_> {
                     .or_else(|| field.description.clone())
                     .unwrap_or_else(|| format!("Question {}", f + 1));
                 crate::controls::action(("ask-tab", f))
-                    .ghost()
+                    .quiet(cx)
                     .small()
                     .h_flex()
                     .items_center()
@@ -633,7 +634,7 @@ impl AskForm<'_> {
                     );
                 }
                 grows(crate::controls::action(("ask-choice", o)))
-                    .ghost()
+                    .quiet(cx)
                     .px_3()
                     .py_2()
                     .w_full()

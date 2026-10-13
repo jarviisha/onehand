@@ -2,7 +2,9 @@ use super::WorkflowsPage;
 use super::click;
 use super::draft::Kind;
 use super::step::{Earlier, step_box};
+use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
+use crate::controls::Tall as _;
 use crate::controls::text_input;
 use crate::settings::{about, field, section};
 use gpui::{
@@ -124,13 +126,13 @@ pub(super) fn form(
     .child(field(
         "Name",
         about("What the launcher lists it as."),
-        text_input(&draft.name, cx),
+        text_input(&draft.name, cx).tall(),
         cx,
     ))
     .child(field(
         "Description",
         None,
-        text_input(&draft.description, cx),
+        text_input(&draft.description, cx).tall(),
         cx,
     ))
     .child(field(
@@ -145,6 +147,7 @@ pub(super) fn form(
             place_at,
             gpui_component::Size::Small,
             pick_place,
+            cx,
         ),
         cx,
     ))
@@ -155,13 +158,13 @@ pub(super) fn form(
             .child(div().flex_1().child(field(
                 "Misses allowed",
                 about("Turns that fail their gates before the run stops."),
-                text_input(&draft.misses, cx),
+                text_input(&draft.misses, cx).tall(),
                 cx,
             )))
             .child(div().flex_1().child(field(
                 "Timeout",
                 about("Working time, such as 45m or 2h."),
-                text_input(&draft.timeout, cx),
+                text_input(&draft.timeout, cx).tall(),
                 cx,
             ))),
     )
@@ -177,7 +180,7 @@ pub(super) fn form(
             .gap_2()
             .children(Kind::ALL.into_iter().enumerate().map(|(at, kind)| {
                 crate::controls::action(("add-step", at))
-                    .ghost()
+                    .quiet(cx)
                     .small()
                     .icon(Icon::new(IconName::Plus))
                     .label(format!("{} step", kind.label()))
@@ -199,6 +202,7 @@ pub(super) fn form(
             .gap_2()
             .child(
                 crate::controls::action("save-workflow")
+                    .tall()
                     .primary()
                     .refuses(!problems.is_empty())
                     .label("Save")
@@ -208,7 +212,8 @@ pub(super) fn form(
             )
             .child(
                 crate::controls::action("clear-workflow")
-                    .ghost()
+                    .tall()
+                    .quiet(cx)
                     .label("Cancel")
                     .on_click(click(handle, |page, _, cx| page.clear_workflow_draft(cx))),
             ),

@@ -25,12 +25,27 @@ that applies to the component is drawn.
 | State | When | Drawn as |
 |---|---|---|
 | Rest | always | its tokens; an icon at rest in `muted_foreground` |
-| Hover | it can be pressed or picked | the pointer cursor (`action` sets it) and a `list_hover` fill on a row; the library's own on its controls |
+| Hover | it can be pressed or picked | the pointer cursor (`action` sets it) and a `list_hover` fill on a row; the selected step on a ghost button (`quiet`); the library's own on its other controls |
 | Selected or open | one of several is chosen, or its menu is open | the `accent` fill |
 | Focus | the keyboard reaches it | the ring, on keyboard focus only: `.focus_visible(\|s\| s.border_color(cx.theme().ring))` on an element you draw; the library's controls draw theirs |
 | Refusing | it cannot act now | `.refuses(true)`: no press, the arrow cursor, and a tooltip saying why |
 | Loading | it started work still running | `.loading(true)` on the button that started it, its label kept |
 | Waiting, empty, failed | it shows content | the `ux-patterns` skill |
+
+## Variants
+
+Every button names one, by role (the rule is in `DESIGN.md` *Components*):
+
+| Variant | For |
+|---|---|
+| `primary` | the view's one main action |
+| `secondary` | a weighed alternative beside the primary; a picker's trigger; every button on the Settings page |
+| ghost, `.quiet(cx)` | dismissing, a strip's or a row's actions, an icon-only control; hovers on the selected step, never a bare `ghost()` |
+| `danger` | only the two listed under *Exceptions* in `DESIGN.md` |
+| `choice` | each option of a pick-one row |
+
+No button draws an edge: never the library's default variant nor `outline()`. A text field is
+the one control marked by its edge.
 
 ## Right and wrong
 
@@ -38,14 +53,21 @@ that applies to the component is drawn.
 // Wrong: a div dressed as a button, with no focus, no refusal and its own cursor rule
 div().px_2().cursor_pointer().child("Retry").on_click(retry)
 // Right
-crate::controls::action("retry-task").ghost().small().label("Retry…").on_click(retry)
+crate::controls::action("retry-task").quiet(cx).small().label("Retry…").on_click(retry)
+```
+
+```rust
+// Wrong: no variant, so the library's default, edged and filled apart from its surface
+action("run-check").label("Run check")
+// Right: a weighed alternative beside the primary
+action("run-check").secondary().label("Run check")
 ```
 
 ```rust
 // Wrong: refuses the press, still shows the pointer
-action(("plugin-update", i)).xsmall().outline().disabled(busy)
+action(("plugin-update", i)).xsmall().secondary().disabled(busy)
 // Right: refusing in one call, cursor included
-action(("plugin-update", i)).xsmall().outline().refuses(busy)
+action(("plugin-update", i)).xsmall().secondary().refuses(busy)
 ```
 
 ```rust

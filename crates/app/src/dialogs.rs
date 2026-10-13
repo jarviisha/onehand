@@ -3,7 +3,9 @@
 //!
 //! The component library owns overlays, focus traps and Escape handling.
 
+use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
+use crate::controls::Tall as _;
 use crate::controls::text_input;
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
@@ -55,7 +57,7 @@ const PREVIEW_MAX_H: gpui::Rems = gpui::rems(12.);
 /// that clear a half-finished rename or worktree still run. The fixed box around
 /// it is what contains that element's `size_full`, which would otherwise take
 /// the whole row away from the name beside it.
-pub(super) fn title_row(name: impl Into<SharedString>) -> impl IntoElement {
+pub(super) fn title_row(name: impl Into<SharedString>, cx: &App) -> impl IntoElement {
     div()
         .h_flex()
         .items_center()
@@ -79,7 +81,7 @@ pub(super) fn title_row(name: impl Into<SharedString>) -> impl IntoElement {
                 DialogClose::new().child(
                     crate::controls::action("dialog-close")
                         .small()
-                        .ghost()
+                        .quiet(cx)
                         .icon(Icon::new(IconName::Close)),
                 ),
             ),
@@ -105,12 +107,12 @@ pub fn rename_session(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
     Dialog::new(cx)
         .close_button(false)
         .content(move |content, _, cx: &mut App| {
-            content.child(title_row("Rename conversation")).child(
+            content.child(title_row("Rename conversation", cx)).child(
                 div()
                     .v_flex()
                     .gap_1()
                     .w_full()
-                    .child(text_input(&input, cx)),
+                    .child(text_input(&input, cx).tall()),
             )
         })
         .footer(
@@ -126,7 +128,8 @@ pub fn rename_session(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                 .when(resettable, |row| {
                     row.child(
                         crate::controls::action("reset-title")
-                            .ghost()
+                            .tall()
+                            .quiet(cx)
                             .label("Use the automatic title")
                             .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
                                 shell.reset_conversation_title(cx);
@@ -135,7 +138,8 @@ pub fn rename_session(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                 })
                 .child(
                     crate::controls::action("cancel-rename")
-                        .ghost()
+                        .tall()
+                        .quiet(cx)
                         .label("Cancel")
                         .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
                             shell.cancel_rename(cx);
@@ -143,6 +147,7 @@ pub fn rename_session(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                 )
                 .child(
                     crate::controls::action("save-rename")
+                        .tall()
                         .primary()
                         .label("Rename")
                         .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
@@ -244,7 +249,7 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
             let picker = crate::controls::menu_below(
                 "workflow-template",
                 crate::controls::action("workflow-template-trigger")
-                    .outline()
+                    .secondary()
                     .small()
                     .label(picker_name.clone())
                     .icon(Icon::new(IconName::ChevronDown)),
@@ -274,7 +279,7 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
             let label = |text: &'static str| div().text_sm().child(text);
             // The column sits in the scrolling box rather than being it, or
             // its fields would shrink to fit instead of scrolling.
-            content.child(title_row(heading.clone())).child(
+            content.child(title_row(heading.clone(), cx)).child(
                 div()
                     .id("workflow-launcher-body")
                     .w_full()
@@ -290,7 +295,7 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
                             .child(div().text_xs().text_color(muted).child(about.clone()))
                             .children(shown)
                             .child(label("Title"))
-                            .child(text_input(&title, cx))
+                            .child(text_input(&title, cx).tall())
                             .child(label("Details"))
                             .child(gpui_component::input::Textarea::new(&body).h(DETAILS_H))
                             .child(label("Instructions"))
@@ -314,7 +319,8 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
                 .children(blocking_note(blocking, danger))
                 .child(
                     crate::controls::action("cancel-workflow")
-                        .ghost()
+                        .tall()
+                        .quiet(cx)
                         .label("Cancel")
                         .refuses(busy)
                         .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
@@ -323,6 +329,7 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
                 )
                 .child({
                     let run = crate::controls::action("run-workflow")
+                        .tall()
                         .primary()
                         .label("Run")
                         .loading(busy);
@@ -399,7 +406,7 @@ pub(crate) fn finding_line(
         )
         .children(finding.task.clone().map(|task| {
             crate::controls::action(("pick-retry-task", at))
-                .ghost()
+                .quiet(cx)
                 .small()
                 .label("Retry…")
                 .on_click(move |_, window: &mut Window, cx: &mut App| {
@@ -426,7 +433,7 @@ pub(crate) fn finding_line(
                     let (shell, task) = (handle.clone(), holder.task);
                     // The line above names each holder; the button opens it.
                     crate::controls::action(SharedString::from(format!("slot-holder-{at}-{i}")))
-                        .ghost()
+                        .quiet(cx)
                         .small()
                         .label(format!("Open {}", holder.named))
                         .tooltip("Open the task holding this slot")
@@ -492,7 +499,7 @@ fn workflow_preview(
     let toggle = {
         let handle = handle.clone();
         crate::controls::action("workflow-preview")
-            .ghost()
+            .quiet(cx)
             .small()
             .label("Preview")
             .icon(Icon::new(match open {
@@ -587,7 +594,7 @@ pub fn new_worktree(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
     Dialog::new(cx)
         .close_button(false)
         .content(move |content, _, cx: &mut App| {
-            content.child(title_row("New worktree")).child(
+            content.child(title_row("New worktree", cx)).child(
                 div()
                     .v_flex()
                     .gap_2()
@@ -598,7 +605,7 @@ pub fn new_worktree(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                             .text_color(muted)
                             .child(format!("A second checkout of {label}, on its own branch.")),
                     )
-                    .child(text_input(&input, cx))
+                    .child(text_input(&input, cx).tall())
                     // Where it lands, in full. A worktree is a folder that
                     // appears on disk without anyone browsing to it, so the one
                     // thing this form owes the reader is the path it is about
@@ -624,7 +631,8 @@ pub fn new_worktree(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                 .w_full()
                 .child(
                     crate::controls::action("worktree-parent")
-                        .ghost()
+                        .tall()
+                        .quiet(cx)
                         .label("Put it somewhere else…")
                         .refuses(busy)
                         .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
@@ -637,7 +645,8 @@ pub fn new_worktree(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                     // Cancel that still offered itself would be promising to
                     // undo something already happening on disk.
                     crate::controls::action("cancel-worktree")
-                        .ghost()
+                        .tall()
+                        .quiet(cx)
                         .label("Cancel")
                         .refuses(busy)
                         .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
@@ -650,6 +659,7 @@ pub fn new_worktree(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                     // a button still offering itself invites the second press
                     // that would ask for the same folder twice.
                     let create = crate::controls::action("create-worktree")
+                        .tall()
                         .primary()
                         .label("Create worktree")
                         .loading(busy);
@@ -690,7 +700,7 @@ pub fn rename_branch(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
     Dialog::new(cx)
         .close_button(false)
         .content(move |content, _, cx: &mut App| {
-            content.child(title_row("Rename branch")).child(
+            content.child(title_row("Rename branch", cx)).child(
                 div()
                     .v_flex()
                     .gap_2()
@@ -701,7 +711,7 @@ pub fn rename_branch(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                             .text_color(muted)
                             .child(format!("The branch checked out here is {from}.")),
                     )
-                    .child(text_input(&input, cx))
+                    .child(text_input(&input, cx).tall())
                     // git's own words where git refused, and the name rule's
                     // where it never got that far. Shown against the name that
                     // caused it, which is why the form is still up.
@@ -719,6 +729,8 @@ pub fn rename_branch(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                 .justify_end()
                 .child(
                     crate::controls::action("cancel-branch-rename")
+                        .tall()
+                        .quiet(cx)
                         .label("Cancel")
                         .refuses(busy)
                         .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
@@ -727,6 +739,7 @@ pub fn rename_branch(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                 )
                 .child({
                     let rename = crate::controls::action("commit-branch-rename")
+                        .tall()
                         .primary()
                         .label("Rename")
                         .loading(busy);

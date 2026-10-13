@@ -5,7 +5,9 @@
 //! Resume, judged first by the run's own setup, is here too.
 
 use super::Shell;
+use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
+use crate::controls::Tall as _;
 use gpui::{App, Context, Entity, ParentElement as _, SharedString, Styled as _, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::button::ButtonVariants as _;
@@ -201,6 +203,8 @@ impl Shell {
             let with_current = {
                 let (shell, id) = (shell.clone(), id.clone());
                 crate::controls::action("retry-current")
+                    .tall()
+                    .secondary()
                     .label(Act::RetryCurrent.label())
                     .on_click(move |_, window: &mut Window, cx: &mut App| {
                         window.close_dialog(cx);
@@ -214,6 +218,7 @@ impl Shell {
                 crate::controls::menu_below(
                     "retry-from",
                     crate::controls::action("retry-from-trigger")
+                        .secondary()
                         .small()
                         .label(format!("From {at}"))
                         .icon(Icon::new(IconName::ChevronDown)),
@@ -271,6 +276,7 @@ impl Shell {
                     "Retry",
                     blocked,
                     move |window, cx| retry(window, cx),
+                    cx,
                 ))
         });
     }
@@ -395,6 +401,7 @@ impl Shell {
                     preflight::RETRY_CURRENT,
                     blocked,
                     move |window, cx| retry(window, cx),
+                    cx,
                 ))
         });
     }
@@ -458,6 +465,7 @@ fn footer(
     confirm: &'static str,
     blocked: bool,
     run: impl Fn(&mut Window, &mut App) + 'static,
+    cx: &App,
 ) -> gpui_component::dialog::DialogFooter {
     gpui_component::dialog::DialogFooter::new()
         .flex_wrap()
@@ -465,7 +473,8 @@ fn footer(
             gpui::div().flex_none().child(
                 gpui_component::dialog::DialogClose::new().child(
                     crate::controls::action(SharedString::from(format!("{id}-cancel")))
-                        .ghost()
+                        .tall()
+                        .quiet(cx)
                         .label("Cancel"),
                 ),
             ),
@@ -473,6 +482,7 @@ fn footer(
         .children(beside)
         .child({
             let button = crate::controls::action(SharedString::from(format!("{id}-confirm")))
+                .tall()
                 .primary()
                 .label(confirm);
             match blocked {
@@ -585,6 +595,7 @@ impl Shell {
                     "Answer the review",
                     blocked,
                     move |window, cx| answer(window, cx),
+                    cx,
                 ))
         });
     }

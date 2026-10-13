@@ -8,7 +8,6 @@ use gpui::{
     IntoElement, ParentElement, Rems, SharedString, StatefulInteractiveElement as _, Styled,
     WeakEntity, Window, div, rems,
 };
-use gpui_component::button::ButtonVariants as _;
 use gpui_component::tab::{Tab, TabBar};
 use gpui_component::tag::Tag;
 use gpui_component::text::{TextView, TextViewState, TextViewStyle};
@@ -18,6 +17,7 @@ use onehand_core::issues::template::{IssueTemplate, lacking};
 use onehand_core::issues::{LocalIssue, sync};
 use onehand_core::task::Group;
 use onehand_core::task::work::{IssueWork, PrSeen};
+use onehand_plugin_host::Quiet as _;
 use onehand_plugin_host::tokens::{BAR_H, CODE_TEXT, PAGE_PROSE};
 use onehand_plugin_host::{AppIcon, Tint, action, status_ink, tint};
 use priority::{priority, priority_ink};
@@ -409,7 +409,7 @@ fn activity(issue: &LocalIssue, cx: &mut Context<IssuesView>) -> AnyElement {
                         .children(session.map(|session| {
                             action(("issue-history-session", i))
                                 .xsmall()
-                                .ghost()
+                                .quiet(cx)
                                 .label("Open session")
                                 .tooltip("Show the conversation that took this issue up")
                                 .on_click(cx.listener(move |view, _: &ClickEvent, window, cx| {
@@ -496,7 +496,7 @@ fn conflict_view(issue: &LocalIssue, cx: &mut Context<IssuesView>) -> Option<Any
                     .child(
                         action("issue-keep-mine")
                             .xsmall()
-                            .ghost()
+                            .quiet(cx)
                             .label("Keep mine")
                             .tooltip(format!("Send what it says here to {forge}"))
                             .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
@@ -506,7 +506,7 @@ fn conflict_view(issue: &LocalIssue, cx: &mut Context<IssuesView>) -> Option<Any
                     .child(
                         action("issue-take-theirs")
                             .xsmall()
-                            .ghost()
+                            .quiet(cx)
                             .label(format!("Take {forge}'s"))
                             .tooltip("Replace what it says here with the other side")
                             .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {

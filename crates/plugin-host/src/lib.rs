@@ -29,7 +29,7 @@ use gpui::{
     AnyElement, App, Div, ElementId, Entity, Hsla, IntoElement, ParentElement as _, SharedString,
     Styled as _, Window, div,
 };
-use gpui_component::button::{Button, ButtonRounded, ButtonVariants as _};
+use gpui_component::button::{Button, ButtonCustomVariant, ButtonRounded, ButtonVariants as _};
 use gpui_component::input::{Input, InputState};
 use gpui_component::{
     ActiveTheme as _, Colorize as _, Selectable as _, Sizable as _, Size, StyledExt as _,
@@ -71,14 +71,19 @@ pub fn action(id: impl Into<ElementId>) -> Button {
         .rounded(ButtonRounded::Small)
 }
 
-/// A text field at a control's corner: the small one [`action`] gives a
-/// button, so a field and the button beside it are one shape. The library
-/// draws a field at the theme's full corner, the one rows and blocks keep.
+/// A text field at a control's corner, on no fill of its own: the small
+/// corner [`action`] gives a button, so a field and the button beside it are
+/// one shape, and the surface it sits on, so its edge alone marks it. The
+/// library draws a field at the theme's full corner, the one rows and blocks
+/// keep, on a fill it derives from the control edge rather than from where
+/// the field sits.
 ///
 /// Here rather than in the app for the reason [`action`] is: a plugin draws
 /// fields too, and one wrapper is one place for the corner to hold.
 pub fn text_input(state: &Entity<InputState>, cx: &App) -> Input {
-    Input::new(state).rounded(cx.theme().radius_tokens().sm)
+    Input::new(state)
+        .rounded(cx.theme().radius_tokens().sm)
+        .bg(cx.theme().transparent)
 }
 
 /// The cursor for an action that is currently refusing.
@@ -320,17 +325,81 @@ pub fn status_line(message: String, cx: &App) -> AnyElement {
         .into_any_element()
 }
 
+/// A ghost button whose hover is the fill a selected one shows.
+///
+/// The library's ghost hovers on a fill it mixes from the bubble's grey at
+/// four fifths opacity, which is no step of the app's ramp: beside a selected
+/// ghost in the same strip, the hovered one came out a shade fainter, its edge
+/// lost in the surface, and read as a smaller box. So the ghost is drawn here
+/// as a custom variant on the ramp's own steps: no fill at rest, the selected
+/// step on hover, on press and when selected, so hovered and selected are one
+/// shape. Every ghost button in the app and its plugins is this, never a bare
+/// `ghost()`.
+pub trait Quiet {
+    /// The ghost variant, hovering on the selected step.
+    fn quiet(self, cx: &App) -> Self;
+}
+
+impl Quiet for Button {
+    fn quiet(self, cx: &App) -> Self {
+        let theme = cx.theme();
+        self.custom(
+            ButtonCustomVariant::new(cx)
+                .foreground(theme.secondary_foreground)
+                .hover(theme.secondary_active)
+                .active(theme.secondary_active),
+        )
+    }
+}
+
+/// A control at a dialog's or a form's scale: [`tokens::FIELD_H`] high with
+/// its words at the chrome size.
+///
+/// The library ties a control's words to its size: a default-size button
+/// letters its label at the reading size, a step above a field of the same
+/// size, and nothing outside it reaches the box those words sit in. Its height
+/// and padding are on the control itself, though, and the caller's own land
+/// after the library's. So this is the small size, lettered as chrome, given
+/// back the default size's height, and padding on the spacing steps (`px_3`,
+/// where the default's `px_2p5` falls between two).
+pub trait Tall {
+    /// The small size at a dialog's or a form's height.
+    fn tall(self) -> Self;
+}
+
+impl Tall for Button {
+    fn tall(self) -> Self {
+        // `min_w` rather than `w`, so an icon alone stays square and a label
+        // keeps its own width.
+        self.small()
+            .h(tokens::FIELD_H)
+            .min_w(tokens::FIELD_H)
+            .px_3()
+    }
+}
+
+impl Tall for Input {
+    fn tall(self) -> Self {
+        self.small().h(tokens::FIELD_H)
+    }
+}
+
 /// One of a few choices, the one taken among them filled: a ghost button,
 /// `selected` on the choice that holds. Every pick-one row draws its choices
 /// with this, the halves of a [`switch`] and a row of filter chips alike, so
 /// one condition keeps one shape.
 ///
-/// The library's selected ghost fills with the theme's selected step, the one
-/// `accent` is too, with no edge and no reaction to the pointer: a fill that
-/// differs lifts by itself, and pressing what is already chosen changes
-/// nothing.
-pub fn choice(id: impl Into<ElementId>, label: impl Into<SharedString>, on: bool) -> Button {
-    action(id).ghost().label(label.into()).selected(on)
+/// A [`Quiet`] ghost, so a selected choice and a hovered one share the
+/// selected step, the one `accent` is too; selected, it has no edge and no
+/// reaction to the pointer: a fill that differs lifts by itself, and pressing
+/// what is already chosen changes nothing.
+pub fn choice(
+    id: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    on: bool,
+    cx: &App,
+) -> Button {
+    action(id).quiet(cx).label(label.into()).selected(on)
 }
 
 /// A choice between a few views of one panel: a [`choice`] per view, every
@@ -343,19 +412,19 @@ pub fn choice(id: impl Into<ElementId>, label: impl Into<SharedString>, on: bool
 /// of the other, both against the left edge of a bar as wide as its panel. So
 /// each view is a choice at `flex_1`.
 ///
-/// **Here rather than in the app** for the reason [`action`] is: the rail and a
+/// **Here rather than in the app** for the reason [`action`] is: the app and a
 /// built-in plugin both draw one, and a plugin cannot reach into the binary
 /// hosting it.
 ///
 /// `size` is the library's own scale, so a switch sits level with the buttons
-/// and inputs of that size beside it: the rail's is the smallest, a row of
-/// chips in a narrow column, and a panel's tabs take a little room to breathe.
+/// and inputs of that size beside it.
 pub fn switch(
     id: &'static str,
     labels: &[SharedString],
     active: usize,
     size: Size,
     pick: impl Fn(&usize, &mut Window, &mut App) + 'static,
+    cx: &App,
 ) -> AnyElement {
     let pick = Rc::new(pick);
 
@@ -365,7 +434,7 @@ pub fn switch(
         .gap_1()
         .children(labels.iter().enumerate().map(|(i, label)| {
             let pick = pick.clone();
-            choice((id, i), label.clone(), i == active)
+            choice((id, i), label.clone(), i == active, cx)
                 .flex_1()
                 .min_w_0()
                 .with_size(size)

@@ -244,6 +244,11 @@ fn paint(colors: &mut ThemeConfigColors, ramp: &Ramp) {
     // row whenever the highlight ring is off, which here it always is -- and it
     // leaves `list_hover` free to be the fainter of the two.
     set(&mut colors.accent, ramp.selected);
+    // A secondary button is filled at the selected step, the fill an open
+    // tab or a taken choice shows, rather than the bubble the library falls
+    // back to: one filled grey for a control, wherever a control is filled.
+    set(&mut colors.button_secondary, ramp.selected);
+    set(&mut colors.button_secondary_foreground, ramp.selected_ink);
     set(&mut colors.accent_foreground, ramp.selected_ink);
     set(&mut colors.border, ramp.hairline);
     // A switch that is off is a track and a thumb, and both have to be seen

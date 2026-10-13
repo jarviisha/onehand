@@ -16,7 +16,8 @@ Slot names that mislead (the library's names, kept because its own controls read
 | `accent`, `accent_foreground` | the selected fill and its ink: a fill, not a hue |
 | `link` (also `info`) | the accent hue: what runs, and links |
 | `muted` | the well's fill, and the user's bubble |
-| `secondary` | a step past the well: code inside the bubble, a filled button |
+| `secondary` | a step past the well: code inside the bubble |
+| `button_secondary`, `button_secondary_foreground` | the secondary button: the selected step and its ink, as `accent` |
 | `primary` | the primary action: ink on light, light on dark, not a hue |
 | `danger`, `warning`, `success` | fills with white on them; their text is `status_ink(cx)` |
 | `tiles` | the docks' surface, read through `dock_surface(cx)` |
@@ -93,7 +94,8 @@ The library's controls apply their own: tooltips, menus and popovers `radius`; c
 |---|---|
 | `.xsmall()` | 1.25rem (20px) |
 | `.small()` | 1.5rem (24px), `CONTROL_H` |
-| the library's default | 2rem (32px) |
+| `.tall()` | 2rem (32px), `FIELD_H`: the small size at the default height, its words at `text_sm` |
+| the library's default | 2rem (32px); not used: its button letters at `text_base` |
 
 ## Shared sizes
 
@@ -105,6 +107,7 @@ All in `onehand_plugin_host::tokens` (`crates/plugin-host/src/tokens.rs`), which
 | `BAR_H` | 2.75rem | every strip along the top of a region |
 | `ROW_H` | 1.875rem | a list row |
 | `CONTROL_H` | 1.5rem | a small control |
+| `FIELD_H` | 2rem | a control at a dialog's or a form's scale (`.tall()`) |
 | `CODE_TEXT` | 0.8125rem | machine text |
 | `LEADING` | 1.6 | reading text |
 | `LEADING_TIGHT` | 1.4 | a wrapped title |

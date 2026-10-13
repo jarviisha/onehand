@@ -93,6 +93,8 @@ Review the uncovered part when changing the relevant area:
 | Code does not cite documents | Checks `//` lines against document names and citation patterns | Block comments, runtime strings and citations outside those patterns |
 | Fields have readers | Scans field-name uses; comments in the guard explain exceptions | Collection mutation counted as a read and unrelated fields sharing a name |
 | Registry icons and button wrapper | Finds listed glyph literals and direct `Button::new(` spelling | Other glyphs, aliases and differently formatted construction |
+| Text fields through `text_input` | Finds direct `Input::new(` spelling | Aliases and differently formatted construction |
+| Ghost buttons through `quiet` | Finds `.ghost()` on any line | A ghost variant reached through `with_variant` |
 | English documents | Detects selected Vietnamese diacritics | Other languages and quoted data |
 | Named sizes | Finds a non-zero number written as the first argument of `rems(` or `px(` outside a `const` | Arithmetic on a number (`x * 0.5`) and sizes passed through other helpers |
 | Colours from the palette | Finds a `"#rrggbb"` string or a call to `rgb(`, `rgba(` or `hsla(` outside the palette file and the terminal's grid | Colours built from numbers some other way, and hex written without quotes |

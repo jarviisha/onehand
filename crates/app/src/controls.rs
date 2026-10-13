@@ -46,6 +46,16 @@ pub(crate) use onehand_plugin_host::{menu_below, menu_item, menu_row};
 /// reach it too.
 pub(crate) use onehand_plugin_host::text_input;
 
+/// A ghost button hovering on the selected step. The rule and its reasoning
+/// live with the definition in [`onehand_plugin_host`], where a built-in
+/// plugin's buttons reach it too.
+pub(crate) use onehand_plugin_host::Quiet;
+
+/// A control at a dialog's or a form's scale. The rule and its reasoning live
+/// with the definition in [`onehand_plugin_host`], where a built-in plugin's
+/// controls reach it too.
+pub(crate) use onehand_plugin_host::Tall;
+
 /// Refusing, and looking like it: the cursor half and the behaviour half in
 /// one call. The rule and its reasoning live with the definitions in
 /// [`onehand_plugin_host`], where a built-in plugin's buttons reach them too.

@@ -6,12 +6,13 @@
 //! becomes one control naming the current tab and opening the others, so no
 //! tab is ever pushed out of reach.
 
+use crate::Quiet as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, ElementId, InteractiveElement as _, ParentElement as _, Rems, SharedString,
     StatefulInteractiveElement as _, Styled as _, rems,
 };
-use gpui_component::button::{Button, ButtonVariants as _};
+use gpui_component::button::Button;
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme as _, Icon, IconName, Sizable as _, StyledExt as _};
 use std::cell::Cell;
@@ -104,7 +105,7 @@ pub fn tab_select(
     cx: &gpui::App,
 ) -> gpui_component::button::Button {
     crate::action(id)
-        .ghost()
+        .quiet(cx)
         .max_w(TAB_MAX_W)
         .tooltip(hint)
         .child(
@@ -160,7 +161,7 @@ pub fn tab_chip(
 /// should stop the click there, or it also picks the tab it closes.
 pub fn tab_close(id: impl Into<ElementId>, hint: &'static str, cx: &App) -> Button {
     crate::action(id)
-        .ghost()
+        .quiet(cx)
         .xsmall()
         .flex_none()
         .icon(Icon::new(IconName::Close).text_color(cx.theme().muted_foreground))

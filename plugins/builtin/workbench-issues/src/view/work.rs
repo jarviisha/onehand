@@ -17,6 +17,7 @@ use gpui_component::menu::PopupMenu;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::issues::LocalIssue;
 use onehand_core::task::work::{Act, Around, IssueWork, Next, PrSeen, next_action, pr_named};
+use onehand_plugin_host::Quiet as _;
 use onehand_plugin_host::{Request, action, menu_below, menu_item, menu_row, status_ink};
 use std::path::Path;
 
@@ -167,7 +168,7 @@ pub(super) fn actions(
         )
         .children(
             shown.into_iter().enumerate().map(|(i, act)| {
-                act_button(("issue-secondary", i), act, number, doing, cx).outline()
+                act_button(("issue-secondary", i), act, number, doing, cx).secondary()
             }),
         )
         .child(more_menu(root, issue, doing, secondary, publish_to, cx))
@@ -363,7 +364,7 @@ fn more_menu(
     let in_tab = doing.full.is_none();
     let trigger = action("issue-more")
         .small()
-        .ghost()
+        .quiet(cx)
         .loading(doing.publishing)
         .icon(Icon::new(IconName::Ellipsis))
         .tooltip("More actions");
@@ -542,7 +543,7 @@ pub(super) fn left_view(doing: &Doing, cx: &mut Context<IssuesView>) -> Option<A
                         .child(
                             action("issue-pr-refresh")
                                 .xsmall()
-                                .ghost()
+                                .quiet(cx)
                                 .label("Refresh")
                                 .tooltip(match on_page {
                                     true => "Read what the work left again",
@@ -601,7 +602,7 @@ pub(super) fn before_view(work: &IssueWork, cx: &mut Context<IssuesView>) -> Opt
             .child(
                 action(key)
                     .xsmall()
-                    .ghost()
+                    .quiet(cx)
                     .label("Show task")
                     .tooltip("Open the task on the Tasks page")
                     .on_click(cx.listener(move |view, _: &ClickEvent, window, cx| {

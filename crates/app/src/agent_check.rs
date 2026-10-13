@@ -9,12 +9,12 @@
 //! it learns goes where any sighting of the agent's modes goes
 //! (`Shared::saw_modes`), so every later start in this process reads it.
 
+use crate::controls::Quiet as _;
 use crate::state::Shared;
 use futures::StreamExt as _;
 use gpui::BorrowAppContext as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{AnyElement, App, IntoElement, ParentElement, Styled, Window, div};
-use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme as _, Sizable as _, StyledExt as _};
 use onehand_core::acp::AcpEvent;
 use onehand_core::config::AgentSpec;
@@ -176,7 +176,7 @@ pub(crate) fn button(id: usize, ask: &Ask, cx: &App) -> AnyElement {
         })
         .child(
             crate::controls::action(("check-agent-modes", id))
-                .ghost()
+                .quiet(cx)
                 .small()
                 .loading(running)
                 .label(match running {

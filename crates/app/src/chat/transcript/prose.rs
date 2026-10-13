@@ -53,7 +53,7 @@ pub(super) fn agent(
                 .gap_2()
                 .text_xs()
                 .text_color(cx.theme().muted_foreground)
-                .child(copy_turn_button(session, target).tooltip("Copy the closing paragraph"))
+                .child(copy_turn_button(session, target, cx).tooltip("Copy the closing paragraph"))
                 .children(
                     elapsed.map(|secs| format!("Processed in {}", onehand_core::duration(secs))),
                 )
@@ -90,7 +90,7 @@ fn md_view(
                             .text_color(cx.theme().muted_foreground)
                             .child(lang)
                     }))
-                    .child(copy_button("copy-code", block.code()))
+                    .child(copy_button("copy-code", block.code(), cx))
             })
             .into_any_element(),
         None => div().child(md.source.clone()).into_any_element(),

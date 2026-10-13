@@ -1,7 +1,9 @@
 //! The issue picker, and the rows every list of issues is drawn with.
 
 use super::title_row;
+use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
+use crate::controls::Tall as _;
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -96,7 +98,7 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
                 });
             // The column sits in the scrolling box rather than being it, or
             // its fields would shrink to fit instead of scrolling.
-            content.child(title_row(heading.clone())).child(
+            content.child(title_row(heading.clone(), cx)).child(
                 div()
                     .id("issue-picker-body")
                     .track_focus(&focus)
@@ -124,14 +126,18 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
                 .children(super::blocking_note(blocking, danger))
                 .child(
                     crate::controls::action("cancel-pick")
-                        .ghost()
+                        .tall()
+                        .quiet(cx)
                         .label("Cancel")
                         .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
                             shell.cancel_pick(cx);
                         })),
                 )
                 .child({
-                    let run = crate::controls::action("run-pick").primary().label("Run");
+                    let run = crate::controls::action("run-pick")
+                        .tall()
+                        .primary()
+                        .label("Run");
                     match runnable {
                         false => run.refuses(true),
                         true => run.on_click(cx.listener(
@@ -286,7 +292,7 @@ where
     crate::controls::menu_below(
         id,
         crate::controls::action((id, 0usize))
-            .outline()
+            .secondary()
             .small()
             .label(name)
             .icon(Icon::new(IconName::ChevronDown)),
