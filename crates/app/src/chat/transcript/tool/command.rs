@@ -17,8 +17,6 @@ use super::*;
 #[derive(IntoElement)]
 pub(in crate::chat::transcript) struct CommandBlock {
     pub(in crate::chat::transcript) target: TranscriptItemId,
-    /// The whole command, which is what Copy hands back.
-    pub(in crate::chat::transcript) command: SharedString,
     /// Every line of it: the box scrolls rather than holding lines back.
     pub(in crate::chat::transcript) lines: Vec<SharedString>,
     /// How tall the panel this is drawn in was last frame, which is what the
@@ -77,6 +75,12 @@ impl RenderOnce for CommandBlock {
             // well's own grey in the dark palette, so its fill alone sets the
             // command off the card.
             .bg(well)
+            // The scrollbar's own gutter while there is one, so its thumb
+            // runs beside the text rather than over it.
+            .map(|block| match overflows {
+                true => block.pr(SCROLLBAR_W),
+                false => block.pr_3(),
+            })
             .py_2()
             .pl_3()
             .child(
@@ -121,22 +125,9 @@ impl RenderOnce for CommandBlock {
                         )
                     })),
             )
-            // Over the text and under the copy button, which is added after it:
-            // the mask takes the wheel in the capture phase and nothing else,
+            // The mask takes the wheel in the capture phase and nothing else,
             // so a press still reaches whatever is drawn on top of it.
             .child(ScrollableMask::new(Axis::Vertical, &scroll).id(("perm-command-mask", key)))
-            // In a column of its own, kept clear of the text rather than laid
-            // over it: a button that covers the first line of a command covers
-            // the part somebody is most likely to be reading. Drawn on every
-            // command, never waiting to be hovered: this is the card whose
-            // text is most likely wanted elsewhere, and a command that scrolls
-            // cannot be selected out by dragging.
-            .child(div().flex_none().px(TIGHT_GAP).child(copy_button(
-                ("perm-copy", key),
-                self.command,
-                "Copy the whole command",
-                cx,
-            )))
             // **What says the command does not end where the box does.** It goes
             // as soon as the end is reached, so
             // it is never a gradient laid over the last line of a command

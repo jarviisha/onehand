@@ -197,8 +197,9 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   in one slot (a spinner while it runs, so nothing moves as it settles), and takes no focus. A
   path or a command is mono; the agent's own wording, a folder and what the agent did (a
   thought, a command's output, a read or search list) read in the middle ink. One copy control
-  (`.xsmall()`, quiet, named in its tooltip, in a column of its own) and one show-more control
-  serve every block.
+  (`.xsmall()`, quiet, named in its tooltip, in a column of its own; a permission's on the line
+  under its command, beside where it runs) and one show-more control serve every block. Text
+  that scrolls keeps a gutter for its scrollbar.
 - **Calm once it is past**: a failure a later prompt has moved past keeps its words in the
   muted ink, with no fill; a settled *N failed* drops the danger ink; a refusal's badge is
   neutral. A live failure is a solid danger wash with no edge, and a lost agent's names the key

@@ -1,8 +1,8 @@
 use super::ask::user_icon;
 use super::metrics::{FRAME_PAD, STACK_GAP};
 use super::parts::{
-    ActivityRow, Object, RowMark, activity_row, card_body, card_foot, card_head, detail_well,
-    grows, pill, pinned_card, plain_box, tool_label,
+    ActivityRow, Object, RowMark, activity_row, card_body, card_foot, card_head, copy_button,
+    detail_well, grows, pill, pinned_card, plain_box, tool_label,
 };
 use super::tool::{CommandBlock, command_cwd};
 use super::{fold_key, live_index};
@@ -134,7 +134,6 @@ pub(in crate::chat) fn permission(
     let lines = p.command_lines();
     let block = CommandBlock {
         target,
-        command: SharedString::from(p.command().to_string()),
         lines: lines
             .into_iter()
             .map(|l| SharedString::from(l.to_string()))
@@ -164,16 +163,36 @@ pub(in crate::chat) fn permission(
             card_body()
                 .gap_2()
                 .child(block)
-                .children(cwd.map(|(shown, full)| {
+                // Where it would run, and the copy, on the line under the
+                // command: in the well, a copy took a column the whole
+                // command's height for one icon, and its scrollbar ran over
+                // the text. Drawn always, never waiting to be hovered: this
+                // is the text most likely wanted elsewhere, and a command
+                // that scrolls cannot be selected out by dragging.
+                .child(
                     div()
-                        .id(("perm-cwd", fold_key(target)))
+                        .h_flex()
+                        .items_center()
+                        .gap_2()
                         .w_full()
-                        .truncate()
-                        .text_xs()
-                        .text_color(crate::theme::meta_ink(cx))
-                        .child(format!("in {shown}"))
-                        .tooltip(move |window, cx| Tooltip::new(full.clone()).build(window, cx))
-                })),
+                        .child(div().flex_1().min_w_0().children(cwd.map(|(shown, full)| {
+                            div()
+                                .id(("perm-cwd", fold_key(target)))
+                                .truncate()
+                                .text_xs()
+                                .text_color(crate::theme::meta_ink(cx))
+                                .child(format!("in {shown}"))
+                                .tooltip(move |window, cx| {
+                                    Tooltip::new(full.clone()).build(window, cx)
+                                })
+                        })))
+                        .child(copy_button(
+                            ("perm-copy", fold_key(target)),
+                            p.command().to_string(),
+                            "Copy the whole command",
+                            cx,
+                        )),
+                ),
         )
         // A card replayed from the archive carries an rpc id no running adapter
         // issued: showing controls would invite an answer nobody is waiting

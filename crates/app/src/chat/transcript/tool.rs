@@ -1,7 +1,7 @@
 use super::fold_key;
 use super::metrics::{
     COMMAND_FADE, COMMAND_H, COMMAND_SHARE, LARGE_DIFF, MONO_ADVANCE, PREVIEW_DIFF, PREVIEW_OUT,
-    TIGHT_GAP,
+    SCROLLBAR_W, TIGHT_GAP,
 };
 use super::parts::{
     ActivityRow, Object, RowMark, accent, activity_row, copy_button, detail_well, line_counts,
