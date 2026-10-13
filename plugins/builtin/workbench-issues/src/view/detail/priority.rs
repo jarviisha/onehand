@@ -1,8 +1,6 @@
 //! What an issue's body says about its priority, and how hard that presses.
 
-use gpui::App;
-use gpui_component::{ActiveTheme, IconName};
-use onehand_plugin_host::status_ink;
+use gpui_component::IconName;
 
 /// How hard a priority presses: 2 for one that cannot wait, 1 for a high
 /// one, -1 for a low one and 0 for the rest, read off its words whatever the
@@ -32,17 +30,6 @@ pub(in crate::view) fn priority_icon(priority: &str) -> IconName {
         1.. => IconName::ArrowUp,
         ..0 => IconName::ArrowDown,
         0 => IconName::Minus,
-    }
-}
-
-/// A priority's ink: danger for what cannot wait, warning for high, and
-/// muted for the rest, so only what presses draws the eye.
-pub(in crate::view) fn priority_ink(priority: &str, cx: &App) -> gpui::Hsla {
-    let ink = status_ink(cx);
-    match urgency(priority) {
-        2 => ink.danger,
-        1 => ink.warning,
-        _ => cx.theme().muted_foreground,
     }
 }
 

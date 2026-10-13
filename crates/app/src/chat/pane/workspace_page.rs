@@ -764,18 +764,9 @@ pub(super) fn page_card(
     card_box(cx).child(card_title(title, count, control, cx))
 }
 
-/// The hairline box every card on the workspace page and the Tasks page is
-/// drawn in, a project tile and a task's row included.
-pub(super) fn card_box(cx: &App) -> Div {
-    div()
-        .v_flex()
-        .gap_2()
-        .min_w_0()
-        .p_3()
-        .rounded(cx.theme().radius)
-        .border_1()
-        .border_color(cx.theme().border)
-}
+/// The hairline box every card on a page is drawn in, the plugin host's so
+/// an issue's boxes are the same one.
+pub(super) use onehand_plugin_host::card_box;
 
 /// A workspace page heading: the title in bold, a muted count beside it and an
 /// optional control at the far end.

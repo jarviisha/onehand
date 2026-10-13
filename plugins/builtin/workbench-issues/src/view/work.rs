@@ -73,7 +73,7 @@ pub(super) fn progress_view(
         // A space keeps the line's height once no step is open.
         .child(work.step.as_ref().map_or_else(
             || "\u{a0}".to_string(),
-            |step| format!("Step {} of {} · {}", step.at, step.of, step.label),
+            |step| format!("{} · step {} of {}", step.label, step.at, step.of),
         ));
     let said = next.said.clone().unwrap_or_default();
     let ink = if next.muted {
@@ -115,9 +115,7 @@ pub(super) fn progress_view(
             .v_flex()
             .gap_1()
             .px_4()
-            .py_3()
-            .border_b_1()
-            .border_color(cx.theme().border)
+            .pt_6()
             .child(step)
             // The page names the steps still to come, always on a line of its
             // own so the body under it does not move when one is done.
@@ -146,7 +144,9 @@ pub(super) fn actions(
     let shown: Vec<Act> = secondary
         .iter()
         .copied()
-        .filter(|act| *act != Act::Edit)
+        // *Edit* and the removal live in ⋯: the one is beside the issue,
+        // the other cannot be taken back.
+        .filter(|act| !matches!(act, Act::Edit | Act::RemoveWorktree))
         .take(SECONDARY_SHOWN)
         .collect();
     secondary.retain(|act| !shown.contains(act));
@@ -157,7 +157,7 @@ pub(super) fn actions(
         .h_flex()
         .flex_none()
         .items_center()
-        .gap_1()
+        .gap_2()
         .child(
             div()
                 .flex_none()
@@ -348,7 +348,7 @@ fn more_menu(
     let forge = issue.link.as_ref().map(|link| link.connector.clone());
     let view = cx.entity();
     let danger = status_ink(cx).danger;
-    let overflow: Vec<(&'static str, Pressed)> = overflow
+    let overflow: Vec<(&'static str, bool, Pressed)> = overflow
         .into_iter()
         .map(|act| {
             // A menu row has no tooltip: *Work here* says what it does in
@@ -357,7 +357,11 @@ fn more_menu(
                 Act::WorkHere => "Work here: a session on this checkout, no workflow",
                 act => act.label(),
             };
-            (said, Pressed::of(act, number, doing))
+            (
+                said,
+                act == Act::RemoveWorktree,
+                Pressed::of(act, number, doing),
+            )
         })
         .collect();
     // The tab leads to the page, where there is room to work the issue.
@@ -375,9 +379,15 @@ fn more_menu(
         .flex_none()
         .child(menu_below(id, trigger, move |menu, _, _| {
             let mut menu = menu;
-            for (said, pressed) in &overflow {
+            for (said, removes, pressed) in &overflow {
                 let (view, pressed) = (view.clone(), pressed.clone());
-                menu = menu.item(menu_item(*said).on_click(move |_, window, cx: &mut App| {
+                let said = *said;
+                // What removes something reads as such, in the danger ink.
+                let item = match removes {
+                    true => menu_row(move |_, _| div().text_color(danger).child(said)),
+                    false => menu_item(said),
+                };
+                menu = menu.item(item.on_click(move |_, window, cx: &mut App| {
                     let pressed = pressed.clone();
                     view.update(cx, |view, cx| pressed.run(view, window, cx))
                 }));
@@ -524,9 +534,7 @@ pub(super) fn left_view(doing: &Doing, cx: &mut Context<IssuesView>) -> Option<A
             .v_flex()
             .gap_1()
             .px_4()
-            .py_3()
-            .border_t_1()
-            .border_color(cx.theme().border)
+            .pt_6()
             .child(
                 div()
                     .h_flex()
@@ -562,6 +570,7 @@ pub(super) fn left_view(doing: &Doing, cx: &mut Context<IssuesView>) -> Option<A
                 div()
                     .truncate()
                     .font_family(cx.theme().mono_font_family.clone())
+                    .text_size(onehand_plugin_host::tokens::CODE_TEXT)
                     .child(branch)
                     .into_any_element(),
             ))
@@ -649,9 +658,7 @@ pub(super) fn before_view(work: &IssueWork, cx: &mut Context<IssuesView>) -> Opt
             .v_flex()
             .gap_1()
             .px_4()
-            .py_3()
-            .border_t_1()
-            .border_color(cx.theme().border)
+            .pt_6()
             .child(div().text_xs().text_color(muted).child("Before"))
             .children(runs)
             .children(tasks)

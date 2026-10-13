@@ -552,6 +552,43 @@ impl ControlSize {
     }
 }
 
+/// The hairline box a page groups one thing's facts in: a card on the
+/// overview or Tasks, a project tile, a task's row, an issue's conflict or
+/// review. Padded `p_3`, its parts `gap_2` apart.
+///
+/// Here rather than in the app for the reason [`action`] is: the Issues page
+/// draws the same box as the overview's.
+pub fn card_box(cx: &App) -> Div {
+    div()
+        .v_flex()
+        .gap_2()
+        .min_w_0()
+        .p_3()
+        .rounded(cx.theme().radius)
+        .border_1()
+        .border_color(cx.theme().border)
+}
+
+/// What opens a block held folded under it: its chevron first, then its
+/// words, a quiet button at the dense size, so the keyboard reaches it too.
+/// The caller says what a press does, and refuses it where there is nothing
+/// to open.
+pub fn fold_toggle(
+    id: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    open: bool,
+    cx: &App,
+) -> Button {
+    action(id)
+        .quiet(cx)
+        .xsmall()
+        .icon(Icon::new(match open {
+            true => IconName::ChevronDown,
+            false => IconName::ChevronRight,
+        }))
+        .label(label.into())
+}
+
 /// A picker's trigger: a button naming what it is set to, then the caret that
 /// opens its menu, so it reads as a control. Unset, it names what it picks,
 /// as a ghost in the muted ink, its caret with it, as a label at rest is;

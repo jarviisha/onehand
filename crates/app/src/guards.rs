@@ -1217,7 +1217,8 @@ mod tests {
     /// An animation started in code: a call that animates an element, or one
     /// that builds gpui's `Animation`.
     fn animations(line: &str) -> Vec<String> {
-        ["with_animation(", "Animation::new("]
+        // The library's `TabBar` slides its underline from tab to tab.
+        ["with_animation(", "Animation::new(", "TabBar::new("]
             .iter()
             .filter(|call| line.contains(*call))
             .map(|call| call.to_string())
@@ -1233,7 +1234,7 @@ mod tests {
         forbid(
             ui_sources(),
             animations,
-            "an animation; a state lands in the frame it happens in, and only a Spinner moves",
+            "an animation, or the library's sliding TabBar (use `tab_chip`); a state lands in the frame it happens in, and only a Spinner moves",
         );
     }
 

@@ -1,4 +1,4 @@
-use super::list::{chip, identity, plain_tag};
+use super::list::{chip, plain_tag};
 use super::mentions::FILE_LINK;
 use super::work;
 use super::{FILES_SHOWN, HISTORY_SHOWN, IssuesView};
@@ -8,7 +8,6 @@ use gpui::{
     IntoElement, ParentElement, Rems, SharedString, StatefulInteractiveElement as _, Styled,
     WeakEntity, Window, div, rems,
 };
-use gpui_component::tab::{Tab, TabBar};
 use gpui_component::tag::Tag;
 use gpui_component::text::{TextView, TextViewState, TextViewStyle};
 use gpui_component::tooltip::Tooltip;
@@ -18,9 +17,9 @@ use onehand_core::issues::{LocalIssue, sync};
 use onehand_core::task::Group;
 use onehand_core::task::work::{IssueWork, PrSeen};
 use onehand_plugin_host::Quiet as _;
-use onehand_plugin_host::tokens::{CODE_TEXT, PAGE_PROSE};
-use onehand_plugin_host::{AppIcon, Tint, action, status_ink, tint};
-use priority::{priority, priority_ink};
+use onehand_plugin_host::tokens::{CODE_TEXT, LEADING, LEADING_TIGHT, PAGE_PROSE};
+use onehand_plugin_host::{action, card_box, middle_ink, row, status_ink, tab_chip};
+use priority::{priority, priority_icon, priority_name};
 use std::path::Path;
 
 /// A description's headings on the type scale: the first at `text_lg`, the
@@ -30,6 +29,10 @@ use std::path::Path;
 const HEADING_1: Rems = rems(1.125);
 const HEADING_2: Rems = rems(1.);
 const HEADING_REST: Rems = rems(0.875);
+
+/// The slot an activity entry's age stands in, so every entry's words start
+/// on one edge whether it says *2m* or *11mo*.
+const AGE_W: Rems = rems(2.5);
 
 /// The gutter inside a fenced block, wider than a row's so the code reads as
 /// set in its well rather than on its edge.
@@ -94,9 +97,8 @@ pub(super) fn issue_view(
     let theme = cx.theme();
     let muted = theme.muted_foreground;
     let next = work::next_for(issue, &doing);
-    let named = issue
-        .reference()
-        .map_or_else(|| format!("#{number}"), str::to_string);
+    // A local issue has no number anyone else knows it by: it is a draft.
+    let named = issue.reference().unwrap_or("Draft").to_string();
 
     // The trail: the project, then the issue, and its actions at the end of
     // the same bar, so what to do is found where the issue is named. Where it
@@ -114,54 +116,34 @@ pub(super) fn issue_view(
                 .text_color(muted)
                 .child(div().min_w_0().truncate().child(doing.project.clone()))
                 .child(Icon::new(IconName::ChevronRight).xsmall())
-                .child(
-                    div()
-                        .flex_none()
-                        .font_family(theme.mono_font_family.clone())
-                        .text_color(theme.foreground)
-                        .child(named.clone()),
-                ),
+                .child(reference_link(issue, named, cx)),
         )
         .child(work::actions(root, issue, &doing, &next, publish_to, cx))
         .children(nav);
 
-    // What it is at a glance: open or closed, where it lives, what it is
-    // filed under.
+    // What it is at a glance: open or closed, and what it is filed under.
+    // Where it lives is the trail's to say.
     let tags = div()
         .h_flex()
         .flex_wrap()
         .items_center()
         .gap_1p5()
         .child(state_badge(issue.open, cx))
-        .child(plain_tag(doing.project.to_string(), cx))
         .children(issue.labels.iter().map(|label| chip(label.clone(), cx)));
 
-    // The title, the largest words on the issue: the whole of it, wrapped.
-    let title = div().text_xl().font_semibold().child(issue.title.clone());
+    // The title, the largest words on the issue: the whole of it, wrapped on
+    // a title's leading.
+    let title = div()
+        .text_xl()
+        .font_semibold()
+        .line_height(gpui::relative(LEADING_TIGHT))
+        .child(issue.title.clone());
 
-    // Its facts on one line: the reference (to the forge, where it is
-    // linked), when it changed, how its work stands, how urgent the body says
-    // it is, and what a template-written body left out. The project is not
-    // among them: the trail and the tags over it already name it.
-    let reference = match (issue.reference(), &issue.link) {
-        (Some(reference), Some(link)) => div()
-            .id("issue-reference")
-            .flex_none()
-            .cursor_pointer()
-            .hover(|reference| reference.underline())
-            .tooltip({
-                let tip = format!("Open on {}", link.connector);
-                move |window, cx| Tooltip::new(tip.clone()).build(window, cx)
-            })
-            .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
-                view.with_url(number, |url, cx| cx.open_url(&url), cx)
-            }))
-            .child(reference.to_string())
-            .into_any_element(),
-        _ => identity(issue, cx),
-    };
+    // Its facts on one line: when it changed, how its work stands, how
+    // urgent the body says it is, and what a template-written body left out.
+    // The reference and the project are not among them: the trail names both.
     let fact = |text: String| div().flex_none().child(text).into_any_element();
-    let mut said: Vec<AnyElement> = vec![reference];
+    let mut said: Vec<AnyElement> = Vec::new();
     let changed = issue.changed();
     if changed > 0 {
         said.push(fact(format!(
@@ -186,12 +168,16 @@ pub(super) fn issue_view(
         }
         None => fact("No runs yet".to_string()),
     });
-    // Inked by how hard it presses, so only what cannot wait draws the eye.
+    // Its mark and its word, in the line's own muted ink: the arrow says
+    // which way it presses without a hue shouting it.
     said.extend(priority(&issue.body).map(|priority| {
         div()
             .flex_none()
-            .text_color(priority_ink(&priority, cx))
-            .child(format!("Priority: {priority}"))
+            .h_flex()
+            .items_center()
+            .gap_1()
+            .child(Icon::new(priority_icon(&priority)).xsmall())
+            .child(format!("Priority: {}", priority_name(&priority)))
             .into_any_element()
     }));
     // Advice, never a refusal, and nothing at all for a body written its own
@@ -216,28 +202,40 @@ pub(super) fn issue_view(
     let at = tabs.iter().position(|tab| *tab == doing.tab).unwrap_or(0);
     let shown = tabs[at];
     let view = cx.entity();
-    let picker = {
-        TabBar::new(("issue-tabs", number))
-            .underline()
-            .small()
-            .selected_index(at)
-            .children(tabs.iter().map(|tab| {
-                let (name, count) = match tab {
-                    IssueTab::Description => ("Description", None),
-                    IssueTab::Activity => ("Activity", Some(events)),
-                };
-                Tab::new().label(name).when_some(count, |tab, count| {
-                    tab.suffix(div().text_xs().text_color(muted).child(count.to_string()))
+    // Two chips, as every strip of tabs here is: the chosen one on the
+    // selected fill. Nothing slides between them.
+    let picker = div()
+        .h_flex()
+        .items_center()
+        .gap_1()
+        .px_4()
+        .pt_3()
+        .children(tabs.iter().enumerate().map(|(i, tab)| {
+            let (name, count) = match tab {
+                IssueTab::Description => ("Description", None),
+                IssueTab::Activity => ("Activity", Some(events)),
+            };
+            let chosen = i == at;
+            let view = view.clone();
+            let tab = *tab;
+            tab_chip(("issue-tab", i), name.into(), name.into(), chosen, cx)
+                .pr_2()
+                .children(count.map(|count| {
+                    div()
+                        .text_xs()
+                        .text_color(match chosen {
+                            true => middle_ink(cx.theme().accent_foreground, muted),
+                            false => muted,
+                        })
+                        .child(count.to_string())
+                }))
+                .on_click(move |_, _, cx| {
+                    view.update(cx, |view, cx| {
+                        view.issue_tab = tab;
+                        cx.notify();
+                    })
                 })
-            }))
-            .on_click(move |at, _, cx| {
-                let tab = tabs[*at];
-                view.update(cx, |view, cx| {
-                    view.issue_tab = tab;
-                    cx.notify();
-                })
-            })
-    };
+        }));
 
     let head = div()
         .v_flex()
@@ -246,17 +244,18 @@ pub(super) fn issue_view(
         .pt_4()
         .child(tags)
         .child(title)
-        .child(facts)
-        .child(picker);
+        .child(facts);
 
     let section = match shown {
         IssueTab::Description => div()
             .v_flex()
             .child(match &body {
+                // Read as a document: the reading size on the reading leading.
                 Some((parsed, _)) => div()
                     .px_4()
                     .py_3()
-                    .text_sm()
+                    .text_base()
+                    .line_height(gpui::relative(LEADING))
                     .child(
                         TextView::new(parsed)
                             .selectable(true)
@@ -267,7 +266,7 @@ pub(super) fn issue_view(
                 None => div()
                     .px_4()
                     .py_3()
-                    .text_sm()
+                    .text_xs()
                     .text_color(muted)
                     .child("No description")
                     .into_any_element(),
@@ -290,6 +289,7 @@ pub(super) fn issue_view(
         // Below where the work stands, pushing the rest down: a person opened
         // it, so it is not content moving under them.
         .children(review)
+        .child(picker)
         .child(section);
 
     div()
@@ -322,26 +322,48 @@ fn centred(inner: gpui::Div) -> gpui::Div {
         .child(inner.w_full().max_w(PAGE_PROSE))
 }
 
-/// Whether the issue is open or closed, as a badge: its own mark and word on
-/// the success tint while open, on the neutral fill once closed.
+/// Whether the issue is open or closed, as a neutral badge with its word: a
+/// state an issue rests in, not one that asks for anything.
 fn state_badge(open: bool, cx: &App) -> Tag {
-    let theme = cx.theme();
-    let (icon, Tint { fill, ink }, word) = if open {
-        (Icon::new(AppIcon::CircleDot), tint(theme.green, cx), "Open")
-    } else {
-        let neutral = Tint {
-            fill: theme.secondary,
-            ink: theme.secondary_foreground,
-        };
-        (Icon::new(IconName::CircleCheck), neutral, "Closed")
-    };
-    Tag::custom(fill, ink, fill)
-        .small()
-        .rounded(onehand_plugin_host::tokens::BADGE_CORNER)
-        .flex_none()
-        .gap_1()
-        .child(icon.xsmall())
-        .child(word)
+    plain_tag(
+        match open {
+            true => "Open",
+            false => "Closed",
+        }
+        .to_string(),
+        cx,
+    )
+}
+
+/// The issue's reference in the trail: in the link's ink and opening it on
+/// its forge where it is linked, in full ink where it is not.
+fn reference_link(issue: &LocalIssue, named: String, cx: &mut Context<IssuesView>) -> AnyElement {
+    let number = issue.number;
+    let mono = cx.theme().mono_font_family.clone();
+    match (issue.reference(), &issue.link) {
+        (Some(_), Some(link)) => div()
+            .id("issue-reference")
+            .flex_none()
+            .font_family(mono)
+            .text_color(cx.theme().link)
+            .cursor_pointer()
+            .hover(|reference| reference.underline())
+            .tooltip({
+                let tip = format!("Open on {}", link.connector);
+                move |window, cx| Tooltip::new(tip.clone()).build(window, cx)
+            })
+            .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
+                view.with_url(number, |url, cx| cx.open_url(&url), cx)
+            }))
+            .child(named)
+            .into_any_element(),
+        _ => div()
+            .flex_none()
+            .font_family(mono)
+            .text_color(cx.theme().foreground)
+            .child(named)
+            .into_any_element(),
+    }
 }
 
 /// Everything that happened to the issue, oldest first under its arrival:
@@ -394,6 +416,7 @@ fn activity(issue: &LocalIssue, cx: &mut Context<IssuesView>) -> AnyElement {
                             div()
                                 .id(("issue-history-at", i))
                                 .flex_none()
+                                .w(AGE_W)
                                 .text_color(muted)
                                 .tooltip(move |window, cx| {
                                     Tooltip::new(moment(at)).build(window, cx)
@@ -465,22 +488,18 @@ fn conflict_view(issue: &LocalIssue, cx: &mut Context<IssuesView>) -> Option<Any
         })
         .collect();
     let ink = status_ink(cx).warning;
+    // A box like every other on a page, its hairline the box's own: the
+    // warning is in its words, which name what needs the person.
     Some(
-        div()
+        card_box(cx)
             .flex_none()
-            .v_flex()
-            .gap_1()
-            .mx_2()
-            .my_1()
-            .p_2()
-            .rounded(cx.theme().radius)
-            .border_1()
-            .border_color(ink)
+            .mx_4()
+            .mt_3()
             .child(
                 div()
                     .text_xs()
                     .text_color(ink)
-                    .child(format!("Changed here and on {forge} since the last sync:")),
+                    .child(format!("Changed here and on {forge} since the last sync")),
             )
             .children(lines.into_iter().map(|line| div().text_xs().child(line)))
             .child(
@@ -490,7 +509,7 @@ fn conflict_view(issue: &LocalIssue, cx: &mut Context<IssuesView>) -> Option<Any
                     .justify_end()
                     .child(
                         action("issue-keep-mine")
-                            .xsmall()
+                            .small()
                             .quiet(cx)
                             .label("Keep mine")
                             .tooltip(format!("Send what it says here to {forge}"))
@@ -500,7 +519,7 @@ fn conflict_view(issue: &LocalIssue, cx: &mut Context<IssuesView>) -> Option<Any
                     )
                     .child(
                         action("issue-take-theirs")
-                            .xsmall()
+                            .small()
                             .quiet(cx)
                             .label(format!("Take {forge}'s"))
                             .tooltip("Replace what it says here with the other side")
@@ -527,48 +546,48 @@ fn on_link(
 }
 
 /// The files the body names, under it: each once, in the order it names them,
-/// pressed to open in the editor. `None` for a body that names none.
+/// a row pressed to open in the editor. `None` for a body that names none.
 fn referenced(files: Vec<String>, cx: &mut Context<IssuesView>) -> Option<AnyElement> {
     if files.is_empty() {
         return None;
     }
     let muted = cx.theme().muted_foreground;
+    let mono = cx.theme().mono_font_family.clone();
     let left_out = files.len().saturating_sub(FILES_SHOWN);
     Some(
         div()
             .flex_none()
             .v_flex()
-            .gap_0p5()
+            .gap_2()
             .px_4()
-            .py_3()
-            .border_t_1()
-            .border_color(cx.theme().border)
-            .child(div().text_xs().text_color(muted).child("Referenced files"))
-            .children(
-                files
-                    .into_iter()
-                    .take(FILES_SHOWN)
-                    .enumerate()
-                    .map(|(i, path)| {
-                        let open = path.clone();
-                        div()
-                            .id(("issue-file", i))
-                            .h_flex()
-                            .items_center()
-                            .gap_1()
-                            .min_w_0()
-                            .px_1()
-                            .rounded(cx.theme().radius)
-                            .cursor_pointer()
-                            .hover(|row| row.bg(cx.theme().list_hover))
-                            .text_xs()
-                            .font_family(cx.theme().mono_font_family.clone())
-                            .child(Icon::new(IconName::File).xsmall().text_color(muted))
-                            .child(div().min_w_0().truncate().child(path))
-                            .on_click(cx.listener(move |view, _: &ClickEvent, window, cx| {
-                                view.open_path(&open, window, cx)
-                            }))
-                    }),
+            .pt_6()
+            .pb_3()
+            .child(div().font_semibold().child("Files it names"))
+            .child(
+                div()
+                    .v_flex()
+                    .children(
+                        files
+                            .into_iter()
+                            .take(FILES_SHOWN)
+                            .enumerate()
+                            .map(|(i, path)| {
+                                let open = path.clone();
+                                row(false, cx)
+                                    .id(("issue-file", i))
+                                    .h_flex()
+                                    .items_center()
+                                    .min_w_0()
+                                    .text_size(CODE_TEXT)
+                                    .font_family(mono.clone())
+                                    .child(div().min_w_0().truncate().child(path))
+                                    .on_click(cx.listener(
+                                        move |view, _: &ClickEvent, window, cx| {
+                                            view.open_path(&open, window, cx)
+                                        },
+                                    ))
+                            }),
+                    ),
             )
             .when(left_out > 0, |list| {
                 list.child(
