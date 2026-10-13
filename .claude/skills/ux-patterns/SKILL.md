@@ -1,11 +1,12 @@
 ---
 name: ux-patterns
-description: Behaviour for waiting, empty, failed and refusing states, toasts, confirming a removal, keys, focus, Esc and on-screen words. Use when a view loads, fails, refuses, has nothing to show, removes something, takes keys, or gains a label or message.
+description: Keep onehand feedback, interaction states and language predictable. Use for loading, empty, failure and refusal states, selection, keyboard focus, confirmations, toasts and on-screen wording.
 ---
 
 # Behaviour
 
-The rules are `docs/ui-patterns.md`'s (*Behaviour*); this skill holds the code for each. Walk
+The rules are [UI patterns](../../../docs/ui-patterns.md)'s *Behaviour*; visual priority comes
+from [DESIGN.md](../../../DESIGN.md)'s *Colour and state*. This skill holds code examples. Walk
 every view the change touches through the sections below.
 
 Done when every state the view can reach (waiting, empty, failed, refusing) is drawn by its
@@ -13,11 +14,66 @@ pattern, every key it adds is a keymap command, and every word it adds follows *
 
 ## Waiting
 
+Follow the state-stability rule in UI patterns: keep content axes and action slots in place.
+Check loading-to-content and empty-to-content transitions, not just their final appearance.
+
 ```rust
 // Content on its way: one meta line where it will appear
 div().text_xs().text_color(cx.theme().muted_foreground).child("Reading the workflows…")
 // An action in flight, on the button that started it
 action("run-check").small().label("Run check").loading(running).refuses(running)
+```
+
+## Immediate feedback
+
+A change the person can take back is drawn before it is saved; the save follows off the UI thread
+(the spawn pattern of `crates/app/src/shell/sessions.rs`). Work that leaves the machine waits
+instead.
+
+Changes come faster than saves: rename A to B, then B to C, while B is still being written. So
+the view keeps, per thing it saves, the value shown, the value known saved, the number of the
+newest change, and the save in flight. Each save waits for the one before it, so they land in
+order; a failure puts the screen back only while its change is still the newest, and then to the
+value known saved, never to the value before that change.
+
+```rust
+// Fields: title (shown), saved_title (on disk), title_edit: u64, title_save: Option<Task<()>>
+self.title_edit += 1;
+let edit = self.title_edit;
+self.title = title.clone();
+cx.notify();
+let earlier = self.title_save.take();
+self.title_save = Some(cx.spawn_in(window, async move |this, cx| {
+    // One save at a time, in the order the changes were made
+    if let Some(earlier) = earlier {
+        earlier.await;
+    }
+    let written = title.clone();
+    let saved = cx.background_executor().spawn(async move { save(&written) }).await;
+    this.update_in(cx, |this, window, cx| match saved {
+        Ok(()) => this.saved_title = title,
+        // Still the newest change: back to what the disk holds, said once
+        Err(why) if this.title_edit == edit => {
+            this.title = this.saved_title.clone();
+            window.push_notification(crate::toast::failed("Renaming the session", why), cx);
+            cx.notify();
+        }
+        // Superseded: the newer change's own save decides what shows
+        Err(_) => {}
+    })
+    .ok();
+}));
+```
+
+## Motion
+
+Nothing animates but a `Spinner` on work still running.
+
+```rust
+// Wrong: a fade drawing the eye to a row that changed
+row.with_animation("arrived", Animation::new(duration), |row, t| row.opacity(t))
+// Right: the new state lands at once and says itself in ink and a word
+row.child(div().text_color(status_ink(cx).success).child("Done"))
 ```
 
 ## Nothing to show
@@ -41,8 +97,9 @@ action("save-agent").primary().label("Save").refuses(!ready)
     .tooltip(if ready { "Save the agent" } else { "Give it a name and a command first" })
 ```
 
-A failure reaches the screen once. `eprintln!` alone, as the export in
-`crates/app/src/chat/pane/sessions.rs` does, leaves the person believing it worked.
+A failure reaches the screen once. A log alone leaves the person believing it worked. Apply
+semantic colour to the local message or mark; do not recolour an entire panel. Keep a word or
+recognizable mark alongside colour, and preserve the refusal's explanation when simplifying UI.
 
 ## Confirming a removal
 
@@ -84,6 +141,8 @@ self.confirm(ask, window, cx, move |shell, window, cx| shell.drop_root(&path, wi
   `.on_action(cx.listener(|this, _: &gpui_component::input::Escape, window, cx| this.close(window, cx)))`.
 - A panel that held focus hands it back before it leaves the frame:
   `ChatPane::reclaim_focus`, or the keymap goes dead (see `CLAUDE.md`, *Gotchas*).
+- Check a row's keyboard-focus path as well as pointer hover: its actions must be reachable,
+  selection must remain visible, and revealing actions must not shift the label.
 
 ## Words
 

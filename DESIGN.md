@@ -1,10 +1,15 @@
-# DESIGN.md: UI overview
+# DESIGN.md: onehand UI contract
 
 The whole-app UI contract for `onehand`: how the window is laid out and the rules every view
 follows, as structure and behaviour, not values. It binds at the level written here; below it,
 the code and its tests decide. A feature's own document (`docs/tasks.md`, `docs/workflows.md`,
 `docs/unattended.md`) holds its screens' detail, and `docs/ui-patterns.md` the patterns every
 screen repeats and how they behave. Code never cites this file.
+
+This contract defines onehand's own visual language: quiet navigation, clear content hierarchy,
+compact controls and predictable alignment. It is the target for UI work, not proof that every
+existing screen conforms. The contract refresh changes documentation only; implementation work
+must report the surfaces migrated and any remaining mismatches within its scope.
 
 **No palette lives here.** gpui-component's theme, overridden at boot by the app's palette
 (`crate::theme::install`, with its contrast tests). Every colour, radius and size is a token read
@@ -17,20 +22,30 @@ layer is a bug even when it looks right, as no theme switch reaches it.
    start closed and open on demand. Beside the Workbench it keeps a minimum, times its zoom; too
    narrow for both, the Workbench takes the area under *← Conversation*, which steps it aside. Pages
    take the agent pane and put the docks away; a page opens over a session only when picked.
-2. **Separate by surface and hairline, not shadow.** Docks part from the conversation by their
-   surface, rows and boxes by a 1px `border`. Shadows only for what floats, the app's own in
+2. **Give each boundary a purpose.** Separate with space first, then a line, then a fill, then a
+   shadow, taking each step only for a reason the one before cannot give. Docks use a distinct
+   surface; independent boxes and tables use a 1px `border`; a subsection is a heading and space,
+   not a frame. Shadows only for what floats, the app's own in
    `lift`: dialogs, popovers, menus, over the transcript the composer card, the cards pinned above
    it, the to-bottom button, and on the Issues page the issue floating over the list.
-3. **Colour comes from the theme.** A hue may carry meaning wherever it helps a reader (a state,
-   a label's kind, code in prose); each one is a theme token holding its contrast on every
-   surface it lands on.
+3. **Content leads; navigation recedes.** Neutral surfaces carry the layout. Hue identifies a
+   state, a link, a label's kind or code in prose, never a decorative section background.
+   Attention is earned: the signals that call for the person (a state's hue, a count or badge of
+   what waits, a dot, weight past what the role takes) mark only what needs them or has just
+   changed, so a view at rest is calm. Hierarchy and identity are not attention: a heading keeps
+   its weight, a list its muted count, a label its kind's hue. All colours are theme tokens with
+   legible contrast on their actual surfaces in both modes.
 4. **Mono for machines, sans for people.** Code, paths, terminal output and diffs use
    `mono_font_family`. Anything a person wrote uses the default family.
-5. **Icons are registry SVGs, never glyphs.**
+5. **Same role, same treatment.** Across app and plugins, equivalent rows, headers and controls
+   share size, spacing, corners and states. A valid token alone does not make a consistent view.
 6. **Say nothing twice.** If a fact is already on screen near what it describes, don't repeat it
    in a badge, a status bar or a title.
 7. **Bounded, and say so.** Every list has a named cap, and when the cap cuts something off, the
    screen says how many were left out.
+8. **Calm and immediate.** What a person changes shows at once, and the work behind it follows.
+   Nothing moves for show: the one motion is a `Spinner` on work still running, beside what the
+   library's own overlays do. `docs/ui-patterns.md` (*Immediate feedback*, *Motion*) holds how.
 
 ## Layout
 
@@ -184,10 +199,22 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
 - **Weight carries hierarchy before size does**: `font_medium` for a page's title and a name in
   a header, `font_semibold` for any other title or heading; nothing bolder. Line height is gpui's,
   but `LEADING` for reading text and `LEADING_TIGHT` for a wrapped title.
-- **Inter and JetBrains Mono ship with the app**, so text looks and centres the same everywhere;
+- **Inks by role.** Text on a neutral surface (the reading surface, a dock, the rail, a floating
+  surface, a well, the bubble) takes one of three: `foreground` for content and the current
+  location; `theme::meta_ink` for a detail beside a name on its line (its folder, its number, its
+  kind); `muted_foreground`, still readable, for labels, counts, hints, placeholders and every
+  navigation row but the current one. Text on a fill takes the ink paired with that fill: a
+  button's variant and the library's controls set their own, a selected row `accent_foreground`,
+  a badge its `Tint`'s ink. Meaning takes its semantic ink: a state `status_ink()`, a link or
+  what runs `link`, code in prose `hue_ink`. No fourth neutral ink, and a quieter ink is a mixed
+  step, never an alpha on the text or its container: see-through text reads differently on
+  every fill under it.
+- **The UI and mono font families ship with the app**, so text looks and centres the same everywhere;
   `[font].monospace` can still name another installed mono family.
 - **Space** takes gpui's steps `0p5`, `1`, `1p5`, `2`, `3`, `4`, `6` and `8`; a named spacing
-  constant equals one of them. An indent lining text up under a title is an icon plus its gap.
+  constant equals one of them. Pick by relationship using `docs/ui-patterns.md`'s *Spacing and
+  density*, not by what fits one screenshot. Text below a title shares its text axis, and icons,
+  labels and buttons in one column share one axis down it.
 - **Sizes are rems**, as per-panel zoom overrides the rem base; pixels only for lines, rings,
   shadows, bounds measured against the window, an inset cancelling one the library draws in
   pixels, and the terminal's grid, which zooms on its own. Fixed chrome heights stay outside the
@@ -209,7 +236,7 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
 | `background` / `foreground` | surface and text |
 | `theme::dock_surface` | the Workbench and the terminal, a step off the reading surface |
 | `muted` / `muted_foreground` | quiet fills (the prompt bubble, every well), meta text |
-| `theme::meta_ink` | the transcript's meta text, contrast-tested |
+| `theme::meta_ink` | the middle ink: a detail beside a name, between prose and meta, contrast-tested |
 | `border` | every hairline |
 | `ring` | keyboard focus, drawn only when the keyboard moved it; the composer while a file is dragged over it |
 | `accent` | the one item selected among several (a fill, not a hue) |
@@ -221,11 +248,17 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
 | `theme::raised` | the composer card |
 | `secondary` | inline code in the prompt bubble, a step off its fill; a document's code on a dock |
 
-- Boxes are borders; wells and the bubble are fills.
+- Reading content is the visual anchor; rail and dock chrome remain quieter. A nested container
+  inherits its surface unless it has a distinct role: well, selection or floating content.
+- Boxes are borders; wells and the bubble are fills. Ordinary sections remain unboxed. Do not
+  combine a border, contrasting fill and shadow just to make a group visible.
 - Hover and selection are fills: distinct steps on a row (`list_hover`, `accent`), one step on a
   ghost button (the selected one). Keyboard focus is the ring.
 - At most one primary in a view; a view needs none (the Settings page has none).
-- A missing surface goes into the ramp with its contrast asserted, never into one view.
+- The palette is neutral: surfaces and inks carry next to no hue, so a hue on screen means
+  something. A missing surface or ink goes into the ramp with its contrast asserted, never into
+  one view; a step between two the ramp holds is mixed from them perceptually (`mix_oklab`), so
+  both modes derive it by one rule.
 
 ## Components
 
@@ -238,10 +271,20 @@ the main action, `secondary` an alternative beside it, a picker's trigger and ev
 `choice` in a pick-one row, `danger` only under *Exceptions*, and ghost (`.quiet(cx)`, whose hover
 is the selected step) the rest. **No button draws an edge** (no default variant, no `outline()`): a
 field is the one control marked by its edge, on no fill of its own. A control that refuses says so
-(`.refuses()`) and goes back to the arrow. Sizes: `.tall()` (`FIELD_H`, chrome-size words) in a
-dialog's footer, a form and a page's head; `small` in a box or a strip; `xsmall` on a row, in a
-transcript block and as a chip; never the library's default, which letters a button at the reading
-size. The app owns only its own: the transcript renderers, the icon registry, the terminal panel,
+(`.refuses()`) and goes back to the arrow.
+
+**A size names a role, and means one height and one text size in every control.** The library's
+sizes disagree across components (its default button letters at the reading size beside a field
+at the chrome size), so the app uses three: `.small()` (`CONTROL_H`), the compact default, in a
+strip, a box and for a row's actions; `.tall()` (`FIELD_H`, chrome-size words) in a form, a filter
+bar, a page's head and a dialog's footer; `.xsmall()` only for a secondary action inside dense
+content: a line of meta text, a transcript block, a chip. Never the library's default. A
+correction a component needs lives in its shared wrapper (`Tall`), never at a call site. An icon
+keeps its role's size whatever the hit area round it, and a badge, a checkbox or a switch keeps
+the library's own geometry, centred in its row. `docs/ui-patterns.md` (*Control sizes*) maps each
+role to its component and size.
+
+The app owns only its own: the transcript renderers, the icon registry, the terminal panel,
 per-panel zoom, and the composer popup (one shell for `@`, `/`, the pickers, the `+` and branch
 menus and the attachment tray, with a pinned title and no key hints, at most six rows, grouped, then
 how many more; a menu opens just above the control that opened it).
@@ -256,6 +299,12 @@ cannot draw (shapes it has no drawing of, brand marks, and forks of bundled shap
 weight), synced from `assets/icons/manifest.toml` by `scripts/sync-icons.sh`. Where the bundled
 set lacks a shape, an approximate icon is accepted. An icon at rest is `muted_foreground`. One that
 carries state uses a semantic token. One that sits beside text takes that text's colour.
+Equivalent icon roles use the same library size through a shared builder; optical corrections
+belong there. Add an icon only when it helps recognition or names an action without visible text;
+a word reads faster than a shape nobody has learned. An icon beside text is no taller than that
+text's line and sits on its centre; icons down a column share one slot width, so the labels after
+them start on one edge. No icon sits on a tile of its own; a fill behind one belongs to the
+control or row it is part of.
 
 ## Exceptions
 

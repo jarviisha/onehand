@@ -376,18 +376,25 @@ impl Quiet for Button {
     }
 }
 
-/// A control at a dialog's or a form's scale: [`tokens::FIELD_H`] high with
-/// its words at the chrome size.
+/// A control at the scale of a form, a filter bar, a page's head and a
+/// dialog's footer: [`tokens::FIELD_H`] high, with its words and its icon at
+/// the chrome size.
 ///
-/// The library ties a control's words to its size: a default-size button
-/// letters its label at the reading size, a step above a field of the same
-/// size, and nothing outside it reaches the box those words sit in. Its height
-/// and padding are on the control itself, though, and the caller's own land
-/// after the library's. So this is the small size, lettered as chrome, given
-/// back the default size's height, and padding on the spacing steps (`px_3`,
-/// where the default's `px_2p5` falls between two).
+/// The library ties a control's words and icon to its size, and not the same
+/// way in every component: a default-size button letters its label at the
+/// reading size and grows its icon, a step above a field of the same size,
+/// and nothing outside it reaches the box those words sit in. Its height and
+/// padding are on the control itself, though, and the caller's own land after
+/// the library's. So this is the small size, lettered as chrome and keeping the
+/// small icon, given back the default size's height, and padding on the spacing
+/// steps (`px_3`, where the default's `px_2p5` falls between two).
+///
+/// The one correction a size needs, made here and nowhere else: the two other
+/// sizes the app uses, `small` and `xsmall`, already measure the same in a
+/// button and a field, and the library's default is never used.
 pub trait Tall {
-    /// The small size at a dialog's or a form's height.
+    /// The small size at the height of a form, a filter bar, a page's head
+    /// and a dialog's footer.
     fn tall(self) -> Self;
 }
 

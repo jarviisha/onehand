@@ -1,30 +1,41 @@
 ---
 name: layout-patterns
-description: Layout for pages, strips, boxes, lists, list-and-detail, forms, dialogs and detail views. Use when adding a screen, panel or dialog, or changing where things sit, how wide they run, or when a view splits or stacks.
+description: Compose onehand screens with consistent hierarchy, alignment and density. Use for pages, panels, lists, forms and dialogs, cross-screen layout cleanup, and container-based split or stack behavior.
 ---
 
 # Layout
 
-The window's regions are `DESIGN.md`'s (*Layout*); the patterns drawn inside them are
-`docs/ui-patterns.md`'s (*Layout*). Read the parts for what you build, at the version in the
-working tree.
+Read [DESIGN.md](../../../DESIGN.md) (*Principles*, *Layout*) and
+[UI patterns](../../../docs/ui-patterns.md) (*Choose the container*, *Hierarchy*, *Separation*,
+*Spacing and density*, then the relevant layout pattern). The window structure and feature content remain their own
+contracts; visual cleanup does not authorize removing actions or changing navigation.
 
 ## Building a screen
 
-1. **Pick its pattern** from the table, open the example, and build from its builders.
-2. **Measure the container** for every split or stack: a dock or a pane can be narrow in a wide
+1. **Identify hierarchy**: region identity, local filters, content groups and actions. Choose the
+   least decorated container that expresses each relationship, preserving feature-required boxes.
+   Separate with space before a line, a line before a fill, a fill before a shadow, and give each
+   text its ink by role.
+2. **Pick its pattern** from the table, inspect an equivalent screen and build from its builders.
+   Compare text axes, action slots and section gaps. Existing code may need migration itself.
+3. **Measure the container** for every split or stack: a dock or a pane can be narrow in a wide
    window. `list_detail` and the boxes' wrap read the width they are given.
-3. **Bound it**: every list has a named cap and says how many it left out; text that can run long
+4. **Bound it**: every list has a named cap and says how many it left out; text that can run long
    truncates or wraps, as its neighbours do.
-4. **Take widths and heights from tokens**: a page's column from `PAGE_*`, a strip's height from
-   `BAR_H`, a row's from `ROW_H` (the `design-tokens` skill).
+5. **Apply pattern metrics**: column from `PAGE_*`, strip from `BAR_H`, single-line row from
+   `ROW_H`, gaps from the relationship table. Multi-line content grows; it does not acquire a
+   smaller font to fit. Keep compact chrome separate from the reading content's rhythm.
+6. **Line it up**: marks down a column in slots of one width on one centre line, labels on one
+   edge, numbers and times in fixed-width slots, action groups holding their width.
 
 Done when the screen follows one pattern below, built from that pattern's builders, and every
-list on it is capped.
+list on it is capped, with no unexplained difference from an equivalent pattern elsewhere.
 
 | Building | Pattern | Example |
 |---|---|---|
 | A page in the agent pane | Page | `tasks_frame` in `crates/app/src/chat/pane/tasks_page.rs` |
+| A page's head and the filters under it | Page head | `plugins/builtin/workbench-issues/src/view/page/head.rs` |
+| Related fields or a subsection | Plain section | `section` in `crates/app/src/settings.rs` |
 | The facts about one thing on a page | Box | `card_box` and `card_title` in `crates/app/src/chat/pane/workspace_page.rs` |
 | A bar along the top of a region | Strip | `crates/app/src/workbench/panel/strip.rs` |
 | Rows to pick from | List | the Files tree, `plugins/builtin/workbench-files/src/view.rs` |
@@ -77,6 +88,13 @@ row.child(div().h_flex().justify_center().child(div().w_full().max_w(CONTENT_COL
 div().px_4().py_6().child(div().max_w(rems(EDITOR_COLUMN)))
 // Right
 div().p_6().child(div().max_w(tokens::PAGE_PROSE))
+```
+
+```rust
+// Wrong: a subsection framed, filled and lifted to look like a group
+div().p_3().border_1().border_color(theme.border).bg(theme.muted).shadow(lift(cx)).child(group)
+// Right: a heading and space; a box only for an independent summary
+div().v_flex().gap_2().child(heading).child(group)
 ```
 
 A change to what a screen holds or the order it holds it in updates `DESIGN.md` (or the
