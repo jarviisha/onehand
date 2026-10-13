@@ -81,9 +81,8 @@ impl RenderOnce for BlockingBody {
                     .id(("blocking-body-scroll", key))
                     .v_flex()
                     // Enough to read the rows as separate things. These are
-                    // bordered boxes, not lines of text, and a quarter-rem
-                    // between two borders is a gap the eye resolves as one
-                    // thick rule with a seam in it.
+                    // filled boxes, not lines of text, and a quarter-rem
+                    // between two fills reads as one block with a seam.
                     .gap_2()
                     .w_full()
                     .max_h(MAX_BLOCKING_BODY_H)

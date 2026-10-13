@@ -408,8 +408,9 @@ rarer screens; saves last, as they move nothing on screen.
   palettes.
 
 - As built: a choice row is the `choice` treatment drawn by hand (a quiet button on the
-  selected step), since it holds a mark, the agent's words and a key, which `choice`'s label
-  cannot; a row keeps its number on the row as a `Kbd`, and the other keys (Enter and Esc on a
+  selected step, on `floating_well` at rest so each reads apart), since it holds a mark, the
+  agent's words and a key, which `choice`'s label cannot; its mark stays drawn in ink, because
+  the library's radio rings itself in the selected step's own grey; a row keeps its number on the row as a `Kbd`, and the other keys (Enter and Esc on a
   permission, Esc on Skip) move to tooltips. A question's tab is the selected step, every tab
   at one weight. The floating well is `theme::floating_well`, the card's fill mixed toward the
   ink. An opened cluster draws its latest 40 rows and counts the rest. The disconnect notice
