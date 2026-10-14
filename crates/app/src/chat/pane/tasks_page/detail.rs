@@ -238,7 +238,18 @@ pub(super) fn task_detail(
     cx: &mut Context<ChatPane>,
 ) -> Vec<gpui::AnyElement> {
     let muted = cx.theme().muted_foreground;
-    let mut out = vec![trail(detail, task, row, cx).into_any_element()];
+    let last = task.runs.last();
+    // What waits on the person below holds the view's one primary while it
+    // shows, so the trail's first action steps down beside it.
+    let review = last
+        .and_then(UnderReview::of)
+        .map(|review| review_card(&task.id, row, &review, cx));
+    let way = match (last, row.group) {
+        (Some(_), Group::Ended) => way_out(task, cx),
+        _ => None,
+    };
+    let held = review.is_some() || way.as_ref().is_some_and(|(_, primary)| *primary);
+    let mut out = vec![trail(detail, task, row, held, cx).into_any_element()];
     out.push(
         div()
             .v_flex()
@@ -256,12 +267,8 @@ pub(super) fn task_detail(
     let Some((last, earlier)) = task.runs.split_last() else {
         return out;
     };
-    if let Some(review) = UnderReview::of(last) {
-        out.push(review_card(&task.id, row, &review, cx));
-    }
-    if row.group == Group::Ended {
-        out.extend(way_out(task, cx));
-    }
+    out.extend(review);
+    out.extend(way.map(|(section, _)| section));
     // Only a task at work has a visit under way: an open visit of any other
     // was cut off, by a quit or a lost session, before it could end.
     let live = match row.group {
@@ -326,22 +333,28 @@ pub(super) fn task_detail(
 }
 
 /// The detail's trail: the way back to the cards, then what can be done with
-/// the task, the most fitting a primary, the next a secondary, the rest and
+/// the task, the most fitting a primary (a secondary while `held`: a section
+/// below holds the view's one primary), the next a secondary, the rest and
 /// the removal of its worktree in ⋯. ⋯ is always drawn, so the removal, which
 /// arrives once the pull request is read, shifts nothing.
 fn trail(
     detail: &TaskDetail,
     task: &onehand_core::task::Task,
     row: &Row,
+    held: bool,
     cx: &mut Context<ChatPane>,
 ) -> gpui::Div {
     let back = onehand_plugin_host::back_link("task-back", "Tasks", cx)
         .on_click(cx.listener(|pane: &mut ChatPane, _, _, cx| pane.open_task(None, cx)));
     let acts = task_acts(row, true);
     let mut acts = acts.into_iter();
-    let primary = acts
-        .next()
-        .map(|act| act.button("task-detail", row, cx).primary());
+    let primary = acts.next().map(|act| {
+        let button = act.button("task-detail", row, cx);
+        match held {
+            true => button.secondary(),
+            false => button.primary(),
+        }
+    });
     let secondary = acts
         .next()
         .map(|act| act.button("task-detail", row, cx).secondary());
@@ -668,11 +681,12 @@ fn removable(task: &onehand_core::task::Task, detail: &TaskDetail) -> bool {
 
 /// An ended task's way out, as its issue says it (`next_action`): why it
 /// ended, and the ways out the head's actions do not already offer, the one
-/// that fits first.
+/// that fits first. Answers whether it drew a primary, which the trail then
+/// steps down beside.
 fn way_out(
     task: &onehand_core::task::Task,
     cx: &mut Context<ChatPane>,
-) -> Option<gpui::AnyElement> {
+) -> Option<(gpui::AnyElement, bool)> {
     let mut work = Work::of(task, None, None);
     work.timeout_moved = crate::unattended::timeout_moved(task, cx);
     let around = Around {
@@ -690,6 +704,7 @@ fn way_out(
         .chain(next.secondary)
         .filter(|act| matches!(act, Act::RetryCurrent))
         .collect();
+    let primary = offered.iter().any(|act| Some(*act) == next.primary);
     let buttons = offered.into_iter().map(|act| {
         let button = crate::controls::action(SharedString::from(format!("task-way-{act:?}")))
             .small()
@@ -700,12 +715,13 @@ fn way_out(
         };
         button.on_click(super::emit(&task.id, cx, ChatPaneEvent::RetryTaskCurrent))
     });
-    Some(
+    Some((
         page_section("Way out", None, None, cx)
             .child(div().text_sm().child(said))
             .child(div().h_flex().gap_2().children(buttons))
             .into_any_element(),
-    )
+        primary,
+    ))
 }
 
 /// What the task's run waits for approval on: the answer, what each answer

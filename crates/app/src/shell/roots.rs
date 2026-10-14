@@ -420,10 +420,16 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.window.workspace.move_root(from, to);
-        // Put back, alone, if its write fails: the move made the other way.
+        // A drop the pin line clamps back onto itself moved nothing to write.
+        let Some(landed) = self.window.workspace.move_root(from, to) else {
+            return;
+        };
+        // Put back, alone, if its write fails: from where it landed, which the
+        // pin clamp may have made other than where it was dropped.
         self.save_change(
-            Box::new(move |shell, _, _| shell.window.workspace.move_root(to, from)),
+            Box::new(move |shell, _, _| {
+                shell.window.workspace.move_root(landed, from);
+            }),
             window,
             cx,
         );

@@ -171,6 +171,10 @@ pub struct Chat {
     /// What the agent last confirmed for each pick, by group (the mode
     /// selector or a config option's id): what a refused pick goes back to.
     confirmed: HashMap<String, String>,
+    /// How many picks sent to the agent are still unanswered, by group: a
+    /// refusal while a newer pick waits is superseded by it, so only the
+    /// newest pick's refusal puts back what is shown.
+    picks_out: HashMap<String, u32>,
     /// The mode + config picks a *resumed* conversation was last using, armed
     /// from the archive on load and replayed once the adapter reconnects
     /// (`reapply_prefs`). The adapter rebuilds effort/agent from static settings

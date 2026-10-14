@@ -314,9 +314,13 @@ impl Workspace {
     /// appeared to cross and then sprang back would say nothing about why. So
     /// dropping a pinned project onto an unpinned one puts it last among the
     /// pinned instead, and the pin stays the stronger statement.
-    pub fn move_root(&mut self, from: usize, to: usize) {
+    ///
+    /// Answers the display position the root landed at, or `None` when nothing
+    /// moved; the way back is `move_root(landed, from)`, never `(to, from)`,
+    /// since `to` may have been clamped.
+    pub fn move_root(&mut self, from: usize, to: usize) -> Option<usize> {
         if from >= self.roots.len() {
-            return;
+            return None;
         }
         let mut order = self.display_order();
         let pinned = self.roots.iter().filter(|root| root.pinned).count();
@@ -326,7 +330,7 @@ impl Workspace {
         };
         let to = to.clamp(first, last);
         if from == to {
-            return;
+            return None;
         }
         let moved = order.remove(from);
         order.insert(to, moved);
@@ -342,6 +346,7 @@ impl Workspace {
             .map(Some)
             .collect();
         self.roots = order.into_iter().filter_map(|i| taken[i].take()).collect();
+        Some(to)
     }
 
     /// Move a session within its root.
@@ -702,6 +707,31 @@ mod tests {
             "it goes last among the pinned, not past them"
         );
         assert!(ws.roots[1].pinned, "and it is still pinned");
+    }
+
+    /// A move put back after its write fails goes back from where the root
+    /// landed: undoing from where it was dropped would move another project.
+    #[test]
+    fn a_clamped_move_is_put_back_from_where_it_landed() {
+        let mut ws = Workspace::seeded("/a");
+        for path in ["/b", "/c", "/d"] {
+            ws.add_root(path);
+        }
+        ws.toggle_pin(0);
+        ws.toggle_pin(1);
+        let paths = |ws: &Workspace| ws.roots.iter().map(|r| r.path.clone()).collect::<Vec<_>>();
+        let before = paths(&ws);
+
+        // Pinned `/a` dropped onto unpinned `/d` lands last among the pinned.
+        let landed = ws.move_root(0, 3);
+        assert_eq!(landed, Some(1));
+        ws.move_root(landed.unwrap(), 0);
+        assert_eq!(paths(&ws), before);
+
+        // A drop that clamps back onto itself moves nothing, and says so.
+        ws.toggle_pin(1);
+        assert_eq!(ws.move_root(0, 2), None);
+        assert_eq!(paths(&ws), before);
     }
 
     /// Reordering sessions keeps the one on screen on screen -- the index is

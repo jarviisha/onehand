@@ -349,10 +349,34 @@ impl Chat {
     /// rather than as a `session/update`, so waiting for an echo would leave
     /// the picker showing the old value until the next turn.
     pub fn set_mode(&mut self, mode_id: &str) {
-        if let Some(tx) = &self.tx {
-            let _ = tx.send(AcpRequest::SetMode(mode_id.to_string()));
-        }
+        self.send_pick(
+            super::MODE_SELECTOR,
+            AcpRequest::SetMode(mode_id.to_string()),
+        );
         self.current_mode = Some(mode_id.to_string());
+    }
+
+    /// Send a pick for `group` to the agent, counted until it answers.
+    fn send_pick(&mut self, group: &str, request: AcpRequest) {
+        let sent = self.tx.as_ref().is_some_and(|tx| tx.send(request).is_ok());
+        if sent {
+            *self.picks_out.entry(group.to_string()).or_default() += 1;
+        }
+    }
+
+    /// The agent answered a pick for `group`: whether it was the newest one,
+    /// with no later pick still waiting for its own answer.
+    pub(super) fn pick_answered(&mut self, group: &str) -> bool {
+        match self.picks_out.get_mut(group) {
+            Some(out) if *out > 1 => {
+                *out -= 1;
+                false
+            }
+            _ => {
+                self.picks_out.remove(group);
+                true
+            }
+        }
     }
 
     /// Step to the mode after the one in force, wrapping at the end.
@@ -377,12 +401,13 @@ impl Chat {
     /// Pick a config option (model / effort / sub-agent), same contract as
     /// [`Self::set_mode`].
     pub fn set_config_option(&mut self, config_id: &str, value: &str) {
-        if let Some(tx) = &self.tx {
-            let _ = tx.send(AcpRequest::SetConfigOption {
+        self.send_pick(
+            config_id,
+            AcpRequest::SetConfigOption {
                 config_id: config_id.to_string(),
                 value: value.to_string(),
-            });
-        }
+            },
+        );
         self.set_config_current(config_id, value);
     }
 
@@ -410,13 +435,14 @@ impl Chat {
     /// picker alias (e.g. `opus` vs the live `opus[1m]`) can switch the context
     /// lane rather than describe it (see the adapter's `getAvailableModels`).
     pub(super) fn reapply_prefs(&mut self) {
-        let Some(tx) = self.tx.clone() else { return };
+        if self.tx.is_none() {
+            return;
+        }
         if let Some(mode) = self.pending_mode.take() {
             if self.current_mode.as_deref() != Some(mode.as_str())
                 && self.modes.iter().any(|m| m.id == mode)
             {
-                let _ = tx.send(AcpRequest::SetMode(mode.clone()));
-                self.current_mode = Some(mode);
+                self.set_mode(&mode);
             }
         }
         for (id, value) in std::mem::take(&mut self.pending_config) {
@@ -432,11 +458,7 @@ impl Chat {
                         && o.choices.iter().any(|c| c.value == value)
                 });
             if restorable {
-                let _ = tx.send(AcpRequest::SetConfigOption {
-                    config_id: id.clone(),
-                    value: value.clone(),
-                });
-                self.set_config_current(&id, &value);
+                self.set_config_option(&id, &value);
             }
         }
     }

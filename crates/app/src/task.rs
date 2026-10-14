@@ -507,21 +507,34 @@ pub(crate) fn dismiss(id: &str, window: &mut Window, cx: &mut App) {
     let Some((written, cut_off)) = dismissed else {
         return;
     };
+    let id = id.to_string();
     window
         .spawn(cx, async move |cx| {
-            if let Err(why) = written.await {
-                let _ = cx.update(|window, cx| {
-                    window.push_notification(crate::toast::failed("Dismissing the task", why), cx)
-                });
-            }
+            let written = written.await;
+            let _ = cx.update(|window, cx| match written {
+                // A run cut off by a quit was never reported; letting it go,
+                // once that is kept, is its end.
+                Ok(()) => {
+                    if let Some(run) = cut_off {
+                        crate::unattended::keep(&id, &run, run.begun(), None, cx);
+                        crate::unattended::deliver(id, cx);
+                    }
+                    enforce_cap(cx);
+                    cx.refresh_windows();
+                }
+                // Not kept, so not let go: the task goes back to where it was.
+                Err(why) => {
+                    cx.update_global::<Tasks, _>(|t, _| {
+                        if let Some(task) = t.task_mut(&id) {
+                            task.dismissed = false;
+                        }
+                    });
+                    window.push_notification(crate::toast::failed("Dismissing the task", why), cx);
+                    cx.refresh_windows();
+                }
+            });
         })
         .detach();
-    // A run cut off by a quit was never reported; letting it go is its end.
-    if let Some(run) = cut_off {
-        crate::unattended::keep(id, &run, run.begun(), None, cx);
-        crate::unattended::deliver(id.to_string(), cx);
-    }
-    enforce_cap(cx);
     cx.refresh_windows();
 }
 

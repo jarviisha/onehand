@@ -282,12 +282,17 @@ impl Chat {
                 }
                 self.config_options = opts;
             }
+            // What is shown follows the newest pick: an older pick's answer
+            // only moves what the agent is known to hold.
             AcpEvent::PickConfirmed { group, value } => {
+                self.pick_answered(&group);
                 self.confirmed.insert(group, value);
             }
             AcpEvent::PickRefused { group, why } => {
-                self.put_back(&group);
-                pick_refused = Some(why);
+                if self.pick_answered(&group) {
+                    self.put_back(&group);
+                    pick_refused = Some(why);
+                }
             }
             AcpEvent::TerminalOutput { terminal_id, chunk } => {
                 let view = self.terminals.entry(terminal_id).or_default();
@@ -344,6 +349,8 @@ impl Chat {
                 // A thought cut off with the adapter is over, not still running.
                 self.finalize_thought();
                 self.tx = None;
+                // Picks sent over the lost connection are answered by nothing.
+                self.picks_out.clear();
                 self.link = Link::Lost;
                 self.busy = false;
                 // No live adapter to answer — but the cards must not keep
