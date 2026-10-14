@@ -117,9 +117,9 @@ pub struct Shared {
     /// The one thread every settings file is written on: off the UI thread,
     /// and in the order the changes were made.
     pub writer: onehand_core::saving::OrderedWriter,
-    /// The newest write of each kind of change to the config, so only its
-    /// failure puts anything back.
-    pub config_writes: std::collections::HashMap<&'static str, u64>,
+    /// Each setting's value known saved and its newest change, so a failed
+    /// write puts back only the settings no later write carries.
+    pub config_saves: onehand_core::saving::Saves<&'static str, crate::saves::Put>,
 }
 
 impl Global for Shared {}
@@ -133,7 +133,7 @@ impl Shared {
             keymap: cfg.keymap,
             mono_family: None,
             writer: onehand_core::saving::OrderedWriter::spawn("onehand-settings"),
-            config_writes: std::collections::HashMap::new(),
+            config_saves: Default::default(),
             next_uid: 1,
             windows: Vec::new(),
             recents: AppState::load(),

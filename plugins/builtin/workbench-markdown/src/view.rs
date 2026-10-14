@@ -85,9 +85,6 @@ pub(crate) struct MarkdownView {
     /// leaves the reader believing the document on screen is current. Cleared
     /// by a read that works.
     status: Option<String>,
-    /// An open that failed, what and why, said once as a toast on the next
-    /// frame: a press that failed is news, unlike a document going stale.
-    failed: Option<(String, String)>,
     /// How the header's *Edit source* reaches the mode that edits files.
     ask: Ask,
 }
@@ -105,7 +102,6 @@ impl MarkdownView {
             _scan: None,
             watch: None,
             status: None,
-            failed: None,
             ask,
         })
     }
@@ -203,7 +199,10 @@ impl MarkdownView {
     /// Through core's editor read, so this obeys the same size bound the quick
     /// editor does and comes back with the same mtime — which is what the live
     /// reload then compares against.
-    fn open_doc(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+    ///
+    /// An open that fails is said once, as a toast, when the read comes back:
+    /// a press that failed is news, unlike a document going stale.
+    fn open_doc(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         let Some(root) = self.root.clone() else {
             return;
         };
@@ -213,7 +212,9 @@ impl MarkdownView {
             .display()
             .to_string();
 
-        cx.spawn(async move |view, cx| {
+        // `spawn_in`, so a read that fails can be said in the window it was
+        // asked from, whatever the Workbench is showing by then.
+        cx.spawn_in(window, async move |view, cx| {
             let read = cx
                 .background_executor()
                 .spawn({
@@ -222,7 +223,7 @@ impl MarkdownView {
                 })
                 .await;
 
-            let _ = view.update(cx, |view: &mut Self, cx| {
+            let _ = view.update_in(cx, |view: &mut Self, window, cx| {
                 // The root can have left the workspace while the read was in
                 // flight, and putting the entry back would leave a parsed
                 // document alive under a project nothing can reach.
@@ -239,7 +240,13 @@ impl MarkdownView {
                         }
                         view.watch_doc(cx);
                     }
-                    Err(e) => view.failed = Some((format!("Opening {label}"), e.to_string())),
+                    Err(e) => {
+                        use gpui_component::WindowExt as _;
+                        window.push_notification(
+                            onehand_plugin_host::toast::failed(&format!("Opening {label}"), e),
+                            cx,
+                        );
+                    }
                 }
                 cx.notify();
             });
@@ -356,14 +363,6 @@ impl Render for MarkdownView {
             self.index(cx);
         }
 
-        // Deferred: the toast layer is the window root's, not to be updated
-        // from inside a child's render.
-        if let Some((what, why)) = self.failed.take() {
-            window.defer(cx, move |window, cx| {
-                use gpui_component::WindowExt as _;
-                window.push_notification(onehand_plugin_host::toast::failed(&what, why), cx)
-            });
-        }
         let body = self.body(window, cx);
         div()
             .flex_1()
@@ -510,9 +509,9 @@ impl MarkdownView {
             root,
             docs,
             cx.listener(|view: &mut Self, dir: &PathBuf, _, cx| view.toggle_dir(dir, cx)),
-            cx.listener(|view: &mut Self, path: &PathBuf, _, cx| {
+            cx.listener(|view: &mut Self, path: &PathBuf, window, cx| {
                 view.detail = true;
-                view.open_doc(path.clone(), cx)
+                view.open_doc(path.clone(), window, cx)
             }),
             cx,
         )

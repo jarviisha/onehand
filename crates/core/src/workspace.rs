@@ -349,6 +349,30 @@ impl Workspace {
         Some(to)
     }
 
+    /// Each root's path, in the order the file keeps them.
+    pub fn root_order(&self) -> Vec<PathBuf> {
+        self.roots.iter().map(|root| root.path.clone()).collect()
+    }
+
+    /// Put the roots back in `order`, as [`Self::root_order`] gave it: what
+    /// puts a move back to the order last saved, however many moves came
+    /// after it. A root `order` does not name keeps its place among the
+    /// others after every root it names; a root it names that has gone is
+    /// passed over.
+    pub fn put_order(&mut self, order: &[PathBuf]) {
+        let active = self.roots.get(self.active_root).map(|r| r.path.clone());
+        let rank = |root: &ProjectRoot| {
+            order
+                .iter()
+                .position(|path| *path == root.path)
+                .unwrap_or(order.len())
+        };
+        self.roots.sort_by_key(rank);
+        if let Some(i) = active.and_then(|path| self.roots.iter().position(|r| r.path == path)) {
+            self.active_root = i;
+        }
+    }
+
     /// Move a session within its root.
     ///
     /// Within one root and never across: a session is an agent bound to that
@@ -707,6 +731,33 @@ mod tests {
             "it goes last among the pinned, not past them"
         );
         assert!(ws.roots[1].pinned, "and it is still pinned");
+    }
+
+    /// A move put back to the order last saved restores every root's place,
+    /// the one on screen following its own.
+    #[test]
+    fn an_order_put_back_is_the_one_saved() {
+        let mut ws = Workspace::seeded("/a");
+        for path in ["/b", "/c"] {
+            ws.add_root(path);
+        }
+        let saved = ws.root_order();
+        ws.move_root(0, 2);
+        ws.move_root(0, 1);
+        ws.add_root("/d");
+        ws.active_root = ws
+            .roots
+            .iter()
+            .position(|r| r.path == Path::new("/a"))
+            .unwrap();
+        ws.put_order(&saved);
+        let order: Vec<_> = ws.root_order();
+        assert_eq!(
+            order,
+            ["/a", "/b", "/c", "/d"].map(PathBuf::from),
+            "a root added since stays after the ones saved"
+        );
+        assert_eq!(ws.roots[ws.active_root].path, PathBuf::from("/a"));
     }
 
     /// A move put back after its write fails goes back from where the root

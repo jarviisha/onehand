@@ -170,7 +170,7 @@ impl Tasks {
 }
 
 /// How long quitting waits for the task files still being written.
-const QUIT_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
+pub(crate) const QUIT_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// Read every task kept, off the UI thread. Nothing starts by itself: a task
 /// that was running or queued when the last process ended reads as

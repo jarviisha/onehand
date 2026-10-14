@@ -238,10 +238,14 @@ impl Shell {
             "appearance",
             "Saving the appearance",
             move |cfg| cfg.appearance = choice,
-            Some(Box::new(move |window, cx| {
-                cx.update_global::<Shared, _>(|shared, _| shared.appearance = before);
-                apply_appearance(before, Some(window), cx);
-            })),
+            Some(crate::saves::Change {
+                before,
+                after: choice,
+                put: |choice, window, cx| {
+                    cx.update_global::<Shared, _>(|shared, _| shared.appearance = choice);
+                    apply_appearance(choice, Some(window), cx);
+                },
+            }),
             window,
             cx,
         );
@@ -258,7 +262,7 @@ impl Shell {
             "agents",
             "Saving the agents",
             move |cfg| cfg.agents = agents,
-            None,
+            None::<crate::saves::Change<()>>,
             window,
             cx,
         );

@@ -94,6 +94,7 @@ impl Chat {
                 prefs: self.prefs(),
                 updated: None,
                 items,
+                read_at: store::next_meta_read(),
             },
         })
     }

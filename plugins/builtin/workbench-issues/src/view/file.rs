@@ -85,13 +85,15 @@ impl IssuesView {
 
     /// Make a change to the active project's issues and write it, then show
     /// what is now kept — selecting the issue the change names, if any. The
-    /// form waits on its *Save* meanwhile.
+    /// project's form waits on its *Save* meanwhile.
     pub(super) fn change(
         &mut self,
         change: impl FnOnce(&mut Issues) -> Result<Option<u64>, String> + Send + 'static,
         cx: &mut Context<Self>,
     ) {
-        self.writing = true;
+        if let Some(state) = self.state_mut() {
+            state.writing = true;
+        }
         cx.notify();
         self.write(change, true, cx);
     }
@@ -103,6 +105,10 @@ impl IssuesView {
     /// On a project kept in step with its forge the change is then synced
     /// straight away, so an edit reaches the forge without waiting for the
     /// timer.
+    ///
+    /// Only the newest change's write moves the selection to the issue it
+    /// names, and only while the person has picked nothing else since it was
+    /// made and no draft is open: an older one landing would take them back.
     fn write(
         &mut self,
         change: impl FnOnce(&mut Issues) -> Result<Option<u64>, String> + Send + 'static,
@@ -112,42 +118,61 @@ impl IssuesView {
         let Some((root, _)) = self.file() else {
             return;
         };
-        let Some(file) = self.state_mut().map(|state| state.file.clone()) else {
+        let Some((file, picked)) = self
+            .state_mut()
+            .map(|state| (state.file.clone(), state.selected))
+        else {
             return;
         };
         let (of, written) = file.update(cx, |file, _| file.write(change));
         cx.spawn(async move |view, cx| {
             let done = written.await;
-            let _ = view.update(cx, |view: &mut Self, cx| {
-                if waited {
-                    view.writing = false;
+            // The file takes every write whether or not this view is still
+            // there, so what was read meanwhile is not held for ever.
+            let newest = file.update(cx, |file, cx| {
+                let newest = file.newest(of);
+                match &done {
+                    Ok((kept, _)) => {
+                        file.land(Some(kept.clone()), cx);
+                        file.sync(true, cx);
+                    }
+                    Err(_) => {
+                        file.land(None, cx);
+                        if newest {
+                            file.load(cx);
+                        }
+                    }
                 }
-                let newest = file.read(cx).newest(of);
+                newest
+            });
+            let _ = view.update(cx, |view: &mut Self, cx| {
+                let state = view.roots.get_mut(&root);
                 match done {
-                    Ok((kept, number)) => {
-                        if let Some(state) = view.roots.get_mut(&root) {
-                            if number.is_some() {
-                                state.selected = number;
-                            }
+                    Ok((_, number)) => {
+                        if let Some(state) = state {
                             if waited {
+                                state.writing = false;
                                 state.form = None;
                             }
-                        }
-                        file.update(cx, |file, cx| {
-                            if newest {
-                                file.land(kept, cx);
+                            if newest
+                                && number.is_some()
+                                && state.selected == picked
+                                && state.form.is_none()
+                            {
+                                state.selected = number;
                             }
-                            file.sync(true, cx);
-                        });
+                        }
                         view.status = None;
                     }
                     // The form stays open with what was typed in it: a refusal
                     // is something to correct, not a reason to start again.
                     Err(why) => {
-                        view.failed = Some(("Saving the issue", why));
-                        if newest {
-                            file.update(cx, |file, cx| file.load(cx));
+                        if let Some(state) = state
+                            && waited
+                        {
+                            state.writing = false;
                         }
+                        view.failed = Some(("Saving the issue", why));
                     }
                 }
                 cx.notify();

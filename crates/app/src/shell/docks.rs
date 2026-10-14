@@ -25,9 +25,11 @@ impl Shell {
     ///
     /// One fact and one reader: the terminal button's dot, which is the only
     /// thing on screen that can say a command is still going behind a closed
-    /// dock. The push is guarded on the pane's side, because this runs on every
-    /// chunk a shell prints, and that is also what keeps it true: a command
-    /// ending prints the prompt back.
+    /// dock. Runs whenever the terminal panel notifies: on its own changes
+    /// (tabs, project, zoom) and when its watch sees a command start or end,
+    /// since a grid's output reaches the grid and not the panel. The push is
+    /// guarded on the pane's side, because most of those notifies change
+    /// nothing here.
     pub(super) fn sync_terminal_live(&mut self, cx: &mut Context<Self>) {
         let live = self.terminal.read(cx).running();
         self.chat

@@ -1,5 +1,5 @@
 use super::confirm::Confirm;
-use super::storage::pick_folder;
+use super::storage::{Thing, WorkspaceChange, pick_folder};
 use super::{Shell, WARM_DELAY};
 use crate::state::Shared;
 use gpui::{App, Context, SharedString, Window};
@@ -390,13 +390,31 @@ impl Shell {
     /// Only the drawing order moves; `roots` and every index into it stay
     /// exactly as they were, so nothing keyed by position has to be told.
     pub fn toggle_pin(&mut self, root_idx: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(root) = self.window.workspace.roots.get(root_idx) else {
+            return;
+        };
+        let (path, pinned) = (root.path.clone(), !root.pinned);
         self.window.workspace.toggle_pin(root_idx);
-        // Put back, alone, if its write fails: pinning is its own toggle.
+        // Put back, alone, if its write fails: pinning is its own thing, and
+        // it goes back to the pin as last saved.
         self.save_change(
-            Box::new(move |shell, _, cx| {
-                shell.window.workspace.toggle_pin(root_idx);
-                shell.sync_project_facts(cx);
-            }),
+            Thing::Pin(path.clone()),
+            WorkspaceChange {
+                before: (path.clone(), !pinned),
+                after: (path, pinned),
+                put: |shell, (path, pinned), _, cx| {
+                    if let Some(root) = shell
+                        .window
+                        .workspace
+                        .roots
+                        .iter_mut()
+                        .find(|root| root.path == path)
+                    {
+                        root.pinned = pinned;
+                    }
+                    shell.sync_project_facts(cx);
+                },
+            },
             window,
             cx,
         );
@@ -420,16 +438,22 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let before = self.window.workspace.root_order();
         // A drop the pin line clamps back onto itself moved nothing to write.
-        let Some(landed) = self.window.workspace.move_root(from, to) else {
+        if self.window.workspace.move_root(from, to).is_none() {
             return;
-        };
-        // Put back, alone, if its write fails: from where it landed, which the
-        // pin clamp may have made other than where it was dropped.
+        }
+        // Put back, alone, if its write fails: every root to its place in the
+        // order last saved, which wherever the pin clamp landed this one, and
+        // however many moves came after, is what the file still holds.
+        let after = self.window.workspace.root_order();
         self.save_change(
-            Box::new(move |shell, _, _| {
-                shell.window.workspace.move_root(landed, from);
-            }),
+            Thing::Order,
+            WorkspaceChange {
+                before,
+                after,
+                put: |shell, order, _, _| shell.window.workspace.put_order(&order),
+            },
             window,
             cx,
         );

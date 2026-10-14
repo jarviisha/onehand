@@ -58,17 +58,21 @@ impl Editor {
             return;
         }
         // Shown at once and written after; a write that fails puts the keys
-        // back as they were, said once.
+        // back as they were last saved, said once.
         let before = Shared::global(cx).keymap.clone();
         let written = overrides.clone();
         crate::saves::write_config(
             "keymap",
             "Saving the shortcuts",
             move |cfg| cfg.keymap = written,
-            Some(Box::new(move |_, cx| {
-                cx.update_global::<Shared, _>(|shared, _| shared.keymap = before);
-                install(cx);
-            })),
+            Some(crate::saves::Change {
+                before,
+                after: overrides.clone(),
+                put: |keymap, _, cx| {
+                    cx.update_global::<Shared, _>(|shared, _| shared.keymap = keymap);
+                    install(cx);
+                },
+            }),
             window,
             cx,
         );

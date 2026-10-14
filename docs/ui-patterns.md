@@ -242,12 +242,13 @@ uses a word or recognizable mark as well as colour. A quieter state must still b
   shows in the frame it is made; saving it runs after, off the UI thread.
 - **Saves of one thing run one at a time, in the order its changes were made**, so an older save
   never lands over a newer one.
-- **A save that fails** matters only while its change is still the newest to that thing: the
-  screen goes back to the last value known saved, not the one before the change, and says so
-  once, as an `error` toast (*Renaming the session failed: <why>*). A newer change supersedes it,
-  and that change's own save decides what the screen shows.
-- **What goes back is the one change, not the file**: the pin, the order, the theme, each to its
-  own last saved value.
+- **A save that fails** matters only while no later save carries that thing: the screen goes
+  back to the last value known saved, not the one before the change, and says so once, as an
+  `error` toast (*Renaming the session failed: <why>*). A later save that carries it supersedes
+  the failure, and that save decides what the screen shows.
+- **What goes back is the one change, not the file**: one write of a file can carry several
+  things (the pin, the order, the theme), and each goes back alone to its own last saved value.
+  A write that carries a thing and lands moves its saved value forward.
 - **A save that is an act rather than a value** (closing an issue, adding a comment, a write that
   runs a step on the file as it then stands) is superseded by nothing: a newer act does not carry
   the older one, so each failure is said once, and the screen reloads what the file holds.
@@ -258,8 +259,10 @@ uses a word or recognizable mark as well as colour. A quieter state must still b
 - **A rename and a shortcut show at once; a form that writes a file** (a workflow, an issue, an
   agent) waits on its *Save*.
 - **The rule lives in core** (`onehand_core::saving`): a writer per file that runs saves in the
-  order sent, and the shown, saved and newest-change state, tested without a GUI. The app keeps
-  the spawn and the toast.
+  order sent, `Saving` for one value and `Saves` for several things in one file, tested without
+  a GUI. The app keeps the spawn and the toast.
+- **Nothing queued is lost on leaving**: a closing window's last workspace save and the settings
+  saves still queued at quit go through the same ordered writer, waited for up to a bound.
 - **Work that leaves the machine or takes its time** (git, the network, an agent) is never drawn
   as done before it is: it waits on the button that started it, as *Waiting* says.
 

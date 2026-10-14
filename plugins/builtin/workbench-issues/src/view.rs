@@ -137,8 +137,6 @@ pub(crate) struct IssuesView {
     /// Which of an issue's sections shows: kept from one issue to the next,
     /// so stepping through the list reads the same section of each.
     issue_tab: detail::IssueTab,
-    /// A change is being written: the form's save shows it until it lands.
-    writing: bool,
     /// The issue being sent to its forge: the menu that sent it shows it
     /// until the forge answers.
     publishing: Option<IssueKey>,
@@ -154,6 +152,9 @@ struct RootIssues {
     /// A new issue or an edit being written: kept across a switch of project
     /// or of page, and asked about before it is dropped.
     form: Option<Form>,
+    /// The form's change is being written: its *Save* shows it until it
+    /// lands.
+    writing: bool,
     /// The selected issue's body, parsed — so it is parsed again when the
     /// issue changes and never on a frame when it has not.
     body: Option<Body>,
@@ -192,7 +193,6 @@ impl IssuesView {
             connectors,
             query: None,
             issue_tab: detail::IssueTab::default(),
-            writing: false,
             publishing: None,
             showing: Showing::default(),
             label: None,
@@ -304,6 +304,7 @@ impl IssuesView {
                     _watch: watch,
                     selected: None,
                     form: None,
+                    writing: false,
                     body: None,
                 },
             );
@@ -596,7 +597,7 @@ impl IssuesView {
         if let Some(form) = &state.form {
             let project = self.page.as_ref().and_then(|page| page.label_of(root));
             let templates = state.file.read(cx).templates.clone();
-            return form_view(form, project, &templates, self.writing, cx);
+            return form_view(form, project, &templates, state.writing, cx);
         }
         let Some(issue) = state.selected.and_then(|n| issues.get(n)).cloned() else {
             return hint("Pick an issue, or start a new one", cx);

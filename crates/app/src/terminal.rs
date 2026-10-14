@@ -128,7 +128,21 @@ pub struct TerminalPanel {
     /// that cannot see its own state draws the same icon in both — so pressing
     /// it to restore looks like pressing it to maximize again.
     maximized: bool,
+    /// What [`Self::running`] answered when the watch last looked, so the
+    /// watch notifies only when it flips.
+    running_seen: bool,
+    /// Whether the watch on [`Self::running`] is going: from the first shell
+    /// opened until no project has one left.
+    watching: bool,
 }
+
+/// How often the watch asks the shells whether a command is in front.
+///
+/// Asked on a clock, not on output, because neither half of the question is
+/// tied to output: a command can start or end without printing a byte, and a
+/// grid behind a closed dock stops notifying after its last draw. One ioctl
+/// per shell, and nothing redraws unless the answer changed.
+const RUNNING_EVERY: std::time::Duration = std::time::Duration::from_secs(1);
 
 impl TerminalPanel {
     pub fn new(cx: &mut App) -> Entity<Self> {
@@ -140,7 +154,45 @@ impl TerminalPanel {
             zoom: crate::zoom::Zoom::default(),
             terminal_theme: TerminalThemeKey::current(cx),
             maximized: false,
+            running_seen: false,
+            watching: false,
         })
+    }
+
+    /// Start watching [`Self::running`], unless the watch is already going.
+    ///
+    /// Nothing else about the panel changes when a command starts or ends in
+    /// a shell, so the header's dot -- shown only while the dock is closed --
+    /// would keep whatever it last read. The watch notifies this panel when
+    /// the answer flips, which is what the shell observes. It ends once no
+    /// project has a shell, and with the panel.
+    fn watch_running(&mut self, cx: &mut Context<Self>) {
+        if self.watching {
+            return;
+        }
+        self.watching = true;
+        cx.spawn(async move |panel, cx| {
+            loop {
+                cx.background_executor().timer(RUNNING_EVERY).await;
+                let go_on = panel.update(cx, |panel: &mut Self, cx| {
+                    if panel.shells.values().all(|set| set.tabs.is_empty()) {
+                        panel.watching = false;
+                        panel.running_seen = false;
+                        return false;
+                    }
+                    let running = panel.running();
+                    if running != panel.running_seen {
+                        panel.running_seen = running;
+                        cx.notify();
+                    }
+                    true
+                });
+                if !matches!(go_on, Ok(true)) {
+                    break;
+                }
+            }
+        })
+        .detach();
     }
 
     /// Take the shell's word for whether this panel fills the frame.
@@ -213,6 +265,7 @@ impl TerminalPanel {
             Ok(shell) => {
                 self.shells.entry(root).or_default().push(shell);
                 self.status = None;
+                self.watch_running(cx);
             }
             Err(e) if had_tabs => {
                 use gpui_component::WindowExt as _;

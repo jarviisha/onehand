@@ -4,8 +4,8 @@
 use crate::buffers::{Lead, RootBuffers, StripHandlers, body, new_buffer, save_status, tab_strip};
 
 use gpui::{
-    App, AppContext as _, Context, Entity, Focusable as _, IntoElement, ParentElement, Render,
-    SharedString, Styled, Window, div,
+    AnyWindowHandle, App, AppContext as _, Context, Entity, Focusable as _, IntoElement,
+    ParentElement, Render, SharedString, Styled, Window, div,
 };
 use gpui_component::StyledExt;
 use gpui_component::WindowExt as _;
@@ -28,10 +28,10 @@ pub(crate) struct EditorView {
     /// went through. Cleared by whatever answers it — a successful save, or a
     /// successful open.
     status: Option<String>,
-    /// A save that failed, what it was and why, said once as a toast on the
-    /// next frame, where the window is to hand. A conflict is not one: it is
-    /// the standing line above.
-    failed: Option<(String, String)>,
+    /// The window this view is drawn in, kept from its first open or draw: a
+    /// save is asked for without one, and its failure is said there as soon
+    /// as it comes back, whether or not the Workbench is showing this mode.
+    window: Option<AnyWindowHandle>,
     /// Tabs with a write in flight, and whether another save was asked for
     /// while it ran.
     ///
@@ -70,7 +70,7 @@ impl EditorView {
             root: None,
             buffers: HashMap::new(),
             status: None,
-            failed: None,
+            window: None,
             saving: HashMap::new(),
             opening: None,
             tabs_w: onehand_plugin_host::unmeasured(),
@@ -145,6 +145,7 @@ impl EditorView {
         let Some(root) = self.root.clone() else {
             return false;
         };
+        self.window = Some(window.window_handle());
         self.detail = true;
         let path = path.to_path_buf();
 
@@ -290,11 +291,10 @@ impl EditorView {
                 })
                 .await;
 
-            let _ = view.update(cx, |view: &mut Self, cx| {
+            // A save that failed is said once, now: not a conflict, which is
+            // the standing line under the body.
+            let said = view.update(cx, |view: &mut Self, cx| {
                 view.status = save_status(&outcome, &label);
-                if let SaveOutcome::Failed(e) = &outcome {
-                    view.failed = Some((format!("Saving {label}"), e.to_string()));
-                }
                 let again = view.saving.remove(&uid).unwrap_or(false);
                 // Read the live buffer before taking the tab set mutably: what
                 // the dot should say depends on whether the user kept typing
@@ -327,7 +327,13 @@ impl EditorView {
                     view.save_tab(root, uid, cx);
                 }
                 cx.notify();
+                view.window
             });
+            if let (Ok(Some(window)), SaveOutcome::Failed(e)) = (said, &outcome) {
+                let note = onehand_plugin_host::toast::failed(&format!("Saving {label}"), e);
+                let _ =
+                    cx.update_window(window, |_, window, cx| window.push_notification(note, cx));
+            }
         })
         .detach();
     }
@@ -510,13 +516,7 @@ fn next_buffer_uid() -> u64 {
 
 impl Render for EditorView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // Deferred: the toast layer is the window root's, not to be updated
-        // from inside a child's render.
-        if let Some((what, why)) = self.failed.take() {
-            window.defer(cx, move |window, cx| {
-                window.push_notification(onehand_plugin_host::toast::failed(&what, why), cx)
-            });
-        }
+        self.window = Some(window.window_handle());
         let Some(root) = self.root.as_ref() else {
             return div()
                 .flex_1()

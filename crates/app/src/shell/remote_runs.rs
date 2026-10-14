@@ -1,3 +1,4 @@
+use super::storage::{Thing, WorkspaceChange};
 use super::{IssuePicker, Shell};
 use crate::state::Shared;
 use gpui::{App, AppContext as _, BorrowAppContext, Context, Entity, SharedString, Window};
@@ -27,6 +28,10 @@ impl Shell {
             return;
         }
         self.window.workspace.toggle_unattended(root_idx);
+        let (path, on) = {
+            let root = &self.window.workspace.roots[root_idx];
+            (root.path.clone(), root.unattended)
+        };
         // Switched on, it is looked at straight away, so a project that can
         // never be worked says so now and not at the next tick. Switched off,
         // nothing is cleared: a row that is off shows nothing, and the next
@@ -40,12 +45,25 @@ impl Shell {
         {
             crate::unattended::check_now(self.project_for_runs(&root.path), cx);
         }
-        // Put back, alone, if its write fails: the switch flipped again.
+        // Put back, alone, if its write fails: the switch as last saved.
         self.save_change(
-            Box::new(move |shell, _, cx| {
-                shell.window.workspace.toggle_unattended(root_idx);
-                shell.sync_project_facts(cx);
-            }),
+            Thing::Unattended(path.clone()),
+            WorkspaceChange {
+                before: (path.clone(), !on),
+                after: (path, on),
+                put: |shell, (path, on), _, cx| {
+                    if let Some(root) = shell
+                        .window
+                        .workspace
+                        .roots
+                        .iter_mut()
+                        .find(|root| root.path == path)
+                    {
+                        root.unattended = on;
+                    }
+                    shell.sync_project_facts(cx);
+                },
+            },
             window,
             cx,
         );

@@ -637,6 +637,7 @@ pub fn set_workflows(
     cx: &mut App,
 ) {
     let before = workflows(cx);
+    let after = (default.clone(), by_label.clone());
     apply_workflows(default.clone(), by_label.clone(), cx);
     // Shown at once and written after; a write that fails puts both back.
     crate::saves::write_config(
@@ -646,10 +647,11 @@ pub fn set_workflows(
             cfg.unattended.workflow = default;
             cfg.unattended.workflows = by_label;
         },
-        Some(Box::new(move |_, cx| {
-            let (default, by_label) = before;
-            apply_workflows(default, by_label, cx);
-        })),
+        Some(crate::saves::Change {
+            before,
+            after,
+            put: |(default, by_label), _, cx| apply_workflows(default, by_label, cx),
+        }),
         window,
         cx,
     );
