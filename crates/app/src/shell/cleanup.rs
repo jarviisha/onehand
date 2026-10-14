@@ -208,11 +208,9 @@ impl Shell {
                                         "Removed {folder}; the branch {branch} was kept: {why}"
                                     )),
                                     (Some(branch), None) => crate::toast::success(format!(
-                                        "Removed {folder} and {branch}."
+                                        "Removed {folder} and {branch}"
                                     )),
-                                    (None, _) => {
-                                        crate::toast::success(format!("Removed {folder}."))
-                                    }
+                                    (None, _) => crate::toast::success(format!("Removed {folder}")),
                                 }
                             }
                             Err(why) => crate::toast::failed("Removing the worktree", why),

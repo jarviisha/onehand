@@ -571,6 +571,7 @@ pub(super) fn left_view(doing: &Doing, cx: &mut Context<IssuesView>) -> Option<A
                                 .xsmall()
                                 .quiet(cx)
                                 .label("Refresh")
+                                .loading(doing.reading)
                                 .tooltip(match on_page {
                                     true => "Read what the work left again",
                                     false => "Read the pull request again",

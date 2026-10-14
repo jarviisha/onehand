@@ -9,7 +9,7 @@ use gpui::{
     App, InteractiveElement, IntoElement, ParentElement, RenderOnce, SharedString,
     StatefulInteractiveElement, Styled, Window, div, relative,
 };
-use gpui_component::{ActiveTheme, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Sizable as _, StyledExt};
 use onehand_core::chat::UserMsg;
 
 /// Attachment rows drawn under a prompt before the rest are counted.
@@ -156,10 +156,6 @@ impl RenderOnce for Prompt {
                     // As wide saying *Copied* as *Copy*, so the answer moves
                     // nothing beside it.
                     .min_w(PROMPT_COPY_W)
-                    .icon(match copied {
-                        true => IconName::Check,
-                        false => IconName::Copy,
-                    })
                     .label(match copied {
                         true => "Copied",
                         false => "Copy",

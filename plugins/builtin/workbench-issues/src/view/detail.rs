@@ -56,6 +56,8 @@ pub(super) struct Doing<'a> {
     pub(super) review: Option<AnyElement>,
     /// The issue is being sent to its forge.
     pub(super) publishing: bool,
+    /// Its pull request, or what its work left, is being read.
+    pub(super) reading: bool,
     /// The templates the issue's project offers, which its body is read
     /// against.
     pub(super) templates: Vec<IssueTemplate>,

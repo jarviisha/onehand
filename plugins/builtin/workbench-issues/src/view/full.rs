@@ -50,6 +50,13 @@ pub(super) struct FullState {
     diffs: HashMap<DiffKey, Option<Result<Vec<DiffRow>, String>>>,
 }
 
+impl FullState {
+    /// What the work left is being read.
+    pub(super) fn reading(&self) -> bool {
+        self.left.reading()
+    }
+}
+
 /// Which list of changed files: this run's, the branch's, or what the step
 /// under review changed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

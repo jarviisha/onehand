@@ -717,6 +717,8 @@ pub(crate) fn pr_said(pr: &PullRequest) -> &'static str {
 #[derive(Debug)]
 pub struct Reading<K, T> {
     generation: u64,
+    /// The newest generation whose answer was taken.
+    landed: u64,
     about: Option<K>,
     /// The last answer taken, and when it was read.
     pub value: Option<(T, u64)>,
@@ -728,6 +730,7 @@ impl<K, T> Default for Reading<K, T> {
     fn default() -> Self {
         Self {
             generation: 0,
+            landed: 0,
             about: None,
             value: None,
             failed: None,
@@ -748,6 +751,11 @@ impl<K: PartialEq, T> Reading<K, T> {
         self.generation
     }
 
+    /// Whether the newest read sent is still on its way.
+    pub fn reading(&self) -> bool {
+        self.landed != self.generation
+    }
+
     /// What the reads are about now.
     pub fn about(&self) -> Option<&K> {
         self.about.as_ref()
@@ -759,6 +767,7 @@ impl<K: PartialEq, T> Reading<K, T> {
         if generation != self.generation {
             return false;
         }
+        self.landed = generation;
         match answer {
             Ok(value) => {
                 self.value = Some((value, at));

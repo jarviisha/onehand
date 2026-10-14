@@ -291,6 +291,7 @@ impl IssuesView {
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         let warning = status_ink(cx).warning;
+        let reading = self.page.as_ref().is_some_and(|page| page.pr_reading > 0);
         let failed: Vec<String> = listed
             .failed
             .iter()
@@ -319,6 +320,7 @@ impl IssuesView {
                         .xsmall()
                         .quiet(cx)
                         .label("Read them")
+                        .loading(reading)
                         .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
                             if stale || again {
                                 view.read_prs(cx);

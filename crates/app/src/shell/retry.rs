@@ -11,7 +11,7 @@ use crate::controls::Tall as _;
 use gpui::{App, Context, Entity, ParentElement as _, SharedString, Styled as _, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::{ActiveTheme as _, Icon, IconName, Sizable as _, StyledExt as _};
+use gpui_component::{ActiveTheme as _, StyledExt as _};
 use onehand_core::preflight;
 use onehand_core::task::marks::{self, Against};
 use onehand_core::task::work::Act;
@@ -217,11 +217,13 @@ impl Shell {
                 let at = choices.get(picked.get()).cloned().unwrap_or_default();
                 crate::controls::menu_below(
                     "retry-from",
-                    crate::controls::action("retry-from-trigger")
-                        .secondary()
-                        .small()
-                        .label(format!("From {at}"))
-                        .icon(Icon::new(IconName::ChevronDown)),
+                    onehand_plugin_host::picker(
+                        "retry-from-trigger",
+                        format!("From {at}"),
+                        true,
+                        onehand_plugin_host::ControlSize::Tall,
+                        cx,
+                    ),
                     move |mut menu, _, _| {
                         for (i, label) in choices.iter().enumerate() {
                             let (picked, shell) = (picked.clone(), shell.clone());

@@ -5,8 +5,7 @@ the ones the code holds; when this file and the code disagree, the code is right
 fixed in the same change.
 
 For role selection, start with [the UI contract](../../../DESIGN.md); for spacing relationships
-and density, use [UI patterns](../../../docs/ui-patterns.md#spacing-and-density). The contract
-refresh does not change the values below or certify that existing call sites conform.
+and density, use [UI patterns](../../../docs/ui-patterns.md#spacing-and-density).
 
 ## Colour
 

@@ -430,7 +430,7 @@ impl IssuesView {
             cx.entity(),
             Confirm {
                 id: "close-issue",
-                title: "Close this issue?".into(),
+                title: format!("Close issue {number}?").into(),
                 description: description.into(),
                 act: "Close issue",
                 ..Default::default()
@@ -615,8 +615,11 @@ impl IssuesView {
         self.read_left_if_due(work.as_ref(), cx);
         let review = self.review_block(&issue, key.as_ref(), work.as_ref(), cx);
         let publishing = key.is_some() && self.publishing == key;
+        let reading =
+            self.pr.reading() || self.page.as_ref().is_some_and(|page| page.full.reading());
         let doing = Doing {
             publishing,
+            reading,
             review,
             full: self.page.as_ref().map(page::PageState::full),
             session: working_in(&issue, &self.live).map(str::to_string),

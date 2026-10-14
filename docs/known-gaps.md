@@ -16,6 +16,9 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
 - **Some window behaviour has no automated test**: Settings' drafts kept across leaving the page,
   a failed write said once, and the keyboard handed back when a dialog closes. Each needs a window
   to run in, and the app runs no GPUI test harness; they are checked by hand.
+- **A refused menu row cannot say why.** The library's menu row takes no tooltip, so a row that
+  refuses (*Move up* on a workflow's first step) is drawn refusing without its reason, which its
+  place has to say.
 - **The Workbench's file tree has no search.** A file in a closed folder is reached by opening the
   folders above it.
 - **Dragging a rail row has no edge autoscroll**, and the keyboard's row in the rail is not

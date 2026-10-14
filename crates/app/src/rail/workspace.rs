@@ -247,7 +247,6 @@ pub(super) fn new_button(
     let build = new_session_menu(projects, target, agents, cx.entity().downgrade());
     let refusal = target.is_none().then(|| hint.clone());
     let new = crate::controls::action("new-session")
-        .icon(IconName::Plus)
         .label("New")
         .tooltip_with_action(hint, &crate::shell::NewSession, None)
         .refuses(refusal)

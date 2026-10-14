@@ -706,13 +706,6 @@ pub fn boot(cx: &mut App) {
     open_or_focus(recent.unwrap_or_else(seed_workspace), cx);
 }
 
-/// The app's fonts and palette without the rest of the app: no config, no
-/// lock, no window. For an example that mocks a screen up on the real look.
-pub fn install_look(cx: &mut App) {
-    crate::fonts::register(cx);
-    crate::theme::install(cx);
-}
-
 /// Point the theme's monospace family at one this machine actually has.
 ///
 /// Everything the transcript sets in mono — diffs, commands, terminal output,

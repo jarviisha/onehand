@@ -7,9 +7,8 @@ the code and its tests decide. A feature's own document (`docs/tasks.md`, `docs/
 screen repeats and how they behave. Code never cites this file.
 
 This contract defines onehand's own visual language: quiet navigation, clear content hierarchy,
-compact controls and predictable alignment. It is the target for UI work, not proof that every
-existing screen conforms. The contract refresh changes documentation only; implementation work
-must report the surfaces migrated and any remaining mismatches within its scope.
+compact controls and predictable alignment. A change that departs from it reports the departure
+within its scope, or records it in `docs/known-gaps.md` with its reason.
 
 **No palette lives here.** gpui-component's theme, overridden at boot by the app's palette
 (`crate::theme::install`, with its contrast tests). Every colour, radius and size is a token read
@@ -367,6 +366,10 @@ The whole list: any other departure from a rule above is a bug until agreed and 
   *Fast*, the branch) are `.small()` ghosts with a caret whatever they hold, where a picker
   elsewhere takes the secondary fill once set: each always holds a choice, and a fill on every
   chip would crowd the field they sit under.
+- **A cut fades into the surface behind it**: a rail name too long for its row, a long command
+  folded in the transcript, the conversation where it runs under the composer, and the staged
+  files beside *Show all N*. Each is a gradient from the clear surface to the solid one; it says
+  something is cut, and nothing else is drawn see-through.
 - **The library draws its own controls' states**: a refusing or loading button, a picker's caret,
   a badge under the pointer and a switch's thumb keep the alpha or the motion it gives them, as
   its overlays keep theirs.

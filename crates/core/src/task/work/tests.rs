@@ -685,6 +685,19 @@ fn the_newest_task_is_the_issues_work_and_an_older_one_needing_attention_is_coun
 }
 
 #[test]
+fn a_read_is_on_its_way_until_the_newest_answer_lands() {
+    let mut reading: Reading<&str, u32> = Reading::default();
+    assert!(!reading.reading());
+    let first = reading.ask("issue 1");
+    let second = reading.ask("issue 1");
+    assert!(reading.reading());
+    reading.land(first, Ok(1), 10);
+    assert!(reading.reading(), "an older answer is not the newest read");
+    reading.land(second, Err("offline".into()), 11);
+    assert!(!reading.reading(), "a failure lands too");
+}
+
+#[test]
 fn a_stale_generation_is_dropped() {
     let mut reading: Reading<&str, u32> = Reading::default();
     let first = reading.ask("issue 1");
