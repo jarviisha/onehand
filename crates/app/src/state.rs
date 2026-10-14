@@ -114,6 +114,12 @@ pub struct Shared {
     pub modes_seen: Vec<(AgentSpec, Vec<String>)>,
     /// *Check the agent* under way, or the last one that failed, per spec.
     pub agent_checks: Vec<(AgentSpec, crate::agent_check::Checking)>,
+    /// The one thread every settings file is written on: off the UI thread,
+    /// and in the order the changes were made.
+    pub writer: onehand_core::saving::OrderedWriter,
+    /// Each setting's value known saved and its newest change, so a failed
+    /// write puts back only the settings no later write carries.
+    pub config_saves: onehand_core::saving::Saves<&'static str, crate::saves::Put>,
 }
 
 impl Global for Shared {}
@@ -126,6 +132,8 @@ impl Shared {
             config_path,
             keymap: cfg.keymap,
             mono_family: None,
+            writer: onehand_core::saving::OrderedWriter::spawn("onehand-settings"),
+            config_saves: Default::default(),
             next_uid: 1,
             windows: Vec::new(),
             recents: AppState::load(),

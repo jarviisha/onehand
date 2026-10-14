@@ -43,6 +43,10 @@ pub(crate) use onehand_plugin_host::status_ink;
 /// a panel and the shell inside it disagreeing about what colour the panel is.
 pub(crate) use onehand_plugin_host::dock_surface;
 
+/// The middle ink is the plugin host's too, since a plugin sets a detail beside
+/// a name as well, and named through this module like the two above.
+pub(crate) use onehand_plugin_host::meta_ink;
+
 /// One mode's surfaces, and the ink that has to be legible on each.
 ///
 /// Named by what the step is *for* rather than by the token it lands in: the
@@ -89,9 +93,9 @@ struct Ramp {
     /// toward the near-black surface.
     ///
     /// It can afford to be quiet where a *surface* could not. A region has only
-    /// its fill to be found by; a row has ink at full strength and a weight the
-    /// library sets from the same token pair, so the fill is the third thing
-    /// saying it and not the only one.
+    /// its fill to be found by; a chosen row has its ink at full strength among
+    /// rows in the muted one, so the fill is the second thing saying it and not
+    /// the only one.
     marked: &'static str,
     /// Every hairline and card border.
     hairline: &'static str,
@@ -103,11 +107,12 @@ struct Ramp {
     /// light palette, where the lift carries it; in the dark one a clear step
     /// above the well, because a shadow barely shows on near-black.
     raised: &'static str,
-    /// A field with no edge sunk into the well: the rail's search. It has its
-    /// fill alone to be found by, so it steps away from the well the other way
-    /// from a row lifting off it. White in the light palette, where the panel
-    /// step sat too close to the well to see; in the dark one the panel step,
-    /// because the reading surface cut a hole the eye went to first.
+    /// A field with no edge sunk into the well: the rail's search, and the
+    /// rail's badges. It has its fill alone to be found by, so it steps away
+    /// from the well the other way from a row lifting off it. White in the
+    /// light palette, where the panel step sat too close to the well to see; in
+    /// the dark one the panel step, because the reading surface cut a hole the
+    /// eye went to first.
     inset: &'static str,
     /// A control's edge, and the scrollbar thumb.
     control: &'static str,
@@ -145,8 +150,8 @@ const LIGHT: Ramp = Ramp {
     // Dark enough that a hovered row shows on a dock as well as on the surface:
     // a lighter tint vanished on the panel.
     hover: "#e8e8e8",
-    // Far enough past hover that a row both hovered and selected, thinned in
-    // the completion popup, still reads as selected.
+    // Far enough past hover that a row both hovered and selected still reads
+    // as selected.
     selected: "#d0d0d0",
     selected_ink: "#1f1f1f",
     // Its own step, darker than `hover`, so a marked rail row shows on the
@@ -381,6 +386,10 @@ pub(crate) fn install(cx: &mut App) {
     for config in [&mut light, &mut dark] {
         config.font_family = Some(crate::fonts::UI_FAMILY.into());
         config.mono_font_family = Some(crate::fonts::MONO_FAMILY.into());
+        // One corner for everything, large surfaces too; a badge keeps its
+        // own, set where it is drawn.
+        config.radius = Some(crate::tokens::CORNER);
+        config.radius_lg = Some(crate::tokens::CORNER);
     }
 
     let theme = Theme::global_mut(cx);
@@ -434,41 +443,6 @@ fn chosen_over(marked: Hsla, ink: Hsla) -> Hsla {
     marked.mix_oklab(ink, 0.95)
 }
 
-/// The step between prose and meta ink.
-///
-/// **Why two steps are not enough in one place.** A completion row stacks three
-/// kinds of text and they are not equal: the name, which is what the row is;
-/// the detail lying on the same line beside it — a folder, a description, a
-/// type icon — which is context for that name; and the label naming the run of
-/// rows the whole thing sits in.
-///
-/// The name has to be at full strength, because a list is read as a column of
-/// names and everything else second. The label has to be at the bottom, because
-/// it is found when looked for and ignored the rest of the time. That leaves
-/// the detail, and it can be at neither end: level with the name it competes
-/// with the thing it is describing, and down at the label it is the same ink as
-/// a heading two lines up while sitting immediately beside a name at full
-/// strength — a gap that reads as the row trailing off.
-///
-/// So it sits here, and this step is what makes the row three things in order
-/// rather than two things and a repeat.
-///
-/// (The run of a name a query matched is *not* one of these. It has nowhere
-/// above full strength to go, so it is carried by weight instead — which is
-/// why four roles fit in three inks.)
-///
-/// Derived rather than named as a ramp step, for the reason [`hue_ink`] is
-/// derived: both palettes get it from values they already hold, so there is no
-/// second ramp to keep in step by hand and no library token borrowed for a
-/// meaning it does not have.
-pub(crate) fn meta_ink(cx: &App) -> Hsla {
-    between(cx.theme().foreground, cx.theme().muted_foreground)
-}
-
-fn between(prose: Hsla, meta: Hsla) -> Hsla {
-    prose.mix_oklab(meta, 0.5)
-}
-
 /// The composer card's fill. No library token holds it, so it is read off the
 /// ramp by mode, the way [`crate::tokens::lift`] chooses its alpha.
 pub(crate) fn raised(cx: &App) -> Hsla {
@@ -479,8 +453,10 @@ pub(crate) fn raised(cx: &App) -> Hsla {
     Hsla::parse_hex(ramp.raised).unwrap_or(cx.theme().popover)
 }
 
-/// The fill of a field with no edge sunk into the well. No library token
-/// holds it, so it is read off the ramp by mode, as [`raised`] is.
+/// The fill of a field with no edge sunk into the well, and of a badge in the
+/// rail, which has to stand off the well, a hovered row and a chosen one at
+/// once. No library token holds it, so it is read off the ramp by mode, as
+/// [`raised`] is.
 pub(crate) fn inset(cx: &App) -> Hsla {
     let ramp = match cx.theme().mode.is_dark() {
         true => &DARK,
@@ -488,6 +464,22 @@ pub(crate) fn inset(cx: &App) -> Hsla {
     };
     Hsla::parse_hex(ramp.inset).unwrap_or(cx.theme().background)
 }
+
+/// A well on a floating card: the command a pinned permission asks to run.
+///
+/// Its own step because the dark palette floats its cards on the well's own
+/// grey, where a well drawn in `muted` would vanish into the card. Mixed from
+/// the card's fill toward the ink, so both palettes sink it by one rule.
+pub(crate) fn floating_well(cx: &App) -> Hsla {
+    floating_well_on(cx.theme().popover, cx.theme().foreground)
+}
+
+fn floating_well_on(card: Hsla, ink: Hsla) -> Hsla {
+    card.mix_oklab(ink, FLOATING_WELL)
+}
+
+/// How much of the card's own fill a floating well keeps.
+const FLOATING_WELL: f32 = 0.93;
 
 /// The composer's lift, in pixels as a hairline is: the tight shadow's blur,
 /// then the soft one's drop and blur.
@@ -546,7 +538,7 @@ mod tests {
     /// floor on purpose.
     ///
     /// A region has only its fill to be found by. A marked row has ink at full
-    /// strength and a weight to go with it, so the fill is the third thing
+    /// strength among rows in the muted one, so the fill is the second thing
     /// saying which row it is and not the only one — and it is read at a glance
     /// down a column of thirty, where the loud answer is worse than the quiet
     /// one. Below this it stops being a fill at all: `hover` against the well is
@@ -865,7 +857,7 @@ mod tests {
     /// Both halves matter. The rail's ink is deliberately below prose strength
     /// — a column of names to aim at, not a body of text — and the fill under a
     /// marked row is the faintest step there is, so what says *which* row is
-    /// selected is the ink and the weight on it rather than a slab of colour.
+    /// selected is the ink on it rather than a slab of colour.
     /// That only works while that ink is legible on that fill and clearly
     /// louder than the rows around it, neither of which the pairing gets for
     /// free: it is the one place in the app where the selected ink lands on the
@@ -977,8 +969,11 @@ mod tests {
                     ("well", theme.muted),
                     ("dock", theme.tiles),
                 ];
+                // A removal on a secondary button is its word in the danger
+                // ink, on the button's own fill.
                 if role == "danger" {
                     on.push(("bubble", theme.secondary));
+                    on.push(("secondary button", theme.button_secondary));
                 }
                 for (surface, fill) in on {
                     let ratio = contrast(ink, fill);
@@ -1004,6 +999,8 @@ mod tests {
                 ("accent", theme.blue),
                 ("success", theme.green),
                 ("warning", theme.yellow),
+                // A failure's banner.
+                ("danger", theme.red),
                 // A label about the code's structure, and an agent's report.
                 ("violet", theme.magenta),
                 ("cyan", theme.cyan),
@@ -1018,6 +1015,33 @@ mod tests {
                     contrast(tint.fill, theme.background) > 1.0,
                     "{name}: the {hue} tint is the surface"
                 );
+            }
+        }
+    }
+
+    /// A changed line in a diff lies on its hue's wash, mixed into the well:
+    /// the wash shows against the well, and the line's words and its sign
+    /// read on it.
+    #[test]
+    fn a_diff_line_reads_on_its_wash() {
+        for (name, ramp, mode) in [
+            ("light", &LIGHT, ThemeMode::Light),
+            ("dark", &DARK, ThemeMode::Dark),
+        ] {
+            let theme = resolve(ramp, mode);
+            for (side, base) in [("added", theme.green), ("removed", theme.red)] {
+                let wash = onehand_plugin_host::tint_over(base, theme.muted, theme.foreground);
+                assert!(
+                    contrast(wash.fill, theme.muted) > 1.0,
+                    "{name}: the {side} wash is the well"
+                );
+                for (label, ink) in [("words", theme.foreground), ("sign", wash.ink)] {
+                    let ratio = contrast(ink, wash.fill);
+                    assert!(
+                        ratio >= AA,
+                        "{name}: an {side} line's {label} are {ratio:.2} on its wash"
+                    );
+                }
             }
         }
     }
@@ -1091,6 +1115,79 @@ mod tests {
         }
     }
 
+    /// Everything a rail row writes on the fills it takes: at rest the well,
+    /// hovered `sidebar_accent`, chosen `rail_chosen`.
+    ///
+    /// A badge sinks on the inset step, which has to stand off all three or it
+    /// reads as loose words on the row it sits in; the words in it read. A
+    /// state's word waiting on the person reads on every fill, and on the
+    /// selected step of the chip that filters by it. The chosen row's meta
+    /// line is the step between its name's ink and muted, so it reads and
+    /// stays under the name.
+    #[test]
+    fn the_rail_reads_on_every_fill_a_row_takes() {
+        const APART: f32 = 1.05;
+        for (name, ramp, mode) in [
+            ("light", &LIGHT, ThemeMode::Light),
+            ("dark", &DARK, ThemeMode::Dark),
+        ] {
+            let theme = resolve(ramp, mode);
+            let chosen = chosen_over(theme.sidebar_accent, theme.sidebar_accent_foreground);
+            let inset = Hsla::parse_hex(ramp.inset).unwrap();
+            let fills = [
+                ("the well", theme.muted),
+                ("a hovered row", theme.sidebar_accent),
+                ("the chosen row", chosen),
+            ];
+            let warning = onehand_plugin_host::status_hue(theme.yellow, theme.foreground);
+            let danger = onehand_plugin_host::status_hue(theme.red, theme.foreground);
+
+            for (row, fill) in fills {
+                let ratio = contrast(inset, fill);
+                assert!(
+                    ratio >= APART,
+                    "{name}: a badge on {row} is {ratio:.2} from it"
+                );
+                for (state, ink) in [("warning", warning), ("danger", danger)] {
+                    let ratio = contrast(ink, fill);
+                    assert!(
+                        ratio >= AA,
+                        "{name}: a {state} word on {row} is {ratio:.2}, under {AA}"
+                    );
+                }
+            }
+            for (label, ink) in [
+                ("its words", theme.secondary_foreground),
+                ("a stuck pill's words", warning),
+            ] {
+                let ratio = contrast(ink, inset);
+                assert!(ratio >= AA, "{name}: {label} on a badge are {ratio:.2}");
+            }
+            let on_chip = contrast(warning, theme.secondary_active);
+            assert!(
+                on_chip >= AA,
+                "{name}: the attention chip's words while on are {on_chip:.2}"
+            );
+
+            let meta = onehand_plugin_host::middle_ink(
+                theme.sidebar_accent_foreground,
+                theme.muted_foreground,
+            );
+            let (line, title) = (
+                contrast(meta, chosen),
+                contrast(theme.sidebar_accent_foreground, chosen),
+            );
+            assert!(
+                line >= AA,
+                "{name}: the chosen row's meta line is {line:.2}, under {AA}"
+            );
+            assert!(
+                line < title,
+                "{name}: the chosen row's meta line ({line:.2}) is as loud as its name ({title:.2})"
+            );
+        }
+    }
+
     /// The middle ink step has to read, and has to be *in the middle*.
     ///
     /// Both halves are the whole of what it is for. A completion row spends the
@@ -1098,16 +1195,19 @@ mod tests {
     /// this is the third value the description beside that name is drawn in —
     /// so a step landing on either end would make the description
     /// indistinguishable from one half of the name, which is the state it
-    /// exists to prevent. And it is small text on a floating card, so it owes
-    /// the same legibility every other ink here does.
+    /// exists to prevent. And it is small text on a floating card, on the
+    /// reading surface, and on the selected fill under that fill's own ink, so
+    /// it owes the same legibility every other ink here does on each.
     #[test]
     fn the_middle_ink_reads_and_stays_between_the_two_it_divides() {
+        use onehand_plugin_host::middle_ink;
+
         for (name, ramp, mode) in [
             ("light", &LIGHT, ThemeMode::Light),
             ("dark", &DARK, ThemeMode::Dark),
         ] {
             let theme = resolve(ramp, mode);
-            let middle = between(theme.foreground, theme.muted_foreground);
+            let middle = middle_ink(theme.foreground, theme.muted_foreground);
 
             let ratio = contrast(middle, theme.popover);
             assert!(
@@ -1123,67 +1223,19 @@ mod tests {
                 ratio < prose && ratio > meta,
                 "{name}: the middle ink is not between prose ({prose:.2}) and meta ({meta:.2}), it is {ratio:.2}"
             );
-        }
-    }
 
-    /// A selected row drawn at partial opacity still has to be a selected row.
-    ///
-    /// **The one fill in the completion popup that carries meaning** — it says
-    /// where `Enter` will land, with no ring, no bar and no mark beside it. It
-    /// is drawn under 1.0 alpha because at full strength it read as a text
-    /// field holding the caret rather than as a row picked out of a list, and
-    /// thinning it is what takes that weight off.
-    ///
-    /// What that must not do is walk it into the hover step. A row can be
-    /// hovered and selected at once, and the reader has to be able to see which
-    /// of the two fills is telling them what the keyboard is pointing at. So
-    /// the comparison here is against the *composited* colour rather than
-    /// against `accent`, because the token the fill came from is no longer the
-    /// colour on the glass.
-    ///
-    /// **The light palette is what this is really guarding.** It has about 1.15
-    /// between white and the well to divide among every step, so its selected
-    /// and hover fills start far closer together than the dark palette's, and
-    /// thinning the selected one closes that gap several times faster. A number
-    /// chosen by eye in dark mode is a selection nobody can find in light mode.
-    #[test]
-    fn the_selection_stays_clear_of_hover() {
-        /// What the compositor puts on the glass for `fill` over `under`.
-        fn over(fill: Hsla, alpha: f32, under: Hsla) -> Hsla {
-            let (fill, under) = (gpui::Rgba::from(fill), gpui::Rgba::from(under));
-            let mix = |a: f32, b: f32| b + (a - b) * alpha;
-            gpui::Rgba {
-                r: mix(fill.r, under.r),
-                g: mix(fill.g, under.g),
-                b: mix(fill.b, under.b),
-                a: 1.,
-            }
-            .into()
-        }
-
-        for (name, ramp, mode) in [
-            ("light", &LIGHT, ThemeMode::Light),
-            ("dark", &DARK, ThemeMode::Dark),
-        ] {
-            let theme = resolve(ramp, mode);
-            let drawn = over(
-                theme.accent,
-                crate::chat::composer::SELECTED_ALPHA,
-                theme.popover,
+            let on_surface = contrast(middle, theme.background);
+            assert!(
+                on_surface >= AA,
+                "{name}: the middle ink on the reading surface is {on_surface:.2}, under {AA}"
             );
 
-            let apart = contrast(drawn, theme.list_hover);
+            // On the selected fill the step is taken under that fill's own ink.
+            let picked = middle_ink(theme.accent_foreground, theme.muted_foreground);
+            let on_picked = contrast(picked, theme.accent);
             assert!(
-                apart >= ROW,
-                "{name}: the drawn selection is {apart:.2} from hover, which is not a difference"
-            );
-            assert!(
-                contrast(drawn, theme.popover) >= ROW,
-                "{name}: the drawn selection does not lift off the card it is on"
-            );
-            assert!(
-                contrast(theme.accent_foreground, drawn) >= AA,
-                "{name}: the ink on the drawn selection is not readable"
+                on_picked >= AA,
+                "{name}: the middle ink on the selected fill is {on_picked:.2}, under {AA}"
             );
         }
     }
@@ -1300,6 +1352,34 @@ mod tests {
                 assert!(
                     ratio >= AA,
                     "{name}: {label} on the inset field is {ratio:.2}"
+                );
+            }
+        }
+    }
+
+    /// A well on a floating card has its fill alone to be found by, as the
+    /// inset field has, and the command and the gutter in it have to read.
+    #[test]
+    fn a_floating_well_stands_off_its_card() {
+        for (name, ramp, mode) in [
+            ("light", &LIGHT, ThemeMode::Light),
+            ("dark", &DARK, ThemeMode::Dark),
+        ] {
+            let theme = resolve(ramp, mode);
+            let well = floating_well_on(theme.popover, theme.foreground);
+            let ratio = contrast(well, theme.popover);
+            assert!(
+                ratio >= 1.1,
+                "{name}: the floating well is {ratio:.2} from its card"
+            );
+            for (label, ink) in [
+                ("prose", theme.foreground),
+                ("meta ink", theme.muted_foreground),
+            ] {
+                let ratio = contrast(ink, well);
+                assert!(
+                    ratio >= AA,
+                    "{name}: {label} on the floating well is {ratio:.2}"
                 );
             }
         }

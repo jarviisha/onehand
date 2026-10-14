@@ -38,6 +38,7 @@ pub mod issues;
 pub mod preflight;
 pub mod process;
 pub mod remote;
+pub mod saving;
 pub mod task;
 pub mod tree;
 pub mod unattended;

@@ -32,6 +32,15 @@ impl Mode {
     }
 }
 
+impl Mode {
+    /// How the mode beside the tree says which file it has open, so the tree
+    /// picks that file's row.
+    pub fn active_setter(&self) -> impl Fn(Option<std::path::PathBuf>, &mut App) + 'static {
+        let view = self.view.clone();
+        move |path, cx| view.update(cx, |view, cx| view.set_active(path, cx))
+    }
+}
+
 impl WorkbenchMode for Mode {
     fn spec(&self) -> WorkbenchModeSpec {
         SPEC

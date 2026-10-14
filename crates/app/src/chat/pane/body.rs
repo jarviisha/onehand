@@ -1,6 +1,6 @@
 use super::{
-    BLOCK_GAP, COMPOSER_COLUMN, COMPOSER_MIN_H, COMPOSER_REST, ChatPane, JUMP_PILL_H, LIST_HEAD,
-    NARROW_PANEL, OverlayRoom, SMOKE, waits_alone,
+    BLOCK_GAP, COMPOSER_COLUMN, COMPOSER_MIN_H, COMPOSER_REST, ChatPane, LIST_HEAD, NARROW_PANEL,
+    OverlayRoom, SMOKE, waits_alone,
 };
 use crate::chat::session::ChatSession;
 use crate::chat::transcript::{self};
@@ -11,7 +11,6 @@ use gpui::{
     App, Context, Entity, IntoElement, ListState, ParentElement, SharedString, Styled, Window, div,
     list, px,
 };
-use gpui_component::button::ButtonVariants as _;
 use gpui_component::scroll::Scrollbar;
 use gpui_component::spinner::Spinner;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
@@ -81,7 +80,8 @@ impl ChatPane {
             .collect();
         pinned.extend((waiting > 0).then(|| {
             div()
-                .px_3()
+                // On the composer's text edge, as the lines under it are.
+                .px_1p5()
                 .text_xs()
                 .text_color(cx.theme().muted_foreground)
                 .child(match waiting {
@@ -142,7 +142,7 @@ impl ChatPane {
                     div()
                         .flex_none()
                         .text_xs()
-                        .text_color(crate::theme::meta_ink(cx))
+                        .text_color(cx.theme().muted_foreground)
                         .child("Send waits until it is up"),
                 ),
         )
@@ -171,7 +171,6 @@ impl ChatPane {
                     div()
                         .flex_none()
                         .text_xs()
-                        .font_medium()
                         .text_color(muted)
                         .child("Queued"),
                 )
@@ -198,7 +197,7 @@ impl ChatPane {
                 )
                 .child(
                     crate::controls::action("drop-queued")
-                        .quiet(cx)
+                        .quiet_icon(false, cx)
                         .small()
                         .icon(Icon::new(IconName::Close))
                         .tooltip("Remove from the queue")
@@ -496,26 +495,19 @@ impl ChatPane {
                                     // scrolling beneath cannot show through
                                     // its corners.
                                     div()
-                                        .rounded(cx.theme().radius_lg)
+                                        .rounded(cx.theme().radius)
                                         .bg(cx.theme().popover.alpha(1.))
                                         .shadow(crate::tokens::lift(cx))
                                         .child(
+                                            // **The arrow alone**, a quiet
+                                            // control at a strip's size: the
+                                            // surface under it is what floats,
+                                            // and what it means is in the
+                                            // tooltip.
                                             crate::controls::action("to-bottom")
-                                                .secondary()
-                                                .rounded(cx.theme().radius_lg)
-                                                // **The arrow alone.** The
-                                                // words named what was down
-                                                // there, which the transcript
-                                                // itself says the moment the
-                                                // control is used -- and a
-                                                // label on a thing floating
-                                                // over the conversation is a
-                                                // sentence competing with the
-                                                // one being read. What it
-                                                // means is in the tooltip,
-                                                // where a control that needs
-                                                // explaining keeps it.
-                                                .size(JUMP_PILL_H)
+                                                .quiet_icon(false, cx)
+                                                .small()
+                                                .rounded(cx.theme().radius)
                                                 .icon(Icon::new(IconName::ChevronDown))
                                                 .tooltip("Jump to the latest activity")
                                                 .on_click(cx.listener(
@@ -560,13 +552,18 @@ fn waiting_hint(what: SharedString, cx: &App) -> impl IntoElement + use<> {
         .size_full()
         .flex_1()
         .min_h_0()
-        .v_flex()
-        .items_center()
+        .h_flex()
         .justify_center()
-        .gap_2()
-        .text_color(cx.theme().muted_foreground)
-        .child(Spinner::new().small())
-        .child(what)
+        .child(
+            div()
+                .h_flex()
+                .items_center()
+                .gap_2()
+                .text_sm()
+                .text_color(crate::theme::meta_ink(cx))
+                .child(Spinner::new().xsmall())
+                .child(what),
+        )
 }
 
 /// Whether the reader is parked above the conversation's tail.

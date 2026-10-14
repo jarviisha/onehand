@@ -27,13 +27,13 @@ mod keymap;
 mod plugins;
 mod rail;
 mod remote;
+mod saves;
 mod settings;
 pub mod shell;
 mod state;
 mod task;
 mod terminal;
 mod theme;
-mod toast;
 mod unattended;
 mod workbench;
 mod workflow;
@@ -41,4 +41,4 @@ mod workflows_page;
 mod zoom;
 
 /// The sizes and the lift the app shares with its plugins.
-pub(crate) use onehand_plugin_host::tokens;
+pub(crate) use onehand_plugin_host::{toast, tokens};

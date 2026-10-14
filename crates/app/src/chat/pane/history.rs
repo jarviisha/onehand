@@ -1,7 +1,6 @@
 //! The header's history menu: the past conversations of the project on
 //! screen, and going back to choosing one.
 
-use super::header::header_control;
 use super::{ChatPane, ChatPaneEvent, rel_time};
 use crate::chat::conversation::{Conversation, SessionPhase};
 use gpui::{App, Context, IntoElement, ParentElement, SharedString, Styled, Window, div};
@@ -127,7 +126,7 @@ impl ChatPane {
         };
         let this = cx.entity();
 
-        header_control("history", IconName::GalleryVerticalEnd, cx)
+        onehand_plugin_host::strip_control("history", IconName::GalleryVerticalEnd, false, cx)
             .tooltip("Open a past conversation in a new session")
             // Anchored to its own right-hand corner: this button sits at the end
             // of the header, and a menu hanging rightwards from it opens off the

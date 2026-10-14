@@ -14,9 +14,8 @@ Each section names the document owning its rules; read it before answering.
 3. Every spacing on the steps `0p5`, `1`, `1p5`, `2`, `3`, `4`, `6`, `8`?
 4. Every text size from the six roles, weights only `medium` and `semibold`, line heights only
    gpui's, `LEADING` and `LEADING_TIGHT`?
-5. Every corner by role: `sm` whatever is pressed, picked, typed into or lifted out by a fill (a
-   button, a field, a checkbox, a key cap, a row, a tab, a chip, a `choice`), `radius` a block read
-   inside a column, `radius_lg` a standing box and a badge, `rounded_full` a dot?
+5. Every corner the one `radius`, a badge at `tokens::BADGE_CORNER` and a dot `rounded_full`, with
+   no `radius_lg` or `radius_tokens().sm` written?
 6. Shadows only on what floats, through `lift` (the composer through its own)?
 7. A new colour in both palettes, its contrast asserted in `theme.rs`'s tests?
 8. Token values kept in code and its token reference, with no duplicate palette or scale in
@@ -28,10 +27,10 @@ Each section names the document owning its rules; read it before answering.
 10. Every button through `action` and with a variant by role (`primary`, `secondary`, ghost as
     `.quiet(cx)`, `danger`, or `choice` in a pick-one row); no button edged (never the library's
     default nor `outline()`); every field through `text_input`, `search_input` or `text_area`; every
-    refusal through `.refuses()`, with a tooltip saying why?
+    refusal through `.refuses(why)`, its reason the tooltip?
 11. Every state the component can be in: hover, selected or open, keyboard focus, refusing, loading?
-12. Every control at the size its role takes: `.tall()` in a form, a filter bar, a page's head and
-    a dialog's footer; `.small()` in a strip, a box and for a row's actions; `.xsmall()` only for a
+12. Every control at the size its role takes: `.tall()` in a form and a dialog's footer;
+    `.small()` in a page's head, a filter bar, a strip, a box and for a row's actions; `.xsmall()` only for a
     secondary action inside meta text, a transcript block or a chip; never the library's default;
     an icon at its role's size, not grown with the hit area; a badge, checkbox or switch at the
     library's own geometry, centred; any size correction in the shared wrapper, not the call site?
@@ -100,6 +99,7 @@ Each section names the document owning its rules; read it before answering.
 41. A page with a head and filters drawing them in the shared order?
 42. A change the person can take back shown at once; saves of one thing run in order; a failed
     save, only while its change is the newest, put back to the last saved value with one toast;
-    and nothing animated but a `Spinner` on running work?
+    and nothing animated but a `Spinner` on running work (the library's overlays and controls
+    aside)?
 43. Icons at one size per role, in slots of one width on one centre line, none on a tile of its
     own; numbers and times in fixed-width slots?

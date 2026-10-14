@@ -11,7 +11,6 @@ use gpui::{
     ParentElement, SharedString, StatefulInteractiveElement as _, Styled, Window, div,
 };
 use gpui_component::input::InputState;
-use gpui_component::tag::Tag;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::config::AgentSpec;
 
@@ -119,38 +118,37 @@ pub(crate) fn about(text: &'static str) -> Option<AnyElement> {
     Some(text.into_any_element())
 }
 
-/// A page's head: its name, the same word its nav row carries, what the page
-/// governs, and one line saying what the page is about.
+/// A page's head: what the page governs, as a badge, and one line saying what
+/// it is about. No title: the nav row beside it names the page, and the
+/// pane's header names Settings.
 ///
 /// **The scope is said on every page, in the same place.** What is in here
 /// belongs to different reaches -- the app as a whole, or the one workspace
 /// this window holds -- and a setting that reads the same either way is one
 /// somebody changes believing it is the other.
 pub(crate) fn page_head(
-    name: &'static str,
     about: &'static str,
     scope: impl Into<SharedString>,
     cx: &App,
 ) -> impl IntoElement {
     div()
-        .v_flex()
-        .gap_1()
+        .h_flex()
+        .items_center()
+        .gap_2()
         .child(
-            div()
-                .h_flex()
-                .items_center()
-                .gap_2()
-                .child(page_title(name))
-                .child(
-                    Tag::secondary()
-                        .small()
-                        .rounded(cx.theme().radius_lg)
-                        .child(scope.into()),
-                ),
+            onehand_plugin_host::badge(
+                scope,
+                onehand_plugin_host::Tint {
+                    fill: cx.theme().secondary,
+                    ink: cx.theme().secondary_foreground,
+                },
+            )
+            .flex_none(),
         )
         .child(
             div()
-                .text_sm()
+                .min_w_0()
+                .text_xs()
                 .text_color(cx.theme().muted_foreground)
                 .child(about),
         )
@@ -182,9 +180,9 @@ pub(crate) fn section(title: Option<&'static str>, about: Option<SharedString>, 
                     div()
                         .v_flex()
                         .gap_1()
-                        .child(div().text_base().font_medium().child(title))
+                        .child(div().text_base().font_semibold().child(title))
                         .when_some(about, |head, about| {
-                            head.child(div().text_sm().text_color(muted).child(about))
+                            head.child(div().text_xs().text_color(muted).child(about))
                         }),
                 )
         })
@@ -207,7 +205,7 @@ pub(crate) fn list_row(
         .h_flex()
         .items_center()
         .justify_between()
-        .gap_4()
+        .gap_2()
         .w_full()
         .child(
             div()
@@ -218,7 +216,7 @@ pub(crate) fn list_row(
                 .child(div().text_sm().child(title.into()))
                 .children(about.map(|about| {
                     div()
-                        .text_sm()
+                        .text_xs()
                         .text_color(cx.theme().muted_foreground)
                         .child(about)
                 })),
@@ -301,43 +299,30 @@ impl SettingsPage {
 /// rail's own icon column, so the column reads as the same kind of list the
 /// rail beside it is.
 fn nav_row(page: SettingsPage, current: SettingsPage, handle: &Entity<Shell>, cx: &App) -> Div {
-    let (accent, accent_fg, muted, hover, radius) = (
-        cx.theme().accent,
-        cx.theme().accent_foreground,
-        cx.theme().muted_foreground,
-        cx.theme().list_hover,
-        cx.theme().radius_tokens().sm,
-    );
     let handle = handle.clone();
-    let selected = page == current;
+    let row = div()
+        .id(page.label())
+        .h_flex()
+        .items_center()
+        .gap_2()
+        .w_full()
+        .h(crate::tokens::ROW_H)
+        .px_2()
+        .rounded(cx.theme().radius)
+        .cursor_pointer()
+        .text_sm();
 
+    // A list row as the rail's page rows are, in their fills and inks: the
+    // chosen fill in its own ink, the rest muted at rest, the mark in one slot
+    // down the column.
     div().w_full().child(
-        div()
-            .id(page.label())
-            .h_flex()
-            .items_center()
-            .gap_2()
-            .w_full()
-            .px_2()
-            .py_1p5()
-            .rounded(radius)
-            .text_sm()
-            .cursor_pointer()
-            .map(|row| match selected {
-                true => row.bg(accent).text_color(accent_fg),
-                false => row.text_color(muted).hover(move |row| row.bg(hover)),
-            })
-            .child(page.icon().small())
+        crate::rail::page_fill(row, page == current, cx)
+            .child(onehand_plugin_host::mark_slot(page.icon().small()))
             .child(page.label())
             .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
                 handle.update(cx, |shell, cx| shell.show_settings_page(page, cx));
             }),
     )
-}
-
-/// The heading a page opens with -- the same word its nav row carries.
-pub(crate) fn page_title(name: &'static str) -> impl IntoElement {
-    div().text_xl().font_medium().child(name)
 }
 
 /// The width of Settings' nav column: its longest name beside its mark.
@@ -420,7 +405,8 @@ fn settings(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                 .flex_none()
                 .w(NAV_W)
                 .h_full()
-                .p_6()
+                .px_8()
+                .py_6()
                 .pr_0()
                 .children(nav)
                 // The build, at the foot of the nav: it is about the app
@@ -444,7 +430,8 @@ fn settings(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                 .min_w_0()
                 .h_full()
                 .overflow_y_scroll()
-                .p_6()
+                .px_8()
+                .py_6()
                 .child(
                     // A reading measure, so a wide window does not stretch a
                     // field across it, centred in whatever room is left.

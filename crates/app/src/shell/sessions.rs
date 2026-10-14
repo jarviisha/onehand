@@ -124,7 +124,10 @@ impl Shell {
             .and_then(|uid| self.chat.read(cx).title_for(uid, cx));
         let ask = Confirm {
             id: "delete-open-conversation",
-            title: "Delete this conversation?".into(),
+            title: match &name {
+                Some(name) => format!("Delete \u{201c}{name}\u{201d}?").into(),
+                None => "Delete this conversation?".into(),
+            },
             description: match &name {
                 Some(name) => format!(
                     "“{name}” will be removed from disk, with every message and image in \

@@ -95,9 +95,9 @@ pub fn tab_menu_rows(count: usize, active: usize) -> (std::ops::Range<usize>, us
 }
 
 /// The control a strip too narrow for its tabs becomes: a ghost button naming
-/// the current tab and a caret, capped like a tab, saying `hint` in full on
-/// hover. The caller sizes it like the tabs it stands in for and hangs the
-/// menu of every tab on it.
+/// the current tab and the picker's caret, at a strip's size and capped like a
+/// tab, saying `hint` in full on hover. The caller hangs the menu of every tab
+/// on it.
 pub fn tab_select(
     id: &'static str,
     label: gpui::SharedString,
@@ -106,25 +106,14 @@ pub fn tab_select(
 ) -> gpui_component::button::Button {
     crate::action(id)
         .quiet(cx)
+        .small()
         .max_w(TAB_MAX_W)
         .tooltip(hint)
-        .child(
-            gpui::div()
-                .h_flex()
-                .items_center()
-                .gap_1()
-                .min_w_0()
-                .child(gpui::div().min_w_0().truncate().child(label))
-                .child(
-                    Icon::new(IconName::ChevronDown)
-                        .size_3()
-                        .flex_none()
-                        .text_color(cx.theme().muted_foreground),
-                ),
-        )
+        .dropdown_caret(true)
+        .child(gpui::div().min_w_0().truncate().child(label))
 }
 
-/// One tab: a flat label, the chosen one on the selected fill and in full ink,
+/// One tab: a flat label, the chosen one on the selected fill and in its ink,
 /// the rest muted and taking the row hover, truncating with its full `hint` on
 /// hover. The caller caps its width, says what a press does, and adds what
 /// follows the name: a mark, then [`tab_close`].
@@ -148,10 +137,10 @@ pub fn tab_chip(
         // size, so a tab took the panel's reading size and stood a step above
         // the buttons beside it.
         .text_sm()
-        .rounded(theme.radius_tokens().sm)
+        .rounded(theme.radius)
         .cursor_pointer()
         .text_color(match chosen {
-            true => theme.foreground,
+            true => theme.accent_foreground,
             false => theme.muted_foreground,
         })
         .when(chosen, |tab| tab.bg(theme.accent))
@@ -165,10 +154,10 @@ pub fn tab_chip(
 /// should stop the click there, or it also picks the tab it closes.
 pub fn tab_close(id: impl Into<ElementId>, hint: &'static str, cx: &App) -> Button {
     crate::action(id)
-        .quiet(cx)
+        .quiet_icon(false, cx)
         .xsmall()
         .flex_none()
-        .icon(Icon::new(IconName::Close).text_color(cx.theme().muted_foreground))
+        .icon(Icon::new(IconName::Close))
         .tooltip(hint)
 }
 

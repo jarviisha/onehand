@@ -2,19 +2,21 @@
 
 use super::model::{Item, meta};
 use super::row::{
-    DragGhost, SessionDrag, ellipsize, faded, hover_fill, labelled, menu_button, on_hover,
-    rail_control, row_surfaces,
+    DragGhost, SessionDrag, ellipsize, faded, hover_fill, key_ring, labelled, menu_button,
+    meta_control, on_hover, row_control, row_inks, row_surfaces,
 };
 use crate::chat::pane::SessionSignal;
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, AppContext as _, ClickEvent, Context, InteractiveElement, IntoElement,
-    ParentElement, SharedString, StatefulInteractiveElement, Styled, WeakEntity, Window, div,
+    AnyElement, App, AppContext as _, ClickEvent, Context, HighlightStyle, Hsla,
+    InteractiveElement, IntoElement, ParentElement, SharedString, StatefulInteractiveElement,
+    Styled, StyledText, WeakEntity, Window, div,
 };
 use gpui_component::menu::{ContextMenuExt as _, PopupMenu};
 use gpui_component::tooltip::Tooltip;
-use gpui_component::{ActiveTheme, Icon, IconName, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use onehand_plugin_host::mark_slot;
 
 /// What a state says on hover: what it means, and what to do about it.
 ///
@@ -48,7 +50,7 @@ pub(crate) fn signal_word(signal: SessionSignal) -> &'static str {
 /// told by colour alone. None of them moves: a list of turning glyphs pulls
 /// the eye from what waits on the person, so running is a filled dot, the one
 /// solid shape among outlines. A lost agent is the failure shape, and its word
-/// says which failure. Smaller than the row's text, so the mark reads as a
+/// says which failure. A step under the row's text, so the mark reads as a
 /// mark and the title as the thing.
 pub(super) fn status_icon(signal: Option<SessionSignal>, cx: &App) -> gpui::AnyElement {
     let ink = crate::theme::status_ink(cx);
@@ -70,7 +72,18 @@ pub(super) fn status_icon(signal: Option<SessionSignal>, cx: &App) -> gpui::AnyE
             cx.theme().muted_foreground,
         ),
     };
-    icon.size_2p5().text_color(color).into_any_element()
+    icon.xsmall().text_color(color).into_any_element()
+}
+
+/// The ink a state's word takes on the meta line: its own, for a state that
+/// waits on the person; the line's, for every other.
+fn word_ink(signal: Option<SessionSignal>, cx: &App) -> Option<Hsla> {
+    let ink = crate::theme::status_ink(cx);
+    match signal {
+        Some(SessionSignal::Lost | SessionSignal::Failed) => Some(ink.danger),
+        Some(SessionSignal::AwaitingUser) => Some(ink.warning),
+        Some(SessionSignal::Busy | SessionSignal::UnseenTurn) | None => None,
+    }
 }
 
 /// A state's mark in its stable column, so titles never shift beside it,
@@ -81,17 +94,11 @@ pub(super) fn status_mark(
     label: SharedString,
     cx: &App,
 ) -> impl IntoElement + use<> {
-    div()
+    mark_slot(status_icon(signal, cx))
         .id(id)
-        .flex_none()
-        .w_4()
-        .flex()
-        .items_center()
-        .justify_center()
         .role(gpui::accesskit::Role::Image)
         .aria_label(label.clone())
         .tooltip(move |window, cx| Tooltip::new(label.clone()).build(window, cx))
-        .child(status_icon(signal, cx))
 }
 
 /// A signal's mark where a page names a session, outside the rail.
@@ -129,8 +136,7 @@ fn session_menu(
     resend: bool,
     shell: WeakEntity<Shell>,
 ) -> impl Fn(PopupMenu, &mut Window, &mut App) -> PopupMenu + use<> {
-    move |menu, _, cx: &mut App| {
-        let danger = crate::theme::status_ink(cx).danger;
+    move |menu, _, _: &mut App| {
         let (again, rename, restart, export, close) = (
             shell.clone(),
             shell.clone(),
@@ -140,62 +146,54 @@ fn session_menu(
         );
         menu.when(resend, |menu| {
             menu.item(
-                crate::controls::menu_item(RESEND)
-                    .icon(Icon::new(IconName::Redo))
-                    .on_click(move |_, _, cx: &mut App| {
-                        again
-                            .update(cx, |shell: &mut Shell, cx| {
-                                shell.resend_last_prompt(uid, cx)
-                            })
-                            .ok();
-                    }),
+                crate::controls::menu_item(RESEND).on_click(move |_, _, cx: &mut App| {
+                    again
+                        .update(cx, |shell: &mut Shell, cx| {
+                            shell.resend_last_prompt(uid, cx)
+                        })
+                        .ok();
+                }),
             )
         })
         .item(
-            crate::controls::menu_item("Rename…")
-                .icon(Icon::new(crate::icons::Icon::SquarePen))
-                .on_click(move |_, window, cx: &mut App| {
-                    rename
-                        .update(cx, |shell: &mut Shell, cx| {
-                            shell.begin_rename(uid, window, cx);
-                        })
-                        .ok();
-                }),
+            crate::controls::menu_item("Rename…").on_click(move |_, window, cx: &mut App| {
+                rename
+                    .update(cx, |shell: &mut Shell, cx| {
+                        shell.begin_rename(uid, window, cx);
+                    })
+                    .ok();
+            }),
         )
-        .item(
-            crate::controls::menu_item("Restart the agent")
-                .icon(Icon::new(IconName::Redo))
-                .on_click(move |_, window, cx: &mut App| {
-                    restart
-                        .update(cx, |shell: &mut Shell, cx| {
-                            shell.restart_session_at(root_idx, session_idx, window, cx);
-                        })
-                        .ok();
-                }),
-        )
-        .item(
-            crate::controls::menu_item("Export as Markdown…")
-                .icon(Icon::new(IconName::ExternalLink))
-                .on_click(move |_, window, cx: &mut App| {
-                    export
-                        .update(cx, |shell: &mut Shell, cx| {
-                            shell.export_session_at(root_idx, session_idx, window, cx);
-                        })
-                        .ok();
-                }),
-        )
+        .item(crate::controls::menu_item("Restart the agent").on_click(
+            move |_, window, cx: &mut App| {
+                restart
+                    .update(cx, |shell: &mut Shell, cx| {
+                        shell.restart_session_at(root_idx, session_idx, window, cx);
+                    })
+                    .ok();
+            },
+        ))
+        .item(crate::controls::menu_item("Export as Markdown…").on_click(
+            move |_, window, cx: &mut App| {
+                export
+                    .update(cx, |shell: &mut Shell, cx| {
+                        shell.export_session_at(root_idx, session_idx, window, cx);
+                    })
+                    .ok();
+            },
+        ))
         .separator()
-        .item(
-            crate::controls::menu_row(move |_, _| div().text_color(danger).child("Close session"))
-                .icon(Icon::new(IconName::Close).text_color(danger))
-                .on_click(move |_, window, cx: &mut App| {
-                    close
-                        .update(cx, |shell: &mut Shell, cx| {
-                            shell.close_session(root_idx, session_idx, window, cx);
-                        })
-                        .ok();
-                }),
-        )
+        // A plain word: the conversation is kept and can be resumed, so
+        // closing takes nothing that cannot come back.
+        .item(crate::controls::menu_item("Close session").on_click(
+            move |_, window, cx: &mut App| {
+                close
+                    .update(cx, |shell: &mut Shell, cx| {
+                        shell.close_session(root_idx, session_idx, window, cx);
+                    })
+                    .ok();
+            },
+        ))
     }
 }
 
@@ -204,17 +202,19 @@ const RESEND: &str = "Send the last prompt again";
 
 /// How a session row stands: the one on screen, the one the keyboard is on.
 pub(super) struct Mark {
-    /// The session the conversation shows.
+    /// The session the conversation shows: the chosen fill.
     pub(super) shown: bool,
-    /// The keyboard's row, while the list has focus.
+    /// The keyboard's row, while the list holds the keys and the keys put it
+    /// there: the ring, and its actions as if it were hovered.
     pub(super) at: bool,
     /// Its turn failed and its last prompt can go again.
     pub(super) resend: bool,
 }
 
 /// A session: its mark, its title and `⋯`, and under the title
-/// `state · who · age`, who being the agent, or the project in a flat list.
-/// Over the end of that line while the pointer is on the row: Stop while it
+/// `state · who · age`, who being the agent, or the project in a flat list,
+/// the state's word in its own ink while it waits on the person. Over the end
+/// of that line while the pointer or the keyboard is on the row: Stop while it
 /// runs, Send again once it failed, and Close.
 ///
 /// Only the tree's rows are dragged: a flat list is in an order this app
@@ -227,13 +227,21 @@ pub(super) fn session_row(
     cx: &mut Context<Shell>,
 ) -> AnyElement {
     let (root, session, uid, signal) = (item.root, item.session, item.uid, item.signal);
-    let chosen = mark.shown || mark.at;
+    let chosen = mark.shown;
     let (rest, hovered) = row_surfaces(chosen, cx);
+    let (name_ink, meta_ink) = row_inks(chosen, cx);
     let group = SharedString::from(format!("rail-session-{uid}"));
     let title = SharedString::from(item.title.clone());
     let facts = SharedString::from(meta(signal, who, item.age));
+    // The state's word leads the line, so its ink runs over its own bytes.
+    let words = StyledText::new(facts.clone()).with_highlights(word_ink(signal, cx).map(|ink| {
+        let color = HighlightStyle {
+            color: Some(ink),
+            ..HighlightStyle::default()
+        };
+        (0..super::model::word(signal).len(), color)
+    }));
     let (shell, hover) = (cx.entity().downgrade(), hover_fill(cx));
-    let muted = cx.theme().muted_foreground;
     let label = SharedString::from(format!(
         "{}: {}",
         super::model::word(signal),
@@ -245,20 +253,20 @@ pub(super) fn session_row(
         .id(gpui::ElementId::Name(group.clone()))
         .group(group.clone())
         .v_flex()
+        .relative()
         .py_1()
-        .when(flat, |d| d.pl_1p5())
         // A session's mark stands under its project's folder and its title
         // under the name. The row's fill starts past the fold control's
         // column, so a chosen row carries no empty band on its left.
-        .when(!flat, |d| d.ml(super::INDENT).pl_1p5())
-        .pr_1()
-        .rounded(cx.theme().radius_tokens().sm)
+        .when(!flat, |d| d.ml(super::INDENT))
+        .px_2()
+        .rounded(cx.theme().radius)
         .cursor_pointer()
         .when(chosen, |d| d.bg(super::row::chosen_fill(cx)))
         .when(!chosen, |d| d.hover(move |d| d.bg(hover)))
         .on_click(
             cx.listener(move |shell: &mut Shell, _: &ClickEvent, window, cx| {
-                shell.rail_open_session(root, session, window, cx);
+                shell.rail_open_session(root, session, false, window, cx);
             }),
         )
         .child(
@@ -270,20 +278,16 @@ pub(super) fn session_row(
                 .child(
                     faded(("title", uid), title, group.clone(), rest, hovered)
                         .tooltip(move |window, cx| Tooltip::new(tip.clone()).build(window, cx))
-                        .text_color(cx.theme().foreground)
-                        .when(
-                            mark.shown || signal == Some(SessionSignal::UnseenTurn),
-                            |d| d.font_medium(),
-                        ),
+                        .text_color(name_ink),
                 )
                 .child(on_hover(
                     &group,
-                    mark.shown,
+                    mark.shown || mark.at,
                     labelled(
                         ("session-menu-name", uid),
                         "Session actions",
                         menu_button(
-                            rail_control(("session-menu", uid), IconName::Ellipsis, cx),
+                            row_control(("session-menu", uid), IconName::Ellipsis, cx),
                             "What can be done with this session",
                             session_menu(root, session, uid, mark.resend, shell.clone()),
                         ),
@@ -299,14 +303,22 @@ pub(super) fn session_row(
                 .pl_6()
                 .text_xs()
                 .child(
-                    faded(("meta", uid), facts, group.clone(), rest, hovered)
-                        .text_color(muted)
+                    faded(("meta", uid), words, group.clone(), rest, hovered)
+                        .text_color(meta_ink)
                         .tooltip(move |window, cx| {
                             Tooltip::new(meta_tip.clone()).build(window, cx)
                         }),
                 )
-                .child(actions(item, mark.resend, &group, hovered, cx)),
+                .child(actions(
+                    item,
+                    mark.resend,
+                    &group,
+                    (rest, hovered),
+                    mark.at && !mark.shown,
+                    cx,
+                )),
         )
+        .when(mark.at, |row| row.child(key_ring(cx)))
         .when(!flat, |row| {
             let (target, ghost) = (shell.clone(), SharedString::from(item.title.clone()));
             row.on_drag(
@@ -342,18 +354,21 @@ pub(super) fn session_row(
 }
 
 /// A session's quick actions, over the end of its meta line while the pointer
-/// is on the row, on the row's own hover fill so what is under them does not
-/// show through.
+/// is on the row, and while the keyboard is (`keyed`) unless it is the
+/// session on screen, whose line they would hide for as long as it shows. On
+/// the row's own fill, at rest or hovered, so what is under them does not show
+/// through.
 fn actions(
     item: &Item,
     resend: bool,
     group: &SharedString,
-    fill: gpui::Hsla,
+    (rest, hovered): (Hsla, Hsla),
+    keyed: bool,
     cx: &mut Context<Shell>,
 ) -> impl IntoElement + use<> {
     let (root, session, uid, signal) = (item.root, item.session, item.uid, item.signal);
     let button = |id: &'static str, icon: Icon, tip: &'static str, cx: &App| {
-        rail_control((id, uid), icon, cx).tooltip(tip)
+        meta_control((id, uid), icon, cx).tooltip(tip)
     };
     div()
         .h_flex()
@@ -361,9 +376,9 @@ fn actions(
         .right_0()
         .top_0()
         .bottom_0()
-        .bg(fill)
-        .invisible()
-        .group_hover(group.clone(), |s| s.visible())
+        .bg(rest)
+        .when(!keyed, |d| d.invisible())
+        .group_hover(group.clone(), move |s| s.visible().bg(hovered))
         .when(signal == Some(SessionSignal::Busy), |d| {
             d.child(labelled(
                 ("session-stop-name", uid),

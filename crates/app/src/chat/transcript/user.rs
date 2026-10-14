@@ -1,15 +1,15 @@
 use super::Room;
 use super::metrics::{
-    BUBBLE_MAX, BUBBLE_TAIL_GAP, HAIR_GAP, MARK_SIZE, STACK_GAP, THUMB_H, THUMB_W, TIGHT_GAP,
-    USER_BUBBLE_MAX, USER_BUBBLE_MAX_NARROW,
+    BUBBLE_MAX, BUBBLE_TAIL_GAP, HAIR_GAP, STACK_GAP, THUMB_H, THUMB_W, TIGHT_GAP, USER_BUBBLE_MAX,
+    USER_BUBBLE_MAX_NARROW,
 };
-use crate::tokens::CONTROL_H;
+use super::parts::copy_button;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, InteractiveElement, IntoElement, ParentElement, RenderOnce, SharedString,
     StatefulInteractiveElement, Styled, Window, div, relative,
 };
-use gpui_component::{ActiveTheme, Icon, IconName, StyledExt};
+use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::chat::UserMsg;
 
 /// Attachment rows drawn under a prompt before the rest are counted.
@@ -73,128 +73,83 @@ pub(super) fn user(u: &UserMsg, uid: usize, room: Room, cx: &App) -> impl IntoEl
                             .items_center()
                             .text_xs()
                             .text_color(cx.theme().muted_foreground)
-                            .child(format!("+{over} more attachment(s)")),
+                            .child(match over {
+                                1 => "+1 more attachment".to_string(),
+                                n => format!("+{n} more attachments"),
+                            }),
                     )
                 })
         }))
-        .children((!u.text.trim().is_empty()).then(|| {
-            div()
-                .id(("prompt", uid))
-                .v_flex()
-                .items_end()
-                // The control belongs to the bubble rather than following it.
-                .gap(BUBBLE_TAIL_GAP)
-                .max_w(relative(share))
-                // **The hover belongs to the whole message, not to the row it
-                // reveals.** Put on the row itself it asked the reader to find
-                // a transparent strip a few pixels tall before it would show
-                // them what was in it -- which is the same as not being there.
-                // The wrapper shrinks to the bubble, so the region that answers
-                // is the thing somebody is pointing at.
-                //
-                // It works by cascade rather than by naming a group: text
-                // colour inherits, so the row is drawn in whatever this says
-                // and the bubble, which sets its own ink, is untouched.
-                .text_color(cx.theme().transparent)
-                .hover(|turn| turn.text_color(cx.theme().muted_foreground))
-                .child(
-                    div()
-                        .max_w(BUBBLE_MAX)
-                        .px_3()
-                        .py_2()
-                        // **Even corners, the well's fill and no edge.** The
-                        // side it sits on already says whose words these are;
-                        // the fill only has to set them off the page.
-                        .rounded(cx.theme().radius_lg)
-                        .bg(cx.theme().muted)
-                        .text_color(cx.theme().foreground)
-                        .child(prompt_text(&u.text, cx)),
-                )
-                .child(PromptCopy {
-                    key: uid,
-                    text: u.text.clone().into(),
-                })
+        .children((!u.text.trim().is_empty()).then(|| Prompt {
+            key: uid,
+            text: u.text.clone().into(),
+            share,
         }))
 }
 
-/// The control under a prompt: hidden until the turn is pointed at, and
-/// answering when it is pressed.
+/// The bubble and the copy control under it, which shows while the message is
+/// pointed at and while the control holds the keyboard's focus.
 ///
-/// **An element of its own, because it has to remember two things the frame
-/// does not.** Whether it was just pressed — which needs keyed state, and keyed
-/// state needs the window — and a timer to take that back a second later.
+/// **An element of its own, because it has to remember what the frame does
+/// not**: whether the message is pointed at, which is keyed state, and keyed
+/// state needs the window.
 ///
-/// **It appears by inheriting, not by being revealed.** The usual way to show a
-/// child on hover is to name a group on an ancestor and ask for it by name from
-/// the child, which resolves through a registry and has already failed twice in
-/// this file. Text colour cascades, so the row is drawn transparent and the
-/// hover on its own container turns the ink up: one primitive, no registry, and
-/// the space is held either way because the row is always laid out.
+/// **The hover belongs to the whole message, not to the control it reveals**,
+/// so the region that answers is the thing somebody is pointing at. Hidden, the
+/// control keeps its place, so the message does not move as it appears.
 #[derive(IntoElement)]
-struct PromptCopy {
+struct Prompt {
     key: usize,
     text: SharedString,
+    share: f32,
 }
 
-impl RenderOnce for PromptCopy {
+impl RenderOnce for Prompt {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let key = self.key;
-        let done = window.use_keyed_state(("prompt-copied", key), cx, |_, _| false);
-        let copied = *done.read(cx);
-        let text = self.text.clone();
+        let hovered = window.use_keyed_state(("prompt-hovered", key), cx, |_, _| false);
+        // The button's own focus handle, which the library keys by the button's
+        // id under the element that holds it: a control reached by the keyboard
+        // shows without the pointer.
+        let copy_id = ("prompt-copy", key);
+        let focus = window.with_id(("prompt", key), |window| {
+            window
+                .use_keyed_state(copy_id, cx, |_, cx| cx.focus_handle())
+                .read(cx)
+                .clone()
+        });
+        let shown = *hovered.read(cx) || focus.is_focused(window);
 
         div()
-            .id(("prompt-copy", key))
-            .h_flex()
-            .items_center()
-            .justify_end()
-            .gap(TIGHT_GAP)
-            .flex_none()
-            .h(CONTROL_H)
-            .cursor_pointer()
-            .text_xs()
-            // **No colour of its own until it has something to say.** The ink
-            // is the message's, inherited, so the row appears when the message
-            // is pointed at rather than when this thin strip is. Once pressed
-            // it takes its own, which is also what keeps the answer up after
-            // the pointer has gone.
-            .when(copied, |row| {
-                row.text_color(crate::theme::status_ink(cx).success)
-            })
-            .child(
-                Icon::new(match copied {
-                    true => IconName::Check,
-                    false => IconName::Copy,
-                })
-                .size(MARK_SIZE),
-            )
-            .child(match copied {
-                true => "Copied",
-                false => "Copy",
-            })
-            .on_click(move |_, window, cx| {
-                cx.write_to_clipboard(gpui::ClipboardItem::new_string(text.to_string()));
-                done.update(cx, |done, cx| {
-                    *done = true;
+            .id(("prompt", key))
+            .v_flex()
+            .items_end()
+            // The control belongs to the bubble rather than following it.
+            .gap(BUBBLE_TAIL_GAP)
+            .max_w(relative(self.share))
+            .on_hover(move |on, _, cx| {
+                hovered.update(cx, |hovered, cx| {
+                    *hovered = *on;
                     cx.notify();
                 });
-                // Taken back on a timer rather than on the next pointer move:
-                // an answer that only clears when the mouse happens to leave is
-                // one that is still claiming to have just happened a minute
-                // later.
-                let done = done.clone();
-                window
-                    .spawn(cx, async move |cx| {
-                        cx.background_executor()
-                            .timer(std::time::Duration::from_millis(1_200))
-                            .await;
-                        done.update(cx, |done, cx| {
-                            *done = false;
-                            cx.notify();
-                        });
-                    })
-                    .detach();
             })
+            .child(
+                div()
+                    .max_w(BUBBLE_MAX)
+                    .px_3()
+                    .py_2()
+                    // **Even corners, the well's fill and no edge.** The side
+                    // it sits on already says whose words these are; the fill
+                    // only has to set them off the page.
+                    .rounded(cx.theme().radius)
+                    .bg(cx.theme().muted)
+                    .text_color(cx.theme().foreground)
+                    .child(prompt_text(&self.text, cx)),
+            )
+            .child(
+                copy_button(copy_id, self.text.clone(), "Copy the prompt", cx)
+                    .when(!shown, |copy| copy.text_color(cx.theme().transparent)),
+            )
     }
 }
 
@@ -278,7 +233,7 @@ fn attachment(a: &onehand_core::attachment::AttachmentSnapshot, cx: &App) -> imp
 
     div()
         // **One plate whatever is on it.** A picture fills it and a file
-        // carries its mark in the middle of it, so a prompt that handed over
+        // leaves it bare, so a prompt that handed over
         // both is a strip of one kind of thing rather than a picture beside a
         // chip of some other height. The name sits at the foot of the plate: a
         // preview is read as the thing itself, and the name is its caption
@@ -291,21 +246,9 @@ fn attachment(a: &onehand_core::attachment::AttachmentSnapshot, cx: &App) -> imp
         .rounded(cx.theme().radius)
         .border_1()
         .border_color(cx.theme().border)
-        .map(|plate| match thumbnail {
-            Some(path) => plate.child(gpui::img(path).size_full()),
-            // The registry has no picture glyph, so the plain file mark stands
-            // in for both kinds; where there is a preview it says what the file
-            // is better than any icon could, so the mark is drawn only here.
-            None => plate.child(
-                div()
-                    .size_full()
-                    .h_flex()
-                    .items_center()
-                    .justify_center()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(Icon::new(IconName::File).size_4()),
-            ),
-        })
+        // A file other than a picture is its name alone: a generic mark over
+        // it says nothing the name does not.
+        .children(thumbnail.map(|path| gpui::img(path).size_full()))
         .child(
             div()
                 // Over the foot of the plate rather than under it: the plate is

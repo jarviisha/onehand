@@ -1,5 +1,5 @@
 use super::fold_key;
-use super::metrics::{DETAIL_OPEN_H, FOLD_INDENT, MARK_SIZE, TIGHT_GAP};
+use super::metrics::{CARD_PAD, DETAIL_OPEN_H, FOLD_INDENT, SCROLLBAR_W, TIGHT_GAP};
 use crate::chat::session::ChatSession;
 use crate::controls::Quiet as _;
 use crate::tokens::{CONTROL_H, LEADING};
@@ -81,9 +81,8 @@ impl RenderOnce for BlockingBody {
                     .id(("blocking-body-scroll", key))
                     .v_flex()
                     // Enough to read the rows as separate things. These are
-                    // bordered boxes, not lines of text, and a quarter-rem
-                    // between two borders is a gap the eye resolves as one
-                    // thick rule with a seam in it.
+                    // filled boxes, not lines of text, and a quarter-rem
+                    // between two fills reads as one block with a seam.
                     .gap_2()
                     .w_full()
                     .max_h(MAX_BLOCKING_BODY_H)
@@ -100,27 +99,29 @@ impl RenderOnce for BlockingBody {
     }
 }
 
-/// Copy `text` to the clipboard, as a quiet icon button.
-///
-/// One constructor for both the copies the transcript offers — a fenced block
-/// and a whole answer — because they are the same gesture and the only reason
-/// they ever looked different was that they were written months apart.
+/// Copy to the clipboard: the one copy control the transcript draws, on a
+/// fenced block, a tool's well, a permission's command and the turn's footer.
+/// A quiet icon at the dense size, named by `tip`, at rest in the muted ink.
+fn copy_control(id: impl Into<gpui::ElementId>, tip: &'static str, cx: &App) -> Button {
+    crate::controls::action(id)
+        .quiet_icon(false, cx)
+        .xsmall()
+        .flex_none()
+        .icon(IconName::Copy)
+        .tooltip(tip)
+}
+
+/// Copy `text`, which is already at hand.
 pub(super) fn copy_button(
     id: impl Into<gpui::ElementId>,
     text: impl Into<SharedString>,
+    tip: &'static str,
     cx: &App,
 ) -> Button {
     let text = text.into();
-    crate::controls::action(id)
-        .quiet(cx)
-        .xsmall()
-        // Square at the shared control height, so a copy offered on a fenced
-        // block and one offered at the end of an answer are the same target.
-        .size(CONTROL_H)
-        .icon(Icon::new(IconName::Copy).size(MARK_SIZE))
-        .on_click(move |_, _, cx: &mut App| {
-            cx.write_to_clipboard(gpui::ClipboardItem::new_string(text.to_string()));
-        })
+    copy_control(id, tip, cx).on_click(move |_, _, cx: &mut App| {
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string(text.to_string()));
+    })
 }
 
 /// Copy the paragraph `target`'s turn closes on, gathered **when the button is
@@ -132,14 +133,26 @@ pub(super) fn copy_turn_button(
     cx: &App,
 ) -> Button {
     let session = session.clone();
-    crate::controls::action("copy-answer")
-        .quiet(cx)
-        .xsmall()
-        .icon(IconName::Copy)
-        .on_click(move |_, _, cx: &mut App| {
+    copy_control("copy-answer", "Copy the closing paragraph", cx).on_click(
+        move |_, _, cx: &mut App| {
             let closing = session.read(cx).chat.turn_closing(target);
             cx.write_to_clipboard(gpui::ClipboardItem::new_string(closing));
-        })
+        },
+    )
+}
+
+/// The one control that shows what a block holds back and takes it away
+/// again: a quiet worded button at the dense size, whose words say how much.
+pub(super) fn show_more(
+    id: impl Into<gpui::ElementId>,
+    label: impl Into<SharedString>,
+    cx: &App,
+) -> Button {
+    crate::controls::action(id)
+        .quiet(cx)
+        .xsmall()
+        .flex_none()
+        .label(label.into())
 }
 
 /// Where whatever a row opens into is set in to: under the row's glyph, past
@@ -169,6 +182,15 @@ pub(super) fn chevron(open: bool) -> Icon {
 /// list of rows keeps one left edge for its glyphs.
 pub(super) fn chevron_slot(fold: Option<bool>) -> gpui::Div {
     div().w_3().flex_none().children(fold.map(chevron))
+}
+
+/// The spinner's column on a fold line, kept whether or not anything runs, so
+/// the words after it stand where they stood once the work settles.
+pub(super) fn spinner_slot(running: bool, cx: &App) -> gpui::Div {
+    div()
+        .w_3()
+        .flex_none()
+        .children(running.then(|| Spinner::new().xsmall().color(accent(cx))))
 }
 
 /// The line every folding block opens from: its arrow first, then what the
@@ -223,6 +245,9 @@ impl RenderOnce for ScrollBody {
             })
             .read(cx)
             .clone();
+        // Last frame's measure: the first frame of an opened detail draws
+        // without the gutter and the second has it, a frame nobody sees.
+        let overflows = scroll.max_offset().y > gpui::px(0.);
 
         div()
             .id(("detail-frame", key))
@@ -237,6 +262,10 @@ impl RenderOnce for ScrollBody {
                     .w_full()
                     .min_w_0()
                     .max_h(self.max_h)
+                    // The scrollbar's gutter while there is one, held inside
+                    // the scrolled box so the bar stays on the frame's edge
+                    // and the text stops short of its thumb.
+                    .when(overflows, |area| area.pr(SCROLLBAR_W))
                     .overflow_y_scroll()
                     .track_scroll(&scroll)
                     .children(self.children),
@@ -336,13 +365,10 @@ pub(super) fn scrolled(open: bool, key: usize, body: gpui::Div) -> gpui::AnyElem
     }
 }
 
-/// A well of machine text: the sunk fill, no edge, mono a step under the
-/// reading size. What a tool read, printed or changed sits in one, and so does
+/// A well of machine text: the sunk fill, no edge, mono at the code size. What a tool read, printed or changed sits in one, and so does
 /// an answer's fenced code, so the two read as the same kind of thing.
 pub(super) fn plain_box(cx: &App) -> gpui::Div {
-    onehand_plugin_host::well(cx)
-        .text_sm()
-        .line_height(relative(LEADING))
+    onehand_plugin_host::well(cx).line_height(relative(LEADING))
 }
 
 /// Lines wider than their well scroll sideways inside it, rather than
@@ -409,7 +435,7 @@ pub(super) fn grows(button: Button) -> Button {
 pub(in crate::chat) fn floating_card(pinned: bool, cx: &App) -> gpui::Div {
     div()
         .w_full()
-        .rounded(cx.theme().radius_lg)
+        .rounded(cx.theme().radius)
         .border_1()
         .border_color(cx.theme().border)
         // Opaque, and not the reading surface: the transcript runs underneath
@@ -417,6 +443,74 @@ pub(in crate::chat) fn floating_card(pinned: bool, cx: &App) -> gpui::Div {
         // one place in the app that cannot afford it.
         .bg(cx.theme().popover.alpha(1.))
         .when(pinned, |card| card.shadow(crate::tokens::lift(cx)))
+}
+
+/// The shell both pinned cards share: the floating surface holding a head, a
+/// body and a foot, each inset by [`CARD_PAD`] and parted from the next by a
+/// hairline that runs the card's whole width. It clips, so the hairlines end
+/// on the rounded edge rather than a pixel past it.
+pub(super) fn pinned_card(pinned: bool, cx: &App) -> gpui::Div {
+    floating_card(pinned, cx).v_flex().overflow_hidden()
+}
+
+/// A pinned card's body, between its head and its foot. The caller sets the
+/// gap between what it holds.
+pub(super) fn card_body() -> gpui::Div {
+    div().v_flex().w_full().px(CARD_PAD).py_3()
+}
+
+/// A pinned card's head: what it asks, in the weight that says nothing
+/// proceeds until it is answered, after its mark if it has one, and at the end
+/// what it is about.
+pub(super) fn card_head(
+    mark: Option<Icon>,
+    title: impl Into<SharedString>,
+    aside: Option<SharedString>,
+    cx: &App,
+) -> gpui::Div {
+    div()
+        .h_flex()
+        .items_center()
+        .gap_2()
+        .w_full()
+        .px(CARD_PAD)
+        .py_3()
+        .border_b_1()
+        .border_color(cx.theme().border)
+        .children(mark.map(|mark| mark.small().flex_none()))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .text_sm()
+                .font_semibold()
+                .child(title.into()),
+        )
+        .children(aside.map(|word| {
+            div()
+                .flex_none()
+                .text_xs()
+                .text_color(crate::theme::meta_ink(cx))
+                .child(word)
+        }))
+}
+
+/// A pinned card's foot: its answers at the end, wrapping onto a second line
+/// before a label is cut, since a cut grant is one nobody can read the reach
+/// of.
+pub(super) fn card_foot(cx: &App) -> gpui::Div {
+    div()
+        .h_flex()
+        .items_center()
+        .justify_end()
+        .flex_wrap()
+        .gap_2()
+        .w_full()
+        .px(CARD_PAD)
+        .py_2()
+        .border_t_1()
+        .border_color(cx.theme().border)
 }
 
 // ── shared bits ─────────────────────────────────────────────────────────────
@@ -434,12 +528,11 @@ pub enum RowMark {
     Done,
     /// Something in the run failed and the run went on to succeed anyway.
     ///
-    /// **A tick, in the warning tint rather than the danger one.** A run marked
-    /// red because one of seven commands exited non-zero is an alarm for
-    /// something already dealt with, and a reader who has learned that the red
-    /// mark usually means nothing has learned to ignore the one that means
-    /// something. The count of what went wrong is still said, in words, at the
-    /// other end of the row.
+    /// **Drawn as a settled step.** A run marked red because one of seven
+    /// commands exited non-zero is an alarm for something already dealt with,
+    /// and a reader who has learned that the red mark usually means nothing has
+    /// learned to ignore the one that means something. The count of what went
+    /// wrong is still said, in muted words, at the other end of the row.
     Recovered,
     Failed,
     /// A step somebody refused. Not a failure — nothing went wrong, a decision
@@ -522,6 +615,9 @@ pub(super) struct ActivityRow {
 pub(super) struct Object {
     pub(super) dir: Option<SharedString>,
     pub(super) name: SharedString,
+    /// The agent's own wording rather than a path or a command: the UI family
+    /// in the middle ink, since mono would claim it is something to type.
+    pub(super) words: bool,
 }
 
 impl Object {
@@ -530,18 +626,13 @@ impl Object {
         let value: SharedString = value.into();
         match value.rfind('/') {
             // A command is not a path and must not be cut at its last slash.
-            Some(_) if value.contains(char::is_whitespace) => Self {
-                dir: None,
-                name: value,
-            },
+            Some(_) if value.contains(char::is_whitespace) => Self::plain(value),
             Some(at) => Self {
                 dir: Some(value[..=at].to_string().into()),
                 name: value[at + 1..].to_string().into(),
+                words: false,
             },
-            None => Self {
-                dir: None,
-                name: value,
-            },
+            None => Self::plain(value),
         }
     }
 
@@ -549,6 +640,15 @@ impl Object {
         Self {
             dir: None,
             name: value.into(),
+            words: false,
+        }
+    }
+
+    /// What the agent said, rather than something to type.
+    pub(super) fn words(value: impl Into<SharedString>) -> Self {
+        Self {
+            words: true,
+            ..Self::plain(value)
         }
     }
 }
@@ -623,17 +723,21 @@ pub(super) fn activity_row(
                     .items_center()
                     .overflow_hidden()
                     .whitespace_nowrap()
-                    .font_family(cx.theme().mono_font_family.clone())
-                    .text_color(match row.struck {
-                        true => muted,
-                        false => cx.theme().foreground,
+                    .when(!object.words, |o| {
+                        o.font_family(cx.theme().mono_font_family.clone())
+                    })
+                    .text_color(match (row.struck, object.words) {
+                        (true, _) => muted,
+                        (false, true) => crate::theme::meta_ink(cx),
+                        (false, false) => cx.theme().foreground,
                     })
                     .when(row.struck, |o| o.line_through())
-                    .children(
-                        object
-                            .dir
-                            .map(|dir| div().flex_none().text_color(muted).child(dir)),
-                    )
+                    .children(object.dir.map(|dir| {
+                        div()
+                            .flex_none()
+                            .text_color(crate::theme::meta_ink(cx))
+                            .child(dir)
+                    }))
                     .child(div().min_w_0().truncate().child(object.name))
             }))
             .children(row.meta)
@@ -724,14 +828,15 @@ pub(super) fn tool_label(kind: ToolKind) -> &'static str {
     }
 }
 
-/// A word in a small label, in the ink its state gives it: the one shape a
-/// state takes wherever one is named. Outlined rather than filled, so a row of
-/// them reads as the row's last column rather than as badges stuck onto it.
-pub(super) fn pill(label: impl Into<SharedString>, ink: gpui::Hsla, cx: &App) -> Tag {
-    Tag::custom(ink, ink, cx.theme().border)
-        .outline()
+/// What came of an exchange, in a small neutral badge: the secondary fill and
+/// its own ink, as every badge takes, cut short rather than pushing the row.
+/// **Neutral even for a refusal**: nothing failed, somebody decided, and the
+/// struck words already say which way.
+pub(super) fn pill(label: impl Into<SharedString>, cx: &App) -> Tag {
+    let theme = cx.theme();
+    Tag::custom(theme.secondary, theme.secondary_foreground, theme.secondary)
         .small()
-        .rounded(cx.theme().radius_lg)
+        .rounded(crate::tokens::BADGE_CORNER)
         .flex_none()
         .whitespace_nowrap()
         .overflow_hidden()

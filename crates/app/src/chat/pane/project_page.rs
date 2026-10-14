@@ -6,11 +6,11 @@ use crate::controls::Tall as _;
 use crate::controls::text_input;
 use crate::tokens::PAGE_NARROW;
 use gpui::{
-    App, Context, Div, ElementId, InteractiveElement, IntoElement, ParentElement, SharedString,
-    Stateful, StatefulInteractiveElement, Styled, Window, div,
+    App, Context, Div, ElementId, FocusHandle, InteractiveElement, IntoElement, ParentElement,
+    SharedString, Stateful, StatefulInteractiveElement, Styled, Window, div,
 };
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Sizable as _, StyledExt};
 use onehand_core::chat::ConvMeta;
 use std::path::{Path, PathBuf};
 
@@ -22,6 +22,10 @@ use std::path::{Path, PathBuf};
 /// the cap cut off is said on screen rather than silently dropped. The list
 /// scrolls as well, because this many rows already outgrows a short window.
 const HOME_ROWS: usize = 8;
+
+/// How many past conversations a session's resume picker offers before the
+/// older ones are counted instead.
+const RESUME_ROWS: usize = 30;
 
 /// The project the pane is standing in while no conversation is showing.
 ///
@@ -47,6 +51,18 @@ pub(super) struct EmptyProject {
     /// Its check command field, the shell's: `None` for a run's own
     /// worktree, which keeps none.
     pub(super) check_input: Option<gpui::Entity<gpui_component::input::InputState>>,
+    /// One focus handle per past conversation the page lists, by place: each
+    /// row is a tab stop, so the keyboard reaches its *Delete…* as the pointer
+    /// does.
+    pub(super) rows: Vec<FocusHandle>,
+}
+
+/// The focus handles for the page's listed conversations, one per row it can
+/// list.
+pub(super) fn home_rows(cx: &mut App) -> Vec<FocusHandle> {
+    (0..HOME_ROWS)
+        .map(|_| cx.focus_handle().tab_stop(true))
+        .collect()
 }
 
 impl ChatPane {
@@ -174,12 +190,10 @@ impl ChatPane {
             cx.entity(),
             crate::shell::Confirm {
                 id: "delete-conversation",
-                title: "Delete this conversation?".into(),
-                description: format!(
-                    "“{name}” will be removed from disk, with every message and image in it. \
-                     This cannot be undone."
-                )
-                .into(),
+                title: format!("Delete “{name}”?").into(),
+                description: "It will be removed from disk, with every message and image in it. \
+                              This cannot be undone."
+                    .into(),
                 act: "Delete",
                 ..Default::default()
             },
@@ -267,6 +281,7 @@ impl ChatPane {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let past = self.choices_of(uid);
+        let older = past.len().saturating_sub(RESUME_ROWS);
         let now = onehand_core::chat::now_secs();
 
         div()
@@ -300,29 +315,37 @@ impl ChatPane {
                             .w_full()
                             .min_h_0()
                             .overflow_y_scroll()
-                            .children(past.into_iter().enumerate().map(|(i, meta)| {
-                                // The agent is not named here: this picker belongs to a
-                                // session that already has one, and every row in it was
-                                // run by that same agent.
-                                let subtitle = format!(
-                                    "{} · {} items",
-                                    rel_time(now, meta.updated),
-                                    meta.item_count
-                                );
-                                conversation_card(
-                                    ("resume", i),
-                                    meta.title.clone().into(),
-                                    subtitle.into(),
-                                    cx,
-                                )
-                                .on_click(cx.listener(
-                                    move |pane: &mut Self, _, _, cx| {
-                                        let meta = pane.choices_of(uid).get(i).cloned();
-                                        pane.start(uid, meta, cx);
-                                    },
-                                ))
-                            })),
+                            .children(past.into_iter().take(RESUME_ROWS).enumerate().map(
+                                |(i, meta)| {
+                                    // The agent is not named here: this picker belongs to a
+                                    // session that already has one, and every row in it was
+                                    // run by that same agent.
+                                    let subtitle = format!(
+                                        "{} · {} items",
+                                        rel_time(now, meta.updated),
+                                        meta.item_count
+                                    );
+                                    conversation_card(
+                                        ("resume", i),
+                                        meta.title.clone().into(),
+                                        subtitle.into(),
+                                        cx,
+                                    )
+                                    .on_click(cx.listener(
+                                        move |pane: &mut Self, _, _, cx| {
+                                            let meta = pane.choices_of(uid).get(i).cloned();
+                                            pane.start(uid, meta, cx);
+                                        },
+                                    ))
+                                },
+                            )),
                     )
+                    .children((older > 0).then(|| {
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(format!("{older} older not shown"))
+                    }))
                     .child(
                         crate::controls::action("resume-fresh")
                             .tall()
@@ -354,17 +377,10 @@ impl ChatPane {
             // what has to happen first beats an offer that cannot be taken:
             // every session belongs to a root, and there is no root to bind one
             // to.
-            return div()
-                .size_full()
-                .v_flex()
-                .items_center()
-                .justify_center()
-                .text_color(cx.theme().muted_foreground)
-                .child("Add a project to start a session")
-                .into_any_element();
+            return onehand_plugin_host::hint("Add a project to start a session", cx);
         };
         let now = onehand_core::chat::now_secs();
-        let muted = cx.theme().muted_foreground;
+        let (muted, ring) = (cx.theme().muted_foreground, cx.theme().ring);
         let danger = crate::theme::status_ink(cx).danger;
         // Bounded, and the bound says so below. A project worked in for months
         // has more archives than this page is for, and none of this scrolls.
@@ -390,184 +406,168 @@ impl ChatPane {
             Some(_) => None,
         };
 
-        div()
-            .size_full()
-            .v_flex()
-            // The header stays. It is the panel's only chrome, and everything on
-            // it that this page can still answer is about the *project* rather
-            // than about a conversation: the file tree, a shell, the way back to
-            // a hidden rail. Dropping it here took all three away at exactly the
-            // moment there is no conversation to reach them from instead -- and
-            // a panel that loses its own chrome between one click and the next
-            // reads as one that broke.
-            .child(self.header(cx))
+        let root = project.path.clone();
+        let checking = crate::task::checking(&root, cx);
+        // The head: what the project's tasks need at the start, then *Run
+        // check* and the page's one primary at the end.
+        let head = div()
+            .h_flex()
+            .items_center()
+            .gap_2()
+            .w_full()
             .child(
                 div()
                     .flex_1()
-                    .min_h_0()
+                    .min_w_0()
+                    .h_flex()
+                    .children(tasks_link(&project.path, cx)),
+            )
+            .children(project.facts.check.then(|| {
+                crate::controls::action("project-run-check")
+                    .small()
+                    .secondary()
+                    .label("Run check")
+                    .loading(checking)
+                    .tooltip("Run the project's check command")
+                    .on_click(cx.listener(|_: &mut Self, _, _, cx| {
+                        cx.emit(ChatPaneEvent::RunCheck);
+                    }))
+            }))
+            .child(
+                crate::controls::action("project-new-session")
+                    .small()
+                    .primary()
+                    .label("New session")
+                    .on_click(cx.listener(|_: &mut Self, _, _, cx| {
+                        cx.emit(ChatPaneEvent::StartSession {
+                            agent: None,
+                            resume: None,
+                        });
+                    })),
+            );
+        // The command *Run check* runs, and a command step naming none: kept
+        // with the project, saved as it is typed.
+        let check = project.check_input.as_ref().map(|input| {
+            onehand_plugin_host::field(
+                "Check command",
+                Some("What Run check and a command step naming none run here".into_any_element()),
+                text_input(input, cx).tall(),
+                cx,
+            )
+        });
+        let history =
+            (!shown.is_empty()).then(|| {
+                div()
                     .v_flex()
-                    .items_center()
-                    .justify_center()
-                    .p_6()
-                    .child(
+                    .gap_2()
+                    .w_full()
+                    .child(div().font_semibold().child("Past conversations"))
+                    .child(div().v_flex().children(
+                        shown.into_iter().zip(&project.rows).enumerate().map(
+                            |(i, (meta, focus))| {
+                                // The agent *is* named here, unlike in a session's own
+                                // picker: this list crosses every agent that has worked
+                                // in the project, and resuming a row starts a session on
+                                // the one that held it.
+                                let subtitle = format!(
+                                    "{} · {} items · {}",
+                                    rel_time(now, meta.updated),
+                                    meta.item_count,
+                                    meta.agent
+                                );
+                                let (agent, archive) =
+                                    (SharedString::from(meta.agent.clone()), meta.dir.clone());
+                                let dir = meta.dir.clone();
+                                let name = SharedString::from(meta.title.clone());
+                                let group = SharedString::from(format!("home-row-{i}"));
+                                conversation_card(
+                                    ("home", i),
+                                    meta.title.clone().into(),
+                                    subtitle.into(),
+                                    cx,
+                                )
+                                .group(group.clone())
+                                .track_focus(focus)
+                                .border_1()
+                                .border_color(gpui::transparent_black())
+                                .focus_visible(|row| row.border_color(ring))
+                                .on_click(cx.listener(move |_: &mut Self, _, _, cx| {
+                                    cx.emit(ChatPaneEvent::StartSession {
+                                        agent: Some(agent.clone()),
+                                        resume: Some(archive.clone()),
+                                    });
+                                }))
+                                // A word rather than a glyph: everything else here can
+                                // be done again, and a deleted conversation cannot. In
+                                // the row's trailing slot, shown while it is pointed
+                                // at or the keyboard is on it; the press stops
+                                // there, or it also opens the row.
+                                .child(
+                                    onehand_plugin_host::hover_slot(
+                                        group,
+                                        false,
+                                        crate::controls::action(("home-delete", i))
+                                            .quiet(cx)
+                                            .small()
+                                            .text_color(danger)
+                                            .label("Delete…")
+                                            .tooltip("Delete this conversation")
+                                            .on_click(cx.listener(
+                                                move |pane: &mut Self, _, window, cx| {
+                                                    cx.stop_propagation();
+                                                    pane.confirm_delete(
+                                                        dir.clone(),
+                                                        name.clone(),
+                                                        window,
+                                                        cx,
+                                                    );
+                                                },
+                                            )),
+                                    )
+                                    .focus(focus),
+                                )
+                            },
+                        ),
+                    ))
+                    .children((hidden > 0).then(|| {
                         div()
-                            .v_flex()
-                            .gap_3()
-                            .w_full()
-                            .max_w(PAGE_NARROW)
-                            // Bounded by the panel it sits in, so the page is
-                            // centred while it fits and fills the space when it
-                            // does not. Without this the column takes its
-                            // content's height whatever that is, and a project
-                            // with a full list of archives on a short window
-                            // pushed its own rows out through the top and bottom
-                            // of the panel -- unreachable, because the centring
-                            // spends the overflow at both ends and there is
-                            // nothing to scroll.
-                            .max_h_full()
-                            .min_h_0()
-                            // The project's name is *not* repeated here. The
-                            // header above says it now, in the same place it
-                            // says a conversation's name, and printing it again
-                            // two rows lower was one word twice on a page whose
-                            // whole job is to offer the few things there are.
-                            .child(
-                                div()
-                                    .h_flex()
-                                    .gap_2()
-                                    .child(
-                                        crate::controls::action("project-new-session")
-                                            .tall()
-                                            .primary()
-                                            .icon(Icon::new(IconName::Plus))
-                                            .label("New session")
-                                            .on_click(cx.listener(|_: &mut Self, _, _, cx| {
-                                                cx.emit(ChatPaneEvent::StartSession {
-                                                    agent: None,
-                                                    resume: None,
-                                                });
-                                            })),
-                                    )
-                                    .children(project.facts.check.then(|| {
-                                        crate::controls::action("project-run-check")
-                                            .tall()
-                                            .secondary()
-                                            .label("Run check")
-                                            .tooltip("Run the project's check command")
-                                            .on_click(cx.listener(|_: &mut Self, _, _, cx| {
-                                                cx.emit(ChatPaneEvent::RunCheck);
-                                            }))
-                                    })),
-                            )
-                            // The command *Run check* runs, and a command step
-                            // naming none: kept with the project, saved as it
-                            // is typed.
-                            .children(project.check_input.as_ref().map(|input| {
-                                div()
-                                    .v_flex()
-                                    .gap_1()
-                                    .w_full()
-                                    .child(div().text_xs().text_color(muted).child(
-                                        "Check command: what Run check and a command step \
-                                         naming none run here",
-                                    ))
-                                    .child(text_input(input, cx).small())
-                            }))
-                            // What this project's tasks need, as one line to
-                            // the Tasks page. Above the conversations: one is
-                            // work left half done.
-                            .children(tasks_link(&project.path, cx))
-                            .children(
-                                note.map(|note| div().text_xs().text_color(muted).child(note)),
-                            )
-                            // The archives are the one part of this page that
-                            // grows, so they are the part that scrolls. *New
-                            // session* above and the count of what was left out
-                            // below stay put: the first is why most people are
-                            // on this page, and the second is the page saying a
-                            // bound bit, which it cannot do from under the fold.
-                            .children((!shown.is_empty()).then(|| {
-                                div()
-                                    .id("project-history")
-                                    .v_flex()
-                                    .gap_3()
-                                    .w_full()
-                                    .min_h_0()
-                                    .overflow_y_scroll()
-                                    .child(
-                                        div()
-                                            .text_xs()
-                                            .text_color(muted)
-                                            .child("Past conversations"),
-                                    )
-                                    .children(shown.into_iter().enumerate().map(|(i, meta)| {
-                                        // The agent *is* named here, unlike in a session's own
-                                        // picker: this list crosses every agent that has worked
-                                        // in the project, and resuming a row starts a session on
-                                        // the one that held it.
-                                        let subtitle = format!(
-                                            "{} · {} items · {}",
-                                            rel_time(now, meta.updated),
-                                            meta.item_count,
-                                            meta.agent
-                                        );
-                                        let (agent, archive) = (
-                                            SharedString::from(meta.agent.clone()),
-                                            meta.dir.clone(),
-                                        );
-                                        let dir = meta.dir.clone();
-                                        let name = SharedString::from(meta.title.clone());
-                                        conversation_card(
-                                            ("home", i),
-                                            meta.title.clone().into(),
-                                            subtitle.into(),
-                                            cx,
-                                        )
-                                        .on_click(cx.listener(move |_: &mut Self, _, _, cx| {
-                                            cx.emit(ChatPaneEvent::StartSession {
-                                                agent: Some(agent.clone()),
-                                                resume: Some(archive.clone()),
-                                            });
-                                        }))
-                                        // A word rather than a glyph, and this is the one
-                                        // control in the app that earns the distinction:
-                                        // everything else it offers can be done again --
-                                        // a closed session respawns, a removed project is
-                                        // added back -- and a deleted conversation cannot.
-                                        //
-                                        // Inside the card, so it is plainly about the
-                                        // conversation beside it rather than about the row
-                                        // it happened to be nearest. That puts one clickable
-                                        // inside another, which is what the stop below is
-                                        // for: without it the press that asks to delete a
-                                        // conversation also opens it.
-                                        .child(
-                                            crate::controls::action(("home-delete", i))
-                                                .quiet(cx)
-                                                .small()
-                                                .text_color(danger)
-                                                .label("Delete…")
-                                                .tooltip("Delete this conversation")
-                                                .on_click(cx.listener(
-                                                    move |pane: &mut Self, _, window, cx| {
-                                                        cx.stop_propagation();
-                                                        pane.confirm_delete(
-                                                            dir.clone(),
-                                                            name.clone(),
-                                                            window,
-                                                            cx,
-                                                        );
-                                                    },
-                                                )),
-                                        )
-                                    }))
-                            }))
-                            .children((hidden > 0).then(|| {
-                                div()
-                                    .text_xs()
-                                    .text_color(muted)
-                                    .child(format!("{hidden} older not shown"))
-                            })),
+                            .text_xs()
+                            .text_color(muted)
+                            .child(format!("{hidden} older not shown"))
+                    }))
+            });
+
+        // The header stays: it is the panel's only chrome, and what it still
+        // answers here is about the project (the file tree, a shell, the way
+        // back to a hidden rail). Under it the page is one column from the top
+        // that scrolls as one; the project's name is the header's to say.
+        div()
+            .size_full()
+            .v_flex()
+            .child(self.header(cx))
+            .child(
+                div()
+                    .id("project-page")
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .px_8()
+                    .py_6()
+                    .child(
+                        div().h_flex().w_full().justify_center().child(
+                            div()
+                                .v_flex()
+                                .gap_6()
+                                .w_full()
+                                .max_w(PAGE_NARROW)
+                                .text_sm()
+                                .child(head)
+                                .children(check)
+                                .children(
+                                    note.map(|note| div().text_xs().text_color(muted).child(note)),
+                                )
+                                .children(history),
+                        ),
                     ),
             )
             .into_any_element()
@@ -614,7 +614,6 @@ fn tasks_link(root: &Path, cx: &mut Context<ChatPane>) -> Option<gpui::AnyElemen
         crate::controls::action("project-tasks")
             .quiet(cx)
             .small()
-            .icon(Icon::new(IconName::Inbox))
             .label(said.join(" · "))
             .tooltip("Show these tasks on the Tasks page")
             .on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {
@@ -644,23 +643,13 @@ fn conversation_card(
     subtitle: SharedString,
     cx: &App,
 ) -> Stateful<Div> {
-    div()
+    onehand_plugin_host::row(false, cx)
         .id(id)
         .h_flex()
         .items_center()
         .gap_2()
         .w_full()
-        .p_2()
-        .rounded(cx.theme().radius_lg)
-        .border_1()
-        .border_color(cx.theme().border)
-        .cursor_pointer()
-        // Hover is the fill alone, and the row's hairline stays what it was.
-        // The tint these rows carried before was under a twentieth of a step
-        // off the card in the light palette -- no feedback at all on a list
-        // whose whole purpose is picking one row out of several -- but that was
-        // the palette's fault, not the fill's, and the ramp answers it.
-        .hover(|row| row.bg(cx.theme().list_hover))
+        .py_1p5()
         .child(
             div()
                 .v_flex()

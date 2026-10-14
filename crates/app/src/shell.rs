@@ -33,7 +33,7 @@ mod sessions;
 mod settings_page;
 mod storage;
 mod workflows;
-pub use boot::{boot, install_look, open_or_focus, seed_workspace};
+pub use boot::{boot, open_or_focus, seed_workspace};
 pub use drafts::{BranchDraft, Draft, WorktreeDraft};
 pub use workflows::WorkflowLauncher;
 pub(crate) use workflows::brief;
@@ -263,6 +263,12 @@ pub struct Shell {
     /// A pending workspace write. Replacing it cancels the one before, which
     /// is the whole debounce — see [`Shell::save_workspace_soon`].
     _pending_save: Option<gpui::Task<()>>,
+    /// Each thing in the workspace file a failed write puts back: its value
+    /// known saved, its newest change, and the newest write carrying it.
+    saves: onehand_core::saving::Saves<storage::Thing, storage::Put>,
+    /// The docks' open state as last saved, so opening or closing one
+    /// schedules a save.
+    docks_saved: Option<crate::chat::DocksOpen>,
     /// A pending agent pre-start, cancelled the same way — see
     /// [`Shell::warm_default_agent`].
     _pending_warm: Option<gpui::Task<()>>,

@@ -325,6 +325,24 @@ fn streamed_chunks_append_to_one_block() {
     assert_eq!(md.source, "```rust\nlet x = 1;\n```\n\ntext\n");
 }
 
+/// An earlier turn's item is not part of the turn running now, so a step it
+/// left in hand does not turn while a later prompt runs.
+#[test]
+fn only_the_last_turn_is_the_running_one() {
+    let mut chat = Chat::default();
+    chat.items.push(ChatItem::User(UserMsg::text("one")));
+    chat.items.push(ChatItem::notice("first turn"));
+    chat.items.push(ChatItem::User(UserMsg::text("two")));
+    chat.items.push(ChatItem::notice("second turn"));
+    let running = |chat: &Chat, idx| chat.in_running_turn(TranscriptItemId::Live(idx));
+
+    assert!(!running(&chat, 3), "nothing runs while the session is idle");
+    chat.busy = true;
+    assert!(!running(&chat, 1), "the earlier turn is over");
+    assert!(running(&chat, 3));
+    assert!(!chat.in_running_turn(TranscriptItemId::History(3)));
+}
+
 #[test]
 fn turn_answer_combines_a_turn_and_marks_the_last_block() {
     // A turn split across a tool: two agent blocks bracketing one tool call.
@@ -1938,4 +1956,92 @@ fn a_thought_cut_off_by_a_disconnect_is_finished() {
         panic!("the thought is gone");
     };
     assert!(!th.is_running());
+}
+
+#[test]
+fn a_refused_pick_goes_back_to_what_the_agent_last_confirmed() {
+    let mut chat = Chat::default();
+    let effort = |current: &str| ConfigOption {
+        id: "effort".into(),
+        name: "Effort".into(),
+        current: Some(current.into()),
+        choices: ["low", "high"]
+            .into_iter()
+            .map(|value| ConfigChoice {
+                value: value.into(),
+                name: value.into(),
+                description: None,
+            })
+            .collect(),
+    };
+    chat.apply(AcpEvent::ConfigOptions(vec![effort("low")]));
+    chat.set_config_option("effort", "high");
+    assert_eq!(chat.config_options[0].current.as_deref(), Some("high"));
+    let outcome = chat.apply(AcpEvent::PickRefused {
+        group: "effort".into(),
+        why: "not on this plan".into(),
+    });
+    assert_eq!(chat.config_options[0].current.as_deref(), Some("low"));
+    assert_eq!(outcome.pick_refused.as_deref(), Some("not on this plan"));
+
+    chat.apply(AcpEvent::ModeChanged("default".into()));
+    chat.set_mode("plan");
+    chat.apply(AcpEvent::PickConfirmed {
+        group: MODE_SELECTOR.into(),
+        value: "plan".into(),
+    });
+    chat.set_mode("auto");
+    chat.apply(AcpEvent::PickRefused {
+        group: MODE_SELECTOR.into(),
+        why: "no".into(),
+    });
+    assert_eq!(
+        chat.current_mode.as_deref(),
+        Some("plan"),
+        "the last confirmed"
+    );
+}
+
+/// Two picks in flight: the older one's refusal is superseded by the newer
+/// one, so it neither puts back what is shown nor is said; the newest's is.
+#[test]
+fn an_older_refused_pick_leaves_a_newer_one_shown() {
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut chat = Chat::default();
+    chat.apply(AcpEvent::Connected { tx, resumed: false });
+    chat.apply(AcpEvent::ModeChanged("default".into()));
+    let refused = |chat: &mut Chat| {
+        chat.apply(AcpEvent::PickRefused {
+            group: MODE_SELECTOR.into(),
+            why: "no".into(),
+        })
+        .pick_refused
+    };
+
+    chat.set_mode("plan");
+    chat.set_mode("auto");
+    assert_eq!(refused(&mut chat), None, "superseded, so not said");
+    assert_eq!(chat.current_mode.as_deref(), Some("auto"));
+    chat.apply(AcpEvent::PickConfirmed {
+        group: MODE_SELECTOR.into(),
+        value: "auto".into(),
+    });
+    assert_eq!(chat.current_mode.as_deref(), Some("auto"));
+
+    chat.set_mode("plan");
+    chat.set_mode("bypass");
+    chat.apply(AcpEvent::PickConfirmed {
+        group: MODE_SELECTOR.into(),
+        value: "plan".into(),
+    });
+    assert_eq!(
+        refused(&mut chat).as_deref(),
+        Some("no"),
+        "the newest is said"
+    );
+    assert_eq!(
+        chat.current_mode.as_deref(),
+        Some("plan"),
+        "and goes back to what the agent last confirmed"
+    );
 }

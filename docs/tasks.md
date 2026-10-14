@@ -33,14 +33,21 @@ running, what needs me, and what has finished.
   resumed, retried and dismissed from its row. See [unattended.md](unattended.md).
 - **History is bounded:** the most recent 200 finished tasks per project. The page says how many
   older ones were removed since onehand started.
-- **Every card is capped at 50 rows** and says how many more it left out.
+- **Every box is capped at 50 rows** and says how many more it left out.
+- **The project filter** is a picker in a filter bar above the boxes, kept while the page is left;
+  a project's page sets it. The boxes stand two by two while the column holds two. A row shows its
+  actions while it is pointed at, except under *Needs attention*, whose next action stays drawn.
 
-**The task detail** opens in place of the cards when a row's text is pressed, with *All tasks* to
-go back. It shows:
+**The task detail** opens in place of the boxes when a row's text is pressed, read as a page at
+the prose width, its parts plain sections. It shows:
 
-- **a head**: the title, the row's muted line, and the row's actions, plus *Retry* on a finished
-  task, and *Answer the pull request review* on an issue's task that can answer one, done with a
-  pull request it opened;
+- **a trail**: *Tasks* to go back (Esc too), then what can be done with the task: the most
+  fitting a primary (a secondary while *Awaiting approval* or the way out holds the view's one
+  primary), the next a secondary, the rest in ⋯ (*Retry…* on a finished task, *Answer the
+  pull request review…* on an issue's task that can answer one, done with a pull request it
+  opened, and *Remove worktree…* in the danger ink once its pull request reads merged); ⋯ is
+  always drawn, so that late arrival shifts nothing;
+- **a head**: the title, large, and the row's muted line;
 - **Way out**, on an ended task: why it ended and the way out that fits, in the issue's words
   (`next_action`), with *Retry with current settings…* when that is a way out (first for a
   configuration failure);
@@ -54,7 +61,9 @@ go back. It shows:
   Pressing a file shows its line diff in the transcript's diff renderer, cut at 400 lines; a binary
   file is listed but does not open. A visit under way, on a task at work, says *In progress*; an open
   visit of any other task was cut off by a quit or a lost session, says *Cut off* and gives no
-  duration; one with a mark missing says *No marks were pinned for this visit.* The timeline draws the newest 100 visits and a visit lists 100 files, each cap said;
+  duration; one with a mark missing says *No marks were pinned for this visit*. A read that fails says *Reading
+the diff failed: <why>* in the warning ink. The timeline draws the newest 100 visits and a visit
+lists 100 files, each cap said;
 - **Earlier runs**, newest first and the newest 20 of them: the run's number, how it ended and
   when, each opening onto the same timeline.
 
@@ -399,7 +408,7 @@ migration it protects.
 - **After a restart nothing starts by itself.** A task that was running or queued comes back
   interrupted, under *Needs attention*, and waits for Resume.
 - **Worktrees are never removed unasked.** A task's worktree may hold unpushed commits. Once its
-  pull request is merged a person may press *Remove worktree…* (on the issue, and on the task
+  pull request is merged a person may press *Remove worktree…* (in the issue's ⋯, and on the task
   detail once it has read the pull request), which is judged and asked in a modal
   ([unattended.md](unattended.md#the-report)); the task's marks stay until the history cap drops
   them.

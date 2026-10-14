@@ -36,7 +36,8 @@
 // stops it where it is.
 //
 // It answers `session/set_config_option` and `session/set_mode` by echoing the
-// new state back, so the chips move when they are used. Nothing is written to
+// new state back, so the chips move when they are used, except Max effort,
+// which it refuses. Nothing is written to
 // disk and no process is spawned.
 //
 // Being a mock *agent* rather than a mock mode inside the app is the whole
@@ -739,6 +740,15 @@ rl.on('line', (line) => {
     case 'session/set_config_option': {
       const id = m.params?.configId;
       const value = m.params?.value;
+      // One pick is refused, so a chip going back to what the agent last
+      // confirmed, and the one toast saying why, can be seen.
+      if (id === 'effort' && value === 'max') {
+        return send({
+          jsonrpc: '2.0',
+          id: m.id,
+          error: { code: -32602, message: 'Max effort is not available on this plan' },
+        });
+      }
       if (id in config) config[id] = typeof value === 'boolean' ? (value ? 'on' : 'off') : value;
       send({ jsonrpc: '2.0', id: m.id, result: {} });
       // Republished rather than assumed: the chip is meant to be showing what

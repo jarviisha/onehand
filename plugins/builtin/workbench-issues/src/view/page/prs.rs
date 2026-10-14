@@ -99,6 +99,7 @@ impl IssuesView {
         let generation = page.pr_asked.entry(root.clone()).or_default();
         *generation += 1;
         let generation = *generation;
+        page.pr_reading += 1;
         cx.spawn(async move |view, cx| {
             let answer = cx
                 .background_executor()
@@ -111,6 +112,10 @@ impl IssuesView {
                 let Some(page) = view.page.as_mut() else {
                     return;
                 };
+                // Counted down whatever the answer, a stale one included:
+                // the read it stood for is no longer out.
+                page.pr_reading = page.pr_reading.saturating_sub(1);
+                cx.notify();
                 if page.pr_asked.get(&root) != Some(&generation) {
                     return;
                 }

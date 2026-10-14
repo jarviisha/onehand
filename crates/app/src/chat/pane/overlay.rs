@@ -285,9 +285,17 @@ impl ChatPane {
                                     .w_full()
                                     .max_w(COMPOSER_COLUMN)
                                     .mx_auto()
-                                    .child(self.composer.update(cx, |composer, cx| {
-                                        composer.card(session, blocked, cx)
-                                    }))
+                                    .child({
+                                        // A run waiting at an approval holds the
+                                        // view's one primary, so Send steps down.
+                                        let waits = self
+                                            .active
+                                            .and_then(|uid| crate::task::shown(uid, cx))
+                                            .is_some_and(|shown| shown.review.is_some());
+                                        self.composer.update(cx, |composer, cx| {
+                                            composer.card(session, blocked, waits, cx)
+                                        })
+                                    })
                                     // Under the card and inside the measured
                                     // box, so the transcript ends above the
                                     // strip rather than behind it: the height

@@ -61,7 +61,7 @@ pub fn confirm_on<T: 'static>(
             .danger()
             .label(ask.act);
         let go = match ask.refused {
-            true => go.refuses(true),
+            true => go.refuses(Some("What was found above stops it")),
             false => go.on_click(move |_, window: &mut Window, cx: &mut App| {
                 window.close_dialog(cx);
                 let then = then.clone();

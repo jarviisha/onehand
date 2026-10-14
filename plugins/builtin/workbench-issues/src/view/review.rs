@@ -19,7 +19,7 @@ use gpui::{
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::TextareaState;
 use gpui_component::text::TextView;
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Sizable as _, StyledExt};
 use onehand_core::issues::template::section;
 use onehand_core::issues::{IssueKey, LocalIssue};
 use onehand_core::task::Approval;
@@ -29,7 +29,7 @@ use onehand_core::task::work::{
 };
 use onehand_plugin_host::Quiet as _;
 use onehand_plugin_host::text_area;
-use onehand_plugin_host::{Refuses as _, Request, action, status_ink};
+use onehand_plugin_host::{Refuses as _, Request, action, card_box, fold_toggle, status_ink};
 use std::path::{Path, PathBuf};
 
 /// How many lines of what a check printed are drawn: its last ones, where a
@@ -335,25 +335,19 @@ impl IssuesView {
             )
             .child(
                 action("issue-review-close")
-                    .xsmall()
+                    .small()
                     .quiet(cx)
                     .label("Close")
                     .on_click(cx.listener(|view, _: &ClickEvent, _, cx| view.close_review(cx))),
             );
 
-        let mut block = div()
+        let mut block = card_box(cx)
             .id("issue-review")
             .flex_none()
             .max_h(BLOCK_MAX_H)
             .overflow_y_scroll()
-            .v_flex()
-            .gap_2()
-            .mx_3()
-            .my_2()
-            .p_2()
-            .rounded(cx.theme().radius)
-            .border_1()
-            .border_color(cx.theme().border)
+            .mx_4()
+            .mt_3()
             .text_sm()
             .child(head);
         if review.changed && review.sent.is_none() {
@@ -379,7 +373,7 @@ impl IssuesView {
                 .when(cut, |column| {
                     column.child(
                         action("issue-review-whole")
-                            .xsmall()
+                            .small()
                             .quiet(cx)
                             .label(format!("Show all {total} lines"))
                             .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
@@ -433,28 +427,13 @@ impl IssuesView {
                 div()
                     .v_flex()
                     .gap_1()
-                    .child(
-                        div()
-                            .id("issue-review-acceptance")
-                            .h_flex()
-                            .gap_1()
-                            .items_center()
-                            .cursor_pointer()
-                            .text_color(muted)
-                            .hover(|row| row.underline())
-                            .child(
-                                Icon::new(if open {
-                                    IconName::ChevronDown
-                                } else {
-                                    IconName::ChevronRight
-                                })
-                                .xsmall(),
-                            )
-                            .child("Acceptance")
-                            .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
+                    .child(div().h_flex().child(
+                        fold_toggle("issue-review-acceptance", "Acceptance", open, cx).on_click(
+                            cx.listener(|view, _: &ClickEvent, _, cx| {
                                 view.toggle_review(|r| r.acceptance = !r.acceptance, cx)
-                            })),
-                    )
+                            }),
+                        ),
+                    ))
                     .when(open, |column| {
                         column.child(TextView::markdown(
                             "issue-review-acceptance-text",
@@ -527,8 +506,7 @@ fn check_line(
             .when(!printed.is_empty(), |column| {
                 column.child(
                     onehand_plugin_host::well(cx)
-                        .p_1()
-                        .text_xs()
+                        .p_2()
                         .children(printed.lines().map(|line| div().child(line.to_string()))),
                 )
             })
@@ -568,17 +546,17 @@ fn answers(
         let empty = note.read(cx).value().trim().is_empty();
         return div()
             .v_flex()
-            .gap_1()
+            .gap_2()
             .child(div().text_color(muted).child(read.revise_said()))
             .child(text_area(note, cx).h(NOTE_H))
             .child(
                 div()
                     .h_flex()
-                    .gap_1()
+                    .gap_2()
                     .justify_end()
                     .child(
                         action("issue-review-cancel")
-                            .xsmall()
+                            .small()
                             .quiet(cx)
                             .label("Cancel")
                             .on_click(
@@ -587,11 +565,10 @@ fn answers(
                     )
                     .child(
                         action("issue-review-send")
-                            .xsmall()
+                            .small()
                             .primary()
                             .label("Send back")
-                            .refuses(empty)
-                            .when(empty, |send| send.tooltip("Say what to change first"))
+                            .refuses(empty.then_some("Say what to change first"))
                             .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
                                 view.send_revise(window, cx)
                             })),
@@ -601,12 +578,12 @@ fn answers(
     }
     div()
         .v_flex()
-        .gap_1()
+        .gap_2()
         .when(cut, |column| {
             column.child(
                 div()
                     .text_color(ink.warning)
-                    .child(format!("Showing the last {ANSWER_LINES} of {lines} lines.")),
+                    .child(format!("Showing the last {ANSWER_LINES} of {lines} lines")),
             )
         })
         .child(
@@ -616,7 +593,7 @@ fn answers(
                 .items_center()
                 .child(
                     action("issue-review-revise")
-                        .xsmall()
+                        .small()
                         .quiet(cx)
                         .label("Revise…")
                         .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
@@ -639,9 +616,8 @@ fn answers(
                 .items_center()
                 .child(
                     action("issue-review-continue")
-                        .xsmall()
+                        .small()
                         .primary()
-                        .icon(Icon::new(IconName::Check))
                         .label("Continue")
                         .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
                             view.press_continue(window, cx)

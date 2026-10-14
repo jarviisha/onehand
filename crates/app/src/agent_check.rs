@@ -100,6 +100,8 @@ fn check(ask: &Ask, cx: &mut App) {
                     | AcpEvent::Elicitation(_)
                     | AcpEvent::AvailableCommands(_)
                     | AcpEvent::ModeChanged(_)
+                    | AcpEvent::PickConfirmed { .. }
+                    | AcpEvent::PickRefused { .. }
                     | AcpEvent::ConfigOptions(_)
                     | AcpEvent::TerminalOutput { .. }
                     | AcpEvent::TerminalExit { .. }
@@ -179,10 +181,7 @@ pub(crate) fn button(id: usize, ask: &Ask, cx: &App) -> AnyElement {
                 .quiet(cx)
                 .small()
                 .loading(running)
-                .label(match running {
-                    true => "Checking…",
-                    false => "Check the agent",
-                })
+                .label("Check the agent")
                 .on_click(move |_, _: &mut Window, cx: &mut App| check(&ask, cx)),
         )
         .into_any_element()

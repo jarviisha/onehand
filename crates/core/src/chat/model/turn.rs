@@ -460,6 +460,20 @@ impl Chat {
         }
     }
 
+    /// Whether the item at `target` belongs to the turn running now: a live
+    /// item with no prompt after it, while the session is busy. An earlier
+    /// turn's step left in hand is not being worked on, whatever runs later.
+    pub fn in_running_turn(&self, target: TranscriptItemId) -> bool {
+        let TranscriptItemId::Live(idx) = target else {
+            return false;
+        };
+        self.busy
+            && self
+                .items
+                .get(idx + 1..)
+                .is_some_and(|after| !after.iter().any(|it| matches!(it, ChatItem::User(_))))
+    }
+
     /// For the agent block at `idx`, describe its turn for the Copy affordance
     /// (see [`TurnAnswer`]). `None` when `idx` is not an agent block. Turns are
     /// delimited by user prompts: the range runs from just after the previous

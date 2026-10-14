@@ -11,7 +11,7 @@ use crate::controls::Tall as _;
 use gpui::{App, Context, Entity, ParentElement as _, SharedString, Styled as _, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::{ActiveTheme as _, Icon, IconName, Sizable as _, StyledExt as _};
+use gpui_component::{ActiveTheme as _, StyledExt as _};
 use onehand_core::preflight;
 use onehand_core::task::marks::{self, Against};
 use onehand_core::task::work::Act;
@@ -217,11 +217,13 @@ impl Shell {
                 let at = choices.get(picked.get()).cloned().unwrap_or_default();
                 crate::controls::menu_below(
                     "retry-from",
-                    crate::controls::action("retry-from-trigger")
-                        .secondary()
-                        .small()
-                        .label(format!("From {at}"))
-                        .icon(Icon::new(IconName::ChevronDown)),
+                    onehand_plugin_host::picker(
+                        "retry-from-trigger",
+                        format!("From {at}"),
+                        true,
+                        onehand_plugin_host::ControlSize::Tall,
+                        cx,
+                    ),
                     move |mut menu, _, _| {
                         for (i, label) in choices.iter().enumerate() {
                             let (picked, shell) = (picked.clone(), shell.clone());
@@ -454,11 +456,11 @@ fn kept_lines(last: &Run, differs: &[Changed]) -> Vec<(String, bool)> {
         .collect()
 }
 
-/// A retry dialog's footer: *Cancel*, an action beside, and the confirm,
-/// spent while something blocks it. Wrapped, for a narrow window. Cancel
-/// closes through the library's close box, as every cancel here does; that
-/// box is full width, so a box of its own sized to the button keeps it on
-/// the row.
+/// A retry dialog's footer: the third action at its start, then *Cancel* and
+/// the confirm at its end, spent while something blocks it. Wrapped, for a
+/// narrow window. Cancel closes through the library's close box, as every
+/// cancel here does; that box is full width, so a box of its own sized to the
+/// button keeps it on the row.
 fn footer(
     id: &'static str,
     beside: Option<gpui_component::button::Button>,
@@ -469,6 +471,9 @@ fn footer(
 ) -> gpui_component::dialog::DialogFooter {
     gpui_component::dialog::DialogFooter::new()
         .flex_wrap()
+        .w_full()
+        .children(beside)
+        .child(gpui::div().flex_1())
         .child(
             gpui::div().flex_none().child(
                 gpui_component::dialog::DialogClose::new().child(
@@ -479,14 +484,13 @@ fn footer(
                 ),
             ),
         )
-        .children(beside)
         .child({
             let button = crate::controls::action(SharedString::from(format!("{id}-confirm")))
                 .tall()
                 .primary()
                 .label(confirm);
             match blocked {
-                true => button.refuses(true),
+                true => button.refuses(Some("A finding above blocks it")),
                 false => button.on_click(move |_, window: &mut Window, cx: &mut App| {
                     window.close_dialog(cx);
                     run(window, cx);
@@ -511,12 +515,16 @@ impl Shell {
         };
         let has_check = self.check_of(&task.setup.repo).is_some();
         let reading = crate::unattended::read_review(&id, cx);
+        // Its button waits wherever it is drawn until the review is read.
+        crate::task::set_acting(&id, Some(Act::AnswerReview), cx);
         cx.spawn_in(window, async move |shell, cx| {
             let read = reading.await;
-            let _ = shell.update_in(cx, |shell: &mut Self, window, cx| match read {
-                Ok(read) => shell.confirm_answer(task, read, has_check, window, cx),
-                Err(why) => {
-                    window.push_notification(crate::toast::failed("Reading the review", why), cx)
+            let _ = shell.update_in(cx, |shell: &mut Self, window, cx| {
+                crate::task::set_acting(&id, None, cx);
+                match read {
+                    Ok(read) => shell.confirm_answer(task, read, has_check, window, cx),
+                    Err(why) => window
+                        .push_notification(crate::toast::failed("Reading the review", why), cx),
                 }
             });
         })

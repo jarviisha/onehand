@@ -73,17 +73,7 @@ impl IssuesView {
                 .flex_1()
                 .min_h_0()
                 .v_flex()
-                .child(
-                    div()
-                        .h_flex()
-                        .flex_none()
-                        .items_center()
-                        .px_3()
-                        .py_1p5()
-                        .border_b_1()
-                        .border_color(cx.theme().border)
-                        .child(back),
-                )
+                .child(onehand_plugin_host::strip(cx).child(back))
                 .child(half(detail))
         } else {
             half(self.list(issues, window, cx))

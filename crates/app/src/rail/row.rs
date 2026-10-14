@@ -2,7 +2,6 @@
 //! name, the controls a row carries, and the drags that reorder the tree.
 
 use crate::controls::Quiet as _;
-use gpui::prelude::FluentBuilder as _;
 use gpui::{
     Anchor, App, Context, Div, ElementId, Hsla, InteractiveElement, IntoElement, MouseButton,
     ParentElement, Rems, Render, SharedString, Stateful, StatefulInteractiveElement, Styled,
@@ -33,10 +32,54 @@ pub(super) fn hover_fill(cx: &App) -> Hsla {
     cx.theme().sidebar_accent
 }
 
-/// The fill of the row that is chosen, the one on screen or the keyboard's,
-/// one step past the hover.
+/// The fill of the row that is chosen, the session on screen or the project
+/// whose page shows, one step past the hover.
 pub(super) fn chosen_fill(cx: &App) -> Hsla {
     crate::theme::rail_chosen(cx)
+}
+
+/// A page's row, the rail's and Settings' nav alike: while its page shows,
+/// the chosen fill in the ink paired with it; otherwise muted at rest, the
+/// hover fill under the pointer and its ink unchanged.
+pub(crate) fn page_fill<E: Styled + InteractiveElement>(row: E, on: bool, cx: &App) -> E {
+    match on {
+        true => row
+            .bg(chosen_fill(cx))
+            .text_color(cx.theme().sidebar_accent_foreground),
+        false => {
+            let hover = hover_fill(cx);
+            row.hover(move |row| row.bg(hover))
+                .text_color(cx.theme().muted_foreground)
+        }
+    }
+}
+
+/// The inks a row writes its name and its meta line in. At rest the rail is
+/// navigation, every row of it in the muted ink, and hovering one changes its
+/// fill alone. The chosen row is where the person is: its name in the ink
+/// paired with its fill, and its meta line the step between that and muted,
+/// so the line stays a step under the name there too.
+pub(super) fn row_inks(chosen: bool, cx: &App) -> (Hsla, Hsla) {
+    let muted = cx.theme().muted_foreground;
+    match chosen {
+        true => {
+            let ink = cx.theme().sidebar_accent_foreground;
+            (ink, onehand_plugin_host::middle_ink(ink, muted))
+        }
+        false => (muted, muted),
+    }
+}
+
+/// The ring on the row the keyboard is on, apart from the chosen fill, which
+/// says what is on screen. Laid over the row's edge rather than drawn as a
+/// border of its own, so a row the keys reach does not move by a pixel.
+pub(super) fn key_ring(cx: &App) -> Div {
+    div()
+        .absolute()
+        .inset_0()
+        .rounded(cx.theme().radius)
+        .border_1()
+        .border_color(cx.theme().ring)
 }
 
 /// The two opaque fills a rail row can be showing: at rest, and under the
@@ -61,7 +104,7 @@ pub(super) fn row_surfaces(chosen: bool, cx: &App) -> (Hsla, Hsla) {
 /// on hover.
 pub(super) fn faded(
     id: impl Into<ElementId>,
-    text: impl Into<SharedString>,
+    text: impl IntoElement,
     group: SharedString,
     rest: Hsla,
     hovered: Hsla,
@@ -80,7 +123,7 @@ pub(super) fn faded(
         .min_w_0()
         .overflow_hidden()
         .whitespace_nowrap()
-        .child(text.into())
+        .child(text)
         .child(
             div()
                 .absolute()
@@ -116,21 +159,30 @@ pub(super) fn labelled(
 
 /// Hidden until the pointer is on the row, unless `shown`; the space stays,
 /// so nothing beside it moves when it appears.
-pub(super) fn on_hover(group: &SharedString, shown: bool, child: impl IntoElement) -> Div {
-    div()
-        .flex_none()
-        .when(!shown, |d| {
-            d.invisible().group_hover(group.clone(), |s| s.visible())
-        })
-        .child(child)
+pub(super) fn on_hover(
+    group: &SharedString,
+    shown: bool,
+    child: impl IntoElement,
+) -> onehand_plugin_host::HoverSlot {
+    onehand_plugin_host::hover_slot(group.clone(), shown, child)
 }
 
-/// A control the rail draws: ghost, extra small, icon-only, in muted ink.
-pub(super) fn rail_control(id: impl Into<ElementId>, icon: impl Into<Icon>, cx: &App) -> Button {
+/// A row's own control: a fold, a new session, a `⋯`. Ghost and icon-only, at
+/// the size a row's actions take.
+pub(super) fn row_control(id: impl Into<ElementId>, icon: impl Into<Icon>, cx: &App) -> Button {
     crate::controls::action(id)
-        .quiet(cx)
+        .quiet_icon(false, cx)
+        .small()
+        .icon(icon.into())
+}
+
+/// A control laid over a row's line of meta text, at the size an action in
+/// dense content takes: *Stop*, *Send the last prompt again*, *Close*.
+pub(super) fn meta_control(id: impl Into<ElementId>, icon: impl Into<Icon>, cx: &App) -> Button {
+    crate::controls::action(id)
+        .quiet_icon(false, cx)
         .xsmall()
-        .icon(icon.into().text_color(cx.theme().muted_foreground))
+        .icon(icon.into())
 }
 
 /// A row's `⋯`: the same builder its right-click menu is handed. The wrap is
@@ -183,7 +235,7 @@ impl Render for DragGhost {
         div()
             .px_2()
             .py_0p5()
-            .rounded(cx.theme().radius_tokens().sm)
+            .rounded(cx.theme().radius)
             .bg(chosen_fill(cx))
             .text_sm()
             .text_color(cx.theme().sidebar_accent_foreground)

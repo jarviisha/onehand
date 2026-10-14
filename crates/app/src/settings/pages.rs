@@ -14,6 +14,9 @@ use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::config::Appearance;
 use onehand_core::unattended::Slots;
 
+/// How many entries a Settings list draws before it counts the rest.
+pub(super) const LIST_SHOWN: usize = 50;
+
 /// The field a new workflow label is typed into: a label is a word or two.
 const LABEL_FIELD_W: gpui::Rems = gpui::rems(10.);
 
@@ -34,11 +37,16 @@ fn appearance_picker(
         .gap_1()
         .children(Appearance::ALL.into_iter().enumerate().map(|(i, choice)| {
             let shell = shell.clone();
-            onehand_plugin_host::choice(("appearance", i), choice.label(), choice == current, cx)
-                .tall()
-                .on_click(move |_, window: &mut Window, cx: &mut App| {
-                    shell.update(cx, |shell, cx| shell.set_appearance(choice, window, cx));
-                })
+            onehand_plugin_host::choice(
+                ("appearance", i),
+                choice.label(),
+                choice == current,
+                onehand_plugin_host::ControlSize::Tall,
+                cx,
+            )
+            .on_click(move |_, window: &mut Window, cx: &mut App| {
+                shell.update(cx, |shell, cx| shell.set_appearance(choice, window, cx));
+            })
         }))
 }
 
@@ -52,14 +60,13 @@ pub(super) fn appearance_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         .gap_6()
         .w_full()
         .child(page_head(
-            "Appearance",
-            "How onehand looks. This applies to every window at once.",
+            "How onehand looks, in every window at once",
             APP,
             cx,
         ))
         .child(section(None, None, cx).child(field(
             "Theme",
-            about("Following the system keeps up with it as it changes."),
+            about("Following the system keeps up with it as it changes"),
             appearance_picker(handle, current, cx),
             cx,
         )))
@@ -101,13 +108,13 @@ pub(super) fn workspace_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
             .text_xs()
             .child(dir)
             .into_any_element(),
-        None => "Not bound — nothing about this workspace is saved.".into_any_element(),
+        None => "Not bound — nothing about this workspace is saved".into_any_element(),
     };
 
     let general = section(None, None, cx)
         .child(field(
             "Name",
-            about("Written at the top of the rail."),
+            about("Written at the top of the rail"),
             text_input(&name, cx).tall(),
             cx,
         ))
@@ -130,7 +137,7 @@ pub(super) fn workspace_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                     crate::controls::action("unbind-storage")
                         .tall()
                         .secondary()
-                        .refuses(!bound)
+                        .refuses((!bound).then_some("No storage folder is bound"))
                         .label("Unbind")
                         .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
                             unbind.update(cx, |shell, cx| shell.unbind_storage(window, cx));
@@ -142,7 +149,7 @@ pub(super) fn workspace_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         Some("Other workspaces"),
         Some(
             "Each opens in a window of its own; one already on screen is brought forward \
-             instead. This window's workspace is left as it is."
+             instead, and this window's workspace is left as it is"
                 .into(),
         ),
         cx,
@@ -175,10 +182,10 @@ pub(super) fn workspace_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         .v_flex()
         .gap_6()
         .w_full()
+        // The scope is the workspace, not its name: the field below says that.
         .child(page_head(
+            "This window's workspace: its name, where it is kept, and the runs it may start",
             "Workspace",
-            "This window's workspace: its name, where it is kept, and the runs it may start.",
-            format!("Workspace: {}", name.read(cx).value()),
             cx,
         ))
         .child(general)
@@ -217,7 +224,9 @@ pub(super) fn connections_page(cx: &App) -> AnyElement {
                     .map(|(_, account)| account.clone())
             }) {
                 None => ("Checking…".to_string(), muted),
-                Some(Ok(who)) => (who, ink.success),
+                // Signed in is the state at rest: muted, as a fact is. Only a
+                // failure, which needs the person, takes an ink.
+                Some(Ok(who)) => (who, muted),
                 Some(Err(why)) => (why, ink.warning),
             };
             list_row(
@@ -235,8 +244,7 @@ pub(super) fn connections_page(cx: &App) -> AnyElement {
         .gap_6()
         .w_full()
         .child(page_head(
-            "Connections",
-            "The services onehand reaches outside the checkout, and who it acts as on each.",
+            "The services onehand reaches outside the checkout, and who it acts as on each",
             APP,
             cx,
         ))
@@ -245,25 +253,21 @@ pub(super) fn connections_page(cx: &App) -> AnyElement {
                 div()
                     .h_flex()
                     .items_center()
-                    .gap_3()
+                    .gap_2()
                     .pt_2()
                     .child(
                         crate::controls::action("connections-recheck")
                             .tall()
                             .secondary()
-                            .refuses(checking)
-                            .label(if checking {
-                                "Checking…"
-                            } else {
-                                "Check again"
-                            })
+                            .loading(checking)
+                            .label("Check again")
                             .on_click(|_: &ClickEvent, _: &mut Window, cx: &mut App| {
                                 crate::unattended::recheck(cx);
                             }),
                     )
                     .children(checked.map(|when| {
                         div()
-                            .text_sm()
+                            .text_xs()
                             .text_color(muted)
                             .child(format!("Last checked {when}"))
                     })),
@@ -295,11 +299,25 @@ fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
              Issues tab — in a project switched on here is picked up by an agent, worked in \
              a worktree of its own, and answered with a pull request, or with commits on its \
              branch where the project has no forge. The switches are this workspace's; the \
-             label and how often to look are the app's, set in its config file ({config}), \
-             and so is the agent a run uses — the default agent unless that file names \
-             another."
+             label and how often to look are the app's, set in its config file, and so is \
+             the agent a run uses — the default agent unless that file names another"
         ))),
         cx,
+    )
+    // The config file's path in the face a path is set in.
+    .child(
+        div()
+            .h_flex()
+            .flex_wrap()
+            .gap_1()
+            .text_xs()
+            .text_color(cx.theme().muted_foreground)
+            .child("Config file")
+            .child(
+                div()
+                    .font_family(cx.theme().mono_font_family.clone())
+                    .child(config),
+            ),
     )
     // The search on demand, rather than at the next tick half an hour away. It
     // looks where the tick would, and does nothing the tick would not.
@@ -307,14 +325,15 @@ fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         "Search",
         about(
             "Look for a labelled issue now rather than at the next scheduled look — in every \
-             open workspace, as the scheduled look does. Runs reach the forge through the \
-             Connections page.",
+             open workspace, as the scheduled look does; runs reach the forge through the \
+             Connections page",
         ),
         div().h_flex().child(
             crate::controls::action("unattended-look-now")
                 .tall()
                 .secondary()
                 .label("Look for an issue now")
+                .loading(crate::unattended::claiming(cx))
                 .on_click(|_: &ClickEvent, window: &mut Window, cx: &mut App| {
                     crate::unattended::look_now(window.window_handle(), cx);
                 }),
@@ -326,7 +345,7 @@ fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         "Workflow",
         about(
             "What an issue is worked with, unless one of its workflow labels below names \
-             another. Only workflows that work on a worktree of their own are offered.",
+             another; only workflows that work on a worktree of their own are offered",
         ),
         div().h_flex().child({
             let shell = handle.clone();
@@ -350,8 +369,8 @@ fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     .child(field(
         "Workflow labels",
         about(
-            "A label on an issue, beside the trigger label, that chooses its workflow. An \
-             issue carrying several takes the first in this list.",
+            "A label on an issue, beside the trigger label, that chooses its workflow; an \
+             issue carrying several takes the first in this list",
         ),
         workflow_labels(handle, cx),
         cx,
@@ -361,18 +380,18 @@ fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     .when_some(crate::unattended::blocked(cx), |group, why| {
         group.child(
             div()
-                .text_sm()
+                .text_xs()
                 .text_color(ink.warning)
                 .child(format!("Nothing will be picked up: {why}")),
         )
     })
     .child(field(
         "Projects",
-        empty.then(|| "No project in this workspace can be switched on.".into_any_element()),
+        empty.then(|| "No project in this workspace can be switched on".into_any_element()),
         div()
             .v_flex()
             .gap_3()
-            .children(choices.into_iter().map(|(idx, name, on)| {
+            .children(choices.into_iter().take(LIST_SHOWN).map(|(idx, name, on)| {
                 let shell = handle.clone();
                 // The switch sets no cursor of its own, and an arrow over a
                 // control that acts reads as one that does not. Held to its own
@@ -382,6 +401,7 @@ fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                     div().flex_none().cursor_pointer().child(
                         Switch::new(("unattended", idx))
                             .checked(on)
+                            .small()
                             .label(name)
                             .on_click(move |_: &bool, window: &mut Window, cx: &mut App| {
                                 shell.update(cx, |shell, cx| {
@@ -428,26 +448,26 @@ fn slots_field(handle: &Entity<Shell>, slots: Slots, cx: &App) -> AnyElement {
         about(
             "Issue runs working or queued, across every window, against unattended.at_once; \
              a run waiting on a person holds none, and is counted against \
-             unattended.waiting when that is set.",
+             unattended.waiting when that is set",
         ),
         div()
             .v_flex()
             .gap_1()
             .child(div().text_sm().child(slots.count_said()))
-            .child(div().h_flex().flex_wrap().gap_1().children(holders))
+            .child(div().h_flex().flex_wrap().gap_2().children(holders))
             .children((left_out > 0).then(|| {
                 div()
-                    .text_sm()
+                    .text_xs()
                     .text_color(muted)
                     .child(format!("and {left_out} more"))
             }))
-            .children(starting.map(|line| div().text_sm().text_color(muted).child(line)))
-            .child(div().text_sm().text_color(muted).child(waiting))
+            .children(starting.map(|line| div().text_xs().text_color(muted).child(line)))
+            .child(div().text_xs().text_color(muted).child(waiting))
             .children(slots.full().is_some().then(|| {
                 div()
-                    .text_sm()
+                    .text_xs()
                     .text_color(muted)
-                    .child("No other issue is taken up until one of these makes room.")
+                    .child("No other issue is taken up until one of these makes room")
             })),
         cx,
     )
@@ -471,38 +491,43 @@ fn workflow_labels(handle: &Entity<Shell>, cx: &App) -> impl IntoElement {
     };
     let ink = crate::theme::status_ink(cx);
     let muted = cx.theme().muted_foreground;
-    let rows = by_label.into_iter().enumerate().map(|(i, (label, id))| {
-        let named = offered.iter().find(|(offered, _, _)| *offered == id);
-        let shell = handle.clone();
-        let remove = label.clone();
-        div()
-            .h_flex()
-            .items_center()
-            .gap_2()
-            .text_sm()
-            .child(div().flex_none().child(label))
-            .child(Icon::new(IconName::ArrowRight).small().text_color(muted))
-            .child(match named {
-                Some((_, name, _)) => div().flex_1().min_w_0().truncate().child(name.clone()),
-                None => div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .text_color(ink.warning)
-                    .child(format!("{id} (no such workflow on a worktree)")),
-            })
-            .child(
-                crate::controls::action(("workflow-label-remove", i))
-                    .secondary()
-                    .small()
-                    .label("Remove")
-                    .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
-                        shell.update(cx, |shell, cx| {
-                            shell.remove_workflow_label(&remove, window, cx)
-                        });
-                    }),
-            )
-    });
+    let more = by_label.len().saturating_sub(LIST_SHOWN);
+    let rows = by_label
+        .into_iter()
+        .take(LIST_SHOWN)
+        .enumerate()
+        .map(|(i, (label, id))| {
+            let named = offered.iter().find(|(offered, _, _)| *offered == id);
+            let shell = handle.clone();
+            let remove = label.clone();
+            div()
+                .h_flex()
+                .items_center()
+                .gap_2()
+                .text_sm()
+                .child(div().flex_none().child(label))
+                .child(Icon::new(IconName::ArrowRight).small().text_color(muted))
+                .child(match named {
+                    Some((_, name, _)) => div().flex_1().min_w_0().truncate().child(name.clone()),
+                    None => div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .text_color(ink.warning)
+                        .child(format!("{id} (no such workflow on a worktree)")),
+                })
+                .child(
+                    crate::controls::action(("workflow-label-remove", i))
+                        .secondary()
+                        .small()
+                        .label("Remove")
+                        .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                            shell.update(cx, |shell, cx| {
+                                shell.remove_workflow_label(&remove, window, cx)
+                            });
+                        }),
+                )
+        });
     let pick = {
         let shell = handle.clone();
         crate::dialogs::issue_workflow_menu(
@@ -517,7 +542,7 @@ fn workflow_labels(handle: &Entity<Shell>, cx: &App) -> impl IntoElement {
         let shell = handle.clone();
         crate::controls::action("workflow-label-add")
             .secondary()
-            .small()
+            .tall()
             .label("Add")
             .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
                 shell.update(cx, |shell, cx| shell.add_workflow_label(window, cx));
@@ -527,16 +552,22 @@ fn workflow_labels(handle: &Entity<Shell>, cx: &App) -> impl IntoElement {
         .v_flex()
         .gap_2()
         .children(rows)
+        .children((more > 0).then(|| {
+            div()
+                .text_xs()
+                .text_color(muted)
+                .child(format!("{more} more not shown"))
+        }))
         .child(
             div()
                 .h_flex()
                 .items_center()
                 .gap_2()
-                .child(div().w(LABEL_FIELD_W).child(text_input(&input, cx).small()))
+                .child(div().w(LABEL_FIELD_W).child(text_input(&input, cx).tall()))
                 .child(pick)
                 .child(add),
         )
         .when_some(refused, |list, why| {
-            list.child(div().text_sm().text_color(ink.warning).child(why))
+            list.child(div().text_xs().text_color(ink.warning).child(why))
         })
 }

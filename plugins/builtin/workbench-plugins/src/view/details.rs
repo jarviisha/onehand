@@ -5,8 +5,7 @@ use gpui::{
     AnyElement, App, InteractiveElement as _, IntoElement, ParentElement,
     StatefulInteractiveElement as _, Styled, Window, div,
 };
-use gpui_component::tag::Tag;
-use gpui_component::{ActiveTheme, Sizable as _, StyledExt, WindowExt as _};
+use gpui_component::{ActiveTheme, StyledExt, WindowExt as _};
 use onehand_plugin_host::status_ink;
 
 /// "4 skills", "1 command" … for each counted kind a plugin has any of, in one
@@ -32,20 +31,20 @@ pub(super) fn counted(n: usize, one: &str, many: &str) -> String {
 
 /// What a plugin carries, one chip per kind it has any of — none for a kind
 /// it has none of, and no row at all for a plugin whose folder said nothing.
-/// *hooks* is in the warning ink and carries no count: a hook is code that
-/// runs on its own, and that there is any is the fact worth reading.
+/// *hooks* carries no count: a hook is code that runs on its own, and that
+/// there is any is the fact worth reading.
 pub(super) fn component_chips(plugin: &Plugin, cx: &App) -> Option<AnyElement> {
     let inventory = &plugin.inventory;
     let mut chips: Vec<AnyElement> = tally(inventory, "MCP", "MCP")
         .into_iter()
-        .map(|text| chip(text, false, cx))
+        .map(|text| chip(text, cx))
         .collect();
     if !inventory.hooks.is_empty() {
-        chips.push(chip("hooks".to_string(), true, cx));
+        chips.push(chip("hooks".to_string(), cx));
     }
     // The walk stopped at its bound, so the counts above are not the whole.
     if inventory.cut {
-        chips.push(chip("not all read".to_string(), false, cx));
+        chips.push(chip("not all read".to_string(), cx));
     }
     (!chips.is_empty()).then(|| {
         div()
@@ -58,19 +57,17 @@ pub(super) fn component_chips(plugin: &Plugin, cx: &App) -> Option<AnyElement> {
     })
 }
 
-/// A kind the plugin carries, as the library's small label, outlined: in the
-/// warning ink and edged in it for hooks, muted on a hairline otherwise.
-fn chip(text: String, warn: bool, cx: &App) -> AnyElement {
-    let (ink, edge) = match warn {
-        true => (status_ink(cx).warning, status_ink(cx).warning),
-        false => (cx.theme().muted_foreground, cx.theme().border),
-    };
-    Tag::custom(ink, ink, edge)
-        .outline()
-        .small()
-        .rounded(cx.theme().radius_lg)
-        .child(text)
-        .into_any_element()
+/// A kind the plugin carries, as a neutral badge: a fact about it, which the
+/// details say more of.
+fn chip(text: String, cx: &App) -> AnyElement {
+    onehand_plugin_host::badge(
+        text,
+        onehand_plugin_host::Tint {
+            fill: cx.theme().secondary,
+            ink: cx.theme().secondary_foreground,
+        },
+    )
+    .into_any_element()
 }
 
 /// The details drawer's width: a hook's command on one line at the panel's
@@ -95,7 +92,6 @@ pub(super) fn open_details(plugin: &Plugin, window: &mut Window, cx: &mut App) {
 fn details(plugin: &Plugin, cx: &App) -> AnyElement {
     let theme = cx.theme();
     let muted = theme.muted_foreground;
-    let mono = theme.mono_font_family.clone();
     let inventory = &plugin.inventory;
     let section = |title: &str, names: &[String]| -> Option<AnyElement> {
         (!names.is_empty()).then(|| {
@@ -136,14 +132,11 @@ fn details(plugin: &Plugin, cx: &App) -> AnyElement {
                     .v_flex()
                     .gap_0p5()
                     .child(div().text_xs().text_color(muted).child(when))
+                    // The command in a well, as machine text is everywhere.
                     .child(
-                        div()
+                        onehand_plugin_host::well(cx)
                             .px_2()
                             .py_1()
-                            .rounded(theme.radius)
-                            .bg(theme.secondary)
-                            .text_xs()
-                            .font_family(mono.clone())
                             .child(hook.command.clone()),
                     )
             }))

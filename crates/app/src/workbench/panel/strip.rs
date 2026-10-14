@@ -6,7 +6,7 @@ use crate::controls::Quiet as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{App, Context, IntoElement, ParentElement, Styled, Window, div};
 use gpui_component::button::Button;
-use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, IconName, Selectable as _, Sizable as _, StyledExt};
 use onehand_plugin_api::{PluginId, WorkbenchModeSpec};
 
 /// The least width, in rems, at which the modes sit side by side: under it they
@@ -25,30 +25,20 @@ impl Workbench {
         let showing = self.showing();
         let full = self.maximized;
         let compact = self.width.get().0 < MODES_MIN_W.0;
-        div()
-            .h_flex()
-            .flex_none()
-            .items_center()
-            // The height of the conversation's header beside it, so the two
-            // bars line up across the seam.
-            .h(crate::tokens::BAR_H)
-            .gap_1p5()
-            .px_3()
-            .border_b_1()
-            .border_color(cx.theme().border)
+        // The shape of the conversation's header beside it, so the two bars
+        // line up across the seam.
+        onehand_plugin_host::strip(cx)
             // The way back to the conversation, while this panel has taken the
             // area because the window cannot hold the two side by side. A
             // maximized panel has its own way back at the other end.
             .when(self.fills_area && !full, |strip| {
-                strip
-                    .child(
-                        onehand_plugin_host::back_link("step-aside", "Conversation", cx).on_click(
-                            cx.listener(|_: &mut Self, _, _, cx| {
-                                cx.emit(WorkbenchEvent::StepAside);
-                            }),
-                        ),
-                    )
-                    .child(div().flex_none().w_px().h_3p5().bg(cx.theme().border))
+                strip.child(
+                    onehand_plugin_host::back_link("step-aside", "Conversation", cx).on_click(
+                        cx.listener(|_: &mut Self, _, _, cx| {
+                            cx.emit(WorkbenchEvent::StepAside);
+                        }),
+                    ),
+                )
             })
             // The modes are the one part of the row that gives way, so the
             // controls at its end are on screen at any width.
@@ -56,7 +46,7 @@ impl Workbench {
                 div()
                     .h_flex()
                     .items_center()
-                    .gap_1p5()
+                    .gap_1()
                     .flex_1()
                     .min_w_0()
                     .overflow_hidden()
@@ -69,32 +59,27 @@ impl Workbench {
                         ),
                     }),
             )
-            // Muted, like the terminal strip's pair and the conversation
-            // header's controls: the library draws a ghost button in full
-            // foreground ink, which on a chrome row is the brightest thing in
-            // the panel. The hover fill brings the ink back on the one about to
-            // be pressed.
             .child(
-                crate::controls::action("maximize-workbench")
-                    .quiet(cx)
-                    .small()
-                    .flex_none()
-                    .text_color(cx.theme().muted_foreground)
-                    .icon(Icon::new(match full {
+                onehand_plugin_host::strip_control(
+                    "maximize-workbench",
+                    match full {
                         true => IconName::Minimize,
                         false => IconName::Maximize,
-                    }))
-                    .tooltip_with_action(
-                        match full {
-                            true => "Back to the dock",
-                            false => "Fill the window",
-                        },
-                        &crate::shell::ToggleMaximize,
-                        None,
-                    )
-                    .on_click(cx.listener(|_: &mut Self, _, _, cx| {
-                        cx.emit(WorkbenchEvent::ToggleMaximize);
-                    })),
+                    },
+                    false,
+                    cx,
+                )
+                .tooltip_with_action(
+                    match full {
+                        true => "Back to the dock",
+                        false => "Fill the window",
+                    },
+                    &crate::shell::ToggleMaximize,
+                    None,
+                )
+                .on_click(cx.listener(|_: &mut Self, _, _, cx| {
+                    cx.emit(WorkbenchEvent::ToggleMaximize);
+                })),
             )
             // A minus, the mark a window's own chrome uses for the thing that
             // goes away and comes back, and the same one the terminal's strip
@@ -104,12 +89,7 @@ impl Workbench {
             // name with `stroke` written into it as literal black -- so it
             // ignores `text_color` and comes out invisible on a dark panel.
             .child(
-                crate::controls::action("hide-workbench")
-                    .quiet(cx)
-                    .small()
-                    .flex_none()
-                    .text_color(cx.theme().muted_foreground)
-                    .icon(Icon::new(IconName::Minus))
+                onehand_plugin_host::strip_control("hide-workbench", IconName::Minus, false, cx)
                     .tooltip_with_action(
                         "Hide the Workbench",
                         &crate::shell::ToggleWorkbenchVisibility,
@@ -157,8 +137,7 @@ fn mode_select(
     let panel = cx.entity().downgrade();
     crate::controls::menu_below(
         "workbench-mode-menu",
-        onehand_plugin_host::tab_select("workbench-mode-select", label.into(), label.into(), cx)
-            .small(),
+        onehand_plugin_host::tab_select("workbench-mode-select", label.into(), label.into(), cx),
         move |mut menu, _, _| {
             for spec in &specs {
                 let (panel, which) = (panel.clone(), spec.id);

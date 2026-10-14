@@ -12,8 +12,7 @@ use gpui::{
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::InputState;
-use gpui_component::{ActiveTheme, Sizable as _, StyledExt, WindowExt as _};
-use onehand_core::config::AppConfig;
+use gpui_component::{ActiveTheme, Sizable as _, StyledExt};
 
 use crate::state::Shared;
 

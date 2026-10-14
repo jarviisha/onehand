@@ -5,12 +5,9 @@ use crate::document::{RootDocs, list, reader};
 use gpui::{
     App, AppContext as _, Context, Entity, IntoElement, ParentElement, Render, Styled, Window, div,
 };
-use gpui_component::{
-    ActiveTheme, IconName, Sizable as _, StyledExt, h_resizable, resizable_panel,
-};
-use onehand_plugin_host::Quiet as _;
+use gpui_component::{ActiveTheme, IconName, StyledExt, h_resizable, resizable_panel};
 use onehand_plugin_host::{
-    Ask, ListWidths, Request, back_link, hint, list_detail, measure_width, status_line,
+    Ask, ListWidths, Request, back_link, hint, list_detail, measure_width, status_ink, status_line,
 };
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -202,7 +199,10 @@ impl MarkdownView {
     /// Through core's editor read, so this obeys the same size bound the quick
     /// editor does and comes back with the same mtime — which is what the live
     /// reload then compares against.
-    fn open_doc(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+    ///
+    /// An open that fails is said once, as a toast, when the read comes back:
+    /// a press that failed is news, unlike a document going stale.
+    fn open_doc(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         let Some(root) = self.root.clone() else {
             return;
         };
@@ -212,7 +212,9 @@ impl MarkdownView {
             .display()
             .to_string();
 
-        cx.spawn(async move |view, cx| {
+        // `spawn_in`, so a read that fails can be said in the window it was
+        // asked from, whatever the Workbench is showing by then.
+        cx.spawn_in(window, async move |view, cx| {
             let read = cx
                 .background_executor()
                 .spawn({
@@ -221,7 +223,7 @@ impl MarkdownView {
                 })
                 .await;
 
-            let _ = view.update(cx, |view: &mut Self, cx| {
+            let _ = view.update_in(cx, |view: &mut Self, window, cx| {
                 // The root can have left the workspace while the read was in
                 // flight, and putting the entry back would leave a parsed
                 // document alive under a project nothing can reach.
@@ -238,7 +240,13 @@ impl MarkdownView {
                         }
                         view.watch_doc(cx);
                     }
-                    Err(e) => view.status = Some(format!("{} — {e}", path.display())),
+                    Err(e) => {
+                        use gpui_component::WindowExt as _;
+                        window.push_notification(
+                            onehand_plugin_host::toast::failed(&format!("Opening {label}"), e),
+                            cx,
+                        );
+                    }
                 }
                 cx.notify();
             });
@@ -363,7 +371,11 @@ impl Render for MarkdownView {
             .relative()
             .child(measure_width(self.width.clone(), cx.entity().downgrade()))
             .child(body)
-            .children(self.status.clone().map(|status| status_line(status, cx)))
+            .children(
+                self.status
+                    .clone()
+                    .map(|status| status_line(status, status_ink(cx).warning)),
+            )
     }
 }
 
@@ -394,19 +406,21 @@ impl MarkdownView {
                     cx.notify();
                 }))
                 .into_any_element(),
-            false => onehand_plugin_host::action("markdown-toggle-list")
-                .xsmall()
-                .quiet(cx)
-                .icon(match self.list_shown {
+            false => onehand_plugin_host::strip_control(
+                "markdown-toggle-list",
+                match self.list_shown {
                     true => IconName::PanelLeftClose,
                     false => IconName::PanelLeftOpen,
-                })
-                .tooltip(match self.list_shown {
-                    true => "Hide the document list",
-                    false => "Show the document list",
-                })
-                .on_click(cx.listener(|view: &mut Self, _, _, cx| view.toggle_list(cx)))
-                .into_any_element(),
+                },
+                false,
+                cx,
+            )
+            .tooltip(match self.list_shown {
+                true => "Hide the document list",
+                false => "Show the document list",
+            })
+            .on_click(cx.listener(|view: &mut Self, _, _, cx| view.toggle_list(cx)))
+            .into_any_element(),
         };
         let reader = {
             let path = docs.open.as_ref().map(|doc| doc.path.clone());
@@ -495,9 +509,9 @@ impl MarkdownView {
             root,
             docs,
             cx.listener(|view: &mut Self, dir: &PathBuf, _, cx| view.toggle_dir(dir, cx)),
-            cx.listener(|view: &mut Self, path: &PathBuf, _, cx| {
+            cx.listener(|view: &mut Self, path: &PathBuf, window, cx| {
                 view.detail = true;
-                view.open_doc(path.clone(), cx)
+                view.open_doc(path.clone(), window, cx)
             }),
             cx,
         )

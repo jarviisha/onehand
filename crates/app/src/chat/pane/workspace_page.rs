@@ -1,9 +1,9 @@
+use super::page_parts::{card_box, card_title, page_card, page_section, pair};
 use super::project_page::count_of;
 use super::{ChatPane, ChatPaneEvent, Page, SessionSignal, rel_time};
-use crate::controls::Quiet as _;
 use crate::tokens::PAGE_WIDE;
 use gpui::{
-    App, Context, Div, InteractiveElement, IntoElement, ParentElement, Rems, SharedString,
+    App, Context, InteractiveElement, IntoElement, ParentElement, Rems, SharedString,
     StatefulInteractiveElement, Styled, Window, div, rems,
 };
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
@@ -28,11 +28,6 @@ const PAGE_RECENT: usize = 5;
 /// many that a workspace of busy projects builds a thousand rows nobody reaches.
 const PAGE_ISSUES: usize = 100;
 
-/// The width a workspace page card starts from before it grows into its row.
-/// Two fit side by side within the page, and a narrower panel wraps them one
-/// under the other.
-const PAGE_CARD: Rems = rems(22.);
-
 /// The width a project tile starts from.
 const PAGE_TILE: Rems = rems(14.);
 
@@ -40,11 +35,8 @@ const PAGE_TILE: Rems = rems(14.);
 /// stretch one tile across the page.
 const PAGE_TILE_MAX: Rems = rems(21.);
 
-/// How tall the open-issues card's list grows before it scrolls.
-const PAGE_ISSUES_H: Rems = rems(24.);
-
-/// The height of a workspace page card's title row.
-const PAGE_TITLE_H: Rems = rems(1.75);
+/// A tile's first line, which the folder beside it is centred on.
+const PAGE_TITLE_LINE: Rems = rems(1.25);
 
 /// What a project filter reads while it is not narrowing the list at all:
 /// the workspace page's issues, or the Tasks page.
@@ -132,12 +124,12 @@ impl ChatPane {
         cx: &mut Context<Self>,
     ) {
         // A filter survives the page being shown again, while its project does.
-        let filter = match self.page.take() {
-            Some(Page::Workspace(page)) => page.filter,
-            Some(Page::Tasks(_) | Page::Issues(_) | Page::Workflows(_) | Page::Settings(_))
-            | None => None,
-        }
-        .filter(|only| projects.iter().any(|project| &project.root == only));
+        // The filter is the pane's, so it is kept while the page is left.
+        let filter = self
+            .workspace_filter
+            .clone()
+            .filter(|only| projects.iter().any(|project| &project.root == only));
+        self.page = None;
         self.page = Some(Page::Workspace(WorkspacePage {
             projects,
             filter,
@@ -356,6 +348,7 @@ impl ChatPane {
 
     /// Narrow the workspace page's issue list to one project, or `None` for all.
     fn filter_workspace(&mut self, only: Option<PathBuf>, cx: &mut Context<Self>) {
+        self.workspace_filter = only.clone();
         if let Some(Page::Workspace(page)) = self.page.as_mut() {
             page.filter = only;
             page.refilter();
@@ -454,13 +447,13 @@ impl ChatPane {
             waiting,
             PAGE_ACTIVE,
             "more",
-            "Nothing is waiting on you.",
+            "Nothing is waiting on you",
         ));
         let working = page_card("Working", Some(working_n), None, cx).child(list(
             working,
             PAGE_ACTIVE,
             "more",
-            "Nothing is running.",
+            "Nothing is running",
         ));
 
         // A tile per project: its name and the most urgent mark its sessions
@@ -500,37 +493,57 @@ impl ChatPane {
                         .filter_map(|(uid, _)| self.signal(*uid, cx)),
                 );
                 let root = project.root.clone();
+                // The folder in a column of its own, so the name and the
+                // lines under it start on one edge.
                 card_box(cx)
                     .id(("workspace-project", i))
                     .flex_grow_1()
                     .flex_basis(PAGE_TILE)
                     .max_w(PAGE_TILE_MAX)
-                    .gap_1()
+                    .h_flex()
+                    .items_start()
+                    .gap_2()
                     .cursor_pointer()
                     .hover(|tile| tile.bg(cx.theme().list_hover))
                     .child(
                         div()
+                            .flex_none()
+                            .h(PAGE_TITLE_LINE)
                             .h_flex()
                             .items_center()
-                            .gap_2()
-                            .child(Icon::new(IconName::Folder).size_4().text_color(muted))
+                            .child(Icon::new(IconName::Folder).small().text_color(muted)),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .v_flex()
+                            .gap_1()
                             .child(
                                 div()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .truncate()
-                                    .font_semibold()
-                                    .child(project.label.clone()),
+                                    .h_flex()
+                                    .items_center()
+                                    .gap_2()
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .truncate()
+                                            .font_semibold()
+                                            .child(project.label.clone()),
+                                    )
+                                    .children(
+                                        rollup.map(|signal| crate::rail::signal_mark(signal, cx)),
+                                    ),
                             )
-                            .children(rollup.map(|signal| crate::rail::signal_mark(signal, cx))),
+                            .child(muted_line(
+                                project
+                                    .git
+                                    .clone()
+                                    .unwrap_or_else(|| "Not a git repository".to_string()),
+                            ))
+                            .child(muted_line(holds)),
                     )
-                    .child(muted_line(
-                        project
-                            .git
-                            .clone()
-                            .unwrap_or_else(|| "Not a git repository".to_string()),
-                    ))
-                    .child(muted_line(holds))
                     .on_click(cx.listener(move |_: &mut Self, _, _, cx| {
                         cx.emit(ChatPaneEvent::ShowProject(root.clone()));
                     }))
@@ -544,7 +557,7 @@ impl ChatPane {
                 .gap_2()
                 .w_full()
                 .child(card_title("Projects", Some(page.projects.len()), None, cx))
-                .child(div().h_flex().flex_wrap().gap_3().w_full().children(tiles))
+                .child(div().h_flex().flex_wrap().gap_4().w_full().children(tiles))
                 .children(
                     (hidden_projects > 0)
                         .then(|| muted_line(format!("{hidden_projects} more not shown"))),
@@ -588,15 +601,18 @@ impl ChatPane {
                 .into_any_element()
             })
             .collect();
-        let recent = page_card("Recent conversations", None, None, cx).child(match page.recent {
-            None => div().child(muted_line("Reading past conversations…".to_string())),
-            Some(_) => list(
-                recent,
-                PAGE_RECENT,
-                "older",
-                "No past conversations to pick up.",
-            ),
-        });
+        // A section, not a box: a list read down the page, which the boxes
+        // above set apart from the rest.
+        let recent =
+            page_section("Recent conversations", None, None, cx).child(match page.recent {
+                None => div().child(muted_line("Reading past conversations…".to_string())),
+                Some(_) => list(
+                    recent,
+                    PAGE_RECENT,
+                    "older",
+                    "No past conversations to pick up",
+                ),
+            });
 
         let unbound = !page.projects.is_empty()
             && page.projects.iter().all(|project| project.issues.is_none());
@@ -616,12 +632,13 @@ impl ChatPane {
         let this = cx.entity();
         let filter = crate::controls::menu_below(
             "workspace-filter",
-            crate::controls::action("workspace-filter-trigger")
-                .quiet(cx)
-                .small()
-                .label(filter_name)
-                .icon(Icon::new(IconName::ChevronDown))
-                .text_color(muted),
+            onehand_plugin_host::picker(
+                "workspace-filter-trigger",
+                filter_name,
+                page.filter.is_some(),
+                onehand_plugin_host::ControlSize::Small,
+                cx,
+            ),
             move |mut menu, _, _| {
                 for (label, only) in &choices {
                     let (only, this) = (only.clone(), this.clone());
@@ -640,10 +657,10 @@ impl ChatPane {
         );
         let note = match &page.read {
             _ if unbound => {
-                Some("This workspace is bound to no folder, so it keeps no issues.".to_string())
+                Some("This workspace is bound to no folder, so it keeps no issues".to_string())
             }
             None => Some("Looking for open issues…".to_string()),
-            Some(_) if page.shown.rows.is_empty() => Some("No open issues.".to_string()),
+            Some(_) if page.shown.rows.is_empty() => Some("No open issues".to_string()),
             Some(_) => None,
         };
         let rows: Vec<gpui::AnyElement> = page
@@ -673,7 +690,7 @@ impl ChatPane {
             .collect();
         let (closed, left_out) = (page.shown.closed, page.shown.left_out);
 
-        let issues = page_card(
+        let issues = page_section(
             "Open issues",
             page.read.as_ref().map(|_| page.shown.rows.len() + left_out),
             (!unbound).then(|| filter.into_any_element()),
@@ -685,37 +702,17 @@ impl ChatPane {
                 .map(|why| div().text_xs().text_color(warning).child(why.clone())),
         )
         .children(note.map(muted_line))
-        .children((!rows.is_empty()).then(|| {
-            // The one card that grows long, so the one that scrolls inside
-            // itself: the cards beside and above it keep their place.
-            div()
-                .id("workspace-issues")
-                .v_flex()
-                .max_h(PAGE_ISSUES_H)
-                .overflow_y_scroll()
-                .children(rows)
-        }))
+        // The page scrolls as one; the list is capped, not boxed in a scroll
+        // of its own.
+        .children((!rows.is_empty()).then(|| div().v_flex().children(rows)))
         // Said, not hidden: a list cut silently reads as the whole of it.
         .children((left_out > 0).then(|| muted_line(format!("{left_out} more not shown"))))
         .children((closed > 0 && !unbound).then(|| {
             muted_line(match closed {
-                1 => "1 closed issue is not listed.".to_string(),
-                n => format!("{n} closed issues are not listed."),
+                1 => "1 closed issue is not listed".to_string(),
+                n => format!("{n} closed issues are not listed"),
             })
         }));
-        // Two cards to a row where the panel is wide enough, one under the
-        // other where it is not.
-        let pair = |left: gpui::Div, right: gpui::Div| {
-            div()
-                .h_flex()
-                .flex_wrap()
-                .items_start()
-                .gap_4()
-                .w_full()
-                .child(left.flex_grow_1().flex_basis(PAGE_CARD))
-                .child(right.flex_grow_1().flex_basis(PAGE_CARD))
-        };
-
         div()
             .size_full()
             .v_flex()
@@ -732,7 +729,8 @@ impl ChatPane {
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
-                    .p_6()
+                    .px_8()
+                    .py_6()
                     .child(
                         div().h_flex().w_full().justify_center().child(
                             div()
@@ -749,51 +747,4 @@ impl ChatPane {
             )
             .into_any_element()
     }
-}
-
-/// A card on the workspace page or the Tasks page: a bordered box, its title in bold with a
-/// muted count beside it, an optional control at the far end, and whatever it
-/// holds below.
-pub(super) fn page_card(
-    title: impl Into<SharedString>,
-    count: Option<usize>,
-    control: Option<gpui::AnyElement>,
-    cx: &App,
-) -> Div {
-    card_box(cx).child(card_title(title, count, control, cx))
-}
-
-/// The hairline box every card on the workspace page and the Tasks page is
-/// drawn in, a project tile and a task's row included.
-pub(super) fn card_box(cx: &App) -> Div {
-    div()
-        .v_flex()
-        .gap_2()
-        .min_w_0()
-        .p_3()
-        .rounded(cx.theme().radius_lg)
-        .border_1()
-        .border_color(cx.theme().border)
-}
-
-/// A workspace page heading: the title in bold, a muted count beside it and an
-/// optional control at the far end.
-fn card_title(
-    title: impl Into<SharedString>,
-    count: Option<usize>,
-    control: Option<gpui::AnyElement>,
-    cx: &App,
-) -> Div {
-    let muted = cx.theme().muted_foreground;
-    div()
-        .h_flex()
-        .items_center()
-        .gap_2()
-        // The control's own height must not change the title row's, or a card
-        // with a filter sits taller than the one beside it.
-        .h(PAGE_TITLE_H)
-        .child(div().font_semibold().child(title.into()))
-        .children(count.map(|n| div().text_xs().text_color(muted).child(n.to_string())))
-        .child(div().flex_1())
-        .children(control)
 }

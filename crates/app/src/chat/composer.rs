@@ -44,27 +44,6 @@ pub(in crate::chat) use card::COMPOSER_SPLIT;
 pub(in crate::chat) use popup::POPUP_STACK_PEEK;
 pub use popup::popup_room;
 
-/// How much of the selected fill is let through.
-///
-/// **The fill is the only thing saying where `Enter` will land**, so this is the
-/// one value here that cannot simply be tuned down until it looks calm. Full
-/// strength it was a slab of mid-grey the width of the popup with a small
-/// radius on it, which reads as a text field that has the caret rather than as
-/// a row that is picked out — and a row that looks like an input in a list you
-/// are arrowing through is saying the wrong thing about what the keyboard is
-/// doing.
-///
-/// What bounds it from below is the hover step. A row can be hovered and
-/// selected at once, and if those two fills converge the reader cannot tell
-/// which of them is telling them where Enter goes. **The light palette is what
-/// sets this number**, not the dark one: there is only 1.15 between white and
-/// the well to divide up in the first place, so the selected fill and the hover
-/// fill start much closer together there and thinning the selected one closes
-/// the gap far faster. `theme::tests::the_selection_stays_clear_of_hover`
-/// holds it, blending the fill the way the compositor does rather than
-/// asserting on the token it came from.
-pub(crate) const SELECTED_ALPHA: f32 = 0.75;
-
 /// What is showing above the composer. Mutually exclusive **by construction**:
 /// one `Option` makes that structural, where a flag per overlay needs a
 /// "close the others" call on every path that opens one.

@@ -156,7 +156,7 @@ pub(super) fn popup_surface(cx: &App) -> gpui::Div {
         .w_full()
         .rounded(cx.theme().radius)
         .border_1()
-        .border_color(cx.theme().input)
+        .border_color(cx.theme().border)
         .bg(cx.theme().popover.alpha(1.))
         .shadow(crate::tokens::lift(cx))
         .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
@@ -439,17 +439,22 @@ impl Composer {
                         // itself, and a pool still arriving is not a failed
                         // search.
                         .when(selected.is_none() && completion, |list| {
-                            let query = self
-                                .trigger
-                                .as_ref()
-                                .map(|trigger| trigger.query.clone())
-                                .unwrap_or_default();
-                            list.child(notice(cx).text_sm().child(
+                            let (query, things) = match self.trigger.as_ref() {
+                                Some(trigger) => (
+                                    trigger.query.clone(),
+                                    match trigger.kind {
+                                        TriggerKind::File => "files",
+                                        TriggerKind::Command => "commands",
+                                    },
+                                ),
+                                None => (String::new(), "matches"),
+                            };
+                            list.child(notice(cx).text_xs().child(
                                 match (pending, query.is_empty()) {
-                                    (true, _) => "Still looking…".to_string(),
-                                    (false, true) => "Nothing to complete".to_string(),
+                                    (true, _) => format!("Looking for {things}…"),
+                                    (false, true) => format!("No {things} yet"),
                                     (false, false) => {
-                                        format!("No matches for \u{201c}{query}\u{201d}")
+                                        format!("No {things} match \u{201c}{query}\u{201d}")
                                     }
                                 },
                             ))
@@ -495,7 +500,6 @@ pub(super) fn popup_header(title: SharedString, cx: &App) -> gpui::Div {
         .border_b_1()
         .border_color(cx.theme().border)
         .text_xs()
-        .font_medium()
         .text_color(cx.theme().muted_foreground)
         .child(title)
 }
@@ -513,7 +517,7 @@ pub(super) fn popup_title(
 ) -> SharedString {
     match overlay {
         Overlay::Completion => match trigger {
-            Some(TriggerKind::Command) => "Run a command".into(),
+            Some(TriggerKind::Command) => "Run a slash command".into(),
             _ => "Mention a file".into(),
         },
         Overlay::Add => "Add to the prompt".into(),

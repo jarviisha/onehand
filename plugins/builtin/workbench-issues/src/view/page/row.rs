@@ -15,15 +15,20 @@ use onehand_core::issues::LabelKind;
 use onehand_core::task::Group;
 use onehand_core::task::work::list::Row;
 use onehand_plugin_host::Quiet as _;
-use onehand_plugin_host::{action, status_ink};
+use onehand_plugin_host::tokens::CODE_TEXT;
+use onehand_plugin_host::tokens::ROW_H;
+use onehand_plugin_host::{action, meta_ink, middle_ink, row as row_surface, status_ink};
 
 /// How many labels a row draws before it counts the rest.
 const ROW_LABELS: usize = 2;
 
-/// A row's inset: enough round one line of text to aim the pointer at, the
-/// same for every row so the list reads as a table.
-const ROW_PAD_X: Rems = rems(0.75);
-const ROW_PAD_Y: Rems = rems(0.5);
+/// The reference's slot: room for a five-digit number or *Draft*, so every
+/// title starts on one edge. A longer reference widens its own row only.
+const REFERENCE_W: Rems = rems(3.);
+
+/// The widest a project's name gets after a title, while the list mixes
+/// several, so a long name never crowds the title out.
+const PROJECT_MAX: Rems = rems(10.);
 
 /// The columns after the title, fixed so each lines up down the list and
 /// only the title gives way: two labels and a count, and an age.
@@ -52,8 +57,9 @@ pub(super) struct Place {
     pub(super) columns: bool,
 }
 
-/// One row on one line: the reference, the title, the priority's mark and
-/// what its work needs, then the labels and how long ago it changed.
+/// One row on one line: the reference, the title, the priority's mark, what
+/// its work needs and, while the list mixes projects, its project; then the
+/// labels and how long ago it changed.
 pub(super) fn page_row(
     i: usize,
     place: Place,
@@ -62,7 +68,12 @@ pub(super) fn page_row(
     cx: &mut Context<IssuesView>,
 ) -> AnyElement {
     let theme = cx.theme();
-    let muted = theme.muted_foreground;
+    // Every quieter ink on the picked row is taken under the selected fill's
+    // own ink, so it stays a step quieter there rather than sinking into it.
+    let muted = match place.picked {
+        true => middle_ink(theme.accent_foreground, theme.muted_foreground),
+        false => theme.muted_foreground,
+    };
     let ink = status_ink(cx);
     let issue = row.item.issue;
     let (root, number) = (row.item.root.to_path_buf(), issue.number);
@@ -71,15 +82,27 @@ pub(super) fn page_row(
         .work
         .is_some_and(|work| work.work.group == Group::Running);
 
-    // The reference leads the title in machine type, the project before it
-    // while the list mixes several.
+    // The reference leads the title in machine type and the middle ink:
+    // context for the title, not a name of its own. On the picked row the step
+    // is taken under the selected fill's ink, so it stays a step there.
     let reference = issue
         .reference()
         .map_or_else(|| "Draft".to_string(), str::to_string);
-    let reference = match project {
-        Some(project) => format!("{project} {reference}"),
-        None => reference,
+    let reference_ink = match place.picked {
+        true => muted,
+        false => meta_ink(cx),
     };
+    // The project, while the list mixes several: after the title in the muted
+    // ink, so it tells rows apart without moving where the titles start.
+    let project = project.map(|project| {
+        div()
+            .flex_none()
+            .max_w(PROJECT_MAX)
+            .truncate()
+            .text_xs()
+            .text_color(muted)
+            .child(project)
+    });
     let title = issue.title.clone();
     let title = div()
         .id(("issues-page-title", i))
@@ -167,8 +190,9 @@ pub(super) fn page_row(
             )
         });
 
-    let radius = theme.radius_lg;
+    let radius = theme.radius;
     let line = div()
+        .h(ROW_H)
         .h_flex()
         .items_center()
         .gap_3()
@@ -182,40 +206,33 @@ pub(super) fn page_row(
                 .child(
                     div()
                         .flex_none()
-                        .text_xs()
-                        .text_color(muted)
+                        .min_w(REFERENCE_W)
+                        .text_size(CODE_TEXT)
+                        .text_color(reference_ink)
                         .font_family(theme.mono_font_family.clone())
                         .child(reference),
                 )
                 .child(title)
                 .children(priority)
-                .children(note.map(|note| note.flex_none().max_w(NOTE_MAX).truncate().text_xs())),
+                .children(note.map(|note| note.flex_none().max_w(NOTE_MAX).truncate().text_xs()))
+                .children(project),
         )
         .when(place.columns, |line| line.child(labels))
         .child(updated);
 
-    column(div())
+    column(row_surface(place.picked, cx))
         .id(("issues-page-row", i))
         .relative()
         .v_flex()
-        .px(ROW_PAD_X)
-        .py(ROW_PAD_Y)
         // The rows stand in one hairline box: each its sides and foot, the
         // first its head unless the columns' names stand over it, the ends
-        // rounded.
+        // rounded and the rows between square.
+        .rounded_none()
         .border_x_1()
         .border_b_1()
         .border_color(theme.border)
         .when(place.first, |row| row.border_t_1().rounded_t(radius))
         .when(place.last, |row| row.rounded_b(radius))
-        .cursor_pointer()
-        .map(|div| {
-            if place.picked {
-                div.bg(theme.accent).text_color(theme.accent_foreground)
-            } else {
-                div.hover(|div| div.bg(theme.list_hover))
-            }
-        })
         // Where the keyboard is: the arrow keys move the picked row, so while
         // the page holds them it carries the ring a focused control does.
         .when(place.picked && place.focused, |row| {
@@ -235,7 +252,7 @@ pub(super) fn page_row(
                     .h_flex()
                     .items_center()
                     .gap_1()
-                    .pb_1()
+                    .pt_1()
                     .text_xs()
                     .text_color(muted)
                     .child(div().flex_1().child("Outside current filters"))
@@ -261,22 +278,32 @@ pub(super) fn page_row(
 }
 
 /// What each column of the rows holds, over them, in the same box and at the
-/// same widths, so a column says what it is without a person guessing.
+/// same widths, so a column says what it is without a person guessing. Meta
+/// text on the table's own surface: the hairline under it parts it from the
+/// rows, so it takes no fill of its own. *Title* stands over the titles, past
+/// the references' slot.
 pub(super) fn columns_head(columns: bool, cx: &mut Context<IssuesView>) -> AnyElement {
     let theme = cx.theme();
     column(div())
+        .h(ROW_H)
         .h_flex()
         .items_center()
         .gap_3()
-        .px(ROW_PAD_X)
-        .py_1p5()
+        .px_2()
         .border_1()
         .border_color(theme.border)
-        .rounded_t(theme.radius_lg)
-        .bg(theme.muted)
+        .rounded_t(theme.radius)
         .text_xs()
         .text_color(theme.muted_foreground)
-        .child(div().flex_1().min_w_0().child("Title"))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .h_flex()
+                .gap_2()
+                .child(div().flex_none().w(REFERENCE_W))
+                .child("Title"),
+        )
         .when(columns, |head| {
             head.child(div().flex_none().w(LABELS_W).child("Labels"))
         })

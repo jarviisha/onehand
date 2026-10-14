@@ -7,9 +7,9 @@ the code and its tests decide. A feature's own document (`docs/tasks.md`, `docs/
 screen repeats and how they behave. Code never cites this file.
 
 This contract defines onehand's own visual language: quiet navigation, clear content hierarchy,
-compact controls and predictable alignment. It is the target for UI work, not proof that every
-existing screen conforms. The contract refresh changes documentation only; implementation work
-must report the surfaces migrated and any remaining mismatches within its scope.
+compact controls and predictable alignment. A departure agreed to stay is listed under
+*Exceptions* below; one still to be put right is recorded in `docs/known-gaps.md` with its reason.
+A change that departs from the contract does one or the other within its scope.
 
 **No palette lives here.** gpui-component's theme, overridden at boot by the app's palette
 (`crate::theme::install`, with its contrast tests). Every colour, radius and size is a token read
@@ -45,7 +45,7 @@ layer is a bug even when it looks right, as no theme switch reaches it.
    screen says how many were left out.
 8. **Calm and immediate.** What a person changes shows at once, and the work behind it follows.
    Nothing moves for show: the one motion is a `Spinner` on work still running, beside what the
-   library's own overlays do. `docs/ui-patterns.md` (*Immediate feedback*, *Motion*) holds how.
+   library's own overlays and controls do (*Exceptions*). `docs/ui-patterns.md` (*Immediate feedback*, *Motion*) holds how.
 
 ## Layout
 
@@ -70,7 +70,7 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
 │                  │    branch                mode      │                  │
 │                  ├────────────────────────────────────┤                  │
 │                  │ shell tabs  +                      │                  │
-│         Settings │ terminal (bottom dock)             │                  │
+│ Settings         │ terminal (bottom dock)             │                  │
 └──────────────────┴────────────────────────────────────┴──────────────────┘
         rail                     DockArea
 ```
@@ -83,22 +83,29 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   *Workflows*, each filled while its page shows; *Sessions* with a warning-ink *N need attention*
   chip (shown above zero or while on, toggling that filter and back) and the filter menu (*By
   project*, *All sessions*, *Needs attention*, *Recent activity*) over a hairline; the scrolling
-  list, ending on *Add project…*; a foot with *Settings*, marked while it shows.
+  list, ending on *Add project…*; a foot with *Settings*, a page row like the four above, filled
+  while it shows. Every row at rest is in the muted ink; the one where the person is takes its
+  fill and the ink paired with it. A badge in the rail sinks on the inset step.
 
   *By project* lists pinned projects first, a gap between projects. A project row: the fold
   chevron, folder and name, its git line (branch, uncommitted changes, commits ahead and behind,
   each only above zero and named in full on hover), the pin, the unattended pill (*auto*, *auto ·
   N*, *auto · N waiting*; a run's pill opens its issue on the Issues page), and while folded its
   sessions' most urgent state. Its chevron alone folds it (not during a search); the rest of the
-  row shows the project's last session, or its page. `+` and `⋯` show on hover, right-click opens
-  the same menu. A session row, indented under its project: its state mark, title and `⋯` (on
-  hover, always on the one shown), and under them `state · agent · age` (*waiting Nm* while it
-  needs input), over which hovering lays *Stop* (running), *Send the last prompt again* (failed)
-  and *Close*. The other filters are flat, the project in place of the agent. A group lists six
-  sessions, then *N more*; an open project with none says *Empty*, a search or filter with none *No
+  row shows the project's last session, or its page, which then fills the row. `+` and `⋯` show
+  on hover and on the keyboard's row, right-click opens the same menu. A session row, indented
+  under its project: its state mark, title and `⋯` (on hover, on the keyboard's row, always on
+  the one shown), and under them `state · agent · age` (*waiting Nm* while it needs input, the
+  state's word in its ink while it waits on the person), over which the pointer and the
+  keyboard's row lay *Stop* (running), *Send the last prompt again* (failed) and *Close*; the
+  keyboard's row lays them on any session but the one shown, whose conversation already holds
+  *Stop* and the way back, so a row the keys only pass through stays still. The
+  other filters are flat, the project in place of the agent. A group lists six sessions, then *N
+  more*; an open project with none says *No open sessions*, a search or filter with none *No
   sessions match*. Each state has its own ink and, but for failed and disconnected, its own
-  mark, none animated (running is a filled dot): failed or disconnected danger, needs input warning, running the accent, done unread success, idle
-  muted. `↑`/`↓` move the list's row, `Enter` and `←`/`→` act on it, `Alt+↑`/`↓` step through
+  mark, none animated (running is a filled dot): failed or disconnected danger, needs input
+  warning, running the accent, done unread success, idle muted. `↑`/`↓` move the list's row,
+  ringed while the keys move it, `Enter` and `←`/`→` act on it, `Alt+↑`/`↓` step through
   sessions in its order. The tree's order is the user's, set by dragging; pinned projects stay on
   top and sessions never leave their project. `Ctrl+Shift+B` hides the rail completely, never to an
   icon column. It resizes between 232 and 448px, on the ramp's lifted surface.
@@ -107,7 +114,7 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   this session…*, refused mid-turn, and *Restart the agent*; *Delete conversation* in the danger
   tint, refused until the first turn ends); a spacer; past conversations and *Close session*
   (only while a session shows); the terminal, an accent dot on it while its dock is closed over a
-  live shell; last, the Workbench. The two dock buttons are filled while their dock is open. On
+  shell running a command; last, the Workbench. The two dock buttons are filled while their dock is open. On
   a page (the overview, Tasks, Issues, Workflows, Settings) it reads the page's name, with no dots
   menu and no dock buttons. As the pane narrows, the name gives way first, down to a minimum.
   Without a session it names the project, its dots menu holding the project's
@@ -133,42 +140,61 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   conversation a readable height (its dragged height kept).
   - Strips as tall as the header. The Workbench's: *← Conversation* while it has the area, the
     modes (Editor, Markdown, Issues, Plugins, Neovim; a select when narrow), maximize, hide. The
-    terminal's: shell tabs (capped, scrolling), `+`, maximize, hide. Crowded file tabs: a select.
+    terminal's: shell tabs (each capped in width, scrolling, so none is left out), `+`, maximize,
+    hide. Crowded file tabs: a select.
   - A list beside its detail (files, documents, issues) only while the dock holds both; else one at
     a time, the detail under a link back naming the list. Picking shows it; going back keeps it.
-  - The Issues tab's issue: a trail (project › reference) with its actions (one primary, one
-    other, ⋯); its tags (state badge, project, labels); the title, large; one line of facts; what
-    it waits on (a conflict, where its work stands, the review); then tabs: *Description* (the
-    body, the files it names, what the work left, *Before*) and *Activity N* (the history).
+    Files and Markdown draw one tree row (`tree_row`); the file or document open beside the tree
+    is its picked row, a changed file's letter in its state's ink at the row's end.
+  - A failed open or save in the Editor or Markdown is a toast; a file changed on disk, a
+    Neovim that would not start and a listing that failed stand as a status line under the mode.
+  - Plugins: the search and filters a filter bar; a row's actions on hover and on keyboard focus, its switch always;
+    what runs and what waits on a restart under the list, so neither moves it.
+  - The Issues tab's issue: a trail (project › reference, linked to its forge, or *Draft*) with
+    its actions (one primary, one other, ⋯); its tags (a neutral state badge, labels); the title,
+    large; one line of facts; what it waits on (a conflict, where its work stands, the review);
+    then two chips: *Description* (the body as a document, the files it names, what the work
+    left, *Before*) and *Activity N* (the history). Sections are parted by space, not rules.
     ⋯ ▸ *Open in Issues* and *Review…* open it on the Issues page, the latter with its review open.
   - Hiding a dock keeps its buffers and processes; the terminal's open state follows the project.
 - **Pages without a session.**
-  - A project with no session shows *New session*, *Run check* when the project has a check
-    command, its *Check command* field, one line counting its tasks that need attention, run or
-    wait (not drawn at zero, and opening the Tasks page narrowed to the project), and its past
-    conversations: capped, scrolling, each with a *Delete* word.
-  - *Workspace overview* shows, across all projects, the cards *Waiting on you* (runs waiting
+  - A project with no session shows one column from the top: a head, the line counting its
+    tasks that need attention, run or wait at the start (not drawn at zero, and opening the
+    Tasks page narrowed to the project), *Run check* (spinning while a check runs) and *New
+    session* (primary) at the end; its *Check command* field; and its past conversations as
+    rows, capped, each with *Delete…* on hover. The page scrolls as one.
+  - *Workspace overview* shows, across all projects, the boxes *Waiting on you* (runs waiting
     for an answer or an approval, and sessions waiting, finished or lost) and *Working*, then
-    *Projects* as a grid of tiles (not drawn without projects), then *Recent conversations* and
-    *Open issues*.
-  - *Tasks*: four cards, *Needs attention* (with the project filter), *Running*, *Queued*,
-    *Finished*, each with a count, an empty line and a cap. A row is the title over workflow, step
-    or outcome and project, with ghost actions by state (*Open session*, *Stop*, *Resume*, *Retry*,
-    *Dismiss*); its text opens the task's detail in the same column.
-  - *Issues*, in the overview's column: a head (*N open*, *Refresh*, *New issue*); a
-    filter bar (search, then chips for open/closed, progress, project, label); a hairline table,
+    *Projects* as a grid of tiles (not drawn without projects), then the sections *Recent
+    conversations* and *Open issues* (its project picker kept while the page is left), plain
+    lists on the page's surface. The page scrolls as one.
+  - *Tasks*: a filter bar (the project picker), then four boxes two by two, *Needs attention*,
+    *Running*, *Queued*, *Finished*, each with a count, an empty line and a cap. A row is the
+    title over workflow, step or outcome and project, with ghost actions by state (*Open
+    session*, *Stop*, *Resume*, *Retry…*, *Dismiss*) shown on hover, kept under *Needs attention*;
+    its text opens the task's detail, a page of its own at the prose width: a trail, the title,
+    then *Awaiting approval*, *Way out* and the runs as plain sections.
+  - *Issues*, in the overview's column: a head (*New issue*, then *Refresh* and *N open*); a
+    filter bar (search, then pickers for open/closed, progress, project, label); a hairline table,
     *Title*, *Labels*, *Updated*, a row a line, rows keeping their place while a person reads.
+    *Reading the issues…* until the first read lands; *Refresh* spins while it reads; *New issue*
+    is secondary, the page holding no primary.
     Nothing is open on arrival; a picked issue floats over the list's right side, its width
     dragged for the session; `×`/Esc close it, ↑/↓ step. *No issues yet* or *No issues match*
     when empty. Filters, search, selection, the open issue and scroll persist.
   - The **review block** opens below where the work stands only on *Review…*, as
     `docs/unattended.md` draws it.
-  - *Workflows* lists the workflows, capped (shipped ones *Built in*, read-only), each with
-    *Run…* (projects, the rail's first). *New workflow* or *Edit* opens a form below, one hairline
-    box per step, a margin marking where a failure goes back to, problems above a spent *Save*.
+  - *Workflows*: a head (*New workflow* on the secondary fill, *Import…*, then how many), then
+    the workflows as rows, capped, shipped ones *Built in* (read-only) in a slot of their own,
+    *Run…* (projects, the rail's first) and the rest shown on hover. *New workflow* or *Edit*
+    opens a form below, one box per step (its kind its first field, one ⋯ to move or remove it),
+    a margin marking where a failure goes back to, problems (a name clash among them) above a
+    *Save* that refuses with the first and spins while it writes.
 - **No top bar, no status bar, no right toolbar.** Transient status goes in a toast; modals are
   `Dialog`s. Settings is a page: a nav column with Appearance, Workspace, Agents, Connections and
-  Shortcuts, its groups split by hairlines, not boxes.
+  Shortcuts (rows as the rail's page rows), and beside it the sub-page, untitled (its nav row
+  names it), opening on its scope as a badge and a hint, its groups split by hairlines with
+  semibold headings, not boxes. Every button there is secondary: Settings holds no primary.
 - **Persistence.** The layout is saved as the Workbench's dragged width, the terminal and rail
   sizes and whether each dock is open, never as the library's `DockAreaState`.
 
@@ -179,11 +205,33 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
 - **A centred reading column**, narrowed on small panels, read a step over the chrome; what is
   wider scrolls inside its well. A scrollbar runs on the panel's edge down to the composer.
 - **One turn, many blocks**: prose, thoughts, plans, activity clusters (tools only), commands,
-  diffs, answered permissions and questions, notices and errors. A workflow's steps and an
-  interrupted turn are notices, never prompts.
+  diffs, answered permissions and questions, notices and errors, the files the turn changed,
+  and, while it runs, the running line (a spinner, its clock, *N running*, what the agent says it
+  is doing). A workflow's steps and an interrupted turn are notices, never prompts.
 - **Folding blocks open from one line**, the chevron first: what runs is open until done, the
-  plan stays open, and a reader's fold wins. Long output folds and is capped. Wells are filled
-  with no edge. A finished turn ends on Copy (its closing paragraph) and how long it took.
+  plan stays open, and a reader's fold wins. Long output folds and is capped, an opened cluster
+  too, each saying what it holds back. Wells are filled with no edge, their text at
+  `CODE_TEXT`. A finished turn ends on Copy (its closing paragraph) and how long it took.
+- **Its rows are lines, not list rows**: a fold line or an activity row is as tall as its text,
+  answers the pointer by raising its ink rather than with a fill, leads with an `.xsmall()` mark
+  in one slot (a spinner while it runs, so nothing moves as it settles), and takes no focus. A
+  path or a command is mono; the agent's own wording, a folder and what the agent did (a
+  thought, a command's output, a read or search list) read in the middle ink. One copy control
+  (`.xsmall()`, quiet, named in its tooltip, in a column of its own; a permission's on the line
+  under its command, beside where it runs; a prompt's under its bubble, shown while the prompt
+  is pointed at or the control holds focus) and one show-more control serve every block. Text
+  that scrolls keeps a gutter for its scrollbar.
+- **Calm once it is past**: a failure a later prompt has moved past keeps its words in the
+  muted ink, with no fill; a settled *N failed* drops the danger ink; a refusal's badge is
+  neutral. A live failure is a solid danger wash with no edge, and a lost agent's names the key
+  that restarts it.
+- **The pinned cards** (a permission, a question) share one shell: a head, the body, the
+  answers at the end at `.small()` (a hairline under the head and over the answers, the sides
+  padded `p_4` so a scrolling body's thumb has room), the dismissing one a quiet ghost. A choice is a row on a well
+  of its own at rest and on the selected step when taken, a radio or checkbox drawn in ink at
+  its head (the library's rings vanish on the selected step) and its number as a `Kbd`, at least
+  a field's height; a typed answer is a plain field (`.tall()`), ringed while the keys are on it. Their keys are named in tooltips, never in a label.
+  The card holds the one primary while it shows.
 
 ## Type, space and shape
 
@@ -220,13 +268,12 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   pixels, and the terminal's grid, which zooms on its own. Fixed chrome heights stay outside the
   zoom wrapper. A size the steps lack is a named constant (shared ones in
   `onehand_plugin_host::tokens`, others beside their use), its reason in its doc comment.
-- **Corners by role**: `radius_tokens().sm` for what is pressed, picked, typed into or lifted out by
-  a fill (a control, a row such as the rail's selected project or session, a tab, a chip); the
-  control wrappers set it. `radius` for a block read inside a column (a well, code, a diff, a
-  notice). `radius_lg` for a box standing on its own (a page's box, a table, the bubble, the
-  composer, the terminal, a floating panel, a dialog, a toast) and for a badge (a `Tag`).
-  `rounded_full` for a dot. A part joined to its container's edge takes its corner there; the
-  library's menus keep `radius`.
+- **One corner**: `radius`, 3px (`tokens::CORNER`), for everything: a control, a field, a row,
+  a tab, a chip, a well, the bubble, a box, the composer, the terminal, a floating panel, a
+  dialog, a toast. The theme sets `radius_lg` to the same, so the library's own surfaces follow.
+  Two exceptions: a badge (a `Tag`) keeps a rounder `tokens::BADGE_CORNER`, so it reads as a tag
+  rather than a button, and a dot or a status mark is `rounded_full`. A part joined to its
+  container's edge takes its corner there.
 - **Lines** are a 1px `border`; the mark under an open tab is 2px.
 
 ## Colour and state
@@ -252,9 +299,14 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   inherits its surface unless it has a distinct role: well, selection or floating content.
 - Boxes are borders; wells and the bubble are fills. Ordinary sections remain unboxed. Do not
   combine a border, contrasting fill and shadow just to make a group visible.
-- Hover and selection are fills: distinct steps on a row (`list_hover`, `accent`), one step on a
-  ghost button (the selected one). Keyboard focus is the ring.
-- At most one primary in a view; a view needs none (the Settings page has none).
+- Hover and selection are fills: distinct steps on a row (`list_hover`, `accent`; the rail's own
+  `sidebar_accent` and `rail_chosen`), one step on a ghost button (the selected one). Keyboard
+  focus is the ring, except on a field: a focused field draws no ring, only its edge in the
+  `ring` ink, and a field with no edge at rest shows one while focused (the composer, a card, keeps
+  the caret alone).
+- At most one primary in a view; a view needs none (the Settings page has none). Where layers
+  stack, what waits on the person holds it while it shows (a floating issue, an open form, a
+  pinned card, a run's approval), and what it covers steps down to `secondary`.
 - The palette is neutral: surfaces and inks carry next to no hue, so a hue on screen means
   something. A missing surface or ink goes into the ramp with its contrast asserted, never into
   one view; a step between two the ramp holds is mixed from them perceptually (`mix_oklab`), so
@@ -264,20 +316,21 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
 
 Reuse gpui-component before building anything: `Root`, `DockArea`, `Sidebar`, `Dialog`, `Switch`,
 `InputState`, `Editor`, `TextView`, plus gpui's own `list` for the transcript. Controls go through
-the plugin host's builders, which set the pointer cursor and the `sm` corner: buttons through
+the plugin host's builders, which set the pointer cursor and the one corner (`radius`): buttons through
 `action`; fields through `text_input`, `search_input` (the search mark, the clear button; the rail's
 alone has no edge, on `theme::inset`) and `text_area`. A button names its variant by role: `primary`
-the main action, `secondary` an alternative beside it, a picker's trigger and every Settings button,
+the main action, `secondary` an alternative beside it, a set picker's trigger (an unset one is a ghost, through
+`picker`) and every Settings button,
 `choice` in a pick-one row, `danger` only under *Exceptions*, and ghost (`.quiet(cx)`, whose hover
 is the selected step) the rest. **No button draws an edge** (no default variant, no `outline()`): a
 field is the one control marked by its edge, on no fill of its own. A control that refuses says so
-(`.refuses()`) and goes back to the arrow.
+and why (`.refuses(why)`, the reason its tooltip) and goes back to the arrow.
 
 **A size names a role, and means one height and one text size in every control.** The library's
 sizes disagree across components (its default button letters at the reading size beside a field
 at the chrome size), so the app uses three: `.small()` (`CONTROL_H`), the compact default, in a
-strip, a box and for a row's actions; `.tall()` (`FIELD_H`, chrome-size words) in a form, a filter
-bar, a page's head and a dialog's footer; `.xsmall()` only for a secondary action inside dense
+strip, a box, a page's head, a filter bar and for a row's actions; `.tall()` (`FIELD_H`,
+chrome-size words) in a form and a dialog's footer; `.xsmall()` only for a secondary action inside dense
 content: a line of meta text, a transcript block, a chip. Never the library's default. A
 correction a component needs lives in its shared wrapper (`Tall`), never at a call site. An icon
 keeps its role's size whatever the hit area round it, and a badge, a checkbox or a switch keeps
@@ -308,9 +361,27 @@ control or row it is part of.
 
 ## Exceptions
 
-The whole list: any other departure from a rule above is a bug until agreed and listed here.
+The whole list of departures agreed to stay: any other is a bug, put right or recorded in
+`docs/known-gaps.md` until it is.
 
 - **The composer card has no edge.** It stands off the page on its own fill (`theme::raised`) and
   its own lift (`composer_lift`).
 - **A solid danger fill marks two buttons**: *Stop* in the composer, and the button confirming a
   removal inside its modal. Anywhere else a destructive action is a word in the danger tint.
+- **The composer's chips are quiet even when set.** Its pickers (the model, the effort, the mode,
+  *Fast*, the branch) are `.small()` ghosts with a caret whatever they hold, where a picker
+  elsewhere takes the secondary fill once set: each always holds a choice, and a fill on every
+  chip would crowd the field they sit under.
+- **A cut fades into the surface behind it**: a rail name too long for its row, a long command
+  folded in the transcript, the conversation where it runs under the composer, and the staged
+  files beside *Show all N*. Each is a gradient from the clear surface to the solid one; it says
+  something is cut, and nothing else is drawn see-through.
+- **The library draws its own controls' states**: a refusing or loading button, a picker's caret,
+  a badge under the pointer and a switch's thumb keep the alpha or the motion it gives them, as
+  its overlays keep theirs.
+- **The library's small parts keep their half corner**: a `Kbd`, a checkbox and the library's own
+  tabs read its `sm` radius, half the one corner; they are drawn inside a control, where a full
+  corner would round them to a pill.
+- **An open menu's trigger keeps its resting ink**: while a dropdown is open the library draws its
+  trigger on the selected step and replays the ink the caller gave it, so a quiet icon stays in
+  the muted ink there rather than taking the selected step's ink.

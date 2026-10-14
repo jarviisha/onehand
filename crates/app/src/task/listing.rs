@@ -28,6 +28,19 @@ pub(crate) struct Row {
     /// running. A task that ended but still holds its place, its session's
     /// turn not yet over, has nothing left to stop.
     pub(crate) stoppable: bool,
+    /// Stop was pressed and the task has not given its place up yet: its
+    /// step's command, or its check, is still being stopped.
+    pub(crate) stopping: bool,
+}
+
+/// Whether a check is running on the project at `root`, so its *Run check*
+/// says it is busy.
+pub(crate) fn checking(root: &std::path::Path, cx: &App) -> bool {
+    cx.try_global::<Tasks>().is_some_and(|t| {
+        t.tasks
+            .iter()
+            .any(|task| task.setup.repo == root && t.checks.contains_key(&task.id))
+    })
 }
 
 /// Every task of the projects at `roots`: finished ones newest first, every
@@ -68,6 +81,7 @@ pub(crate) fn rows(roots: &[PathBuf], cx: &App) -> Vec<Row> {
             stoppable: live.is_some()
                 || t.queue.queued(&task.id)
                 || t.checks.contains_key(&task.id),
+            stopping: t.stopping(&task.id),
         };
         rows.push((Some(task), row));
     }

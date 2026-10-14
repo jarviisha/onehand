@@ -14,8 +14,7 @@ use gpui::{
 use gpui_component::button::ButtonVariants;
 use gpui_component::dialog::Dialog;
 use gpui_component::input::TextareaState;
-use gpui_component::tag::Tag;
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::issues::template;
 use onehand_core::preflight::{Check, Finding};
 use onehand_core::unattended::{self as core, IssueRow, Tracker};
@@ -60,7 +59,10 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
     let blocking = judged
         .as_ref()
         .map_or(0, |(found, ..)| found.iter().filter(|f| f.blocks).count());
-    let runnable = judged.is_some() && blocking == 0;
+    let refusal = match judged {
+        None => Some("Pick an issue first".to_string()),
+        Some(_) => super::blocked(blocking),
+    };
     let danger = crate::theme::status_ink(cx).danger;
     let (margin, room) = super::form_room(window);
     let handle = cx.entity();
@@ -75,8 +77,8 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
                     .w_full()
                     .when(!narrowed, |col| {
                         col.child(div().text_xs().text_color(cx.theme().muted_foreground).child(
-                            "Choose an issue to start a run on. Starting claims it where it \
-                             lives and starts an agent on it in a worktree of its own.",
+                            "Choose an issue to start a run on; starting claims it where it \
+                             lives and starts an agent on it in a worktree of its own",
                         ))
                     })
                     .child(issue_list(found.as_deref(), at, &handle, cx))
@@ -109,22 +111,19 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
                     .child(
                         div()
                             .v_flex()
-                            .gap_3()
+                            .gap_4()
                             .w_full()
                             .children(list)
-                            .children(form),
+                            .children(form)
+                            // How many things above block the start, last,
+                            // standing over the footer's primary.
+                            .children(super::blocking_note(blocking, danger)),
                     ),
             )
         })
         .footer(
-            div()
-                .h_flex()
-                .gap_2()
-                .justify_end()
-                .w_full()
-                // Why *Run* is spent, beside it; what each block is, and
-                // where it is changed, is in the form above.
-                .children(super::blocking_note(blocking, danger))
+            super::footer_row()
+                .child(div().flex_1())
                 .child(
                     crate::controls::action("cancel-pick")
                         .tall()
@@ -139,9 +138,9 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
                         .tall()
                         .primary()
                         .label("Run");
-                    match runnable {
-                        false => run.refuses(true),
-                        true => run.on_click(cx.listener(
+                    match refusal {
+                        Some(why) => run.refuses(Some(why)),
+                        None => run.on_click(cx.listener(
                             |shell: &mut Shell, _: &ClickEvent, window, cx| {
                                 shell.commit_pick(window, cx);
                             },
@@ -184,7 +183,6 @@ fn start_form(
         cx.theme().muted_foreground,
         crate::theme::status_ink(cx).danger,
     );
-    let label = |text: &'static str| div().text_sm().child(text);
     let shell = handle.clone();
     let menu = issue_workflow_menu(
         "pick-workflow",
@@ -193,18 +191,16 @@ fn start_form(
         move |id, _, cx| shell.update(cx, |shell, cx| shell.pick_issue_workflow(id, cx)),
         cx,
     );
-    let about = template.as_ref().ok().map(|template| {
-        div()
-            .text_xs()
-            .text_color(muted)
-            .child(template.description.trim().to_string())
-    });
+    let about = template
+        .as_ref()
+        .ok()
+        .map(|template| div().child(template.description.trim().to_string()));
     let agent = crate::unattended::run_agent(cx).map_or_else(
         || "no agent configured".to_string(),
         |name| format!("with {name}"),
     );
     let place = format!(
-        "On a new branch, {}, in a worktree of its own, {agent}.",
+        "On a new branch, {}, in a worktree of its own, {agent}",
         core::branch_for(tracker, &row.issue)
     );
     let base = findings
@@ -223,22 +219,40 @@ fn start_form(
     // said, never in the way.
     let lacks = template::lacking(row.issue.body_text(), templates)
         .map(|lacks| div().text_xs().text_color(muted).child(lacks.said()));
+    // Fields, as every form's are, `gap_4` apart; what blocks the start
+    // stands above the footer's primary.
     let column = div()
         .v_flex()
-        .gap_2()
+        .gap_4()
         .w_full()
         .children(lacks)
-        .child(label("Workflow"))
-        .child(div().h_flex().child(menu))
-        .children(about)
-        .child(label("Where it works"))
-        .child(div().text_xs().text_color(muted).child(place))
+        .child(onehand_plugin_host::field(
+            "Workflow",
+            about.map(IntoElement::into_any_element),
+            div().h_flex().child(menu),
+            cx,
+        ))
+        .child(onehand_plugin_host::field(
+            "Where it works",
+            Some(place.into_any_element()),
+            div(),
+            cx,
+        ))
         .children(base)
         .when(!lines.is_empty(), |col| {
-            col.child(label("Before it starts")).children(lines)
+            col.child(onehand_plugin_host::field(
+                "Before it starts",
+                None,
+                div().v_flex().gap_2().children(lines),
+                cx,
+            ))
         })
-        .child(label("Instructions for this run"))
-        .child(text_area(instructions, cx).h(super::INSTRUCTIONS_H));
+        .child(onehand_plugin_host::field(
+            "Instructions for this run",
+            None,
+            text_area(instructions, cx).h(super::INSTRUCTIONS_H),
+            cx,
+        ));
     let Ok(template) = template else {
         return column.into_any_element();
     };
@@ -290,13 +304,16 @@ where
     };
     let picked = picked.map(str::to_string);
     let on_pick = std::rc::Rc::new(on_pick);
+    // A form's picker: at a form's height, filled once it holds a choice.
     crate::controls::menu_below(
         id,
-        crate::controls::action((id, 0usize))
-            .secondary()
-            .small()
-            .label(name)
-            .icon(Icon::new(IconName::ChevronDown)),
+        onehand_plugin_host::picker(
+            (id, 0usize),
+            name,
+            picked.is_some(),
+            onehand_plugin_host::ControlSize::Tall,
+            cx,
+        ),
         move |mut menu, _, _| {
             if let Some(any) = any {
                 let on_pick = on_pick.clone();
@@ -328,9 +345,10 @@ where
     )
 }
 
-/// One issue as a pressable row: how it is shown muted — the forge's number, or
-/// *Draft* — then the title, a few labels as pills, and a muted word at the end
-/// saying where it lives or whose it is.
+/// One issue as a pressable row: how it is named — the forge's number, or
+/// *Draft* — in its slot in the middle ink, then the title, a few labels
+/// tinted by kind, and a muted word at the end saying where it lives or whose
+/// it is.
 ///
 /// One builder for every list of issues, so an issue reads the same in the
 /// picker and on the workspace page.
@@ -343,17 +361,15 @@ pub(crate) fn issue_row(
     cx: &App,
 ) -> gpui::Stateful<gpui::Div> {
     let muted = cx.theme().muted_foreground;
-    let (fill, ink) = (cx.theme().secondary, cx.theme().secondary_foreground);
     row_shell(id, shown, title, cx)
         // A few labels, not all: the row is for telling issues apart, and the
         // title is what does most of that.
-        .children(labels.iter().take(3).map(|label| {
-            Tag::custom(fill, ink, fill)
-                .small()
-                .rounded(cx.theme().radius_lg)
-                .flex_none()
-                .child(label.clone())
-        }))
+        .children(
+            labels
+                .iter()
+                .take(3)
+                .map(|label| onehand_plugin_host::label_badge(label.clone(), cx)),
+        )
         .child(
             div()
                 .flex_none()
@@ -364,8 +380,8 @@ pub(crate) fn issue_row(
 }
 
 /// A row in the issue row's shape with something other than a number at its
-/// head — a session's mark, a project's folder, a conversation's age — and no
-/// labels. What the workspace page lists that is not an issue.
+/// head — a session's mark, a conversation's age — and no labels. What the
+/// workspace page lists that is not an issue.
 pub(crate) fn page_row(
     id: impl Into<gpui::ElementId>,
     lead: impl IntoElement,
@@ -383,31 +399,32 @@ pub(crate) fn page_row(
     )
 }
 
-/// What both row shapes share: the pressable line, its muted head and its
-/// truncated title.
+/// The slot a row's head stands in — a five-digit reference, *Draft*, an
+/// age, a mark — so every title starts on one edge.
+const LEAD_W: gpui::Rems = gpui::rems(3.);
+
+/// What both row shapes share: a list row's surface, its head in a slot of
+/// its own in the middle ink, and its truncated title.
 fn row_shell(
     id: impl Into<gpui::ElementId>,
     lead: impl IntoElement,
     title: String,
     cx: &App,
 ) -> gpui::Stateful<gpui::Div> {
-    let (muted, radius, hover) = (
-        cx.theme().muted_foreground,
-        cx.theme().radius_tokens().sm,
-        cx.theme().list_hover,
-    );
-    div()
+    onehand_plugin_host::row(false, cx)
         .id(id)
         .h_flex()
         .items_center()
         .gap_2()
         .w_full()
-        .px_2()
-        .py_1()
-        .rounded(radius)
-        .cursor_pointer()
-        .hover(move |row| row.bg(hover))
-        .child(div().flex_none().text_color(muted).child(lead))
+        .child(
+            div()
+                .flex_none()
+                .w(LEAD_W)
+                .text_xs()
+                .text_color(crate::theme::meta_ink(cx))
+                .child(lead),
+        )
         .child(div().flex_1().min_w_0().truncate().child(title))
 }
 
@@ -418,24 +435,32 @@ fn issue_list(
     handle: &Entity<Shell>,
     cx: &App,
 ) -> AnyElement {
-    let (muted, active) = (cx.theme().muted_foreground, cx.theme().list_active);
+    let theme = cx.theme();
+    let (muted, accent, accent_ink) = (
+        theme.muted_foreground,
+        theme.accent,
+        theme.accent_foreground,
+    );
     let (rows, cut, unread) = match found {
         None => {
             return div()
+                .text_xs()
                 .text_color(muted)
                 .child("Reading the open issues…")
                 .into_any_element();
         }
         Some(Err(why)) => {
             return div()
+                .text_xs()
                 .text_color(crate::theme::status_ink(cx).warning)
                 .child(format!("Nothing to pick: {why}"))
                 .into_any_element();
         }
         Some(Ok((rows, _, _))) if rows.is_empty() => {
             return div()
+                .text_xs()
                 .text_color(muted)
-                .child("No open issues")
+                .child("No open issues yet")
                 .into_any_element();
         }
         Some(Ok((rows, cut, unread))) => (rows, *cut, unread.clone()),
@@ -477,7 +502,10 @@ fn issue_list(
                         trailing,
                         cx,
                     )
-                    .when(chosen == Some(i), |row| row.bg(active))
+                    // The chosen one on the selected step, in its ink.
+                    .when(chosen == Some(i), |row| {
+                        row.bg(accent).text_color(accent_ink)
+                    })
                     .on_click(
                         move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
                             handle.update(cx, |shell, cx| shell.choose_issue(i, window, cx));
@@ -498,7 +526,7 @@ fn issue_list(
         // Said, not hidden: a list cut silently reads as the whole of it.
         .when(cut, |list| {
             list.child(div().text_xs().text_color(muted).child(format!(
-                "Showing the newest {}; close some to reach the rest.",
+                "Showing the newest {}; close some to reach the rest",
                 onehand_core::unattended::ISSUES_SHOWN
             )))
         })

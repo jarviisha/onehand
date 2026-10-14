@@ -1,7 +1,7 @@
 use super::popup::{edge_scrolled, more_text, popup_header, popup_surface};
 use super::{Composer, ComposerEvent, Overlay};
 use crate::controls::Quiet as _;
-use crate::tokens::CONTROL_H;
+use crate::tokens::{CONTROL_H, ROW_H};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, Context, InteractiveElement, IntoElement, ParentElement, Rems, StatefulInteractiveElement,
@@ -19,10 +19,10 @@ const ATTACHMENT_MAX_W: Rems = rems(10.);
 const TRAY_FADE: Rems = rems(3.);
 /// Attachment chips drawn before the tray starts counting instead.
 const MAX_TRAY_CHIPS: usize = 12;
-/// Rows built at once in the expanded attachment manager. Removing a visible
-/// row reveals the next one, so every item remains manageable without laying
-/// out a dropped directory's entire contents on each frame.
-const MAX_ATTACHMENT_MANAGER_ROWS: usize = 100;
+/// Rows the attachment manager lists, as many as any list of the composer's
+/// popup. Removing a visible row reveals the next one, so every item remains
+/// manageable, and the line under the list says how many wait.
+const MAX_ATTACHMENT_MANAGER_ROWS: usize = 6;
 
 impl Composer {
     /// Stage paths that arrived from somewhere other than the picker.
@@ -173,14 +173,14 @@ impl Composer {
         if self.attachments.is_empty() {
             return None;
         }
-        let (border, muted, danger_border, danger_text, radius, well) = (
+        let (border, muted, danger_text, radius) = (
             cx.theme().border,
             cx.theme().muted_foreground,
-            cx.theme().danger,
             crate::theme::status_ink(cx).danger,
-            cx.theme().radius_tokens().sm,
-            cx.theme().muted,
+            cx.theme().radius,
         );
+        // An unreadable file's edge in the state's ink, as its name is.
+        let danger_border = danger_text;
         let hover = cx.theme().list_hover;
         let page = cx.theme().background;
         // **One row, never two.** Past the composer's width the row is cut,
@@ -211,7 +211,7 @@ impl Composer {
         let chips = div()
             .id("attachment-tray")
             .h_flex()
-            .gap_1()
+            .gap_2()
             .overflow_x_scroll()
             .track_scroll(&scroll)
             .children(
@@ -248,7 +248,7 @@ impl Composer {
                         let size = a.bytes.map(|bytes| {
                             div()
                                 .flex_none()
-                                .text_color(muted)
+                                .text_color(crate::theme::meta_ink(cx))
                                 .child(onehand_core::attachment::size_label(bytes))
                                 .into_any_element()
                         });
@@ -262,7 +262,7 @@ impl Composer {
                         // without it the press that unstages a file also
                         // asks the Workbench to open the file just removed.
                         let unstage = crate::controls::action(("unstage", i))
-                            .quiet(cx)
+                            .quiet_icon(false, cx)
                             .xsmall()
                             .icon(Icon::new(IconName::Close))
                             .tooltip("Remove this attachment")
@@ -279,7 +279,7 @@ impl Composer {
                         attachment_shape(
                             div().id(("attachment", i)),
                             unavailable,
-                            (border, danger_border, well),
+                            (border, danger_border),
                             radius,
                         )
                         .children(parts)
@@ -305,7 +305,7 @@ impl Composer {
             div()
                 .h_flex()
                 .items_center()
-                .gap_1()
+                .gap_2()
                 .w_full()
                 .child(
                     div()
@@ -334,7 +334,7 @@ impl Composer {
                     tray.child(
                         crate::controls::action("all-attachments")
                             .quiet(cx)
-                            .xsmall()
+                            .small()
                             .flex_none()
                             .label(format!("Show all {}", self.attachments.len()))
                             .tooltip("Review or remove staged attachments")
@@ -382,7 +382,7 @@ impl Composer {
                             .unwrap_or_else(|| "Size unavailable".to_string());
                         let name = attachment.name.clone();
                         let remove = crate::controls::action(("remove-managed-attachment", i))
-                            .quiet(cx)
+                            .quiet_icon(false, cx)
                             .xsmall()
                             .icon(Icon::new(IconName::Close))
                             .tooltip("Remove this attachment")
@@ -390,17 +390,21 @@ impl Composer {
                                 cx.stop_propagation();
                                 composer.unstage(id, cx);
                             }));
-                        let row = div()
-                            .h_flex()
-                            .gap_2()
-                            .w_full()
-                            .min_w_0()
-                            .px_2()
-                            .h(CONTROL_H)
-                            .children(
-                                unavailable
-                                    .then(|| Icon::new(IconName::Info).size_3().text_color(danger)),
-                            )
+                        // The mark's slot is there on every row, so every
+                        // name starts on one edge whether it is marked or not.
+                        let contents = |row: gpui::Div| {
+                            row.h_flex()
+                                .items_center()
+                                .gap_2()
+                                .w_full()
+                                .min_w_0()
+                                .child(onehand_plugin_host::mark_slot(div().children(
+                                    unavailable.then(|| {
+                                        Icon::new(IconName::Info).small().text_color(danger)
+                                    }),
+                                )))
+                        };
+                        let row = contents(div())
                             .child(
                                 div()
                                     .flex_1()
@@ -413,16 +417,17 @@ impl Composer {
                             .child(div().flex_none().text_xs().text_color(muted).child(detail))
                             .child(remove);
                         match path {
-                            Some(path) => crate::controls::action(("open-managed-attachment", i))
-                                .quiet(cx)
-                                .w_full()
-                                .child(row)
-                                .tooltip("Open this file in the Workbench")
-                                .on_click(cx.listener(move |_: &mut Self, _, _, cx| {
-                                    cx.emit(ComposerEvent::OpenFile(path.clone()));
-                                }))
-                                .into_any_element(),
-                            None => row.into_any_element(),
+                            Some(path) => {
+                                super::rows::popup_row(("open-managed-attachment", i), false, cx)
+                                    .h(ROW_H)
+                                    .child(row)
+                                    .tooltip("Open this file in the Workbench")
+                                    .on_click(cx.listener(move |_: &mut Self, _, _, cx| {
+                                        cx.emit(ComposerEvent::OpenFile(path.clone()));
+                                    }))
+                                    .into_any_element()
+                            }
+                            None => div().h_flex().h(ROW_H).px_2().child(row).into_any_element(),
                         }
                     }),
             );
@@ -474,7 +479,7 @@ fn openable(attachment: &StagedAttachment) -> Option<std::path::PathBuf> {
 fn attachment_shape<E: Styled>(
     el: E,
     unavailable: bool,
-    (border, danger, well): (gpui::Hsla, gpui::Hsla, gpui::Hsla),
+    (border, danger): (gpui::Hsla, gpui::Hsla),
     radius: gpui::Pixels,
 ) -> E {
     el.h_flex()
@@ -485,9 +490,9 @@ fn attachment_shape<E: Styled>(
         .pl_2()
         .pr_1()
         .rounded(radius)
+        // An edge and no fill: a boundary is drawn once.
         .border_1()
         .border_color(if unavailable { danger } else { border })
-        .bg(well)
         .text_xs()
 }
 
@@ -501,40 +506,21 @@ fn attachment_shape<E: Styled>(
 /// shell makes them one family structurally rather than by two sets of style
 /// rules kept in step by hand.
 ///
-/// A ghost control at a small button's height, its words lettered at
-/// `text_xs` by each chip on the child that carries them, in full ink, while
-/// its glyphs and its caret take the chip's muted ink. The chip whose popup is
-/// open takes the selected fill, and keeps it under the pointer; its caller
-/// leaves its tooltip off meanwhile, since the menu opens where it would show.
+/// A quiet ghost at the small size Send beside it takes, so the row is one
+/// height and one size of words: its glyph and its words in one ink, a caret
+/// where it opens a picker. The chip whose popup is open takes the selected
+/// fill and that fill's ink; its caller leaves its tooltip off meanwhile, since
+/// the menu opens where it would show.
+///
+/// Quiet rather than the filled trigger a picker takes elsewhere: a filled
+/// chip for each setting would crowd the field they sit under.
 pub(super) fn chip(id: impl Into<gpui::ElementId>, open: bool, cx: &App) -> Button {
-    let (open_fill, fg, radius) = (
-        cx.theme().accent,
-        cx.theme().muted_foreground,
-        cx.theme().radius_tokens().sm,
-    );
     crate::controls::action(id)
         .quiet(cx)
-        // Not for the geometry -- the height and padding below are set outright
-        // and land after the library's own, so they win either way. This is for
-        // the **caret**, which takes its size from the button's size rather than
-        // from the text beside it: left at the default it is a chevron a third
-        // taller than the word it belongs to, on a control whose whole job is to
-        // be quiet.
-        .xsmall()
+        .small()
         .selected(open)
         .h_flex()
         .items_center()
         .gap_1()
         .flex_none()
-        .h(CONTROL_H)
-        .px_1p5()
-        .rounded(radius)
-        // Ink here, but **not the text size**: the library sets that on the box
-        // holding the words, from the button's `Size` and not from anything the
-        // call site asks for -- so a size set out here is overridden by one set
-        // closer to the text, and setting it looks like it worked while nothing
-        // moves. Whatever wants a size of its own says so on the child that
-        // carries the words.
-        .text_color(fg)
-        .when(open, |chip| chip.bg(open_fill))
 }

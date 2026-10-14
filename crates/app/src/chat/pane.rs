@@ -29,6 +29,7 @@ mod events;
 mod header;
 mod history;
 mod overlay;
+mod page_parts;
 mod project_page;
 mod runs;
 mod sessions;
@@ -90,13 +91,6 @@ const SIDE_MARGIN: Rems = rems(1.);
 const SIDE_MARGIN_NARROW: Rems = rems(0.75);
 /// Where a panel stops being wide enough to hold the column off its edges.
 const NARROW_PANEL: Rems = rems(30.);
-/// The disc offering the way back to the end of the conversation.
-///
-/// A step above the controls in the card below it, because it is the one thing
-/// on screen floating over the conversation with nothing around it — and a step
-/// under the card's own height, because it is not part of that card. Square, so
-/// the full radius makes it a circle: it holds one arrow and nothing else.
-const JUMP_PILL_H: Rems = rems(1.625);
 /// The narrower cap the composer and the surfaces that belong to it take.
 ///
 /// **A message being written is not a message being read.** The transcript's
@@ -212,6 +206,8 @@ pub struct ProjectFacts {
     pub unattended: Option<bool>,
     /// It has a check command, so its page offers to run it.
     pub check: bool,
+    /// Removing it asks first, which its menu's ellipsis says.
+    pub asks: bool,
 }
 
 impl ProjectFacts {
@@ -225,6 +221,7 @@ impl ProjectFacts {
             is_repo,
             unattended: (!root.transient).then_some(root.unattended),
             check: root.check.is_some(),
+            asks: false,
         }
     }
 }
@@ -242,6 +239,11 @@ pub struct ChatPane {
     /// task detail: clicking through the cards moves no focus, and a page that
     /// held none would hear no key at all.
     tasks_focus: FocusHandle,
+    /// The project the overview's issues are narrowed to, kept while the
+    /// overview is left and shown again.
+    workspace_filter: Option<std::path::PathBuf>,
+    /// The project the Tasks page is narrowed to, kept while it is left.
+    tasks_filter: Option<std::path::PathBuf>,
     /// Every session the user has opened, in whatever phase it has reached.
     ///
     /// One map, not six. What each session's phase means, and why the parallel
@@ -415,6 +417,8 @@ impl ChatPane {
             Self {
                 focus_handle: cx.focus_handle(),
                 tasks_focus: cx.focus_handle(),
+                workspace_filter: None,
+                tasks_filter: None,
                 conversations: HashMap::new(),
                 active: None,
                 composer,

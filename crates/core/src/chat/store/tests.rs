@@ -325,6 +325,62 @@ fn a_rename_rewrites_only_the_metadata() {
     let _ = std::fs::remove_dir_all(&store);
 }
 
+/// A rename's metadata landing after a turn's save that was read later
+/// leaves the turn's count alone; the turn's lines still land.
+#[test]
+fn a_rename_landing_late_does_not_write_back_an_older_count() {
+    let store = scratch("rename-late");
+    let mut chat = chat_in(&store, "s1");
+    chat.push_user("first".into(), Vec::new());
+    save(&mut chat);
+    let dir = conv_dir(&store, "s1");
+
+    assert!(chat.rename("Named"));
+    let rename = chat.flush_meta().unwrap();
+    chat.push_user("second".into(), Vec::new());
+    let turn = chat.flush().unwrap();
+    commit(&turn).unwrap();
+    commit(&rename).unwrap();
+
+    let meta = read_meta(&dir).unwrap();
+    assert_eq!(meta.item_count, 2, "the turn's count stands");
+    assert_eq!(
+        meta.title, "Named",
+        "read after the rename, the turn carries it"
+    );
+    let _ = std::fs::remove_dir_all(&store);
+}
+
+/// A turn's save landing after a rename that was read later keeps the name,
+/// and still moves the conversation's date.
+#[test]
+fn a_turn_landing_late_keeps_the_newer_name() {
+    let store = scratch("turn-late");
+    let mut chat = chat_in(&store, "s1");
+    chat.push_user("first".into(), Vec::new());
+    save(&mut chat);
+    let dir = conv_dir(&store, "s1");
+    let lines = |dir: &Path| {
+        std::fs::read_to_string(dir.join("items.jsonl"))
+            .unwrap()
+            .lines()
+            .count()
+    };
+
+    chat.push_user("second".into(), Vec::new());
+    let turn = chat.flush().unwrap();
+    assert!(chat.rename("Named"));
+    let rename = chat.flush_meta().unwrap();
+    commit(&rename).unwrap();
+    commit(&turn).unwrap();
+
+    let meta = read_meta(&dir).unwrap();
+    assert_eq!(meta.title, "Named", "the older read does not undo the name");
+    assert_eq!(meta.item_count, 2);
+    assert_eq!(lines(&dir), 2, "the turn's line still lands");
+    let _ = std::fs::remove_dir_all(&store);
+}
+
 #[test]
 fn a_bounded_load_says_so_and_keeps_the_tail() {
     let store = scratch("bounded");

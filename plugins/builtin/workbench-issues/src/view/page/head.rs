@@ -1,4 +1,4 @@
-//! The page's head — the open count, *Refresh* and *New issue* — the filter
+//! The page's head — *New issue*, *Refresh* and the open count — the filter
 //! bar under it, and what the list cannot vouch for. The page's name is the
 //! pane's header's, as every page's is.
 
@@ -10,13 +10,14 @@ use gpui::{
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::InputState;
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, Sizable as _, StyledExt};
 use onehand_core::issues;
 use onehand_core::task::work::list::{Filters, Incomplete, Listed, Progress};
 use onehand_plugin_host::Quiet as _;
-use onehand_plugin_host::Tall as _;
 use onehand_plugin_host::search_input;
-use onehand_plugin_host::{AppIcon, action, menu_below, menu_item, status_ink};
+use onehand_plugin_host::{
+    AppIcon, ControlSize, action, menu_below, menu_item, picker, status_ink,
+};
 use std::path::PathBuf;
 
 /// How many labels the label filter offers.
@@ -27,8 +28,8 @@ const LABELS_SHOWN: usize = 100;
 const SEARCH_W: Rems = rems(18.);
 
 impl IssuesView {
-    /// The page's head over the list: how many issues are open, *Refresh*
-    /// and *New issue* on one row; under it the search as wide as
+    /// The page's head over the list: *New issue*, *Refresh* and how many
+    /// issues are open on one row; under it the search as wide as
     /// the row allows and the open/closed, progress, project and label
     /// filters, wrapping when narrow.
     pub(super) fn page_head(
@@ -40,6 +41,7 @@ impl IssuesView {
         query: &Entity<InputState>,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let reading = listed.open + listed.closed == 0 && self.reading_issues(projects, cx);
         let showing = {
             let closed = filters.closed;
             // The count of open issues heads the page; the menu keeps both.
@@ -51,10 +53,11 @@ impl IssuesView {
             let view = cx.entity();
             menu_below(
                 "issues-page-showing",
-                trigger(
+                picker(
                     "issues-page-showing-trigger",
                     if closed { "Closed" } else { "Open" },
                     closed,
+                    ControlSize::Small,
                     cx,
                 ),
                 move |mut menu, _, _| {
@@ -78,13 +81,14 @@ impl IssuesView {
             menu_below(
                 "issues-page-progress",
                 // Unset, the trigger names what it filters by.
-                trigger(
+                picker(
                     "issues-page-progress-trigger",
                     match picked {
                         Progress::All => "Progress",
                         picked => picked.label(),
                     },
                     picked != Progress::All,
+                    ControlSize::Small,
                     cx,
                 ),
                 move |mut menu, _, _| {
@@ -117,7 +121,13 @@ impl IssuesView {
             let view = cx.entity();
             menu_below(
                 "issues-page-project",
-                trigger("issues-page-project-trigger", &name, picked.is_some(), cx),
+                picker(
+                    "issues-page-project-trigger",
+                    name,
+                    picked.is_some(),
+                    ControlSize::Small,
+                    cx,
+                ),
                 move |menu, _, _| {
                     let pick = |only: Option<PathBuf>| {
                         let view = view.clone();
@@ -148,10 +158,11 @@ impl IssuesView {
             let view = cx.entity();
             menu_below(
                 "issues-page-label",
-                trigger(
+                picker(
                     "issues-page-label-trigger",
-                    picked.as_deref().unwrap_or("Label"),
+                    picked.clone().unwrap_or_else(|| "Label".to_string()),
                     picked.is_some(),
+                    ControlSize::Small,
                     cx,
                 ),
                 move |menu, window, _| {
@@ -193,21 +204,27 @@ impl IssuesView {
                 )
             },
         );
+        let pr_reading = self.page.as_ref().is_some_and(|page| page.pr_reading > 0);
         let theme = cx.theme();
         let muted = theme.muted_foreground;
+        // *New issue* leads, on the secondary fill: the page holds no
+        // primary, so what floats over the list never has one to outweigh.
+        // The count and the way to read it again end the row together.
         let header = div()
             .h_flex()
             .items_center()
             .gap_2()
             .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .text_sm()
-                    .text_color(muted)
-                    .child(format!("{} open", listed.open)),
+                action("issues-page-new")
+                    .small()
+                    .secondary()
+                    .label("New issue")
+                    .tooltip("In the project filtered to, or the one picked")
+                    .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
+                        view.new_issue_on_page(window, cx)
+                    })),
             )
+            .child(div().flex_1())
             // Named for assistive technology in a box of its own: the
             // library's button takes a name only from a text label.
             .child(
@@ -217,9 +234,10 @@ impl IssuesView {
                     .aria_label("Refresh")
                     .child(
                         action("issues-page-refresh")
-                            .tall()
-                            .quiet(cx)
+                            .small()
+                            .quiet_icon(false, cx)
                             .icon(Icon::new(AppIcon::Refresh))
+                            .loading(pr_reading)
                             .tooltip(read)
                             .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
                                 view.read_prs(cx);
@@ -228,15 +246,16 @@ impl IssuesView {
                     ),
             )
             .child(
-                action("issues-page-new")
-                    .tall()
-                    .primary()
-                    .icon(Icon::new(IconName::Plus))
-                    .label("New issue")
-                    .tooltip("In the project filtered to, or the one picked")
-                    .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
-                        view.new_issue_on_page(window, cx)
-                    })),
+                div()
+                    .flex_none()
+                    .whitespace_nowrap()
+                    .text_xs()
+                    .text_color(muted)
+                    // Nothing until the first read lands: *0 open* over an
+                    // empty list would say there are none.
+                    .when(!reading, |count| {
+                        count.child(format!("{} open", listed.open))
+                    }),
             );
         let filters = div()
             .h_flex()
@@ -249,7 +268,7 @@ impl IssuesView {
                 div()
                     .flex_1()
                     .min_w(SEARCH_W)
-                    .child(search_input(query, cx).tall()),
+                    .child(search_input(query, cx).small()),
             )
             .child(showing)
             .child(progress)
@@ -272,6 +291,7 @@ impl IssuesView {
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         let warning = status_ink(cx).warning;
+        let reading = self.page.as_ref().is_some_and(|page| page.pr_reading > 0);
         let failed: Vec<String> = listed
             .failed
             .iter()
@@ -300,6 +320,7 @@ impl IssuesView {
                         .xsmall()
                         .quiet(cx)
                         .label("Read them")
+                        .loading(reading)
                         .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
                             if stale || again {
                                 view.read_prs(cx);
@@ -326,21 +347,4 @@ impl IssuesView {
                 .into_any_element(),
         )
     }
-}
-
-/// A filter's trigger: a filled chip naming what it is set to, then the
-/// caret that opens it, so it reads as a control. Set away from where it
-/// starts, its words take the primary ink, so a narrowed list says so.
-fn trigger(id: &'static str, label: &str, set: bool, cx: &App) -> gpui_component::button::Button {
-    let theme = cx.theme();
-    let ink = match set {
-        true => theme.primary,
-        false => theme.secondary_foreground,
-    };
-    action(id)
-        .tall()
-        .secondary()
-        .label(label.to_string())
-        .dropdown_caret(true)
-        .text_color(ink)
 }

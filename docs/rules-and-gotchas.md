@@ -95,12 +95,16 @@ Review the uncovered part when changing the relevant area:
 | Registry icons and button wrapper | Finds listed glyph literals and direct `Button::new(` spelling | Other glyphs, aliases and differently formatted construction |
 | Text fields through `text_input`, `search_input` and `text_area` | Finds direct `Input::new(` and `Textarea::new(` spelling | Aliases and differently formatted construction |
 | Ghost buttons through `quiet` | Finds `.ghost()` on any line | A ghost variant reached through `with_variant` |
+| An icon alone rests muted | Reads the whole chain round each `.quiet(cx)`, from its `action(` to its press handler or the statement's end, and finds one with an `.icon(` and no `.label(` or `.child(` | A chain whose words come from a variable rather than `.label(` or `.child(`, which reads as having words; an `.icon(` set after the press handler; a chain started by a name ending in `action(` (`tooltip_with_action(`, `on_action(`). A button not built through `action` is the button-wrapper guard's to catch |
 | English documents | Detects selected Vietnamese diacritics | Other languages and quoted data |
 | Named sizes | Finds a non-zero number written as the first argument of `rems(` or `px(` outside a `const` | Arithmetic on a number (`x * 0.5`) and sizes passed through other helpers |
 | Colours from the palette | Finds a `"#rrggbb"` string or a call to `rgb(`, `rgba(` or `hsla(` outside the palette file and the terminal's grid | Colours built from numbers some other way, and hex written without quotes |
 | Spacing on the steps | Finds gpui's spacing methods with a step off the scale (`_2p5`, `_5`, `_10`…) | Lengths handed to `p(`, `gap(` and the like, which the named-size rule sees only when written as a number |
 | Shadows | Finds gpui's own shadow steps (`shadow_md()`…) | A `BoxShadow` built by hand |
 | Type on the scale | Finds `text_2xl` and above, bold and heavier, and `text_size(rems(` with a number | A size or weight reached through a named constant or a style refinement |
+| Nothing animates | Finds `with_animation(`, `Animation::new(` and the library's sliding `TabBar::new(` | Motion through a library component other than a `Spinner` |
+| Nothing see-through | Finds `.opacity(`, `.fade_out(` and an `.alpha(` other than `alpha(0.)` and `alpha(1.)` outside the palette's shadows | An alpha written into a colour some other way |
+| One corner | Finds `radius_lg` and `radius_tokens().sm` in UI sources | A corner written as a number in a `const`, and `ButtonRounded` other than `Medium` |
 | Theme, bounded rendering, module size and UI contract | Dedicated tests cover individual behaviours | No general guard proves these rules or synchronizes documentation with code |
 
 Keep the checks that catch real regressions. Add a targeted check when a concrete failure
@@ -108,6 +112,9 @@ justifies it, and describe its limits rather than treating a source scan as a Ru
 
 ## Gotchas
 
+- **`Input::h` sizes a multi-line field only.** The library's `Input` has an `h` of its own that
+  shadows `Styled::h`, so `.h(…)` on a one-line field does nothing and it keeps its size's height.
+  Call `gpui::Styled::h(field, …)` by name, as `Tall for Input` does.
 - **Key bindings beat `on_key_down`.** GPUI matches bindings against the focus context stack first and
   only delivers the key to focused elements if nothing matched. That is why the app keymap reaches
   over a PTY with no cooperation from the terminal widget — and why binding a key the terminal needs

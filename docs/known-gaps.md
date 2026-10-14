@@ -13,13 +13,12 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   most. The Markdown renderer picks each heading level's weight itself, and its style lets a caller
   size a level but not weigh one; the Markdown mode and an issue's description both draw through it.
   Changing it means a patch to the renderer.
-- **The rail's keyboard row shows after a click too.** While the rail holds the keys, the row
-  the arrows move takes the selected fill, whether the keys or the pointer put it there; every
-  other keyboard mark shows for the keyboard only. The row is also how the rail says which project
-  a click picked, so drawing it for the keyboard alone needs a second mark for the pointer.
 - **Some window behaviour has no automated test**: Settings' drafts kept across leaving the page,
   a failed write said once, and the keyboard handed back when a dialog closes. Each needs a window
   to run in, and the app runs no GPUI test harness; they are checked by hand.
+- **A refused menu row cannot say why.** The library's menu row takes no tooltip, so a row that
+  refuses (*Move up* on a workflow's first step) is drawn refusing without its reason, which its
+  place has to say.
 - **The Workbench's file tree has no search.** A file in a closed folder is reached by opening the
   folders above it.
 - **Dragging a rail row has no edge autoscroll**, and the keyboard's row in the rail is not
@@ -39,6 +38,11 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   conversation last changed, not when it last changed state.
 - **A rail session row says nothing about the lines it changed.** No source reports a diff per
   session: the git status is the project's, shared by every session working in it.
+- **The keyboard barely reaches into the transcript.** Its fold lines and activity rows take no
+  focus, so a block opens by pointer only. Its buttons (Copy, the show-more controls, a diff's
+  path) take Tab, but only while drawn: the transcript is a `gpui::list` that draws the rows on
+  screen, so a tab order through it skips what is scrolled away. The pinned cards and the
+  composer take the keyboard whole.
 - **There is no search in the transcript**, and the removal was deliberate rather than pending. It
   matched whole *items* and never occurrences, so a word said ten times in one answer was one hit
   with no mark on the word itself, and a hit in text a block had truncated was counted, scrolled to

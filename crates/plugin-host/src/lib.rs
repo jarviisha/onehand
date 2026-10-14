@@ -12,28 +12,33 @@
 mod confirm;
 mod list_detail;
 mod menu;
+mod row_actions;
+mod strip;
 mod tabs;
+pub mod toast;
 pub mod tokens;
 mod workbench;
 pub use confirm::{Confirm, confirm_on};
 pub use list_detail::{ListDetail, ListWidths, back_link, list_detail};
-pub use menu::{menu_below, menu_item, menu_row};
+pub use menu::{menu_below, menu_command, menu_item, menu_row};
 pub use onehand_core::worktree::removal::Process;
+pub use row_actions::{HoverSlot, hover_slot};
+pub use strip::{strip, strip_control};
 pub use tabs::{
     Measured, TAB_MAX_W, TabStrip, measure_width, tab_chip, tab_close, tab_menu_rows, tab_select,
     tab_strip, unmeasured,
 };
 pub use workbench::{Ask, Request, WorkbenchMode};
 
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, Div, ElementId, Entity, Hsla, IntoElement, ParentElement as _, SharedString,
-    Styled as _, Window, div,
+    AnyElement, App, Div, ElementId, Entity, Hsla, InteractiveElement as _, IntoElement,
+    ParentElement as _, SharedString, Styled as _, Window, div,
 };
 use gpui_component::button::{Button, ButtonCustomVariant, ButtonRounded, ButtonVariants as _};
 use gpui_component::input::{Input, InputState, Textarea, TextareaState};
 use gpui_component::{
-    ActiveTheme as _, Colorize as _, Icon, IconName, Selectable as _, Sizable as _, Size,
-    StyledExt as _,
+    ActiveTheme as _, Colorize as _, Icon, IconName, Selectable as _, Sizable as _, StyledExt as _,
 };
 use std::rc::Rc;
 
@@ -55,10 +60,9 @@ pub type RemoteChannelFactory = fn(String) -> Box<dyn onehand_core::remote::type
 /// `cursor_default`, so setting the cursor here wins — which is the whole reason
 /// this can be a wrapper rather than a fork of the control.
 ///
-/// **It also sets the small corner**, half the theme's: a control is pressed
-/// or typed into, and the tighter corner tells it apart from the rows, chips
-/// and blocks around it, which keep the theme's. Here, because every button
-/// passes through here and nowhere else.
+/// **It also sets the theme's corner**, the one every box, row and field
+/// takes: the library's buttons default to it, but a size can change it, and
+/// every button passes through here and nowhere else.
 ///
 /// **It lives here rather than in the app** because a built-in plugin draws
 /// buttons too and cannot reach into the binary that hosts it. A second copy in
@@ -69,22 +73,28 @@ pub type RemoteChannelFactory = fn(String) -> Box<dyn onehand_core::remote::type
 pub fn action(id: impl Into<ElementId>) -> Button {
     Button::new(id)
         .cursor_pointer()
-        .rounded(ButtonRounded::Small)
+        .rounded(ButtonRounded::Medium)
 }
 
-/// A text field at a control's corner, on no fill of its own: the small
-/// corner [`action`] gives a button, so a field and the button beside it are
-/// one shape, and the surface it sits on, so its edge alone marks it. The
-/// library draws a field at the theme's full corner, the one rows and blocks
-/// keep, on a fill it derives from the control edge rather than from where
-/// the field sits.
+/// A text field at the theme's corner, on no fill of its own: the corner
+/// [`action`] gives a button, so a field and the button beside it are one
+/// shape, and the surface it sits on, so its edge alone marks it. The library
+/// draws a field on a fill it derives from the control edge rather than from
+/// where the field sits.
+///
+/// **Focus is the edge alone.** The library marks a focused field twice: its
+/// edge turns the ring ink, and a ring is drawn round it, outside its bounds.
+/// The field clips what lies outside itself, which takes the ring away and
+/// leaves the edge. A field drawn with no edge at rest keeps one, in the
+/// surface's own colour, so the edge still has somewhere to show.
 ///
 /// Here rather than in the app for the reason [`action`] is: a plugin draws
 /// fields too, and one wrapper is one place for the corner to hold.
 pub fn text_input(state: &Entity<InputState>, cx: &App) -> Input {
     Input::new(state)
-        .rounded(cx.theme().radius_tokens().sm)
+        .rounded(cx.theme().radius)
         .bg(cx.theme().transparent)
+        .overflow_hidden()
 }
 
 /// The cursor for an action that is currently refusing.
@@ -109,27 +119,34 @@ fn resting(button: Button) -> Button {
 /// beckons. Taking the pointer back in the same call that refuses is what stops
 /// the two halves drifting apart again.
 ///
+/// **It takes the reason, and shows it as the tooltip**, so a refusal cannot
+/// go without saying why: a control that only goes quiet leaves the person
+/// to guess what it waits for. So the refusal is the reason being there, and
+/// it is called after the control's own tooltip, which it replaces for as
+/// long as it refuses.
+///
 /// Here rather than in the app for the reason [`action`] is: a built-in plugin
 /// draws buttons that refuse while they work.
 pub trait Refuses: Sized {
-    /// Refuse presses while `refusing` holds, and say so in the cursor.
-    fn refuses(self, refusing: bool) -> Self;
+    /// Refuse presses while there is a reason to, say so in the cursor, and
+    /// say why in the tooltip.
+    fn refuses(self, why: Option<impl Into<SharedString>>) -> Self;
 }
 
 impl Refuses for Button {
-    fn refuses(self, refusing: bool) -> Self {
+    fn refuses(self, why: Option<impl Into<SharedString>>) -> Self {
         use gpui_component::Disableable as _;
 
-        match refusing {
-            true => resting(self).disabled(true),
-            false => self,
+        match why {
+            Some(why) => resting(self).disabled(true).tooltip(why.into()),
+            None => self,
         }
     }
 }
 
-/// A sunk box of machine text: full width, the muted fill, the theme's corner
-/// and the mono family, clipped so a long line cannot push the column wider.
-/// The caller sets the text size and the padding, which differ by what is in it.
+/// A sunk box of machine text: full width, the muted fill, the theme's corner,
+/// the mono family at [`tokens::CODE_TEXT`], clipped so a long line cannot push
+/// the column wider. The caller sets the padding, which differs by what is in it.
 ///
 /// Here rather than in the app for the reason [`action`] is: the Issues mode
 /// draws the same well as the conversation's, and a second copy is a second
@@ -143,6 +160,7 @@ pub fn well(cx: &App) -> Div {
         .rounded(theme.radius)
         .bg(theme.muted)
         .font_family(theme.mono_font_family.clone())
+        .text_size(tokens::CODE_TEXT)
 }
 
 /// One setting, stacked: its name, a line about it in meta text, and the
@@ -237,6 +255,51 @@ pub fn status_hue(base: Hsla, foreground: Hsla) -> Hsla {
     base.mix_oklab(foreground, 0.70)
 }
 
+/// The middle ink, the step between prose and meta ink, on a neutral surface.
+///
+/// **Why two steps are not enough in one place.** A completion row stacks three
+/// kinds of text and they are not equal: the name, which is what the row is;
+/// the detail lying on the same line beside it — a folder, a description, a
+/// type icon, an issue's number — which is context for that name; and the label
+/// naming the run of rows the whole thing sits in.
+///
+/// The name has to be at full strength, because a list is read as a column of
+/// names and everything else second. The label has to be at the bottom, because
+/// it is found when looked for and ignored the rest of the time. That leaves
+/// the detail, and it can be at neither end: level with the name it competes
+/// with the thing it is describing, and down at the label it is the same ink as
+/// a heading two lines up while sitting immediately beside a name at full
+/// strength — a gap that reads as the row trailing off.
+///
+/// So it sits here, and this step is what makes the row three things in order
+/// rather than two things and a repeat.
+///
+/// (The run of a name a query matched is *not* one of these. It has nowhere
+/// above full strength to go, so it is carried by weight instead — which is
+/// why four roles fit in three inks.)
+///
+/// Derived rather than named as a ramp step: both palettes get it from values
+/// they already hold, so there is no second ramp to keep in step by hand and no
+/// library token borrowed for a meaning it does not have.
+///
+/// Here rather than in the app for the reason [`action`] is: a plugin sets a
+/// detail beside a name too (an issue's number beside its title, a plugin's
+/// version beside its name), and a second copy of the derivation is a second
+/// place for the step to drift.
+pub fn meta_ink(cx: &App) -> Hsla {
+    middle_ink(cx.theme().foreground, cx.theme().muted_foreground)
+}
+
+/// The step halfway from `full` to `meta`, mixed rather than thinned so it is
+/// one solid colour wherever it lands. On a fill, `full` is the ink paired with
+/// that fill, so the step stays a step there too.
+///
+/// `pub` for the reason [`status_hue`] is: the app's contrast test asserts this
+/// derivation from a resolved ramp.
+pub fn middle_ink(full: Hsla, meta: Hsla) -> Hsla {
+    full.mix_oklab(meta, 0.5)
+}
+
 /// How much of a hue a pale fill keeps; the rest is the surface it sits on.
 const TINT: f32 = 0.16;
 
@@ -266,6 +329,56 @@ pub fn tint_over(base: Hsla, surface: Hsla, foreground: Hsla) -> Tint {
         fill: base.mix_oklab(surface, TINT),
         ink: status_hue(base, foreground),
     }
+}
+
+/// One mark's slot: an icon, a state's mark or a dot, centred in a column one
+/// icon wide. Every mark down a column sits in one, so the marks share a
+/// centre line whatever each is drawn at, and the labels after them start on
+/// one edge.
+///
+/// A control may stand in one too, wider than the slot: it stays centred on
+/// the column's line, its hit area spilling past the slot on both sides.
+pub fn mark_slot(mark: impl IntoElement) -> Div {
+    div()
+        .w_4()
+        .flex_none()
+        .h_flex()
+        .items_center()
+        .justify_center()
+        .child(mark)
+}
+
+/// An issue's label as a badge, on a tint of its kind's hue with that hue's
+/// ink: a label that asks for something is blue, an enhancement green, one
+/// about the code's structure violet, one about the documents yellow, an
+/// agent's report cyan; one that only files the issue stays neutral. Every
+/// list of issues draws its labels through this, so a label reads one way
+/// wherever it is.
+pub fn label_badge(label: impl Into<SharedString>, cx: &App) -> gpui_component::tag::Tag {
+    use onehand_core::issues::LabelKind;
+    let label = label.into();
+    let theme = cx.theme();
+    let kind = match LabelKind::of(&label) {
+        LabelKind::Category => Tint {
+            fill: theme.secondary,
+            ink: theme.secondary_foreground,
+        },
+        LabelKind::Action => tint(theme.blue, cx),
+        LabelKind::Enhancement => tint(theme.green, cx),
+        LabelKind::Structure => tint(theme.magenta, cx),
+        LabelKind::Docs => tint(theme.yellow, cx),
+        LabelKind::Report => tint(theme.cyan, cx),
+    };
+    badge(label, kind).flex_none()
+}
+
+/// A small label on a fill, the shape every badge takes: the library's `Tag`
+/// at its small size, on [`tokens::BADGE_CORNER`], in the `tint`'s fill and ink.
+pub fn badge(text: impl Into<SharedString>, tint: Tint) -> gpui_component::tag::Tag {
+    gpui_component::tag::Tag::custom(tint.fill, tint.ink, tint.fill)
+        .small()
+        .rounded(crate::tokens::BADGE_CORNER)
+        .child(text.into())
 }
 
 /// A mark the app's own icon set draws for a plugin, where the bundled set
@@ -316,13 +429,16 @@ pub fn hint(text: &'static str, cx: &App) -> AnyElement {
 ///
 /// Drawn by the mode and not by the panel, because the panel no longer knows
 /// what any of them mean — which is what makes one definition worth having.
-pub fn status_line(message: String, cx: &App) -> AnyElement {
+///
+/// In the ink of the state it reports, one of [`status_ink`]'s, and on the
+/// strip's inset, so its words start where the strip's above them do.
+pub fn status_line(message: impl Into<SharedString>, ink: Hsla) -> AnyElement {
     div()
-        .px_2()
+        .px_3()
         .py_1()
         .text_xs()
-        .text_color(status_ink(cx).warning)
-        .child(message)
+        .text_color(ink)
+        .child(message.into())
         .into_any_element()
 }
 
@@ -340,13 +456,14 @@ pub fn search_input(state: &Entity<InputState>, cx: &App) -> Input {
 }
 
 /// A field of several lines, on the corner and the surface [`text_input`]
-/// gives a field of one: the library draws a textarea at the theme's full
-/// corner on a fill of its own, and beside a single-line field in the same
+/// gives a field of one: the library draws a textarea on a fill of its own,
+/// and beside a single-line field in the same
 /// form the two read as different controls.
 pub fn text_area(state: &Entity<TextareaState>, cx: &App) -> Textarea {
     Textarea::new(state)
-        .rounded(cx.theme().radius_tokens().sm)
+        .rounded(cx.theme().radius)
         .bg(cx.theme().transparent)
+        .overflow_hidden()
 }
 
 /// A ghost button whose hover is the fill a selected one shows.
@@ -362,6 +479,19 @@ pub fn text_area(state: &Entity<TextareaState>, cx: &App) -> Textarea {
 pub trait Quiet {
     /// The ghost variant, hovering on the selected step.
     fn quiet(self, cx: &App) -> Self;
+
+    /// The ghost of an icon with no words: the muted ink at rest, as an icon
+    /// at rest is, and its fill's ink when hovered or `on`.
+    ///
+    /// **Its own call, because a bare icon is no label.** A word in a ghost
+    /// reads at full ink; the same ink on a lone mark makes it the brightest
+    /// thing on a chrome row. The library's hover takes the variant's ink, so
+    /// the mark comes up under the pointer by itself, but it replays the
+    /// caller's ink inside `selected`, which is why `on` is taken here and
+    /// set with it: a muted mark would otherwise sit on the selected fill.
+    /// A menu's trigger, which the library marks open on its own, keeps the
+    /// muted mark while its menu shows, for that same replay.
+    fn quiet_icon(self, on: bool, cx: &App) -> Self;
 }
 
 impl Quiet for Button {
@@ -373,6 +503,13 @@ impl Quiet for Button {
                 .hover(theme.secondary_active)
                 .active(theme.secondary_active),
         )
+    }
+
+    fn quiet_icon(self, on: bool, cx: &App) -> Self {
+        let rest = cx.theme().muted_foreground;
+        self.quiet(cx)
+            .selected(on)
+            .when(!on, |button| button.text_color(rest))
     }
 }
 
@@ -411,8 +548,145 @@ impl Tall for Button {
 
 impl Tall for Input {
     fn tall(self) -> Self {
-        self.small().h(tokens::FIELD_H)
+        // `Styled::h` by name: the field's own `h` sets a multi-line field's
+        // height only, and a one-line field kept the small size's.
+        gpui::Styled::h(self.small(), tokens::FIELD_H)
     }
+}
+
+/// The three sizes a control takes, each the role it serves: `.xsmall()` for
+/// a secondary action inside dense content, `.small()` the compact default,
+/// `.tall()` in a form, a filter bar, a page's head and a dialog's footer.
+///
+/// For a builder that sizes the controls it makes, so a caller names one of
+/// the three: the library's own scale also holds its default size, which
+/// letters a button at the reading size and is never used.
+#[derive(Clone, Copy)]
+pub enum ControlSize {
+    XSmall,
+    Small,
+    Tall,
+}
+
+impl ControlSize {
+    fn on(self, button: Button) -> Button {
+        match self {
+            Self::XSmall => button.xsmall(),
+            Self::Small => button.small(),
+            Self::Tall => button.tall(),
+        }
+    }
+}
+
+/// The hairline box a page groups one thing's facts in: a card on the
+/// overview or Tasks, a project tile, a task's row, an issue's conflict or
+/// review. Padded `p_3`, its parts `gap_2` apart.
+///
+/// Here rather than in the app for the reason [`action`] is: the Issues page
+/// draws the same box as the overview's.
+pub fn card_box(cx: &App) -> Div {
+    div()
+        .v_flex()
+        .gap_2()
+        .min_w_0()
+        .p_3()
+        .rounded(cx.theme().radius)
+        .border_1()
+        .border_color(cx.theme().border)
+}
+
+/// What opens a block held folded under it: its chevron first, then its
+/// words, a quiet button at the dense size, so the keyboard reaches it too.
+/// The caller says what a press does, and refuses it where there is nothing
+/// to open.
+pub fn fold_toggle(
+    id: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    open: bool,
+    cx: &App,
+) -> Button {
+    action(id)
+        .quiet(cx)
+        .xsmall()
+        .icon(Icon::new(match open {
+            true => IconName::ChevronDown,
+            false => IconName::ChevronRight,
+        }))
+        .label(label.into())
+}
+
+/// A tree's row, as Files and Markdown draw theirs: a list row at
+/// [`tokens::ROW_H`], its content inset [`tokens::ROW_INSET`] and stepped in
+/// [`tokens::TREE_INDENT`] per level, the picked row on the selected fill.
+/// The caller adds its mark in a [`mark_slot`], its name, and its marks in
+/// one trailing slot.
+pub fn tree_row(
+    id: impl Into<ElementId>,
+    depth: usize,
+    picked: bool,
+    cx: &App,
+) -> gpui::Stateful<Div> {
+    row(picked, cx)
+        .id(id)
+        .h_flex()
+        .items_center()
+        .gap_2()
+        .w_full()
+        .h(tokens::ROW_H)
+        .text_sm()
+        .pl(gpui::rems(
+            tokens::ROW_INSET.0 + depth as f32 * tokens::TREE_INDENT.0,
+        ))
+}
+
+/// A picker's trigger: a button naming what it is set to, then the caret that
+/// opens its menu, so it reads as a control. Unset, it names what it picks,
+/// as a ghost in the muted ink, its caret with it, as a label at rest is;
+/// `set` away from where it starts, it names the choice on the secondary fill
+/// in that fill's ink, so the picker narrowing a list is the one that stands
+/// out. `size` is the role's.
+pub fn picker(
+    id: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    set: bool,
+    size: ControlSize,
+    cx: &App,
+) -> Button {
+    let button = action(id).label(label.into()).dropdown_caret(true);
+    size.on(match set {
+        true => button.secondary(),
+        // The variant's own ink rather than one laid over it, so the caret,
+        // which the library inks from the variant, rests with the words.
+        false => {
+            let theme = cx.theme();
+            button.custom(
+                ButtonCustomVariant::new(cx)
+                    .foreground(theme.muted_foreground)
+                    .hover(theme.secondary_active)
+                    .active(theme.secondary_active),
+            )
+        }
+    })
+}
+
+/// A list row's surface: at least [`tokens::ROW_H`] tall, inset `px_2`, at
+/// the theme's corner, answering the pointer. The hover fills it with
+/// `list_hover` and leaves its inks; the picked row stands on `accent` in
+/// that fill's paired ink, a quieter ink on it taken through [`middle_ink`]
+/// under that pair. The caller lays it out, a line or a line over a second,
+/// and adds the ring where the keyboard is.
+pub fn row(picked: bool, cx: &App) -> Div {
+    let theme = cx.theme();
+    let hover = theme.list_hover;
+    div()
+        .min_h(tokens::ROW_H)
+        .px_2()
+        .rounded(theme.radius)
+        .cursor_pointer()
+        .map(|row| match picked {
+            true => row.bg(theme.accent).text_color(theme.accent_foreground),
+            false => row.hover(move |row| row.bg(hover)),
+        })
 }
 
 /// One of a few choices, the one taken among them filled: a ghost button,
@@ -428,9 +702,10 @@ pub fn choice(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
     on: bool,
+    size: ControlSize,
     cx: &App,
 ) -> Button {
-    action(id).quiet(cx).label(label.into()).selected(on)
+    size.on(action(id).quiet(cx).label(label.into()).selected(on))
 }
 
 /// A choice between a few views of one panel: a [`choice`] per view, every
@@ -447,13 +722,13 @@ pub fn choice(
 /// built-in plugin both draw one, and a plugin cannot reach into the binary
 /// hosting it.
 ///
-/// `size` is the library's own scale, so a switch sits level with the buttons
-/// and inputs of that size beside it.
+/// `size` is the role's, so a switch sits level with the buttons and inputs
+/// of that role beside it.
 pub fn switch(
     id: &'static str,
     labels: &[SharedString],
     active: usize,
-    size: Size,
+    size: ControlSize,
     pick: impl Fn(&usize, &mut Window, &mut App) + 'static,
     cx: &App,
 ) -> AnyElement {
@@ -465,10 +740,9 @@ pub fn switch(
         .gap_1()
         .children(labels.iter().enumerate().map(|(i, label)| {
             let pick = pick.clone();
-            choice((id, i), label.clone(), i == active, cx)
+            choice((id, i), label.clone(), i == active, size, cx)
                 .flex_1()
                 .min_w_0()
-                .with_size(size)
                 .on_click(move |_, window, cx| pick(&i, window, cx))
         }))
         .into_any_element()

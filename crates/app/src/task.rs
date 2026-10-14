@@ -37,6 +37,9 @@ pub(crate) struct Tasks {
     draining: HashMap<String, Vec<Subscription>>,
     /// Checks running, each with the flag that calls its command off.
     checks: HashMap<String, Arc<AtomicBool>>,
+    /// What a person pressed on each task that is still being read or done,
+    /// so the button waits wherever the task is drawn.
+    acting: HashMap<String, onehand_core::task::work::Act>,
     /// How many finished tasks of each project were let go to keep the
     /// history bounded.
     // ponytail: counts since boot only; persist it if people ask.
@@ -65,6 +68,7 @@ impl Default for Tasks {
             asked_in: HashMap::new(),
             draining: HashMap::new(),
             checks: HashMap::new(),
+            acting: HashMap::new(),
             removed: HashMap::new(),
             commands: Arc::default(),
             writer: files::Writer::spawn(files::dir()),
@@ -106,6 +110,18 @@ impl Tasks {
     pub(super) fn command_started(&self) -> Running {
         self.commands.fetch_add(1, Ordering::SeqCst);
         Running(self.commands.clone())
+    }
+
+    /// Stop was pressed on task `id` and it has not given its place up
+    /// yet: its step's command, or its check, is still being stopped.
+    fn stopping(&self, id: &str) -> bool {
+        self.live
+            .values()
+            .any(|d| d.task == id && d.stopping.is_some())
+            || self
+                .checks
+                .get(id)
+                .is_some_and(|cancel| cancel.load(Ordering::SeqCst))
     }
 
     /// Whether task `id` is running or waiting for its place.
@@ -154,7 +170,7 @@ impl Tasks {
 }
 
 /// How long quitting waits for the task files still being written.
-const QUIT_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
+pub(crate) const QUIT_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// Read every task kept, off the UI thread. Nothing starts by itself: a task
 /// that was running or queued when the last process ended reads as
@@ -352,7 +368,7 @@ fn ended(
             use crate::chat::session::ChatEvent as E;
             match event {
                 E::TurnEnded | E::Disconnected => on_event(cx),
-                E::Appended | E::AwaitingUser(_) | E::OpenFile(_) => {}
+                E::Appended | E::AwaitingUser(_) | E::OpenFile(_) | E::PickRefused(_) => {}
             }
         },
     );
@@ -473,8 +489,8 @@ pub(crate) fn stop_queued(id: &str, cx: &mut App) {
 
 /// A person let interrupted task `id` go: it is kept as history and never
 /// offered again.
-pub(crate) fn dismiss(id: &str, cx: &mut App) {
-    let cut_off = cx.update_global::<Tasks, _>(|t, _| {
+pub(crate) fn dismiss(id: &str, window: &mut Window, cx: &mut App) {
+    let dismissed = cx.update_global::<Tasks, _>(|t, _| {
         if t.busy(id) {
             return None;
         }
@@ -485,15 +501,40 @@ pub(crate) fn dismiss(id: &str, cx: &mut App) {
             .last()
             .filter(|run| run.outcome.is_none())
             .cloned();
-        t.save(id);
-        cut_off
+        let task = task.clone();
+        Some((t.writer.save_said(task), cut_off))
     });
-    // A run cut off by a quit was never reported; letting it go is its end.
-    if let Some(run) = cut_off {
-        crate::unattended::keep(id, &run, run.begun(), None, cx);
-        crate::unattended::deliver(id.to_string(), cx);
-    }
-    enforce_cap(cx);
+    let Some((written, cut_off)) = dismissed else {
+        return;
+    };
+    let id = id.to_string();
+    window
+        .spawn(cx, async move |cx| {
+            let written = written.await;
+            let _ = cx.update(|window, cx| match written {
+                // A run cut off by a quit was never reported; letting it go,
+                // once that is kept, is its end.
+                Ok(()) => {
+                    if let Some(run) = cut_off {
+                        crate::unattended::keep(&id, &run, run.begun(), None, cx);
+                        crate::unattended::deliver(id, cx);
+                    }
+                    enforce_cap(cx);
+                    cx.refresh_windows();
+                }
+                // Not kept, so not let go: the task goes back to where it was.
+                Err(why) => {
+                    cx.update_global::<Tasks, _>(|t, _| {
+                        if let Some(task) = t.task_mut(&id) {
+                            task.dismissed = false;
+                        }
+                    });
+                    window.push_notification(crate::toast::failed("Dismissing the task", why), cx);
+                    cx.refresh_windows();
+                }
+            });
+        })
+        .detach();
     cx.refresh_windows();
 }
 
@@ -517,6 +558,8 @@ pub(crate) struct Shown {
     pub(crate) at: usize,
     /// What it waits on *Continue* or *Revise…* for.
     pub(crate) review: Option<UnderReview>,
+    /// Stop was pressed and its step's command is still being stopped.
+    pub(crate) stopping: bool,
 }
 
 /// What task `id`'s run, under way, waits for approval on now.
@@ -539,6 +582,7 @@ pub(crate) fn shown(uid: u64, cx: &App) -> Option<Shown> {
             .collect(),
         at: run.step,
         review: UnderReview::of(run),
+        stopping: driven.stopping.is_some(),
     })
 }
 
@@ -551,6 +595,29 @@ pub(crate) fn each<R>(cx: &App, look: impl Fn(&Task, bool) -> Option<R>) -> Vec<
         .iter()
         .filter_map(|task| look(task, t.busy(&task.id)))
         .collect()
+}
+
+/// What a person pressed on task `id` that is still being done, Stop
+/// included, so its button waits.
+pub(crate) fn pressed(id: &str, cx: &App) -> Option<onehand_core::task::work::Act> {
+    let t = cx.try_global::<Tasks>()?;
+    t.acting.get(id).copied().or_else(|| {
+        t.stopping(id)
+            .then_some(onehand_core::task::work::Act::Stop)
+    })
+}
+
+/// Say that `act`, pressed on task `id`, is being done, or with `None` that
+/// it is over.
+pub(crate) fn set_acting(id: &str, act: Option<onehand_core::task::work::Act>, cx: &mut App) {
+    if !cx.has_global::<Tasks>() {
+        return;
+    }
+    cx.update_global::<Tasks, _>(|t, _| match act {
+        Some(act) => t.acting.insert(id.to_string(), act),
+        None => t.acting.remove(id),
+    });
+    cx.refresh_windows();
 }
 
 /// Task `id` as it is kept.
@@ -569,9 +636,13 @@ pub(crate) fn stop_task(id: &str, cx: &mut App) {
     if let Some(uid) = t.live_uid(id) {
         return stop(uid, cx);
     }
-    if let Some(cancel) = t.checks.get(id) {
-        cancel.store(true, Ordering::SeqCst);
-    }
+    // Through the global, so whoever draws the task sees it stopping.
+    cx.update_global::<Tasks, _>(|t, _| {
+        if let Some(cancel) = t.checks.get(id) {
+            cancel.store(true, Ordering::SeqCst);
+        }
+    });
+    cx.refresh_windows();
 }
 
 /// Give task `id` a new run of `template`, from step `from` when that is

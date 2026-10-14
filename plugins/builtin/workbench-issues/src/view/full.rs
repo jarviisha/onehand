@@ -12,13 +12,15 @@ use gpui::{
     AnyElement, ClickEvent, Context, InteractiveElement as _, IntoElement, ParentElement,
     StatefulInteractiveElement as _, Styled, div,
 };
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::diff::Row as DiffRow;
 use onehand_core::issues;
 use onehand_core::task::marks::{self, Change};
 use onehand_core::task::work::left::{CheckStands, Left, left_blocking};
 use onehand_core::task::work::{IssueWork, Reading, Work};
-use onehand_plugin_host::status_ink;
+use onehand_plugin_host::Refuses as _;
+use onehand_plugin_host::tokens::CODE_TEXT;
+use onehand_plugin_host::{fold_toggle, row as row_surface, status_ink};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
@@ -46,6 +48,13 @@ pub(super) struct FullState {
     open: HashSet<Side>,
     /// Diffs opened, and what each read came to; `None` while it is read.
     diffs: HashMap<DiffKey, Option<Result<Vec<DiffRow>, String>>>,
+}
+
+impl FullState {
+    /// What the work left is being read.
+    pub(super) fn reading(&self) -> bool {
+        self.left.reading()
+    }
 }
 
 /// Which list of changed files: this run's, the branch's, or what the step
@@ -323,28 +332,13 @@ pub(super) fn files_view(
         .gap_0p5()
         .min_w_0()
         .child(
-            div()
-                .id(id)
-                .h_flex()
-                .gap_1()
-                .items_center()
-                .cursor_pointer()
-                .when(!files.is_empty(), |row| row.hover(|row| row.underline()))
-                .child(count)
-                .when(!files.is_empty(), |row| {
-                    row.child(
-                        Icon::new(if open {
-                            IconName::ChevronDown
-                        } else {
-                            IconName::ChevronRight
-                        })
-                        .xsmall()
-                        .text_color(muted),
-                    )
-                })
-                .on_click(
-                    cx.listener(move |view, _: &ClickEvent, _, cx| view.toggle_side(side, cx)),
-                ),
+            div().h_flex().child(
+                fold_toggle(id, count, open, cx)
+                    .refuses(files.is_empty().then_some("No files changed"))
+                    .on_click(
+                        cx.listener(move |view, _: &ClickEvent, _, cx| view.toggle_side(side, cx)),
+                    ),
+            ),
         )
         .when(open, |column| {
             column
@@ -387,37 +381,34 @@ fn file_row(
         |(added, removed)| format!("+{added} −{removed}"),
     );
     let diff = key.as_ref().and_then(|key| full.state.diffs.get(key));
-    let row =
-        div()
-            .id((
-                match side {
-                    Side::Run => "issue-full-run-file",
-                    Side::Branch => "issue-full-branch-file",
-                    Side::Review => "issue-review-file",
-                },
-                i,
-            ))
-            .h_flex()
-            .gap_2()
-            .min_w_0()
-            .px_1()
-            .rounded(cx.theme().radius_tokens().sm)
-            .font_family(cx.theme().mono_font_family.clone())
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .child(change.path.clone()),
+    let row = row_surface(false, cx)
+        .id((
+            match side {
+                Side::Run => "issue-full-run-file",
+                Side::Branch => "issue-full-branch-file",
+                Side::Review => "issue-review-file",
+            },
+            i,
+        ))
+        .h_flex()
+        .items_center()
+        .gap_2()
+        .min_w_0()
+        .text_size(CODE_TEXT)
+        .font_family(cx.theme().mono_font_family.clone())
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .child(change.path.clone()),
+        )
+        .child(div().flex_none().text_color(muted).child(counts))
+        .when_some(key, |row, key| {
+            row.on_click(
+                cx.listener(move |view, _: &ClickEvent, _, cx| view.toggle_diff(key.clone(), cx)),
             )
-            .child(div().flex_none().text_color(muted).child(counts))
-            .when_some(key, |row, key| {
-                row.cursor_pointer()
-                    .hover(|row| row.bg(cx.theme().list_hover))
-                    .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
-                        view.toggle_diff(key.clone(), cx)
-                    }))
-            });
+        });
     div()
         .v_flex()
         .min_w_0()

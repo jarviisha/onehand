@@ -638,10 +638,9 @@ mod tests {
         }
     }
 
-    /// The library draws a text field, one line or several, at the theme's
-    /// full corner, the one rows and blocks keep, on a fill of its own; a field
-    /// here takes a control's small corner on the surface it sits on, so it and
-    /// the button beside it are one shape. The wrapper sets it, and like the
+    /// The library draws a text field, one line or several, on a fill of its
+    /// own; a field here takes the theme's corner on the surface it sits on, so
+    /// it and the button beside it are one shape. The wrapper sets it, and like the
     /// button's it is one line to bypass with code that looks ordinary.
     #[test]
     fn every_text_field_goes_through_the_wrapper() {
@@ -1215,6 +1214,158 @@ mod tests {
         );
     }
 
+    /// An animation started in code: a call that animates an element, or one
+    /// that builds gpui's `Animation`.
+    fn animations(line: &str) -> Vec<String> {
+        // The library's `TabBar` slides its underline from tab to tab.
+        ["with_animation(", "Animation::new(", "TabBar::new("]
+            .iter()
+            .filter(|call| line.contains(*call))
+            .map(|call| call.to_string())
+            .collect()
+    }
+
+    /// Nothing moves for show: a hover, a fold or a new state lands in the
+    /// frame it happens in, and says itself in ink and a word. The one motion
+    /// is a `Spinner` on work still running, which the library draws, as it
+    /// draws its own overlays.
+    #[test]
+    fn nothing_animates() {
+        forbid(
+            ui_sources(),
+            animations,
+            "an animation, or the library's sliding TabBar (use `tab_chip`); a state lands in the frame it happens in, and only a Spinner moves",
+        );
+    }
+
+    /// A colour or a box thinned by an alpha: `.alpha(…)` past the two ends a
+    /// fade runs between, `.opacity(…)` and `.fade_out(…)`.
+    fn thinned(line: &str) -> Vec<String> {
+        let mut found: Vec<String> = [".opacity(", ".fade_out("]
+            .iter()
+            .filter(|call| line.contains(*call))
+            .map(|call| call.to_string())
+            .collect();
+        for (at, _) in line.match_indices(".alpha(") {
+            let arg = &line[at + ".alpha(".len()..];
+            if !(arg.starts_with("0.)") || arg.starts_with("1.)")) {
+                found.push(".alpha(".to_string());
+            }
+        }
+        found
+    }
+
+    /// Never an alpha on text or a box: a see-through colour takes whatever is
+    /// under it, so one ink reads one shade here and another there. A missing
+    /// step is mixed into the ramp instead. The palette's own shadows, which
+    /// are an alpha by nature, are the one exception, and a fade runs from
+    /// `alpha(0.)` to a solid colour.
+    #[test]
+    fn nothing_is_see_through() {
+        let sources = ui_sources()
+            .into_iter()
+            .filter(|(path, _)| {
+                !path.ends_with("crates/app/src/theme.rs")
+                    && !path.ends_with("crates/plugin-host/src/tokens.rs")
+            })
+            .collect();
+        forbid(
+            sources,
+            thinned,
+            "an alpha on a colour; mix the step into the ramp instead",
+        );
+    }
+
+    /// One corner: the theme's `radius`. `radius_lg` is set to the same and
+    /// `radius_tokens().sm` is half of it, so writing either is a second
+    /// corner by another name.
+    #[test]
+    fn one_corner() {
+        // The palette is where the theme's two corners are set to one.
+        let sources = ui_sources()
+            .into_iter()
+            .filter(|(path, _)| !path.ends_with("crates/app/src/theme.rs"))
+            .collect();
+        forbid(
+            sources,
+            |line| {
+                ["radius_lg", "radius_tokens().sm"]
+                    .iter()
+                    .filter(|name| line.contains(*name))
+                    .map(|name| name.to_string())
+                    .collect()
+            },
+            "a second corner; every box takes `radius`, a badge `tokens::BADGE_CORNER`",
+        );
+    }
+
+    /// The builder chain a `.quiet(cx)` on line `at` belongs to: from the
+    /// `action(` that starts it to its press handler, or to the statement's
+    /// end where it has none. `None` where no `action(` starts it before the
+    /// statement above ends.
+    fn quiet_chain(lines: &[&str], at: usize) -> Option<String> {
+        let start = (0..=at)
+            .rev()
+            .take_while(|&n| n == at || !lines[n].trim_end().ends_with(';'))
+            .find(|&n| lines[n].contains("action("))?;
+        let mut chain = String::new();
+        for line in &lines[start..] {
+            if let Some(end) = line.find(".on_click") {
+                chain.push_str(&line[..end]);
+                break;
+            }
+            chain.push_str(line);
+            chain.push(' ');
+            if line.trim_end().ends_with(';') {
+                break;
+            }
+        }
+        Some(chain)
+    }
+
+    /// An icon alone rests in the muted ink, as every icon at rest does: a
+    /// ghost with an icon and no words goes through `quiet_icon`, which mutes
+    /// it until it is hovered or on. `.quiet(cx)` letters it at full ink, the
+    /// brightest mark on its row. The chain is read across lines, since a
+    /// button is built over several; one that carries a label or children of
+    /// its own has words, and is left alone.
+    #[test]
+    fn an_icon_alone_rests_muted() {
+        let root = workspace_root().display().to_string();
+        let mut found = Vec::new();
+        for (path, source) in ui_sources() {
+            let rel = path
+                .strip_prefix(&root)
+                .unwrap_or(&path)
+                .trim_start_matches('/')
+                .to_string();
+            if rel.contains("/tests/") || rel.ends_with("/tests.rs") {
+                continue;
+            }
+            let code = source.split("#[cfg(test)]\nmod tests").next().unwrap_or("");
+            let lines: Vec<&str> = code.lines().collect();
+            for (n, line) in lines.iter().enumerate() {
+                if line.trim_start().starts_with("//") || !line.contains(".quiet(cx)") {
+                    continue;
+                }
+                let Some(chain) = quiet_chain(&lines, n) else {
+                    continue;
+                };
+                if chain.contains(".icon(")
+                    && !chain.contains(".label(")
+                    && !chain.contains(".child(")
+                {
+                    found.push(format!("{rel}:{}: {}", n + 1, line.trim()));
+                }
+            }
+        }
+        assert!(
+            found.is_empty(),
+            "an icon-only ghost through `.quiet(cx)`; use `.quiet_icon(on, cx)`:\n{}",
+            found.join("\n")
+        );
+    }
+
     /// Text sized or weighted off the scale: `text_2xl` and above, bold and
     /// heavier, and a size written as a number.
     fn off_scale_type(line: &str) -> Vec<String> {
@@ -1263,6 +1414,12 @@ mod tests {
 
         assert_eq!(gpui_shadows(".shadow_md()"), vec!["shadow_md"]);
         assert!(gpui_shadows(".shadow(lift(cx))").is_empty());
+
+        assert_eq!(
+            animations(r#"row.with_animation("in", Animation::new(d), f)"#),
+            vec!["with_animation(", "Animation::new("]
+        );
+        assert!(animations("Spinner::new().small()").is_empty());
 
         assert_eq!(
             off_scale_type(".text_2xl().font_bold()"),

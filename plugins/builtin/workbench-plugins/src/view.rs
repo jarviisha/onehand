@@ -10,10 +10,11 @@ use gpui::{
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{InputEvent, InputState};
-use gpui_component::{ActiveTheme, Selectable as _, Sizable as _, StyledExt};
-use onehand_plugin_host::Quiet as _;
+use gpui_component::{ActiveTheme, Sizable as _, StyledExt};
 use onehand_plugin_host::search_input;
-use onehand_plugin_host::{Ask, Refuses as _, Request, action, choice, hint, status_line, switch};
+use onehand_plugin_host::{
+    Ask, ControlSize, Refuses as _, Request, action, choice, hint, status_ink, status_line, switch,
+};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -32,6 +33,11 @@ const INSTALLED_CAP: usize = 200;
 /// of is not worth building to the end — the search is how the rest are
 /// reached, and the list says how many it left out.
 const MARKET_CAP: usize = 60;
+
+/// Why a control that changes a plugin refuses while another change runs:
+/// the command line takes one change at a time, and what is running is said
+/// above the list.
+const ONE_AT_A_TIME: &str = "Another change is running";
 
 /// Which of the mode's two lists is showing.
 ///
@@ -174,6 +180,9 @@ pub(crate) struct PluginsView {
     /// One focus handle per installed row, by plugin, so the rows are tab
     /// stops and a row keeps its focus across a re-list.
     rows: HashMap<String, FocusHandle>,
+    /// One focus handle per marketplace row, by place, so those rows are tab
+    /// stops too.
+    offered: Vec<FocusHandle>,
     /// How the banner's *Restart agent* reaches the shell.
     ask: Ask,
 }
@@ -197,6 +206,7 @@ impl PluginsView {
             made: Vec::new(),
             since: None,
             rows: HashMap::new(),
+            offered: Vec::new(),
             ask,
         })
     }
@@ -370,12 +380,11 @@ impl Render for PluginsView {
             self.list(cx);
         }
         let body = self.body(window, cx);
-        div()
-            .flex_1()
-            .min_h_0()
-            .v_flex()
-            .child(body)
-            .children(self.status.clone().map(|status| status_line(status, cx)))
+        div().flex_1().min_h_0().v_flex().child(body).children(
+            self.status
+                .clone()
+                .map(|status| status_line(status, status_ink(cx).warning)),
+        )
     }
 }
 
@@ -396,6 +405,9 @@ impl PluginsView {
                     .entry(id)
                     .or_insert_with(|| cx.focus_handle().tab_stop(true));
             }
+        }
+        while self.offered.len() < MARKET_CAP {
+            self.offered.push(cx.focus_handle().tab_stop(true));
         }
         // *Has update* is offered only while something has one. Once the
         // last is updated the chip goes, and a filter left on it would keep
@@ -423,7 +435,7 @@ impl PluginsView {
                 .iter()
                 .position(|tab| *tab == self.tab)
                 .unwrap_or(0),
-            gpui_component::Size::Small,
+            ControlSize::Small,
             cx.listener(|view: &mut Self, i: &usize, _, cx| {
                 view.tab = Tab::ALL[*i];
                 cx.notify();
@@ -486,15 +498,17 @@ impl PluginsView {
                     if rows.is_empty() {
                         rows.push(note(
                             if catalog.installed.is_empty() {
-                                "Nothing installed reaches this project"
+                                "No plugins reach this project yet".to_string()
+                            } else if needle.is_empty() {
+                                "No plugins match this filter".to_string()
                             } else {
-                                "No plugin matches"
+                                format!("No plugins match “{needle}”")
                             },
                             cx,
                         ));
                     }
                     if cut > 0 {
-                        rows.push(note(format!("… {cut} more not shown"), cx));
+                        rows.push(note(format!("{cut} more not shown"), cx));
                     }
                     (self.installed_controls(&installed_query, catalog, cx), rows)
                 }
@@ -518,13 +532,16 @@ impl PluginsView {
                         .map(|(i, plugin)| self.available_row(i, plugin, catalog, cx))
                         .collect();
                     if rows.is_empty() {
-                        rows.push(note("No plugin matches the search", cx));
-                    }
-                    if cut > 0 {
                         rows.push(note(
-                            format!("… {cut} more not shown — narrow the search"),
+                            match needle.is_empty() {
+                                true => "No plugins in this marketplace yet".to_string(),
+                                false => format!("No plugins match “{needle}”"),
+                            },
                             cx,
                         ));
+                    }
+                    if cut > 0 {
+                        rows.push(note(format!("{cut} more not shown; narrow the search"), cx));
                     }
                     (self.market_controls(&query, catalog, cx), rows)
                 }
@@ -537,10 +554,6 @@ impl PluginsView {
             .gap_4()
             .p_4()
             .child(tabs)
-            // What is happening, while it happens — only then, so an idle
-            // panel carries no line above its list.
-            .children(self.busy.as_ref().map(|change| note(change.doing(), cx)))
-            .children(self.pending_banner(cx))
             .child(controls)
             .child(
                 div()
@@ -556,7 +569,7 @@ impl PluginsView {
                     .child(
                         div()
                             .v_flex()
-                            .rounded(cx.theme().radius_lg)
+                            .rounded(cx.theme().radius)
                             .border_1()
                             .border_color(cx.theme().border)
                             .overflow_hidden()
@@ -569,6 +582,11 @@ impl PluginsView {
                             })),
                     ),
             )
+            // What is happening, while it happens, and what waits on a
+            // restart: under the list, so neither moves it as it comes and
+            // goes.
+            .children(self.busy.as_ref().map(|change| note(change.doing(), cx)))
+            .children(self.pending_banner(cx))
             .into_any_element()
     }
 
@@ -580,11 +598,11 @@ impl PluginsView {
             .v_flex()
             .gap_2()
             .p_2()
-            .child(status_line(why, cx))
+            .child(status_line(why, status_ink(cx).warning))
             .child(
                 div().px_2().child(
                     action("plugins-retry")
-                        .xsmall()
+                        .small()
                         .secondary()
                         .label("Try again")
                         .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
@@ -614,29 +632,34 @@ impl PluginsView {
         markets.dedup();
         let current = self.market.clone();
         let chips = (markets.len() > 1).then(|| {
-            let all = choice("plugins-market-all", "All", current.is_none(), cx)
-                .xsmall()
-                .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
-                    view.market = None;
-                    cx.notify();
-                }));
+            let all = choice(
+                "plugins-market-all",
+                "All",
+                current.is_none(),
+                ControlSize::Small,
+                cx,
+            )
+            .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
+                view.market = None;
+                cx.notify();
+            }));
             let each = markets.into_iter().enumerate().map(|(i, market)| {
                 let on = current.as_deref() == Some(market.as_str());
-                choice(("plugins-market", i), market.clone(), on, cx)
-                    .xsmall()
-                    .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
-                        view.market = Some(market.clone());
-                        cx.notify();
-                    }))
+                choice(
+                    ("plugins-market", i),
+                    market.clone(),
+                    on,
+                    ControlSize::Small,
+                    cx,
+                )
+                .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
+                    view.market = Some(market.clone());
+                    cx.notify();
+                }))
             });
             div().h_flex().flex_wrap().gap_1().child(all).children(each)
         });
-        div()
-            .v_flex()
-            .gap_2()
-            .child(search_input(query, cx).small())
-            .children(chips)
-            .into_any_element()
+        filter_bar(query, chips, cx)
     }
 
     /// What the agent on screen has not loaded, and the way to load it —
@@ -675,7 +698,7 @@ impl PluginsView {
                         .small()
                         .secondary()
                         .label("Restart the agent")
-                        .refuses(self.busy.is_some())
+                        .refuses(self.busy.is_some().then_some(ONE_AT_A_TIME))
                         .on_click(move |_, window, cx| ask(&Request::RestartAgent, window, cx)),
                 )
                 .into_any_element(),
@@ -698,24 +721,46 @@ impl PluginsView {
             .enumerate()
             .filter(|(_, filter)| *filter != Filter::HasUpdate || any_update)
             .map(|(i, filter)| {
-                action(("plugins-filter", i))
-                    .xsmall()
-                    .quiet(cx)
-                    .label(filter.label())
-                    .selected(filter == current)
-                    .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
-                        view.filter = filter;
-                        cx.notify();
-                    }))
+                choice(
+                    ("plugins-filter", i),
+                    filter.label(),
+                    filter == current,
+                    ControlSize::Small,
+                    cx,
+                )
+                .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
+                    view.filter = filter;
+                    cx.notify();
+                }))
             });
-        div()
-            .v_flex()
-            .gap_2()
-            .child(search_input(query, cx).small())
-            .child(div().h_flex().flex_wrap().gap_1().children(chips))
-            .into_any_element()
+        filter_bar(
+            query,
+            Some(div().h_flex().flex_wrap().gap_1().children(chips)),
+            cx,
+        )
     }
 }
+
+/// A list's filter bar: the search taking the free width, then its choices,
+/// wrapping under it when the dock is narrow.
+fn filter_bar(query: &Entity<InputState>, choices: Option<gpui::Div>, cx: &App) -> AnyElement {
+    div()
+        .h_flex()
+        .flex_wrap()
+        .items_center()
+        .gap_2()
+        .child(
+            div()
+                .flex_1()
+                .min_w(SEARCH_MIN)
+                .child(search_input(query, cx).small()),
+        )
+        .children(choices)
+        .into_any_element()
+}
+
+/// The narrowest the search gets before the filter bar wraps.
+const SEARCH_MIN: gpui::Rems = gpui::rems(10.);
 
 #[cfg(test)]
 mod tests;

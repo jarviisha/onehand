@@ -67,7 +67,7 @@ pub(super) struct Driven {
     /// Set to call off the step's command, while one is running.
     pub(super) command: Option<Arc<AtomicBool>>,
     /// How the run ends once its called-off command has exited.
-    stopping: Option<Stop>,
+    pub(super) stopping: Option<Stop>,
     _watch: Subscription,
     _answered: Subscription,
     _release: Subscription,
@@ -264,8 +264,10 @@ fn end(uid: u64, stop: Stop, cx: &mut App) {
         Some(())
     })
     .flatten();
-    if running.is_none() {
-        advance(uid, cx, move |run| run.stopped(stop));
+    match running {
+        // Its Stop waits on its button until the command has exited.
+        Some(()) => cx.refresh_windows(),
+        None => advance(uid, cx, move |run| run.stopped(stop)),
     }
 }
 
@@ -316,7 +318,7 @@ fn on_event(uid: u64, session: &Entity<ChatSession>, event: &ChatEvent, cx: &mut
             }
         }
         ChatEvent::Disconnected => end(uid, Stop::LinkLost, cx),
-        ChatEvent::OpenFile(_) => {}
+        ChatEvent::OpenFile(_) | ChatEvent::PickRefused(_) => {}
     }
 }
 

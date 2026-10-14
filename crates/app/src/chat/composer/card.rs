@@ -14,10 +14,6 @@ use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::{ActiveTheme, Icon, Sizable as _, StyledExt};
 use onehand_core::attachment::AttachmentSource;
 
-/// How big the `+` glyph is drawn: a step over the chips' glyphs, because it is
-/// aimed at by its shape alone, and still under the chip's height so the row's
-/// height stays the chips'.
-const ACTION_ICON: Rems = rems(1.25);
 /// The ring a file dragged over the card draws, in pixels as a hairline is. A
 /// shadow rather than a border, so the card does not shift by its width while
 /// the file is held over it.
@@ -33,10 +29,14 @@ impl Composer {
     ///
     /// **No edge.** Its raised fill and its own lift set it apart from the
     /// transcript it floats over, and the caret alone shows focus.
+    ///
+    /// `waits`: the run driving this session waits at an approval, whose
+    /// *Continue* is the view's primary while it does.
     pub fn card(
         &mut self,
         session: &Entity<ChatSession>,
         blocked: Option<onehand_core::chat::SubmitBlock>,
+        waits: bool,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let (step_down, step_up, take_row) = (session.clone(), session.clone(), session.clone());
@@ -59,6 +59,7 @@ impl Composer {
             div()
                 .h_flex()
                 .items_center()
+                .gap_2()
                 .min_w_0()
                 .flex_shrink_1()
                 .children(model)
@@ -69,7 +70,7 @@ impl Composer {
         let add = {
             let session = session.clone();
             chip("add", add_open, cx)
-                .child(Icon::new(crate::icons::Icon::PlusLight).size(ACTION_ICON))
+                .child(Icon::new(crate::icons::Icon::PlusLight).small())
                 .when(!add_open, |chip| {
                     chip.tooltip("Attach a file, mention one, run a slash command or a workflow")
                 })
@@ -88,7 +89,7 @@ impl Composer {
             .p_1p5()
             .bg(crate::theme::raised(cx))
             .shadow(lift.clone())
-            .rounded(cx.theme().radius_lg)
+            .rounded(cx.theme().radius)
             // Held always, so `Ctrl+V` can be taken from the input wherever the
             // caret is in the prompt. The list context below is the one that
             // comes and goes.
@@ -200,6 +201,7 @@ impl Composer {
                         send_controls(
                             blocked.clone(),
                             !self.text(cx).trim().is_empty() || !self.attachments.is_empty(),
+                            (session.read(cx).chat.cancelled, waits),
                             cx.listener(|_: &mut Self, _, _, cx| {
                                 cx.emit(ComposerEvent::SendPressed);
                             }),
@@ -221,15 +223,14 @@ impl Composer {
     ) -> Option<gpui::AnyElement> {
         if let Some(toggle) = fast_toggle(session, cx) {
             let session = session.clone();
-            let muted = cx.theme().muted_foreground;
             return Some(
                 chip("fast-toggle", false, cx)
-                    .child(
-                        Icon::new(crate::icons::Icon::Zap)
-                            .xsmall()
-                            .text_color(muted),
-                    )
-                    .child(chip_text(if toggle.on { "On" } else { "Off" }, cx))
+                    .child(Icon::new(crate::icons::Icon::Zap).small())
+                    .child(chip_text(if toggle.on { "On" } else { "Off" }))
+                    // The caret every composer picker carries, whatever it
+                    // holds: a click here flips the value rather than opening
+                    // a menu, but the chip reads as one of the row's pickers.
+                    .dropdown_caret(true)
                     .tooltip(match toggle.on {
                         true => "Fast mode is on",
                         false => "Fast mode is off",
@@ -273,8 +274,9 @@ impl Composer {
             chip("branch", branch_open, cx)
                 .flex_shrink_1()
                 .min_w_0()
-                .child(Icon::new(crate::icons::Icon::GitBranch).xsmall())
-                .child(chip_text(line, cx))
+                .child(Icon::new(crate::icons::Icon::GitBranch).small())
+                .child(chip_text(line))
+                .dropdown_caret(true)
                 .when(!branch_open, |chip| {
                     chip.tooltip("The branch checked out here")
                 })
@@ -287,7 +289,7 @@ impl Composer {
             return None;
         }
         let strip = match narrow {
-            true => div().v_flex().items_start(),
+            true => div().v_flex().items_start().gap_2(),
             false => div().h_flex().items_center().justify_between().gap_2(),
         };
         Some(
@@ -303,20 +305,14 @@ impl Composer {
     }
 }
 
-/// A chip's words: the composer's metadata size, in full ink, giving way with
-/// an ellipsis rather than pushing the chip's caret out of its box.
-fn chip_text(text: impl Into<SharedString>, cx: &App) -> gpui::Div {
-    div()
-        .min_w_0()
-        .truncate()
-        .text_xs()
-        .text_color(cx.theme().foreground)
-        .child(text.into())
+/// A chip's words, in the chip's own ink and size, giving way with an ellipsis
+/// rather than pushing the chip's caret out of its box.
+fn chip_text(text: impl Into<SharedString>) -> gpui::Div {
+    div().min_w_0().truncate().child(text.into())
 }
 
-/// A picker for a setting a turn is run under: the setting's mark in muted ink,
-/// and the value in force in full. No caret: the hover fill and the pointer
-/// already say it can be pressed.
+/// A picker for a setting a turn is run under: the setting's mark and the
+/// value in force, then the caret every picker here carries.
 fn status_action(
     target: Overlay,
     label: SharedString,
@@ -341,9 +337,14 @@ fn status_action(
         .max_w(OPTION_MAX_W)
         .flex_shrink_1()
         .min_w_0()
-        .child(Icon::new(icon).xsmall())
-        .child(chip_text(label, cx))
-        .when(!open, |chip| chip.tooltip(hint))
+        .child(Icon::new(icon).small())
+        .child(chip_text(label))
+        .dropdown_caret(true)
+        .when(!open, |chip| match target {
+            // The mode has a key that steps through it, which its tooltip says.
+            Overlay::Mode => chip.tooltip_with_action(hint, &crate::shell::CycleMode, None),
+            _ => chip.tooltip(hint),
+        })
         .on_click(cx.listener(move |composer: &mut Composer, _, window, cx| {
             composer.toggle_picker(target.clone(), &session, window, cx);
         }))
@@ -363,7 +364,7 @@ fn option_action(
         .min_w_0()
         // Children and not the button's `label`, which the library boxes
         // `flex_none`: against the cap it would push the caret past the clip.
-        .child(chip_text(label, cx))
+        .child(chip_text(label))
         .dropdown_caret(true)
         .when(!open, |chip| {
             chip.tooltip("Choose the model and other options")
@@ -373,8 +374,8 @@ fn option_action(
         }))
 }
 
-/// The effort the model runs at, in muted ink beside the model's chip so the
-/// two read as a name and its qualifier, opening a menu of its own.
+/// The effort the model runs at, in the middle ink beside the model's chip so
+/// the two read as a name and its qualifier, opening a menu of its own.
 fn effort_chip(
     label: SharedString,
     open: bool,
@@ -384,12 +385,7 @@ fn effort_chip(
     let session = session.clone();
     chip("effort-selector", open, cx)
         .flex_none()
-        .child(
-            div()
-                .text_xs()
-                .text_color(cx.theme().muted_foreground)
-                .child(label),
-        )
+        .child(div().text_color(crate::theme::meta_ink(cx)).child(label))
         .dropdown_caret(true)
         .when(!open, |chip| {
             chip.tooltip("Choose how hard the model thinks")
@@ -409,9 +405,14 @@ fn effort_chip(
 /// draft.** Stop is the solid danger fill with its word, the one press here
 /// that ends something; Queue is the neutral secondary fill beside it, so the
 /// region keeps one primary and the two are told apart by more than colour.
+///
+/// `(stopping, waits)`: Stop was pressed and the turn has not ended yet, so it
+/// waits on its button; a run waits at an approval, so Send steps down to the
+/// secondary fill beside that approval's primary.
 fn send_controls(
     blocked: Option<onehand_core::chat::SubmitBlock>,
     has_draft: bool,
+    (stopping, waits): (bool, bool),
     on_send: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
     on_stop: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
 ) -> gpui::Div {
@@ -424,7 +425,7 @@ fn send_controls(
     if blocked == Some(SubmitBlock::Busy) {
         return div()
             .h_flex()
-            .gap_1()
+            .gap_2()
             .children(has_draft.then(|| {
                 control("queue")
                     .secondary()
@@ -436,22 +437,22 @@ fn send_controls(
                 control("stop")
                     .danger()
                     .label("Stop")
+                    .loading(stopping)
                     .tooltip("Stop the current turn")
                     .on_click(on_stop),
             );
     }
     // The arrow alone: the one control here whose meaning never changes, in a
     // row that runs out of width before anything else in the card does.
-    let send = control("send")
-        .primary()
-        .icon(Icon::new(crate::icons::Icon::ArrowUpLight));
+    let send = match waits {
+        true => control("send").secondary(),
+        false => control("send").primary(),
+    }
+    .icon(Icon::new(crate::icons::Icon::ArrowUpLight));
     match blocked {
         // No pointer over a button that refuses: the cursor is a promise a
         // press will do something, and this one is here to say it will not.
-        Some(reason) => div().child(
-            send.refuses(true)
-                .tooltip(SharedString::from(reason.hint())),
-        ),
+        Some(reason) => div().child(send.refuses(Some(reason.hint()))),
         None => div().child(
             send.tooltip("Enter sends · Shift+Enter for a newline")
                 .on_click(on_send),

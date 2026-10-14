@@ -80,6 +80,10 @@ pub struct Conversation {
     /// working to failing is worth announcing, and the change back is what arms
     /// it to speak again.
     pub archive_failed: bool,
+    /// The name the user gave it, shown at once and saved after: what is
+    /// put back when the newest rename's write fails. Made at the first
+    /// rename, from the name before it.
+    pub title: Option<onehand_core::saving::Saving<Option<String>>>,
 }
 
 /// Where a session is between "the user asked for it" and "it is talking".
@@ -124,6 +128,7 @@ impl Conversation {
             draft: None,
             was_live: false,
             archive_failed: false,
+            title: None,
         }
     }
 

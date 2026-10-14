@@ -1,8 +1,8 @@
 use super::confirm::Confirm;
-use super::storage::pick_folder;
+use super::storage::{Thing, WorkspaceChange, pick_folder};
 use super::{Shell, WARM_DELAY};
 use crate::state::Shared;
-use gpui::{Context, SharedString, Window};
+use gpui::{App, Context, SharedString, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::dock::DockPlacement;
 use onehand_core::gitstat;
@@ -21,7 +21,12 @@ impl Shell {
             return;
         };
         let status = self.window.git.get(&root.path);
-        let facts = crate::chat::pane::ProjectFacts::of(root, status.is_some());
+        let facts = crate::chat::pane::ProjectFacts {
+            asks: !self
+                .removal_losses(self.window.workspace.active_root, cx)
+                .is_empty(),
+            ..crate::chat::pane::ProjectFacts::of(root, status.is_some())
+        };
         // The same line the rail prints beside the project's name, from core's
         // own rule rather than composed again here.
         let line = status.map(|status| gpui::SharedString::from(status.label()));
@@ -279,20 +284,11 @@ impl Shell {
         let Some(root) = self.window.workspace.roots.get(idx) else {
             return;
         };
-        let (path, label, live) = (root.path.clone(), root.label.clone(), root.sessions.len());
-        let unsaved = self.workbench.read(cx).unsaved_in(&path, cx);
-        if live == 0 && unsaved == 0 {
+        let (path, label) = (root.path.clone(), root.label.clone());
+        let losses = self.removal_losses(idx, cx);
+        if losses.is_empty() {
             self.drop_root(&path, window, cx);
             return;
-        }
-        let mut losses = Vec::new();
-        if live > 0 {
-            let s = if live == 1 { "session" } else { "sessions" };
-            losses.push(format!("closes {live} {s}"));
-        }
-        if unsaved > 0 {
-            let s = if unsaved == 1 { "file" } else { "files" };
-            losses.push(format!("discards {unsaved} unsaved {s}"));
         }
         let ask = Confirm {
             id: "remove-project",
@@ -310,6 +306,27 @@ impl Shell {
         self.confirm(ask, window, cx, move |shell, window, cx| {
             shell.drop_root(&path, window, cx)
         });
+    }
+
+    /// What removing the root at `idx` would take with it: its sessions, closed,
+    /// and its unsaved files, discarded. Removing asks first only when there is
+    /// any, which is also what puts an ellipsis on the word that starts it.
+    pub(crate) fn removal_losses(&self, idx: usize, cx: &App) -> Vec<String> {
+        let Some(root) = self.window.workspace.roots.get(idx) else {
+            return Vec::new();
+        };
+        let live = root.sessions.len();
+        let unsaved = self.workbench.read(cx).unsaved_in(&root.path, cx);
+        let mut losses = Vec::new();
+        if live > 0 {
+            let s = if live == 1 { "session" } else { "sessions" };
+            losses.push(format!("closes {live} {s}"));
+        }
+        if unsaved > 0 {
+            let s = if unsaved == 1 { "file" } else { "files" };
+            losses.push(format!("discards {unsaved} unsaved {s}"));
+        }
+        losses
     }
 
     /// Remove the root at `path`, the question already answered.
@@ -373,8 +390,34 @@ impl Shell {
     /// Only the drawing order moves; `roots` and every index into it stay
     /// exactly as they were, so nothing keyed by position has to be told.
     pub fn toggle_pin(&mut self, root_idx: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(root) = self.window.workspace.roots.get(root_idx) else {
+            return;
+        };
+        let (path, pinned) = (root.path.clone(), !root.pinned);
         self.window.workspace.toggle_pin(root_idx);
-        self.save_workspace(window, cx);
+        // Put back, alone, if its write fails: pinning is its own thing, and
+        // it goes back to the pin as last saved.
+        self.save_change(
+            Thing::Pin(path.clone()),
+            WorkspaceChange {
+                before: (path.clone(), !pinned),
+                after: (path, pinned),
+                put: |shell, (path, pinned), _, cx| {
+                    if let Some(root) = shell
+                        .window
+                        .workspace
+                        .roots
+                        .iter_mut()
+                        .find(|root| root.path == path)
+                    {
+                        root.pinned = pinned;
+                    }
+                    shell.sync_project_facts(cx);
+                },
+            },
+            window,
+            cx,
+        );
         // The project page's menu is the other place that says whether this is
         // pinned, and it says it in the label of the entry that was just used.
         self.sync_project_facts(cx);
@@ -395,8 +438,25 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.window.workspace.move_root(from, to);
-        self.save_workspace(window, cx);
+        let before = self.window.workspace.root_order();
+        // A drop the pin line clamps back onto itself moved nothing to write.
+        if self.window.workspace.move_root(from, to).is_none() {
+            return;
+        }
+        // Put back, alone, if its write fails: every root to its place in the
+        // order last saved, which wherever the pin clamp landed this one, and
+        // however many moves came after, is what the file still holds.
+        let after = self.window.workspace.root_order();
+        self.save_change(
+            Thing::Order,
+            WorkspaceChange {
+                before,
+                after,
+                put: |shell, order, _, _| shell.window.workspace.put_order(&order),
+            },
+            window,
+            cx,
+        );
         cx.notify();
     }
 

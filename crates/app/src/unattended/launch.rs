@@ -551,6 +551,7 @@ pub(super) fn landed(
     cx: &mut App,
 ) {
     with(cx, |u| u.claiming = false);
+    cx.refresh_windows();
     let unstarted = match begun {
         None => {
             // A search somebody asked for that found nothing says so; one the

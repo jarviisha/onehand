@@ -47,7 +47,13 @@ impl Shell {
         // picking another one does: the edit is the page's, and goes with it.
         {
             let page = workflows_page.downgrade();
+            let shell = cx.entity().downgrade();
             window.on_window_should_close(cx, move |window, cx| {
+                // A save still waiting on its debounce is written now, or the
+                // change made just before closing goes with the window.
+                if let Some(shell) = shell.upgrade() {
+                    shell.update(cx, |shell, cx| shell.flush_workspace(cx));
+                }
                 let Some(page) = page.upgrade().filter(|page| page.read(cx).dirty(cx)) else {
                     return true;
                 };
@@ -55,11 +61,11 @@ impl Shell {
                     page,
                     crate::shell::Confirm {
                         id: "close-workflow-draft",
-                        title: "Drop the workflow being written?".into(),
+                        title: "Discard the workflow being written?".into(),
                         description: "Its changes are not saved. Closing the window throws \
                                       them away."
                             .into(),
-                        act: "Drop and close",
+                        act: "Discard",
                         ..Default::default()
                     },
                     window,
@@ -201,6 +207,12 @@ impl Shell {
                     // A warning rather than an error: nothing went wrong and
                     // nothing was lost -- the conversation is exactly where it
                     // was, which is the opposite of the message above.
+                    E::PickRefused(why) => window.push_notification(
+                        crate::toast::failed("Changing the agent's setting", why),
+                        cx,
+                    ),
+                    E::RenameFailed(why) => window
+                        .push_notification(crate::toast::failed("Renaming the session", why), cx),
                     E::ConversationNotDeleted(why) => window.push_notification(
                         crate::toast::failed("Deleting the conversation", why),
                         cx,
@@ -229,7 +241,7 @@ impl Shell {
                         cx.defer(move |cx| crate::task::stop(uid, cx));
                     }
                     E::ResumeTask(id) => shell.resume_task(id.clone(), window, cx),
-                    E::DismissTask(id) => crate::task::dismiss(id, cx),
+                    E::DismissTask(id) => crate::task::dismiss(id, window, cx),
                     E::RetryTask(id) => shell.begin_retry(id.clone(), window, cx),
                     E::RetryTaskCurrent(id) => shell.begin_retry_current(id.clone(), window, cx),
                     E::AnswerReview(id) => shell.answer_review(id.clone(), window, cx),
@@ -309,8 +321,8 @@ impl Shell {
 
         // The conversation header's terminal dot is a fact the docks have no
         // idea anyone outside them wants. Guarded the same way and for the same
-        // reason as the rail's rows above -- more so for the terminal, which
-        // notifies once per chunk of whatever is printing into it.
+        // reason as the rail's rows above: the terminal notifies for its own
+        // changes and when its watch sees a command start or end.
         cx.observe(&workbench, |shell: &mut Self, _, cx| {
             shell.sync_terminal_live(cx);
         })
@@ -412,8 +424,23 @@ impl Shell {
                 if matches!(event, InputEvent::Change) {
                     let name = state.read(cx).value().trim().to_string();
                     if !name.is_empty() && name != shell.window.workspace.name {
-                        shell.window.workspace.name = name;
-                        shell.save_workspace_soon(cx);
+                        let before =
+                            std::mem::replace(&mut shell.window.workspace.name, name.clone());
+                        // Put back, field and all, if its write fails.
+                        shell.save_change_soon(
+                            super::storage::Thing::Name,
+                            super::storage::WorkspaceChange {
+                                before,
+                                after: name,
+                                put: |shell, name, window, cx| {
+                                    shell.window.workspace.name = name.clone();
+                                    shell
+                                        .workspace_name
+                                        .update(cx, |input, cx| input.set_value(name, window, cx));
+                                },
+                            },
+                            cx,
+                        );
                         cx.notify();
                     }
                 }
@@ -493,6 +520,8 @@ impl Shell {
             workflows_page,
             terminal,
             _pending_save: None,
+            saves: Default::default(),
+            docks_saved: None,
             _pending_warm: None,
             git_generation: 0,
             rail_sessions: Vec::new(),
@@ -644,6 +673,19 @@ pub fn boot(cx: &mut App) {
     let remote = cfg.remote.clone();
     let unattended = cfg.unattended.clone();
     cx.set_global(Shared::from_config(cfg, config_path));
+    // The settings, workspace and conversation-name writes still queued at
+    // quit would die with the process: waited for, as the task files are,
+    // once the windows are gone and their last writes are queued.
+    let writer = Shared::global(cx).writer.clone();
+    cx.on_app_quit(move |_| {
+        let writer = writer.clone();
+        async move {
+            if !writer.flush(crate::task::QUIT_WAIT) {
+                eprintln!("onehand: a settings or workspace write may not have landed");
+            }
+        }
+    })
+    .detach();
     init_keymap(cx);
     // After the global exists, because that is where the bridge is filed, and
     // before the first window, so a channel that takes a moment to answer has
@@ -680,13 +722,6 @@ pub fn boot(cx: &mut App) {
         });
 
     open_or_focus(recent.unwrap_or_else(seed_workspace), cx);
-}
-
-/// The app's fonts and palette without the rest of the app: no config, no
-/// lock, no window. For an example that mocks a screen up on the real look.
-pub fn install_look(cx: &mut App) {
-    crate::fonts::register(cx);
-    crate::theme::install(cx);
 }
 
 /// Point the theme's monospace family at one this machine actually has.

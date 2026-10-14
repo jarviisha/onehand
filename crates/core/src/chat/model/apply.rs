@@ -12,7 +12,7 @@ use crate::chat::store;
 /// burden of getting it exactly right on every branch of the reducer and every
 /// helper it calls, where being subtly wrong shows up as a row that never
 /// redraws. These two are cheap to be sure of.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApplyOutcome {
     /// Something rendered is different now, so anything derived from the
     /// transcript is stale.
@@ -32,6 +32,9 @@ pub struct ApplyOutcome {
     /// The agent said which modes it offers, now in [`Chat::modes`]: what a
     /// start reads before it brings the agent up again.
     pub modes_offered: bool,
+    /// The agent refused a pick, put back to what it last confirmed: why,
+    /// to be said once.
+    pub pick_refused: Option<String>,
 }
 
 /// What an agent parked in front of the user, and what to call it.
@@ -146,6 +149,7 @@ impl Chat {
         // up. An elicitation that cannot be drawn never reaches here -- the
         // client declines those where they arrive rather than parking them.
         let modes_offered = matches!(event, AcpEvent::Modes { .. });
+        let mut pick_refused = None;
         let asked_user = match event {
             AcpEvent::Permission(_) => Some(UserAsk::Permission),
             AcpEvent::Elicitation(_) => Some(UserAsk::Question),
@@ -262,11 +266,34 @@ impl Chat {
             }
             AcpEvent::AvailableCommands(c) => self.commands = c,
             AcpEvent::Modes { current, available } => {
+                self.confirm_mode(current.clone());
                 self.current_mode = current;
                 self.modes = available;
             }
-            AcpEvent::ModeChanged(id) => self.current_mode = Some(id),
-            AcpEvent::ConfigOptions(opts) => self.config_options = opts,
+            AcpEvent::ModeChanged(id) => {
+                self.confirm_mode(Some(id.clone()));
+                self.current_mode = Some(id);
+            }
+            AcpEvent::ConfigOptions(opts) => {
+                for opt in &opts {
+                    if let Some(current) = &opt.current {
+                        self.confirmed.insert(opt.id.clone(), current.clone());
+                    }
+                }
+                self.config_options = opts;
+            }
+            // What is shown follows the newest pick: an older pick's answer
+            // only moves what the agent is known to hold.
+            AcpEvent::PickConfirmed { group, value } => {
+                self.pick_answered(&group);
+                self.confirmed.insert(group, value);
+            }
+            AcpEvent::PickRefused { group, why } => {
+                if self.pick_answered(&group) {
+                    self.put_back(&group);
+                    pick_refused = Some(why);
+                }
+            }
             AcpEvent::TerminalOutput { terminal_id, chunk } => {
                 let view = self.terminals.entry(terminal_id).or_default();
                 view.output.push_str(&chunk);
@@ -322,14 +349,17 @@ impl Chat {
                 // A thought cut off with the adapter is over, not still running.
                 self.finalize_thought();
                 self.tx = None;
+                // Picks sent over the lost connection are answered by nothing.
+                self.picks_out.clear();
                 self.link = Link::Lost;
                 self.busy = false;
                 // No live adapter to answer — but the cards must not keep
                 // offering buttons whose rpc ids died with the connection.
                 self.cancel_pending_permissions();
-                self.items.push(ChatItem::error(format!(
-                    "Disconnected: {e} — Ctrl+Shift+R to restart"
-                )));
+                // No key in the words: the front end names the one its keymap
+                // binds, which the person may have changed.
+                self.items
+                    .push(ChatItem::error(format!("Disconnected: {e}")));
             }
         }
 
@@ -338,6 +368,28 @@ impl Chat {
             turn_ended,
             asked_user,
             modes_offered,
+            pick_refused,
+        }
+    }
+
+    /// The mode the agent says is in force, as confirmed.
+    fn confirm_mode(&mut self, mode: Option<String>) {
+        match mode {
+            Some(mode) => self
+                .confirmed
+                .insert(super::MODE_SELECTOR.to_string(), mode),
+            None => self.confirmed.remove(super::MODE_SELECTOR),
+        };
+    }
+
+    /// Show what the agent last confirmed for `group` again, after it
+    /// refused a pick there.
+    fn put_back(&mut self, group: &str) {
+        let confirmed = self.confirmed.get(group).cloned();
+        if group == super::MODE_SELECTOR {
+            self.current_mode = confirmed;
+        } else if let Some(value) = confirmed {
+            self.set_config_current(group, &value);
         }
     }
 

@@ -22,7 +22,8 @@ pub(super) fn search_field(state: &RailState, cx: &Context<Shell>) -> impl IntoE
     div().flex_1().min_w_0().child(
         search_input(&state.search, cx)
             .small()
-            .bordered(false)
+            // No edge at rest, but one to turn the ring ink on focus.
+            .border_color(crate::theme::inset(cx))
             .bg(crate::theme::inset(cx))
             .when_some(
                 crate::keymap::first_key("focus_rail_search", cx),
@@ -31,7 +32,9 @@ pub(super) fn search_field(state: &RailState, cx: &Context<Shell>) -> impl IntoE
     )
 }
 
-/// *Sessions*, how many wait on the person, and the filter.
+/// *Sessions*, how many wait on the person, and the filter: a label line over
+/// the list, its words on the edge the rows' marks start at, its controls at
+/// a row's size.
 ///
 /// The count is also the switch for its filter, and remembers the filter it
 /// replaced; while that filter is on the count stays, even at none, so it can
@@ -44,30 +47,29 @@ pub(super) fn sessions_header(
     let filter = state.filter;
     let attention = filter == Filter::NeedsAttention;
     let shell = cx.entity().downgrade();
-    let (warning, muted, ink) = (
+    let (warning, muted) = (
         crate::theme::status_ink(cx).warning,
         cx.theme().muted_foreground,
-        cx.theme().foreground,
     );
     div()
         .h_flex()
         .items_center()
         .flex_none()
-        .px_3()
-        .pt_1()
-        .pb_1p5()
+        .h(crate::tokens::ROW_H)
+        .mx_1p5()
+        .px_2()
         .gap_2()
         // Under the header, so it is also the edge the list scrolls under.
         .border_b_1()
         .border_color(cx.theme().border)
         .text_xs()
-        .child(div().font_medium().text_color(muted).child("Sessions"))
+        .child(div().text_color(muted).child("Sessions"))
         .when(waiting > 0 || attention, |d| {
             let verb = if waiting == 1 { "needs" } else { "need" };
             d.child(
                 crate::controls::action("rail-attention")
                     .quiet(cx)
-                    .xsmall()
+                    .small()
                     .label(format!("{waiting} {verb} attention"))
                     .text_color(warning)
                     .selected(attention)
@@ -86,15 +88,12 @@ pub(super) fn sessions_header(
         .child(labelled(
             "rail-filter-name",
             "Filter sessions",
+            // On while it holds anything but the list by project, so a
+            // narrowed list says so where it is narrowed.
             crate::controls::action("rail-filter")
-                .quiet(cx)
-                .xsmall()
-                .icon(
-                    Icon::new(crate::icons::Icon::ListFilter).text_color(match filter {
-                        Filter::ByProject => muted,
-                        Filter::All | Filter::NeedsAttention | Filter::Recent => ink,
-                    }),
-                )
+                .quiet_icon(filter != Filter::ByProject, cx)
+                .small()
+                .icon(Icon::new(crate::icons::Icon::ListFilter))
                 .tooltip(format!("Showing: {}", filter.label()))
                 .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, _, _| {
                     Filter::ALL.iter().fold(menu, |menu, f| {

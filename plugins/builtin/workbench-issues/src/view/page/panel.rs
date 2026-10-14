@@ -11,7 +11,7 @@ use gpui::{
 };
 use gpui_component::{ActiveTheme, IconName, Sizable as _, StyledExt};
 use onehand_plugin_host::Quiet as _;
-use onehand_plugin_host::tokens::BAR_H;
+use onehand_plugin_host::strip;
 use onehand_plugin_host::{action, hint};
 
 // The widths below are plain rems rather than `Rems`: the drag works them out
@@ -68,9 +68,9 @@ impl IssuesView {
             .child(
                 action("issues-page-close")
                     .small()
-                    .quiet(cx)
+                    .quiet_icon(false, cx)
                     .icon(IconName::Close)
-                    .tooltip("Close (Esc)")
+                    .tooltip_with_action("Close", &crate::IssuesClose, Some("IssuesPage"))
                     .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
                         if let Some(page) = view.page.as_mut() {
                             page.open = false;
@@ -93,16 +93,7 @@ impl IssuesView {
                     Some(issues) => self.detail(&root, &issues, None, window, cx),
                     None => hint("Reading issues…", cx),
                 };
-                let bar = div()
-                    .flex_none()
-                    .h_flex()
-                    .items_center()
-                    .gap_2()
-                    .h(BAR_H)
-                    .pl_4()
-                    .pr_2()
-                    .text_xs()
-                    .text_color(muted)
+                let bar = strip(cx)
                     .child(
                         div()
                             .flex_1()
@@ -135,7 +126,7 @@ impl IssuesView {
                 }
             })
             .v_flex()
-            .rounded(theme.radius_lg)
+            .rounded(theme.radius)
             .border_1()
             .border_color(theme.border)
             .bg(theme.popover)

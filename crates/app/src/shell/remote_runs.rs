@@ -1,3 +1,4 @@
+use super::storage::{Thing, WorkspaceChange};
 use super::{IssuePicker, Shell};
 use crate::state::Shared;
 use gpui::{App, AppContext as _, BorrowAppContext, Context, Entity, SharedString, Window};
@@ -27,6 +28,10 @@ impl Shell {
             return;
         }
         self.window.workspace.toggle_unattended(root_idx);
+        let (path, on) = {
+            let root = &self.window.workspace.roots[root_idx];
+            (root.path.clone(), root.unattended)
+        };
         // Switched on, it is looked at straight away, so a project that can
         // never be worked says so now and not at the next tick. Switched off,
         // nothing is cleared: a row that is off shows nothing, and the next
@@ -40,7 +45,28 @@ impl Shell {
         {
             crate::unattended::check_now(self.project_for_runs(&root.path), cx);
         }
-        self.save_workspace(window, cx);
+        // Put back, alone, if its write fails: the switch as last saved.
+        self.save_change(
+            Thing::Unattended(path.clone()),
+            WorkspaceChange {
+                before: (path.clone(), !on),
+                after: (path, on),
+                put: |shell, (path, on), _, cx| {
+                    if let Some(root) = shell
+                        .window
+                        .workspace
+                        .roots
+                        .iter_mut()
+                        .find(|root| root.path == path)
+                    {
+                        root.unattended = on;
+                    }
+                    shell.sync_project_facts(cx);
+                },
+            },
+            window,
+            cx,
+        );
         // The project page's menu says whether this is on, in the entry that was
         // just used.
         self.sync_project_facts(cx);
@@ -297,9 +323,7 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let path = crate::state::Shared::global(cx).config_path.clone();
-        let saved = crate::unattended::set_workflows(default, by_label, &path, cx);
-        crate::toast::report(window, cx, "Saving the unattended runs", None, saved);
+        crate::unattended::set_workflows(default, by_label, window, cx);
         cx.notify();
     }
 
@@ -422,6 +446,7 @@ impl Shell {
         let has_check = self.check_of(&picker.root).is_some();
         let workflow = picker.workflow_for(&row, cx);
         let instructions = picker.instructions.read(cx).value().to_string();
+        let number = row.issue.number;
         if let Err(why) = crate::unattended::start_picked(
             picker.root,
             tracker,
@@ -432,7 +457,10 @@ impl Shell {
             handle,
             cx,
         ) {
-            window.push_notification(crate::toast::warning(why), cx);
+            window.push_notification(
+                crate::toast::failed(&format!("Starting on issue {number}"), why),
+                cx,
+            );
         }
     }
 

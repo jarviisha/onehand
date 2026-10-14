@@ -305,8 +305,12 @@ the project's page beside *Run check* and kept in the workspace file (`Workspace
 
 **Workflows are written on a page of their own**, opened from the rail's *Workflows* row: the list
 on offer, capped and saying what it left out, each readable one with *Run…*, then the editor, one
-box per step, with where each failure sends the run back marked in the margin (*to 2* beside the
-step that fails, *from 4* beside where it goes back to). The draft is the page's entity's
+box per step (its kind the first field, one ⋯ holding *Move up* and *Move down*, refused at the
+ends, and *Remove*), with where each failure sends the run back marked in the margin (*to 2*
+beside the step that fails, *from 4* beside where it goes back to). A name another workflow has
+is said above *Save* before it is pressed (*Another workflow is already called …*), and *Save*
+refuses until it is changed; one write lands at a time. *Cancel* asks, as Esc does, when the form
+holds changes (*Keep*, *Discard*). The draft is the page's entity's
 (`WorkflowsPage`), held per window, so going to another page and back finds it as it was; picking
 another workflow, or closing the window, with changes unsaved asks first in a modal. *Run…* asks
 which project, the one selected in the rail first, and opens the launcher on it with the workflow
@@ -466,7 +470,7 @@ change (`git checkout . && git clean -fd`).
 | Retry a dismissed task | *Dismiss* an ended task, open it under *Finished*, *Retry* | It leaves *Finished*; if the run ends on something nobody chose it is under *Needs attention* again |
 | Runs from an older build | Put a run file from before tasks in `<config_dir>/onehand/pipeline-runs/` and start onehand | It is in `tasks/` under the same name, listed as interrupted, and `pipeline-runs/` is gone |
 | An unknown key | Copy a workflow file into `<config_dir>/onehand/workflows/` with `gate = "x"` added to a step, then *Import…* it too | The row reads *Cannot be read: it has a key `steps[N].gate` that onehand does not read*; the import is refused with the same reason |
-| Export, then import | *Export…* *Work in checkout*, then *Import…* that file | The form opens on it as a new workflow; Save asks for another name, and once renamed it is saved under a new id at version 1 |
+| Export, then import | *Export…* *Work in checkout*, then *Import…* that file | The form opens on it as a new workflow; above *Save*, which refuses, *Another workflow is already called Work in checkout*; once renamed it is saved under a new id at version 1 |
 | Retry after a rename | Duplicate *Work in checkout* and save it, start a run with brief `miss`, then rename the workflow and save | *Retry* keeps *version 1*, saying Settings now say *version 2*; *Retry with current settings…* lists *Workflow version: version 1 → version 2* and runs the renamed workflow |
 | What Retry keeps | Let a run time out, then change `[unattended] timeout` (or the project's check command) and *Retry* | The dialog lists the agent, mode, check command, timeout and workflow version it keeps; the changed one, in the warning ink, names what Settings say now and *Retry with current settings* |
 | Retry with current settings | On a task whose run failed at its push, change the project's check command and press *Retry with current settings…* | *Check command: old → new*, *It starts at the Verify step, the first step whose command changes.*; *Retry with current settings* runs Verify on the new command before anything is pushed |
@@ -488,7 +492,7 @@ change (`git checkout . && git clean -fd`).
 | Answer the pull request review | On a GitHub project, an issue whose task is done with its draft pull request open, a review left on it | The issue offers *Answer the pull request review* beside *Open pull request*; pressed, a new run starts at the repair step with the review as its note, and the issue is told it answers the review, as putting the label back does |
 | A review that cannot be answered | The same, after closing the pull request unmerged; then with a commit pushed to the branch on GitHub that the worktree does not have, the pull request open again; then on a workflow with no status checks step | The dialog lists *Its pull request … was closed without being merged …*, then *The branch on the forge went its own way …*, then *… has no status checks step …*, in the danger ink, and *Answer the review* is spent; nothing is claimed, and the issue gets no comment |
 | An older run in the review | A run kept by a build from before command results were kept, waiting at an approval after its check | The block's *Check* says *not recorded for this run*, or *cannot tell whether the check covers the work now* on a dirty worktree |
-| Check the agent | Edit the Mock UI agent's arguments (a new spec), then *Run workflow…* on an issue with `mode` set | *Mode … is not known yet* with *Check the agent*; pressed, *Checking…*, then the line goes, or turns into a block in the danger ink naming the modes offered; no session appears, no prompt is sent, and no adapter process is left (`pgrep -f mock_ui_agent`) |
+| Check the agent | Edit the Mock UI agent's arguments (a new spec), then *Run workflow…* on an issue with `mode` set | *Mode … is not known yet* with *Check the agent*; pressed, the button waits with a spinner, then the line goes, or turns into a block in the danger ink naming the modes offered; no session appears, no prompt is sent, and no adapter process is left (`pgrep -f mock_ui_agent`) |
 | An agent that does not come up | The same with the agent's command set to one that does not exist | Beside the button: *… could not be checked: …* |
 | Limits | Any start form or Retry dialog | *Before it starts* ends on *Limits: 45m of work, …; 3 failed turns …*, from the workflow that will run |
 | A shared checkout | Prompt a session in a project, then open the launcher on a checkout workflow there | *Your session “…” works in this checkout too …*, muted; *Run* is offered |
@@ -501,7 +505,7 @@ change (`git checkout . && git clean -fd`).
 | Changed while asked | Open the modal on a clean worktree, then create a file in it, then press *Remove* | Nothing removed: *Not removed, as things stand now: Uncommitted or untracked files …* |
 | The Workflows page | Press *Workflows* in the rail | The header reads *Workflows*, both docks go, the row is highlighted; Settings has no Workflows page |
 | A draft kept across pages | *New workflow*, type a name, go to *Tasks* and back to *Workflows* | The form is there with the name typed |
-| Dropping a draft is asked | With that draft, *Edit* another workflow; then close the window | *Discard the workflow being edited?* in a modal, *Keep editing* keeps it; closing asks *Drop the workflow being written?*, *Keep* keeps the window open |
+| Dropping a draft is asked | With that draft, *Edit* another workflow; then *Cancel*; then close the window | *Discard the workflow being edited?* in a modal, *Keep* keeps it; *Cancel* asks the same; closing asks *Discard the workflow being written?*, *Keep* keeps the window open |
 | Run from the page | Two projects, the second selected in the rail; *Run…* on *Work in checkout* | The menu lists the selected project first; picking it opens the launcher on it with *Work in checkout* picked |
 | A repair loop in the margin | Edit a workflow whose Verify goes back to Implement | Beside Verify, *to N* (Implement's number); beside Implement, *from M* |
 | The check command on the project page | Open a project with no session, type a command in *Check command* | *Run check* appears beside *New session*; the command is kept after a restart |

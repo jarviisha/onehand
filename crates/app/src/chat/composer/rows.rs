@@ -1,4 +1,3 @@
-use super::SELECTED_ALPHA;
 use super::presentation::Row;
 use crate::controls::Quiet as _;
 use crate::tokens::ROW_H;
@@ -6,6 +5,7 @@ use gpui::prelude::FluentBuilder as _;
 use gpui::{App, ParentElement, Rems, SharedString, Styled, div, rems};
 use gpui_component::button::Button;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use onehand_plugin_host::{mark_slot, middle_ink};
 
 /// The leading column every popup row's name stands in.
 ///
@@ -45,11 +45,12 @@ pub(super) const OPTION_MAX_W: Rems = rems(9.);
 /// looked exactly like a second candidate. A mark cannot be confused with a
 /// fill however the two move.
 ///
-/// The fill is `accent` with the ink that goes on it, the one spelling a
-/// selected thing takes everywhere in this window -- a tab, a mode chip, a rail
-/// row.
-fn popup_row(id: usize, highlighted: bool, cx: &App) -> Button {
-    crate::controls::action(("candidate", id))
+/// The fill is `accent`, solid, with the ink that goes on it, the one spelling
+/// a selected thing takes everywhere in this window -- a tab, a mode chip, a
+/// rail row. The pointer moves the fill as the arrows do, so the ghost's hover,
+/// the same step, never stands beside it as a second one.
+pub(super) fn popup_row(id: impl Into<gpui::ElementId>, highlighted: bool, cx: &App) -> Button {
+    crate::controls::action(id)
         .quiet(cx)
         // Not for the geometry, which is set outright below and lands after the
         // library's. This is what the row's own `text_sm` could not do: the
@@ -65,7 +66,7 @@ fn popup_row(id: usize, highlighted: bool, cx: &App) -> Button {
         .overflow_hidden()
         .px_2()
         .text_sm()
-        .rounded(cx.theme().radius_tokens().sm)
+        .rounded(cx.theme().radius)
         // No border and no ring, on either state. The library leaves a ghost
         // button's border transparent already, so what is turned off here is
         // the focus ring it would draw over the top — a second rectangle around
@@ -73,7 +74,7 @@ fn popup_row(id: usize, highlighted: bool, cx: &App) -> Button {
         // an outline would be claiming otherwise.
         .border_0()
         .when(highlighted, |el| {
-            el.bg(cx.theme().accent.alpha(SELECTED_ALPHA))
+            el.bg(cx.theme().accent)
                 .text_color(cx.theme().accent_foreground)
         })
 }
@@ -86,6 +87,7 @@ fn popup_row(id: usize, highlighted: bool, cx: &App) -> Button {
 /// stacked under the name it would double the height of a list whose whole job
 /// is to put fifty paths in front of somebody typing.
 pub(super) fn candidate_row(id: usize, row: Row, highlighted: bool, cx: &App) -> Button {
+    let id = ("candidate", id);
     // **The name is one ink, and the match moved off the ramp onto weight.**
     //
     // There are four things to tell apart here and three ink steps to do it
@@ -115,10 +117,7 @@ pub(super) fn candidate_row(id: usize, row: Row, highlighted: bool, cx: &App) ->
     // for the name rather than part of it, and both sit on the same line as it,
     // so they take the step directly under it — far enough down that the name
     // leads, not so far that a path is hard to read.
-    let second = match highlighted {
-        true => cx.theme().accent_foreground.alpha(0.75),
-        false => crate::theme::meta_ink(cx),
-    };
+    let second = detail_ink(highlighted, cx);
     popup_row(id, highlighted, cx)
         .h(ROW_H)
         // **The icon is what holds the name's left edge still.** Without it a
@@ -128,7 +127,7 @@ pub(super) fn candidate_row(id: usize, row: Row, highlighted: bool, cx: &App) ->
         // rows, so neither list has a gap in it where the other has a glyph.
         .children(
             row.mark
-                .map(|mark| mark.size_3().flex_none().text_color(second)),
+                .map(|mark| mark_slot(mark.small().text_color(second))),
         )
         // **A column of a fixed width, not a box that fits its name.** The name
         // is what the eye runs down, so it has to start at the same x on every
@@ -254,19 +253,12 @@ fn marked(
 /// stands at one height and the list can be bounded in whole rows. The name
 /// gives way only once the detail has gone.
 pub(super) fn choice_row(id: usize, row: Row, highlighted: bool, cx: &App) -> Button {
-    let detail_ink = match highlighted {
-        // On the fill, the muted ink of an unlit row is close to unreadable;
-        // this is the same relationship one step down from the ink that belongs
-        // on this fill.
-        true => cx.theme().accent_foreground.alpha(0.75),
-        false => cx.theme().muted_foreground,
-    };
+    let id = ("candidate", id);
+    let detail_ink = detail_ink(highlighted, cx);
     popup_row(id, highlighted, cx)
         .h(ROW_H)
-        .children(
-            row.mark
-                .map(|mark| mark.small().flex_none().text_color(detail_ink)),
-        )
+        // A glyph leading the name takes the name's ink, in a slot of its own.
+        .children(row.mark.map(|mark| mark_slot(mark.small())))
         .child(div().min_w_0().truncate().child(row.label))
         .child(
             div()
@@ -281,4 +273,14 @@ pub(super) fn choice_row(id: usize, row: Row, highlighted: bool, cx: &App) -> Bu
             row.checked
                 .then(|| Icon::new(IconName::Check).small().flex_none()),
         )
+}
+
+/// The ink of what sits beside a row's name: the middle step, mixed under the
+/// fill's own ink on the row about to be taken, so it stays a step under the
+/// name there too.
+fn detail_ink(highlighted: bool, cx: &App) -> gpui::Hsla {
+    match highlighted {
+        true => middle_ink(cx.theme().accent_foreground, cx.theme().muted_foreground),
+        false => crate::theme::meta_ink(cx),
+    }
 }

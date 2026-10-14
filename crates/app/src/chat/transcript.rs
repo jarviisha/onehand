@@ -43,8 +43,8 @@ gpui::actions!(permission_card, [PermissionAllow, PermissionDeny]);
 pub struct QuestionPick {
     pub index: usize,
 }
+use metrics::LINE_H;
 pub(in crate::chat) use metrics::{BLOCK_GAP, CONTENT_COLUMN, TEXT, TEXT_SM, TIGHT_GAP, TURN_GAP};
-use metrics::{LINE_H, STATE_TINT};
 pub(in crate::chat) use parts::{accent, line_counts};
 pub(in crate::chat) use permission::permission;
 use plan::plan;
@@ -105,7 +105,22 @@ pub fn item(
         ChatItem::Plan(p) => plan(session, p, target, cx).into_any_element(),
         ChatItem::Permission(p) => permission(session, p, target, room.well, cx).into_any_element(),
         ChatItem::Ask(a) => ask(session, a, target, cx).into_any_element(),
-        ChatItem::Notice { text, level } => notice(text, *level, cx).into_any_element(),
+        ChatItem::Notice { text, level } => {
+            // The adapter is gone and this is what said so: the way back is
+            // named by the key the keymap binds now.
+            let lost = chat.link == onehand_core::chat::Link::Lost
+                && matches!(target, TranscriptItemId::Live(i) if i + 1 == chat.items.len());
+            let restart = lost
+                .then(|| {
+                    gpui_component::kbd::Kbd::binding_for_action(
+                        &crate::shell::RestartSession,
+                        None,
+                        window,
+                    )
+                })
+                .flatten();
+            notice(text, *level, prompted_after(chat, target), restart, cx).into_any_element()
+        }
     };
 
     // Width is owned by the pane's run so an activity summary drawn by the
@@ -119,7 +134,7 @@ pub fn item(
 ///
 /// A remark stays a caption. A **failure does not**: the two loudest things
 /// this app can say — the turn errored, the agent is gone and here is the key
-/// that brings it back — used to draw at the smallest size in the palest
+/// that brings it back, the one the keymap binds — used to draw at the smallest size in the palest
 /// colour the theme has, quieter than the file path in the tool card above
 /// them. Something that ends the conversation cannot be whispered, so a
 /// failure takes the alert icon, the danger tint and the body size.
@@ -129,7 +144,38 @@ pub fn item(
 /// failure sits on a wash of its own danger colour, in the body face, which is
 /// what stops it reading as one more line of the answer without claiming to be
 /// quoted output.
-fn notice(text: &str, level: NoticeLevel, cx: &App) -> impl IntoElement + use<> {
+///
+/// **Only while nothing has been asked since.** A failure a later prompt has
+/// moved past no longer needs the person: it keeps its mark and its words, in
+/// the muted ink, as the record of what happened, so a conversation scrolled
+/// back through is not a column of alarms already answered.
+fn notice(
+    text: &str,
+    level: NoticeLevel,
+    past: bool,
+    restart: Option<gpui_component::kbd::Kbd>,
+    cx: &App,
+) -> impl IntoElement + use<> {
+    if level == NoticeLevel::Error && past {
+        return div()
+            .h_flex()
+            .items_start()
+            .gap_2()
+            .w_full()
+            .min_w_0()
+            .text_sm()
+            .text_color(cx.theme().muted_foreground)
+            .child(
+                div()
+                    .h(metrics::LINE_SM)
+                    .flex_none()
+                    .h_flex()
+                    .items_center()
+                    .child(Icon::new(IconName::TriangleAlert).xsmall()),
+            )
+            .child(div().flex_1().min_w_0().child(text.to_string()))
+            .into_any_element();
+    }
     if level != NoticeLevel::Error {
         // **A line down the middle of the column, with nothing around it.** A
         // remark is the transcript speaking about itself rather than either
@@ -148,10 +194,11 @@ fn notice(text: &str, level: NoticeLevel, cx: &App) -> impl IntoElement + use<> 
             .into_any_element();
     }
 
-    // A failure is a banner: the full width of the column, its own edge, and
-    // the mark anchored to the first line so a message that wraps to three
-    // lines does not carry the icon down the middle of itself.
-    let danger = crate::theme::status_ink(cx).danger;
+    // A failure is a banner: the full width of the column on the danger tint,
+    // a solid fill and no edge, and the mark anchored to the first line so a
+    // message that wraps to three lines does not carry the icon down the
+    // middle of itself.
+    let tint = onehand_plugin_host::tint(cx.theme().red, cx);
     div()
         .h_flex()
         .items_start()
@@ -161,11 +208,9 @@ fn notice(text: &str, level: NoticeLevel, cx: &App) -> impl IntoElement + use<> 
         .px_3()
         .py_2()
         .rounded(cx.theme().radius)
-        .border_1()
-        .border_color(danger)
-        .bg(cx.theme().danger.opacity(STATE_TINT))
+        .bg(tint.fill)
         .text_sm()
-        .text_color(danger)
+        .text_color(tint.ink)
         .child(
             // The glyph is held to the first line's height, so a message that
             // wraps keeps it beside its first words.
@@ -176,8 +221,37 @@ fn notice(text: &str, level: NoticeLevel, cx: &App) -> impl IntoElement + use<> 
                 .items_center()
                 .child(Icon::new(IconName::TriangleAlert).xsmall()),
         )
-        .child(div().flex_1().min_w_0().child(text.to_string()))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .h_flex()
+                .flex_wrap()
+                .items_center()
+                .gap_x_2()
+                .child(text.to_string())
+                .children(restart.map(|key| {
+                    div()
+                        .h_flex()
+                        .items_center()
+                        .gap_1()
+                        .child("Restart the agent with")
+                        .child(key)
+                })),
+        )
         .into_any_element()
+}
+
+/// Whether a prompt was sent after `target`, which moves a failure there into
+/// the record.
+fn prompted_after(chat: &onehand_core::chat::Chat, target: TranscriptItemId) -> bool {
+    let prompt = |item: &ChatItem| matches!(item, ChatItem::User(_));
+    match target {
+        TranscriptItemId::History(i) => {
+            chat.history.iter().skip(i + 1).any(prompt) || chat.items.iter().any(prompt)
+        }
+        TranscriptItemId::Live(i) => chat.items.iter().skip(i + 1).any(prompt),
+    }
 }
 
 /// A stable element id per item. History and live indices overlap, so the
