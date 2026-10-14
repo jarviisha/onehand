@@ -21,7 +21,7 @@ Check loading-to-content and empty-to-content transitions, not just their final 
 // Content on its way: one meta line where it will appear
 div().text_xs().text_color(cx.theme().muted_foreground).child("Reading the workflows…")
 // An action in flight, on the button that started it
-action("run-check").secondary().tall().label("Run check").loading(running)
+action("run-check").secondary().small().label("Run check").loading(running)
     .refuses(running.then_some("The check is running"))
 ```
 
@@ -63,7 +63,8 @@ cx.spawn(async move |pane, cx| {
 
 ## Motion
 
-Nothing animates but a `Spinner` on work still running.
+Nothing animates but a `Spinner` on work still running, beside what the library's own overlays
+and controls (a switch's thumb) do themselves.
 
 ```rust
 // Wrong: a fade drawing the eye to a row that changed
@@ -87,7 +88,7 @@ div().px_2().py_1().text_xs().text_color(cx.theme().muted_foreground).child("No 
 // An action the person started failed
 window.push_notification(crate::toast::failed("Exporting the conversation", e), cx);
 // A condition standing until something answers it, under a plugin's view
-onehand_plugin_host::status_line(message, cx)
+onehand_plugin_host::status_line(message, onehand_plugin_host::status_ink(cx).warning)
 // Cannot act yet: refuse, and say why
 action("save-agent").primary().tall().label("Save").tooltip("Save the agent")
     .refuses((!ready).then_some("Give it a name and a command first"))

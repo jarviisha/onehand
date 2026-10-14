@@ -105,7 +105,7 @@ size it takes; `design-tokens/reference.md` holds what each size measures in eac
 | A badge | Tag | `.small()`, at its own height |
 | A checkbox, a switch | Checkbox, Switch | `.small()` beside chrome text, at the library's own geometry |
 | A single-line row; a row with a second line | drawn by the app | `ROW_H`; at least `ROW_H` |
-| A strip along the top of a region | drawn by the app | `BAR_H` |
+| A strip along the top of a region | `strip` (plugin host) | `BAR_H` |
 
 - **One size, one measure.** `.small()` and `.xsmall()` already give a Button and an Input the
   same height and words; the library's default does not, so it is never used, and `.tall()` is
@@ -183,12 +183,13 @@ Boxes sit side by side while the measured column holds two, and stack when it do
 
 A single-line row is `ROW_H` tall, padded `px_2` with `gap_2`, at `radius`. Hover fills it with
 `list_hover`, the selected row with `accent`. A row's own actions are `.small()` ghost buttons, shown
-on hover and on the selected row; `.xsmall()` only for one inside the row's line of meta text. Every list has a named cap, and its last line says how many more
+on hover, on the selected row, on keyboard focus and while their action runs; `.xsmall()` only for one inside the row's line of meta text. Every list has a named cap, and its last line says how many more
 there are, in meta text. A table is a box of rows split by hairlines, under a head row in meta text
 on the box's own surface, its rows `row`s at the box's inset, square but at the box's ends.
 Keep metadata and actions in stable trailing slots. Multi-line row variants align their primary
 labels and secondary lines across peers. A hovered selected row remains recognizably selected;
-keyboard focus remains separately visible. Hover actions are also available on keyboard focus.
+keyboard focus remains separately visible. Hover actions are also available on keyboard focus, so
+a row whose actions hide at rest is a tab stop; a focus a click leaves does not show them.
 
 ### List and detail
 
@@ -247,6 +248,9 @@ uses a word or recognizable mark as well as colour. A quieter state must still b
   and that change's own save decides what the screen shows.
 - **What goes back is the one change, not the file**: the pin, the order, the theme, each to its
   own last saved value.
+- **A save that is an act rather than a value** (closing an issue, adding a comment, a write that
+  runs a step on the file as it then stands) is superseded by nothing: a newer act does not carry
+  the older one, so each failure is said once, and the screen reloads what the file holds.
 - **A pick the agent applies** (a mode, a model, an effort, *Fast*) shows at once. The agent
   refusing it is its failed save: back to the value the agent last confirmed, one toast.
 - **A dragged size and a dock's open state** are saved but never put back, since the layout would
@@ -263,7 +267,8 @@ uses a word or recognizable mark as well as colour. A quieter state must still b
 
 - Nothing animates. A hover, a selection, a fold or a new state lands in the frame it happens in.
 - The one motion is a `Spinner` on work still running, where *Waiting* puts it. The library's own
-  overlays (dialogs, popovers, toasts) keep what they do themselves.
+  overlays (dialogs, popovers, toasts) and controls (a switch's thumb) keep what they do
+  themselves.
 - A size or a position never animates, and nothing pulses or slides to draw the eye (a field's
   caret blinks on its own); a state that needs the person says so in ink and a word.
 
@@ -310,7 +315,8 @@ in the app and in a plugin:
 - the buttons read *Keep*, then the danger word, the same verb as the control that asked.
 
 What can be undone or resumed goes ahead without asking: stopping a task that offers *Resume*,
-taking an item off the queue, unbinding a key. The control starting a removal is a word in the
+taking an item off the queue, unbinding a key, closing an issue. Closing an issue a run is working
+on asks (*Close <title>?*), since it ends that run too. The control starting a removal is a word in the
 danger tint.
 
 ### Keys and focus

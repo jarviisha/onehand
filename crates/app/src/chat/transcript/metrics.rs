@@ -154,16 +154,5 @@ pub(super) const ASK_CHOICE_DOT: Rems = rems(0.5);
 /// The ring around that mark, in pixels and not rems: a hairline's job done a
 /// touch heavier, and a hairline must not scale with a panel's zoom.
 pub(super) const ASK_MARK_RING: gpui::Pixels = gpui::px(1.5);
-/// The height of a question's typed-answer field, a step under a choice's
-/// floor: one line by construction, and standing it at a two-line height
-/// leaves a band of empty surface under the words.
-pub(super) const ASK_FIELD_H: Rems = rems(2.75);
 /// Width a question's tab label is elided at. Only a *tab* is ever elided.
 pub(super) const ASK_TAB_W: Rems = rems(8.75);
-/// The height a choice row stands at whatever it holds.
-///
-/// A floor, not a height. The label and the description under it are the
-/// agent's sentences, so the row grows with them; what this answers is the
-/// other end — a row whose label is one word, which shrink-wrapped is a target
-/// half the size of the one below it.
-pub(super) const ASK_ROW_MIN: Rems = rems(3.25);

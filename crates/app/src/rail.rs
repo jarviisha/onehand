@@ -40,6 +40,7 @@ mod search;
 mod session;
 mod workspace;
 pub use project::{pick_item, unattended_item};
+pub(crate) use row::page_fill;
 pub(crate) use session::{signal_mark, signal_word};
 pub(crate) use workspace::ellipsize_front;
 
@@ -408,8 +409,7 @@ fn page_row<F: Fn(&mut Shell, &mut Window, &mut Context<Shell>) + 'static>(
     cx: &mut Context<Shell>,
     go: F,
 ) -> impl IntoElement + use<F> {
-    let hover = row::hover_fill(cx);
-    div()
+    let row = div()
         .id(id)
         .h_flex()
         .items_center()
@@ -417,15 +417,8 @@ fn page_row<F: Fn(&mut Shell, &mut Window, &mut Context<Shell>) + 'static>(
         .px_2()
         .gap_2()
         .rounded(cx.theme().radius)
-        .cursor_pointer()
-        .when(on, |d| {
-            d.bg(row::chosen_fill(cx))
-                .text_color(cx.theme().sidebar_accent_foreground)
-        })
-        .when(!on, |d| {
-            d.hover(move |d| d.bg(hover))
-                .text_color(cx.theme().muted_foreground)
-        })
+        .cursor_pointer();
+    page_fill(row, on, cx)
         .tooltip(move |window, cx| {
             let tip = Tooltip::new(tip);
             match key {

@@ -6,8 +6,8 @@ use crate::controls::Tall as _;
 use crate::controls::text_input;
 use crate::tokens::PAGE_NARROW;
 use gpui::{
-    App, Context, Div, ElementId, InteractiveElement, IntoElement, ParentElement, SharedString,
-    Stateful, StatefulInteractiveElement, Styled, Window, div,
+    App, Context, Div, ElementId, FocusHandle, InteractiveElement, IntoElement, ParentElement,
+    SharedString, Stateful, StatefulInteractiveElement, Styled, Window, div,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme, Sizable as _, StyledExt};
@@ -51,6 +51,18 @@ pub(super) struct EmptyProject {
     /// Its check command field, the shell's: `None` for a run's own
     /// worktree, which keeps none.
     pub(super) check_input: Option<gpui::Entity<gpui_component::input::InputState>>,
+    /// One focus handle per past conversation the page lists, by place: each
+    /// row is a tab stop, so the keyboard reaches its *Delete…* as the pointer
+    /// does.
+    pub(super) rows: Vec<FocusHandle>,
+}
+
+/// The focus handles for the page's listed conversations, one per row it can
+/// list.
+pub(super) fn home_rows(cx: &mut App) -> Vec<FocusHandle> {
+    (0..HOME_ROWS)
+        .map(|_| cx.focus_handle().tab_stop(true))
+        .collect()
 }
 
 impl ChatPane {
@@ -368,7 +380,7 @@ impl ChatPane {
             return onehand_plugin_host::hint("Add a project to start a session", cx);
         };
         let now = onehand_core::chat::now_secs();
-        let muted = cx.theme().muted_foreground;
+        let (muted, ring) = (cx.theme().muted_foreground, cx.theme().ring);
         let danger = crate::theme::status_ink(cx).danger;
         // Bounded, and the bound says so below. A project worked in for months
         // has more archives than this page is for, and none of this scrolls.
@@ -450,63 +462,73 @@ impl ChatPane {
                     .gap_2()
                     .w_full()
                     .child(div().font_semibold().child("Past conversations"))
-                    .child(div().v_flex().children(shown.into_iter().enumerate().map(
-                        |(i, meta)| {
-                            // The agent *is* named here, unlike in a session's own
-                            // picker: this list crosses every agent that has worked
-                            // in the project, and resuming a row starts a session on
-                            // the one that held it.
-                            let subtitle = format!(
-                                "{} · {} items · {}",
-                                rel_time(now, meta.updated),
-                                meta.item_count,
-                                meta.agent
-                            );
-                            let (agent, archive) =
-                                (SharedString::from(meta.agent.clone()), meta.dir.clone());
-                            let dir = meta.dir.clone();
-                            let name = SharedString::from(meta.title.clone());
-                            let group = SharedString::from(format!("home-row-{i}"));
-                            conversation_card(
-                                ("home", i),
-                                meta.title.clone().into(),
-                                subtitle.into(),
-                                cx,
-                            )
-                            .group(group.clone())
-                            .on_click(cx.listener(move |_: &mut Self, _, _, cx| {
-                                cx.emit(ChatPaneEvent::StartSession {
-                                    agent: Some(agent.clone()),
-                                    resume: Some(archive.clone()),
-                                });
-                            }))
-                            // A word rather than a glyph: everything else here can
-                            // be done again, and a deleted conversation cannot. In
-                            // the row's trailing slot, shown while it is pointed
-                            // at; the press stops there, or it also opens the row.
-                            .child(onehand_plugin_host::hover_slot(
-                                group,
-                                false,
-                                crate::controls::action(("home-delete", i))
-                                    .quiet(cx)
-                                    .small()
-                                    .text_color(danger)
-                                    .label("Delete…")
-                                    .tooltip("Delete this conversation")
-                                    .on_click(cx.listener(
-                                        move |pane: &mut Self, _, window, cx| {
-                                            cx.stop_propagation();
-                                            pane.confirm_delete(
-                                                dir.clone(),
-                                                name.clone(),
-                                                window,
-                                                cx,
-                                            );
-                                        },
-                                    )),
-                            ))
-                        },
-                    )))
+                    .child(div().v_flex().children(
+                        shown.into_iter().zip(&project.rows).enumerate().map(
+                            |(i, (meta, focus))| {
+                                // The agent *is* named here, unlike in a session's own
+                                // picker: this list crosses every agent that has worked
+                                // in the project, and resuming a row starts a session on
+                                // the one that held it.
+                                let subtitle = format!(
+                                    "{} · {} items · {}",
+                                    rel_time(now, meta.updated),
+                                    meta.item_count,
+                                    meta.agent
+                                );
+                                let (agent, archive) =
+                                    (SharedString::from(meta.agent.clone()), meta.dir.clone());
+                                let dir = meta.dir.clone();
+                                let name = SharedString::from(meta.title.clone());
+                                let group = SharedString::from(format!("home-row-{i}"));
+                                conversation_card(
+                                    ("home", i),
+                                    meta.title.clone().into(),
+                                    subtitle.into(),
+                                    cx,
+                                )
+                                .group(group.clone())
+                                .track_focus(focus)
+                                .border_1()
+                                .border_color(gpui::transparent_black())
+                                .focus_visible(|row| row.border_color(ring))
+                                .on_click(cx.listener(move |_: &mut Self, _, _, cx| {
+                                    cx.emit(ChatPaneEvent::StartSession {
+                                        agent: Some(agent.clone()),
+                                        resume: Some(archive.clone()),
+                                    });
+                                }))
+                                // A word rather than a glyph: everything else here can
+                                // be done again, and a deleted conversation cannot. In
+                                // the row's trailing slot, shown while it is pointed
+                                // at or the keyboard is on it; the press stops
+                                // there, or it also opens the row.
+                                .child(
+                                    onehand_plugin_host::hover_slot(
+                                        group,
+                                        false,
+                                        crate::controls::action(("home-delete", i))
+                                            .quiet(cx)
+                                            .small()
+                                            .text_color(danger)
+                                            .label("Delete…")
+                                            .tooltip("Delete this conversation")
+                                            .on_click(cx.listener(
+                                                move |pane: &mut Self, _, window, cx| {
+                                                    cx.stop_propagation();
+                                                    pane.confirm_delete(
+                                                        dir.clone(),
+                                                        name.clone(),
+                                                        window,
+                                                        cx,
+                                                    );
+                                                },
+                                            )),
+                                    )
+                                    .focus(focus),
+                                )
+                            },
+                        ),
+                    ))
                     .children((hidden > 0).then(|| {
                         div()
                             .text_xs()

@@ -7,8 +7,9 @@ the code and its tests decide. A feature's own document (`docs/tasks.md`, `docs/
 screen repeats and how they behave. Code never cites this file.
 
 This contract defines onehand's own visual language: quiet navigation, clear content hierarchy,
-compact controls and predictable alignment. A change that departs from it reports the departure
-within its scope, or records it in `docs/known-gaps.md` with its reason.
+compact controls and predictable alignment. A departure agreed to stay is listed under
+*Exceptions* below; one still to be put right is recorded in `docs/known-gaps.md` with its reason.
+A change that departs from the contract does one or the other within its scope.
 
 **No palette lives here.** gpui-component's theme, overridden at boot by the app's palette
 (`crate::theme::install`, with its contrast tests). Every colour, radius and size is a token read
@@ -44,7 +45,7 @@ layer is a bug even when it looks right, as no theme switch reaches it.
    screen says how many were left out.
 8. **Calm and immediate.** What a person changes shows at once, and the work behind it follows.
    Nothing moves for show: the one motion is a `Spinner` on work still running, beside what the
-   library's own overlays do. `docs/ui-patterns.md` (*Immediate feedback*, *Motion*) holds how.
+   library's own overlays and controls do (*Exceptions*). `docs/ui-patterns.md` (*Immediate feedback*, *Motion*) holds how.
 
 ## Layout
 
@@ -96,7 +97,9 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   under its project: its state mark, title and `⋯` (on hover, on the keyboard's row, always on
   the one shown), and under them `state · agent · age` (*waiting Nm* while it needs input, the
   state's word in its ink while it waits on the person), over which the pointer and the
-  keyboard's row lay *Stop* (running), *Send the last prompt again* (failed) and *Close*. The
+  keyboard's row lay *Stop* (running), *Send the last prompt again* (failed) and *Close*; the
+  keyboard's row lays them on any session but the one shown, whose conversation already holds
+  *Stop* and the way back, so a row the keys only pass through stays still. The
   other filters are flat, the project in place of the agent. A group lists six sessions, then *N
   more*; an open project with none says *No open sessions*, a search or filter with none *No
   sessions match*. Each state has its own ink and, but for failed and disconnected, its own
@@ -145,7 +148,7 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
     is its picked row, a changed file's letter in its state's ink at the row's end.
   - A failed open or save in the Editor or Markdown is a toast; a file changed on disk, a
     Neovim that would not start and a listing that failed stand as a status line under the mode.
-  - Plugins: the search and filters a filter bar; a row's actions on hover, its switch always;
+  - Plugins: the search and filters a filter bar; a row's actions on hover and on keyboard focus, its switch always;
     what runs and what waits on a restart under the list, so neither moves it.
   - The Issues tab's issue: a trail (project › reference, linked to its forge, or *Draft*) with
     its actions (one primary, one other, ⋯); its tags (a neutral state badge, labels); the title,
@@ -165,10 +168,10 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
     *Projects* as a grid of tiles (not drawn without projects), then the sections *Recent
     conversations* and *Open issues* (its project picker kept while the page is left), plain
     lists on the page's surface. The page scrolls as one.
-  - *Tasks*: a filter bar (the project picker), then four cards two by two, *Needs attention*,
+  - *Tasks*: a filter bar (the project picker), then four boxes two by two, *Needs attention*,
     *Running*, *Queued*, *Finished*, each with a count, an empty line and a cap. A row is the
     title over workflow, step or outcome and project, with ghost actions by state (*Open
-    session*, *Stop*, *Resume*, *Retry*, *Dismiss*) shown on hover, kept under *Needs attention*;
+    session*, *Stop*, *Resume*, *Retry…*, *Dismiss*) shown on hover, kept under *Needs attention*;
     its text opens the task's detail, a page of its own at the prose width: a trail, the title,
     then *Awaiting approval*, *Way out* and the runs as plain sections.
   - *Issues*, in the overview's column: a head (*New issue*, then *Refresh* and *N open*); a
@@ -215,7 +218,8 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   path or a command is mono; the agent's own wording, a folder and what the agent did (a
   thought, a command's output, a read or search list) read in the middle ink. One copy control
   (`.xsmall()`, quiet, named in its tooltip, in a column of its own; a permission's on the line
-  under its command, beside where it runs) and one show-more control serve every block. Text
+  under its command, beside where it runs; a prompt's under its bubble, shown while the prompt
+  is pointed at or the control holds focus) and one show-more control serve every block. Text
   that scrolls keeps a gutter for its scrollbar.
 - **Calm once it is past**: a failure a later prompt has moved past keeps its words in the
   muted ink, with no fill; a settled *N failed* drops the danger ink; a refusal's badge is
@@ -225,7 +229,8 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   answers at the end at `.small()` (a hairline under the head and over the answers, the sides
   padded `p_4` so a scrolling body's thumb has room), the dismissing one a quiet ghost. A choice is a row on a well
   of its own at rest and on the selected step when taken, a radio or checkbox drawn in ink at
-  its head (the library's rings vanish on the selected step) and its number as a `Kbd`; a typed answer is a plain field. Their keys are named in tooltips, never in a label.
+  its head (the library's rings vanish on the selected step) and its number as a `Kbd`, at least
+  a field's height; a typed answer is a plain field (`.tall()`), ringed while the keys are on it. Their keys are named in tooltips, never in a label.
   The card holds the one primary while it shows.
 
 ## Type, space and shape
@@ -311,7 +316,7 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
 
 Reuse gpui-component before building anything: `Root`, `DockArea`, `Sidebar`, `Dialog`, `Switch`,
 `InputState`, `Editor`, `TextView`, plus gpui's own `list` for the transcript. Controls go through
-the plugin host's builders, which set the pointer cursor and the `sm` corner: buttons through
+the plugin host's builders, which set the pointer cursor and the one corner (`radius`): buttons through
 `action`; fields through `text_input`, `search_input` (the search mark, the clear button; the rail's
 alone has no edge, on `theme::inset`) and `text_area`. A button names its variant by role: `primary`
 the main action, `secondary` an alternative beside it, a set picker's trigger (an unset one is a ghost, through
@@ -356,7 +361,8 @@ control or row it is part of.
 
 ## Exceptions
 
-The whole list: any other departure from a rule above is a bug until agreed and listed here.
+The whole list of departures agreed to stay: any other is a bug, put right or recorded in
+`docs/known-gaps.md` until it is.
 
 - **The composer card has no edge.** It stands off the page on its own fill (`theme::raised`) and
   its own lift (`composer_lift`).
@@ -373,3 +379,9 @@ The whole list: any other departure from a rule above is a bug until agreed and 
 - **The library draws its own controls' states**: a refusing or loading button, a picker's caret,
   a badge under the pointer and a switch's thumb keep the alpha or the motion it gives them, as
   its overlays keep theirs.
+- **The library's small parts keep their half corner**: a `Kbd`, a checkbox and the library's own
+  tabs read its `sm` radius, half the one corner; they are drawn inside a control, where a full
+  corner would round them to a pill.
+- **An open menu's trigger keeps its resting ink**: while a dropdown is open the library draws its
+  trigger on the selected step and replays the ink the caller gave it, so a quiet icon stays in
+  the muted ink there rather than taking the selected step's ink.

@@ -1,5 +1,5 @@
 use super::fold_key;
-use super::metrics::{CARD_PAD, DETAIL_OPEN_H, FOLD_INDENT, TIGHT_GAP};
+use super::metrics::{CARD_PAD, DETAIL_OPEN_H, FOLD_INDENT, SCROLLBAR_W, TIGHT_GAP};
 use crate::chat::session::ChatSession;
 use crate::controls::Quiet as _;
 use crate::tokens::{CONTROL_H, LEADING};
@@ -245,6 +245,9 @@ impl RenderOnce for ScrollBody {
             })
             .read(cx)
             .clone();
+        // Last frame's measure: the first frame of an opened detail draws
+        // without the gutter and the second has it, a frame nobody sees.
+        let overflows = scroll.max_offset().y > gpui::px(0.);
 
         div()
             .id(("detail-frame", key))
@@ -259,6 +262,10 @@ impl RenderOnce for ScrollBody {
                     .w_full()
                     .min_w_0()
                     .max_h(self.max_h)
+                    // The scrollbar's gutter while there is one, held inside
+                    // the scrolled box so the bar stays on the frame's edge
+                    // and the text stops short of its thumb.
+                    .when(overflows, |area| area.pr(SCROLLBAR_W))
                     .overflow_y_scroll()
                     .track_scroll(&scroll)
                     .children(self.children),

@@ -33,7 +33,7 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | A button that can refuse | `.refuses(why)`: refusing while `why` is `Some`, its reason the tooltip; called after the control's own tooltip (the `Refuses` trait, re-exported by `crates/app/src/controls.rs`) | `crates/plugin-host/src/lib.rs` |
 | A small label, a badge | `badge(text, tint)`: the library's `Tag` at `.small()` on `tokens::BADGE_CORNER`, in a `Tint`'s fill and ink (`tint(base, cx)` for a hue) | `crates/plugin-host/src/lib.rs` |
 | A mark down a column (an icon, a state's mark, a dot) | `mark_slot(mark)`: one icon wide, centred, so marks share a line and labels an edge | `crates/plugin-host/src/lib.rs` |
-| A row's actions shown on hover | `hover_slot(group, shown, child)`: a trailing slot keeping its width, visible while the row named `group` is hovered or `shown` | `crates/plugin-host/src/lib.rs` |
+| A row's actions shown on hover | `hover_slot(group, shown, child)`, then `.focus(&row_handle)`: a trailing slot keeping its width, visible while the row named `group` is hovered, while the keyboard holds the row, or while `shown` (selected, or its action running). A hidden slot's controls are not tab stops, so the row itself is one | `crates/plugin-host/src/row_actions.rs` |
 | An issue's label | `label_badge(label, cx)`: a badge tinted by the label's kind | `crates/plugin-host/src/lib.rs` |
 | A block held folded | `fold_toggle(id, label, open, cx)`: the chevron first, quiet, `.xsmall()` | `crates/plugin-host/src/lib.rs` |
 | A box on a page | `card_box(cx)`: hairline, `p_3`, `gap_2` | `crates/plugin-host/src/lib.rs` |
@@ -54,15 +54,18 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | A dialog's title row | `title_row` | `crates/app/src/dialogs.rs` |
 | A form field | `field` (its line about the setting in meta text) | `crates/plugin-host/src/lib.rs`, re-exported by `crates/app/src/settings.rs` |
 | A Settings group, a Settings row | `section`, `list_row` | `crates/app/src/settings.rs` |
-| A page's box and its title row | `card_box`, `card_title` | `crates/app/src/chat/pane/workspace_page.rs` |
-| A sunk box of machine text | `well` (callers set size and padding) | `crates/plugin-host/src/lib.rs` |
+| A page's box, its title row, a list section and two to a row | `page_card`, `card_title`, `page_section`, `pair` | `crates/app/src/chat/pane/page_parts.rs` |
+| A dialog's footer (a third action at its start) | `footer_row` | `crates/app/src/dialogs.rs` |
+| A Settings sub-page's scope line | `page_head` | `crates/app/src/settings.rs` |
+| A sunk box of machine text | `well` (sets the code text size; callers set padding) | `crates/plugin-host/src/lib.rs` |
 | A mono well on a page | `mono_well`, built on `well` | `crates/app/src/chat/pane/tasks_page/detail.rs` |
 | Shared sizes and the floating shadow | `tokens` | `crates/plugin-host/src/tokens.rs` |
 | A transcript well, a pinned card, a row's note | `plain_box`, `floating_card`, `row_note` | `crates/app/src/chat/transcript/parts.rs` |
-| Transcript sizes and corners | the constants and `radius_*` | `crates/app/src/chat/transcript/metrics.rs` |
+| Transcript sizes | the constants | `crates/app/src/chat/transcript/metrics.rs` |
 | The composer card | `card` | `crates/app/src/chat/composer/card.rs` |
 | The composer popup and its parts | `popup_surface`, `popup_header`, `popup_title`, `candidate_row`, `choice_row` | `crates/app/src/chat/composer/popup.rs`, `rows.rs` |
 | A rail row's fills, inks and controls | `row_surfaces`, `row_inks`, `hover_fill`, `chosen_fill`, `key_ring`, `row_control`, `meta_control`, `menu_button` | `crates/app/src/rail/row.rs` |
+| A page row (the rail's foot, Settings' nav) | `page_fill(row, on, cx)` | `crates/app/src/rail/row.rs` |
 
-The app has no shared page section yet: take the nearest one above, and when a second
-page needs the same thing, lift it into a shared module in that change rather than copying it.
+A page part not listed above: take the nearest one, and when a second page needs the same
+thing, lift it into `page_parts.rs` in that change rather than copying it.

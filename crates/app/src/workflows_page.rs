@@ -52,6 +52,9 @@ pub(crate) struct WorkflowsPage {
     /// A save is being written: *Save* spins and takes no second press, so
     /// one write lands at a time.
     writing: bool,
+    /// One focus handle per listed row, by place: each row is a tab stop, so
+    /// the keyboard reaches its actions as the pointer does.
+    rows: Vec<FocusHandle>,
 }
 
 impl EventEmitter<WorkflowsPageEvent> for WorkflowsPage {}
@@ -70,6 +73,7 @@ impl WorkflowsPage {
             projects: Vec::new(),
             selected: None,
             writing: false,
+            rows: Vec::new(),
         })
     }
 
@@ -117,7 +121,13 @@ impl WorkflowsPage {
 impl Render for WorkflowsPage {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let handle = cx.entity();
-        let list = list(&handle, &self.run_choices(), cx);
+        let listed = crate::workflow::templates(cx)
+            .len()
+            .min(crate::workflow::TEMPLATES_SHOWN);
+        while self.rows.len() < listed {
+            self.rows.push(cx.focus_handle().tab_stop(true));
+        }
+        let list = list(&handle, &self.run_choices(), &self.rows, cx);
         let form = self
             .draft
             .as_ref()
@@ -190,7 +200,7 @@ fn head(handle: &Entity<WorkflowsPage>, cx: &App) -> AnyElement {
         .child(div().flex_1())
         .children((count > 0).then(|| {
             div()
-                .text_sm()
+                .text_xs()
                 .text_color(cx.theme().muted_foreground)
                 .child(match count {
                     1 => "1 workflow".to_string(),
@@ -202,14 +212,15 @@ fn head(handle: &Entity<WorkflowsPage>, cx: &App) -> AnyElement {
 
 /// Every workflow on offer, capped and saying what it left out: a row each,
 /// its name over what it does, *Built in* in a slot of its own, and *Run…*
-/// and what may be done to it while it is pointed at.
+/// and what may be done to it while it is pointed at or the keyboard is on it.
 fn list(
     handle: &Entity<WorkflowsPage>,
     choices: &[(PathBuf, SharedString)],
+    focus: &[FocusHandle],
     cx: &App,
 ) -> AnyElement {
     let entries = crate::workflow::templates(cx);
-    let muted = cx.theme().muted_foreground;
+    let (muted, ring) = (cx.theme().muted_foreground, cx.theme().ring);
     let warning = crate::theme::status_ink(cx).warning;
     let left_out = entries
         .len()
@@ -217,8 +228,9 @@ fn list(
     let rows = entries
         .iter()
         .take(crate::workflow::TEMPLATES_SHOWN)
+        .zip(focus)
         .enumerate()
-        .map(|(i, entry)| {
+        .map(|(i, (entry, focus))| {
             let shipped = entry.file.is_none();
             let about = match &entry.template {
                 Ok(template) => div()
@@ -283,6 +295,10 @@ fn list(
             onehand_plugin_host::row(false, cx)
                 .cursor_default()
                 .group(group.clone())
+                .track_focus(focus)
+                .border_1()
+                .border_color(gpui::transparent_black())
+                .focus_visible(|row| row.border_color(ring))
                 .h_flex()
                 .items_center()
                 .gap_2()
@@ -313,7 +329,7 @@ fn list(
                         )
                     },
                 ))
-                .child(onehand_plugin_host::hover_slot(group, false, actions))
+                .child(onehand_plugin_host::hover_slot(group, false, actions).focus(focus))
                 .into_any_element()
         })
         .collect::<Vec<_>>();

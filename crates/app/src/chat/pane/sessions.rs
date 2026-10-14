@@ -458,6 +458,7 @@ impl ChatPane {
             // moment can honestly say.
             facts: ProjectFacts::default(),
             check_input: None,
+            rows: super::project_page::home_rows(cx),
         });
         self.scan_project_history(cx);
         // Going to no session at all is still leaving the one that was showing,

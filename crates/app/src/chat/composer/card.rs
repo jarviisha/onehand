@@ -227,6 +227,10 @@ impl Composer {
                 chip("fast-toggle", false, cx)
                     .child(Icon::new(crate::icons::Icon::Zap).small())
                     .child(chip_text(if toggle.on { "On" } else { "Off" }))
+                    // The caret every composer picker carries, whatever it
+                    // holds: a click here flips the value rather than opening
+                    // a menu, but the chip reads as one of the row's pickers.
+                    .dropdown_caret(true)
                     .tooltip(match toggle.on {
                         true => "Fast mode is on",
                         false => "Fast mode is off",

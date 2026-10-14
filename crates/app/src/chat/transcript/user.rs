@@ -3,13 +3,13 @@ use super::metrics::{
     BUBBLE_MAX, BUBBLE_TAIL_GAP, HAIR_GAP, STACK_GAP, THUMB_H, THUMB_W, TIGHT_GAP, USER_BUBBLE_MAX,
     USER_BUBBLE_MAX_NARROW,
 };
-use crate::controls::Quiet as _;
+use super::parts::copy_button;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, InteractiveElement, IntoElement, ParentElement, RenderOnce, SharedString,
     StatefulInteractiveElement, Styled, Window, div, relative,
 };
-use gpui_component::{ActiveTheme, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::chat::UserMsg;
 
 /// Attachment rows drawn under a prompt before the rest are counted.
@@ -87,13 +87,12 @@ pub(super) fn user(u: &UserMsg, uid: usize, room: Room, cx: &App) -> impl IntoEl
         }))
 }
 
-/// The bubble and the Copy under it, which shows while the message is pointed
-/// at, while the control holds the keyboard's focus, and while it answers.
+/// The bubble and the copy control under it, which shows while the message is
+/// pointed at and while the control holds the keyboard's focus.
 ///
-/// **An element of its own, because it has to remember three things the frame
-/// does not**: whether the message is pointed at, whether it was just copied,
-/// and a timer to take that back a second later. All three are keyed state,
-/// and keyed state needs the window.
+/// **An element of its own, because it has to remember what the frame does
+/// not**: whether the message is pointed at, which is keyed state, and keyed
+/// state needs the window.
 ///
 /// **The hover belongs to the whole message, not to the control it reveals**,
 /// so the region that answers is the thing somebody is pointing at. Hidden, the
@@ -109,10 +108,9 @@ impl RenderOnce for Prompt {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let key = self.key;
         let hovered = window.use_keyed_state(("prompt-hovered", key), cx, |_, _| false);
-        let done = window.use_keyed_state(("prompt-copied", key), cx, |_, _| false);
-        let copied = *done.read(cx);
         // The button's own focus handle, which the library keys by the button's
-        // id under the element that holds it.
+        // id under the element that holds it: a control reached by the keyboard
+        // shows without the pointer.
         let copy_id = ("prompt-copy", key);
         let focus = window.with_id(("prompt", key), |window| {
             window
@@ -120,8 +118,7 @@ impl RenderOnce for Prompt {
                 .read(cx)
                 .clone()
         });
-        let shown = copied || *hovered.read(cx) || focus.is_focused(window);
-        let text = self.text.clone();
+        let shown = *hovered.read(cx) || focus.is_focused(window);
 
         div()
             .id(("prompt", key))
@@ -150,46 +147,11 @@ impl RenderOnce for Prompt {
                     .child(prompt_text(&self.text, cx)),
             )
             .child(
-                crate::controls::action(copy_id)
-                    .quiet(cx)
-                    .xsmall()
-                    // As wide saying *Copied* as *Copy*, so the answer moves
-                    // nothing beside it.
-                    .min_w(PROMPT_COPY_W)
-                    .label(match copied {
-                        true => "Copied",
-                        false => "Copy",
-                    })
-                    .when(!shown, |copy| copy.text_color(cx.theme().transparent))
-                    .on_click(move |_, window, cx| {
-                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(text.to_string()));
-                        done.update(cx, |done, cx| {
-                            *done = true;
-                            cx.notify();
-                        });
-                        // Taken back on a timer rather than on the next pointer
-                        // move: an answer that only clears when the mouse
-                        // happens to leave is one that is still claiming to
-                        // have just happened a minute later.
-                        let done = done.clone();
-                        window
-                            .spawn(cx, async move |cx| {
-                                cx.background_executor()
-                                    .timer(std::time::Duration::from_millis(1_200))
-                                    .await;
-                                done.update(cx, |done, cx| {
-                                    *done = false;
-                                    cx.notify();
-                                });
-                            })
-                            .detach();
-                    }),
+                copy_button(copy_id, self.text.clone(), "Copy the prompt", cx)
+                    .when(!shown, |copy| copy.text_color(cx.theme().transparent)),
             )
     }
 }
-
-/// The prompt's Copy at its widest word, so saying *Copied* moves nothing.
-const PROMPT_COPY_W: gpui::Rems = gpui::rems(4.5);
 
 /// What the user typed, with the spans they fenced in backticks set apart.
 ///

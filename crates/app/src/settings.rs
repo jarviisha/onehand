@@ -299,21 +299,24 @@ impl SettingsPage {
 /// rail's own icon column, so the column reads as the same kind of list the
 /// rail beside it is.
 fn nav_row(page: SettingsPage, current: SettingsPage, handle: &Entity<Shell>, cx: &App) -> Div {
-    let muted = cx.theme().muted_foreground;
     let handle = handle.clone();
-    let selected = page == current;
+    let row = div()
+        .id(page.label())
+        .h_flex()
+        .items_center()
+        .gap_2()
+        .w_full()
+        .h(crate::tokens::ROW_H)
+        .px_2()
+        .rounded(cx.theme().radius)
+        .cursor_pointer()
+        .text_sm();
 
-    // A list row as the rail's page rows are: the selected fill in its own
-    // ink, the rest muted at rest, the mark in one slot down the column.
+    // A list row as the rail's page rows are, in their fills and inks: the
+    // chosen fill in its own ink, the rest muted at rest, the mark in one slot
+    // down the column.
     div().w_full().child(
-        onehand_plugin_host::row(selected, cx)
-            .id(page.label())
-            .h_flex()
-            .items_center()
-            .gap_2()
-            .w_full()
-            .text_sm()
-            .when(!selected, |row| row.text_color(muted))
+        crate::rail::page_fill(row, page == current, cx)
             .child(onehand_plugin_host::mark_slot(page.icon().small()))
             .child(page.label())
             .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {

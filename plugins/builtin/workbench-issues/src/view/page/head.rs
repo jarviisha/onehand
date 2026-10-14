@@ -1,4 +1,4 @@
-//! The page's head — the open count, *Refresh* and *New issue* — the filter
+//! The page's head — *New issue*, *Refresh* and the open count — the filter
 //! bar under it, and what the list cannot vouch for. The page's name is the
 //! pane's header's, as every page's is.
 
@@ -28,8 +28,8 @@ const LABELS_SHOWN: usize = 100;
 const SEARCH_W: Rems = rems(18.);
 
 impl IssuesView {
-    /// The page's head over the list: how many issues are open, *Refresh*
-    /// and *New issue* on one row; under it the search as wide as
+    /// The page's head over the list: *New issue*, *Refresh* and how many
+    /// issues are open on one row; under it the search as wide as
     /// the row allows and the open/closed, progress, project and label
     /// filters, wrapping when narrow.
     pub(super) fn page_head(
@@ -249,7 +249,7 @@ impl IssuesView {
                 div()
                     .flex_none()
                     .whitespace_nowrap()
-                    .text_sm()
+                    .text_xs()
                     .text_color(muted)
                     // Nothing until the first read lands: *0 open* over an
                     // empty list would say there are none.

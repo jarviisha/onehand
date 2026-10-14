@@ -12,6 +12,7 @@
 mod confirm;
 mod list_detail;
 mod menu;
+mod row_actions;
 mod strip;
 mod tabs;
 pub mod toast;
@@ -21,6 +22,7 @@ pub use confirm::{Confirm, confirm_on};
 pub use list_detail::{ListDetail, ListWidths, back_link, list_detail};
 pub use menu::{menu_below, menu_command, menu_item, menu_row};
 pub use onehand_core::worktree::removal::Process;
+pub use row_actions::{HoverSlot, hover_slot};
 pub use strip::{strip, strip_control};
 pub use tabs::{
     Measured, TAB_MAX_W, TabStrip, measure_width, tab_chip, tab_close, tab_menu_rows, tab_select,
@@ -611,20 +613,6 @@ pub fn fold_toggle(
             false => IconName::ChevronRight,
         }))
         .label(label.into())
-}
-
-/// A row's actions, in a trailing slot that keeps its width: hidden until
-/// the pointer is on the row named `group`, unless `shown` (the selected row,
-/// or one whose next action is earned), so nothing beside it moves when it
-/// appears.
-pub fn hover_slot(group: impl Into<SharedString>, shown: bool, child: impl IntoElement) -> Div {
-    let group = group.into();
-    div()
-        .flex_none()
-        .when(!shown, |slot| {
-            slot.invisible().group_hover(group, |s| s.visible())
-        })
-        .child(child)
 }
 
 /// A tree's row, as Files and Markdown draw theirs: a list row at

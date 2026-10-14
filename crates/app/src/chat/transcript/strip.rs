@@ -483,6 +483,10 @@ pub fn activity_group(
     cx: &App,
 ) -> gpui::AnyElement {
     let (name, icon) = activity_identity(section.group);
+    // The same rule as the cluster's own line: in the danger ink while the
+    // work runs, and once it has settled the count is the record, in the
+    // row's own muted words.
+    let running = section.outcome.outcome == onehand_core::chat::Outcome::Running;
 
     div()
         .v_flex()
@@ -496,7 +500,9 @@ pub fn activity_group(
                     div()
                         .flex_none()
                         .whitespace_nowrap()
-                        .text_color(crate::theme::status_ink(cx).danger)
+                        .when(running, |n| {
+                            n.text_color(crate::theme::status_ink(cx).danger)
+                        })
                         .child(match section.outcome.errors {
                             1 => "1 failed".to_string(),
                             n => format!("{n} failed"),

@@ -61,7 +61,7 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
         .map_or(0, |(found, ..)| found.iter().filter(|f| f.blocks).count());
     let refusal = match judged {
         None => Some("Pick an issue first".to_string()),
-        Some(_) => super::blocks_start(blocking),
+        Some(_) => super::blocked(blocking),
     };
     let danger = crate::theme::status_ink(cx).danger;
     let (margin, room) = super::form_room(window);
@@ -114,16 +114,16 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
                             .gap_4()
                             .w_full()
                             .children(list)
-                            .children(form),
+                            .children(form)
+                            // How many things above block the start, last,
+                            // standing over the footer's primary.
+                            .children(super::blocking_note(blocking, danger)),
                     ),
             )
         })
         .footer(
             super::footer_row()
                 .child(div().flex_1())
-                // Why *Run* is spent, beside it; what each block is, and
-                // where it is changed, is in the form above.
-                .children(super::blocking_note(blocking, danger))
                 .child(
                     crate::controls::action("cancel-pick")
                         .tall()

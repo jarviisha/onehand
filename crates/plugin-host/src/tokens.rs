@@ -45,7 +45,7 @@ pub const FIELD_H: Rems = rems(2.);
 
 /// The one corner, in pixels as the theme holds it: every box, control,
 /// field, row, well and floating surface, the library's own included, which
-/// reads it as `radius` (and `radius`, set to the same).
+/// reads it as `radius` (and `radius_lg`, set to the same).
 pub const CORNER: usize = 3;
 
 /// A badge's corner, the one shape that keeps a rounder one: a small label on

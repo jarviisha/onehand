@@ -180,6 +180,9 @@ pub(crate) struct PluginsView {
     /// One focus handle per installed row, by plugin, so the rows are tab
     /// stops and a row keeps its focus across a re-list.
     rows: HashMap<String, FocusHandle>,
+    /// One focus handle per marketplace row, by place, so those rows are tab
+    /// stops too.
+    offered: Vec<FocusHandle>,
     /// How the banner's *Restart agent* reaches the shell.
     ask: Ask,
 }
@@ -203,6 +206,7 @@ impl PluginsView {
             made: Vec::new(),
             since: None,
             rows: HashMap::new(),
+            offered: Vec::new(),
             ask,
         })
     }
@@ -401,6 +405,9 @@ impl PluginsView {
                     .entry(id)
                     .or_insert_with(|| cx.focus_handle().tab_stop(true));
             }
+        }
+        while self.offered.len() < MARKET_CAP {
+            self.offered.push(cx.focus_handle().tab_stop(true));
         }
         // *Has update* is offered only while something has one. Once the
         // last is updated the chip goes, and a filter left on it would keep

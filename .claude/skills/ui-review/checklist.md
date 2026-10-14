@@ -99,6 +99,7 @@ Each section names the document owning its rules; read it before answering.
 41. A page with a head and filters drawing them in the shared order?
 42. A change the person can take back shown at once; saves of one thing run in order; a failed
     save, only while its change is the newest, put back to the last saved value with one toast;
-    and nothing animated but a `Spinner` on running work?
+    and nothing animated but a `Spinner` on running work (the library's overlays and controls
+    aside)?
 43. Icons at one size per role, in slots of one width on one centre line, none on a tile of its
     own; numbers and times in fixed-width slots?

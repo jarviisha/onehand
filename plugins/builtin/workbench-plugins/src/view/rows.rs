@@ -107,16 +107,24 @@ impl PluginsView {
                 scope: update.scope,
                 verb: Verb::Update,
             };
-            action(("plugin-update", i))
-                .small()
-                .quiet(cx)
-                .label(format!("Update {}", update.to))
-                .loading(self.running(&change))
-                .refuses(busy.then_some(ONE_AT_A_TIME))
-                .on_click(
-                    cx.listener(move |view, _: &ClickEvent, _, cx| view.change(change.clone(), cx)),
-                )
+            let running = self.running(&change);
+            (
+                running,
+                action(("plugin-update", i))
+                    .small()
+                    .quiet(cx)
+                    .label(format!("Update {}", update.to))
+                    .loading(running)
+                    .refuses(busy.then_some(ONE_AT_A_TIME))
+                    .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
+                        view.change(change.clone(), cx)
+                    })),
+            )
         });
+        // An update still running keeps its spinner in sight with the pointer
+        // away.
+        let updating = update.as_ref().is_some_and(|(running, _)| *running);
+        let update = update.map(|(_, update)| update);
 
         let scopes = plugin
             .installed
@@ -140,6 +148,7 @@ impl PluginsView {
 
         let chips = component_chips(plugin, cx);
         let handle = self.rows.get(&plugin.id).cloned();
+        let slot_focus = handle.clone();
         let open = plugin.clone();
         let key_plugin = plugin.clone();
         let key_flip = here;
@@ -185,23 +194,26 @@ impl PluginsView {
                     .child(
                         // The controls keep their presses: without this, the
                         // press that flips the switch also opens the details.
-                        // The row's actions show while it is pointed at; the
-                        // switch, a state, always.
+                        // The row's actions show while it is pointed at or
+                        // the keyboard is on it; the switch, a state, always.
                         div()
                             .h_flex()
                             .items_center()
                             .gap_2()
                             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                            .child(onehand_plugin_host::hover_slot(
-                                group,
-                                false,
-                                div()
-                                    .h_flex()
-                                    .items_center()
-                                    .gap_1()
-                                    .children(update)
-                                    .child(menu),
-                            ))
+                            .child(
+                                onehand_plugin_host::hover_slot(
+                                    group,
+                                    updating,
+                                    div()
+                                        .h_flex()
+                                        .items_center()
+                                        .gap_1()
+                                        .children(update)
+                                        .child(menu),
+                                )
+                                .when_some(slot_focus, |slot, focus| slot.focus(&focus)),
+                            )
                             .child(
                                 div()
                                     .flex_none()
@@ -389,9 +401,21 @@ impl PluginsView {
         catalog: &Catalog,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let muted = cx.theme().muted_foreground;
+        let (muted, ring) = (cx.theme().muted_foreground, cx.theme().ring);
         let busy = self.busy.is_some();
         let installed = catalog.installed.iter().find(|p| p.id == plugin.id);
+        // A change still running on this row keeps its spinner in sight with
+        // the pointer away.
+        let running = match installed {
+            Some(have) => self.running(&have.flip(Scope::Local)),
+            None => Scope::ALL.into_iter().any(|at| {
+                self.running(&Change {
+                    id: plugin.id.clone(),
+                    scope: at,
+                    verb: Verb::Install,
+                })
+            }),
+        };
         let control = match installed {
             Some(have) if have.in_force(Scope::Local) => note("Installed", cx),
             Some(have) => {
@@ -401,14 +425,14 @@ impl PluginsView {
                     .quiet(cx)
                     .label("Enable")
                     .tooltip("Installed but off here — turn it on on this machine only")
-                    .loading(self.running(&enable))
+                    .loading(running)
                     .refuses(busy.then_some(ONE_AT_A_TIME))
                     .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
                         view.change(enable.clone(), cx)
                     }))
                     .into_any_element()
             }
-            None => self.install_split(i, plugin, cx),
+            None => self.install_split(i, plugin, running, cx),
         };
 
         // Official and the count, and nothing else: which marketplace it is
@@ -443,11 +467,21 @@ impl PluginsView {
         });
 
         // *Installed* is a fact, always drawn; *Enable* and *Install* are the
-        // row's actions, shown while it is pointed at.
-        let shown = installed.is_some_and(|have| have.in_force(Scope::Local));
+        // row's actions, shown while it is pointed at, the keyboard is on it
+        // or one of them runs. The row is a tab stop, so the keyboard reaches
+        // them.
+        let shown = running || installed.is_some_and(|have| have.in_force(Scope::Local));
         let group = SharedString::from(format!("plugin-available-{i}"));
+        let focus = self.offered.get(i).cloned();
+        let slot = onehand_plugin_host::hover_slot(group.clone(), shown, control)
+            .when_some(focus.clone(), |slot, focus| slot.focus(&focus));
         div()
-            .group(group.clone())
+            .id(SharedString::from(format!("plugin-offered-{}", plugin.id)))
+            .group(group)
+            .when_some(focus, |row, focus| row.track_focus(&focus))
+            .border_1()
+            .border_color(gpui::transparent_black())
+            .focus_visible(|row| row.border_color(ring))
             .v_flex()
             .w_full()
             .min_w_0()
@@ -467,7 +501,7 @@ impl PluginsView {
                             .text_sm()
                             .child(plugin.name.clone()),
                     )
-                    .child(onehand_plugin_host::hover_slot(group, shown, control)),
+                    .child(slot),
             )
             // Two lines, then an ellipsis. Clipped as well as clamped: a
             // description can hold a word with nowhere to break — a URL — and
@@ -491,7 +525,13 @@ impl PluginsView {
 
     /// *Install ▾*: the press installs at the scope used last, the caret
     /// installs at another and makes it the one used next.
-    fn install_split(&self, i: usize, plugin: &Available, cx: &mut Context<Self>) -> AnyElement {
+    fn install_split(
+        &self,
+        i: usize,
+        plugin: &Available,
+        running: bool,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let scope = self.install_scope;
         let busy = self.busy.is_some();
         let install = Change {
@@ -499,13 +539,6 @@ impl PluginsView {
             scope,
             verb: Verb::Install,
         };
-        let running = Scope::ALL.into_iter().any(|at| {
-            self.running(&Change {
-                id: plugin.id.clone(),
-                scope: at,
-                verb: Verb::Install,
-            })
-        });
         let main = action(("plugin-install", i))
             .small()
             .quiet(cx)

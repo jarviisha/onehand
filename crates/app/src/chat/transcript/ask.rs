@@ -1,6 +1,5 @@
 use super::metrics::{
-    ASK_CHOICE_DOT, ASK_CHOICE_MARK, ASK_FIELD_H, ASK_MARK_RING, ASK_ROW_MIN, ASK_TAB_W, CARD_PAD,
-    PART_GAP,
+    ASK_CHOICE_DOT, ASK_CHOICE_MARK, ASK_MARK_RING, ASK_TAB_W, CARD_PAD, PART_GAP,
 };
 use super::parts::{
     ActivityRow, BlockingBody, Object, RowMark, activity_row, card_body, card_foot, card_head,
@@ -10,8 +9,9 @@ use super::{fold_key, live_index};
 use crate::chat::session::ChatSession;
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
+use crate::controls::Tall as _;
 use crate::controls::text_input;
-use crate::tokens::{CONTROL_H, LEADING_TIGHT};
+use crate::tokens::{CONTROL_H, FIELD_H, LEADING_TIGHT};
 use gpui::Focusable as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -261,14 +261,22 @@ impl AskForm<'_> {
                 // away: the two are one answer, and spaced apart the description
                 // reads as belonging to whichever row it is nearer.
                 let destructive = choice.is_destructive();
-                let mut words = div().v_flex().gap_0p5().flex_1().min_w_0().child(
-                    div()
-                        .w_full()
-                        .when(destructive, |label| {
-                            label.text_color(crate::theme::status_ink(cx).danger)
-                        })
-                        .child(choice.label.clone()),
-                );
+                // At the leading of a sentence read once, so a choice of one
+                // line sits inside the field's height below it.
+                let mut words = div()
+                    .v_flex()
+                    .gap_0p5()
+                    .flex_1()
+                    .min_w_0()
+                    .line_height(relative(LEADING_TIGHT))
+                    .child(
+                        div()
+                            .w_full()
+                            .when(destructive, |label| {
+                                label.text_color(crate::theme::status_ink(cx).danger)
+                            })
+                            .child(choice.label.clone()),
+                    );
                 if let Some(description) = choice.description.clone() {
                     words = words.child(
                         div()
@@ -289,10 +297,14 @@ impl AskForm<'_> {
                     // taken row the library lays the caller's fill over its
                     // selected step.
                     .when(!on, |row| row.bg(crate::theme::floating_well(cx)))
+                    // **As tall as the typed answer at one line**, a form's
+                    // field height as the floor: the field is the list's last
+                    // row, written in rather than picked. A longer label or a
+                    // description grows the row past it.
                     .px_3()
-                    .py_2()
+                    .py_1()
                     .w_full()
-                    .min_h(ASK_ROW_MIN)
+                    .min_h(FIELD_H)
                     // The keyboard's own position, which has to show without
                     // being an answer: an arrow press moves it and settles
                     // nothing, so it is the focus ring rather than a fill.
@@ -369,13 +381,15 @@ impl AskForm<'_> {
             })
             .flatten()?;
         let key = ask_key_hint(self.a.row_count(self.active));
+        // The keyboard's position on the list, marked with the edge a focused
+        // field draws: the arrows reach this row without handing it the
+        // caret, and a row they reach shows it as the choices above do.
+        let cursor = self.a.cursor_row(self.active) == Some(onehand_core::chat::AskRow::Custom);
         Some(
-            // As tall as a choice of one line and its words on the choices'
-            // edge: it is the last row of the list, written in rather than
-            // picked. `Styled::h` by name, since the field's own `h` sizes a
-            // multi-line field only.
-            gpui::Styled::h(text_input(&state, cx).small(), ASK_FIELD_H)
-                .px_3()
+            // A form's field, at the height a one-line choice stands at.
+            text_input(&state, cx)
+                .tall()
+                .when(cursor, |field| field.border_color(cx.theme().ring))
                 .when_some(key, |field, key| field.suffix(key)),
         )
     }

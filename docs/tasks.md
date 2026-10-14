@@ -33,16 +33,17 @@ running, what needs me, and what has finished.
   resumed, retried and dismissed from its row. See [unattended.md](unattended.md).
 - **History is bounded:** the most recent 200 finished tasks per project. The page says how many
   older ones were removed since onehand started.
-- **Every card is capped at 50 rows** and says how many more it left out.
-- **The project filter** is a picker in a filter bar above the cards, kept while the page is left;
-  a project's page sets it. The cards stand two by two while the column holds two. A row shows its
+- **Every box is capped at 50 rows** and says how many more it left out.
+- **The project filter** is a picker in a filter bar above the boxes, kept while the page is left;
+  a project's page sets it. The boxes stand two by two while the column holds two. A row shows its
   actions while it is pointed at, except under *Needs attention*, whose next action stays drawn.
 
-**The task detail** opens in place of the cards when a row's text is pressed, read as a page at
+**The task detail** opens in place of the boxes when a row's text is pressed, read as a page at
 the prose width, its parts plain sections. It shows:
 
 - **a trail**: *Tasks* to go back (Esc too), then what can be done with the task: the most
-  fitting a primary, the next a secondary, the rest in ⋯ (*Retry* on a finished task, *Answer the
+  fitting a primary (a secondary while *Awaiting approval* or the way out holds the view's one
+  primary), the next a secondary, the rest in ⋯ (*Retry…* on a finished task, *Answer the
   pull request review…* on an issue's task that can answer one, done with a pull request it
   opened, and *Remove worktree…* in the danger ink once its pull request reads merged); ⋯ is
   always drawn, so that late arrival shifts nothing;

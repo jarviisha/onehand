@@ -119,13 +119,9 @@ pub fn rename_session(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
     Dialog::new(cx)
         .close_button(false)
         .content(move |content, _, cx: &mut App| {
-            content.child(title_row("Rename conversation", cx)).child(
-                div()
-                    .v_flex()
-                    .gap_1()
-                    .w_full()
-                    .child(text_input(&input, cx).tall()),
-            )
+            content
+                .child(title_row("Rename conversation", cx))
+                .child(field("Title", None, text_input(&input, cx).tall(), cx))
         })
         .footer(
             footer_row()
@@ -326,14 +322,16 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
                             .children(lines)
                             .when_some(error.clone(), |col, why| {
                                 col.child(div().text_xs().text_color(danger).child(why))
-                            }),
+                            })
+                            // How many of them block it, last, standing over
+                            // the footer's primary.
+                            .children(blocking_note(blocking, danger)),
                     ),
             )
         })
         .footer(
             footer_row()
                 .child(div().flex_1())
-                .children(blocking_note(blocking, danger))
                 .child(
                     crate::controls::action("cancel-workflow")
                         .tall()
@@ -352,7 +350,7 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
                         .loading(busy);
                     let why = match busy {
                         true => Some(STARTING.to_string()),
-                        false => blocks_start(blocking),
+                        false => blocked(blocking),
                     };
                     match why {
                         Some(why) => run.refuses(Some(why)),
@@ -477,25 +475,28 @@ pub(crate) fn finding_line(
         )
 }
 
-/// Why *Run* is spent, said beside it: how many things above block the
-/// start. What each is, and where it is changed, is in the form.
+/// Why *Run* is spent, said once, at the end of the form and so above the
+/// footer: how many things above block the start. What each is, and where it
+/// is changed, is in the form.
 fn blocking_note(blocking: usize, danger: gpui::Hsla) -> Option<impl IntoElement> {
-    blocks_start(blocking).map(|why| div().text_xs().text_color(danger).child(why))
+    let why = match blocking {
+        0 => return None,
+        1 => "One thing above blocks the start".to_string(),
+        n => format!("{n} things above block the start"),
+    };
+    Some(div().text_xs().text_color(danger).child(why))
 }
 
-/// How many things above block the start, in the words *Run*'s refusal and
-/// the note beside it share; none when nothing does.
-fn blocks_start(blocking: usize) -> Option<String> {
-    match blocking {
-        0 => None,
-        1 => Some("One thing above blocks the start".to_string()),
-        n => Some(format!("{n} things above block the start")),
-    }
+/// *Run*'s refusal while something above blocks the start: what answers it,
+/// leaving the count to the note over the footer rather than saying it twice.
+fn blocked(blocking: usize) -> Option<String> {
+    (blocking > 0).then(|| BLOCKED.to_string())
 }
 
 // Why a dialog's buttons refuse while its work runs: the work cannot be called
 // back, nor asked for a second time.
 const STARTING: &str = "The run is starting";
+const BLOCKED: &str = "Clear what blocks the start first";
 const MAKING_WORKTREE: &str = "The worktree is being made";
 const RENAMING_BRANCH: &str = "The branch is being renamed";
 
@@ -617,13 +618,15 @@ pub fn new_worktree(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                     .v_flex()
                     .gap_2()
                     .w_full()
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(muted)
-                            .child(format!("A second checkout of {label}, on its own branch")),
-                    )
-                    .child(text_input(&input, cx).tall())
+                    .child(field(
+                        "Branch",
+                        Some(
+                            format!("A second checkout of {label}, on its own branch")
+                                .into_any_element(),
+                        ),
+                        text_input(&input, cx).tall(),
+                        cx,
+                    ))
                     // Where it lands, in full, in the face a path is set in. A
                     // worktree is a folder that appears on disk without anyone
                     // browsing to it, so the one thing this form owes the reader
@@ -718,10 +721,7 @@ pub fn rename_branch(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
         return Dialog::new(cx);
     };
     let (from, error, busy) = (draft.from.clone(), draft.error.clone(), draft.busy);
-    let (muted, danger) = (
-        cx.theme().muted_foreground,
-        crate::theme::status_ink(cx).danger,
-    );
+    let danger = crate::theme::status_ink(cx).danger;
 
     Dialog::new(cx)
         .close_button(false)
@@ -731,13 +731,12 @@ pub fn rename_branch(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                     .v_flex()
                     .gap_2()
                     .w_full()
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(muted)
-                            .child(format!("The branch checked out here is {from}")),
-                    )
-                    .child(text_input(&input, cx).tall())
+                    .child(field(
+                        "New name",
+                        Some(format!("The branch checked out here is {from}").into_any_element()),
+                        text_input(&input, cx).tall(),
+                        cx,
+                    ))
                     // git's own words where git refused, and the name rule's
                     // where it never got that far. Shown against the name that
                     // caused it, which is why the form is still up.

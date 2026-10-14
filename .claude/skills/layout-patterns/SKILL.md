@@ -36,8 +36,8 @@ list on it is capped, with no unexplained difference from an equivalent pattern 
 | A page in the agent pane | Page | `tasks_frame` in `crates/app/src/chat/pane/tasks_page.rs` |
 | A page's head and the filters under it | Page head | `plugins/builtin/workbench-issues/src/view/page/head.rs` |
 | Related fields or a subsection | Plain section | `section` in `crates/app/src/settings.rs` |
-| The facts about one thing on a page | Box | `card_box` and `card_title` in `crates/app/src/chat/pane/workspace_page.rs` |
-| A bar along the top of a region | Strip | `crates/app/src/workbench/panel/strip.rs` |
+| The facts about one thing on a page | Box | `card_box` (plugin host); `page_card`, `card_title`, `page_section` and `pair` in `crates/app/src/chat/pane/page_parts.rs` |
+| A bar along the top of a region | Strip | `strip` and `strip_control` (plugin host) |
 | Rows to pick from | List | the Files tree, `plugins/builtin/workbench-files/src/view.rs` |
 | A list beside its detail | List and detail | `list_detail` in `crates/plugin-host/src/list_detail.rs`; the Markdown mode |
 | Inputs and a submit | Form | `field` in `crates/app/src/settings.rs`; the Workflows form |
@@ -52,7 +52,7 @@ From `tasks_frame`: the header names the page, the body scrolls as one centred c
 div().size_full().v_flex()
     .child(self.header(cx))
     .child(
-        div().id("tasks-page").flex_1().min_h_0().overflow_y_scroll().p_6().child(
+        div().id("tasks-page").flex_1().min_h_0().overflow_y_scroll().px_8().py_6().child(
             div().h_flex().w_full().justify_center().child(
                 div().v_flex().gap_6().w_full().max_w(PAGE_WIDE).text_sm().children(body),
             ),
@@ -87,7 +87,7 @@ row.child(div().h_flex().justify_center().child(div().w_full().max_w(CONTENT_COL
 // Wrong: a page padded its own way, its width a bare number
 div().px_4().py_6().child(div().max_w(rems(EDITOR_COLUMN)))
 // Right
-div().p_6().child(div().max_w(tokens::PAGE_PROSE))
+div().px_8().py_6().child(div().max_w(tokens::PAGE_PROSE))
 ```
 
 ```rust

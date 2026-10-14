@@ -38,6 +38,22 @@ pub(super) fn chosen_fill(cx: &App) -> Hsla {
     crate::theme::rail_chosen(cx)
 }
 
+/// A page's row, the rail's and Settings' nav alike: while its page shows,
+/// the chosen fill in the ink paired with it; otherwise muted at rest, the
+/// hover fill under the pointer and its ink unchanged.
+pub(crate) fn page_fill<E: Styled + InteractiveElement>(row: E, on: bool, cx: &App) -> E {
+    match on {
+        true => row
+            .bg(chosen_fill(cx))
+            .text_color(cx.theme().sidebar_accent_foreground),
+        false => {
+            let hover = hover_fill(cx);
+            row.hover(move |row| row.bg(hover))
+                .text_color(cx.theme().muted_foreground)
+        }
+    }
+}
+
 /// The inks a row writes its name and its meta line in. At rest the rail is
 /// navigation, every row of it in the muted ink, and hovering one changes its
 /// fill alone. The chosen row is where the person is: its name in the ink
@@ -143,7 +159,11 @@ pub(super) fn labelled(
 
 /// Hidden until the pointer is on the row, unless `shown`; the space stays,
 /// so nothing beside it moves when it appears.
-pub(super) fn on_hover(group: &SharedString, shown: bool, child: impl IntoElement) -> Div {
+pub(super) fn on_hover(
+    group: &SharedString,
+    shown: bool,
+    child: impl IntoElement,
+) -> onehand_plugin_host::HoverSlot {
     onehand_plugin_host::hover_slot(group.clone(), shown, child)
 }
 

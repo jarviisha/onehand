@@ -39,6 +39,7 @@ Helpers:
 | `raised(cx)` | the composer card's fill | `crates/app/src/theme.rs` |
 | `inset(cx)` | a field with no edge sunk into the well: the rail's search; a badge in the rail | `crates/app/src/theme.rs` |
 | `rail_chosen(cx)` | the rail's chosen row | `crates/app/src/theme.rs` |
+| `floating_well(cx)` | a well on a floating card: the command a pinned permission asks to run | `crates/app/src/theme.rs` |
 
 Inks (roles: `DESIGN.md`, *Type, space and shape*; by place: UI patterns, *Hierarchy*). The three
 neutral ones, for text on a neutral surface:
@@ -169,6 +170,8 @@ All in `onehand_plugin_host::tokens` (`crates/plugin-host/src/tokens.rs`), which
 | `PAGE_NARROW` | 35rem | a one-column page |
 | `PAGE_PROSE` | 48rem | an editor, or one thing read in full |
 | `PAGE_WIDE` | 64rem | boxes side by side, a table |
+| `ROW_INSET` | 0.5rem | where a tree row's content starts from a dock's edge (Files, Markdown) |
+| `TREE_INDENT` | 0.875rem | how far each level of a tree steps in |
 | `lift(cx)` | | the floating shadow |
 
 Equal values kept apart on purpose, each one decision beside its one use: `CHAT_MIN`,

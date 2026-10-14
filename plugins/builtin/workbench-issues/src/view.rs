@@ -423,6 +423,12 @@ impl IssuesView {
                 issue.title
             ),
         };
+        // The question names the issue by its title, its number only where it
+        // has none.
+        let title = match issue.title.trim() {
+            "" => format!("Close issue {number}?"),
+            named => format!("Close \u{201c}{named}\u{201d}?"),
+        };
         // The project is held so a dialog left open across a switch closes the
         // issue it was opened for, never the same number in another project.
         let root = self.root.clone();
@@ -430,7 +436,7 @@ impl IssuesView {
             cx.entity(),
             Confirm {
                 id: "close-issue",
-                title: format!("Close issue {number}?").into(),
+                title: title.into(),
                 description: description.into(),
                 act: "Close issue",
                 ..Default::default()
