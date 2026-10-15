@@ -16,7 +16,7 @@ How the repository is held together:
 
 - [CONTEXT.md](CONTEXT.md): the glossary; use its terms and never the words it says to avoid.
 - [DESIGN.md](DESIGN.md): the **binding** UI overview (layout, transcript, the visual system
-  and its exceptions), structure and behaviour only. It defines onehand's own visual language;
+  and its roles), structure and behaviour only. It defines onehand's own visual language;
   implementation may lag the contract and must not be treated as its authority.
 - [docs/ui-patterns.md](docs/ui-patterns.md): the patterns every screen repeats (pages, boxes,
   lists, forms, dialogs) and how they behave (waiting, empty, failing, confirming, keys, words).

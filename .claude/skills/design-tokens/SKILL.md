@@ -7,7 +7,7 @@ description: Apply onehand's visual roles consistently through theme and size to
 
 Every value a view draws with is a token: a theme slot, a gpui scale method, or a named constant.
 [DESIGN.md](../../../DESIGN.md) owns visual roles (*Principles*, *Type, space and shape*,
-*Colour and state*, *Exceptions*). [UI patterns](../../../docs/ui-patterns.md) owns spacing
+*Colour and state*, *Components*). [UI patterns](../../../docs/ui-patterns.md) owns spacing
 relationships and density. [reference.md](reference.md) maps those decisions to existing tokens;
 its values describe the code, not a promise that every caller uses them correctly.
 

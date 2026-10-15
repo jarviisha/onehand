@@ -9,6 +9,7 @@
 // a working feature.
 #![warn(unreachable_pub)]
 
+mod choice_mark;
 mod confirm;
 mod list_detail;
 mod menu;
@@ -18,6 +19,7 @@ mod tabs;
 pub mod toast;
 pub mod tokens;
 mod workbench;
+pub use choice_mark::choice_mark;
 pub use confirm::{Confirm, confirm_on};
 pub use list_detail::{ListDetail, ListWidths, back_link, list_detail};
 pub use menu::{menu_below, menu_command, menu_item, menu_row};
@@ -223,6 +225,9 @@ pub struct StatusInk {
     pub danger: Hsla,
     pub warning: Hsla,
     pub success: Hsla,
+    /// What is over and settled, such as a closed issue: magenta, the hue a
+    /// closed issue takes on the forges people know.
+    pub closed: Hsla,
 }
 
 /// Resolve status ink from the active palette.
@@ -242,6 +247,7 @@ pub fn status_ink(cx: &App) -> StatusInk {
         danger: status_hue(theme.red, theme.foreground),
         warning: status_hue(theme.yellow, theme.foreground),
         success: status_hue(theme.green, theme.foreground),
+        closed: status_hue(theme.magenta, theme.foreground),
     }
 }
 

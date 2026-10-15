@@ -30,12 +30,12 @@ Helpers:
 
 | Helper | Gives | Lives in |
 |---|---|---|
-| `status_ink(cx).danger`, `.warning`, `.success` | status text and marks | `crates/plugin-host/src/lib.rs`; the app says `crate::theme::status_ink` |
+| `status_ink(cx).danger`, `.warning`, `.success`, `.closed` | status text and marks; `closed` for what is over and settled (a closed issue) | `crates/plugin-host/src/lib.rs`; the app says `crate::theme::status_ink` |
 | `tint(base, cx)` | a label's `Tint { fill, ink }` by its hue | `crates/plugin-host/src/lib.rs` |
 | `dock_surface(cx)` | the Workbench's and the terminal's surface | `crates/plugin-host/src/lib.rs` |
 | `badge_edge(tint)` | a badge's edge: halfway from its `Tint`'s fill to its ink | `crates/plugin-host/src/lib.rs` |
 | `control_fill(cx)` | a control's fill: a secondary button at rest, a ghost hovered, pressed or chosen; between `list_hover` and `accent` | `crates/plugin-host/src/lib.rs` |
-| `faint_rule(cx)` | a hairline a step fainter, halfway to the surface: the lines across the pane parting the Issues list from its header and foot | `crates/plugin-host/src/lib.rs` |
+| `faint_rule(cx)` | a hairline a step fainter, halfway to the surface: the lines across the pane parting a list page's list from its header, filter bar and foot | `crates/plugin-host/src/lib.rs` |
 | `meta_ink(cx)` | the middle ink: a detail beside a name, between prose and muted | `crates/plugin-host/src/lib.rs`; the app says `crate::theme::meta_ink` |
 | `middle_ink(full, meta)` | the same step under another full ink: on a fill, under that fill's paired ink | `crates/plugin-host/src/lib.rs` |
 | `hue_ink(base, cx)` | a hue tempered for ink: code inside prose | `crates/app/src/theme.rs` |
@@ -167,7 +167,7 @@ All in `onehand_plugin_host::tokens` (`crates/plugin-host/src/tokens.rs`), which
 | `BAR_H` | 2.75rem | every strip along the top of a region |
 | `ROW_H` | 1.875rem | a list row |
 | `CONTROL_H` | 1.5rem | a small control |
-| `FIELD_H` | 1.875rem | a control a step over `.short()`: the Issues page's head (`.tall()`) |
+| `FIELD_H` | 1.875rem | a control a step over `.short()`: a list page's head (`.tall()`) |
 | `CODE_TEXT` | 0.8125rem | machine text |
 | `LEADING` | 1.6 | reading text |
 | `LEADING_TIGHT` | 1.4 | a wrapped title |

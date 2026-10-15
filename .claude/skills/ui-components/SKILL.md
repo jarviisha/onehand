@@ -5,7 +5,7 @@ description: Build and normalize onehand controls and content containers through
 
 # Components
 
-Read [DESIGN.md](../../../DESIGN.md) (*Components*, *Icons*, *Exceptions*) and
+Read [DESIGN.md](../../../DESIGN.md) (*Components*, *Icons*) and
 [UI patterns](../../../docs/ui-patterns.md) (*Choose the container*, *Control sizes*) for the role
 being built.
 The catalog describes available implementation, not permission to copy a mismatched caller.
@@ -56,7 +56,7 @@ Every button names one, by role (the rule is in `DESIGN.md` *Components*):
 | `primary` | the view's one main action |
 | `secondary` | a weighed alternative beside the primary; a set picker's trigger (`picker`; unset it is a ghost); every button on the Settings page |
 | ghost, `.quiet(cx)` | dismissing, a strip's or a row's actions; hovers on the control fill, never a bare `ghost()`; an icon with no words through `.quiet_icon(on, cx)`, muted at rest |
-| `danger` | only the two listed under *Exceptions* in `DESIGN.md` |
+| `danger` | only the two solid fills `DESIGN.md` names under *Components*: the composer's *Stop* and a removal's confirming button |
 | `choice` | each option of a pick-one row |
 
 No button draws an edge: never the library's default variant nor `outline()`. A text field is

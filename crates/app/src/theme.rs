@@ -1008,6 +1008,7 @@ mod tests {
                 ("danger", theme.red),
                 ("warning", theme.yellow),
                 ("success", theme.green),
+                ("closed", theme.magenta),
             ] {
                 let ink = onehand_plugin_host::status_hue(base, theme.foreground);
                 let mut on = vec![

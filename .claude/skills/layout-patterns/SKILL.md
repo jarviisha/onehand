@@ -22,7 +22,7 @@ contracts; visual cleanup does not authorize removing actions or changing naviga
    window. `list_detail` and the boxes' wrap read the width they are given.
 4. **Bound it**: every list has a named cap and says how many it left out; text that can run long
    truncates or wraps, as its neighbours do.
-5. **Apply pattern metrics**: column from `PAGE_*`, strip from `BAR_H`, single-line row from
+5. **Apply pattern metrics**: a column page's width from `PAGE_*`, a list page's the pane's, strip from `BAR_H`, single-line row from
    `ROW_H`, gaps from the relationship table. Multi-line content grows; it does not acquire a
    smaller font to fit. Keep compact chrome separate from the reading content's rhythm.
 6. **Line it up**: marks down a column in slots of one width on one centre line, labels on one
@@ -33,8 +33,9 @@ list on it is capped, with no unexplained difference from an equivalent pattern 
 
 | Building | Pattern | Example |
 |---|---|---|
-| A page in the agent pane | Page | `tasks_frame` in `crates/app/src/chat/pane/tasks_page.rs` |
-| A page's head and the filters under it | Page head | `plugins/builtin/workbench-issues/src/view/page/head.rs` |
+| Fields, boxes or one thing read in full, in the agent pane | Column page | `tasks_frame` in `crates/app/src/chat/pane/tasks_page.rs` |
+| One long list to scan, filter and pick from, in the agent pane | List page | the Issues page, `plugins/builtin/workbench-issues/src/view/page.rs` |
+| The filters under a page's head | Filter bar | `plugins/builtin/workbench-issues/src/view/page/head.rs` |
 | Related fields or a subsection | Plain section | `section` in `crates/app/src/settings.rs` |
 | The facts about one thing on a page | Box | `card_box` (plugin host); `page_card`, `card_title`, `page_section` and `pair` in `crates/app/src/chat/pane/page_parts.rs` |
 | A bar along the top of a region | Strip | `strip` and `strip_control` (plugin host) |
@@ -44,7 +45,7 @@ list on it is capped, with no unexplained difference from an equivalent pattern 
 | A modal question or form | Dialog | `crates/app/src/dialogs.rs` |
 | One thing read in full | Detail | the issue, `plugins/builtin/workbench-issues/src/view/detail.rs` |
 
-## A page, in code
+## A column page, in code
 
 From `tasks_frame`: the header names the page, the body scrolls as one centred column.
 

@@ -29,8 +29,8 @@ Each section names the document owning its rules; read it before answering.
     default nor `outline()`); every field through `text_input`, `search_input` or `text_area`; every
     refusal through `.refuses(why)`, its reason the tooltip?
 11. Every state the component can be in: hover, selected or open, keyboard focus, refusing, loading?
-12. Every control at the size its role takes: `.short()` in a form, a page's filter bar
-    and a dialog's footer; `.xsmall()` in a page's head, a strip, a box, for a row's actions and for a
+12. Every control at the size its role takes: `.tall()` in a list page's head; `.short()` in a
+    form, a page's filter bar and a dialog's footer; `.xsmall()` in a column page's head, a strip, a box, for a row's actions and for a
     secondary action inside meta text, a transcript block or a chip; never the library's default;
     an icon at its role's size, not grown with the hit area; a badge, checkbox or switch at the
     library's own geometry, centred; any size correction in the shared wrapper, not the call site?
@@ -39,7 +39,7 @@ Each section names the document owning its rules; read it before answering.
 
 ## Layout: `DESIGN.md` (*Layout*), `docs/ui-patterns.md` (*Layout*), the `layout-patterns` skill
 
-15. Each group uses the right pattern: plain section, box, strip, list, list and detail, form,
+15. Each page a column page or a list page by what it holds, and each group the right pattern: plain section, box, strip, list, list and detail, form,
     dialog or detail within its page, without unnecessary nested frames?
 16. Every split or stack reads the measured container, never the window?
 17. Every list capped, saying how many it left out?
@@ -64,8 +64,9 @@ Each section names the document owning its rules; read it before answering.
 ## Contract: `DESIGN.md`, `CLAUDE.md` (*Rules*)
 
 27. At most one primary action per view (none is fine)?
-28. Every departure from a rule covered by the user's authorized scope and recorded under
-    `DESIGN.md`'s *Exceptions*, without silently changing the contract to fit existing code?
+28. No departure from a rule: a treatment that differs written as a rule of its role, inside the
+    user's authorized scope, or recorded in `docs/known-gaps.md`, without silently changing the
+    contract to fit existing code?
 29. `DESIGN.md`, `docs/ui-patterns.md` and the feature's own document still describe what the
     change draws?
 30. No code, comment or runtime string citing a document?

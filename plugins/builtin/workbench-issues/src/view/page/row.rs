@@ -15,9 +15,7 @@ use onehand_core::issues::LabelKind;
 use onehand_core::task::Group;
 use onehand_core::task::work::list::Row;
 use onehand_plugin_host::Quiet as _;
-use onehand_plugin_host::{
-    AppIcon, action, meta_ink, middle_ink, row as row_surface, status_hue, status_ink,
-};
+use onehand_plugin_host::{AppIcon, action, meta_ink, middle_ink, row as row_surface, status_ink};
 
 /// How many labels a row draws before it counts the rest.
 const ROW_LABELS: usize = 3;
@@ -104,14 +102,10 @@ pub(super) fn issue_row(
         .child(Icon::new(IconName::Folder).xsmall())
         .child(div().min_w_0().truncate().child(project));
     // Whether it is open, in the hue of its state, the one coloured mark on
-    // the line: open in the success ink, closed in a tempered magenta, the
-    // hue a closed issue takes on the forges people know.
+    // the line: open in the success ink, closed in the closed ink.
     let (glyph, hue) = match issue.open {
         true => (Icon::from(AppIcon::CircleDot), ink.success),
-        false => (
-            Icon::new(IconName::CircleCheck),
-            status_hue(theme.magenta, theme.foreground),
-        ),
+        false => (Icon::new(IconName::CircleCheck), ink.closed),
     };
     let state = Icon::new(glyph).small().text_color(hue);
     let title = issue.title.clone();
