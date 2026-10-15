@@ -1985,6 +1985,37 @@ fn a_failed_turn_survives_a_replay_that_replaces_the_file() {
     assert!(chat.failed(), "and the failure came with it");
 }
 
+/// Only a prompt the person sends answers a failure. A user message the agent
+/// delivers itself (a replay re-reading the conversation, an adapter echoing
+/// one mid-turn) went out long ago, so it leaves the failure standing, and so
+/// does a replay still under way.
+#[test]
+fn a_message_the_agent_delivers_does_not_answer_a_failure() {
+    let mut chat = Chat::new(
+        1,
+        PathBuf::from("/r"),
+        "Claude".into(),
+        Some(PathBuf::from("/store")),
+    );
+    chat.resume_from(ConversationSnapshot {
+        session_id: "sid-1".into(),
+        title: None,
+        updated: 1,
+        prefs: Prefs::default(),
+        items: vec![
+            ChatItem::User(UserMsg::text("go".to_string())),
+            ChatItem::failure("The turn failed: rate limited", NoticeLevel::Failed, None),
+        ],
+        written: 2,
+        complete: true,
+    });
+    chat.apply(AcpEvent::UserChunk("go".into()));
+    assert!(
+        chat.failed(),
+        "a replay under way still stands on the failure"
+    );
+}
+
 /// Some adapters answer a cancel with an error; the turn was stopped, not
 /// failed, so the rail must not offer to send it again.
 #[test]

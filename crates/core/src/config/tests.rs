@@ -482,8 +482,17 @@ fn app_state_remembers_a_workspace_by_its_name() {
     );
 
     st.touch(PathBuf::from("/ws"));
-    st.set_name(Path::new("/ws"), "Audit workspace");
-    assert_eq!(st.name_of(Path::new("/ws")), Some("Audit workspace"));
+    assert_eq!(
+        st.label_of(Path::new("/old")),
+        "old",
+        "it reads as its folder"
+    );
+    assert!(st.set_name(Path::new("/ws"), "Audit workspace"));
+    assert_eq!(st.label_of(Path::new("/ws")), "Audit workspace");
+    assert!(
+        !st.set_name(Path::new("/ws"), "Audit workspace"),
+        "nothing changed"
+    );
     st.set_name(Path::new("/ws"), "Renamed");
     assert_eq!(st.name_of(Path::new("/ws")), Some("Renamed"));
 

@@ -20,7 +20,7 @@ use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 pub(super) fn workspace_bar(
     name: SharedString,
     current: Option<std::path::PathBuf>,
-    recents: Vec<(std::path::PathBuf, Option<String>)>,
+    recents: Vec<(std::path::PathBuf, String)>,
     cx: &mut Context<Shell>,
 ) -> impl IntoElement + use<> {
     let initial: String = name.chars().take(1).collect();
@@ -121,7 +121,7 @@ const MAX_PARENT: usize = 30;
 /// row it hangs off is free to be any element the rail wants.
 fn workspace_menu(
     current: Option<std::path::PathBuf>,
-    recents: Vec<(std::path::PathBuf, Option<String>)>,
+    recents: Vec<(std::path::PathBuf, String)>,
     shell: WeakEntity<Shell>,
 ) -> impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static {
     move |menu, _, cx| {
@@ -137,14 +137,7 @@ fn workspace_menu(
         }
         for (dir, name) in &recents {
             let is_current = current.as_deref() == Some(dir.as_path());
-            let label = ellipsize(
-                &name.clone().unwrap_or_else(|| {
-                    dir.file_name()
-                        .map(|name| name.to_string_lossy().into_owned())
-                        .unwrap_or_else(|| dir.display().to_string())
-                }),
-                MAX_LABEL,
-            );
+            let label = ellipsize(name, MAX_LABEL);
             let parent = dir
                 .parent()
                 .map(|parent| ellipsize_front(&parent.display().to_string(), MAX_PARENT));

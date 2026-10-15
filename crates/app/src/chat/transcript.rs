@@ -132,14 +132,7 @@ pub fn item(
                 NoticeLevel::Error => !lost,
                 NoticeLevel::Info => false,
             };
-            // The ink of the line it sits in: the wash's own on a live failure.
-            let ink = match level.is_failure() && !past {
-                true => onehand_plugin_host::tint(cx.theme().red, cx).ink,
-                false => cx.theme().muted_foreground,
-            };
-            let detail = detail
-                .as_deref()
-                .map(|detail| notice_detail(session, target, detail, ink, cx));
+            let detail = detail.as_deref().map(|detail| (session, target, detail));
             notice(text, *level, past, restart, detail, cx).into_any_element()
         }
     };
@@ -175,9 +168,13 @@ fn notice(
     level: NoticeLevel,
     past: bool,
     restart: Option<gpui_component::kbd::Kbd>,
-    detail: Option<gpui::AnyElement>,
+    detail: Option<(&Entity<ChatSession>, TranscriptItemId, &str)>,
     cx: &App,
 ) -> impl IntoElement + use<> {
+    // What the agent attached, folded, in the ink of the line it sits in.
+    let detail = |ink| {
+        detail.map(|(session, target, detail)| notice_detail(session, target, detail, ink, cx))
+    };
     if level.is_failure() && past {
         return div()
             .h_flex()
@@ -202,7 +199,7 @@ fn notice(
                     .v_flex()
                     .gap_1()
                     .child(text.to_string())
-                    .children(detail),
+                    .children(detail(cx.theme().muted_foreground)),
             )
             .into_any_element();
     }
@@ -273,7 +270,7 @@ fn notice(
                                 .child(key)
                         })),
                 )
-                .children(detail),
+                .children(detail(tint.ink)),
         )
         .into_any_element()
 }

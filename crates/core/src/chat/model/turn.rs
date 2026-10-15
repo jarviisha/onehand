@@ -1,7 +1,7 @@
 use super::items::{
     AskItem, ChatItem, NoticeLevel, PermItem, TranscriptItemId, TurnAnswer, UserMsg,
 };
-use super::{Chat, Link};
+use super::{Chat, Link, Replay};
 use crate::acp::{AcpRequest, Attachment, ElicitOutcome, ToolStatus};
 use crate::attachment::{AttachmentDelivery, AttachmentSnapshot, StagedAttachment};
 use crate::chat::store;
@@ -606,7 +606,12 @@ impl Chat {
     /// a chat rebuilt by a restart or a relaunch says the same, and only a
     /// prompt going out answers it.
     pub fn failed(&self) -> bool {
-        standing_failure(self.transcript_back()).is_some()
+        // Mid-replay the whole transcript is the stash; what is in `items` is a
+        // re-delivery of it that may stop anywhere.
+        match &self.replay {
+            Replay::Partial(stash) => standing_failure(stash.iter().rev()).is_some(),
+            Replay::Settled | Replay::Armed => standing_failure(self.transcript_back()).is_some(),
+        }
     }
 
     /// The transcript newest first: the live items, then the history before them.
@@ -831,12 +836,13 @@ pub(super) fn last_paragraph(markdown: &str) -> &str {
 }
 
 /// The failed turn's notice a transcript, read newest first, still stands on:
-/// one no prompt has followed.
+/// one no prompt the person sent has followed. A user message the agent
+/// delivered itself carries no time it was sent and answers nothing.
 pub(super) fn standing_failure<'a>(
     mut back: impl Iterator<Item = &'a ChatItem>,
 ) -> Option<&'a ChatItem> {
     back.find_map(|item| match item {
-        ChatItem::User(_) => Some(None),
+        ChatItem::User(prompt) if prompt.sent_at.is_some() => Some(None),
         ChatItem::Notice {
             level: NoticeLevel::Failed,
             ..

@@ -1,5 +1,7 @@
 use super::attachments::chip;
-use super::presentation::{effort_action, fast_action, fast_toggle, mode_action, options_action};
+use super::presentation::{
+    effort_action, fast_action, fast_label, fast_toggle, mode_action, options_action,
+};
 use super::rows::OPTION_MAX_W;
 use super::{Composer, ComposerEvent, Overlay};
 use crate::chat::session::ChatSession;
@@ -225,11 +227,10 @@ impl Composer {
             let session = session.clone();
             return Some(
                 chip("fast-toggle", false, cx)
-                    .child(Icon::new(crate::icons::Icon::Zap).small())
                     // Named on the chip, not only in its tooltip: a bare "Off"
                     // beside a mark says nothing about what is off. No caret,
                     // since a click flips it and no menu opens.
-                    .child(chip_text(if toggle.on { "Fast: On" } else { "Fast: Off" }))
+                    .child(chip_text(fast_label(if toggle.on { "On" } else { "Off" })))
                     .tooltip(match toggle.on {
                         true => "Fast mode is on",
                         false => "Fast mode is off",
@@ -319,15 +320,13 @@ fn status_action(
     session: &Entity<ChatSession>,
     cx: &mut Context<Composer>,
 ) -> impl IntoElement + use<> {
+    // Fast is named by its words, as the model and effort chips beside it
+    // are; the mode, under the card, keeps the mark it is known by.
     let (id, icon, hint) = match target {
-        Overlay::Fast => (
-            "fast-selector",
-            crate::icons::Icon::Zap,
-            "Choose how fast the agent answers",
-        ),
+        Overlay::Fast => ("fast-selector", None, "Choose how fast the agent answers"),
         _ => (
             "mode-selector",
-            crate::icons::Icon::Shield,
+            Some(crate::icons::Icon::Shield),
             "Choose what the agent may do without asking",
         ),
     };
@@ -336,7 +335,7 @@ fn status_action(
         .max_w(OPTION_MAX_W)
         .flex_shrink_1()
         .min_w_0()
-        .child(Icon::new(icon).small())
+        .children(icon.map(|icon| Icon::new(icon).small()))
         .child(chip_text(label))
         .dropdown_caret(true)
         .when(!open, |chip| match target {

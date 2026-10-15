@@ -712,6 +712,7 @@ async fn handle_message(
                     // here would refreeze the same id on every restart and
                     // refail forever. Note it and fall back to a fresh
                     // session; the loaded history stays as read-only context.
+                    eprintln!("[acp] session/load failed: {err}");
                     let (message, detail) = in_words(err);
                     let _ = output
                         .send(AcpEvent::Error {
@@ -764,6 +765,8 @@ async fn handle_message(
             }
             Some(Pending::PromptTurn) => {
                 if let Some(err) = msg.get("error") {
+                    // The whole object, code and all, for whoever reads the log.
+                    eprintln!("[acp] the turn failed: {err}");
                     let (message, detail) = in_words(err);
                     let _ = output
                         .send(AcpEvent::Error {
@@ -1137,11 +1140,9 @@ fn response_ok(id: Value, result: Value) -> Value {
 }
 
 /// A JSON-RPC error as a person reads it: its message, and what the agent
-/// attached as `data`, as machine text. Its code is for programs, so the whole
-/// object goes to the log instead. An error with no message has nothing better
-/// to say than itself.
+/// attached as `data`, as machine text. Its code is for programs and is not
+/// said. An error with no message has nothing better to say than itself.
 fn in_words(err: &Value) -> (String, Option<String>) {
-    eprintln!("[acp] error {err}");
     let message = err
         .get("message")
         .and_then(Value::as_str)

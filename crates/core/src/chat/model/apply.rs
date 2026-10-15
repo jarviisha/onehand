@@ -362,8 +362,11 @@ impl Chat {
                 self.cancel_pending_permissions();
                 // No key in the words: the front end names the one its keymap
                 // binds, which the person may have changed.
-                self.items
-                    .push(ChatItem::error(format!("Disconnected: {e}")));
+                self.items.push(ChatItem::failure(
+                    format!("Disconnected: {e}"),
+                    NoticeLevel::Error,
+                    None,
+                ));
             }
         }
 

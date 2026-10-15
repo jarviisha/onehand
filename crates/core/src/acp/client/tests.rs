@@ -68,11 +68,18 @@ impl Agent {
 /// the client to make any progress at all — driving it here is what lets the
 /// test body read and write the agent's side as a conversation.
 fn client() -> (Agent, tokio::sync::mpsc::UnboundedReceiver<AcpEvent>) {
+    client_resuming(None)
+}
+
+/// [`client`], resuming the session `resume` names.
+fn client_resuming(
+    resume: Option<String>,
+) -> (Agent, tokio::sync::mpsc::UnboundedReceiver<AcpEvent>) {
     let (transport, agent) = Transport::scripted();
     let (read, out) = tokio::io::split(agent);
     let (tx, events) = tokio::sync::mpsc::unbounded_channel();
     tokio::spawn(async move {
-        let stream = connect_over(transport, PathBuf::from("/tmp"), None);
+        let stream = connect_over(transport, PathBuf::from("/tmp"), resume);
         futures::pin_mut!(stream);
         while let Some(event) = stream.next().await {
             if tx.send(event).is_err() {
@@ -634,4 +641,36 @@ async fn a_failed_turn_is_said_in_the_agents_words() {
             assert!(!said.contains("-32000"), "{said}");
         }
     }
+}
+
+/// A resume the adapter refuses is said in its words too, and the client goes
+/// on to a fresh session rather than giving up.
+#[tokio::test]
+async fn a_refused_resume_is_said_in_the_agents_words() {
+    let (mut agent, mut events) = client_resuming(Some("s-old".into()));
+    let hello = agent.heard().await;
+    agent
+        .say(json!({
+            "jsonrpc": "2.0",
+            "id": hello["id"],
+            "result": { "protocolVersion": 1, "agentCapabilities": { "loadSession": true } }
+        }))
+        .await;
+    let load = agent.heard().await;
+    assert_eq!(load["method"], "session/load", "{load:#}");
+    agent
+        .say(json!({
+            "jsonrpc": "2.0",
+            "id": load["id"],
+            "error": { "code": -32002, "message": "no such session", "data": "expired" }
+        }))
+        .await;
+
+    let (text, detail) = failure(&mut events).await;
+    assert_eq!(
+        text,
+        "Loading the session failed: no such session; starting a fresh one"
+    );
+    assert_eq!(detail.as_deref(), Some("expired"));
+    assert_eq!(agent.heard().await["method"], "session/new");
 }

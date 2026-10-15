@@ -750,12 +750,8 @@ impl ChatItem {
         }
     }
 
-    /// A failure the user has to see.
-    pub(crate) fn error(text: impl Into<String>) -> Self {
-        Self::failure(text, NoticeLevel::Error, None)
-    }
-
-    /// A failure, and the machine text the agent attached to it.
+    /// A failure the user has to see, and the machine text the agent attached
+    /// to it.
     pub(crate) fn failure(
         text: impl Into<String>,
         level: NoticeLevel,

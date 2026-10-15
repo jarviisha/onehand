@@ -499,3 +499,34 @@ fn a_failed_turn_comes_back_failed() {
     ));
     let _ = std::fs::remove_dir_all(&store);
 }
+
+/// A build before failed turns had a level of their own wrote one as an error
+/// reading `Error: …`; read back, it is the failed turn it was, so a session
+/// that ended on one still needs attention after the upgrade. The resume
+/// fallback that build wrote the same way failed no turn, and stays an error.
+#[test]
+fn an_old_turn_error_reads_as_failed() {
+    use crate::chat::NoticeLevel;
+    let store = scratch("legacy-failed");
+    let mut chat = chat_in(&store, "s1");
+    for text in [
+        "Error: {\"code\":-32000,\"message\":\"gave up\"}",
+        "Error: session/load failed (x) — starting a fresh session",
+    ] {
+        chat.items
+            .push(ChatItem::failure(text, NoticeLevel::Error, None));
+    }
+    save(&mut chat);
+
+    let back = load(&conv_dir(&store, "s1")).unwrap();
+    let levels: Vec<_> = back
+        .items
+        .iter()
+        .filter_map(|it| match it {
+            ChatItem::Notice { level, .. } => Some(*level),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(levels, [NoticeLevel::Failed, NoticeLevel::Error]);
+    let _ = std::fs::remove_dir_all(&store);
+}

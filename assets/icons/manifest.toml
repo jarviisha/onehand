@@ -80,13 +80,10 @@ square-slash = "lucide:square-slash"
 # split by where a glyph is drawn rather than by which glyph it is.
 plus-light = "lucide:plus"
 arrow-up-light = "lucide:arrow-up"
-# The strip under the composer names two settings a turn is taken under, and
-# each chip leads with the mark of the setting it belongs to. The bundled set
-# has neither shape: its nearest thing to a bolt is `battery-charging`, which is
-# a battery and says "this is topping up" rather than "this runs fast", and it
-# draws no shield, lock or badge of any kind — its `circle-check` says an answer
-# was correct, not that permission is being asked for.
-zap = "lucide:zap"
+# The permission mode's chip under the composer leads with the mark of the
+# setting it belongs to. The bundled set draws no shield, lock or badge of any
+# kind — its `circle-check` says an answer was correct, not that permission is
+# being asked for.
 shield = "lucide:shield"
 # The conversation header's *Close session*. What that button does is end a
 # session while keeping every word of the conversation, and every mark the

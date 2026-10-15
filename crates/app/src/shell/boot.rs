@@ -424,7 +424,6 @@ impl Shell {
                 if matches!(event, InputEvent::Change) {
                     let name = state.read(cx).value().trim().to_string();
                     if !name.is_empty() && name != shell.window.workspace.name {
-                        super::storage::name_in_recents(shell, &name, cx);
                         let before =
                             std::mem::replace(&mut shell.window.workspace.name, name.clone());
                         // Put back, field and all, if its write fails.
@@ -434,7 +433,6 @@ impl Shell {
                                 before,
                                 after: name,
                                 put: |shell, name, window, cx| {
-                                    super::storage::name_in_recents(shell, &name, cx);
                                     shell.window.workspace.name = name.clone();
                                     shell
                                         .workspace_name
@@ -572,12 +570,8 @@ pub fn open_or_focus(workspace: Workspace, cx: &mut App) {
                 .ok();
             return;
         }
-        cx.update_global::<Shared, _>(|shared, _| {
-            shared.recents.touch(dir);
-            if let Err(e) = shared.recents.save() {
-                eprintln!("onehand: failed to save recents: {e}");
-            }
-        });
+        cx.update_global::<Shared, _>(|shared, _| shared.recents.touch(dir));
+        super::storage::log_failed(super::storage::save_recents(cx), cx);
     }
     open_window(workspace, cx);
 }
