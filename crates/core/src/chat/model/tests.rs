@@ -1952,6 +1952,39 @@ fn a_failed_turn_outlives_a_restart_until_a_prompt_goes_out() {
     assert!(!next.failed(), "a prompt going out answers it");
 }
 
+/// An agent replaying the conversation on a resume replays what was said, never
+/// what onehand said about it, so a replay that wins over the file must still
+/// carry the failure the conversation ended on.
+#[test]
+fn a_failed_turn_survives_a_replay_that_replaces_the_file() {
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut chat = Chat::new(
+        1,
+        PathBuf::from("/r"),
+        "Claude".into(),
+        Some(PathBuf::from("/store")),
+    );
+    chat.resume_from(ConversationSnapshot {
+        session_id: "sid-1".into(),
+        title: None,
+        updated: 1,
+        prefs: Prefs::default(),
+        items: vec![
+            ChatItem::User(UserMsg::text("go".to_string())),
+            ChatItem::failure("The turn failed: rate limited", NoticeLevel::Failed, None),
+        ],
+        written: 2,
+        complete: true,
+    });
+    assert!(chat.failed());
+    chat.apply(AcpEvent::UserChunk("go".into()));
+    chat.apply(AcpEvent::AgentChunk("half an answer".into()));
+    chat.apply(AcpEvent::Connected { tx, resumed: true });
+
+    assert!(chat.history.is_empty(), "the replay won");
+    assert!(chat.failed(), "and the failure came with it");
+}
+
 /// Some adapters answer a cancel with an error; the turn was stopped, not
 /// failed, so the rail must not offer to send it again.
 #[test]

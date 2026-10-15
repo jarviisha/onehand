@@ -178,7 +178,7 @@ impl Shell {
         self.set_window_identity(Some(dir.clone()), window, cx);
         cx.update_global::<Shared, _>(|shared, _| {
             shared.recents.touch(dir.clone());
-            shared.recents.name(&dir, &self.window.workspace.name);
+            shared.recents.set_name(&dir, &self.window.workspace.name);
             // Recents are a convenience, not state the app depends on:
             // a failed write is logged, never surfaced or fatal.
             if let Err(e) = shared.recents.save() {
@@ -578,7 +578,7 @@ fn say(shell: &gpui::WeakEntity<Shell>, note: Notification, cx: &mut gpui::Async
 /// like every recent, so a failed write is logged and nothing more.
 pub(super) fn remember_name(dir: &Path, name: &str, cx: &mut App) {
     let recents = cx.update_global::<Shared, _>(|shared, _| {
-        shared.recents.name(dir, name);
+        shared.recents.set_name(dir, name);
         shared.recents.clone()
     });
     let written = Shared::global(cx)
@@ -591,4 +591,15 @@ pub(super) fn remember_name(dir: &Path, name: &str, cx: &mut App) {
             }
         })
         .detach();
+}
+
+/// Name this window's workspace in the recents, in memory only: a rename runs
+/// once per keystroke and can be put back, so the file takes the name at its
+/// next write, and every window that opens writes its own name again.
+/// shortcut: a rename followed by quitting before any recents write leaves the
+/// old name on disk until that workspace is next opened.
+pub(super) fn name_in_recents(shell: &Shell, name: &str, cx: &mut App) {
+    if let Some(dir) = &shell.window.workspace.storage_dir {
+        cx.update_global::<Shared, _>(|shared, _| shared.recents.set_name(dir, name));
+    }
 }

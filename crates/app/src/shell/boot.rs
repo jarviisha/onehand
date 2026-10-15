@@ -424,9 +424,7 @@ impl Shell {
                 if matches!(event, InputEvent::Change) {
                     let name = state.read(cx).value().trim().to_string();
                     if !name.is_empty() && name != shell.window.workspace.name {
-                        if let Some(dir) = shell.window.workspace.storage_dir.clone() {
-                            super::storage::remember_name(&dir, &name, cx);
-                        }
+                        super::storage::name_in_recents(shell, &name, cx);
                         let before =
                             std::mem::replace(&mut shell.window.workspace.name, name.clone());
                         // Put back, field and all, if its write fails.
@@ -436,6 +434,7 @@ impl Shell {
                                 before,
                                 after: name,
                                 put: |shell, name, window, cx| {
+                                    super::storage::name_in_recents(shell, &name, cx);
                                     shell.window.workspace.name = name.clone();
                                     shell
                                         .workspace_name

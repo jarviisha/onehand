@@ -201,6 +201,18 @@ impl Chat {
                 .retain(|it| matches!(it, ChatItem::Notice { .. }));
             self.touch();
         } else {
+            // The agent replays what was said, never what onehand said about
+            // it: a turn the conversation ended failed on is carried over, or
+            // the replay would answer a failure nobody tried again.
+            let failure = match super::turn::standing_failure(stash.iter().rev()) {
+                Some(ChatItem::Notice {
+                    text,
+                    level,
+                    detail,
+                }) => Some(ChatItem::failure(text.clone(), *level, detail.clone())),
+                _ => None,
+            };
+            self.items.extend(failure);
             self.rewrite = true;
             self.persisted = 0;
         }

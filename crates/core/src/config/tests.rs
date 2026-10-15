@@ -482,9 +482,9 @@ fn app_state_remembers_a_workspace_by_its_name() {
     );
 
     st.touch(PathBuf::from("/ws"));
-    st.name(Path::new("/ws"), "Audit workspace");
+    st.set_name(Path::new("/ws"), "Audit workspace");
     assert_eq!(st.name_of(Path::new("/ws")), Some("Audit workspace"));
-    st.name(Path::new("/ws"), "Renamed");
+    st.set_name(Path::new("/ws"), "Renamed");
     assert_eq!(st.name_of(Path::new("/ws")), Some("Renamed"));
 
     let back: AppState = toml::from_str(&toml::to_string_pretty(&st).unwrap()).unwrap();
@@ -496,7 +496,7 @@ fn app_state_remembers_a_workspace_by_its_name() {
         None,
         "a forgotten workspace keeps no name"
     );
-    st.name(Path::new("/never"), "Nowhere");
+    st.set_name(Path::new("/never"), "Nowhere");
     assert_eq!(
         st.name_of(Path::new("/never")),
         None,

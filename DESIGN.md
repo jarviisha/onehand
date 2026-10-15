@@ -230,7 +230,8 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   muted ink, with no fill; a settled *N failed* drops the danger ink; a refusal's badge is
   neutral. A live failure is a solid danger wash with no edge, in the agent's words (*The turn
   failed: …*), what it attached folded under *Show details* in mono; a lost agent's names the key
-  that restarts it. A failed turn holds until a prompt goes out; a restart does not answer it.
+  that restarts it. A failed turn holds until a prompt goes out; a restart does not answer it. An
+  error that failed no turn (one answering a *Stop*, a resume that fell back) is past at once.
 - **The pinned cards** (a permission, a question) share one shell: a head, the body, the
   answers at the end at `.xsmall()` (a hairline under the head and over the answers, padded as a box
   whose body scrolls), the dismissing one a quiet ghost. A choice is a row on a well

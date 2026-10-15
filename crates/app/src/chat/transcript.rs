@@ -124,7 +124,14 @@ pub fn item(
                     )
                 })
                 .flatten();
-            let past = prompted_after(chat, target);
+            // Live by the rule the rail reads: a failed turn until a prompt
+            // follows it, a lost agent while it is lost. Any other failure (an
+            // error answering a Stop, a resume that fell back) is past at once.
+            let past = match level {
+                NoticeLevel::Failed => prompted_after(chat, target),
+                NoticeLevel::Error => !lost,
+                NoticeLevel::Info => false,
+            };
             // The ink of the line it sits in: the wash's own on a live failure.
             let ink = match level.is_failure() && !past {
                 true => onehand_plugin_host::tint(cx.theme().red, cx).ink,

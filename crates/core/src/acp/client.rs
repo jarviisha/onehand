@@ -712,7 +712,7 @@ async fn handle_message(
                     // here would refreeze the same id on every restart and
                     // refail forever. Note it and fall back to a fresh
                     // session; the loaded history stays as read-only context.
-                    let (message, detail) = said(err);
+                    let (message, detail) = in_words(err);
                     let _ = output
                         .send(AcpEvent::Error {
                             text: format!(
@@ -756,7 +756,7 @@ async fn handle_message(
                 let event = match msg.get("error") {
                     Some(err) => AcpEvent::PickRefused {
                         group,
-                        why: said(err).0,
+                        why: in_words(err).0,
                     },
                     None => AcpEvent::PickConfirmed { group, value },
                 };
@@ -764,7 +764,7 @@ async fn handle_message(
             }
             Some(Pending::PromptTurn) => {
                 if let Some(err) = msg.get("error") {
-                    let (message, detail) = said(err);
+                    let (message, detail) = in_words(err);
                     let _ = output
                         .send(AcpEvent::Error {
                             text: format!("The turn failed: {message}"),
@@ -1140,7 +1140,7 @@ fn response_ok(id: Value, result: Value) -> Value {
 /// attached as `data`, as machine text. Its code is for programs, so the whole
 /// object goes to the log instead. An error with no message has nothing better
 /// to say than itself.
-fn said(err: &Value) -> (String, Option<String>) {
+fn in_words(err: &Value) -> (String, Option<String>) {
     eprintln!("[acp] error {err}");
     let message = err
         .get("message")

@@ -939,7 +939,7 @@ impl AppState {
     }
 
     /// Remember `dir`'s name, if `dir` is remembered at all.
-    pub fn name(&mut self, dir: &Path, name: &str) {
+    pub fn set_name(&mut self, dir: &Path, name: &str) {
         if self.recent_workspaces.iter().any(|d| d == dir) {
             self.names.insert(dir.to_path_buf(), name.to_string());
         }

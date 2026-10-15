@@ -606,16 +606,7 @@ impl Chat {
     /// a chat rebuilt by a restart or a relaunch says the same, and only a
     /// prompt going out answers it.
     pub fn failed(&self) -> bool {
-        self.transcript_back()
-            .find_map(|item| match item {
-                ChatItem::User(_) => Some(false),
-                ChatItem::Notice {
-                    level: NoticeLevel::Failed,
-                    ..
-                } => Some(true),
-                _ => None,
-            })
-            .unwrap_or(false)
+        standing_failure(self.transcript_back()).is_some()
     }
 
     /// The transcript newest first: the live items, then the history before them.
@@ -837,4 +828,20 @@ pub(super) fn last_paragraph(markdown: &str) -> &str {
         "" => last,
         tail => tail,
     }
+}
+
+/// The failed turn's notice a transcript, read newest first, still stands on:
+/// one no prompt has followed.
+pub(super) fn standing_failure<'a>(
+    mut back: impl Iterator<Item = &'a ChatItem>,
+) -> Option<&'a ChatItem> {
+    back.find_map(|item| match item {
+        ChatItem::User(_) => Some(None),
+        ChatItem::Notice {
+            level: NoticeLevel::Failed,
+            ..
+        } => Some(Some(item)),
+        _ => None,
+    })
+    .flatten()
 }
