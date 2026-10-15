@@ -2,8 +2,9 @@
 //! one at a time.
 
 use super::*;
-use crate::controls::Tall as _;
+use crate::controls::Short as _;
 use crate::controls::text_input;
+use gpui_component::Sizable as _;
 
 pub struct Editor {
     editing: Option<usize>,
@@ -126,7 +127,7 @@ impl Render for Editor {
                                  unassign; Enter saves, Escape cancels"
                                     .into_any_element(),
                             ),
-                            text_input(&self.input, cx).tall(),
+                            text_input(&self.input, cx).short(),
                             cx,
                         ))
                         .child(
@@ -153,7 +154,7 @@ impl Render for Editor {
                                 .child(
                                     // Secondary: Settings holds no primary.
                                     crate::controls::action("save-shortcut")
-                                        .tall()
+                                        .short()
                                         .label("Save")
                                         .secondary()
                                         .on_click(cx.listener(move |editor, _, window, cx| {
@@ -162,7 +163,7 @@ impl Render for Editor {
                                 )
                                 .child(
                                     crate::controls::action("cancel-shortcut")
-                                        .tall()
+                                        .short()
                                         .secondary()
                                         .label("Cancel")
                                         .on_click(cx.listener(|editor, _, window, cx| {
@@ -192,7 +193,7 @@ impl Render for Editor {
                         row.child(
                             crate::controls::action(("reset-shortcut", index))
                                 .secondary()
-                                .small()
+                                .xsmall()
                                 .label("Reset")
                                 .on_click(cx.listener(move |editor, _, window, cx| {
                                     editor.save(index, true, window, cx)
@@ -202,7 +203,7 @@ impl Render for Editor {
                     .child(
                         crate::controls::action(("edit-shortcut", index))
                             .secondary()
-                            .small()
+                            .xsmall()
                             .label("Edit")
                             .on_click(cx.listener(move |editor, _, window, cx| {
                                 editor.edit(index, window, cx)

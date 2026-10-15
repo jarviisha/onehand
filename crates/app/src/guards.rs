@@ -1295,7 +1295,7 @@ mod tests {
                     .map(|name| name.to_string())
                     .collect()
             },
-            "a second corner; every box takes `radius`, a badge `tokens::BADGE_CORNER`",
+            "a second corner; every box takes `radius`, a badge `rounded_full`",
         );
     }
 

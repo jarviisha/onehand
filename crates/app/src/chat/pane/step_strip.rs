@@ -4,7 +4,7 @@
 use super::{ChatPane, ChatPaneEvent};
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
-use crate::controls::Tall as _;
+use crate::controls::Short as _;
 use crate::controls::text_area;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -83,7 +83,7 @@ impl ChatPane {
                             let (read, revised) = (review, pressed.clone());
                             row.child(
                                 crate::controls::action("workflow-review")
-                                    .small()
+                                    .xsmall()
                                     .quiet(cx)
                                     .label("Review…")
                                     .tooltip("Read what is waiting for approval")
@@ -94,7 +94,7 @@ impl ChatPane {
                             )
                             .child(
                                 crate::controls::action("workflow-revise")
-                                    .small()
+                                    .xsmall()
                                     .quiet(cx)
                                     .label("Revise…")
                                     .on_click(cx.listener(move |_, _, window, cx| {
@@ -103,7 +103,7 @@ impl ChatPane {
                             )
                             .child(
                                 crate::controls::action("workflow-continue")
-                                    .small()
+                                    .xsmall()
                                     .primary()
                                     .label("Continue")
                                     .tooltip("Approve it and go on to the next step")
@@ -115,7 +115,7 @@ impl ChatPane {
                         })
                         .child(
                             crate::controls::action("workflow-stop")
-                                .small()
+                                .xsmall()
                                 .quiet(cx)
                                 .label("Stop")
                                 .loading(shown.stopping)
@@ -241,14 +241,14 @@ pub(super) fn open_review(
                     .justify_end()
                     .child(
                         crate::controls::action("workflow-review-close")
-                            .tall()
+                            .short()
                             .quiet(cx)
                             .label("Close")
                             .on_click(|_, window, cx| window.close_dialog(cx)),
                     )
                     .child(
                         crate::controls::action("workflow-review-continue")
-                            .tall()
+                            .short()
                             .primary()
                             .label("Continue")
                             .on_click(move |_, window: &mut Window, cx: &mut App| {
@@ -334,14 +334,14 @@ pub(super) fn open_revise(approval: Approval, window: &mut Window, cx: &mut Cont
                     .justify_end()
                     .child(
                         crate::controls::action("workflow-revise-cancel")
-                            .tall()
+                            .short()
                             .quiet(cx)
                             .label("Cancel")
                             .on_click(|_, window, cx| window.close_dialog(cx)),
                     )
                     .child(
                         crate::controls::action("workflow-revise-send")
-                            .tall()
+                            .short()
                             .primary()
                             .label("Send back")
                             .refuses(empty.then_some("Say what to change first"))

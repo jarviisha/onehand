@@ -41,7 +41,7 @@ check "gpui shadow (use lift)" \
   '\.shadow_(2xs|xs|sm|md|lg|xl|2xl)\(\)'
 check "fixed corner (use the theme's)" \
   '\.rounded_(xs|sm|md|lg|xl|2xl|3xl)\(\)'
-check "round shape: dots only" \
+check "round shape: dots and badges only" \
   '\.rounded_full\(\)'
 check "thinned token: a hover or a fill made by alpha" \
   '\.(opacity|alpha)\('

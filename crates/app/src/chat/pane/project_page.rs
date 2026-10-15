@@ -2,15 +2,16 @@ use super::header::Archives;
 use super::{ChatPane, ChatPaneEvent, ProjectFacts, rel_time};
 use crate::chat::conversation::Conversation;
 use crate::controls::Quiet as _;
-use crate::controls::Tall as _;
+use crate::controls::Short as _;
 use crate::controls::text_input;
 use crate::tokens::PAGE_NARROW;
 use gpui::{
     App, Context, Div, ElementId, FocusHandle, InteractiveElement, IntoElement, ParentElement,
     SharedString, Stateful, StatefulInteractiveElement, Styled, Window, div,
 };
+use gpui_component::Sizable as _;
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::{ActiveTheme, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::chat::ConvMeta;
 use std::path::{Path, PathBuf};
 
@@ -348,7 +349,7 @@ impl ChatPane {
                     }))
                     .child(
                         crate::controls::action("resume-fresh")
-                            .tall()
+                            .short()
                             .primary()
                             .label("Start a new conversation")
                             .on_click(cx.listener(move |pane: &mut Self, _, _, cx| {
@@ -424,7 +425,7 @@ impl ChatPane {
             )
             .children(project.facts.check.then(|| {
                 crate::controls::action("project-run-check")
-                    .small()
+                    .xsmall()
                     .secondary()
                     .label("Run check")
                     .loading(checking)
@@ -435,7 +436,7 @@ impl ChatPane {
             }))
             .child(
                 crate::controls::action("project-new-session")
-                    .small()
+                    .xsmall()
                     .primary()
                     .label("New session")
                     .on_click(cx.listener(|_: &mut Self, _, _, cx| {
@@ -451,7 +452,7 @@ impl ChatPane {
             onehand_plugin_host::field(
                 "Check command",
                 Some("What Run check and a command step naming none run here".into_any_element()),
-                text_input(input, cx).tall(),
+                text_input(input, cx).short(),
                 cx,
             )
         });
@@ -508,7 +509,7 @@ impl ChatPane {
                                         false,
                                         crate::controls::action(("home-delete", i))
                                             .quiet(cx)
-                                            .small()
+                                            .xsmall()
                                             .text_color(danger)
                                             .label("Delete…")
                                             .tooltip("Delete this conversation")
@@ -613,7 +614,7 @@ fn tasks_link(root: &Path, cx: &mut Context<ChatPane>) -> Option<gpui::AnyElemen
     Some(
         crate::controls::action("project-tasks")
             .quiet(cx)
-            .small()
+            .xsmall()
             .label(said.join(" · "))
             .tooltip("Show these tasks on the Tasks page")
             .on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {

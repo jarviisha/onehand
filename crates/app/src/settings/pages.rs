@@ -1,6 +1,6 @@
 use super::{APP, about, field, list_row, page_head, section};
 use crate::controls::Refuses as _;
-use crate::controls::Tall as _;
+use crate::controls::Short as _;
 use crate::controls::text_input;
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
@@ -41,7 +41,7 @@ fn appearance_picker(
                 ("appearance", i),
                 choice.label(),
                 choice == current,
-                onehand_plugin_host::ControlSize::Tall,
+                onehand_plugin_host::ControlSize::Short,
                 cx,
             )
             .on_click(move |_, window: &mut Window, cx: &mut App| {
@@ -115,7 +115,7 @@ pub(super) fn workspace_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         .child(field(
             "Name",
             about("Written at the top of the rail"),
-            text_input(&name, cx).tall(),
+            text_input(&name, cx).short(),
             cx,
         ))
         .child(field(
@@ -126,7 +126,7 @@ pub(super) fn workspace_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                 .gap_2()
                 .child(
                     crate::controls::action("bind-storage")
-                        .tall()
+                        .short()
                         .secondary()
                         .label("Choose folder…")
                         .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
@@ -135,7 +135,7 @@ pub(super) fn workspace_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                 )
                 .child(
                     crate::controls::action("unbind-storage")
-                        .tall()
+                        .short()
                         .secondary()
                         .refuses((!bound).then_some("No storage folder is bound"))
                         .label("Unbind")
@@ -160,7 +160,7 @@ pub(super) fn workspace_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
             .gap_2()
             .child(
                 crate::controls::action("new-workspace")
-                    .tall()
+                    .short()
                     .secondary()
                     .label("New workspace…")
                     .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
@@ -169,7 +169,7 @@ pub(super) fn workspace_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
             )
             .child(
                 crate::controls::action("open-workspace")
-                    .tall()
+                    .short()
                     .secondary()
                     .label("Open workspace…")
                     .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
@@ -257,7 +257,7 @@ pub(super) fn connections_page(cx: &App) -> AnyElement {
                     .pt_2()
                     .child(
                         crate::controls::action("connections-recheck")
-                            .tall()
+                            .short()
                             .secondary()
                             .loading(checking)
                             .label("Check again")
@@ -330,7 +330,7 @@ fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         ),
         div().h_flex().child(
             crate::controls::action("unattended-look-now")
-                .tall()
+                .short()
                 .secondary()
                 .label("Look for an issue now")
                 .loading(crate::unattended::claiming(cx))
@@ -432,7 +432,7 @@ fn slots_field(handle: &Entity<Shell>, slots: Slots, cx: &App) -> AnyElement {
             let (shell, task) = (handle.clone(), holder.task.clone());
             crate::controls::action(("unattended-slot", at))
                 .secondary()
-                .small()
+                .xsmall()
                 .label(holder.shown.clone())
                 .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
                     shell.update(cx, |shell, cx| shell.show_task(&task, window, cx));
@@ -519,7 +519,7 @@ fn workflow_labels(handle: &Entity<Shell>, cx: &App) -> impl IntoElement {
                 .child(
                     crate::controls::action(("workflow-label-remove", i))
                         .secondary()
-                        .small()
+                        .xsmall()
                         .label("Remove")
                         .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
                             shell.update(cx, |shell, cx| {
@@ -542,7 +542,7 @@ fn workflow_labels(handle: &Entity<Shell>, cx: &App) -> impl IntoElement {
         let shell = handle.clone();
         crate::controls::action("workflow-label-add")
             .secondary()
-            .tall()
+            .short()
             .label("Add")
             .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
                 shell.update(cx, |shell, cx| shell.add_workflow_label(window, cx));
@@ -563,7 +563,7 @@ fn workflow_labels(handle: &Entity<Shell>, cx: &App) -> impl IntoElement {
                 .h_flex()
                 .items_center()
                 .gap_2()
-                .child(div().w(LABEL_FIELD_W).child(text_input(&input, cx).tall()))
+                .child(div().w(LABEL_FIELD_W).child(text_input(&input, cx).short()))
                 .child(pick)
                 .child(add),
         )

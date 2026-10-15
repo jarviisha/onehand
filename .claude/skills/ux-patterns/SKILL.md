@@ -90,7 +90,7 @@ window.push_notification(crate::toast::failed("Exporting the conversation", e), 
 // A condition standing until something answers it, under a plugin's view
 onehand_plugin_host::status_line(message, onehand_plugin_host::status_ink(cx).warning)
 // Cannot act yet: refuse, and say why
-action("save-agent").primary().tall().label("Save").tooltip("Save the agent")
+action("save-agent").primary().short().label("Save").tooltip("Save the agent")
     .refuses((!ready).then_some("Give it a name and a command first"))
 ```
 

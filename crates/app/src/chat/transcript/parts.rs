@@ -2,7 +2,7 @@ use super::fold_key;
 use super::metrics::{CARD_PAD, DETAIL_OPEN_H, FOLD_INDENT, SCROLLBAR_W, TIGHT_GAP};
 use crate::chat::session::ChatSession;
 use crate::controls::Quiet as _;
-use crate::tokens::{CONTROL_H, LEADING};
+use crate::tokens::LEADING;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, Axis, ClickEvent, Entity, InteractiveElement, IntoElement, Length, ParentElement, Rems,
@@ -403,12 +403,16 @@ pub(super) fn sideways(
 /// already held the label off both edges — so taking the row away and nothing
 /// else leaves every control shrink-wrapped around its text, which is a
 /// different card to be wrong about in the same place. A single line lands back
-/// on exactly the row the library would have drawn: [`CONTROL_H`] is that
+/// on exactly the row the library would have drawn: [`XSMALL_H`] is that
 /// height, and the padding is what a second line grows by rather than what a
 /// first line needs.
 pub(super) fn grows(button: Button) -> Button {
-    button.small().h(Length::Auto).min_h(CONTROL_H).py_1p5()
+    button.xsmall().h(Length::Auto).min_h(XSMALL_H).py_1()
 }
+
+/// The library's extra small row, carried as a number for the reason
+/// [`crate::tokens::CONTROL_H`] is: the floor a growing answer lands back on at one line.
+const XSMALL_H: gpui::Rems = gpui::rems(1.25);
 
 // ── permission — blocking; the agent parks until answered ───────────────────
 
@@ -834,9 +838,15 @@ pub(super) fn tool_label(kind: ToolKind) -> &'static str {
 /// struck words already say which way.
 pub(super) fn pill(label: impl Into<SharedString>, cx: &App) -> Tag {
     let theme = cx.theme();
-    Tag::custom(theme.secondary, theme.secondary_foreground, theme.secondary)
+    let edge = onehand_plugin_host::badge_edge(onehand_plugin_host::Tint {
+        fill: theme.secondary,
+        ink: theme.secondary_foreground,
+    });
+    Tag::custom(theme.secondary, theme.secondary_foreground, edge)
         .small()
-        .rounded(crate::tokens::BADGE_CORNER)
+        // The shape and the edge `badge` gives every other one.
+        .rounded_full()
+        .py_1()
         .flex_none()
         .whitespace_nowrap()
         .overflow_hidden()

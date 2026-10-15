@@ -8,9 +8,10 @@ use gpui::{
     InteractiveElement as _, IntoElement, ParentElement, Render, SharedString,
     StatefulInteractiveElement as _, Styled, Task, Window, div,
 };
+use gpui_component::Sizable as _;
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{InputEvent, InputState};
-use gpui_component::{ActiveTheme, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, StyledExt};
 use onehand_plugin_host::search_input;
 use onehand_plugin_host::{
     Ask, ControlSize, Refuses as _, Request, action, choice, hint, status_ink, status_line, switch,
@@ -435,7 +436,7 @@ impl PluginsView {
                 .iter()
                 .position(|tab| *tab == self.tab)
                 .unwrap_or(0),
-            ControlSize::Small,
+            ControlSize::XSmall,
             cx.listener(|view: &mut Self, i: &usize, _, cx| {
                 view.tab = Tab::ALL[*i];
                 cx.notify();
@@ -602,7 +603,7 @@ impl PluginsView {
             .child(
                 div().px_2().child(
                     action("plugins-retry")
-                        .small()
+                        .xsmall()
                         .secondary()
                         .label("Try again")
                         .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
@@ -636,7 +637,7 @@ impl PluginsView {
                 "plugins-market-all",
                 "All",
                 current.is_none(),
-                ControlSize::Small,
+                ControlSize::XSmall,
                 cx,
             )
             .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
@@ -649,7 +650,7 @@ impl PluginsView {
                     ("plugins-market", i),
                     market.clone(),
                     on,
-                    ControlSize::Small,
+                    ControlSize::XSmall,
                     cx,
                 )
                 .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
@@ -695,7 +696,7 @@ impl PluginsView {
                 )
                 .child(
                     action("plugins-restart")
-                        .small()
+                        .xsmall()
                         .secondary()
                         .label("Restart the agent")
                         .refuses(self.busy.is_some().then_some(ONE_AT_A_TIME))
@@ -725,7 +726,7 @@ impl PluginsView {
                     ("plugins-filter", i),
                     filter.label(),
                     filter == current,
-                    ControlSize::Small,
+                    ControlSize::XSmall,
                     cx,
                 )
                 .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
@@ -753,7 +754,7 @@ fn filter_bar(query: &Entity<InputState>, choices: Option<gpui::Div>, cx: &App) 
             div()
                 .flex_1()
                 .min_w(SEARCH_MIN)
-                .child(search_input(query, cx).small()),
+                .child(search_input(query, cx).xsmall()),
         )
         .children(choices)
         .into_any_element()

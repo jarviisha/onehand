@@ -174,9 +174,17 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
     session*, *Stop*, *Resume*, *Retry…*, *Dismiss*) shown on hover, kept under *Needs attention*;
     its text opens the task's detail, a page of its own at the prose width: a trail, the title,
     then *Awaiting approval*, *Way out* and the runs as plain sections.
-  - *Issues*, in the overview's column: a head (*New issue*, then *Refresh* and *N open*); a
-    filter bar (search, then pickers for open/closed, progress, project, label); a hairline table,
-    *Title*, *Labels*, *Updated*, a row a line, rows keeping their place while a person reads.
+  - *Issues*, across the pane's whole width, the pane's header drawing a line its whole width
+    over it: a head at `.tall()` (the search, then *Refresh* and *New issue* at the end); a filter
+    bar at `.short()` (*Open* and *Closed* as choices, each its count in a badge on its
+    corner, then, at the row's end, pickers for progress, project, label and *Clear filters*),
+    over a line the pane's whole width; a list of rows on one line at `.text_xs()`, no lines between them,
+    each its state mark (open in the success ink, closed in tempered magenta), reference,
+    title (in `font_medium`), priority and note, then its labels, project and
+    age (in `font_medium`, the middle ink) in slots at the end, the labels
+    and project dropped where the pane is too narrow to leave the title room, rows keeping their place while a person reads, the row the arrow keys move
+    marked by its selected fill alone, with no ring; *Showing N of M
+    open issues* at the foot, over a line the pane's whole width.
     *Reading the issues…* until the first read lands; *Refresh* spins while it reads; *New issue*
     is secondary, the page holding no primary.
     Nothing is open on arrival; a picked issue floats over the list's right side, its width
@@ -226,11 +234,11 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   neutral. A live failure is a solid danger wash with no edge, and a lost agent's names the key
   that restarts it.
 - **The pinned cards** (a permission, a question) share one shell: a head, the body, the
-  answers at the end at `.small()` (a hairline under the head and over the answers, the sides
+  answers at the end at `.xsmall()` (a hairline under the head and over the answers, the sides
   padded `p_4` so a scrolling body's thumb has room), the dismissing one a quiet ghost. A choice is a row on a well
   of its own at rest and on the selected step when taken, a radio or checkbox drawn in ink at
   its head (the library's rings vanish on the selected step) and its number as a `Kbd`, at least
-  a field's height; a typed answer is a plain field (`.tall()`), ringed while the keys are on it. Their keys are named in tooltips, never in a label.
+  a field's height; a typed answer is a plain field (`.short()`), ringed while the keys are on it. Their keys are named in tooltips, never in a label.
   The card holds the one primary while it shows.
 
 ## Type, space and shape
@@ -239,13 +247,16 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
 |---|---|
 | Meta, hints, counts, a small label | `.text_xs()`, in `muted_foreground` when it is meta |
 | Machine text | `CODE_TEXT`, in `mono_font_family` |
-| Chrome: a panel's rows, boxes, controls and forms | `.text_sm()` |
+| Chrome: a panel's rows, boxes and forms | `.text_sm()` |
+| A control's words (`.short()`, `.xsmall()`) | `.text_xs()` |
 | Reading text: the transcript, the composer's field, a document | the inherited size, `.text_base()` |
 | A heading in reading text | a step up the scale per level, two at most; then the body's size |
 | A page's or an issue's title | `.text_xl()` |
 
 - **Weight carries hierarchy before size does**: `font_medium` for a page's title and a name in
-  a header, `font_semibold` for any other title or heading; nothing bolder. Line height is gpui's,
+  a header, `font_semibold` for any other title or heading; nothing bolder. The Issues page's
+  rows are the exception: at the meta size, their title and their age take `font_medium`, the
+  columns read down the list, and the rest the regular weight. Line height is gpui's,
   but `LEADING` for reading text and `LEADING_TIGHT` for a wrapped title.
 - **Inks by role.** Text on a neutral surface (the reading surface, a dock, the rail, a floating
   surface, a well, the bubble) takes one of three: `foreground` for content and the current
@@ -268,13 +279,14 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   pixels, and the terminal's grid, which zooms on its own. Fixed chrome heights stay outside the
   zoom wrapper. A size the steps lack is a named constant (shared ones in
   `onehand_plugin_host::tokens`, others beside their use), its reason in its doc comment.
-- **One corner**: `radius`, 3px (`tokens::CORNER`), for everything: a control, a field, a row,
+- **One corner**: `radius`, 4px (`tokens::CORNER`), for everything: a control, a field, a row,
   a tab, a chip, a well, the bubble, a box, the composer, the terminal, a floating panel, a
   dialog, a toast. The theme sets `radius_lg` to the same, so the library's own surfaces follow.
-  Two exceptions: a badge (a `Tag`) keeps a rounder `tokens::BADGE_CORNER`, so it reads as a tag
-  rather than a button, and a dot or a status mark is `rounded_full`. A part joined to its
+  Two exceptions: a badge (a `Tag`) is `rounded_full`, so it reads as a tag rather than a
+  button, its words `py_1` off its edges, its edge halfway from its fill to its ink (`badge_edge`), and a dot or a status mark is `rounded_full` too. A part joined to its
   container's edge takes its corner there.
-- **Lines** are a 1px `border`; the mark under an open tab is 2px.
+- **Lines** are a 1px `border`; the mark under an open tab is 2px. The Issues page's lines across
+  the pane are a step fainter (`faint_rule`), so the edge-to-edge list reads as one surface.
 
 ## Colour and state
 
@@ -300,7 +312,9 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
 - Boxes are borders; wells and the bubble are fills. Ordinary sections remain unboxed. Do not
   combine a border, contrasting fill and shadow just to make a group visible.
 - Hover and selection are fills: distinct steps on a row (`list_hover`, `accent`; the rail's own
-  `sidebar_accent` and `rail_chosen`), one step on a ghost button (the selected one). Keyboard
+  `sidebar_accent` and `rail_chosen`), one step on a ghost button (`control_fill`, between a
+  row's hover and its selected step). A secondary button rests on that fill and lifts to the
+  selected step under the pointer; the selected step is otherwise a chosen row's. Keyboard
   focus is the ring, except on a field: a focused field draws no ring, only its edge in the
   `ring` ink, and a field with no edge at rest shows one while focused (the composer, a card, keeps
   the caret alone).
@@ -318,21 +332,23 @@ Reuse gpui-component before building anything: `Root`, `DockArea`, `Sidebar`, `D
 `InputState`, `Editor`, `TextView`, plus gpui's own `list` for the transcript. Controls go through
 the plugin host's builders, which set the pointer cursor and the one corner (`radius`): buttons through
 `action`; fields through `text_input`, `search_input` (the search mark, the clear button; the rail's
-alone has no edge, on `theme::inset`) and `text_area`. A button names its variant by role: `primary`
+has no edge, on `theme::inset`, and the Issues page's none, on the well's `muted` fill) and `text_area`. A button names its variant by role: `primary`
 the main action, `secondary` an alternative beside it, a set picker's trigger (an unset one is a ghost, through
 `picker`) and every Settings button,
 `choice` in a pick-one row, `danger` only under *Exceptions*, and ghost (`.quiet(cx)`, whose hover
-is the selected step) the rest. **No button draws an edge** (no default variant, no `outline()`): a
+is the control fill) the rest. **No button draws an edge** (no default variant, no `outline()`): a
 field is the one control marked by its edge, on no fill of its own. A control that refuses says so
 and why (`.refuses(why)`, the reason its tooltip) and goes back to the arrow.
 
 **A size names a role, and means one height and one text size in every control.** The library's
 sizes disagree across components (its default button letters at the reading size beside a field
-at the chrome size), so the app uses three: `.small()` (`CONTROL_H`), the compact default, in a
-strip, a box, a page's head, a filter bar and for a row's actions; `.tall()` (`FIELD_H`,
-chrome-size words) in a form and a dialog's footer; `.xsmall()` only for a secondary action inside dense
-content: a line of meta text, a transcript block, a chip. Never the library's default. A
-correction a component needs lives in its shared wrapper (`Tall`), never at a call site. An icon
+at the chrome size), so the app uses three: `.xsmall()`, the compact default, in a strip, a box, a
+page's head, for a row's actions and for a secondary action inside dense content (a line of meta
+text, a transcript block, a chip); `.short()` (`CONTROL_H`) in a form, a page's filter bar (and
+and a dialog's footer; `.tall()` (`FIELD_H`, chrome-size words) in the Issues page's head, its
+search and actions. Never the library's default. **`.xsmall()` and `.short()` letter their words
+at `.text_xs()`**, so a `.short()` control's sit in its box with room above and below. A
+correction a component needs lives in its shared wrapper (`Short`, `Tall`), never at a call site. An icon
 keeps its role's size whatever the hit area round it, and a badge, a checkbox or a switch keeps
 the library's own geometry, centred in its row. `docs/ui-patterns.md` (*Control sizes*) maps each
 role to its component and size.
@@ -367,9 +383,11 @@ The whole list of departures agreed to stay: any other is a bug, put right or re
 - **The composer card has no edge.** It stands off the page on its own fill (`theme::raised`) and
   its own lift (`composer_lift`).
 - **A solid danger fill marks two buttons**: *Stop* in the composer, and the button confirming a
-  removal inside its modal. Anywhere else a destructive action is a word in the danger tint.
+  removal inside its modal. Anywhere else a destructive action is a word in the danger tint, and
+  so is the one control that undoes a narrowing: *Clear filters* on the Issues page, a word in
+  the danger tint on no fill, underlined under the pointer, shown only while a filter is set.
 - **The composer's chips are quiet even when set.** Its pickers (the model, the effort, the mode,
-  *Fast*, the branch) are `.small()` ghosts with a caret whatever they hold, where a picker
+  *Fast*, the branch) are `.xsmall()` ghosts with a caret whatever they hold, where a picker
   elsewhere takes the secondary fill once set: each always holds a choice, and a fill on every
   chip would crowd the field they sit under.
 - **A cut fades into the surface behind it**: a rail name too long for its row, a long command
@@ -383,5 +401,5 @@ The whole list of departures agreed to stay: any other is a bug, put right or re
   tabs read its `sm` radius, half the one corner; they are drawn inside a control, where a full
   corner would round them to a pill.
 - **An open menu's trigger keeps its resting ink**: while a dropdown is open the library draws its
-  trigger on the selected step and replays the ink the caller gave it, so a quiet icon stays in
-  the muted ink there rather than taking the selected step's ink.
+  trigger on its pressed fill (a ghost's control fill) and replays the ink the caller gave it, so a
+  quiet icon stays in the muted ink there rather than taking that fill's ink.

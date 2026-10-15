@@ -7,7 +7,7 @@
 use super::Shell;
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
-use crate::controls::Tall as _;
+use crate::controls::Short as _;
 use gpui::{App, Context, Entity, ParentElement as _, SharedString, Styled as _, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::button::ButtonVariants as _;
@@ -203,7 +203,7 @@ impl Shell {
             let with_current = {
                 let (shell, id) = (shell.clone(), id.clone());
                 crate::controls::action("retry-current")
-                    .tall()
+                    .short()
                     .secondary()
                     .label(Act::RetryCurrent.label())
                     .on_click(move |_, window: &mut Window, cx: &mut App| {
@@ -221,7 +221,7 @@ impl Shell {
                         "retry-from-trigger",
                         format!("From {at}"),
                         true,
-                        onehand_plugin_host::ControlSize::Tall,
+                        onehand_plugin_host::ControlSize::Short,
                         cx,
                     ),
                     move |mut menu, _, _| {
@@ -478,7 +478,7 @@ fn footer(
             gpui::div().flex_none().child(
                 gpui_component::dialog::DialogClose::new().child(
                     crate::controls::action(SharedString::from(format!("{id}-cancel")))
-                        .tall()
+                        .short()
                         .quiet(cx)
                         .label("Cancel"),
                 ),
@@ -486,7 +486,7 @@ fn footer(
         )
         .child({
             let button = crate::controls::action(SharedString::from(format!("{id}-confirm")))
-                .tall()
+                .short()
                 .primary()
                 .label(confirm);
             match blocked {

@@ -1,70 +1,71 @@
-//! One row of the page's list, and the names of its columns.
+//! One issue of the page's list, as a row on one line.
 
 use super::super::detail::moment;
 use super::super::detail::priority::{priority, priority_icon, priority_name};
 use super::super::list::chip;
-use super::{IssuesView, column};
+use super::IssuesView;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, ClickEvent, Context, InteractiveElement as _, IntoElement, ParentElement, Rems,
     SharedString, StatefulInteractiveElement as _, Styled, div, rems,
 };
 use gpui_component::tooltip::Tooltip;
-use gpui_component::{ActiveTheme, Icon, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::issues::LabelKind;
 use onehand_core::task::Group;
 use onehand_core::task::work::list::Row;
 use onehand_plugin_host::Quiet as _;
-use onehand_plugin_host::tokens::CODE_TEXT;
-use onehand_plugin_host::tokens::ROW_H;
-use onehand_plugin_host::{action, meta_ink, middle_ink, row as row_surface, status_ink};
+use onehand_plugin_host::{
+    AppIcon, action, meta_ink, middle_ink, row as row_surface, status_hue, status_ink,
+};
 
 /// How many labels a row draws before it counts the rest.
-const ROW_LABELS: usize = 2;
+const ROW_LABELS: usize = 3;
 
 /// The reference's slot: room for a five-digit number or *Draft*, so every
 /// title starts on one edge. A longer reference widens its own row only.
 const REFERENCE_W: Rems = rems(3.);
 
-/// The widest a project's name gets after a title, while the list mixes
-/// several, so a long name never crowds the title out.
-const PROJECT_MAX: Rems = rems(10.);
+/// The project's slot at the row's end, so the labels before it and the age
+/// after it line up down the list whatever the name.
+const PROJECT_W: Rems = rems(9.);
 
-/// The columns after the title, fixed so each lines up down the list and
-/// only the title gives way: two labels and a count, and an age.
-const LABELS_W: Rems = rems(13.125);
-const UPDATED_W: Rems = rems(2.75);
+/// The age's slot, room for *11mo*, so every age ends on the row's edge.
+const UPDATED_W: Rems = rems(2.5);
+
+/// A row: a step over a list's row, holding a mark and badges on one line
+/// with room above and below them.
+const ISSUE_ROW_H: Rems = rems(2.5);
 
 /// The widest what an issue's work needs gets beside its title, so a long
 /// sentence leaves the title room to be read.
 const NOTE_MAX: Rems = rems(14.);
 
+/// The widest the labels get, so three long ones leave the title room.
+const LABELS_MAX: Rems = rems(16.);
+
 /// The page's width, in rems, below which a row keeps only its title and its
-/// age: the labels would leave the title too little to be read.
-pub(super) const COLUMNS_MIN: f32 = 36.;
+/// age: the labels and the project would leave the title too little to be
+/// read.
+pub(super) const COLUMNS_MIN: f32 = 46.;
 
 /// Where a row stands among the others, and how it is drawn there.
 pub(super) struct Place {
-    /// It opens the box: no column names stand over it.
-    pub(super) first: bool,
-    /// It closes the box.
-    pub(super) last: bool,
-    /// Its issue is the one picked.
+    /// Its issue is the one picked: the arrow keys move it, and its fill
+    /// alone says where they are, with no ring over it.
     pub(super) picked: bool,
-    /// The page holds the keyboard, so the picked row is where it is.
-    pub(super) focused: bool,
-    /// The labels' column is drawn.
+    /// The page is wide enough for the labels and the project.
     pub(super) columns: bool,
 }
 
-/// One row on one line: the reference, the title, the priority's mark, what
-/// its work needs and, while the list mixes projects, its project; then the
-/// labels and how long ago it changed.
-pub(super) fn page_row(
+/// One issue on one line: whether it is open, the reference, the title, the
+/// priority's mark and what its work needs; at the end its labels, its
+/// project and how long ago it changed.
+pub(super) fn issue_row(
     i: usize,
     place: Place,
     row: &Row<'_>,
-    project: Option<SharedString>,
+    project: SharedString,
     cx: &mut Context<IssuesView>,
 ) -> AnyElement {
     let theme = cx.theme();
@@ -92,23 +93,37 @@ pub(super) fn page_row(
         true => muted,
         false => meta_ink(cx),
     };
-    // The project, while the list mixes several: after the title in the muted
-    // ink, so it tells rows apart without moving where the titles start.
-    let project = project.map(|project| {
-        div()
-            .flex_none()
-            .max_w(PROJECT_MAX)
-            .truncate()
-            .text_xs()
-            .text_color(muted)
-            .child(project)
-    });
+    let project = div()
+        .flex_none()
+        .w(PROJECT_W)
+        .h_flex()
+        .items_center()
+        .gap_1()
+        .text_xs()
+        .text_color(muted)
+        .child(Icon::new(IconName::Folder).xsmall())
+        .child(div().min_w_0().truncate().child(project));
+    // Whether it is open, in the hue of its state, the one coloured mark on
+    // the line: open in the success ink, closed in a tempered magenta, the
+    // hue a closed issue takes on the forges people know.
+    let (glyph, hue) = match issue.open {
+        true => (Icon::from(AppIcon::CircleDot), ink.success),
+        false => (
+            Icon::new(IconName::CircleCheck),
+            status_hue(theme.magenta, theme.foreground),
+        ),
+    };
+    let state = Icon::new(glyph).small().text_color(hue);
     let title = issue.title.clone();
+    // The title is what the row is, so it takes weight, as the age does; the
+    // reference, the note and the project are context, in the regular weight
+    // and the quieter inks.
     let title = div()
         .id(("issues-page-title", i))
         .flex_initial()
         .min_w_0()
         .truncate()
+        .font_medium()
         .tooltip(move |window, cx| Tooltip::new(title.clone()).build(window, cx))
         .child(issue.title.clone());
     let priority = priority(&issue.body).map(|said| {
@@ -140,14 +155,22 @@ pub(super) fn page_row(
         None
     };
     let changed = issue.changed();
+    let age_ink = match place.picked {
+        true => theme.accent_foreground,
+        false => meta_ink(cx),
+    };
     let updated = div()
         .id(("issues-page-updated", i))
         .flex_none()
         .w(UPDATED_W)
         .h_flex()
         .justify_end()
+        // Weighted as the title is, and a step over the muted ink: the middle
+        // one, or on the picked row that fill's own ink. How fresh an issue
+        // is is read down the column as the titles are.
+        .font_medium()
         .text_xs()
-        .text_color(muted)
+        .text_color(age_ink)
         .tooltip(move |window, cx| Tooltip::new(moment(changed)).build(window, cx))
         .child(onehand_core::age(onehand_core::issues::now(), changed));
 
@@ -165,18 +188,18 @@ pub(super) fn page_row(
     let labels = div()
         .h_flex()
         .flex_none()
-        .w(LABELS_W)
-        .gap_1()
+        .max_w(LABELS_MAX)
         .overflow_hidden()
+        .gap_1()
         .children(issue.labels.iter().take(ROW_LABELS).map(|label| {
             let neutral = LabelKind::of(label) == LabelKind::Category;
             chip(label.clone(), cx)
                 .flex_initial()
                 .min_w_0()
                 .truncate()
-                .when(place.picked && neutral, |chip| {
-                    chip.bg(well).border_color(well)
-                })
+                // Its edge stays: it is drawn from the label's ink, which the
+                // well does not change.
+                .when(place.picked && neutral, |chip| chip.bg(well))
         }))
         .when(more > 0, |labels| {
             labels.child(
@@ -190,9 +213,12 @@ pub(super) fn page_row(
             )
         });
 
-    let radius = theme.radius;
+    // The whole row at the meta size, the reference and the title with it:
+    // many issues read down the list at a glance, and the title stands out by
+    // its ink, not its size.
     let line = div()
-        .h(ROW_H)
+        .h(ISSUE_ROW_H)
+        .text_xs()
         .h_flex()
         .items_center()
         .gap_3()
@@ -203,49 +229,25 @@ pub(super) fn page_row(
                 .min_w_0()
                 .items_center()
                 .gap_2()
+                .child(div().flex_none().child(state))
                 .child(
                     div()
                         .flex_none()
                         .min_w(REFERENCE_W)
-                        .text_size(CODE_TEXT)
                         .text_color(reference_ink)
                         .font_family(theme.mono_font_family.clone())
                         .child(reference),
                 )
                 .child(title)
                 .children(priority)
-                .children(note.map(|note| note.flex_none().max_w(NOTE_MAX).truncate().text_xs()))
-                .children(project),
+                .children(note.map(|note| note.flex_none().max_w(NOTE_MAX).truncate().text_xs())),
         )
-        .when(place.columns, |line| line.child(labels))
+        .when(place.columns, |line| line.child(labels).child(project))
         .child(updated);
 
-    column(row_surface(place.picked, cx))
+    row_surface(place.picked, cx)
         .id(("issues-page-row", i))
-        .relative()
         .v_flex()
-        // The rows stand in one hairline box: each its sides and foot, the
-        // first its head unless the columns' names stand over it, the ends
-        // rounded and the rows between square.
-        .rounded_none()
-        .border_x_1()
-        .border_b_1()
-        .border_color(theme.border)
-        .when(place.first, |row| row.border_t_1().rounded_t(radius))
-        .when(place.last, |row| row.rounded_b(radius))
-        // Where the keyboard is: the arrow keys move the picked row, so while
-        // the page holds them it carries the ring a focused control does.
-        .when(place.picked && place.focused, |row| {
-            row.child(
-                gpui::div()
-                    .absolute()
-                    .inset_0()
-                    .border_1()
-                    .border_color(theme.ring)
-                    .when(place.first, |ring| ring.rounded_t(radius))
-                    .when(place.last, |ring| ring.rounded_b(radius)),
-            )
-        })
         .when(row.outside, |column| {
             column.child(
                 div()
@@ -274,46 +276,5 @@ pub(super) fn page_row(
         .on_click(cx.listener(move |view, _: &ClickEvent, window, cx| {
             view.pick(root.clone(), number, window, cx)
         }))
-        .into_any_element()
-}
-
-/// What each column of the rows holds, over them, in the same box and at the
-/// same widths, so a column says what it is without a person guessing. Meta
-/// text on the table's own surface: the hairline under it parts it from the
-/// rows, so it takes no fill of its own. *Title* stands over the titles, past
-/// the references' slot.
-pub(super) fn columns_head(columns: bool, cx: &mut Context<IssuesView>) -> AnyElement {
-    let theme = cx.theme();
-    column(div())
-        .h(ROW_H)
-        .h_flex()
-        .items_center()
-        .gap_3()
-        .px_2()
-        .border_1()
-        .border_color(theme.border)
-        .rounded_t(theme.radius)
-        .text_xs()
-        .text_color(theme.muted_foreground)
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .h_flex()
-                .gap_2()
-                .child(div().flex_none().w(REFERENCE_W))
-                .child("Title"),
-        )
-        .when(columns, |head| {
-            head.child(div().flex_none().w(LABELS_W).child("Labels"))
-        })
-        .child(
-            div()
-                .flex_none()
-                .w(UPDATED_W)
-                .h_flex()
-                .justify_end()
-                .child("Updated"),
-        )
         .into_any_element()
 }

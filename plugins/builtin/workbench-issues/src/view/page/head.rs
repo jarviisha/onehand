@@ -1,6 +1,6 @@
-//! The page's head — *New issue*, *Refresh* and the open count — the filter
-//! bar under it, and what the list cannot vouch for. The page's name is the
-//! pane's header's, as every page's is.
+//! The page's head — the open and closed choices, *Refresh* and *New issue*
+//! — the filter bar under it, and what the list cannot vouch for. The page's
+//! name is the pane's header's, as every page's is.
 
 use super::IssuesView;
 use gpui::prelude::FluentBuilder as _;
@@ -8,15 +8,17 @@ use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, InteractiveElement as _, IntoElement,
     ParentElement, Rems, SharedString, StatefulInteractiveElement as _, Styled, Window, div, rems,
 };
-use gpui_component::button::ButtonVariants as _;
+use gpui_component::button::{ButtonCustomVariant, ButtonVariants as _};
 use gpui_component::input::InputState;
-use gpui_component::{ActiveTheme, Icon, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::issues;
 use onehand_core::task::work::list::{Filters, Incomplete, Listed, Progress};
 use onehand_plugin_host::Quiet as _;
+use onehand_plugin_host::Short as _;
+use onehand_plugin_host::Tall as _;
 use onehand_plugin_host::search_input;
 use onehand_plugin_host::{
-    AppIcon, ControlSize, action, menu_below, menu_item, picker, status_ink,
+    AppIcon, ControlSize, action, badge, choice, menu_below, menu_item, picker, status_ink, tint,
 };
 use std::path::PathBuf;
 
@@ -27,11 +29,15 @@ const LABELS_SHOWN: usize = 100;
 /// title's few words or a `#number`.
 const SEARCH_W: Rems = rems(18.);
 
+/// The widest the search gets: past it the row's free width opens between the
+/// search and the filters, which keep to the row's end.
+const SEARCH_MAX: Rems = rems(28.);
+
 impl IssuesView {
-    /// The page's head over the list: *New issue*, *Refresh* and how many
-    /// issues are open on one row; under it the search as wide as
-    /// the row allows and the open/closed, progress, project and label
-    /// filters, wrapping when narrow.
+    /// The page's head over the list: the search, then *Refresh* and *New
+    /// issue* at the row's end; under it, at a form's height, open or closed,
+    /// each with its count on its corner, and at the row's end the progress,
+    /// project and label filters, wrapping when narrow.
     pub(super) fn page_head(
         &self,
         listed: &Listed<'_>,
@@ -41,40 +47,6 @@ impl IssuesView {
         query: &Entity<InputState>,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let reading = listed.open + listed.closed == 0 && self.reading_issues(projects, cx);
-        let showing = {
-            let closed = filters.closed;
-            // The count of open issues heads the page; the menu keeps both.
-            let count = |closed: bool| match closed {
-                true => format!("Closed {}", listed.closed),
-                false => format!("Open {}", listed.open),
-            };
-            let choices = [count(false), count(true)];
-            let view = cx.entity();
-            menu_below(
-                "issues-page-showing",
-                picker(
-                    "issues-page-showing-trigger",
-                    if closed { "Closed" } else { "Open" },
-                    closed,
-                    ControlSize::Small,
-                    cx,
-                ),
-                move |mut menu, _, _| {
-                    for (i, choice) in choices.iter().enumerate() {
-                        let pick = i == 1;
-                        let view = view.clone();
-                        menu =
-                            menu.item(menu_item(choice.clone()).checked(pick == closed).on_click(
-                                move |_, _, cx: &mut App| {
-                                    view.update(cx, |view, cx| view.filter(|f| f.closed = pick, cx))
-                                },
-                            ));
-                    }
-                    menu
-                },
-            )
-        };
         let progress = {
             let picked = filters.progress;
             let view = cx.entity();
@@ -88,7 +60,7 @@ impl IssuesView {
                         picked => picked.label(),
                     },
                     picked != Progress::All,
-                    ControlSize::Small,
+                    ControlSize::Short,
                     cx,
                 ),
                 move |mut menu, _, _| {
@@ -125,7 +97,7 @@ impl IssuesView {
                     "issues-page-project-trigger",
                     name,
                     picked.is_some(),
-                    ControlSize::Small,
+                    ControlSize::Short,
                     cx,
                 ),
                 move |menu, _, _| {
@@ -162,7 +134,7 @@ impl IssuesView {
                     "issues-page-label-trigger",
                     picked.clone().unwrap_or_else(|| "Label".to_string()),
                     picked.is_some(),
-                    ControlSize::Small,
+                    ControlSize::Short,
                     cx,
                 ),
                 move |menu, window, _| {
@@ -205,25 +177,62 @@ impl IssuesView {
             },
         );
         let pr_reading = self.page.as_ref().is_some_and(|page| page.pr_reading > 0);
-        let theme = cx.theme();
-        let muted = theme.muted_foreground;
-        // *New issue* leads, on the secondary fill: the page holds no
-        // primary, so what floats over the list never has one to outweigh.
-        // The count and the way to read it again end the row together.
+        let reading = listed.open + listed.closed == 0 && self.reading_issues(projects, cx);
+        // Open or closed, a choice with its count pinned to its corner in a
+        // badge in the hue of that state, the one its rows' marks take: open
+        // green, closed magenta. The word reads alone; no count before the
+        // first read lands, which would say there are none.
+        let (open_tint, closed_tint) = (tint(cx.theme().green, cx), tint(cx.theme().magenta, cx));
+        let choose = |pick: bool, name: &'static str, count: usize, cx: &mut Context<Self>| {
+            let button =
+                choice(
+                    ("issues-page-showing", usize::from(pick)),
+                    name,
+                    pick == filters.closed,
+                    ControlSize::Short,
+                    cx,
+                )
+                .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
+                    view.filter(|f| f.closed = pick, cx)
+                }));
+            div()
+                .relative()
+                .flex_none()
+                .child(button)
+                .when(!reading, |slot| {
+                    slot.child(
+                        div().absolute().top_neg_2().right_neg_2().child(
+                            // A notch slimmer than a badge in a row, as a
+                            // count on a corner is.
+                            badge(
+                                count.to_string(),
+                                if pick { closed_tint } else { open_tint },
+                            )
+                            .py_0p5(),
+                        ),
+                    )
+                })
+        };
+        let well = cx.theme().muted;
+        // The search leads the head at its height, growing up to its widest;
+        // the way to read again and *New issue* on the secondary fill end the
+        // row. The page holds no primary, so what floats over the list never
+        // has one to outweigh.
         let header = div()
             .h_flex()
             .items_center()
             .gap_2()
             .child(
-                action("issues-page-new")
-                    .small()
-                    .secondary()
-                    .label("New issue")
-                    .tooltip("In the project filtered to, or the one picked")
-                    .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
-                        view.new_issue_on_page(window, cx)
-                    })),
+                div()
+                    .flex_basis(SEARCH_MAX)
+                    .min_w(SEARCH_W)
+                    .max_w(SEARCH_MAX)
+                    // No edge: the well's fill marks it off the page, and an
+                    // edge in that fill is left for focus to turn the ring ink.
+                    .child(search_input(query, cx).tall().bg(well).border_color(well)),
             )
+            // The search keeps its widest and gives way only when the row
+            // runs short; what it leaves falls here, before the actions.
             .child(div().flex_1())
             // Named for assistive technology in a box of its own: the
             // library's button takes a name only from a text label.
@@ -234,7 +243,7 @@ impl IssuesView {
                     .aria_label("Refresh")
                     .child(
                         action("issues-page-refresh")
-                            .small()
+                            .tall()
                             .quiet_icon(false, cx)
                             .icon(Icon::new(AppIcon::Refresh))
                             .loading(pr_reading)
@@ -246,37 +255,90 @@ impl IssuesView {
                     ),
             )
             .child(
-                div()
-                    .flex_none()
-                    .whitespace_nowrap()
-                    .text_xs()
-                    .text_color(muted)
-                    // Nothing until the first read lands: *0 open* over an
-                    // empty list would say there are none.
-                    .when(!reading, |count| {
-                        count.child(format!("{} open", listed.open))
-                    }),
+                action("issues-page-new")
+                    .tall()
+                    .secondary()
+                    .icon(Icon::new(IconName::Plus))
+                    .label("New issue")
+                    .tooltip("In the project filtered to, or the one picked")
+                    .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
+                        view.new_issue_on_page(window, cx)
+                    })),
             );
+        // Anything narrowing the list but the tab, which is what is listed
+        // rather than a filter on it.
+        let narrowed = !filters.query.is_empty()
+            || filters.progress != Progress::All
+            || filters.project.is_some()
+            || filters.label.is_some();
+        // Only while a filter is set, after the pickers, so nothing moves as
+        // it comes and goes. A word in the danger ink on no fill, underlined
+        // under the pointer: it undoes the narrowing rather than acting on an
+        // issue. The words are a child so they can underline by themselves,
+        // and the box round it names it, since the library's button takes a
+        // name only from a text label.
+        let clear = narrowed.then(|| {
+            let (danger, clear) = (status_ink(cx).danger, cx.theme().transparent);
+            div()
+                .id("issues-page-clear-filters-named")
+                .flex_none()
+                .aria_label("Clear filters")
+                .child(
+                    action("issues-page-clear-filters")
+                        .short()
+                        .custom(
+                            ButtonCustomVariant::new(cx)
+                                .color(clear)
+                                .foreground(danger)
+                                .hover(clear)
+                                .active(clear),
+                        )
+                        .child(
+                            div()
+                                .hover(|words| words.underline())
+                                .child("Clear filters"),
+                        )
+                        .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
+                            view.clear_narrowing(window, cx)
+                        })),
+                )
+        });
+        // Open or closed leads the row under it, the choices `gap_4` apart so
+        // a count over one's corner keeps clear of the next; the filters keep
+        // to the row's end, and wrap under the choices when narrow.
         let filters = div()
             .h_flex()
             .flex_wrap()
             .items_center()
+            .justify_between()
             .gap_2()
-            // The search takes what the row leaves, down to its floor, where
-            // the row wraps.
             .child(
                 div()
-                    .flex_1()
-                    .min_w(SEARCH_W)
-                    .child(search_input(query, cx).small()),
+                    .h_flex()
+                    .items_center()
+                    .gap_4()
+                    .child(choose(false, "Open", listed.open, cx))
+                    .child(choose(true, "Closed", listed.closed, cx)),
             )
-            .child(showing)
-            .child(progress)
-            .child(project)
-            .children(label);
+            .child(
+                // Its own wrap, so a pane too narrow for the pickers in one
+                // row stacks them rather than clipping the last.
+                div()
+                    .h_flex()
+                    .flex_wrap()
+                    .items_center()
+                    .gap_2()
+                    .child(progress)
+                    .child(project)
+                    .children(label)
+                    .children(clear),
+            );
+        // Apart by a page section's gap rather than a row's: the search and
+        // the way to start an issue are one group, what narrows the list
+        // another, and a count over a choice's corner needs the room.
         div()
             .v_flex()
-            .gap_4()
+            .gap_6()
             .child(header)
             .child(filters)
             .into_any_element()

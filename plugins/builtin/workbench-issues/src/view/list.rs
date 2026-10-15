@@ -175,11 +175,11 @@ impl IssuesView {
                 div()
                     .flex_1()
                     .min_w_0()
-                    .child(search_input(&query, cx).small()),
+                    .child(search_input(&query, cx).xsmall()),
             )
             .child(
                 action("issues-new")
-                    .small()
+                    .xsmall()
                     .quiet_icon(false, cx)
                     .icon(Icon::new(IconName::Plus))
                     .tooltip("New issue")
@@ -240,7 +240,7 @@ impl IssuesView {
                     Showing::Open => 0,
                     Showing::Closed => 1,
                 },
-                ControlSize::Small,
+                ControlSize::XSmall,
                 move |picked, _, cx| {
                     view.update(cx, |view, cx| {
                         view.showing = if *picked == 0 {
@@ -327,7 +327,7 @@ impl IssuesView {
             "issues-label-filter",
             picked.clone().unwrap_or_else(|| "Label".to_string()),
             picked.is_some(),
-            ControlSize::Small,
+            ControlSize::XSmall,
             cx,
         )
         .tooltip("Show only issues with a label");

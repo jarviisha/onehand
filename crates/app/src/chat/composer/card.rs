@@ -419,7 +419,7 @@ fn send_controls(
     use onehand_core::chat::SubmitBlock;
 
     fn control(id: &'static str) -> Button {
-        crate::controls::action(id).small()
+        crate::controls::action(id)
     }
 
     if blocked == Some(SubmitBlock::Busy) {
@@ -428,6 +428,7 @@ fn send_controls(
             .gap_2()
             .children(has_draft.then(|| {
                 control("queue")
+                    .xsmall()
                     .secondary()
                     .label("Queue")
                     .tooltip("Send this prompt when the current turn finishes")
@@ -435,6 +436,7 @@ fn send_controls(
             }))
             .child(
                 control("stop")
+                    .xsmall()
                     .danger()
                     .label("Stop")
                     .loading(stopping)
@@ -445,8 +447,8 @@ fn send_controls(
     // The arrow alone: the one control here whose meaning never changes, in a
     // row that runs out of width before anything else in the card does.
     let send = match waits {
-        true => control("send").secondary(),
-        false => control("send").primary(),
+        true => control("send").xsmall().secondary(),
+        false => control("send").primary().xsmall(),
     }
     .icon(Icon::new(crate::icons::Icon::ArrowUpLight));
     match blocked {

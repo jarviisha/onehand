@@ -9,9 +9,9 @@ use super::{fold_key, live_index};
 use crate::chat::session::ChatSession;
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
-use crate::controls::Tall as _;
+use crate::controls::Short as _;
 use crate::controls::text_input;
-use crate::tokens::{CONTROL_H, FIELD_H, LEADING_TIGHT};
+use crate::tokens::{CONTROL_H, LEADING_TIGHT};
 use gpui::Focusable as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -197,7 +197,7 @@ impl AskForm<'_> {
                     .unwrap_or_else(|| format!("Question {}", f + 1));
                 crate::controls::action(("ask-tab", f))
                     .quiet(cx)
-                    .small()
+                    .xsmall()
                     .selected(open)
                     .flex_none()
                     .child(
@@ -304,7 +304,7 @@ impl AskForm<'_> {
                     .px_3()
                     .py_1()
                     .w_full()
-                    .min_h(FIELD_H)
+                    .min_h(CONTROL_H)
                     // The keyboard's own position, which has to show without
                     // being an answer: an arrow press moves it and settles
                     // nothing, so it is the focus ring rather than a fill.
@@ -388,7 +388,7 @@ impl AskForm<'_> {
         Some(
             // A form's field, at the height a one-line choice stands at.
             text_input(&state, cx)
-                .tall()
+                .short()
                 .when(cursor, |field| field.border_color(cx.theme().ring))
                 .when_some(key, |field, key| field.suffix(key)),
         )
@@ -408,7 +408,7 @@ impl AskForm<'_> {
             .children((!quick).then(|| {
                 crate::controls::action(("ask-skip", idx))
                     .quiet(cx)
-                    .small()
+                    .xsmall()
                     .label("Skip")
                     .tooltip_with_action(
                         "Skip this question",
@@ -425,7 +425,7 @@ impl AskForm<'_> {
             .child(
                 crate::controls::action(("ask-submit", idx))
                     .primary()
-                    .small()
+                    .xsmall()
                     // Nothing is picked yet: refusing, and the pointer would
                     // promise otherwise.
                     .refuses((!can_advance).then_some("Pick or type an answer first"))

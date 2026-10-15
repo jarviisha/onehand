@@ -334,7 +334,7 @@ impl Composer {
                     tray.child(
                         crate::controls::action("all-attachments")
                             .quiet(cx)
-                            .small()
+                            .xsmall()
                             .flex_none()
                             .label(format!("Show all {}", self.attachments.len()))
                             .tooltip("Review or remove staged attachments")
@@ -517,7 +517,7 @@ fn attachment_shape<E: Styled>(
 pub(super) fn chip(id: impl Into<gpui::ElementId>, open: bool, cx: &App) -> Button {
     crate::controls::action(id)
         .quiet(cx)
-        .small()
+        .xsmall()
         .selected(open)
         .h_flex()
         .items_center()

@@ -34,7 +34,7 @@ that applies to the component is drawn.
 | State | When | Drawn as |
 |---|---|---|
 | Rest | always | its tokens; its text in the ink its role takes (UI patterns, *Hierarchy*); an icon at rest in `muted_foreground`, in a slot as wide as its peers', never on a tile of its own |
-| Hover | it can be pressed or picked | the pointer cursor (`action` sets it) and a `list_hover` fill on a row, its inks unchanged; the selected step on a ghost button (`quiet`); the library's own on its other controls |
+| Hover | it can be pressed or picked | the pointer cursor (`action` sets it) and a `list_hover` fill on a row, its inks unchanged; the control fill on a ghost button (`quiet`); the library's own on its other controls |
 | Selected or open | one of several is chosen, or its menu is open | the `accent` fill |
 | Focus | the keyboard reaches it | the keyboard ring; row actions become available without moving content; custom elements use `.focus_visible(\|s\| s.border_color(cx.theme().ring))`, library controls draw theirs |
 | Refusing | it cannot act now | `.refuses(Some(why))`: no press, the arrow cursor, and `why` as its tooltip |
@@ -55,7 +55,7 @@ Every button names one, by role (the rule is in `DESIGN.md` *Components*):
 |---|---|
 | `primary` | the view's one main action |
 | `secondary` | a weighed alternative beside the primary; a set picker's trigger (`picker`; unset it is a ghost); every button on the Settings page |
-| ghost, `.quiet(cx)` | dismissing, a strip's or a row's actions; hovers on the selected step, never a bare `ghost()`; an icon with no words through `.quiet_icon(on, cx)`, muted at rest |
+| ghost, `.quiet(cx)` | dismissing, a strip's or a row's actions; hovers on the control fill, never a bare `ghost()`; an icon with no words through `.quiet_icon(on, cx)`, muted at rest |
 | `danger` | only the two listed under *Exceptions* in `DESIGN.md` |
 | `choice` | each option of a pick-one row |
 
@@ -68,7 +68,7 @@ the one control marked by its edge.
 // Wrong: a div dressed as a button, with no focus, no refusal and its own cursor rule
 div().px_2().cursor_pointer().child("Retry").on_click(retry)
 // Right
-crate::controls::action("retry-task").quiet(cx).small().label("Retry…").on_click(retry)
+crate::controls::action("retry-task").quiet(cx).xsmall().label("Retry…").on_click(retry)
 ```
 
 ```rust
@@ -76,35 +76,35 @@ crate::controls::action("retry-task").quiet(cx).small().label("Retry…").on_cli
 // surface and lettered at the reading size
 action("run-check").label("Run check")
 // Right: a weighed alternative beside the primary, at the size its role takes
-action("run-check").secondary().small().label("Run check")
+action("run-check").secondary().xsmall().label("Run check")
 ```
 
 ```rust
 // Wrong: refuses the press, still shows the pointer, and says nothing of why
-action(("plugin-update", i)).small().secondary().disabled(busy)
+action(("plugin-update", i)).xsmall().secondary().disabled(busy)
 // Right: refusing in one call, cursor and reason included
-action(("plugin-update", i)).small().secondary().refuses(busy.then_some("Another change is running"))
+action(("plugin-update", i)).xsmall().secondary().refuses(busy.then_some("Another change is running"))
 ```
 
 ```rust
-// Wrong: a row's everyday action at the dense size, and a form's button at the library's default
-action(("session-more", i)).quiet(cx).xsmall().icon(IconName::Ellipsis)
+// Wrong: a row's action at the library's small size, and a form's button at its default
+action(("session-more", i)).quiet(cx).small().icon(IconName::Ellipsis)
 action("save-agent").primary().label("Save")
 // Right: the size each role takes
-action(("session-more", i)).quiet(cx).small().icon(IconName::Ellipsis)
-action("save-agent").primary().tall().label("Save")
+action(("session-more", i)).quiet(cx).xsmall().icon(IconName::Ellipsis)
+action("save-agent").primary().short().label("Save")
 ```
 
 ```rust
 // Wrong: the library's default size for a form's taller hit area, which grows the icon with it
 action("browse-folder").quiet(cx).with_size(Size::Medium).icon(IconName::FolderOpen)
-// Right: the tall size keeps the small icon in the taller box
-action("browse-folder").quiet(cx).tall().icon(IconName::FolderOpen)
+// Right: the form's size keeps the extra small icon in the taller box
+action("browse-folder").quiet(cx).short().icon(IconName::FolderOpen)
 ```
 
 ```rust
 // Wrong: a switch stretched to the controls beside it
-Switch::new("keep").small().h(tokens::FIELD_H)
+Switch::new("keep").small().h(tokens::CONTROL_H)
 // Right: the library's own geometry, centred in its row
 div().h_flex().items_center().gap_2().child(Switch::new("keep").small()).child(field)
 ```
@@ -112,8 +112,8 @@ div().h_flex().items_center().gap_2().child(Switch::new("keep").small()).child(f
 ```rust
 // Wrong: a label drawn by hand
 div().px(CHIP_PAD_X).py(CHIP_PAD_Y).rounded(cx.theme().radius).bg(fill).text_color(ink)
-// Right: the library's label, at a badge's corner
-Tag::custom(tint.fill, tint.ink, tint.fill).small().rounded(tokens::BADGE_CORNER).child(text)
+// Right: the library's label, in a badge's shape
+badge(text, tint)
 ```
 
 ```rust

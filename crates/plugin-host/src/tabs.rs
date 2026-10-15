@@ -106,7 +106,7 @@ pub fn tab_select(
 ) -> gpui_component::button::Button {
     crate::action(id)
         .quiet(cx)
-        .small()
+        .xsmall()
         .max_w(TAB_MAX_W)
         .tooltip(hint)
         .dropdown_caret(true)

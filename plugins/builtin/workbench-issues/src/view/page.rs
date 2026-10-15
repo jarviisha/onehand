@@ -1,9 +1,11 @@
 //! The Issues page: the issues of every project of the workspace in one
 //! list, and the one picked floating over it, drawn in full.
 //!
-//! The list keeps to the column the other workspace pages keep to, under one
-//! toolbar, a row a line. The issue picked floats over the list's right side
-//! in a panel of its own (`panel`), which never moves the list: closing it
+//! The list takes the pane's whole width, under the open and closed choices,
+//! the page's actions and its filters, an issue a row on one line, and a line
+//! at the foot says how many it shows over a line the pane's whole width, as
+//! the one the pane's header draws over the page. The issue picked floats
+//! over the list's right side in a panel of its own (`panel`), which never moves the list: closing it
 //! finds every row where it was. Nothing is open when the page is first
 //! shown.
 //!
@@ -15,7 +17,6 @@
 
 use super::{IssuesView, full, review};
 use crate::{IssuesClose, IssuesDown, IssuesUp};
-use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, Context, FocusHandle, InteractiveElement as _, IntoElement, ParentElement,
     ScrollHandle, SharedString, StatefulInteractiveElement as _, Styled, Window, div,
@@ -24,8 +25,7 @@ use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::issues::{self, IssueKey, LocalIssue};
 use onehand_core::task::work::IssueWork;
 use onehand_core::task::work::list::{Filters, Held, Item, PrReads, list};
-use onehand_plugin_host::hint;
-use onehand_plugin_host::tokens::PAGE_WIDE;
+use onehand_plugin_host::{faint_rule, hint};
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
@@ -34,7 +34,7 @@ mod panel;
 mod prs;
 mod row;
 
-use row::page_row;
+use row::issue_row;
 
 /// What the page holds beside what every Issues view does.
 #[derive(Default)]
@@ -309,7 +309,7 @@ impl IssuesView {
         if claim {
             window.focus(&focus, cx);
         }
-        let (top, rows) = self.page_list(&projects, selected.as_ref(), window, cx);
+        let (top, rows, foot) = self.page_list(&projects, selected.as_ref(), window, cx);
         let open = self.page.as_ref().is_some_and(|page| page.open);
         let panel = (open && self.has_page_issue()).then(|| self.page_panel(window, cx));
         div()
@@ -339,6 +339,7 @@ impl IssuesView {
                     .child(rows)
                     .children(panel),
             )
+            .children(foot)
             .into_any_element()
     }
 
@@ -362,15 +363,15 @@ impl IssuesView {
         self.key(root, number)
     }
 
-    /// The list: the toolbar and what the reading says, then, apart, the
-    /// rows, which the panel floats over.
+    /// The list: the toolbar, what the reading says and the tabs, then,
+    /// apart, the rows, which the panel floats over, and the line at the foot.
     fn page_list(
         &mut self,
         projects: &[(PathBuf, SharedString)],
         selected: Option<&IssueKey>,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> (AnyElement, AnyElement) {
+    ) -> (AnyElement, AnyElement, Option<AnyElement>) {
         // What the rows borrow, held for the length of this draw.
         let owned: Vec<(PathBuf, LocalIssue)> = projects
             .iter()
@@ -403,16 +404,8 @@ impl IssuesView {
         let query = self.query(window, cx);
         let text = query.read(cx).value().to_string();
         let columns = self.width.get().0 >= row::COLUMNS_MIN;
-        // The ring is the keyboard's: drawn while the page holds the keys and
-        // the keyboard was last used, never after a click.
-        let page_focused = window.last_input_was_keyboard()
-            && self
-                .page
-                .as_ref()
-                .and_then(|page| page.focus.as_ref())
-                .is_some_and(|focus| focus.is_focused(window));
         let Some(page) = self.page.as_mut() else {
-            return (hint("No page", cx), div().into_any_element());
+            return (hint("No page", cx), div().into_any_element(), None);
         };
         let mut filters = page.filters.clone();
         filters.query = text;
@@ -470,50 +463,60 @@ impl IssuesView {
                 .map(|(_, label)| label.clone())
                 .unwrap_or_default()
         };
-        // The project is named on a row only where it tells rows apart: every
-        // project listed, and more than one of them on screen.
-        let mixed = filters.project.is_none()
-            && listed
-                .rows
-                .iter()
-                .any(|row| row.item.root != listed.rows[0].item.root);
-        let last = listed.rows.len().saturating_sub(1);
-        // The columns are named over rows, never over an empty list.
-        let head = !listed.rows.is_empty();
-        let focused = page_focused;
         let rows: Vec<AnyElement> = listed
             .rows
             .iter()
             .enumerate()
             .map(|(i, row)| {
                 let picked = selected == Some(&row.item.key);
-                let project = mixed.then(|| label_of(row.item.root));
-                let place = row::Place {
-                    first: i == 0 && !head,
-                    last: i == last,
-                    picked,
-                    focused,
-                    columns,
-                };
-                page_row(i, place, row, project, cx)
+                let project = label_of(row.item.root);
+                let place = row::Place { picked, columns };
+                issue_row(i, place, row, project, cx)
             })
             .collect();
-        let left_out = listed.left_out;
+        // How many matching issues the list shows of how many match, which
+        // also says when its cap bites. A row kept after it stopped matching
+        // and one pinned outside the filters are on screen but not counted,
+        // so the line agrees with the count on the tab.
+        let shown = listed
+            .rows
+            .iter()
+            .filter(|row| !row.outside && row.left.is_none())
+            .count();
+        let of = if filters.closed {
+            listed.closed
+        } else {
+            listed.open
+        };
+        let rule = faint_rule(cx);
+        let foot = (!listed.rows.is_empty()).then(|| {
+            let which = if filters.closed { "closed" } else { "open" };
+            div()
+                .flex_none()
+                .px_8()
+                .py_3()
+                .border_t_1()
+                .border_color(rule)
+                .text_xs()
+                .text_color(muted)
+                .child(format!("Showing {shown} of {of} {which} issues"))
+                .into_any_element()
+        });
+        // At the rows' inset, so its words start where theirs do.
         let line =
-            |text: String| column(div().px_3().py_2().text_xs().text_color(muted).child(text));
+            |text: String| column(div().px_2().py_2().text_xs().text_color(muted).child(text));
 
+        // A line the pane's whole width under the filters, as under the header
+        // and over the foot: the list scrolls under it.
         let top = div()
             .flex_none()
-            .px_8()
-            .pt_6()
+            .px_6()
+            .py_3()
+            .border_b_1()
+            .border_color(rule)
             .child(column(
                 div().v_flex().gap_2().child(toolbar).children(notices),
             ))
-            // Outside the scroll, so the names stay over the rows they name.
-            .map(|top| match head {
-                true => top.child(div().mt_6().child(row::columns_head(columns, cx))),
-                false => top.pb_6(),
-            })
             .into_any_element();
         let rows = div()
             .id("issues-page-list")
@@ -521,15 +524,12 @@ impl IssuesView {
             .v_flex()
             .overflow_y_scroll()
             .track_scroll(&scroll)
-            .px_8()
-            .pb_6()
+            .px_6()
+            .py_2()
             .children(rows)
             .children(empty.map(|empty| line(empty.to_string())))
-            .when(left_out > 0, |list| {
-                list.child(line(format!("… {left_out} more not shown")))
-            })
             .into_any_element();
-        (top, rows)
+        (top, rows, foot)
     }
 
     /// Whether a project's issues have not landed yet, nor failed: until
@@ -543,6 +543,23 @@ impl IssuesView {
         })
     }
 
+    /// Every filter but the tab back to where it starts: the search, the
+    /// progress, the project and the label.
+    fn clear_narrowing(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(query) = self.query.clone() {
+            query.update(cx, |input, cx| input.set_value("", window, cx));
+        }
+        self.filter(
+            |f| {
+                *f = Filters {
+                    closed: f.closed,
+                    ..Filters::default()
+                }
+            },
+            cx,
+        );
+    }
+
     /// Every filter back to where it starts, which a pinned row offers.
     fn clear_filters(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(query) = self.query.clone() {
@@ -552,9 +569,9 @@ impl IssuesView {
     }
 }
 
-/// `inner` in the column the workspace pages keep to, centred.
+/// `inner` across the page's whole width: a table uses what the pane gives it.
 fn column(inner: gpui::Div) -> gpui::Div {
-    inner.w_full().max_w(PAGE_WIDE).mx_auto()
+    inner.w_full()
 }
 
 /// The work of every issue of `root`, by the file the page keys them with.

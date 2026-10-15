@@ -12,7 +12,7 @@ use gpui::{
 };
 use gpui_component::StyledExt;
 use gpui_component::button::ButtonVariants as _;
-use onehand_plugin_host::Tall as _;
+use onehand_plugin_host::Short as _;
 use onehand_plugin_host::{Ask, Request, action, hint, status_ink, status_line};
 use onehand_terminal_ui::{Program, PtyTab, TerminalThemeKey, spawn_pty, terminal_palette};
 use std::collections::HashMap;
@@ -233,7 +233,7 @@ impl NeovimView {
                 .gap_2()
                 .child(
                     action("start-neovim")
-                        .tall()
+                        .short()
                         .primary()
                         .label("Start Neovim")
                         .on_click(cx.listener(|view: &mut Self, _, window, cx| {

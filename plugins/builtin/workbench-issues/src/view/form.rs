@@ -5,14 +5,15 @@ use gpui::{
     AnyElement, App, AppContext as _, ClickEvent, Context, Entity, IntoElement, ParentElement,
     SharedString, Styled, Window, div,
 };
+use gpui_component::Sizable as _;
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{InputState, TextareaState};
-use gpui_component::{ActiveTheme, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::issues::template::IssueTemplate;
 use onehand_core::issues::{self, Draft};
 use onehand_plugin_host::Quiet as _;
 use onehand_plugin_host::Refuses as _;
-use onehand_plugin_host::Tall as _;
+use onehand_plugin_host::Short as _;
 use onehand_plugin_host::text_area;
 use onehand_plugin_host::text_input;
 use onehand_plugin_host::{action, field, status_ink};
@@ -206,7 +207,7 @@ fn templates_row(
             .child(div().text_xs().text_color(muted).child("Template"))
             .children(templates.iter().enumerate().map(|(at, t)| {
                 action(("issue-form-template", at))
-                    .small()
+                    .xsmall()
                     .quiet(cx)
                     .label(t.name.clone())
                     .on_click(cx.listener(move |view, _: &ClickEvent, window, cx| {
@@ -252,11 +253,16 @@ pub(super) fn form_view(
                 None => said,
             }
         }))
-        .child(field("Title", None, text_input(&form.title, cx).tall(), cx))
+        .child(field(
+            "Title",
+            None,
+            text_input(&form.title, cx).short(),
+            cx,
+        ))
         .child(field(
             "Labels",
             Some("Separated by commas".into_any_element()),
-            text_input(&form.labels, cx).tall(),
+            text_input(&form.labels, cx).short(),
             cx,
         ))
         .children(templates_row(form, templates, cx))
@@ -286,14 +292,14 @@ pub(super) fn form_view(
                 .justify_end()
                 .child(
                     action("issue-form-cancel")
-                        .tall()
+                        .short()
                         .quiet(cx)
                         .label("Cancel")
                         .on_click(cx.listener(|view, _: &ClickEvent, _, cx| view.cancel_form(cx))),
                 )
                 .child(
                     action("issue-form-save")
-                        .tall()
+                        .short()
                         .primary()
                         .loading(writing)
                         .label(match form.editing {

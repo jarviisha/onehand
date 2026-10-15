@@ -8,7 +8,8 @@ use gpui::{
     App, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, Window, div,
 };
-use gpui_component::{ActiveTheme, Sizable as _, StyledExt};
+use gpui_component::Sizable as _;
+use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::task::{Group, Section};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -145,7 +146,7 @@ impl ChatPane {
                 "tasks-filter-trigger",
                 filter_name,
                 page.filter.is_some(),
-                onehand_plugin_host::ControlSize::Small,
+                onehand_plugin_host::ControlSize::Short,
                 cx,
             ),
             move |mut menu, _, _| {
@@ -387,7 +388,7 @@ impl TaskAct {
     ) -> gpui_component::button::Button {
         let press = self.press(row, cx);
         let button = crate::controls::action(SharedString::from(format!("{key}-{}", self.label())))
-            .small()
+            .xsmall()
             .label(self.label())
             .loading(self == Self::Stop && row.stopping);
         let button = match self.tooltip() {

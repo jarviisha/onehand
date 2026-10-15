@@ -68,7 +68,7 @@ impl PluginsView {
             plugin.id
         )))
         .quiet_icon(false, cx)
-        .small()
+        .xsmall()
         .icon(Icon::new(IconName::Ellipsis))
         .tooltip("Where it is on, and removing it")
         .refuses(busy.then_some(ONE_AT_A_TIME));
@@ -111,7 +111,7 @@ impl PluginsView {
             (
                 running,
                 action(("plugin-update", i))
-                    .small()
+                    .xsmall()
                     .quiet(cx)
                     .label(format!("Update {}", update.to))
                     .loading(running)
@@ -421,7 +421,7 @@ impl PluginsView {
             Some(have) => {
                 let enable = have.flip(Scope::Local);
                 action(("plugin-enable", i))
-                    .small()
+                    .xsmall()
                     .quiet(cx)
                     .label("Enable")
                     .tooltip("Installed but off here — turn it on on this machine only")
@@ -540,7 +540,7 @@ impl PluginsView {
             verb: Verb::Install,
         };
         let main = action(("plugin-install", i))
-            .small()
+            .xsmall()
             .quiet(cx)
             .label("Install")
             .tooltip(format!("Install for: {}", scope.meaning()))
@@ -553,7 +553,7 @@ impl PluginsView {
             "plugin-install-scope-{}",
             plugin.id
         )))
-        .small()
+        .xsmall()
         .quiet_icon(false, cx)
         .icon(Icon::new(IconName::ChevronDown))
         .tooltip("Install for…")

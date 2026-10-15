@@ -181,7 +181,7 @@ fn head(handle: &Entity<WorkflowsPage>, cx: &App) -> AnyElement {
         .gap_2()
         .child(
             crate::controls::action("new-workflow")
-                .small()
+                .xsmall()
                 .secondary()
                 .label("New workflow")
                 .on_click(click(handle, |page, window, cx| {
@@ -190,7 +190,7 @@ fn head(handle: &Entity<WorkflowsPage>, cx: &App) -> AnyElement {
         )
         .child(
             crate::controls::action("import-workflow")
-                .small()
+                .xsmall()
                 .quiet(cx)
                 .label("Import…")
                 .on_click(click(handle, |page, window, cx| {
@@ -380,7 +380,7 @@ fn run_menu(
         ("run-workflow", i),
         crate::controls::action(("run-workflow-trigger", i))
             .quiet(cx)
-            .small()
+            .xsmall()
             .label("Run…"),
         move |mut menu, _, _| {
             menu = menu.label("Run on");
@@ -421,7 +421,7 @@ fn row_action(
 ) -> impl IntoElement {
     crate::controls::action(id)
         .quiet(cx)
-        .small()
+        .xsmall()
         .label(label)
         .on_click(click(handle, act))
 }
@@ -436,7 +436,7 @@ fn row_delete(
 ) -> impl IntoElement {
     crate::controls::action(id)
         .quiet(cx)
-        .small()
+        .xsmall()
         .text_color(crate::theme::status_ink(cx).danger)
         .label("Delete…")
         .on_click(click(handle, act))
@@ -450,7 +450,7 @@ fn row_icon(
 ) -> gpui_component::button::Button {
     crate::controls::action(id)
         .quiet_icon(false, cx)
-        .small()
+        .xsmall()
         .icon(Icon::new(icon))
         .tooltip(tip)
 }

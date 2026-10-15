@@ -213,6 +213,12 @@ const DARK: Ramp = Ramp {
     primary_ink: "#181818",
 };
 
+/// A step of the ramp as a colour, to derive another from. Every step is a
+/// literal the ramp's tests parse, so the fallback is never reached.
+fn hex(step: &str) -> Hsla {
+    Hsla::parse_hex(step).unwrap_or_default()
+}
+
 /// Write one ramp into the token names the library actually reads.
 fn paint(colors: &mut ThemeConfigColors, ramp: &Ramp) {
     fn set(slot: &mut Option<SharedString>, value: &'static str) {
@@ -257,10 +263,15 @@ fn paint(colors: &mut ThemeConfigColors, ramp: &Ramp) {
     // row whenever the highlight ring is off, which here it always is -- and it
     // leaves `list_hover` free to be the fainter of the two.
     set(&mut colors.accent, ramp.selected);
-    // A secondary button is filled at the selected step, the fill an open
-    // tab or a taken choice shows, rather than the bubble the library falls
-    // back to: one filled grey for a control, wherever a control is filled.
-    set(&mut colors.button_secondary, ramp.selected);
+    // A secondary button rests on the control fill, the one a ghost shows
+    // hovered or chosen, rather than the bubble the library falls back to:
+    // one filled grey for a control, wherever a control is filled. Pointed at
+    // or pressed it takes the selected step, through the hover slots above.
+    colors.button_secondary = Some(
+        onehand_plugin_host::control_fill_of(hex(ramp.hover), hex(ramp.selected))
+            .to_hex()
+            .into(),
+    );
     set(&mut colors.button_secondary_foreground, ramp.selected_ink);
     set(&mut colors.accent_foreground, ramp.selected_ink);
     set(&mut colors.border, ramp.hairline);
@@ -824,6 +835,41 @@ mod tests {
                     "{name}: a {label} filled button sits closer to the well than its own resting fill"
                 );
             }
+        }
+    }
+
+    /// A filled control rests a step under a chosen row, above a hovered one,
+    /// and lifts to the chosen row's step under the pointer.
+    #[test]
+    fn a_control_fill_sits_between_hover_and_selected() {
+        for (name, ramp, mode) in [
+            ("light", &LIGHT, ThemeMode::Light),
+            ("dark", &DARK, ThemeMode::Dark),
+        ] {
+            let theme = resolve(ramp, mode);
+            let fill = onehand_plugin_host::control_fill_of(theme.list_hover, theme.accent);
+            let off = |c: Hsla| contrast(c, theme.background);
+            assert!(
+                off(fill) > off(theme.list_hover) && off(fill) < off(theme.accent),
+                "{name}: the control fill ({:.2}) is not between hover ({:.2}) and selected ({:.2})",
+                off(fill),
+                off(theme.list_hover),
+                off(theme.accent)
+            );
+            assert!(
+                off(fill) >= STEP,
+                "{name}: the control fill is {:.2} off the surface, under {STEP}",
+                off(fill)
+            );
+            assert_eq!(
+                theme.button_secondary.to_hex(),
+                fill.to_hex(),
+                "{name}: a secondary button does not rest on the control fill"
+            );
+            assert!(
+                off(theme.button_secondary_hover) > off(theme.button_secondary),
+                "{name}: a secondary button does not lift under the pointer"
+            );
         }
     }
 

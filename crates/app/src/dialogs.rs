@@ -5,7 +5,7 @@
 
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
-use crate::controls::Tall as _;
+use crate::controls::Short as _;
 use crate::controls::text_area;
 use crate::controls::text_input;
 use crate::shell::Shell;
@@ -81,7 +81,7 @@ pub(super) fn title_row(name: impl Into<SharedString>, cx: &App) -> impl IntoEle
             div().flex_none().size_6().child(
                 DialogClose::new().child(
                     crate::controls::action("dialog-close")
-                        .small()
+                        .xsmall()
                         .quiet_icon(false, cx)
                         .icon(Icon::new(IconName::Close))
                         .tooltip("Close"),
@@ -121,7 +121,7 @@ pub fn rename_session(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
         .content(move |content, _, cx: &mut App| {
             content
                 .child(title_row("Rename conversation", cx))
-                .child(field("Title", None, text_input(&input, cx).tall(), cx))
+                .child(field("Title", None, text_input(&input, cx).short(), cx))
         })
         .footer(
             footer_row()
@@ -133,7 +133,7 @@ pub fn rename_session(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                 .when(resettable, |row| {
                     row.child(
                         crate::controls::action("reset-title")
-                            .tall()
+                            .short()
                             .quiet(cx)
                             .label("Use the automatic title")
                             .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
@@ -144,7 +144,7 @@ pub fn rename_session(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                 .child(div().flex_1())
                 .child(
                     crate::controls::action("cancel-rename")
-                        .tall()
+                        .short()
                         .quiet(cx)
                         .label("Cancel")
                         .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
@@ -153,7 +153,7 @@ pub fn rename_session(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                 )
                 .child(
                     crate::controls::action("save-rename")
-                        .tall()
+                        .short()
                         .primary()
                         .label("Rename")
                         .refuses(empty.then_some("Name it first"))
@@ -259,7 +259,7 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
                     "workflow-template-trigger",
                     picker_name.clone(),
                     true,
-                    onehand_plugin_host::ControlSize::Tall,
+                    onehand_plugin_host::ControlSize::Short,
                     cx,
                 ),
                 move |mut menu, _, _| {
@@ -305,7 +305,7 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
                                 cx,
                             ))
                             .children(shown)
-                            .child(field("Title", None, text_input(&title, cx).tall(), cx))
+                            .child(field("Title", None, text_input(&title, cx).short(), cx))
                             .child(field(
                                 "Details",
                                 None,
@@ -334,7 +334,7 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
                 .child(div().flex_1())
                 .child(
                     crate::controls::action("cancel-workflow")
-                        .tall()
+                        .short()
                         .quiet(cx)
                         .label("Cancel")
                         .refuses(busy.then_some(STARTING))
@@ -344,7 +344,7 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
                 )
                 .child({
                     let run = crate::controls::action("run-workflow")
-                        .tall()
+                        .short()
                         .primary()
                         .label("Run")
                         .loading(busy);
@@ -426,7 +426,7 @@ pub(crate) fn finding_line(
         .children(finding.task.clone().map(|task| {
             crate::controls::action(("pick-retry-task", at))
                 .quiet(cx)
-                .small()
+                .xsmall()
                 .label("Retry…")
                 .on_click(move |_, window: &mut Window, cx: &mut App| {
                     shell.update(cx, |shell, cx| {
@@ -453,7 +453,7 @@ pub(crate) fn finding_line(
                     // The line above names each holder; the button opens it.
                     crate::controls::action(SharedString::from(format!("slot-holder-{at}-{i}")))
                         .quiet(cx)
-                        .small()
+                        .xsmall()
                         .label(format!("Open {}", holder.named))
                         .tooltip("Open the task holding this slot")
                         .on_click(move |_, window: &mut Window, cx: &mut App| {
@@ -624,7 +624,7 @@ pub fn new_worktree(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                             format!("A second checkout of {label}, on its own branch")
                                 .into_any_element(),
                         ),
-                        text_input(&input, cx).tall(),
+                        text_input(&input, cx).short(),
                         cx,
                     ))
                     // Where it lands, in full, in the face a path is set in. A
@@ -654,7 +654,7 @@ pub fn new_worktree(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                 // that close it.
                 .child(
                     crate::controls::action("worktree-parent")
-                        .tall()
+                        .short()
                         .quiet(cx)
                         .label("Put it somewhere else…")
                         .refuses(busy.then_some(MAKING_WORKTREE))
@@ -669,7 +669,7 @@ pub fn new_worktree(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                     // Cancel that still offered itself would be promising to
                     // undo something already happening on disk.
                     crate::controls::action("cancel-worktree")
-                        .tall()
+                        .short()
                         .quiet(cx)
                         .label("Cancel")
                         .refuses(busy.then_some(MAKING_WORKTREE))
@@ -683,7 +683,7 @@ pub fn new_worktree(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                     // a button still offering itself invites the second press
                     // that would ask for the same folder twice.
                     let create = crate::controls::action("create-worktree")
-                        .tall()
+                        .short()
                         .primary()
                         .label("Create worktree")
                         .loading(busy);
@@ -734,7 +734,7 @@ pub fn rename_branch(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                     .child(field(
                         "New name",
                         Some(format!("The branch checked out here is {from}").into_any_element()),
-                        text_input(&input, cx).tall(),
+                        text_input(&input, cx).short(),
                         cx,
                     ))
                     // git's own words where git refused, and the name rule's
@@ -752,7 +752,7 @@ pub fn rename_branch(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                 .child(div().flex_1())
                 .child(
                     crate::controls::action("cancel-branch-rename")
-                        .tall()
+                        .short()
                         .quiet(cx)
                         .label("Cancel")
                         .refuses(busy.then_some(RENAMING_BRANCH))
@@ -762,7 +762,7 @@ pub fn rename_branch(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                 )
                 .child({
                     let rename = crate::controls::action("commit-branch-rename")
-                        .tall()
+                        .short()
                         .primary()
                         .label("Rename")
                         .loading(busy);

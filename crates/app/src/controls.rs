@@ -59,7 +59,7 @@ pub(crate) use onehand_plugin_host::Quiet;
 /// A control at a dialog's or a form's scale. The rule and its reasoning live
 /// with the definition in [`onehand_plugin_host`], where a built-in plugin's
 /// controls reach it too.
-pub(crate) use onehand_plugin_host::Tall;
+pub(crate) use onehand_plugin_host::Short;
 
 /// Refusing, and looking like it: the cursor half and the behaviour half in
 /// one call. The rule and its reasoning live with the definitions in
