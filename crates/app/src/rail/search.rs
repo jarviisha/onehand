@@ -21,7 +21,7 @@ use gpui_component::{ActiveTheme, Icon, Selectable as _, Sizable as _, StyledExt
 pub(super) fn search_field(state: &RailState, cx: &Context<Shell>) -> impl IntoElement + use<> {
     div().flex_1().min_w_0().child(
         search_input(&state.search, cx)
-            .small()
+            .xsmall()
             // No edge at rest, but one to turn the ring ink on focus.
             .border_color(crate::theme::inset(cx))
             .bg(crate::theme::inset(cx))
@@ -69,7 +69,7 @@ pub(super) fn sessions_header(
             d.child(
                 crate::controls::action("rail-attention")
                     .quiet(cx)
-                    .small()
+                    .xsmall()
                     .label(format!("{waiting} {verb} attention"))
                     .text_color(warning)
                     .selected(attention)
@@ -92,7 +92,7 @@ pub(super) fn sessions_header(
             // narrowed list says so where it is narrowed.
             crate::controls::action("rail-filter")
                 .quiet_icon(filter != Filter::ByProject, cx)
-                .small()
+                .xsmall()
                 .icon(Icon::new(crate::icons::Icon::ListFilter))
                 .tooltip(format!("Showing: {}", filter.label()))
                 .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, _, _| {

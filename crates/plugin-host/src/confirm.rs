@@ -11,7 +11,7 @@
 //! plugin removes things too, and has to ask the way the window does.
 
 use crate::Quiet as _;
-use crate::Tall as _;
+use crate::Short as _;
 use crate::{Refuses as _, action, status_ink};
 use gpui::Styled as _;
 use gpui::prelude::FluentBuilder as _;
@@ -57,7 +57,7 @@ pub fn confirm_on<T: 'static>(
             false => cx.theme().muted_foreground,
         };
         let go = action(SharedString::from(format!("{}-confirm", ask.id)))
-            .tall()
+            .short()
             .danger()
             .label(ask.act);
         let go = match ask.refused {
@@ -87,7 +87,7 @@ pub fn confirm_on<T: 'static>(
                     .child(
                         DialogClose::new().child(
                             action(SharedString::from(format!("{}-keep", ask.id)))
-                                .tall()
+                                .short()
                                 .quiet(cx)
                                 .label("Keep"),
                         ),

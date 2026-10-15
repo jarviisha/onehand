@@ -15,7 +15,8 @@ use futures::StreamExt as _;
 use gpui::BorrowAppContext as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{AnyElement, App, IntoElement, ParentElement, Styled, Window, div};
-use gpui_component::{ActiveTheme as _, Sizable as _, StyledExt as _};
+use gpui_component::Sizable as _;
+use gpui_component::{ActiveTheme as _, StyledExt as _};
 use onehand_core::acp::AcpEvent;
 use onehand_core::config::AgentSpec;
 use std::path::{Path, PathBuf};
@@ -179,7 +180,7 @@ pub(crate) fn button(id: usize, ask: &Ask, cx: &App) -> AnyElement {
         .child(
             crate::controls::action(("check-agent-modes", id))
                 .quiet(cx)
-                .small()
+                .xsmall()
                 .loading(running)
                 .label("Check the agent")
                 .on_click(move |_, _: &mut Window, cx: &mut App| check(&ask, cx)),

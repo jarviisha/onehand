@@ -9,8 +9,9 @@
 use crate::Quiet as _;
 use gpui::{App, Pixels, Rems, Styled as _};
 use gpui_component::ResizableState;
+use gpui_component::Sizable as _;
 use gpui_component::button::Button;
-use gpui_component::{Icon, IconName, Sizable as _};
+use gpui_component::{Icon, IconName};
 use std::ops::Range;
 
 /// The least room a detail is still readable in beside its list.
@@ -84,7 +85,7 @@ fn fit(dragged: Option<f32>, widths: &ListWidths, container: f32) -> (bool, f32)
 pub fn back_link(id: &'static str, list: &'static str, cx: &App) -> Button {
     crate::action(id)
         .quiet(cx)
-        .small()
+        .xsmall()
         .flex_none()
         .icon(Icon::new(IconName::ArrowLeft))
         .label(list)

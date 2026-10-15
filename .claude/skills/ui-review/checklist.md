@@ -14,7 +14,7 @@ Each section names the document owning its rules; read it before answering.
 3. Every spacing on the steps `0p5`, `1`, `1p5`, `2`, `3`, `4`, `6`, `8`?
 4. Every text size from the six roles, weights only `medium` and `semibold`, line heights only
    gpui's, `LEADING` and `LEADING_TIGHT`?
-5. Every corner the one `radius`, a badge at `tokens::BADGE_CORNER` and a dot `rounded_full`, with
+5. Every corner the one `radius`, a badge and a dot `rounded_full`, with
    no `radius_lg` or `radius_tokens().sm` written?
 6. Shadows only on what floats, through `lift` (the composer through its own)?
 7. A new colour in both palettes, its contrast asserted in `theme.rs`'s tests?
@@ -29,8 +29,8 @@ Each section names the document owning its rules; read it before answering.
     default nor `outline()`); every field through `text_input`, `search_input` or `text_area`; every
     refusal through `.refuses(why)`, its reason the tooltip?
 11. Every state the component can be in: hover, selected or open, keyboard focus, refusing, loading?
-12. Every control at the size its role takes: `.tall()` in a form and a dialog's footer;
-    `.small()` in a page's head, a filter bar, a strip, a box and for a row's actions; `.xsmall()` only for a
+12. Every control at the size its role takes: `.short()` in a form, a page's filter bar
+    and a dialog's footer; `.xsmall()` in a page's head, a strip, a box, for a row's actions and for a
     secondary action inside meta text, a transcript block or a chip; never the library's default;
     an icon at its role's size, not grown with the hit area; a badge, checkbox or switch at the
     library's own geometry, centred; any size correction in the shared wrapper, not the call site?

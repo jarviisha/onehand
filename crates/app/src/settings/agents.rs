@@ -1,6 +1,6 @@
 use super::{APP, about, field, list_row, page_head, section};
 use crate::controls::Refuses as _;
-use crate::controls::Tall as _;
+use crate::controls::Short as _;
 use crate::controls::text_input;
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
@@ -86,7 +86,7 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
                 row.child(
                     crate::controls::action(("default-agent", idx))
                         .secondary()
-                        .small()
+                        .xsmall()
                         .label("Make default")
                         .on_click({
                             let shell = shell.clone();
@@ -103,7 +103,7 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
             .child(
                 crate::controls::action(("check-agent", idx))
                     .secondary()
-                    .small()
+                    .xsmall()
                     .label("Test")
                     .loading(running)
                     .tooltip("Look for the command without starting it")
@@ -116,7 +116,7 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
             )
             .child(
                 crate::controls::action(("edit-agent", idx))
-                    .small()
+                    .xsmall()
                     .secondary()
                     // Not the bundled `replace`, which is a find-and-replace
                     // mark: it reads as swapping this agent for another one
@@ -135,7 +135,7 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
             .child(
                 crate::controls::action(("delete-agent", idx))
                     .secondary()
-                    .small()
+                    .xsmall()
                     .text_color(ink.danger)
                     .label("Delete…")
                     .on_click({
@@ -233,7 +233,7 @@ pub(super) fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     .child(field(
         "Name",
         about("What the New session menu calls it"),
-        text_input(&name, cx).tall(),
+        text_input(&name, cx).short(),
         cx,
     ))
     .child(field(
@@ -242,13 +242,13 @@ pub(super) fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
             "The program to run; it has to speak the Agent Client Protocol over standard \
              input and output",
         ),
-        text_input(&command, cx).tall(),
+        text_input(&command, cx).short(),
         cx,
     ))
     .child(field(
         "Arguments",
         about("Separated by spaces; quote one that holds a space"),
-        text_input(&args, cx).tall(),
+        text_input(&args, cx).short(),
         cx,
     ))
     .child(
@@ -257,7 +257,7 @@ pub(super) fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
             .gap_2()
             .child(
                 crate::controls::action("save-agent")
-                    .tall()
+                    .short()
                     .secondary()
                     // Refused until name and command are both non-blank: an
                     // agent missing either cannot be launched.
@@ -269,7 +269,7 @@ pub(super) fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
             )
             .child(
                 crate::controls::action("clear-agent")
-                    .tall()
+                    .short()
                     .secondary()
                     .label(if editing { "Cancel edit" } else { "Clear" })
                     .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {

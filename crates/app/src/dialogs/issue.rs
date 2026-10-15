@@ -3,7 +3,7 @@
 use super::title_row;
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
-use crate::controls::Tall as _;
+use crate::controls::Short as _;
 use crate::controls::text_area;
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
@@ -126,7 +126,7 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
                 .child(div().flex_1())
                 .child(
                     crate::controls::action("cancel-pick")
-                        .tall()
+                        .short()
                         .quiet(cx)
                         .label("Cancel")
                         .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
@@ -135,7 +135,7 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
                 )
                 .child({
                     let run = crate::controls::action("run-pick")
-                        .tall()
+                        .short()
                         .primary()
                         .label("Run");
                     match refusal {
@@ -311,7 +311,7 @@ where
             (id, 0usize),
             name,
             picked.is_some(),
-            onehand_plugin_host::ControlSize::Tall,
+            onehand_plugin_host::ControlSize::Short,
             cx,
         ),
         move |mut menu, _, _| {

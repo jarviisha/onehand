@@ -511,7 +511,7 @@ fn conflict_view(issue: &LocalIssue, cx: &mut Context<IssuesView>) -> Option<Any
                     .justify_end()
                     .child(
                         action("issue-keep-mine")
-                            .small()
+                            .xsmall()
                             .quiet(cx)
                             .label("Keep mine")
                             .tooltip(format!("Send what it says here to {forge}"))
@@ -521,7 +521,7 @@ fn conflict_view(issue: &LocalIssue, cx: &mut Context<IssuesView>) -> Option<Any
                     )
                     .child(
                         action("issue-take-theirs")
-                            .small()
+                            .xsmall()
                             .quiet(cx)
                             .label(format!("Take {forge}'s"))
                             .tooltip("Replace what it says here with the other side")

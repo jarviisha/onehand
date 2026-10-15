@@ -108,6 +108,17 @@ impl ChatPane {
             // conversation shows, the name stands as far off the pane's edge as
             // the page's body does, so the two start on one line.
             .when(self.page.is_some() || !live, |header| header.px_8())
+            // The one exception: the Issues page lists under a line the
+            // pane's whole width, since its list runs edge to edge too and the
+            // head is what the list scrolls under.
+            .when(
+                matches!(self.page, Some(super::Page::Issues(_))),
+                |header| {
+                    header
+                        .border_b_1()
+                        .border_color(onehand_plugin_host::faint_rule(cx))
+                },
+            )
             // **No rule under it.** A hairline is an edge between two surfaces,
             // and there are not two here: the header and the transcript are one
             // reading surface, and what separates them is that one is a row of
@@ -344,10 +355,13 @@ impl ChatPane {
             .child(title);
         if !live && project.is_none() {
             // A page's name is the page's title, at the size a page's title
-            // takes: the page draws none of its own in its body.
+            // takes: the page draws none of its own in its body. The Issues
+            // page keeps the strip's chrome size instead: its line under the
+            // header makes the header a bar over the list, not a heading.
+            let issues = matches!(self.page, Some(super::Page::Issues(_)));
             return div()
                 .min_w_0()
-                .when(self.page.is_some(), |title| title.text_xl())
+                .when(self.page.is_some() && !issues, |title| title.text_xl())
                 .child(name)
                 .into_any_element();
         }

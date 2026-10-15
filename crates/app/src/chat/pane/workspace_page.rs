@@ -636,7 +636,7 @@ impl ChatPane {
                 "workspace-filter-trigger",
                 filter_name,
                 page.filter.is_some(),
-                onehand_plugin_host::ControlSize::Small,
+                onehand_plugin_host::ControlSize::XSmall,
                 cx,
             ),
             move |mut menu, _, _| {

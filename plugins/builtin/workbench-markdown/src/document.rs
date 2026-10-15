@@ -307,7 +307,7 @@ pub(crate) fn reader(
                 // where there is a document for it to act on.
                 .children(doc.map(|_| {
                     onehand_plugin_host::action("markdown-edit")
-                        .small()
+                        .xsmall()
                         .quiet(cx)
                         .flex_none()
                         .label("Edit source")

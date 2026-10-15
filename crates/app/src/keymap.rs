@@ -12,7 +12,7 @@ use gpui::{
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::InputState;
-use gpui_component::{ActiveTheme, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, StyledExt};
 
 use crate::state::Shared;
 

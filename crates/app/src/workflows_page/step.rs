@@ -1,7 +1,7 @@
 use super::WorkflowsPage;
 use super::draft::{Kind, StepDraft};
 use crate::controls::Quiet as _;
-use crate::controls::Tall as _;
+use crate::controls::Short as _;
 use crate::controls::text_area;
 use crate::controls::text_input;
 use crate::settings::{about, field};
@@ -44,7 +44,7 @@ pub(super) fn step_box(
                 ("step-kind-trigger", i),
                 step.kind.label(),
                 true,
-                onehand_plugin_host::ControlSize::Tall,
+                onehand_plugin_host::ControlSize::Short,
                 cx,
             ),
             move |mut menu, _, _| {
@@ -72,7 +72,7 @@ pub(super) fn step_box(
         crate::controls::menu_below(
             ("step-more", i),
             crate::controls::action(("step-more-trigger", i))
-                .small()
+                .xsmall()
                 .quiet_icon(false, cx)
                 .icon(IconName::Ellipsis)
                 .tooltip("Move or remove this step"),
@@ -129,13 +129,14 @@ pub(super) fn step_box(
         .child(
             div()
                 .flex_1()
-                .child(field("Id", None, text_input(&step.id, cx).tall(), cx)),
+                .child(field("Id", None, text_input(&step.id, cx).short(), cx)),
         )
-        .child(
-            div()
-                .flex_1()
-                .child(field("Label", None, text_input(&step.label, cx).tall(), cx)),
-        );
+        .child(div().flex_1().child(field(
+            "Label",
+            None,
+            text_input(&step.label, cx).short(),
+            cx,
+        )));
 
     let body = match step.kind {
         Kind::Agent => {
@@ -237,7 +238,7 @@ pub(super) fn step_box(
                             current.clone()
                         },
                         !current.is_empty(),
-                        onehand_plugin_host::ControlSize::Tall,
+                        onehand_plugin_host::ControlSize::Short,
                         cx,
                     ),
                     move |mut menu, _, _| {
@@ -270,7 +271,7 @@ pub(super) fn step_box(
                     col.child(field(
                         "Command",
                         about("Run by onehand in the work, through sh"),
-                        text_input(&step.command, cx).tall(),
+                        text_input(&step.command, cx).short(),
                         cx,
                     ))
                 })
@@ -278,7 +279,7 @@ pub(super) fn step_box(
                     col.child(field(
                         "Wait at most",
                         about("Such as 45m or 2h; passing all, the pull request leaves draft"),
-                        text_input(&step.wait, cx).tall(),
+                        text_input(&step.wait, cx).short(),
                         cx,
                     ))
                 })

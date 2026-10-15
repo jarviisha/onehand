@@ -16,10 +16,11 @@ use gpui::{
     AnyElement, AppContext as _, ClickEvent, Context, Entity, InteractiveElement as _, IntoElement,
     ParentElement, Rems, StatefulInteractiveElement as _, Styled, Window, div, rems,
 };
+use gpui_component::Sizable as _;
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::TextareaState;
 use gpui_component::text::TextView;
-use gpui_component::{ActiveTheme, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::issues::template::section;
 use onehand_core::issues::{IssueKey, LocalIssue};
 use onehand_core::task::Approval;
@@ -335,7 +336,7 @@ impl IssuesView {
             )
             .child(
                 action("issue-review-close")
-                    .small()
+                    .xsmall()
                     .quiet(cx)
                     .label("Close")
                     .on_click(cx.listener(|view, _: &ClickEvent, _, cx| view.close_review(cx))),
@@ -373,7 +374,7 @@ impl IssuesView {
                 .when(cut, |column| {
                     column.child(
                         action("issue-review-whole")
-                            .small()
+                            .xsmall()
                             .quiet(cx)
                             .label(format!("Show all {total} lines"))
                             .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
@@ -556,7 +557,7 @@ fn answers(
                     .justify_end()
                     .child(
                         action("issue-review-cancel")
-                            .small()
+                            .xsmall()
                             .quiet(cx)
                             .label("Cancel")
                             .on_click(
@@ -565,7 +566,7 @@ fn answers(
                     )
                     .child(
                         action("issue-review-send")
-                            .small()
+                            .xsmall()
                             .primary()
                             .label("Send back")
                             .refuses(empty.then_some("Say what to change first"))
@@ -593,7 +594,7 @@ fn answers(
                 .items_center()
                 .child(
                     action("issue-review-revise")
-                        .small()
+                        .xsmall()
                         .quiet(cx)
                         .label("Revise…")
                         .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
@@ -616,7 +617,7 @@ fn answers(
                 .items_center()
                 .child(
                     action("issue-review-continue")
-                        .small()
+                        .xsmall()
                         .primary()
                         .label("Continue")
                         .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {

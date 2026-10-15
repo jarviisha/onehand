@@ -188,7 +188,7 @@ impl ChatPane {
                 .child(
                     crate::controls::action("edit-queued")
                         .quiet(cx)
-                        .small()
+                        .xsmall()
                         .label("Edit")
                         .tooltip("Put it back in the composer")
                         .on_click(cx.listener(|pane: &mut Self, _, window, cx| {
@@ -198,7 +198,7 @@ impl ChatPane {
                 .child(
                     crate::controls::action("drop-queued")
                         .quiet_icon(false, cx)
-                        .small()
+                        .xsmall()
                         .icon(Icon::new(IconName::Close))
                         .tooltip("Remove from the queue")
                         .on_click(cx.listener(|pane: &mut Self, _, _, cx| {
@@ -506,7 +506,7 @@ impl ChatPane {
                                             // tooltip.
                                             crate::controls::action("to-bottom")
                                                 .quiet_icon(false, cx)
-                                                .small()
+                                                .xsmall()
                                                 .rounded(cx.theme().radius)
                                                 .icon(Icon::new(IconName::ChevronDown))
                                                 .tooltip("Jump to the latest activity")

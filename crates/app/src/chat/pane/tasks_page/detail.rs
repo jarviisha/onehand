@@ -379,7 +379,7 @@ fn trail(
     let more = crate::controls::menu_below(
         SharedString::from(format!("task-more-{}", task.id)),
         crate::controls::action("task-more")
-            .small()
+            .xsmall()
             .quiet_icon(false, cx)
             .icon(IconName::Ellipsis)
             .tooltip("More actions")
@@ -707,7 +707,7 @@ fn way_out(
     let primary = offered.iter().any(|act| Some(*act) == next.primary);
     let buttons = offered.into_iter().map(|act| {
         let button = crate::controls::action(SharedString::from(format!("task-way-{act:?}")))
-            .small()
+            .xsmall()
             .label(act.label());
         let button = match Some(act) == next.primary {
             true => button.primary(),
@@ -770,7 +770,7 @@ fn review_card(
             div().h_flex().child(
                 crate::controls::action("task-review-read")
                     .quiet(cx)
-                    .small()
+                    .xsmall()
                     .label("Review…")
                     .on_click({
                         let pane = pane.clone();
@@ -783,7 +783,7 @@ fn review_card(
         .child(answer_row(
             crate::controls::action("task-review-revise")
                 .quiet(cx)
-                .small()
+                .xsmall()
                 .label("Revise…")
                 .on_click(
                     cx.listener(move |_, _, window, cx| open_revise(revised.clone(), window, cx)),
@@ -793,7 +793,7 @@ fn review_card(
         .child(answer_row(
             crate::controls::action("task-review-continue")
                 .primary()
-                .small()
+                .xsmall()
                 .label("Continue")
                 .on_click(move |_, window, cx| press_continue(pane.clone(), &pressed, window, cx)),
             review.continue_said(),

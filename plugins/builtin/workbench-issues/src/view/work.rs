@@ -224,7 +224,7 @@ fn act_button(
         .work
         .as_ref()
         .is_some_and(|work| work.work.pressed == Some(act));
-    let button = action(id).small().label(act.label()).loading(waits);
+    let button = action(id).xsmall().label(act.label()).loading(waits);
     let button = match tooltip(act) {
         Some(tip) => button.tooltip(tip),
         None => button,
@@ -381,7 +381,7 @@ fn more_menu(
     // The tab leads to the page, where there is room to work the issue.
     let in_tab = doing.full.is_none();
     let trigger = action("issue-more")
-        .small()
+        .xsmall()
         .quiet_icon(false, cx)
         .loading(doing.publishing || waits)
         .icon(Icon::new(IconName::Ellipsis))

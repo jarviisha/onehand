@@ -64,7 +64,7 @@ pub(super) fn workspace_bar(
         .child(
             crate::controls::action("workspace")
                 .quiet_icon(false, cx)
-                .small()
+                .xsmall()
                 .icon(Icon::new(IconName::ChevronsUpDown))
                 .tooltip("Other workspaces, and opening or starting one")
                 .dropdown_menu_with_anchor(
@@ -75,7 +75,7 @@ pub(super) fn workspace_bar(
         .child(
             crate::controls::action("hide-rail")
                 .quiet_icon(false, cx)
-                .small()
+                .xsmall()
                 .icon(Icon::new(IconName::PanelLeftClose))
                 .tooltip_with_action("Hide the rail", &crate::shell::ToggleRail, None)
                 .on_click(
@@ -263,11 +263,11 @@ pub(super) fn new_button(
         .h_flex()
         .items_center()
         .flex_none()
-        .child(new.quiet(cx).small())
+        .child(new.quiet(cx).xsmall())
         .child(
             crate::controls::action("new-session-target")
                 .quiet(cx)
-                .small()
+                .xsmall()
                 .dropdown_caret(true)
                 .tooltip("Start a session in another project, or with another agent")
                 .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, window, cx| {

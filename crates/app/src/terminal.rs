@@ -13,7 +13,7 @@
 //! PTY/grid ownership is shared with the Neovim plugin through
 //! `onehand-terminal-ui`.
 
-use crate::controls::Tall as _;
+use crate::controls::Short as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement,
@@ -758,7 +758,7 @@ impl TerminalPanel {
                         .gap_2()
                         .child(
                             crate::controls::action("new-shell")
-                                .tall()
+                                .short()
                                 .primary()
                                 .label("New terminal")
                                 .on_click(cx.listener(|panel: &mut Self, _, window, cx| {

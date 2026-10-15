@@ -5,7 +5,7 @@
 //! plugin, which cannot reach into the binary hosting it — and two copies of
 //! one number are two places for it to drift.
 
-use gpui::{App, BoxShadow, Pixels, Rems, px, rems};
+use gpui::{App, BoxShadow, Rems, rems};
 use gpui_component::ActiveTheme as _;
 
 /// The height every bar along the top of a region shares: the conversation's
@@ -33,24 +33,16 @@ pub const ROW_H: Rems = rems(1.875);
 /// floors a pixel or two off read as a line of controls that do not agree.
 pub const CONTROL_H: Rems = rems(1.5);
 
-/// A control at a dialog's or a form's scale: a footer's buttons, a form's
-/// fields and the buttons beside them, a page head's actions.
-///
-/// The library's default height, carried as a number for the reason
-/// [`CONTROL_H`] is, and set by [`crate::Tall`] over the small size rather
-/// than reached through the default one: the library letters a default-size
-/// button at the reading size, a step above the field beside it, while a
-/// small one letters at the chrome size every control here reads at.
-pub const FIELD_H: Rems = rems(2.);
+/// A control a step over [`CONTROL_H`], as tall as a list's row: the Issues
+/// page's head, its choices and its actions, over the filter bar. Set by
+/// [`crate::Tall`] over the small size rather than reached through the
+/// library's default one, which letters a button at the reading size.
+pub const FIELD_H: Rems = rems(1.875);
 
 /// The one corner, in pixels as the theme holds it: every box, control,
 /// field, row, well and floating surface, the library's own included, which
 /// reads it as `radius` (and `radius_lg`, set to the same).
-pub const CORNER: usize = 3;
-
-/// A badge's corner, the one shape that keeps a rounder one: a small label on
-/// a fill reads as a tag rather than as a button beside it.
-pub const BADGE_CORNER: Pixels = px(8.);
+pub const CORNER: usize = 4;
 
 /// Where a tree row's content starts from a dock's edge, and how far each
 /// level of the tree steps in: Files and Markdown share both, so their trees

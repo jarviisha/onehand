@@ -82,7 +82,9 @@ longer value does not push its neighbours.
 
 Density follows the task: chrome and lists are compact, forms leave room for labels, and prose
 keeps its reading size and line height. Do not make a crowded panel fit by shrinking its font,
-icons or hit targets. Use the existing overflow, wrapping and list/detail patterns instead.
+icons or hit targets. Use the existing overflow, wrapping and list/detail patterns instead. The
+Issues page's list is the one exception: its rows read at `.text_xs()`, a whole list scanned at a
+glance, its title carried by weight and ink rather than size.
 Same-role peers keep the same control size (*Control sizes*). A single-line row is `ROW_H` tall; a
 row with a second line takes `ROW_H` as its minimum and grows to fit its lines at shared padding
 and leading, rather than clipping to that height.
@@ -94,11 +96,11 @@ size it takes; `design-tokens/reference.md` holds what each size measures in eac
 
 | Role | Component | Size |
 |---|---|---|
-| A form's fields and buttons; a dialog's footer | Button, Input | `.tall()` |
-| A page head's actions; a filter bar's search and pickers; a strip's controls; a box's control; a row's actions | Button, Input | `.small()`, a step under a row, so the controls never outweigh what they act on |
-| A field in a strip or the rail | Input | `.small()` |
-| A secondary action inside dense content: a line of meta text, a transcript block, a chip | Button | `.xsmall()` |
-| An icon in a button | Icon | the button's own: `small` in a `.small()` or `.tall()` button, `xsmall` in an `.xsmall()` one |
+| The Issues page's head: its search, its icon-only actions and its creating action | Button, Input | `.tall()` |
+| A form's fields and buttons; a dialog's footer; a page's filter bar: its search and pickers | Button, Input | `.short()` |
+| A page head's actions; a strip's controls; a box's control; a row's actions; a secondary action inside dense content (a line of meta text, a transcript block, a chip) | Button, Input | `.xsmall()`, well under a row, so the controls never outweigh what they act on |
+| A field in a strip or the rail | Input | `.xsmall()` |
+| An icon in a button | Icon | the button's own: `small` in a `.tall()` button, `xsmall` in a `.short()` or `.xsmall()` one |
 | An icon leading a label the app draws: a row, a menu item | Icon | `.small()` |
 | A state's mark leading a row's label (a session's) | Icon | `.xsmall()`, a step under the label |
 | A mark inside a line of meta text | Icon | `.xsmall()` |
@@ -107,12 +109,15 @@ size it takes; `design-tokens/reference.md` holds what each size measures in eac
 | A single-line row; a row with a second line | drawn by the app | `ROW_H`; at least `ROW_H` |
 | A strip along the top of a region | `strip` (plugin host) | `BAR_H` |
 
-- **One size, one measure.** `.small()` and `.xsmall()` already give a Button and an Input the
-  same height and words; the library's default does not, so it is never used, and `.tall()` is
-  the wrapper that gives both the form's height at the chrome size. A size a component gets
-  wrong is corrected in its shared wrapper, never at the call site.
-- **The hit area is not the icon.** A taller control keeps the icon its role takes: a `.tall()`
-  button carries the same small icon as a `.small()` one. Nothing is enlarged to fill its box.
+- **One size, one measure.** `.xsmall()` already gives a Button and an Input the same height and
+  words; the library's default does not, so it is never used. `.short()` is the wrapper that gives
+  both the small height with words at `.text_xs()`, so they breathe inside it, and `.tall()` the
+  one that gives both `FIELD_H` at the chrome size. A size a component
+  gets wrong is corrected in its shared wrapper, never at the call site. The library's `.small()`
+  is no control's size; a control holding a badge keeps it, being the one tall enough.
+- **The hit area is not the icon.** A taller control keeps the icon its role takes: a `.short()`
+  button carries the same extra small icon as an `.xsmall()` one. Nothing is enlarged to fill its
+  box.
 - **Some components keep their own geometry**: a badge, a checkbox, a switch, a key cap. Centre
   them in their row (`items_center`); never stretch them to the height of the controls beside
   them.
@@ -132,8 +137,10 @@ The window keeps the rail's minimum beside the conversation's: it is never small
 
 A strip along the top of a region is `BAR_H` tall and padded `px_3`, its parts `gap_2` apart,
 at the chrome size (`strip`): what it names at the start, in full ink, its controls at the end as
-`small` ghost buttons (`strip_control` for an icon alone). An icon-only control carries a tooltip.
-No line runs under a strip: it and what it heads are one surface, parted by space. Keep identity
+`xsmall` ghost buttons (`strip_control` for an icon alone). An icon-only control carries a tooltip.
+No line runs under a strip: it and what it heads are one surface, parted by space. The one
+exception is the pane header over the Issues page, whose list runs the pane's whole width under
+a `faint_rule` line (*Pages*). Keep identity
 at the leading edge and actions at the trailing edge in every equivalent strip; a control that
 shows a region the strip's own panel hid may lead (the way back to the rail, a list's toggle).
 Filters belong below the region header with the content they filter. Reserve the action group's
@@ -150,7 +157,12 @@ Widths:
 
 - `PAGE_NARROW`: one column of fields or rows (a project's page);
 - `PAGE_PROSE`: an editor, or one thing read in full (Workflows, an issue);
-- `PAGE_WIDE`: boxes side by side, or a table (the overview, Tasks, Issues).
+- `PAGE_WIDE`: boxes side by side (the overview, Tasks).
+
+The Issues page's list takes the pane's whole width instead, the one page that does: inset
+`px_6`, its rows' fills on that edge and their words on the header's, the pane header, the filter
+bar and the foot each parted from it by a `faint_rule` line the pane's whole width; over that line its
+name in the header stays at the strip's chrome size, a bar over the list rather than a heading.
 
 A page holding sections of its own (Settings) puts their nav column at its start.
 The pane header owns the page name, inset `px_8` as the body is; do not repeat it as a large
@@ -161,15 +173,23 @@ heading identifies its own content. Reuse the same column width for the same kin
 
 A page that has a head and filters draws them in one order, the Issues page's:
 
-- **The head**: the page's creating action at the start, `.small()` on the secondary fill (*New
-  issue*); at the end its icon-only ghost buttons (*Refresh*), then what the page counts, in
-  muted ink (*12 open*). The head holds no primary, so a panel floating over the page never has
-  one to outweigh.
-- **The filter bar**, under the head: the search first at `.small()`, taking the free width, then
-  each filter as a `.small()` `picker` with its caret, its label naming what it is set to: a
-  ghost in the muted ink while it is where it starts, on the secondary fill in that fill's ink
-  once it narrows the list.
-- **The content** they filter. A filter's choice and the search are kept while the page is left
+- **The head**: the search first, `.tall()`, with no edge on the well's `muted` fill (an edge in
+  that fill is left for focus), as wide as its cap and narrower only when the row runs short; at
+  the end its icon-only ghost buttons (*Refresh*) and its creating action, `.tall()` on the
+  secondary fill (*New issue*); `gap_6` over the filter bar, a group apart. The head holds no primary, so a
+  panel floating over the page never has one to outweigh.
+- **The filter bar**, under the head: where the content splits into a few states that each count
+  (*Open*, *Closed*), those first, each a `.short()` `choice`, the shown one filled, its count a
+  slim `badge` in the hue of that state (open green, closed magenta) hung from its top-right corner, its lower-left corner `2` in from that point each way, over
+  the button's inset and above its words, the choices `gap_6` apart so a count keeps clear of
+  the next; the filters kept to the row's end, wrapping under the choices
+  when narrow. Each filter is a `.short()` `picker` with its caret, its label naming what it is
+  set to: a ghost in the muted ink while it is where it starts, on the secondary fill in that
+  fill's ink once it narrows the list. After them, only while a filter or the search is set,
+  *Clear filters*: a word in the danger ink on no fill, underlined under the pointer, that puts
+  the search and every filter back (the choice is not a filter); last in its group, so nothing
+  moves as it comes and goes.
+- **The content** they filter; a list's foot says how many it shows of how many match. A filter's choice and the search are kept while the page is left
   and shown again.
 
 ### Boxes
@@ -182,13 +202,14 @@ Boxes sit side by side while the measured column holds two, and stack when it do
 ### Lists
 
 A single-line row is `ROW_H` tall, padded `px_2` with `gap_2`, at `radius`. Hover fills it with
-`list_hover`, the selected row with `accent`. A row's own actions are `.small()` ghost buttons, shown
-on hover, on the selected row, on keyboard focus and while their action runs; `.xsmall()` only for one inside the row's line of meta text. Every list has a named cap, and its last line says how many more
-there are, in meta text. A table is a box of rows split by hairlines, under a head row in meta text
-on the box's own surface, its rows `row`s at the box's inset, square but at the box's ends.
+`list_hover`, the selected row with `accent`. A row's own actions are `.xsmall()` ghost buttons, shown
+on hover, on the selected row, on keyboard focus and while their action runs. Every list has a named cap, and its last line says how many more
+there are, in meta text. A table is rows split by hairlines, each with one under it, under a head row in
+meta text on the page's own surface, its rows square `row`s at the row inset.
 Keep metadata and actions in stable trailing slots. Multi-line row variants align their primary
 labels and secondary lines across peers. A hovered selected row remains recognizably selected;
-keyboard focus remains separately visible. Hover actions are also available on keyboard focus, so
+keyboard focus remains separately visible, except where the arrow keys move the selection itself
+(the Issues page's list): there the selected fill is where the keys are, and no ring is drawn. Hover actions are also available on keyboard focus, so
 a row whose actions hide at rest is a tab stop; a focus a click leaves does not show them.
 
 ### List and detail
@@ -201,7 +222,7 @@ going back keeps the list's place.
 
 Each input is a `field`: its title in chrome text, an optional hint under it in meta text, `gap_2`
 to the control. Fields stand `gap_4` apart. An input is built with `text_input`, at a control's
-corner and the `.tall()` size its buttons take. Problems stand above the submit button in the danger
+corner and the `.short()` size its buttons take. Problems stand above the submit button in the danger
 ink. The submit is the form's one primary action; while the form cannot be sent it refuses, its
 tooltip saying why.
 
@@ -210,7 +231,7 @@ tooltip saying why.
 A dialog is the library's `Dialog` at its own width, titled through `title_row`, its ✕ muted and
 named in its tooltip. Its fields are `field`s, `gap_4` apart; what blocks it stands above the
 footer in the danger ink. Its footer (`footer_row`) sits on the right: the dismissing button
-first, then the one primary action or the danger word, at `.tall()`. A third action (*Use the
+first, then the one primary action or the danger word, at `.short()`. A third action (*Use the
 automatic title*, *Put it somewhere else…*) stands at the footer's start, apart from the two that
 close it. It opens with focus on its first field and closes on Esc. A question without fields (a
 retry, *Answer the review*, a removal) is an alert dialog, as the confirmation below is, never a

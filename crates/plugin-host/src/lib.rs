@@ -300,6 +300,38 @@ pub fn middle_ink(full: Hsla, meta: Hsla) -> Hsla {
     full.mix_oklab(meta, 0.5)
 }
 
+/// A hairline a step fainter than the theme's `border`, halfway to the
+/// surface it lies on: the lines a list running the pane's whole width is
+/// parted by, from the header over it and the foot under it, which the full
+/// hairline would draw as a frame round the page.
+pub fn faint_rule(cx: &App) -> Hsla {
+    let theme = cx.theme();
+    theme.border.mix_oklab(theme.background, 0.5)
+}
+
+/// How much of the hover step the control fill keeps; the rest is the
+/// selected step.
+const CONTROL_FILL: f32 = 0.8;
+
+/// The fill a control takes: a secondary button at rest, a ghost hovered,
+/// pressed or chosen, a picker pointed at. Between the hover step a row takes
+/// and the selected step a chosen row does, nearer the hover: at the selected
+/// step every filled control was the heaviest grey on screen, heavier than
+/// the user's own message, and a secondary button had nowhere to go under the
+/// pointer. The selected step is left to a chosen row, beside the hovered rows
+/// it has to stand out from, and to a filled button pointed at.
+pub fn control_fill(cx: &App) -> Hsla {
+    let theme = cx.theme();
+    control_fill_of(theme.list_hover, theme.accent)
+}
+
+/// [`control_fill`] from the two steps it lies between. `pub` for the reason
+/// [`status_hue`] is: the app writes it into the theme's secondary button and
+/// its contrast test works from a resolved ramp.
+pub fn control_fill_of(hover: Hsla, selected: Hsla) -> Hsla {
+    hover.mix_oklab(selected, CONTROL_FILL)
+}
+
 /// How much of a hue a pale fill keeps; the rest is the surface it sits on.
 const TINT: f32 = 0.16;
 
@@ -373,12 +405,23 @@ pub fn label_badge(label: impl Into<SharedString>, cx: &App) -> gpui_component::
 }
 
 /// A small label on a fill, the shape every badge takes: the library's `Tag`
-/// at its small size, on [`tokens::BADGE_CORNER`], in the `tint`'s fill and ink.
+/// at its small size, fully round so it reads as a tag rather than as a button
+/// beside it, in the `tint`'s fill and ink, with room above and below its
+/// words (`py_1`) where the library leaves them a hair off its edge, and an
+/// edge of its own ([`badge_edge`]).
 pub fn badge(text: impl Into<SharedString>, tint: Tint) -> gpui_component::tag::Tag {
-    gpui_component::tag::Tag::custom(tint.fill, tint.ink, tint.fill)
+    gpui_component::tag::Tag::custom(tint.fill, tint.ink, badge_edge(tint))
         .small()
-        .rounded(crate::tokens::BADGE_CORNER)
+        .rounded_full()
+        .py_1()
         .child(text.into())
+}
+
+/// A badge's edge: halfway from its fill to its ink, in its own hue, so the
+/// badge stands out of the row it sits in rather than lying on it as a smudge
+/// of colour, and reads the same on any surface under it.
+pub fn badge_edge(tint: Tint) -> Hsla {
+    tint.ink.mix_oklab(tint.fill, 0.5)
 }
 
 /// A mark the app's own icon set draws for a plugin, where the bundled set
@@ -472,9 +515,9 @@ pub fn text_area(state: &Entity<TextareaState>, cx: &App) -> Textarea {
 /// four fifths opacity, which is no step of the app's ramp: beside a selected
 /// ghost in the same strip, the hovered one came out a shade fainter, its edge
 /// lost in the surface, and read as a smaller box. So the ghost is drawn here
-/// as a custom variant on the ramp's own steps: no fill at rest, the selected
-/// step on hover, on press and when selected, so hovered and selected are one
-/// shape. Every ghost button in the app and its plugins is this, never a bare
+/// as a custom variant on the ramp's own steps: no fill at rest, the
+/// [`control_fill`] on hover, on press and when selected, so hovered and
+/// selected are one shape. Every ghost button in the app and its plugins is this, never a bare
 /// `ghost()`.
 pub trait Quiet {
     /// The ghost variant, hovering on the selected step.
@@ -500,8 +543,8 @@ impl Quiet for Button {
         self.custom(
             ButtonCustomVariant::new(cx)
                 .foreground(theme.secondary_foreground)
-                .hover(theme.secondary_active)
-                .active(theme.secondary_active),
+                .hover(control_fill(cx))
+                .active(control_fill(cx)),
         )
     }
 
@@ -513,25 +556,13 @@ impl Quiet for Button {
     }
 }
 
-/// A control at the scale of a form, a filter bar, a page's head and a
-/// dialog's footer: [`tokens::FIELD_H`] high, with its words and its icon at
-/// the chrome size.
-///
-/// The library ties a control's words and icon to its size, and not the same
-/// way in every component: a default-size button letters its label at the
-/// reading size and grows its icon, a step above a field of the same size,
-/// and nothing outside it reaches the box those words sit in. Its height and
-/// padding are on the control itself, though, and the caller's own land after
-/// the library's. So this is the small size, lettered as chrome and keeping the
-/// small icon, given back the default size's height, and padding on the spacing
-/// steps (`px_3`, where the default's `px_2p5` falls between two).
-///
-/// The one correction a size needs, made here and nowhere else: the two other
-/// sizes the app uses, `small` and `xsmall`, already measure the same in a
-/// button and a field, and the library's default is never used.
+/// A control a step over [`Short`]: [`tokens::FIELD_H`] high, its words and
+/// its icon at the chrome size, the small size's, given that height and
+/// padding on the spacing steps. The library ties a control's words and icon
+/// to its size and its default size letters a button at the reading size, so
+/// this is the small size made taller rather than the default one.
 pub trait Tall {
-    /// The small size at the height of a form, a filter bar, a page's head
-    /// and a dialog's footer.
+    /// The small size at [`tokens::FIELD_H`].
     fn tall(self) -> Self;
 }
 
@@ -554,17 +585,49 @@ impl Tall for Input {
     }
 }
 
-/// The three sizes a control takes, each the role it serves: `.xsmall()` for
-/// a secondary action inside dense content, `.small()` the compact default,
-/// `.tall()` in a form, a filter bar, a page's head and a dialog's footer.
+/// A control at a form's scale: a form's fields and buttons, a dialog's
+/// footer, a page's filter bar. The small size's height, its words a step
+/// down at the meta size, so they sit in the box with room above and below
+/// rather than filling it edge to edge.
+///
+/// A button takes the extra small size for its words, the only way to reach
+/// the box the library letters them in, and is given back the small height
+/// and inset; its icon comes down with the words, and an icon alone stays
+/// square. A field's text size is its own style, which lands after the
+/// library's.
+pub trait Short {
+    /// The small size, lettered at the meta size.
+    fn short(self) -> Self;
+}
+
+impl Short for Button {
+    fn short(self) -> Self {
+        // `min_w` rather than `w`, so an icon alone stays square and a label
+        // keeps its own width.
+        self.xsmall()
+            .h(tokens::CONTROL_H)
+            .min_w(tokens::CONTROL_H)
+            .px_2()
+    }
+}
+
+impl Short for Input {
+    fn short(self) -> Self {
+        self.small().text_xs()
+    }
+}
+
+/// The sizes a builder's controls take, each the role it serves:
+/// `.xsmall()` the compact default, `.short()` in a form, a filter bar and a
+/// dialog's footer, `.tall()` in the Issues page's head.
 ///
 /// For a builder that sizes the controls it makes, so a caller names one of
-/// the three: the library's own scale also holds its default size, which
+/// these: the library's own scale also holds its default size, which
 /// letters a button at the reading size and is never used.
 #[derive(Clone, Copy)]
 pub enum ControlSize {
     XSmall,
-    Small,
+    Short,
     Tall,
 }
 
@@ -572,7 +635,7 @@ impl ControlSize {
     fn on(self, button: Button) -> Button {
         match self {
             Self::XSmall => button.xsmall(),
-            Self::Small => button.small(),
+            Self::Short => button.short(),
             Self::Tall => button.tall(),
         }
     }
@@ -662,8 +725,8 @@ pub fn picker(
             button.custom(
                 ButtonCustomVariant::new(cx)
                     .foreground(theme.muted_foreground)
-                    .hover(theme.secondary_active)
-                    .active(theme.secondary_active),
+                    .hover(control_fill(cx))
+                    .active(control_fill(cx)),
             )
         }
     })

@@ -20,7 +20,7 @@ Slot names that mislead (the library's names, kept because its own controls read
 | `link` (also `info`) | the accent hue: what runs, and links |
 | `muted` | the well's fill, and the user's bubble |
 | `secondary` | a step past the well: code inside the bubble |
-| `button_secondary`, `button_secondary_foreground` | the secondary button: the selected step and its ink, as `accent` |
+| `button_secondary`, `button_secondary_foreground` | the secondary button: the control fill at rest (the selected step when pointed at or pressed) and its ink |
 | `primary` | the primary action: ink on light, light on dark, not a hue |
 | `danger`, `warning`, `success` | fills with white on them; their text is `status_ink(cx)` |
 | `tiles` | the docks' surface, read through `dock_surface(cx)` |
@@ -33,6 +33,9 @@ Helpers:
 | `status_ink(cx).danger`, `.warning`, `.success` | status text and marks | `crates/plugin-host/src/lib.rs`; the app says `crate::theme::status_ink` |
 | `tint(base, cx)` | a label's `Tint { fill, ink }` by its hue | `crates/plugin-host/src/lib.rs` |
 | `dock_surface(cx)` | the Workbench's and the terminal's surface | `crates/plugin-host/src/lib.rs` |
+| `badge_edge(tint)` | a badge's edge: halfway from its `Tint`'s fill to its ink | `crates/plugin-host/src/lib.rs` |
+| `control_fill(cx)` | a control's fill: a secondary button at rest, a ghost hovered, pressed or chosen; between `list_hover` and `accent` | `crates/plugin-host/src/lib.rs` |
+| `faint_rule(cx)` | a hairline a step fainter, halfway to the surface: the lines across the pane parting the Issues list from its header and foot | `crates/plugin-host/src/lib.rs` |
 | `meta_ink(cx)` | the middle ink: a detail beside a name, between prose and muted | `crates/plugin-host/src/lib.rs`; the app says `crate::theme::meta_ink` |
 | `middle_ink(full, meta)` | the same step under another full ink: on a fill, under that fill's paired ink | `crates/plugin-host/src/lib.rs` |
 | `hue_ink(base, cx)` | a hue tempered for ink: code inside prose | `crates/app/src/theme.rs` |
@@ -56,7 +59,7 @@ Text on a fill takes the ink paired with it:
 |---|---|
 | `primary`, a solid `danger` | `primary_foreground`, `danger_foreground`, set by the button's variant |
 | `button_secondary`; a `quiet` ghost | `button_secondary_foreground`; `secondary_foreground`, set by the builder |
-| a ghost's hover or selected step, under an icon alone (`quiet_icon`) | `secondary_foreground`; at rest, with no fill, the icon is muted |
+| a ghost's control fill (hovered, pressed or chosen), under an icon alone (`quiet_icon`) | `secondary_foreground`; at rest, with no fill, the icon is muted |
 | `accent`, the selected row | `accent_foreground` |
 | `rail_chosen(cx)`, the rail's current row | `sidebar_accent_foreground` |
 | `muted` (a well, the bubble) | the neutral inks, as on the surface: a neutral fill, not a paired one |
@@ -102,15 +105,14 @@ are not steps and stay allowed. A named spacing constant (`BLOCK_GAP`, `TIGHT_GA
 
 | Write | px |
 |---|---|
-| `cx.theme().radius` | 3 (`tokens::CORNER`) |
-| `tokens::BADGE_CORNER` | 8, a badge only |
-| `.rounded_full()` | round |
+| `cx.theme().radius` | 4 (`tokens::CORNER`) |
+| `.rounded_full()` | a badge, a dot, a status mark |
 
 The theme sets `radius` and `radius_lg` both to `tokens::CORNER`, so the library's tooltips, menus,
 popovers, dialogs and toasts take the one corner too. What the library draws at half its corner
-(`radius_tokens().sm`: checkboxes, `Kbd`, its tabs) comes out at 1.5px and is left to it. A button
+(`radius_tokens().sm`: checkboxes, `Kbd`, its tabs) comes out at 2px and is left to it. A button
 (`action`, `ButtonRounded::Medium`) and a text field (`text_input`, `search_input`, `text_area`)
-set `radius` where they are built; a `Tag` takes `BADGE_CORNER` through `badge`.
+set `radius` where they are built; a `Tag` takes `rounded_full` through `badge`.
 
 ## Elevation
 
@@ -130,24 +132,26 @@ Moving the library's rev means checking this table.
 | Size | Button: height / words / icon / icon–label gap / inset | Input: height / words / inset | Icon alone |
 |---|---|---|---|
 | `.xsmall()` | 20 / 12 / 12 / 4 / 4 | 20 / 12 / 4 **px** | 12 |
-| `.small()` (`CONTROL_H`) | 24 / 14 / 14 / 4 / 8 | 24 / 14 / 8 **px** | 14 |
-| `.tall()` (`FIELD_H`) | 32 / 14 / 14 / 4 / 12 | 32 / 14 / 8 **px** | none |
+| `.short()` (`CONTROL_H`) | 24 / 12 / 12 / 4 / 8 | 24 / 12 / 8 **px** | 12 |
+| `.tall()` (`FIELD_H`) | 30 / 14 / 14 / 4 / 12 | 30 / 14 / 8 **px** | 14 |
+| `.small()`: no control's size | 24 / 14 / 14 / 4 / 8 | 24 / 14 / 8 **px** | 14 |
 | the library's default | 32 / 16 / 16 / 8 / 10: never used | 32 / 14 / 10 **px** | 16 |
 
-An icon-only button is square at its height. `.tall()` is the small size given the default's
-height (`Tall` in `crates/plugin-host/src/lib.rs`), so its words and icon stay the small ones.
-A builder that sizes the controls it makes (`choice`, `switch`) takes one of the three as a
-`ControlSize`.
+An icon-only button is square at its height. `.short()` is the extra small size given the small
+height and inset (`Short` in `crates/plugin-host/src/lib.rs`), so its words and icon are the extra
+small ones; a field keeps the small size and takes `.text_xs()`. `.tall()` is the small size
+given `FIELD_H` (`Tall`, beside it), so its words and icon stay the small ones. A builder that sizes the controls
+it makes (`choice`, `switch`, `picker`) takes one of them as a `ControlSize`.
 
 A field of several lines (`text_area`) is the library's `Textarea`, which takes no size: its text
 sits at the default's inset, 10 **px**, which no wrapper reaches, so it starts 2px inside a
-`.tall()` field's above it.
+`.short()` field's above it.
 
 Components that keep geometry of their own, centred in their row rather than sized to it:
 
 | Component | Geometry |
 |---|---|
-| `Tag` at `.small()` | words 12, inset 6 × 2; its height follows its line |
+| `Tag` at `.small()` through `badge` | words 12, inset 6 × 4; its height follows its line |
 | `Checkbox` | box 12 / 14 / 16 at `.xsmall()` / `.small()` / default; its label 12 / 14 / 16 |
 | `Switch` | track 28 × 16 **px** at `.xsmall()` and `.small()`, 36 × 20 **px** at the default; thumb 12 / 16 **px** |
 | `Kbd` | words 12, inset 4 × 2 |
@@ -163,7 +167,7 @@ All in `onehand_plugin_host::tokens` (`crates/plugin-host/src/tokens.rs`), which
 | `BAR_H` | 2.75rem | every strip along the top of a region |
 | `ROW_H` | 1.875rem | a list row |
 | `CONTROL_H` | 1.5rem | a small control |
-| `FIELD_H` | 2rem | a control at a dialog's or a form's scale (`.tall()`) |
+| `FIELD_H` | 1.875rem | a control a step over `.short()`: the Issues page's head (`.tall()`) |
 | `CODE_TEXT` | 0.8125rem | machine text |
 | `LEADING` | 1.6 | reading text |
 | `LEADING_TIGHT` | 1.4 | a wrapped title |

@@ -64,8 +64,8 @@ passing a scan alone is not completion. Documentation-only work follows that ski
 ```rust
 // Wrong: a badge at the library's small-tag corner, or the common one
 Tag::custom(fill, ink, fill).small().child(text)
-// Right: a badge keeps its rounder corner (or call `badge`)
-Tag::custom(fill, ink, fill).small().rounded(tokens::BADGE_CORNER).child(text)
+// Right: a badge is fully round (or call `badge`)
+Tag::custom(fill, ink, fill).small().rounded_full().py_1().child(text)
 ```
 
 ```rust
