@@ -26,7 +26,7 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 |---|---|---|
 | Any button | `action` (sets the pointer and the theme's corner) | `crates/app/src/controls.rs` (the app), `crates/plugin-host/src/lib.rs` (a plugin) |
 | Any text field | `text_input(&state, cx)` (sets the theme's corner, on no fill of its own) | `crates/app/src/controls.rs` (the app), `crates/plugin-host/src/lib.rs` (a plugin) |
-| A search field | `search_input(&state, cx)`: a `text_input` with the search mark and the clear button; the caller sizes it | `crates/plugin-host/src/lib.rs`, re-exported by `crates/app/src/controls.rs` |
+| A search field | `search_input(&state, cx)`: a `text_input` with the search mark and the clear button; the caller sizes it and sinks it into its place's fill (`.bg(..)`, the edge in that fill) | `crates/plugin-host/src/lib.rs`, re-exported by `crates/app/src/controls.rs` |
 | A field of several lines | `text_area(&state, cx)`: the library's `Textarea` on a field's corner and surface | `crates/plugin-host/src/lib.rs`, re-exported by `crates/app/src/controls.rs` |
 | A control at a dialog's, a form's or a page filter bar's scale | `.short()` (the `Short` trait, for a button or a field; re-exported by `crates/app/src/controls.rs`) | `crates/plugin-host/src/lib.rs` |
 | A ghost button | `.quiet(cx)`; an icon with no words `.quiet_icon(on, cx)`, muted at rest and in its fill's ink when hovered or `on` (the `Quiet` trait, re-exported by `crates/app/src/controls.rs`) | `crates/plugin-host/src/lib.rs` |
@@ -37,6 +37,7 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | An issue's label | `label_badge(label, cx)`: a badge tinted by the label's kind | `crates/plugin-host/src/lib.rs` |
 | A block held folded | `fold_toggle(id, label, open, cx)`: the chevron first, quiet, `.xsmall()` | `crates/plugin-host/src/lib.rs` |
 | A box on a page | `card_box(cx)`: hairline, `p_3`, `gap_2` | `crates/plugin-host/src/lib.rs` |
+| A radio or checkbox at a choice row's head | `choice_mark(on, single, cx)`: drawn in ink, round for one choice and square for several, so it shows on the selected step where the library's ring vanishes | `crates/plugin-host/src/choice_mark.rs` |
 | A picker's trigger | `picker(id, label, set, size, cx)`: a ghost in the muted ink naming what it picks, on the secondary fill once set, with the caret | `crates/plugin-host/src/lib.rs` |
 | A list or table row's surface | `row(picked, cx)`: `ROW_H`, `px_2`, the hover and picked fills with their inks; the caller lays it out | `crates/plugin-host/src/lib.rs` |
 | A menu, its rows, a menu under its control | `menu_item`, `menu_row`, `menu_below`; `menu_command(label, action)` for a row that runs a keymap command and shows its key | `crates/plugin-host/src/menu.rs` |

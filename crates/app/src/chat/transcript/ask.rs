@@ -1,6 +1,4 @@
-use super::metrics::{
-    ASK_CHOICE_DOT, ASK_CHOICE_MARK, ASK_MARK_RING, ASK_TAB_W, CARD_PAD, PART_GAP,
-};
+use super::metrics::{ASK_TAB_W, CARD_PAD, PART_GAP};
 use super::parts::{
     ActivityRow, BlockingBody, Object, RowMark, activity_row, card_body, card_foot, card_head,
     detail_well, grows, pill, pinned_card,
@@ -92,40 +90,6 @@ fn ask_key_hint(n: usize) -> Option<Kbd> {
         return None;
     }
     gpui::Keystroke::parse(&n.to_string()).ok().map(Kbd::new)
-}
-
-/// The mark at the head of a choice row: round for a single-select and square
-/// for a multi-select, the one convention a reader already knows.
-///
-/// **Drawn in ink, not taken from the library.** Its radio rings the mark in
-/// the field's edge colour, which is the selected step's own grey in the dark
-/// palette, so the mark vanished on the very row being hovered or taken. In
-/// the muted ink it shows on the row's rest, hover and selected fills alike,
-/// and in full ink once taken.
-fn ask_choice_mark(on: bool, single: bool, cx: &App) -> impl IntoElement + use<> {
-    let ink = match on {
-        true => cx.theme().foreground,
-        false => cx.theme().muted_foreground,
-    };
-    let corner = cx.theme().radius;
-    div()
-        .flex_none()
-        .size(ASK_CHOICE_MARK)
-        .h_flex()
-        .items_center()
-        .justify_center()
-        .border(ASK_MARK_RING)
-        .border_color(ink)
-        .map(|mark| match single {
-            true => mark.rounded_full(),
-            false => mark.rounded(corner),
-        })
-        .when(on, |mark| {
-            mark.child(div().size(ASK_CHOICE_DOT).bg(ink).map(|dot| match single {
-                true => dot.rounded_full(),
-                false => dot.rounded(corner),
-            }))
-        })
 }
 
 /// The live form.
@@ -326,7 +290,7 @@ impl AskForm<'_> {
                             .items_center()
                             .gap_3()
                             .w_full()
-                            .child(ask_choice_mark(on, single, cx))
+                            .child(onehand_plugin_host::choice_mark(on, single, cx))
                             .child(words)
                             .children(ask_key_hint(o + 1)),
                     )

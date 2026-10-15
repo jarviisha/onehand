@@ -7,9 +7,9 @@ the code and its tests decide. A feature's own document (`docs/tasks.md`, `docs/
 screen repeats and how they behave. Code never cites this file.
 
 This contract defines onehand's own visual language: quiet navigation, clear content hierarchy,
-compact controls and predictable alignment. A departure agreed to stay is listed under
-*Exceptions* below; one still to be put right is recorded in `docs/known-gaps.md` with its reason.
-A change that departs from the contract does one or the other within its scope.
+compact controls and predictable alignment. It keeps no standing exceptions: a treatment that
+differs is a rule of the role it belongs to, written where that role is. A departure is a bug,
+put right or recorded in `docs/known-gaps.md` with its reason within the change that makes it.
 
 **No palette lives here.** gpui-component's theme, overridden at boot by the app's palette
 (`crate::theme::install`, with its contrast tests). Every colour, radius and size is a token read
@@ -25,9 +25,10 @@ layer is a bug even when it looks right, as no theme switch reaches it.
 2. **Give each boundary a purpose.** Separate with space first, then a line, then a fill, then a
    shadow, taking each step only for a reason the one before cannot give. Docks use a distinct
    surface; independent boxes and tables use a 1px `border`; a subsection is a heading and space,
-   not a frame. Shadows only for what floats, the app's own in
+   not a frame, and a hairline parts groups only where space alone runs many peers together (a
+   settings sub-page). Shadows only for what floats, the app's own in
    `lift`: dialogs, popovers, menus, over the transcript the composer card, the cards pinned above
-   it, the to-bottom button, and on the Issues page the issue floating over the list.
+   it, the to-bottom button, and on a list page the item floating over the list.
 3. **Content leads; navigation recedes.** Neutral surfaces carry the layout. Hue identifies a
    state, a link, a label's kind or code in prose, never a decorative section background.
    Attention is earned: the signals that call for the person (a state's hue, a count or badge of
@@ -45,7 +46,7 @@ layer is a bug even when it looks right, as no theme switch reaches it.
    screen says how many were left out.
 8. **Calm and immediate.** What a person changes shows at once, and the work behind it follows.
    Nothing moves for show: the one motion is a `Spinner` on work still running, beside what the
-   library's own overlays and controls do (*Exceptions*). `docs/ui-patterns.md` (*Immediate feedback*, *Motion*) holds how.
+   library's own overlays and controls do (*Components*). `docs/ui-patterns.md` (*Immediate feedback*, *Motion*) holds how.
 
 ## Layout
 
@@ -85,7 +86,8 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   project*, *All sessions*, *Needs attention*, *Recent activity*) over a hairline; the scrolling
   list, ending on *Add project…*; a foot with *Settings*, a page row like the four above, filled
   while it shows. Every row at rest is in the muted ink; the one where the person is takes its
-  fill and the ink paired with it. A badge in the rail sinks on the inset step.
+  fill and the ink paired with it. A neutral badge sinks a step into the surface it sits on, here
+  the inset step.
 
   *By project* lists pinned projects first, a gap between projects. A project row: the fold
   chevron, folder and name, its git line (branch, uncommitted changes, commits ahead and behind,
@@ -102,8 +104,9 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   *Stop* and the way back, so a row the keys only pass through stays still. The
   other filters are flat, the project in place of the agent. A group lists six sessions, then *N
   more*; an open project with none says *No open sessions*, a search or filter with none *No
-  sessions match*. Each state has its own ink and, but for failed and disconnected, its own
-  mark, none animated (running is a filled dot): failed or disconnected danger, needs input
+  sessions match*. Each state has its own ink, and a mark per thing the person can do, none
+  animated (running is a filled dot): failed and disconnected share one, both answered by trying
+  again, their words telling them apart. The inks: failed or disconnected danger, needs input
   warning, running the accent, done unread success, idle muted. `↑`/`↓` move the list's row,
   ringed while the keys move it, `Enter` and `←`/`→` act on it, `Alt+↑`/`↓` step through
   sessions in its order. The tree's order is the user's, set by dragging; pinned projects stay on
@@ -174,25 +177,17 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
     session*, *Stop*, *Resume*, *Retry…*, *Dismiss*) shown on hover, kept under *Needs attention*;
     its text opens the task's detail, a page of its own at the prose width: a trail, the title,
     then *Awaiting approval*, *Way out* and the runs as plain sections.
-  - *Issues*, across the pane's whole width, the pane's header drawing a line its whole width
-    over it: a head at `.tall()` (the search, then *Refresh* and *New issue* at the end); a filter
-    bar at `.short()` (*Open* and *Closed* as choices, each its count in a badge on its
-    corner, then, at the row's end, pickers for progress, project, label and *Clear filters*),
-    over a line the pane's whole width; a list of rows on one line at `.text_xs()`, no lines between them,
-    each its state mark (open in the success ink, closed in tempered magenta), reference,
-    title (in `font_medium`), priority and note, then its labels, project and
-    age (in `font_medium`, the middle ink) in slots at the end, the labels
-    and project dropped where the pane is too narrow to leave the title room, rows keeping their place while a person reads, the row the arrow keys move
-    marked by its selected fill alone, with no ring; *Showing N of M
-    open issues* at the foot, over a line the pane's whole width.
-    *Reading the issues…* until the first read lands; *Refresh* spins while it reads; *New issue*
-    is secondary, the page holding no primary.
-    Nothing is open on arrival; a picked issue floats over the list's right side, its width
-    dragged for the session; `×`/Esc close it, ↑/↓ step. *No issues yet* or *No issues match*
-    when empty. Filters, search, selection, the open issue and scroll persist.
+  - *Issues*, a list page (`docs/ui-patterns.md`, *List pages*): a head (the search, then
+    *Refresh* and *New issue*, its primary, at the end); a filter bar (*Open* and
+    *Closed* as choices, each its count in a badge on its corner, then pickers for progress,
+    project and label and *Clear filters*); a row is its state mark (open in the success ink,
+    closed in the closed ink), reference, title, priority and note, then its labels, project
+    and age in slots at the end, the labels and project dropped first; *Showing N of M open
+    issues* at the foot. *Reading the issues…* until the first read lands; *Refresh* spins while
+    it reads. *No issues yet* or *No issues match* when empty.
   - The **review block** opens below where the work stands only on *Review…*, as
     `docs/unattended.md` draws it.
-  - *Workflows*: a head (*New workflow* on the secondary fill, *Import…*, then how many), then
+  - *Workflows*: a head (*New workflow*, its primary, *Import…*, then how many), then
     the workflows as rows, capped, shipped ones *Built in* (read-only) in a slot of their own,
     *Run…* (projects, the rail's first) and the rest shown on hover. *New workflow* or *Edit*
     opens a form below, one box per step (its kind its first field, one ⋯ to move or remove it),
@@ -234,8 +229,8 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   neutral. A live failure is a solid danger wash with no edge, and a lost agent's names the key
   that restarts it.
 - **The pinned cards** (a permission, a question) share one shell: a head, the body, the
-  answers at the end at `.xsmall()` (a hairline under the head and over the answers, the sides
-  padded `p_4` so a scrolling body's thumb has room), the dismissing one a quiet ghost. A choice is a row on a well
+  answers at the end at `.xsmall()` (a hairline under the head and over the answers, padded as a box
+  whose body scrolls), the dismissing one a quiet ghost. A choice is a row on a well
   of its own at rest and on the selected step when taken, a radio or checkbox drawn in ink at
   its head (the library's rings vanish on the selected step) and its number as a `Kbd`, at least
   a field's height; a typed answer is a plain field (`.short()`), ringed while the keys are on it. Their keys are named in tooltips, never in a label.
@@ -254,9 +249,9 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
 | A page's or an issue's title | `.text_xl()` |
 
 - **Weight carries hierarchy before size does**: `font_medium` for a page's title and a name in
-  a header, `font_semibold` for any other title or heading; nothing bolder. The Issues page's
-  rows are the exception: at the meta size, their title and their age take `font_medium`, the
-  columns read down the list, and the rest the regular weight. Line height is gpui's,
+  a header, `font_semibold` for any other title or heading; nothing bolder. A list page's rows,
+  at the meta size, carry their name and the column read down the list in `font_medium`
+  (`docs/ui-patterns.md`, *List pages*). Line height is gpui's,
   but `LEADING` for reading text and `LEADING_TIGHT` for a wrapped title.
 - **Inks by role.** Text on a neutral surface (the reading surface, a dock, the rail, a floating
   surface, a well, the bubble) takes one of three: `foreground` for content and the current
@@ -274,18 +269,21 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   constant equals one of them. Pick by relationship using `docs/ui-patterns.md`'s *Spacing and
   density*, not by what fits one screenshot. Text below a title shares its text axis, and icons,
   labels and buttons in one column share one axis down it.
-- **Sizes are rems**, as per-panel zoom overrides the rem base; pixels only for lines, rings,
-  shadows, bounds measured against the window, an inset cancelling one the library draws in
-  pixels, and the terminal's grid, which zooms on its own. Fixed chrome heights stay outside the
+- **Sizes are rems**, as per-panel zoom overrides the rem base. Pixels are for what zoom must
+  not reach: a stroke (a line, a ring, a mark), a shadow, a bound measured against the window, an
+  inset cancelling one the library draws in pixels, and a grid that zooms on its own (the
+  terminal's). Fixed chrome heights stay outside the
   zoom wrapper. A size the steps lack is a named constant (shared ones in
   `onehand_plugin_host::tokens`, others beside their use), its reason in its doc comment.
-- **One corner**: `radius`, 4px (`tokens::CORNER`), for everything: a control, a field, a row,
-  a tab, a chip, a well, the bubble, a box, the composer, the terminal, a floating panel, a
-  dialog, a toast. The theme sets `radius_lg` to the same, so the library's own surfaces follow.
-  Two exceptions: a badge (a `Tag`) is `rounded_full`, so it reads as a tag rather than a
-  button, its words `py_1` off its edges, its edge halfway from its fill to its ink (`badge_edge`), and a dot or a status mark is `rounded_full` too. A part joined to its
-  container's edge takes its corner there.
-- **Lines** are a 1px `border`; the mark under an open tab is 2px. The Issues page's lines across
+- **Two shapes.** What a person presses or what holds content takes `radius`, 4px
+  (`tokens::CORNER`): a control, a field, a row, a tab, a chip, a well, the bubble, a box, the
+  composer, the terminal, a floating panel, a dialog, a toast. The theme sets `radius_lg` to the
+  same, so the library's own surfaces follow. What is only read beside content is
+  `rounded_full`: a badge (a `Tag`), so it reads as a tag rather than a
+  button, its words `py_1` off its edges, its edge halfway from its fill to its ink (`badge_edge`), and a dot or a status mark is `rounded_full` too. The library's small parts keep its half
+  corner (*Components*). A part joined to its container's edge takes its corner there.
+- **Lines** part regions and are a 1px `border`. A **mark** says where the person is, not where
+  a region ends: the one under an open tab is 2px, as a stroke a step heavier than a line. A list page's lines across
   the pane are a step fainter (`faint_rule`), so the edge-to-edge list reads as one surface.
 
 ## Colour and state
@@ -302,7 +300,7 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
 | `link` | the accent hue: what runs, and links |
 | `list_hover` | hover on a pickable row |
 | `primary` | the single primary action in a view |
-| `status_ink()` | danger, warning and success text |
+| `status_ink()` | danger, warning and success text, and `closed` for what is over and settled (a closed issue) |
 | `popover` | floating surfaces |
 | `theme::raised` | the composer card |
 | `secondary` | inline code in the prompt bubble, a step off its fill; a document's code on a dock |
@@ -311,13 +309,13 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   inherits its surface unless it has a distinct role: well, selection or floating content.
 - Boxes are borders; wells and the bubble are fills. Ordinary sections remain unboxed. Do not
   combine a border, contrasting fill and shadow just to make a group visible.
-- Hover and selection are fills: distinct steps on a row (`list_hover`, `accent`; the rail's own
-  `sidebar_accent` and `rail_chosen`), one step on a ghost button (`control_fill`, between a
+- Hover and selection are fills: distinct steps on a row (`list_hover`, `accent`; on the rail's lifted surface its
+  own pair, `sidebar_accent` and `rail_chosen`, as a fill is a step from the surface under it), one step on a ghost button (`control_fill`, between a
   row's hover and its selected step). A secondary button rests on that fill and lifts to the
   selected step under the pointer; the selected step is otherwise a chosen row's. Keyboard
-  focus is the ring, except on a field: a focused field draws no ring, only its edge in the
-  `ring` ink, and a field with no edge at rest shows one while focused (the composer, a card, keeps
-  the caret alone).
+  focus on a control is the ring. A field is marked by its edge, so its focus is that edge turned
+  the `ring` ink, and an edgeless one gains it while focused; the composer, the input surface,
+  shows focus by its caret (*Components*).
 - At most one primary in a view; a view needs none (the Settings page has none). Where layers
   stack, what waits on the person holds it while it shows (a floating issue, an open form, a
   pinned card, a run's approval), and what it covers steps down to `secondary`.
@@ -331,21 +329,45 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
 Reuse gpui-component before building anything: `Root`, `DockArea`, `Sidebar`, `Dialog`, `Switch`,
 `InputState`, `Editor`, `TextView`, plus gpui's own `list` for the transcript. Controls go through
 the plugin host's builders, which set the pointer cursor and the one corner (`radius`): buttons through
-`action`; fields through `text_input`, `search_input` (the search mark, the clear button; the rail's
-has no edge, on `theme::inset`, and the Issues page's none, on the well's `muted` fill) and `text_area`. A button names its variant by role: `primary`
+`action`; fields through `text_input`, `search_input` and `text_area`. A field comes in two kinds:
+an **edged field**, in a form or a dialog, on no fill of its own; and a **search field** (the
+search mark, the clear button), with no edge, sunk into the fill of the place it sits (the
+rail's on `theme::inset`, a list page's on the well's `muted`), since it heads what it searches
+rather than standing among fields. A button names its variant by role: `primary`
 the main action, `secondary` an alternative beside it, a set picker's trigger (an unset one is a ghost, through
 `picker`) and every Settings button,
-`choice` in a pick-one row, `danger` only under *Exceptions*, and ghost (`.quiet(cx)`, whose hover
+`choice` in a pick-one row, `danger` as below, and ghost (`.quiet(cx)`, whose hover
 is the control fill) the rest. **No button draws an edge** (no default variant, no `outline()`): a
-field is the one control marked by its edge, on no fill of its own. A control that refuses says so
+field is the one control marked by its edge, or, searching, by its sunk fill. A control that refuses says so
 and why (`.refuses(why)`, the reason its tooltip) and goes back to the arrow.
+
+**Danger is a word, and a fill only to end or confirm.** A destructive action is a word in the
+danger tint. The solid `danger` fill marks two buttons: *Stop* in the composer while a turn runs,
+and the button confirming a removal inside its modal. Nothing that destroys nothing takes the
+danger ink.
+
+**The composer is the input surface**, a role of its own rather than a box or a field: a card
+with no edge, standing off the page on its own fill (`theme::raised`) and lift (`composer_lift`),
+showing focus by the caret alone. Its pickers (the model, the effort, the mode, *Fast*, the
+branch) are `.xsmall()` ghosts with a caret whatever they hold, where a picker elsewhere takes
+the secondary fill once set: each always holds a choice, and a fill on every chip would crowd
+the field they sit under.
+
+**The library's own parts are the library's.** Inside a gpui-component control or overlay, what
+it draws itself stays as it draws it: a refusing or loading button's alpha, a picker's caret, a
+badge under the pointer, a switch's thumb and the motion of its overlays; the `sm` radius, half
+the one corner, of its small parts drawn inside a control (a `Kbd`, a checkbox, its own tabs),
+where a full corner would round them to a pill; and an open dropdown's trigger on its pressed
+fill, in the ink the caller gave it, so a quiet icon stays muted there. The app corrects the
+library only through a shared wrapper: where the library's mark vanishes on a fill the app
+draws on (a radio's or a checkbox's ring on the selected step), `choice_mark` draws it in ink.
 
 **A size names a role, and means one height and one text size in every control.** The library's
 sizes disagree across components (its default button letters at the reading size beside a field
 at the chrome size), so the app uses three: `.xsmall()`, the compact default, in a strip, a box, a
-page's head, for a row's actions and for a secondary action inside dense content (a line of meta
-text, a transcript block, a chip); `.short()` (`CONTROL_H`) in a form, a page's filter bar (and
-and a dialog's footer; `.tall()` (`FIELD_H`, chrome-size words) in the Issues page's head, its
+column page's head, for a row's actions and for a secondary action inside dense content (a line of
+meta text, a transcript block, a chip); `.short()` (`CONTROL_H`) in a form, a page's filter bar
+and a dialog's footer; `.tall()` (`FIELD_H`, chrome-size words) in a list page's head, its
 search and actions. Never the library's default. **`.xsmall()` and `.short()` letter their words
 at `.text_xs()`**, so a `.short()` control's sit in its box with room above and below. A
 correction a component needs lives in its shared wrapper (`Short`, `Tall`), never at a call site. An icon
@@ -374,32 +396,3 @@ a word reads faster than a shape nobody has learned. An icon beside text is no t
 text's line and sits on its centre; icons down a column share one slot width, so the labels after
 them start on one edge. No icon sits on a tile of its own; a fill behind one belongs to the
 control or row it is part of.
-
-## Exceptions
-
-The whole list of departures agreed to stay: any other is a bug, put right or recorded in
-`docs/known-gaps.md` until it is.
-
-- **The composer card has no edge.** It stands off the page on its own fill (`theme::raised`) and
-  its own lift (`composer_lift`).
-- **A solid danger fill marks two buttons**: *Stop* in the composer, and the button confirming a
-  removal inside its modal. Anywhere else a destructive action is a word in the danger tint, and
-  so is the one control that undoes a narrowing: *Clear filters* on the Issues page, a word in
-  the danger tint on no fill, underlined under the pointer, shown only while a filter is set.
-- **The composer's chips are quiet even when set.** Its pickers (the model, the effort, the mode,
-  *Fast*, the branch) are `.xsmall()` ghosts with a caret whatever they hold, where a picker
-  elsewhere takes the secondary fill once set: each always holds a choice, and a fill on every
-  chip would crowd the field they sit under.
-- **A cut fades into the surface behind it**: a rail name too long for its row, a long command
-  folded in the transcript, the conversation where it runs under the composer, and the staged
-  files beside *Show all N*. Each is a gradient from the clear surface to the solid one; it says
-  something is cut, and nothing else is drawn see-through.
-- **The library draws its own controls' states**: a refusing or loading button, a picker's caret,
-  a badge under the pointer and a switch's thumb keep the alpha or the motion it gives them, as
-  its overlays keep theirs.
-- **The library's small parts keep their half corner**: a `Kbd`, a checkbox and the library's own
-  tabs read its `sm` radius, half the one corner; they are drawn inside a control, where a full
-  corner would round them to a pill.
-- **An open menu's trigger keeps its resting ink**: while a dropdown is open the library draws its
-  trigger on its pressed fill (a ghost's control fill) and replays the ink the caller gave it, so a
-  quiet icon stays in the muted ink there rather than taking that fill's ink.

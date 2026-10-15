@@ -143,16 +143,5 @@ pub(super) const COMMAND_H: Rems = rems(LINE_SM.0 * 8.);
 pub(super) const CARD_PAD: Rems = rems(1.);
 /// Left and right inside a frame that lays its contents out in columns.
 pub(super) const FRAME_PAD: Rems = rems(0.75);
-/// The radio or checkbox at the head of a choice row, and the mark inside it
-/// once the choice is taken.
-///
-/// Two numbers because the inner one is not a fraction of the outer: the ring
-/// has a border of its own, and a dot derived from the outside measurement
-/// would grow into it at one size and float inside it at another.
-pub(super) const ASK_CHOICE_MARK: Rems = rems(1.0);
-pub(super) const ASK_CHOICE_DOT: Rems = rems(0.5);
-/// The ring around that mark, in pixels and not rems: a hairline's job done a
-/// touch heavier, and a hairline must not scale with a panel's zoom.
-pub(super) const ASK_MARK_RING: gpui::Pixels = gpui::px(1.5);
 /// Width a question's tab label is elided at. Only a *tab* is ever elided.
 pub(super) const ASK_TAB_W: Rems = rems(8.75);

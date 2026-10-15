@@ -13,6 +13,11 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   most. The Markdown renderer picks each heading level's weight itself, and its style lets a caller
   size a level but not weigh one; the Markdown mode and an issue's description both draw through it.
   Changing it means a patch to the renderer.
+- **Two search fields still draw an edge.** A search field sinks into the fill of its place with
+  no edge, as the rail's and the Issues page's do, but `search_input` itself still draws the
+  edge a form's field has, and each caller sinks it by hand. The Plugins mode's filter and the
+  Issues tab's search keep the edge. Fixing it means moving the sinking into `search_input`,
+  which then needs the fill of its place from each caller.
 - **Some window behaviour has no automated test**: Settings' drafts kept across leaving the page,
   a failed write said once, and the keyboard handed back when a dialog closes. Each needs a window
   to run in, and the app runs no GPUI test harness; they are checked by hand.

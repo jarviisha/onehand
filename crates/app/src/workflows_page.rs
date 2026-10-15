@@ -152,7 +152,7 @@ impl Render for WorkflowsPage {
                         .gap_6()
                         .w_full()
                         .max_w(crate::tokens::PAGE_PROSE)
-                        .child(head(&handle, cx))
+                        .child(head(&handle, form.is_some(), cx))
                         .child(
                             div()
                                 .text_sm()
@@ -170,10 +170,10 @@ impl Render for WorkflowsPage {
     }
 }
 
-/// The page's head: the actions that make a workflow at the start, *New
-/// workflow* on the secondary fill, and how many there are at the end. No
-/// primary, so the form, when it is open, never has one to outweigh.
-fn head(handle: &Entity<WorkflowsPage>, cx: &App) -> AnyElement {
+/// The page's head: the actions that make a workflow at the start, and how
+/// many there are at the end. *New workflow* is the page's one primary at
+/// rest; while the form is open it holds that, and this steps down under it.
+fn head(handle: &Entity<WorkflowsPage>, editing: bool, cx: &App) -> AnyElement {
     let count = crate::workflow::templates(cx).len();
     div()
         .h_flex()
@@ -182,7 +182,8 @@ fn head(handle: &Entity<WorkflowsPage>, cx: &App) -> AnyElement {
         .child(
             crate::controls::action("new-workflow")
                 .xsmall()
-                .secondary()
+                .when(editing, |button| button.secondary())
+                .when(!editing, |button| button.primary())
                 .label("New workflow")
                 .on_click(click(handle, |page, window, cx| {
                     page.new_workflow(window, cx)

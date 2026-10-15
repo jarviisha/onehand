@@ -8,7 +8,7 @@ use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, InteractiveElement as _, IntoElement,
     ParentElement, Rems, SharedString, StatefulInteractiveElement as _, Styled, Window, div, rems,
 };
-use gpui_component::button::{ButtonCustomVariant, ButtonVariants as _};
+use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::InputState;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::issues;
@@ -178,6 +178,9 @@ impl IssuesView {
         );
         let pr_reading = self.page.as_ref().is_some_and(|page| page.pr_reading > 0);
         let reading = listed.open + listed.closed == 0 && self.reading_issues(projects, cx);
+        // The page's one primary at rest; what floats over the list (an issue,
+        // a form) holds it while it shows, and this steps down under it.
+        let covered = self.page.as_ref().is_some_and(|page| page.open);
         // Open or closed, a choice with its count pinned to its corner in a
         // badge in the hue of that state, the one its rows' marks take: open
         // green, closed magenta. The word reads alone; no count before the
@@ -265,7 +268,8 @@ impl IssuesView {
             .child(
                 action("issues-page-new")
                     .tall()
-                    .secondary()
+                    .when(covered, |button| button.secondary())
+                    .when(!covered, |button| button.primary())
                     .icon(Icon::new(IconName::Plus))
                     .label("New issue")
                     .tooltip("In the project filtered to, or the one picked")
@@ -280,37 +284,18 @@ impl IssuesView {
             || filters.project.is_some()
             || filters.label.is_some();
         // Only while a filter is set, after the pickers, so nothing moves as
-        // it comes and goes. A word in the danger ink on no fill, underlined
-        // under the pointer: it undoes the narrowing rather than acting on an
-        // issue. The words are a child so they can underline by themselves,
-        // and the box round it names it, since the library's button takes a
-        // name only from a text label.
-        let clear = narrowed.then(|| {
-            let (danger, clear) = (status_ink(cx).danger, cx.theme().transparent);
-            div()
-                .id("issues-page-clear-filters-named")
-                .flex_none()
-                .aria_label("Clear filters")
-                .child(
-                    action("issues-page-clear-filters")
-                        .short()
-                        .custom(
-                            ButtonCustomVariant::new(cx)
-                                .color(clear)
-                                .foreground(danger)
-                                .hover(clear)
-                                .active(clear),
-                        )
-                        .child(
-                            div()
-                                .hover(|words| words.underline())
-                                .child("Clear filters"),
-                        )
-                        .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
-                            view.clear_narrowing(window, cx)
-                        })),
-                )
-        });
+        // it comes and goes. A plain ghost: undoing a narrowing destroys
+        // nothing, so it takes no danger ink.
+        let clear =
+            narrowed.then(|| {
+                action("issues-page-clear-filters")
+                    .short()
+                    .quiet(cx)
+                    .label("Clear filters")
+                    .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
+                        view.clear_narrowing(window, cx)
+                    }))
+            });
         // Open or closed leads the row under it, the choices `gap_6` apart so
         // a count off one's corner keeps clear of the next; the filters keep
         // to the row's end, and wrap under the choices when narrow.
