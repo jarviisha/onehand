@@ -20,8 +20,8 @@ impl PluginsView {
     /// One installed plugin.
     ///
     /// Its name, then a quieter line saying where it came from and where it
-    /// is installed, then what it carries — one chip per kind, *hooks* in the
-    /// warning ink since a hook is code that runs on its own. The version is
+    /// is installed, then what it carries — one neutral chip per kind, *hooks*
+    /// among them: what a plugin carries is a fact, not a state. The version is
     /// in the monospace face, a commit cut to the seven characters a person
     /// reads with the whole of it on hover.
     ///

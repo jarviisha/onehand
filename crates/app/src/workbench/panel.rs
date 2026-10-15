@@ -516,7 +516,7 @@ impl Focusable for Workbench {
 }
 
 impl Render for Workbench {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let showing = self.showing();
         let specs: Vec<WorkbenchModeSpec> = self.modes.iter().map(|item| item.spec()).collect();
         let strip = self.strip(specs, cx);
@@ -531,7 +531,7 @@ impl Render for Workbench {
         // put, leaving every column landing past its own character. Such a mode
         // takes its reading size as a font size instead, through `set_zoom`.
         let body = if showing.rem_zoom {
-            self.zoom.scale(window, body).into_any_element()
+            self.zoom.scale(body).into_any_element()
         } else {
             body
         };
