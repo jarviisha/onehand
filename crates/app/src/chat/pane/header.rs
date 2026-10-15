@@ -46,6 +46,14 @@ pub(super) struct Archives {
 }
 
 impl ChatPane {
+    /// The header, kept at its own size under the reading zoom: it is drawn
+    /// inside the zoomed part of every view the pane shows, and a header that
+    /// grew with the conversation would spend the room the zoom asked for and
+    /// stop lining up with the Workbench's strip beside it.
+    pub(super) fn header(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        self.zoom.unscale(self.header_row(cx))
+    }
+
     /// The session header: what conversation this is, what it is doing, and the
     /// things you do *to* it.
     ///
@@ -72,14 +80,6 @@ impl ChatPane {
     /// edge, so the outermost control moves the outermost panel. The dots are
     /// the row's one menu mark, and everything behind them is something done
     /// to the conversation the name beside them is.
-    /// The header, kept at its own size under the reading zoom: it is drawn
-    /// inside the zoomed part of every view the pane shows, and a header that
-    /// grew with the conversation would spend the room the zoom asked for and
-    /// stop lining up with the Workbench's strip beside it.
-    pub(super) fn header(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        self.zoom.unscale(self.header_row(cx))
-    }
-
     fn header_row(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let chat = self.active_chat(cx);
         let title = chat.and_then(Chat::conversation_title).unwrap_or_else(|| {
