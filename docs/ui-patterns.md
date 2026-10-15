@@ -180,8 +180,9 @@ A page that has a head and filters draws them in one order, the Issues page's:
   panel floating over the page never has one to outweigh.
 - **The filter bar**, under the head: where the content splits into a few states that each count
   (*Open*, *Closed*), those first, each a `.short()` `choice`, the shown one filled, its count a
-  slim `badge` in the hue of that state (open green, closed magenta) sitting outside its top-right corner, its own lower corner a notch over the button's so it
-  never covers the words, the choices `gap_8` apart so a count keeps clear of the next; the filters kept to the row's end, wrapping under the choices
+  slim `badge` in the hue of that state (open green, closed magenta) hung from its top-right corner, its lower-left corner `2` in from that point each way, over
+  the button's inset and above its words, the choices `gap_6` apart so a count keeps clear of
+  the next; the filters kept to the row's end, wrapping under the choices
   when narrow. Each filter is a `.short()` `picker` with its caret, its label naming what it is
   set to: a ghost in the muted ink while it is where it starts, on the secondary fill in that
   fill's ink once it narrows the list. After them, only while a filter or the search is set,

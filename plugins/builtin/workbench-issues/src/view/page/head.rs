@@ -200,17 +200,15 @@ impl IssuesView {
                 .flex_none()
                 .child(button)
                 .when(!reading, |slot| {
-                    // Outside the button whole, its lower corner on the
-                    // button's upper one, a notch in, so it never covers the
-                    // words.
+                    // Hung from a point on the button's top-right corner,
+                    // its lower-left corner `2` in from that point each way:
+                    // over the button's inset and above its words, never on
+                    // them. Insets from a point rather than margins, so where
+                    // it lands does not hang on how margins meet a box taken
+                    // out of the flow.
                     slot.child(
-                        div()
-                            .absolute()
-                            .left_full()
-                            .bottom_full()
-                            .ml_neg_1()
-                            .mb_neg_1()
-                            .child(
+                        div().absolute().top_0().right_0().size_0().child(
+                            div().absolute().left_neg_2().bottom_neg_2().child(
                                 // A notch slimmer than a badge in a row, as a
                                 // count on a corner is.
                                 badge(
@@ -219,6 +217,7 @@ impl IssuesView {
                                 )
                                 .py_0p5(),
                             ),
+                        ),
                     )
                 })
         };
@@ -312,7 +311,7 @@ impl IssuesView {
                         })),
                 )
         });
-        // Open or closed leads the row under it, the choices `gap_8` apart so
+        // Open or closed leads the row under it, the choices `gap_6` apart so
         // a count off one's corner keeps clear of the next; the filters keep
         // to the row's end, and wrap under the choices when narrow.
         let filters = div()
@@ -325,7 +324,7 @@ impl IssuesView {
                 div()
                     .h_flex()
                     .items_center()
-                    .gap_8()
+                    .gap_6()
                     .child(choose(false, "Open", listed.open, cx))
                     .child(choose(true, "Closed", listed.closed, cx)),
             )
