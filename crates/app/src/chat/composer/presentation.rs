@@ -212,13 +212,13 @@ fn chip_group<'a>(
         .filter(|option| !option.choices.is_empty())
 }
 
-/// What that chip says: the value in force, or the setting's own name until one
-/// is.
+/// What that chip says: the value in force after the setting's name, or the
+/// setting's own name until one is.
 pub(super) fn fast_action(session: &Entity<ChatSession>, cx: &App) -> Option<SharedString> {
     let option = chip_group(&session.read(cx).chat.config_options, CHIP_GROUP)?;
     Some(SharedString::from(
         in_force(option)
-            .map(|choice| choice.name.clone())
+            .map(|choice| format!("Fast: {}", choice.name))
             .unwrap_or_else(|| option.name.clone()),
     ))
 }

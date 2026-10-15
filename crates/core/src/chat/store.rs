@@ -215,6 +215,8 @@ enum Line {
         /// Always written. An absent key meaning "quiet" is an implicit case
         /// worth more than the fifteen bytes it saves.
         level: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        detail: Option<String>,
     },
 }
 
@@ -538,9 +540,14 @@ fn restore_line(dir: &Path, line: &Line) -> ChatItem {
                 })
                 .collect(),
         )),
-        Line::Notice { text, level } => ChatItem::Notice {
+        Line::Notice {
+            text,
+            level,
+            detail,
+        } => ChatItem::Notice {
             text: text.clone(),
             level: NoticeLevel::parse(level),
+            detail: detail.clone(),
         },
         Line::Tool {
             id,
@@ -670,9 +677,14 @@ pub(crate) fn line_of(chat: &Chat, item: &ChatItem) -> Option<(String, Vec<Blob>
                 })
                 .collect(),
         },
-        ChatItem::Notice { text, level } => Line::Notice {
+        ChatItem::Notice {
+            text,
+            level,
+            detail,
+        } => Line::Notice {
             text: text.clone(),
             level: level.as_str().to_string(),
+            detail: detail.clone(),
         },
         ChatItem::Tool(t) => Line::Tool {
             id: t.call.id.clone(),

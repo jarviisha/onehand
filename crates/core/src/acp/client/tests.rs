@@ -582,3 +582,56 @@ fn a_failure_carries_the_adapters_last_words_when_it_said_any() {
         "adapter closed stdout: npm error code ETARGET · npm error No matching version"
     );
 }
+
+/// Wait for the next failure the client reports.
+async fn failure(
+    events: &mut tokio::sync::mpsc::UnboundedReceiver<AcpEvent>,
+) -> (String, Option<String>) {
+    while let Some(event) = events.recv().await {
+        if let AcpEvent::Error { text, detail } = event {
+            return (text, detail);
+        }
+    }
+    panic!("no failure reached the caller");
+}
+
+/// **A failed turn is said in the agent's words, not as the protocol object
+/// carrying them.** The raw `{"code":-32000,"message":…}` read as prose is a
+/// puzzle at the moment a person decides how to recover; the message leads,
+/// what the agent attached beside it is kept apart as detail, and the code,
+/// which no person acts on, is not shown at all.
+#[tokio::test]
+async fn a_failed_turn_is_said_in_the_agents_words() {
+    for (error, detail) in [
+        (
+            json!({ "code": -32000, "message": "the adapter gave up", "data": { "reason": "quota" } }),
+            true,
+        ),
+        (
+            json!({ "code": -32000, "message": "the adapter gave up" }),
+            false,
+        ),
+    ] {
+        let (mut agent, mut events) = client();
+        agent.handshake().await;
+        let tx = connected(&mut events).await;
+        tx.send(AcpRequest::Prompt {
+            text: "go".into(),
+            attachments: Vec::new(),
+        })
+        .expect("the client is still serving");
+        let prompt = agent.heard().await;
+        assert_eq!(prompt["method"], "session/prompt", "{prompt:#}");
+        agent
+            .say(json!({ "jsonrpc": "2.0", "id": prompt["id"], "error": error }))
+            .await;
+
+        let (text, said) = failure(&mut events).await;
+        assert_eq!(text, "The turn failed: the adapter gave up");
+        assert_eq!(said.is_some(), detail, "{said:?}");
+        if let Some(said) = said {
+            assert!(said.contains("quota"), "{said}");
+            assert!(!said.contains("-32000"), "{said}");
+        }
+    }
+}

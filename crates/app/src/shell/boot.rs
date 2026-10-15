@@ -424,6 +424,9 @@ impl Shell {
                 if matches!(event, InputEvent::Change) {
                     let name = state.read(cx).value().trim().to_string();
                     if !name.is_empty() && name != shell.window.workspace.name {
+                        if let Some(dir) = shell.window.workspace.storage_dir.clone() {
+                            super::storage::remember_name(&dir, &name, cx);
+                        }
                         let before =
                             std::mem::replace(&mut shell.window.workspace.name, name.clone());
                         // Put back, field and all, if its write fails.
@@ -588,6 +591,7 @@ const WINDOW_MIN: gpui::Size<gpui::Pixels> = gpui::size(gpui::px(720.), gpui::px
 /// Open a window for `workspace` and register it.
 fn open_window(workspace: Workspace, cx: &mut App) {
     let storage_dir = workspace.storage_dir.clone();
+    let name = workspace.name.clone();
     cx.spawn(async move |cx| {
         let options = gpui::WindowOptions {
             // The window's identity to the desktop, and the only reason the app
@@ -636,7 +640,7 @@ fn open_window(workspace: Workspace, cx: &mut App) {
             let shell = built.expect("the window was built without a shell");
             cx.update_global::<Shared, _>(|shared, _| {
                 shared.windows.push(OpenWindow {
-                    storage_dir,
+                    storage_dir: storage_dir.clone(),
                     handle: handle.into(),
                     shell,
                 });
@@ -646,6 +650,9 @@ fn open_window(workspace: Workspace, cx: &mut App) {
             // not from the first tick, half an hour in. After the push, because
             // the look finds projects through this registry.
             crate::unattended::recheck(cx);
+            if let Some(dir) = &storage_dir {
+                super::storage::remember_name(dir, &name, cx);
+            }
         });
     })
     .detach();

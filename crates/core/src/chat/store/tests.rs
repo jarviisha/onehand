@@ -469,3 +469,33 @@ fn fnv1a_gives_the_published_values_so_a_saved_digest_survives_any_rebuild() {
     assert_eq!(fnv1a(b"a"), 0xaf63_dc4c_8601_ec8c);
     assert_eq!(fnv1a(b"foobar"), 0x8594_4171_f739_67e8);
 }
+
+/// A relaunch reads the session back from its file, so a failed turn's notice
+/// has to come back failed, with the detail the agent attached, or the
+/// session would read as idle beside a failure it still shows.
+#[test]
+fn a_failed_turn_comes_back_failed() {
+    let store = scratch("failed");
+    let mut chat = chat_in(&store, "s1");
+    chat.push_user("go".into(), Vec::new());
+    chat.items.push(ChatItem::failure(
+        "The turn failed: rate limited",
+        crate::chat::NoticeLevel::Failed,
+        Some("{\"reason\": \"quota\"}".into()),
+    ));
+    save(&mut chat);
+
+    let back = load(&conv_dir(&store, "s1")).unwrap();
+    assert!(matches!(
+        back.items.as_slice(),
+        [
+            ChatItem::User(_),
+            ChatItem::Notice {
+                level: crate::chat::NoticeLevel::Failed,
+                detail: Some(_),
+                ..
+            }
+        ]
+    ));
+    let _ = std::fs::remove_dir_all(&store);
+}

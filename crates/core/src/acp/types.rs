@@ -498,8 +498,13 @@ pub enum AcpEvent {
     },
     /// The current turn finished.
     TurnEnded { stop_reason: String },
-    /// A non-fatal error reported by the agent (e.g. a failed prompt).
-    Error(String),
+    /// A non-fatal error reported by the agent (e.g. a failed prompt): a
+    /// sentence a person reads, and whatever the agent attached beside its
+    /// message, kept apart as machine text.
+    Error {
+        text: String,
+        detail: Option<String>,
+    },
     /// The adapter died / timed out / closed — the session is now `Failed`
     /// (restartable with Ctrl+Shift+R). Terminal for this worker.
     Disconnected(String),

@@ -637,7 +637,10 @@ fn a_failed_resume_puts_the_conversation_back() {
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
     let mut chat = resumed_chat(3);
     chat.apply(AcpEvent::UserChunk("message 0".into()));
-    chat.apply(AcpEvent::Error("session/load failed".into()));
+    chat.apply(AcpEvent::Error {
+        text: "session/load failed".into(),
+        detail: None,
+    });
     chat.apply(AcpEvent::Connected { tx, resumed: false });
 
     assert_eq!(chat.history.len(), 3, "the conversation is back on screen");
@@ -1886,14 +1889,20 @@ fn the_modes_an_agent_offers_are_reported_when_it_says_them() {
 #[test]
 fn a_turn_that_ends_on_an_error_marks_the_chat_failed() {
     let (mut chat, _rx) = chat_with_tx();
-    chat.apply(AcpEvent::Error("not now".into()));
-    assert!(!chat.failed, "no turn was running");
+    chat.apply(AcpEvent::Error {
+        text: "not now".into(),
+        detail: None,
+    });
+    assert!(!chat.failed(), "no turn was running");
     assert!(chat.submit("go", &[]));
-    chat.apply(AcpEvent::Error("rate limited".into()));
+    chat.apply(AcpEvent::Error {
+        text: "rate limited".into(),
+        detail: None,
+    });
     chat.apply(AcpEvent::TurnEnded {
         stop_reason: "end_turn".into(),
     });
-    assert!(chat.failed);
+    assert!(chat.failed());
     assert_eq!(chat.resend_text(), Some("go"));
     assert!(chat.submit("again", &[]));
     assert_eq!(
@@ -1901,7 +1910,46 @@ fn a_turn_that_ends_on_an_error_marks_the_chat_failed() {
         None,
         "nothing to resend while nothing failed"
     );
-    assert!(!chat.failed, "a new turn clears it");
+    assert!(!chat.failed(), "a new turn clears it");
+}
+
+/// A failed turn is the transcript's to say, not a flag the chat happens to
+/// hold: a restart and a relaunch rebuild the chat from what was written, and
+/// the session is still failed there, until a prompt goes out again. Only
+/// trying again answers a failure; restarting the agent does not.
+#[test]
+fn a_failed_turn_outlives_a_restart_until_a_prompt_goes_out() {
+    let (mut chat, _rx) = chat_with_tx();
+    chat.session_id = Some("s-1".into());
+    assert!(chat.submit("go", &[]));
+    chat.apply(AcpEvent::Error {
+        text: "The turn failed: rate limited".into(),
+        detail: None,
+    });
+    chat.apply(AcpEvent::TurnEnded {
+        stop_reason: "end_turn".into(),
+    });
+    assert!(chat.failed());
+
+    let snapshot = chat.take_snapshot().expect("there is a conversation");
+    let mut next = Chat::new(
+        2,
+        PathBuf::from("/r"),
+        "Claude".into(),
+        Some(PathBuf::from("/store")),
+    );
+    next.resume_from(snapshot);
+    assert!(next.failed(), "the restart did not answer it");
+    assert_eq!(
+        next.resend_text(),
+        Some("go"),
+        "and it can still be sent again"
+    );
+
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    next.tx = Some(tx);
+    assert!(next.submit("again", &[]));
+    assert!(!next.failed(), "a prompt going out answers it");
 }
 
 /// Some adapters answer a cancel with an error; the turn was stopped, not
@@ -1911,11 +1959,14 @@ fn a_stopped_turn_answered_with_an_error_is_not_failed() {
     let (mut chat, _rx) = chat_with_tx();
     assert!(chat.submit("go", &[]));
     chat.cancel_turn();
-    chat.apply(AcpEvent::Error("cancelled by client".into()));
+    chat.apply(AcpEvent::Error {
+        text: "cancelled by client".into(),
+        detail: None,
+    });
     chat.apply(AcpEvent::TurnEnded {
         stop_reason: "end_turn".into(),
     });
-    assert!(!chat.failed);
+    assert!(!chat.failed());
 }
 
 /// The adapter's interruption marker arrives as a user chunk, and is a notice

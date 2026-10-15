@@ -93,7 +93,8 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   chevron, folder and name, its git line (branch, uncommitted changes, commits ahead and behind,
   each only above zero and named in full on hover), the pin, the unattended pill (*auto*, *auto ·
   N*, *auto · N waiting*; a run's pill opens its issue on the Issues page), and while folded its
-  sessions' most urgent state. Its chevron alone folds it (not during a search); the rest of the
+  sessions' most urgent state. Narrowed, the name keeps a minimum and the branch gives way first.
+  Its chevron alone folds it (not during a search); the rest of the
   row shows the project's last session, or its page, which then fills the row. `+` and `⋯` show
   on hover and on the keyboard's row, right-click opens the same menu. A session row, indented
   under its project: its state mark, title and `⋯` (on hover, on the keyboard's row, always on
@@ -130,7 +131,8 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   ink, rather than approving it unread.
 - **Composer.** A card with no edge, set off by its raised fill and lift; the caret alone shows
   focus, and no line is ever added to it (a refusal is Send's tooltip, a failure a toast). The
-  field, then the `+` menu, *Fast* (a toggle when its choices read as on and off), the model and
+  field, then the `+` menu, *Fast* (*Fast: On* or *Off*, a toggle with no caret, when its choices
+  read as on and off; else *Fast:* and the value in force), the model and
   effort chips, then *Send*, or *Stop* (solid danger, worded) and *Queue* over a draft. Under it
   the branch and the mode, stacked when narrow. Each chip's menu opens just above it, without
   its tooltip. Above the card: one pinned permission or question, the oldest, with how many more
@@ -167,7 +169,7 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
     session* (primary) at the end; its *Check command* field; and its past conversations as
     rows, capped, each with *Delete…* on hover. The page scrolls as one.
   - *Workspace overview* shows, across all projects, the boxes *Waiting on you* (runs waiting
-    for an answer or an approval, and sessions waiting, finished or lost) and *Working*, then
+    for an answer or an approval, and sessions waiting, failed, finished or lost) and *Working*, then
     *Projects* as a grid of tiles (not drawn without projects), then the sections *Recent
     conversations* and *Open issues* (its project picker kept while the page is left), plain
     lists on the page's surface. The page scrolls as one.
@@ -226,8 +228,9 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   that scrolls keeps a gutter for its scrollbar.
 - **Calm once it is past**: a failure a later prompt has moved past keeps its words in the
   muted ink, with no fill; a settled *N failed* drops the danger ink; a refusal's badge is
-  neutral. A live failure is a solid danger wash with no edge, and a lost agent's names the key
-  that restarts it.
+  neutral. A live failure is a solid danger wash with no edge, in the agent's words (*The turn
+  failed: …*), what it attached folded under *Show details* in mono; a lost agent's names the key
+  that restarts it. A failed turn holds until a prompt goes out; a restart does not answer it.
 - **The pinned cards** (a permission, a question) share one shell: a head, the body, the
   answers at the end at `.xsmall()` (a hairline under the head and over the answers, padded as a box
   whose body scrolls), the dismissing one a quiet ghost. A choice is a row on a well
@@ -349,7 +352,8 @@ danger ink.
 **The composer is the input surface**, a role of its own rather than a box or a field: a card
 with no edge, standing off the page on its own fill (`theme::raised`) and lift (`composer_lift`),
 showing focus by the caret alone. Its pickers (the model, the effort, the mode, *Fast*, the
-branch) are `.xsmall()` ghosts with a caret whatever they hold, where a picker elsewhere takes
+branch) are `.xsmall()` ghosts with a caret whatever they hold (*Fast* as a toggle opens no menu
+and carries none), where a picker elsewhere takes
 the secondary fill once set: each always holds a choice, and a fill on every chip would crowd
 the field they sit under.
 

@@ -1,4 +1,6 @@
-use super::items::{AskItem, ChatItem, PermItem, TranscriptItemId, TurnAnswer, UserMsg};
+use super::items::{
+    AskItem, ChatItem, NoticeLevel, PermItem, TranscriptItemId, TurnAnswer, UserMsg,
+};
 use super::{Chat, Link};
 use crate::acp::{AcpRequest, Attachment, ElicitOutcome, ToolStatus};
 use crate::attachment::{AttachmentDelivery, AttachmentSnapshot, StagedAttachment};
@@ -402,7 +404,6 @@ impl Chat {
         }
         self.prompts_sent += 1;
         self.cancelled = false;
-        self.failed = false;
 
         self.push_user(
             text.to_string(),
@@ -591,13 +592,35 @@ impl Chat {
     /// failed. The files staged with it were a snapshot and do not go again.
     /// `None` while nothing failed, or nothing was prompted.
     pub fn resend_text(&self) -> Option<&str> {
-        if !self.failed {
+        if !self.failed() {
             return None;
         }
-        self.items.iter().rev().find_map(|item| match item {
+        self.transcript_back().find_map(|item| match item {
             ChatItem::User(prompt) => Some(prompt.text.as_str()),
             _ => None,
         })
+    }
+
+    /// Whether the last turn ended on a failure, read from the transcript: a
+    /// failed turn's notice with no prompt after it. Read rather than held, so
+    /// a chat rebuilt by a restart or a relaunch says the same, and only a
+    /// prompt going out answers it.
+    pub fn failed(&self) -> bool {
+        self.transcript_back()
+            .find_map(|item| match item {
+                ChatItem::User(_) => Some(false),
+                ChatItem::Notice {
+                    level: NoticeLevel::Failed,
+                    ..
+                } => Some(true),
+                _ => None,
+            })
+            .unwrap_or(false)
+    }
+
+    /// The transcript newest first: the live items, then the history before them.
+    fn transcript_back(&self) -> impl Iterator<Item = &ChatItem> {
+        self.items.iter().rev().chain(self.history.iter().rev())
     }
 
     /// A parked permission prompt is waiting for the user's answer (it blocks

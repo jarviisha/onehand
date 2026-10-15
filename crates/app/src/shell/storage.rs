@@ -177,7 +177,8 @@ impl Shell {
         self.save_workspace(window, cx);
         self.set_window_identity(Some(dir.clone()), window, cx);
         cx.update_global::<Shared, _>(|shared, _| {
-            shared.recents.touch(dir);
+            shared.recents.touch(dir.clone());
+            shared.recents.name(&dir, &self.window.workspace.name);
             // Recents are a convenience, not state the app depends on:
             // a failed write is logged, never surfaced or fatal.
             if let Err(e) = shared.recents.save() {
@@ -382,8 +383,15 @@ impl Shell {
     }
 
     /// Recently opened storage directories, most-recent-first.
-    pub fn recents(&self, cx: &App) -> Vec<std::path::PathBuf> {
-        Shared::global(cx).recents.recent_workspaces.clone()
+    /// Every remembered workspace, with the name it was last opened or
+    /// renamed under where one was remembered.
+    pub fn recents(&self, cx: &App) -> Vec<(PathBuf, Option<String>)> {
+        let recents = &Shared::global(cx).recents;
+        recents
+            .recent_workspaces
+            .iter()
+            .map(|dir| (dir.clone(), recents.name_of(dir).map(str::to_string)))
+            .collect()
     }
 
     /// Open a recents row: read its config off the UI loop, then funnel into
@@ -563,4 +571,24 @@ fn say(shell: &gpui::WeakEntity<Shell>, note: Notification, cx: &mut gpui::Async
             cx.notify();
         })
         .ok();
+}
+
+/// Remember `dir`'s name among the recents, so the switcher reads it as the
+/// rail does. Written on the ordered writer, off the UI thread; a convenience
+/// like every recent, so a failed write is logged and nothing more.
+pub(super) fn remember_name(dir: &Path, name: &str, cx: &mut App) {
+    let recents = cx.update_global::<Shared, _>(|shared, _| {
+        shared.recents.name(dir, name);
+        shared.recents.clone()
+    });
+    let written = Shared::global(cx)
+        .writer
+        .write(move || recents.save().map_err(|e| e.to_string()));
+    cx.background_executor()
+        .spawn(async move {
+            if let Err(why) = written.await {
+                eprintln!("onehand: failed to save recents: {why}");
+            }
+        })
+        .detach();
 }
