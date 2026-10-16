@@ -119,7 +119,7 @@ size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in ea
   in its shared wrapper, never at the call site. The library's `.small()` is an icon-only
   button's size, square at the same height as `.short()`; a worded button never takes it, as its
   words would stand at the chrome size. A control holding a badge keeps it, being the one tall
-  enough. `.xsmall()` is no button's or field's size: an icon and a checkbox take it.
+  enough. `.xsmall()` is no button's or field's size: only an icon takes it.
 - **The hit area is not the icon.** A worded `.short()` button carries the extra small icon
   beside its words; an icon alone at `.small()` takes the small one, its box no larger than a
   worded peer's. Nothing is enlarged to fill its box.
