@@ -10,7 +10,7 @@ use gpui::{
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::InputState;
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, StyledExt};
 use onehand_core::issues;
 use onehand_core::task::work::list::{Filters, Incomplete, Listed, Progress};
 use onehand_plugin_host::Quiet as _;
@@ -372,7 +372,7 @@ impl IssuesView {
                 .child(div().flex_1().min_w_0().text_color(warning).child(said))
                 .child(
                     action("issues-page-read-them")
-                        .xsmall()
+                        .short()
                         .quiet(cx)
                         .label("Read them")
                         .loading(reading)

@@ -10,12 +10,12 @@
 //! (`Shared::saw_modes`), so every later start in this process reads it.
 
 use crate::controls::Quiet as _;
+use crate::controls::Short as _;
 use crate::state::Shared;
 use futures::StreamExt as _;
 use gpui::BorrowAppContext as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{AnyElement, App, IntoElement, ParentElement, Styled, Window, div};
-use gpui_component::Sizable as _;
 use gpui_component::{ActiveTheme as _, StyledExt as _};
 use onehand_core::acp::AcpEvent;
 use onehand_core::config::AgentSpec;
@@ -182,7 +182,7 @@ pub(crate) fn button(id: usize, ask: &Ask, cx: &App) -> AnyElement {
         .child(
             crate::controls::action(("check-agent-modes", id))
                 .quiet(cx)
-                .xsmall()
+                .short()
                 .loading(running)
                 .label("Check the agent")
                 .on_click(move |_, _: &mut Window, cx: &mut App| check(&ask, cx)),

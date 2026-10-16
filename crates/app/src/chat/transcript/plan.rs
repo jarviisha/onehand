@@ -1,5 +1,5 @@
 use super::fold_key;
-use super::metrics::FOLD_INDENT;
+use super::metrics::{FOLD_INDENT, TEXT_SM};
 use super::parts::{accent, fold_line};
 use crate::chat::session::ChatSession;
 use gpui::prelude::FluentBuilder as _;
@@ -39,7 +39,7 @@ pub(super) fn plan(
     // Only the running turn's plan is worked through now.
     let busy = session.read(cx).chat.in_running_turn(target);
 
-    let line = fold_line(("plan", fold_key(target)), open, cx)
+    let line = fold_line(("plan", fold_key(target)), open, false, cx)
         .on_click({
             let session = session.clone();
             move |_, _, cx: &mut App| {
@@ -68,7 +68,7 @@ pub(super) fn plan(
                     .v_flex()
                     .gap_1()
                     .pl(FOLD_INDENT)
-                    .text_sm()
+                    .text_size(TEXT_SM)
                     .children(p.entries.iter().take(MAX_TODO_ITEMS).map(|entry| {
                         // **The glyph changes, never the row**: a plan is
                         // worked through while it is on screen.

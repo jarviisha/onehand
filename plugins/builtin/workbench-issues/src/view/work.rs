@@ -18,6 +18,7 @@ use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::issues::LocalIssue;
 use onehand_core::task::work::{Act, Around, IssueWork, Next, PrSeen, next_action, pr_named};
 use onehand_plugin_host::Quiet as _;
+use onehand_plugin_host::Short as _;
 use onehand_plugin_host::{Request, action, menu_below, menu_item, menu_row, status_ink};
 use std::path::Path;
 
@@ -224,7 +225,7 @@ fn act_button(
         .work
         .as_ref()
         .is_some_and(|work| work.work.pressed == Some(act));
-    let button = action(id).xsmall().label(act.label()).loading(waits);
+    let button = action(id).short().label(act.label()).loading(waits);
     let button = match tooltip(act) {
         Some(tip) => button.tooltip(tip),
         None => button,
@@ -381,7 +382,7 @@ fn more_menu(
     // The tab leads to the page, where there is room to work the issue.
     let in_tab = doing.full.is_none();
     let trigger = action("issue-more")
-        .xsmall()
+        .small()
         .quiet_icon(false, cx)
         .loading(doing.publishing || waits)
         .icon(Icon::new(IconName::Ellipsis))
@@ -568,7 +569,7 @@ pub(super) fn left_view(doing: &Doing, cx: &mut Context<IssuesView>) -> Option<A
                         }))
                         .child(
                             action("issue-pr-refresh")
-                                .xsmall()
+                                .short()
                                 .quiet(cx)
                                 .label("Refresh")
                                 .loading(doing.reading)
@@ -629,7 +630,7 @@ pub(super) fn before_view(work: &IssueWork, cx: &mut Context<IssuesView>) -> Opt
             )
             .child(
                 action(key)
-                    .xsmall()
+                    .short()
                     .quiet(cx)
                     .label("Show task")
                     .tooltip("Open the task on the Tasks page")

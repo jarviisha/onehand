@@ -26,6 +26,10 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   edge a form's field has, and each caller sinks it by hand. The Plugins mode's filter and the
   Issues tab's search keep the edge. Fixing it means moving the sinking into `search_input`,
   which then needs the fill of its place from each caller.
+- **A field in a strip or the rail stands under the buttons beside it.** Buttons there are
+  `.short()` or an icon-only `.small()`, at `CONTROL_H`, while the field keeps `.xsmall()`, four
+  pixels shorter: the Plugins mode's filter bar and the Issues tab's search show it. Fixing it
+  means taking those fields to `.short()` and checking each strip still holds them at `BAR_H`.
 - **Some window behaviour has no automated test**: Settings' drafts kept across leaving the page,
   a failed write said once, and the keyboard handed back when a dialog closes. Each needs a window
   to run in, and the app runs no GPUI test harness; they are checked by hand.

@@ -6,6 +6,7 @@ use super::rows::OPTION_MAX_W;
 use super::{Composer, ComposerEvent, Overlay};
 use crate::chat::session::ChatSession;
 use crate::controls::Refuses as _;
+use crate::controls::Short as _;
 use crate::controls::text_area;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -426,7 +427,7 @@ fn send_controls(
             .gap_2()
             .children(has_draft.then(|| {
                 control("queue")
-                    .xsmall()
+                    .short()
                     .secondary()
                     .label("Queue")
                     .tooltip("Send this prompt when the current turn finishes")
@@ -434,7 +435,7 @@ fn send_controls(
             }))
             .child(
                 control("stop")
-                    .xsmall()
+                    .short()
                     .danger()
                     .label("Stop")
                     .loading(stopping)
@@ -445,8 +446,8 @@ fn send_controls(
     // The arrow alone: the one control here whose meaning never changes, in a
     // row that runs out of width before anything else in the card does.
     let send = match waits {
-        true => control("send").xsmall().secondary(),
-        false => control("send").primary().xsmall(),
+        true => control("send").small().secondary(),
+        false => control("send").primary().small(),
     }
     .icon(Icon::new(crate::icons::Icon::ArrowUpLight));
     match blocked {

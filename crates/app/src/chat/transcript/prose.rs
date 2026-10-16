@@ -1,8 +1,7 @@
 use super::fold_key;
 use super::metrics::{
-    FOLD_INDENT, HEADING_1, HEADING_2, MAX_CODE_BLOCK_H, PARAGRAPH_GAP, TEXT, TIGHT_GAP,
+    FOLD_INDENT, HEADING_1, HEADING_2, MAX_CODE_BLOCK_H, PARAGRAPH_GAP, TEXT, TEXT_SM, TIGHT_GAP,
 };
-use super::parts::spinner_slot;
 use super::parts::{accent, copy_button, copy_turn_button, fold_line};
 use crate::chat::session::ChatSession;
 use crate::tokens::LEADING;
@@ -167,9 +166,7 @@ pub(super) fn thought(
             });
         }
     };
-    let line = fold_line(("thought", fold_key(target)), open, cx)
-        .on_click(toggle)
-        .child(spinner_slot(th.is_running(), cx));
+    let line = fold_line(("thought", fold_key(target)), open, th.is_running(), cx).on_click(toggle);
     let line = match (th.is_running(), th.elapsed_secs) {
         (true, _) => line.text_color(accent(cx)).child("Thinking…"),
         (false, Some(secs)) => line.child(format!("Thought for {}", onehand_core::duration(secs))),
@@ -188,7 +185,7 @@ pub(super) fn thought(
                     .w_full()
                     .min_w_0()
                     .pl(FOLD_INDENT)
-                    .text_sm()
+                    .text_size(TEXT_SM)
                     // What the agent did, a step under what it said: the
                     // middle ink, readable at length.
                     .text_color(crate::theme::meta_ink(cx))

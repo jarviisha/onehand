@@ -72,7 +72,7 @@ pub(super) fn step_box(
         crate::controls::menu_below(
             ("step-more", i),
             crate::controls::action(("step-more-trigger", i))
-                .xsmall()
+                .small()
                 .quiet_icon(false, cx)
                 .icon(IconName::Ellipsis)
                 .tooltip("Move or remove this step"),

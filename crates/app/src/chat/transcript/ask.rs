@@ -1,4 +1,4 @@
-use super::metrics::{ASK_TAB_W, CARD_PAD, PART_GAP};
+use super::metrics::{ASK_TAB_W, CARD_PAD, PART_GAP, TEXT_SM};
 use super::parts::{
     ActivityRow, BlockingBody, Object, RowMark, activity_row, card_body, card_foot, card_head,
     detail_well, grows, pill, pinned_card,
@@ -161,7 +161,7 @@ impl AskForm<'_> {
                     .unwrap_or_else(|| format!("Question {}", f + 1));
                 crate::controls::action(("ask-tab", f))
                     .quiet(cx)
-                    .xsmall()
+                    .short()
                     .selected(open)
                     .flex_none()
                     .child(
@@ -372,7 +372,7 @@ impl AskForm<'_> {
             .children((!quick).then(|| {
                 crate::controls::action(("ask-skip", idx))
                     .quiet(cx)
-                    .xsmall()
+                    .short()
                     .label("Skip")
                     .tooltip_with_action(
                         "Skip this question",
@@ -389,7 +389,7 @@ impl AskForm<'_> {
             .child(
                 crate::controls::action(("ask-submit", idx))
                     .primary()
-                    .xsmall()
+                    .short()
                     // Nothing is picked yet: refusing, and the pointer would
                     // promise otherwise.
                     .refuses((!can_advance).then_some("Pick or type an answer first"))
@@ -531,7 +531,7 @@ fn ask_form(
                 .children(form.question().map(|line| {
                     div()
                         .w_full()
-                        .text_sm()
+                        .text_size(TEXT_SM)
                         .line_height(relative(LEADING_TIGHT))
                         .child(line)
                 }))

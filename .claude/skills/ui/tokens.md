@@ -133,13 +133,14 @@ Moving the library's rev means checking this table.
 
 | Size | Button: height / words / icon / icon–label gap / inset | Input: height / words / inset | Icon alone |
 |---|---|---|---|
-| `.xsmall()` | 20 / 12 / 12 / 4 / 4 | 20 / 12 / 4 **px** | 12 |
+| `.xsmall()`: no button's size | 20 / 12 / 12 / 4 / 4 | 20 / 12 / 4 **px** | 12 |
 | `.short()` (`CONTROL_H`) | 24 / 12 / 12 / 4 / 8 | 24 / 12 / 8 **px** | 12 |
 | `.tall()` (`FIELD_H`) | 30 / 14 / 14 / 4 / 12 | 30 / 14 / 8 **px** | 14 |
-| `.small()`: no control's size | 24 / 14 / 14 / 4 / 8 | 24 / 14 / 8 **px** | 14 |
+| `.small()`: an icon-only button | 24 / 14 / 14 / 4 / 8: never with words | 24 / 14 / 8 **px** | 14 |
 | the library's default | 32 / 16 / 16 / 8 / 10: never used | 32 / 14 / 10 **px** | 16 |
 
-An icon-only button is square at its height. `.short()` is the extra small size given the small
+An icon-only button is square at its height, and padding vertically equals its height less its
+words, halved: 4 at `.xsmall()`, 6 at `.short()`, 8 at `.tall()`. `.short()` is the extra small size given the small
 height and inset (`Short` in `crates/plugin-host/src/lib.rs`), so its words and icon are the extra
 small ones; a field keeps the small size and takes `.text_xs()`. `.tall()` is the small size
 given `FIELD_H` (`Tall`, beside it), so its words and icon stay the small ones. A builder that sizes the controls
@@ -168,7 +169,7 @@ All in `onehand_plugin_host::tokens` (`crates/plugin-host/src/tokens.rs`), which
 |---|---|---|
 | `BAR_H` | 2.75rem | every strip along the top of a region |
 | `ROW_H` | 1.875rem | a list row |
-| `CONTROL_H` | 1.5rem | a small control |
+| `CONTROL_H` | 1.5rem | a small control: `.short()`, and an icon-only `.small()` button |
 | `FIELD_H` | 1.875rem | a control a step over `.short()`: a list page's head (`.tall()`) |
 | `CODE_TEXT` | 0.8125rem | machine text |
 | `LEADING` | 1.6 | reading text |

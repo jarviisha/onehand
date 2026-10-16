@@ -13,6 +13,7 @@ use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::issues::{self, Issues, LocalIssue};
 use onehand_plugin_host::Quiet as _;
+use onehand_plugin_host::Short as _;
 use onehand_plugin_host::search_input;
 use onehand_plugin_host::{
     ControlSize, Tint, action, menu_below, menu_item, middle_ink, picker, row as row_surface,
@@ -179,7 +180,7 @@ impl IssuesView {
             )
             .child(
                 action("issues-new")
-                    .xsmall()
+                    .small()
                     .quiet_icon(false, cx)
                     .icon(Icon::new(IconName::Plus))
                     .tooltip("New issue")
@@ -240,7 +241,7 @@ impl IssuesView {
                     Showing::Open => 0,
                     Showing::Closed => 1,
                 },
-                ControlSize::XSmall,
+                ControlSize::Short,
                 move |picked, _, cx| {
                     view.update(cx, |view, cx| {
                         view.showing = if *picked == 0 {
@@ -327,7 +328,7 @@ impl IssuesView {
             "issues-label-filter",
             picked.clone().unwrap_or_else(|| "Label".to_string()),
             picked.is_some(),
-            ControlSize::XSmall,
+            ControlSize::Short,
             cx,
         )
         .tooltip("Show only issues with a label");
@@ -458,13 +459,13 @@ impl IssuesView {
                 footer.child(
                     if failed {
                         action("issues-sync-retry")
-                            .xsmall()
+                            .short()
                             .quiet(cx)
                             .label("Retry")
                             .tooltip(format!("Sync with {name} again"))
                     } else {
                         action("issues-sync-now")
-                            .xsmall()
+                            .small()
                             .quiet_icon(false, cx)
                             .icon(Icon::new(IconName::Redo))
                             .loading(syncing)
@@ -475,7 +476,7 @@ impl IssuesView {
             })
             .child(if on {
                 action("issues-sync-pause")
-                    .xsmall()
+                    .small()
                     .quiet_icon(false, cx)
                     .icon(Icon::new(IconName::Pause))
                     .tooltip("Pause auto-sync; links to issues are kept")
@@ -484,7 +485,7 @@ impl IssuesView {
                     )
             } else {
                 action("issues-sync-resume")
-                    .xsmall()
+                    .small()
                     .quiet_icon(false, cx)
                     .icon(Icon::new(IconName::Play))
                     .tooltip(if paused {

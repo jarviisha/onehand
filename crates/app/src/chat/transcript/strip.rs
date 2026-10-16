@@ -1,6 +1,5 @@
 use super::fold_key;
-use super::metrics::FOLD_INDENT;
-use super::parts::spinner_slot;
+use super::metrics::{FOLD_INDENT, TEXT_SM};
 use super::parts::{
     ActivityRow, Object, RowMark, activity_row, chevron, detail_well, fold_line, line_counts,
     plain_box, show_more, sideways,
@@ -8,12 +7,13 @@ use super::parts::{
 use super::tool::diff_rows;
 use crate::chat::session::ChatSession;
 use crate::controls::Quiet as _;
+use crate::controls::Short as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, ClickEvent, Entity, InteractiveElement, IntoElement, ParentElement, Rems, SharedString,
     StatefulInteractiveElement, Styled, Window, div, rems,
 };
-use gpui_component::{ActiveTheme, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, IconName, StyledExt};
 use onehand_core::chat::activity;
 use onehand_core::chat::{ChatItem, TranscriptItemId};
 use onehand_core::diff::Row as DiffRow;
@@ -150,9 +150,8 @@ fn cluster_line(
 ) -> gpui::AnyElement {
     let summary = &plan.summary;
     let running = summary.running.is_some();
-    fold_line(id, open, cx)
+    fold_line(id, open, running, cx)
         .on_click(move |event, window, cx| on_click(event, window, cx))
-        .child(spinner_slot(running, cx))
         .child(div().min_w_0().truncate().child(summary.plain()))
         // In the danger ink while the cluster runs; once it has settled the
         // count is the record, in the line's own ink.
@@ -221,7 +220,7 @@ pub(in crate::chat) fn turn_summary(
     // how two elements come to share one piece of retained state.
     let key = fold_key(anchor);
 
-    let head = fold_line(("turn-summary", key), open, cx)
+    let head = fold_line(("turn-summary", key), open, false, cx)
         .on_click(move |event, window, cx| on_toggle(event, window, cx))
         .child(
             div()
@@ -270,7 +269,7 @@ pub(in crate::chat) fn turn_summary(
                 .min_w_0()
                 .pl(FOLD_INDENT)
                 .gap_1()
-                .text_sm()
+                .text_size(TEXT_SM)
                 .children(
                     listed
                         .into_iter()
@@ -302,7 +301,7 @@ pub(in crate::chat) fn turn_summary(
                     div().h_flex().child(
                         crate::controls::action(("turn-diff-all", key))
                             .quiet(cx)
-                            .xsmall()
+                            .short()
                             .label(match all_open {
                                 true => "Hide every diff",
                                 false => "Show every diff",

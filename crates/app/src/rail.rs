@@ -17,6 +17,7 @@
 //! [`model`], without drawing, and the same rows are what the keyboard walks.
 
 use crate::controls::Quiet as _;
+use crate::controls::Short as _;
 use crate::shell::Shell;
 use crate::tokens::ROW_H;
 use gpui::prelude::FluentBuilder as _;
@@ -502,7 +503,7 @@ fn more(group: Option<PathBuf>, hidden: usize, cx: &mut Context<Shell>) -> AnyEl
         .child(
             crate::controls::action(gpui::ElementId::Name(id))
                 .quiet(cx)
-                .xsmall()
+                .short()
                 .label(format!("{hidden} more"))
                 .text_color(cx.theme().muted_foreground)
                 .on_click(cx.listener(move |shell: &mut Shell, _, _, cx| {

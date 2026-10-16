@@ -5,7 +5,6 @@ use gpui::{
     AnyElement, App, AppContext as _, ClickEvent, Context, Entity, IntoElement, ParentElement,
     SharedString, Styled, Window, div,
 };
-use gpui_component::Sizable as _;
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{InputState, TextareaState};
 use gpui_component::{ActiveTheme, StyledExt};
@@ -207,7 +206,7 @@ fn templates_row(
             .child(div().text_xs().text_color(muted).child("Template"))
             .children(templates.iter().enumerate().map(|(at, t)| {
                 action(("issue-form-template", at))
-                    .xsmall()
+                    .short()
                     .quiet(cx)
                     .label(t.name.clone())
                     .on_click(cx.listener(move |view, _: &ClickEvent, window, cx| {

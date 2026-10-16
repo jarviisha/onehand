@@ -177,7 +177,7 @@ pub(super) fn on_hover(
 pub(super) fn row_control(id: impl Into<ElementId>, icon: impl Into<Icon>, cx: &App) -> Button {
     crate::controls::action(id)
         .quiet_icon(false, cx)
-        .xsmall()
+        .small()
         .icon(icon.into())
 }
 
@@ -186,7 +186,7 @@ pub(super) fn row_control(id: impl Into<ElementId>, icon: impl Into<Icon>, cx: &
 pub(super) fn meta_control(id: impl Into<ElementId>, icon: impl Into<Icon>, cx: &App) -> Button {
     crate::controls::action(id)
         .quiet_icon(false, cx)
-        .xsmall()
+        .small()
         .icon(icon.into())
 }
 

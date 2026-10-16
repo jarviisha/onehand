@@ -40,7 +40,7 @@ pub fn strip_control(
 ) -> Button {
     crate::action(id)
         .quiet_icon(on, cx)
-        .xsmall()
+        .small()
         .flex_none()
         .icon(icon.into())
 }

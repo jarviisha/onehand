@@ -2,13 +2,13 @@ use super::page_parts::{page_card, pair};
 use super::workspace_page::{ALL_PROJECTS, PageProject};
 use super::{ChatPane, ChatPaneEvent, Page};
 use crate::controls::Quiet as _;
+use crate::controls::Short as _;
 use crate::task::Row;
 use crate::tokens::PAGE_WIDE;
 use gpui::{
     App, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, Window, div,
 };
-use gpui_component::Sizable as _;
 use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::task::{Group, Section};
 use std::path::{Path, PathBuf};
@@ -388,7 +388,7 @@ impl TaskAct {
     ) -> gpui_component::button::Button {
         let press = self.press(row, cx);
         let button = crate::controls::action(SharedString::from(format!("{key}-{}", self.label())))
-            .xsmall()
+            .short()
             .label(self.label())
             .loading(self == Self::Stop && row.stopping);
         let button = match self.tooltip() {

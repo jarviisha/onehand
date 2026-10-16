@@ -23,6 +23,7 @@ pub(crate) use draft::WorkflowDraft;
 gpui::actions!(workflows_page, [CloseWorkflowForm]);
 
 use crate::controls::Quiet as _;
+use crate::controls::Short as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, AppContext as _, ClickEvent, Context, Entity, EventEmitter, FocusHandle,
@@ -181,7 +182,7 @@ fn head(handle: &Entity<WorkflowsPage>, editing: bool, cx: &App) -> AnyElement {
         .gap_2()
         .child(
             crate::controls::action("new-workflow")
-                .xsmall()
+                .short()
                 .when(editing, |button| button.secondary())
                 .when(!editing, |button| button.primary())
                 .label("New workflow")
@@ -191,7 +192,7 @@ fn head(handle: &Entity<WorkflowsPage>, editing: bool, cx: &App) -> AnyElement {
         )
         .child(
             crate::controls::action("import-workflow")
-                .xsmall()
+                .short()
                 .quiet(cx)
                 .label("Import…")
                 .on_click(click(handle, |page, window, cx| {
@@ -381,7 +382,7 @@ fn run_menu(
         ("run-workflow", i),
         crate::controls::action(("run-workflow-trigger", i))
             .quiet(cx)
-            .xsmall()
+            .short()
             .label("Run…"),
         move |mut menu, _, _| {
             menu = menu.label("Run on");
@@ -422,7 +423,7 @@ fn row_action(
 ) -> impl IntoElement {
     crate::controls::action(id)
         .quiet(cx)
-        .xsmall()
+        .short()
         .label(label)
         .on_click(click(handle, act))
 }
@@ -437,7 +438,7 @@ fn row_delete(
 ) -> impl IntoElement {
     crate::controls::action(id)
         .quiet(cx)
-        .xsmall()
+        .short()
         .text_color(crate::theme::status_ink(cx).danger)
         .label("Delete…")
         .on_click(click(handle, act))
@@ -451,7 +452,7 @@ fn row_icon(
 ) -> gpui_component::button::Button {
     crate::controls::action(id)
         .quiet_icon(false, cx)
-        .xsmall()
+        .small()
         .icon(Icon::new(icon))
         .tooltip(tip)
 }

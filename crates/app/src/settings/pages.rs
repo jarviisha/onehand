@@ -432,7 +432,7 @@ fn slots_field(handle: &Entity<Shell>, slots: Slots, cx: &App) -> AnyElement {
             let (shell, task) = (handle.clone(), holder.task.clone());
             crate::controls::action(("unattended-slot", at))
                 .secondary()
-                .xsmall()
+                .short()
                 .label(holder.shown.clone())
                 .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
                     shell.update(cx, |shell, cx| shell.show_task(&task, window, cx));
@@ -519,7 +519,7 @@ fn workflow_labels(handle: &Entity<Shell>, cx: &App) -> impl IntoElement {
                 .child(
                     crate::controls::action(("workflow-label-remove", i))
                         .secondary()
-                        .xsmall()
+                        .short()
                         .label("Remove")
                         .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
                             shell.update(cx, |shell, cx| {

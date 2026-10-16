@@ -35,7 +35,7 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | A mark down a column (an icon, a state's mark, a dot) | `mark_slot(mark)`: one icon wide, centred, so marks share a line and labels an edge | `crates/plugin-host/src/lib.rs` |
 | A row's actions shown on hover | `hover_slot(group, shown, child)`, then `.focus(&row_handle)`: a trailing slot keeping its width, visible while the row named `group` is hovered, while the keyboard holds the row, or while `shown` (selected, or its action running). A hidden slot's controls are not tab stops, so the row itself is one | `crates/plugin-host/src/row_actions.rs` |
 | An issue's label | `label_badge(label, cx)`: a badge tinted by the label's kind | `crates/plugin-host/src/lib.rs` |
-| A block held folded | `fold_toggle(id, label, open, cx)`: the chevron first, quiet, `.xsmall()` | `crates/plugin-host/src/lib.rs` |
+| A block held folded | `fold_toggle(id, label, open, cx)`: the chevron first, quiet, `.short()` | `crates/plugin-host/src/lib.rs` |
 | A box on a page | `card_box(cx)`: hairline, `p_3`, `gap_2` | `crates/plugin-host/src/lib.rs` |
 | A radio or checkbox at a choice row's head | `choice_mark(on, single, cx)`: drawn in ink, round for one choice and square for several, so it shows on the selected step where the library's ring vanishes | `crates/plugin-host/src/choice_mark.rs` |
 | A picker's trigger | `picker(id, label, set, size, cx)`: a ghost in the muted ink naming what it picks, on the secondary fill once set, with the caret | `crates/plugin-host/src/lib.rs` |

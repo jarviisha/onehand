@@ -5,6 +5,7 @@ use super::RailState;
 use super::model::{Filter, toggle_attention};
 use super::row::labelled;
 use crate::controls::Quiet as _;
+use crate::controls::Short as _;
 use crate::controls::search_input;
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
@@ -68,7 +69,7 @@ pub(super) fn sessions_header(
             d.child(
                 crate::controls::action("rail-attention")
                     .quiet(cx)
-                    .xsmall()
+                    .short()
                     .label(format!("{waiting} {verb} attention"))
                     .text_color(warning)
                     .selected(attention)
@@ -91,7 +92,7 @@ pub(super) fn sessions_header(
             // narrowed list says so where it is narrowed.
             crate::controls::action("rail-filter")
                 .quiet_icon(filter != Filter::ByProject, cx)
-                .xsmall()
+                .small()
                 .icon(Icon::new(crate::icons::Icon::ListFilter))
                 .tooltip(format!("Showing: {}", filter.label()))
                 .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, _, _| {

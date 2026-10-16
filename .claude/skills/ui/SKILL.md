@@ -72,17 +72,17 @@ Each pair: what is wrong, the wrong line, then the right one.
 ```rust
 // A div dressed as a button: no focus, no refusal, a cursor rule of its own
 div().px_2().cursor_pointer().child("Retry").on_click(retry)
-crate::controls::action("retry-task").quiet(cx).xsmall().label("Retry…").on_click(retry)
-// No variant and no size: the library's default, edged and lettered at the reading size
+crate::controls::action("retry-task").quiet(cx).short().label("Retry…").on_click(retry)
+// No variant and no size: the library's default, edged and lettered over the chrome's size
 action("run-check").label("Run check")
-action("run-check").secondary().xsmall().label("Run check")
+action("run-check").secondary().short().label("Run check")
 // Refuses the press yet keeps the pointer, and never says why
-action(("plugin-update", i)).xsmall().secondary().disabled(busy)
-action(("plugin-update", i)).xsmall().secondary().refuses(busy.then_some("Another change is running"))
-// A row's action at the library's small size, which is no control's
-action(("session-more", i)).quiet_icon(false, cx).small().icon(IconName::Ellipsis)
+action(("plugin-update", i)).short().secondary().disabled(busy)
+action(("plugin-update", i)).short().secondary().refuses(busy.then_some("Another change is running"))
+// A row's icon at the extra small size, under the height of a worded peer beside it
 action(("session-more", i)).quiet_icon(false, cx).xsmall().icon(IconName::Ellipsis)
-// A form's button at the library's default size, lettered at the reading size
+action(("session-more", i)).quiet_icon(false, cx).small().icon(IconName::Ellipsis)
+// A form's button at the library's default size, lettered over the chrome's size
 action("save-agent").primary().label("Save")
 action("save-agent").primary().short().label("Save")
 // A badge drawn by hand

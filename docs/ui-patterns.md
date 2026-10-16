@@ -100,9 +100,10 @@ size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in ea
 |---|---|---|
 | A list page's head: its search, its icon-only actions and its creating action | Button, Input | `.tall()` |
 | A form's fields and buttons; a dialog's footer; a page's filter bar: its search and pickers | Button, Input | `.short()` |
-| A column page head's actions; a strip's controls; a box's control; a row's actions; a secondary action inside dense content (a line of meta text, a transcript block, a chip) | Button, Input | `.xsmall()`, well under a row, so the controls never outweigh what they act on |
+| Every other button with words: a column page head's actions, a strip's, a box's, a row's, a secondary action inside dense content (a line of meta text, a transcript block, a chip), a tab, a fold toggle, a pinned card's answers | Button | `.short()`, under a row, so the controls never outweigh what they act on |
+| Every other icon-only button: a strip's, a row's, a copy control, the composer's send | Button | `.small()`, square at `CONTROL_H`, so an icon alone is as tall as a worded peer beside it |
 | A field in a strip or the rail | Input | `.xsmall()` |
-| An icon in a button | Icon | the button's own: `small` in a `.tall()` button, `xsmall` in a `.short()` or `.xsmall()` one |
+| An icon in a button | Icon | the button's own: `small` in a `.tall()` button and in an icon-only `.small()` one, `xsmall` beside words in a `.short()` one |
 | An icon leading a label the app draws: a row, a menu item | Icon | `.small()` |
 | A state's mark leading a row's label (a session's) | Icon | `.xsmall()`, a step under the label |
 | A mark inside a line of meta text | Icon | `.xsmall()` |
@@ -111,15 +112,18 @@ size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in ea
 | A single-line row; a row with a second line | drawn by the app | `ROW_H`; at least `ROW_H` |
 | A strip along the top of a region | `strip` (plugin host) | `BAR_H` |
 
-- **One size, one measure.** `.xsmall()` already gives a Button and an Input the same height and
-  words; the library's default does not, so it is never used. `.short()` is the wrapper that gives
-  both the small height with words at `.text_xs()`, so they breathe inside it, and `.tall()` the
-  one that gives both `FIELD_H` at the chrome size. A size a component
-  gets wrong is corrected in its shared wrapper, never at the call site. The library's `.small()`
-  is no control's size; a control holding a badge keeps it, being the one tall enough.
-- **The hit area is not the icon.** A taller control keeps the icon its role takes: a `.short()`
-  button carries the same extra small icon as an `.xsmall()` one. Nothing is enlarged to fill its
-  box.
+- **One size, one measure.** The library's default letters a button at the body size beside a
+  field at the chrome size, so it is never used. `.short()` is the wrapper that gives a Button and
+  an Input the small height with words at `.text_xs()`, so they breathe inside it, and `.tall()`
+  the one that gives both `FIELD_H` at the chrome size. A size a component gets wrong is corrected
+  in its shared wrapper, never at the call site. The library's `.small()` is an icon-only
+  button's size, square at the same height as `.short()`; a worded button never takes it, as its
+  words would stand at the chrome size. A control holding a badge keeps it, being the one tall
+  enough. `.xsmall()` is no button's size: a field in a strip or the rail, an icon and a checkbox
+  take it.
+- **The hit area is not the icon.** A worded `.short()` button carries the extra small icon
+  beside its words; an icon alone at `.small()` takes the small one, its box no larger than a
+  worded peer's. Nothing is enlarged to fill its box.
 - **Some components keep their own geometry**: a badge, a checkbox, a switch, a key cap. Centre
   them in their row (`items_center`); never stretch them to the height of the controls beside
   them.
@@ -139,7 +143,7 @@ The window keeps the rail's minimum beside the conversation's: it is never small
 
 A strip along the top of a region is `BAR_H` tall and padded `px_3`, its parts `gap_2` apart,
 at the chrome size (`strip`): what it names at the start, in full ink, its controls at the end as
-`xsmall` ghost buttons (`strip_control` for an icon alone). An icon-only control carries a tooltip.
+ghost buttons at their control sizes (`strip_control` for an icon alone). An icon-only control carries a tooltip.
 No line runs under a strip: it and what it heads are one surface, parted by space; the pane
 header over a list page is that page's, and draws its line (*List pages*). Keep identity
 at the leading edge and actions at the trailing edge in every equivalent strip; a control that
@@ -178,7 +182,7 @@ ends, its sections `gap_6` apart, as wide as one of these:
 - `PAGE_WIDE`: boxes side by side (the overview, Tasks).
 
 The pane header is inset `px_8`, as the body is. A page holding sections of its own (Settings)
-puts their nav column at its start. Its head's actions are `.xsmall()`; its creating action
+puts their nav column at its start. Its head's actions are `.short()`; its creating action
 (*New session*, *New workflow*) is the view's one primary, stepping down to `secondary` while a
 form it opened is open and holds it. A page that only sets values (Settings) holds no primary,
 every button on it secondary, and parts its many peer groups by hairlines with semibold
@@ -216,7 +220,7 @@ The list takes the pane's whole width, a whole list scanned at a glance:
 
 Whatever filters its content draws its filters in one order. On a page they stand under its head
 at `.short()`, as below. In a dock, which is dense chrome with no head, the bar leads with its
-search and takes the same order at `.xsmall()` (the Plugins mode's marketplaces as choices).
+search (`.xsmall()`) and takes the same order, its choices at `.short()` (the Plugins mode's marketplaces as choices).
 
 - where the content splits into a few states that each count (*Open*, *Closed*), those first,
   each a `.short()` `choice`, the shown one filled, its count a slim `badge` in the hue of that
@@ -245,7 +249,7 @@ Boxes sit side by side while the measured column holds two, and stack when it do
 ### Lists
 
 A single-line row is `ROW_H` tall, padded `px_2` with `gap_2`, at `radius`. Hover fills it with
-`list_hover`, the selected row with `accent`. A row's own actions are `.xsmall()` ghost buttons, shown
+`list_hover`, the selected row with `accent`. A row's own actions are ghost buttons at their control sizes, shown
 on hover, on the selected row, on keyboard focus and while their action runs. Every list has a named cap. Its last line, in meta
 text, says why the list is short: a list the cap cut says how many more there are (*N more*); a
 list a search or a filter narrows says how many it shows of how many there are (*Showing N of

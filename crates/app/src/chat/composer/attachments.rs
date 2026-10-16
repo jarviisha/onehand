@@ -1,6 +1,7 @@
 use super::popup::{edge_scrolled, more_text, popup_header, popup_surface};
 use super::{Composer, ComposerEvent, Overlay};
 use crate::controls::Quiet as _;
+use crate::controls::Short as _;
 use crate::tokens::{CONTROL_H, ROW_H};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -263,7 +264,7 @@ impl Composer {
                         // asks the Workbench to open the file just removed.
                         let unstage = crate::controls::action(("unstage", i))
                             .quiet_icon(false, cx)
-                            .xsmall()
+                            .small()
                             .icon(Icon::new(IconName::Close))
                             .tooltip("Remove this attachment")
                             .on_click(cx.listener(move |composer: &mut Self, _, _, cx| {
@@ -334,7 +335,7 @@ impl Composer {
                     tray.child(
                         crate::controls::action("all-attachments")
                             .quiet(cx)
-                            .xsmall()
+                            .short()
                             .flex_none()
                             .label(format!("Show all {}", self.attachments.len()))
                             .tooltip("Review or remove staged attachments")
@@ -383,7 +384,7 @@ impl Composer {
                         let name = attachment.name.clone();
                         let remove = crate::controls::action(("remove-managed-attachment", i))
                             .quiet_icon(false, cx)
-                            .xsmall()
+                            .small()
                             .icon(Icon::new(IconName::Close))
                             .tooltip("Remove this attachment")
                             .on_click(cx.listener(move |composer: &mut Self, _, _, cx| {
@@ -517,7 +518,7 @@ fn attachment_shape<E: Styled>(
 pub(super) fn chip(id: impl Into<gpui::ElementId>, open: bool, cx: &App) -> Button {
     crate::controls::action(id)
         .quiet(cx)
-        .xsmall()
+        .short()
         .selected(open)
         .h_flex()
         .items_center()

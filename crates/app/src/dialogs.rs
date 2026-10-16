@@ -81,7 +81,7 @@ pub(super) fn title_row(name: impl Into<SharedString>, cx: &App) -> impl IntoEle
             div().flex_none().size_6().child(
                 DialogClose::new().child(
                     crate::controls::action("dialog-close")
-                        .xsmall()
+                        .small()
                         .quiet_icon(false, cx)
                         .icon(Icon::new(IconName::Close))
                         .tooltip("Close"),
@@ -426,7 +426,7 @@ pub(crate) fn finding_line(
         .children(finding.task.clone().map(|task| {
             crate::controls::action(("pick-retry-task", at))
                 .quiet(cx)
-                .xsmall()
+                .short()
                 .label("Retry…")
                 .on_click(move |_, window: &mut Window, cx: &mut App| {
                     shell.update(cx, |shell, cx| {
@@ -453,7 +453,7 @@ pub(crate) fn finding_line(
                     // The line above names each holder; the button opens it.
                     crate::controls::action(SharedString::from(format!("slot-holder-{at}-{i}")))
                         .quiet(cx)
-                        .xsmall()
+                        .short()
                         .label(format!("Open {}", holder.named))
                         .tooltip("Open the task holding this slot")
                         .on_click(move |_, window: &mut Window, cx: &mut App| {
