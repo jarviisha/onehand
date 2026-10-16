@@ -281,7 +281,7 @@ pub fn rail(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> impl Int
     div()
         .v_flex()
         .size_full()
-        .bg(cx.theme().muted)
+        .bg(cx.theme().sidebar)
         .text_sm()
         .text_color(cx.theme().muted_foreground)
         .child(workspace::workspace_bar(
@@ -436,7 +436,7 @@ fn page_row<F: Fn(&mut Shell, &mut Window, &mut Context<Shell>) + 'static>(
 }
 
 /// A badge in the rail: sunk on the ramp's inset step, which stands off the
-/// rail's well, its hovered row and its chosen row alike, in `ink`.
+/// rail's fill, its hovered row and its chosen row alike, in `ink`.
 fn rail_badge(ink: gpui::Hsla, cx: &App) -> Tint {
     Tint {
         fill: crate::theme::inset(cx),

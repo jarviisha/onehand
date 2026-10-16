@@ -24,7 +24,7 @@ pub(super) fn workspace_bar(
     cx: &mut Context<Shell>,
 ) -> impl IntoElement + use<> {
     let initial: String = name.chars().take(1).collect();
-    let well = cx.theme().muted;
+    let rail = cx.theme().sidebar;
     let tip = name.clone();
     div()
         .h_flex()
@@ -55,7 +55,7 @@ pub(super) fn workspace_bar(
                         .child(initial),
                 )
                 .child(
-                    faded("workspace-name", name, "workspace".into(), well, well)
+                    faded("workspace-name", name, "workspace".into(), rail, rail)
                         .font_medium()
                         .text_color(cx.theme().foreground)
                         .tooltip(move |window, cx| Tooltip::new(tip.clone()).build(window, cx)),

@@ -3,19 +3,23 @@
 //! alternating cell backgrounds, translucent strokes and an outer content mask.
 use gpui::{
     App, AppContext, Bounds, ContentMask, Context, Hsla, IntoElement, ParentElement, PathBuilder,
-    Pixels, Point, Render, Styled, Window, canvas, div, fill, point, px, rgb, size,
+    Pixels, Point, Render, Styled, Window, canvas, div, fill, point, px, size,
 };
+use gpui_component::ActiveTheme as _;
 use gpui_terminal::box_drawing::draw_box_character;
 
 struct Gallery;
 
 impl Render for Gallery {
-    fn render(&mut self, window: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         eprintln!("corner_gallery scale_factor={}", window.scale_factor());
+        let theme = cx.theme();
+        let (surface, panel_fill, ink) = (theme.background, theme.muted, theme.foreground);
+        let checks = [theme.blue, theme.red];
         div()
             .size_full()
-            .bg(rgb(0x202530))
-            .text_color(rgb(0xd8dee9))
+            .bg(surface)
+            .text_color(ink)
             .p_4()
             .child("Old / new pairs: plain | cell backgrounds | alpha 0.5 | clipped")
             .children(
@@ -50,7 +54,7 @@ impl Render for Gallery {
                                                     size(cell.width * 3.95, cell.height * 1.9),
                                                 ),
                                             });
-                                            window.paint_quad(fill(panel, rgb(0x202530)));
+                                            window.paint_quad(fill(panel, panel_fill));
                                             window.with_content_mask(clip, |window| {
                                                 for (row, line) in
                                                     ["╭───╮", "│   │", "╰───╯"].iter().enumerate()
@@ -67,14 +71,10 @@ impl Render for Gallery {
                                                         if group == 1 {
                                                             window.paint_quad(fill(
                                                                 bounds,
-                                                                rgb(if (row + col) % 2 == 0 {
-                                                                    0x355d83
-                                                                } else {
-                                                                    0x704839
-                                                                }),
+                                                                checks[(row + col) % 2],
                                                             ));
                                                         }
-                                                        let mut color: Hsla = rgb(0xd8dee9).into();
+                                                        let mut color: Hsla = ink;
                                                         if group == 2 {
                                                             color.a = 0.5;
                                                         }
