@@ -9,6 +9,7 @@ use super::parts::{
 };
 use crate::chat::session::ChatSession;
 use crate::controls::Quiet as _;
+use gpui::StyledImage as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, Axis, ClickEvent, Entity, InteractiveElement, IntoElement, ParentElement, RenderOnce,
@@ -290,11 +291,22 @@ fn detail_frame(
             command_detail(session, t, target, &command, &output, well, cx)
         }
         Detail::Diffs => diff_detail(session, t, target, well, cx),
-        Detail::Image(bytes) => well.p_3().map(|well| match session.read(cx).image(&bytes) {
-            Some(handle) => well.child(gpui::img(handle).max_w_full()),
-            None => well
-                .text_color(cx.theme().muted_foreground)
-                .child(format!("[unrecognized image, {} bytes]", bytes.len())),
+        Detail::Image(bytes) => well.p_3().map(|well| {
+            // A recognised signature is no promise the bytes decode, and gpui
+            // draws nothing for an image that fails to; both say so the same way.
+            let ink = cx.theme().muted_foreground;
+            let unrecognized = format!("[unrecognized image, {} bytes]", bytes.len());
+            match session.read(cx).image(&bytes) {
+                Some(handle) => {
+                    well.child(gpui::img(handle).max_w_full().with_fallback(move || {
+                        div()
+                            .text_color(ink)
+                            .child(unrecognized.clone())
+                            .into_any_element()
+                    }))
+                }
+                None => well.text_color(ink).child(unrecognized),
+            }
         }),
         Detail::Lines { lines, hidden } => well
             .p_3()

@@ -143,6 +143,8 @@ pub(super) fn copy_turn_button(
 
 /// The one control that shows what a block holds back and takes it away
 /// again: a quiet worded button at the dense size, whose words say how much.
+/// Its words are a person's, so it sets the default family itself rather than
+/// inheriting the mono one of the output well it often sits in.
 pub(super) fn show_more(
     id: impl Into<gpui::ElementId>,
     label: impl Into<SharedString>,
@@ -152,6 +154,7 @@ pub(super) fn show_more(
         .quiet(cx)
         .xsmall()
         .flex_none()
+        .font_family(cx.theme().font_family.clone())
         .label(label.into())
 }
 

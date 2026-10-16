@@ -34,13 +34,13 @@ impl ChatSession {
             let f = &a.req.fields[field];
             // A text field *is* its box, so the question's own wording is the
             // invitation; a select's box is the way past the choices above it
-            // and has to say so.
+            // and has to say so. On a form of several questions that wording is
+            // already the line over the box, so the box does not say it again.
+            let worded = (a.req.fields.len() == 1)
+                .then(|| f.description.clone().or_else(|| f.title.clone()))
+                .flatten();
             let hint = match &f.kind {
-                ElicitKind::Text => f
-                    .description
-                    .clone()
-                    .or_else(|| f.title.clone())
-                    .unwrap_or_else(|| "Type your answer".into()),
+                ElicitKind::Text => worded.unwrap_or_else(|| "Type your answer".into()),
                 _ => "Or type your own answer".into(),
             };
             let typed = a.custom.get(field).cloned().unwrap_or_default();

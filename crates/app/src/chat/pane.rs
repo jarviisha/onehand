@@ -697,7 +697,7 @@ impl Render for ChatPane {
                     }
                 },
             ))
-            .child(zoom.scale(window, body))
+            .child(zoom.scale(body))
     }
 }
 

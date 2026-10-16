@@ -159,11 +159,11 @@ const sqlcmd = (query) => `sqlcmd -S ${HOST} -U sa -P '${PASS}' -Q "${query}"`;
 // was drawing a coloured box. A fixture whose failure mode is "that looks
 // broken" teaches the wrong thing about the code it is there to exercise.
 const PIXELS =
-  'iVBORw0KGgoAAAANSUhEUgAAAHgAAABACAYAAADRTbMSAAAAwElEQVR42u3dMQ2AMBBA0WohjIwM' +
-  'CCBI6MCEAoIIBOIIJMBCSo83fAHXt11yaZqX9VTckkf4CXA/jAoUYMACLMACLMACLMACLMCABViA' +
-  '9UXgpu0UKMCABViABVglgfN+VNXd4FPeQgUYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBlwWOFqA' +
-  'AQMGDBgwYMCAAb8PHGVgwIABAwYMGDBgwIABAwYMGDBgwFaVch8swAIswAIMWIAFWIAFWID1DFh+' +
-  'H1WFXVtlNAtm7FQ3AAAAAElFTkSuQmCC';
+  'iVBORw0KGgoAAAANSUhEUgAAAHgAAABACAYAAADRTbMSAAAAuUlEQVR42u3dsQ1AUBCA4TeRtw8j' +
+  '2IDGKEZTSxQSPSvQyDlf8Q9w97WXXOn68VTeiiUAVhbgY1+VIMCABViABViA9QpwnbbQ3R1+GWqK' +
+  'AAMGDBgwYMCAAQMGDBgwYMCAAQMGDBgwYMCAAQMGDBgwYMCAAQMG/G1guaoUYAEWYAEG/BS4mVsF' +
+  'CjBgwIABAxZgARZgAQYMGDBgwAIswAIswIABAwYMWG6yBFiABViAAQP+JbD8LhRgReoCe8xVqvjo' +
+  'xu0AAAAASUVORK5CYII=';
 
 // ── Pace ────────────────────────────────────────────────────────────────────
 //

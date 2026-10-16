@@ -59,31 +59,34 @@ impl Zoom {
         self.0 = ((factor / STEP).round() * STEP).clamp(MIN, MAX);
     }
 
-    /// The rem base this factor implies, given the window's own.
-    ///
-    /// Named for `Window::rem_size` / `Window::with_rem_size`, which is what it
-    /// feeds; a bare `rem` reads as a remainder at the call site.
-    pub fn rem_size(self, window: &Window) -> Pixels {
-        window.rem_size() * self.0
+    /// Wrap `child` so everything inside it lays out against this zoom.
+    pub fn scale(self, child: impl IntoElement) -> Zoomed {
+        Zoomed {
+            factor: self.0,
+            child: child.into_any_element(),
+        }
     }
 
-    /// Wrap `child` so everything inside it lays out against this zoom.
-    pub fn scale(self, window: &Window, child: impl IntoElement) -> Zoomed {
+    /// Wrap `child`, inside a subtree this zoom scales, so it lays out at the
+    /// size it would have unzoomed: fixed chrome drawn within the zoomed part,
+    /// as the agent pane's header is, keeps its height while the reading grows.
+    pub fn unscale(self, child: impl IntoElement) -> Zoomed {
         Zoomed {
-            rem: self.rem_size(window),
+            factor: 1. / self.0,
             child: child.into_any_element(),
         }
     }
 }
 
-/// An element that lays its child out against an overridden rem base.
+/// An element that lays its child out against an overridden rem base: the rem
+/// in force around it, times its factor, so one nested inside another composes.
 ///
 /// All three phases have to set it: `request_layout` is where rem-sized text
 /// and padding become numbers, and `prepaint`/`paint` re-resolve some of them
 /// (a text run's line height, for one). Overriding only in one phase produces
 /// a subtree measured at one size and drawn at another.
 pub struct Zoomed {
-    rem: Pixels,
+    factor: f32,
     child: AnyElement,
 }
 
@@ -114,7 +117,7 @@ impl Element for Zoomed {
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, ()) {
-        let id = window.with_rem_size(Some(self.rem), |window| {
+        let id = window.with_rem_size(Some(window.rem_size() * self.factor), |window| {
             self.child.request_layout(window, cx)
         });
         (id, ())
@@ -129,7 +132,9 @@ impl Element for Zoomed {
         window: &mut Window,
         cx: &mut App,
     ) {
-        window.with_rem_size(Some(self.rem), |window| self.child.prepaint(window, cx));
+        window.with_rem_size(Some(window.rem_size() * self.factor), |window| {
+            self.child.prepaint(window, cx)
+        });
     }
 
     fn paint(
@@ -142,7 +147,9 @@ impl Element for Zoomed {
         window: &mut Window,
         cx: &mut App,
     ) {
-        window.with_rem_size(Some(self.rem), |window| self.child.paint(window, cx));
+        window.with_rem_size(Some(window.rem_size() * self.factor), |window| {
+            self.child.paint(window, cx)
+        });
     }
 }
 

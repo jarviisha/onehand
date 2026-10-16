@@ -116,8 +116,6 @@ struct Ramp {
     inset: &'static str,
     /// A control's edge, and the scrollbar thumb.
     control: &'static str,
-    /// The border marking where the keyboard is.
-    ring: &'static str,
     /// Running and links; the text selection is this, thinned.
     accent: &'static str,
     /// The base hues status ink is derived from.
@@ -162,7 +160,6 @@ const LIGHT: Ramp = Ramp {
     raised: "#ffffff",
     inset: "#ffffff",
     control: "#c7c7c7",
-    ring: "#888888",
     // Darker than the usual editor blue, which inline code tempered toward
     // the meta ink drew under AA in a well.
     accent: "#006eb8",
@@ -201,7 +198,6 @@ const DARK: Ramp = Ramp {
     raised: "#303030",
     inset: "#202020",
     control: "#404040",
-    ring: "#767676",
     // Blue in both modes, lifted to read on near-black: running and waiting
     // must never be told apart by a shade, and a yellow sat beside the amber.
     accent: "#3794ff",
@@ -331,7 +327,11 @@ fn paint(colors: &mut ThemeConfigColors, ramp: &Ramp) {
 
     set(&mut colors.input, ramp.control);
     set(&mut colors.scrollbar_thumb, ramp.control);
-    set(&mut colors.ring, ramp.ring);
+    // The keyboard's ring is the ink itself. The library draws it round a
+    // focused control at half strength, a figure the app cannot reach, and only
+    // the full ink keeps that half-strength band at 3:1 on every surface: the
+    // grey it was before read at 1.7.
+    set(&mut colors.ring, ramp.foreground);
     set(&mut colors.caret, ramp.foreground);
     set(&mut colors.link, ramp.accent);
     set(&mut colors.info, ramp.accent);
@@ -352,6 +352,14 @@ fn paint(colors: &mut ThemeConfigColors, ramp: &Ramp) {
     ] {
         set(slot, "#ffffff");
     }
+    // Its hover and pressed fills, which the library otherwise thins to a third
+    // of the red: white on that over a white dialog read at 1.7. A step darker
+    // instead, mixed toward the light palette's ink, so the word gains contrast
+    // as it is acted on; the fill is the same red in both modes, so the steps are.
+    let danger = hex(ramp.danger_fill);
+    let ink = hex(LIGHT.foreground);
+    colors.button_danger_hover = Some(danger.mix_oklab(ink, 0.85).to_hex().into());
+    colors.button_danger_active = Some(danger.mix_oklab(ink, 0.75).to_hex().into());
     // The text selection: the accent, thinned so the text under it still reads.
     colors.selection = Some(format!("{}40", ramp.accent).into());
 
@@ -573,6 +581,20 @@ mod tests {
     fn contrast(a: Hsla, b: Hsla) -> f32 {
         let (a, b) = (luminance(a), luminance(b));
         (a.max(b) + 0.05) / (a.min(b) + 0.05)
+    }
+
+    /// A colour as it lands on screen: `fill` laid over the opaque `under`
+    /// at its own alpha, which is how a see-through fill is actually seen.
+    fn over(fill: Hsla, under: Hsla) -> Hsla {
+        let (f, u) = (gpui::Rgba::from(fill), gpui::Rgba::from(under));
+        let mix = |a: f32, b: f32| b + (a - b) * f.a;
+        gpui::Rgba {
+            r: mix(f.r, u.r),
+            g: mix(f.g, u.g),
+            b: mix(f.b, u.b),
+            a: 1.,
+        }
+        .into()
     }
 
     /// A ramp resolved the way the running app resolves it.
@@ -834,6 +856,72 @@ mod tests {
                     contrast(state, theme.muted) > contrast(theme.secondary, theme.muted),
                     "{name}: a {label} filled button sits closer to the well than its own resting fill"
                 );
+            }
+        }
+    }
+
+    /// A danger button's word stays readable in every state it takes: at rest,
+    /// under the pointer and pressed. It is the one button that ends or
+    /// removes something, so it cannot fade at the moment it is acted on, and
+    /// it is drawn on a dialog (a removal's confirmation) and on the composer
+    /// card (*Stop*), so each state is judged as it lands on both.
+    #[test]
+    fn a_danger_button_reads_in_every_state() {
+        for (name, ramp, mode) in [
+            ("light", &LIGHT, ThemeMode::Light),
+            ("dark", &DARK, ThemeMode::Dark),
+        ] {
+            let theme = resolve(ramp, mode);
+            for (surface, under) in [
+                ("a dialog", theme.popover),
+                ("the composer", hex(ramp.raised)),
+            ] {
+                for (state, fill) in [
+                    ("at rest", theme.button_danger),
+                    ("hovered", theme.button_danger_hover),
+                    ("pressed", theme.button_danger_active),
+                ] {
+                    let ratio = contrast(theme.button_danger_foreground, over(fill, under));
+                    assert!(
+                        ratio >= AA,
+                        "{name}: a danger button's word {state} on {surface} is {ratio:.2}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// The keyboard's ring reads against every surface a control sits on, as
+    /// it is drawn: the library lays it round a focused control at half the
+    /// ring's strength, a figure it keeps to itself, so the ring is judged at
+    /// that strength over each surface. The app's own rings, a field's focused
+    /// edge among them, draw it whole and clear the same bar more easily.
+    #[test]
+    fn the_focus_ring_reads_on_every_surface() {
+        // The library's `FOCUS_RING_OPACITY`, which it does not export.
+        const DRAWN: f32 = 0.5;
+        for (name, ramp, mode) in [
+            ("light", &LIGHT, ThemeMode::Light),
+            ("dark", &DARK, ThemeMode::Dark),
+        ] {
+            let theme = resolve(ramp, mode);
+            for (surface, under) in [
+                ("the reading surface", theme.background),
+                ("the composer", hex(ramp.raised)),
+                ("a dock", hex(ramp.panel)),
+                ("the rail", theme.muted),
+                ("a floating surface", theme.popover),
+            ] {
+                for (how, ring) in [
+                    ("as a control's ring", theme.ring.alpha(DRAWN)),
+                    ("whole", theme.ring),
+                ] {
+                    let ratio = contrast(over(ring, under), under);
+                    assert!(
+                        ratio >= 3.0,
+                        "{name}: the focus ring {how} on {surface} is {ratio:.2}"
+                    );
+                }
             }
         }
     }
@@ -1436,17 +1524,6 @@ mod tests {
     /// page under it, it has to be a difference a reader can see.
     #[test]
     fn the_composer_lift_outlines_the_card_on_both_palettes() {
-        fn over(fill: Hsla, under: Hsla) -> Hsla {
-            let (f, u) = (gpui::Rgba::from(fill), gpui::Rgba::from(under));
-            let mix = |a: f32, b: f32| b + (a - b) * f.a;
-            gpui::Rgba {
-                r: mix(f.r, u.r),
-                g: mix(f.g, u.g),
-                b: mix(f.b, u.b),
-                a: 1.,
-            }
-            .into()
-        }
         for (name, ramp, mode) in [
             ("light", &LIGHT, ThemeMode::Light),
             ("dark", &DARK, ThemeMode::Dark),

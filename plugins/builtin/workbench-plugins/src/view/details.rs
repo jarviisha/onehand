@@ -6,7 +6,6 @@ use gpui::{
     StatefulInteractiveElement as _, Styled, Window, div,
 };
 use gpui_component::{ActiveTheme, StyledExt, WindowExt as _};
-use onehand_plugin_host::status_ink;
 
 /// "4 skills", "1 command" … for each counted kind a plugin has any of, in one
 /// order wherever counts are said. Hooks are left to the caller: a chip says
@@ -117,7 +116,7 @@ fn details(plugin: &Plugin, cx: &App) -> AnyElement {
                 div()
                     .text_xs()
                     .font_medium()
-                    .text_color(status_ink(cx).warning)
+                    .text_color(muted)
                     .child(format!(
                         "Hooks · {} — run on their own",
                         inventory.hooks.len()
