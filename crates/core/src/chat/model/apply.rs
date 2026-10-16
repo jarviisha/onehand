@@ -1,5 +1,6 @@
 use super::items::{
-    AskItem, ChatItem, Md, PermItem, PlanItem, Thought, ToolItem, UserMsg, MAX_TERM_BYTES,
+    AskItem, ChatItem, Md, NoticeLevel, PermItem, PlanItem, Thought, ToolItem, UserMsg,
+    MAX_TERM_BYTES,
 };
 use super::{Chat, Link, Replay};
 use crate::acp::{AcpEvent, PlanEntry, ToolCall, ToolCallUpdate, ToolContent, ToolStatus};
@@ -338,12 +339,15 @@ impl Chat {
                 // a conversation that has finished closing the previous one.
                 self.flush_queued();
             }
-            AcpEvent::Error(e) => {
+            AcpEvent::Error { text, detail } => {
                 // An error mid-turn is the prompt's answer: the turn ends on it.
                 // Not after a Stop, though: some adapters answer a cancel with
                 // an error, and a turn the person stopped did not fail.
-                self.failed |= self.busy && !self.cancelled;
-                self.items.push(ChatItem::error(format!("Error: {e}")));
+                let level = match self.busy && !self.cancelled {
+                    true => NoticeLevel::Failed,
+                    false => NoticeLevel::Error,
+                };
+                self.items.push(ChatItem::failure(text, level, detail));
             }
             AcpEvent::Disconnected(e) => {
                 // A thought cut off with the adapter is over, not still running.
@@ -358,8 +362,11 @@ impl Chat {
                 self.cancel_pending_permissions();
                 // No key in the words: the front end names the one its keymap
                 // binds, which the person may have changed.
-                self.items
-                    .push(ChatItem::error(format!("Disconnected: {e}")));
+                self.items.push(ChatItem::failure(
+                    format!("Disconnected: {e}"),
+                    NoticeLevel::Error,
+                    None,
+                ));
             }
         }
 

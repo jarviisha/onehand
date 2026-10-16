@@ -12,6 +12,7 @@
 //! The caps below are correctness, not tuning.
 
 use super::session::ChatSession;
+use gpui::prelude::FluentBuilder as _;
 use gpui::{App, Entity, IntoElement, ParentElement, Styled, Window, div};
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::chat::{ChatItem, NoticeLevel, TranscriptItemId};
@@ -105,7 +106,11 @@ pub fn item(
         ChatItem::Plan(p) => plan(session, p, target, cx).into_any_element(),
         ChatItem::Permission(p) => permission(session, p, target, room.well, cx).into_any_element(),
         ChatItem::Ask(a) => ask(session, a, target, cx).into_any_element(),
-        ChatItem::Notice { text, level } => {
+        ChatItem::Notice {
+            text,
+            level,
+            detail,
+        } => {
             // The adapter is gone and this is what said so: the way back is
             // named by the key the keymap binds now.
             let lost = chat.link == onehand_core::chat::Link::Lost
@@ -119,7 +124,16 @@ pub fn item(
                     )
                 })
                 .flatten();
-            notice(text, *level, prompted_after(chat, target), restart, cx).into_any_element()
+            // Live by the rule the rail reads: a failed turn until a prompt
+            // follows it, a lost agent while it is lost. Any other failure (an
+            // error answering a Stop, a resume that fell back) is past at once.
+            let past = match level {
+                NoticeLevel::Failed => prompted_after(chat, target),
+                NoticeLevel::Error => !lost,
+                NoticeLevel::Info => false,
+            };
+            let detail = detail.as_deref().map(|detail| (session, target, detail));
+            notice(text, *level, past, restart, detail, cx).into_any_element()
         }
     };
 
@@ -154,9 +168,14 @@ fn notice(
     level: NoticeLevel,
     past: bool,
     restart: Option<gpui_component::kbd::Kbd>,
+    detail: Option<(&Entity<ChatSession>, TranscriptItemId, &str)>,
     cx: &App,
 ) -> impl IntoElement + use<> {
-    if level == NoticeLevel::Error && past {
+    // What the agent attached, folded, in the ink of the line it sits in.
+    let detail = |ink| {
+        detail.map(|(session, target, detail)| notice_detail(session, target, detail, ink, cx))
+    };
+    if level.is_failure() && past {
         return div()
             .h_flex()
             .items_start()
@@ -173,10 +192,18 @@ fn notice(
                     .items_center()
                     .child(Icon::new(IconName::TriangleAlert).xsmall()),
             )
-            .child(div().flex_1().min_w_0().child(text.to_string()))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .v_flex()
+                    .gap_1()
+                    .child(text.to_string())
+                    .children(detail(cx.theme().muted_foreground)),
+            )
             .into_any_element();
     }
-    if level != NoticeLevel::Error {
+    if !level.is_failure() {
         // **A line down the middle of the column, with nothing around it.** A
         // remark is the transcript speaking about itself rather than either
         // side speaking, and the centre is the one lane neither of them uses —
@@ -225,20 +252,67 @@ fn notice(
             div()
                 .flex_1()
                 .min_w_0()
-                .h_flex()
-                .flex_wrap()
-                .items_center()
-                .gap_x_2()
-                .child(text.to_string())
-                .children(restart.map(|key| {
+                .v_flex()
+                .gap_1()
+                .child(
                     div()
                         .h_flex()
+                        .flex_wrap()
                         .items_center()
-                        .gap_1()
-                        .child("Restart the agent with")
-                        .child(key)
-                })),
+                        .gap_x_2()
+                        .child(text.to_string())
+                        .children(restart.map(|key| {
+                            div()
+                                .h_flex()
+                                .items_center()
+                                .gap_1()
+                                .child("Restart the agent with")
+                                .child(key)
+                        })),
+                )
+                .children(detail(tint.ink)),
         )
+        .into_any_element()
+}
+
+/// What the agent attached to a failure beside its message: machine text,
+/// folded under the words a person reads first, and opened on request.
+fn notice_detail(
+    session: &Entity<ChatSession>,
+    target: TranscriptItemId,
+    detail: &str,
+    ink: gpui::Hsla,
+    cx: &App,
+) -> gpui::AnyElement {
+    let open = session.read(cx).section_is_open(target);
+    let session = session.clone();
+    let toggle = parts::show_more(
+        ("notice-detail", fold_key(target)),
+        if open { "Hide details" } else { "Show details" },
+        cx,
+    )
+    .text_color(ink)
+    .on_click(move |_, _, cx: &mut App| {
+        session.update(cx, |session, cx| {
+            session.toggle_section(target);
+            cx.notify();
+        });
+    });
+    div()
+        .v_flex()
+        .items_start()
+        .gap_1()
+        .child(toggle)
+        .when(open, |column| {
+            column.child(
+                div()
+                    .w_full()
+                    .min_w_0()
+                    .font_family(cx.theme().mono_font_family.clone())
+                    .text_size(crate::tokens::CODE_TEXT)
+                    .child(detail.to_string()),
+            )
+        })
         .into_any_element()
 }
 

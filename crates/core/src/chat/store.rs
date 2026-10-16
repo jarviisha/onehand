@@ -167,6 +167,22 @@ pub struct ConfigPick {
     pub value: String,
 }
 
+/// A turn's failure as a build before it had a level of its own wrote it: an
+/// error reading `Error: `, which is how that build said every error a prompt
+/// was answered with. The resume fallback it said the same way failed no turn.
+/// shortcut: an error that build wrote answering a Stop reads as failed too,
+/// which the next prompt answers; drop this once those archives are gone.
+fn legacy_failed(text: &str, level: NoticeLevel) -> NoticeLevel {
+    match level {
+        NoticeLevel::Error
+            if text.starts_with("Error: ") && !text.starts_with("Error: session/load failed") =>
+        {
+            NoticeLevel::Failed
+        }
+        NoticeLevel::Info | NoticeLevel::Error | NoticeLevel::Failed => level,
+    }
+}
+
 /// One line of `items.jsonl`.
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "t", rename_all = "snake_case")]
@@ -215,6 +231,8 @@ enum Line {
         /// Always written. An absent key meaning "quiet" is an implicit case
         /// worth more than the fifteen bytes it saves.
         level: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        detail: Option<String>,
     },
 }
 
@@ -538,9 +556,14 @@ fn restore_line(dir: &Path, line: &Line) -> ChatItem {
                 })
                 .collect(),
         )),
-        Line::Notice { text, level } => ChatItem::Notice {
+        Line::Notice {
+            text,
+            level,
+            detail,
+        } => ChatItem::Notice {
             text: text.clone(),
-            level: NoticeLevel::parse(level),
+            level: legacy_failed(text, NoticeLevel::parse(level)),
+            detail: detail.clone(),
         },
         Line::Tool {
             id,
@@ -670,9 +693,14 @@ pub(crate) fn line_of(chat: &Chat, item: &ChatItem) -> Option<(String, Vec<Blob>
                 })
                 .collect(),
         },
-        ChatItem::Notice { text, level } => Line::Notice {
+        ChatItem::Notice {
+            text,
+            level,
+            detail,
+        } => Line::Notice {
             text: text.clone(),
             level: level.as_str().to_string(),
+            detail: detail.clone(),
         },
         ChatItem::Tool(t) => Line::Tool {
             id: t.call.id.clone(),

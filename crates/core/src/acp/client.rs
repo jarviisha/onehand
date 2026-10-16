@@ -712,10 +712,15 @@ async fn handle_message(
                     // here would refreeze the same id on every restart and
                     // refail forever. Note it and fall back to a fresh
                     // session; the loaded history stays as read-only context.
+                    eprintln!("[acp] session/load failed: {err}");
+                    let (message, detail) = in_words(err);
                     let _ = output
-                        .send(AcpEvent::Error(format!(
-                            "session/load failed ({err}) — starting a fresh session"
-                        )))
+                        .send(AcpEvent::Error {
+                            text: format!(
+                                "Loading the session failed: {message}; starting a fresh one"
+                            ),
+                            detail,
+                        })
                         .await;
                     let id2 = alloc(next_id);
                     pending.insert(id2, Pending::NewSession);
@@ -752,10 +757,7 @@ async fn handle_message(
                 let event = match msg.get("error") {
                     Some(err) => AcpEvent::PickRefused {
                         group,
-                        why: err
-                            .get("message")
-                            .and_then(Value::as_str)
-                            .map_or_else(|| err.to_string(), str::to_string),
+                        why: in_words(err).0,
                     },
                     None => AcpEvent::PickConfirmed { group, value },
                 };
@@ -763,7 +765,15 @@ async fn handle_message(
             }
             Some(Pending::PromptTurn) => {
                 if let Some(err) = msg.get("error") {
-                    let _ = output.send(AcpEvent::Error(err.to_string())).await;
+                    // The whole object, code and all, for whoever reads the log.
+                    eprintln!("[acp] the turn failed: {err}");
+                    let (message, detail) = in_words(err);
+                    let _ = output
+                        .send(AcpEvent::Error {
+                            text: format!("The turn failed: {message}"),
+                            detail,
+                        })
+                        .await;
                 }
                 let stop = msg
                     .get("result")
@@ -1127,6 +1137,21 @@ fn notification(method: &str, params: Value) -> Value {
 
 fn response_ok(id: Value, result: Value) -> Value {
     json!({ "jsonrpc": "2.0", "id": id, "result": result })
+}
+
+/// A JSON-RPC error as a person reads it: its message, and what the agent
+/// attached as `data`, as machine text. Its code is for programs and is not
+/// said. An error with no message has nothing better to say than itself.
+fn in_words(err: &Value) -> (String, Option<String>) {
+    let message = err
+        .get("message")
+        .and_then(Value::as_str)
+        .map_or_else(|| err.to_string(), str::to_string);
+    let detail = err.get("data").filter(|d| !d.is_null()).map(|d| match d {
+        Value::String(s) => s.clone(),
+        other => serde_json::to_string_pretty(other).unwrap_or_else(|_| other.to_string()),
+    });
+    (message, detail)
 }
 
 fn response_err(id: Value, message: &str) -> Value {

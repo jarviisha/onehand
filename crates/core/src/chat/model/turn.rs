@@ -1,5 +1,7 @@
-use super::items::{AskItem, ChatItem, PermItem, TranscriptItemId, TurnAnswer, UserMsg};
-use super::{Chat, Link};
+use super::items::{
+    AskItem, ChatItem, NoticeLevel, PermItem, TranscriptItemId, TurnAnswer, UserMsg,
+};
+use super::{Chat, Link, Replay};
 use crate::acp::{AcpRequest, Attachment, ElicitOutcome, ToolStatus};
 use crate::attachment::{AttachmentDelivery, AttachmentSnapshot, StagedAttachment};
 use crate::chat::store;
@@ -402,7 +404,6 @@ impl Chat {
         }
         self.prompts_sent += 1;
         self.cancelled = false;
-        self.failed = false;
 
         self.push_user(
             text.to_string(),
@@ -591,13 +592,31 @@ impl Chat {
     /// failed. The files staged with it were a snapshot and do not go again.
     /// `None` while nothing failed, or nothing was prompted.
     pub fn resend_text(&self) -> Option<&str> {
-        if !self.failed {
+        if !self.failed() {
             return None;
         }
-        self.items.iter().rev().find_map(|item| match item {
+        self.transcript_back().find_map(|item| match item {
             ChatItem::User(prompt) => Some(prompt.text.as_str()),
             _ => None,
         })
+    }
+
+    /// Whether the last turn ended on a failure, read from the transcript: a
+    /// failed turn's notice with no prompt after it. Read rather than held, so
+    /// a chat rebuilt by a restart or a relaunch says the same, and only a
+    /// prompt going out answers it.
+    pub fn failed(&self) -> bool {
+        // Mid-replay the whole transcript is the stash; what is in `items` is a
+        // re-delivery of it that may stop anywhere.
+        match &self.replay {
+            Replay::Partial(stash) => standing_failure(stash.iter().rev()).is_some(),
+            Replay::Settled | Replay::Armed => standing_failure(self.transcript_back()).is_some(),
+        }
+    }
+
+    /// The transcript newest first: the live items, then the history before them.
+    fn transcript_back(&self) -> impl Iterator<Item = &ChatItem> {
+        self.items.iter().rev().chain(self.history.iter().rev())
     }
 
     /// A parked permission prompt is waiting for the user's answer (it blocks
@@ -814,4 +833,21 @@ pub(super) fn last_paragraph(markdown: &str) -> &str {
         "" => last,
         tail => tail,
     }
+}
+
+/// The failed turn's notice a transcript, read newest first, still stands on:
+/// one no prompt the person sent has followed. A user message the agent
+/// delivered itself carries no time it was sent and answers nothing.
+pub(super) fn standing_failure<'a>(
+    mut back: impl Iterator<Item = &'a ChatItem>,
+) -> Option<&'a ChatItem> {
+    back.find_map(|item| match item {
+        ChatItem::User(prompt) if prompt.sent_at.is_some() => Some(None),
+        ChatItem::Notice {
+            level: NoticeLevel::Failed,
+            ..
+        } => Some(Some(item)),
+        _ => None,
+    })
+    .flatten()
 }

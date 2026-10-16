@@ -87,7 +87,9 @@ fn check(ask: &Ask, cx: &mut App) {
                         modes = available.into_iter().map(|m| m.id).collect();
                     }
                     AcpEvent::Connected { .. } => return Ok(modes),
-                    AcpEvent::Error(why) | AcpEvent::Disconnected(why) => return Err(why),
+                    AcpEvent::Error { text: why, .. } | AcpEvent::Disconnected(why) => {
+                        return Err(why);
+                    }
                     // Nothing else is asked of an agent that is never
                     // prompted; whatever it says before it comes up is let go.
                     AcpEvent::SessionId(_)

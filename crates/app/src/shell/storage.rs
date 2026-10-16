@@ -138,13 +138,8 @@ impl Shell {
         // Said once if it fails, unlike a touch: the workspace would come
         // back at the next launch.
         if let Some(dir) = was {
-            let recents = cx.update_global::<Shared, _>(|shared, _| {
-                shared.recents.forget(&dir);
-                shared.recents.clone()
-            });
-            let written = Shared::global(cx)
-                .writer
-                .write(move || recents.save().map_err(|e| e.to_string()));
+            cx.update_global::<Shared, _>(|shared, _| shared.recents.forget(&dir));
+            let written = save_recents(cx);
             window
                 .spawn(cx, async move |cx| {
                     if let Err(why) = written.await {
@@ -177,13 +172,10 @@ impl Shell {
         self.save_workspace(window, cx);
         self.set_window_identity(Some(dir.clone()), window, cx);
         cx.update_global::<Shared, _>(|shared, _| {
-            shared.recents.touch(dir);
-            // Recents are a convenience, not state the app depends on:
-            // a failed write is logged, never surfaced or fatal.
-            if let Err(e) = shared.recents.save() {
-                eprintln!("onehand: failed to save recents: {e}");
-            }
+            shared.recents.touch(dir.clone());
+            shared.recents.set_name(&dir, &self.window.workspace.name);
         });
+        log_failed(save_recents(cx), cx);
         cx.notify();
     }
 
@@ -381,9 +373,15 @@ impl Shell {
         .detach();
     }
 
-    /// Recently opened storage directories, most-recent-first.
-    pub fn recents(&self, cx: &App) -> Vec<std::path::PathBuf> {
-        Shared::global(cx).recents.recent_workspaces.clone()
+    /// Every remembered workspace, most recent first, with what a list of them
+    /// calls it.
+    pub fn recents(&self, cx: &App) -> Vec<(PathBuf, String)> {
+        let recents = &Shared::global(cx).recents;
+        recents
+            .recent_workspaces
+            .iter()
+            .map(|dir| (dir.clone(), recents.label_of(dir)))
+            .collect()
     }
 
     /// Open a recents row: read its config off the UI loop, then funnel into
@@ -417,8 +415,8 @@ impl Shell {
                         .update(cx, |_shell, cx| {
                             cx.update_global::<Shared, _>(|shared, _| {
                                 shared.recents.forget(&dir);
-                                let _ = shared.recents.save();
                             });
+                            log_failed(save_recents(cx), cx);
                             cx.notify();
                         })
                         .ok();
@@ -471,12 +469,18 @@ impl Shell {
 
         let config = self.window.workspace.to_config();
         let pending = self.saves.write_all();
+        let dir_named = dir.clone();
         let written = Shared::global(cx)
             .writer
             .write(move || config.save_to(&dir).map_err(|why| why.to_string()));
         cx.spawn_in(window, async move |shell, cx| {
             let result = written.await;
             let _ = shell.update_in(cx, |shell: &mut Self, window, cx| {
+                // A name is remembered once its workspace holds it, never
+                // while it is still being typed or could yet be put back.
+                if result.is_ok() {
+                    remember_name(&dir_named, &shell.window.workspace.name, cx);
+                }
                 let Some((why, back)) = shell.saves.landed(pending, result) else {
                     return;
                 };
@@ -563,4 +567,38 @@ fn say(shell: &gpui::WeakEntity<Shell>, note: Notification, cx: &mut gpui::Async
             cx.notify();
         })
         .ok();
+}
+
+/// Write the recents as they stand now, on the ordered writer every recents
+/// write goes through, so an older copy queued behind it cannot land over it.
+pub(super) fn save_recents(
+    cx: &App,
+) -> impl std::future::Future<Output = Result<(), String>> + use<> {
+    let recents = Shared::global(cx).recents.clone();
+    Shared::global(cx)
+        .writer
+        .write(move || recents.save().map_err(|e| e.to_string()))
+}
+
+/// Log a recents write that fails: a convenience, not state the app depends
+/// on, so nothing more.
+pub(super) fn log_failed(
+    written: impl std::future::Future<Output = Result<(), String>> + Send + 'static,
+    cx: &App,
+) {
+    cx.background_executor()
+        .spawn(async move {
+            if let Err(why) = written.await {
+                eprintln!("onehand: failed to save recents: {why}");
+            }
+        })
+        .detach();
+}
+
+/// Remember `dir`'s name among the recents, so the switcher reads it as the
+/// rail does, and write them when that changed anything.
+pub(super) fn remember_name(dir: &Path, name: &str, cx: &mut App) {
+    if cx.update_global::<Shared, _>(|shared, _| shared.recents.set_name(dir, name)) {
+        log_failed(save_recents(cx), cx);
+    }
 }

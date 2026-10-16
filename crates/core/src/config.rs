@@ -888,6 +888,11 @@ pub struct AppState {
     pub(crate) workspace_dir: Option<PathBuf>,
     /// Bound workspace storage dirs, most-recent-first, deduped, capped.
     pub recent_workspaces: Vec<PathBuf>,
+    /// Each remembered workspace's name, as last opened or renamed, so a list
+    /// of them reads as the rail does without opening every one's own file.
+    /// A dir with none, remembered before names were, reads as its folder.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    names: BTreeMap<PathBuf, String>,
 }
 
 impl AppState {
@@ -924,6 +929,41 @@ impl AppState {
             fresh
         });
         self.recent_workspaces.truncate(Self::MAX_RECENTS);
+        self.prune_names();
+    }
+
+    /// Drop the names of workspaces no longer remembered.
+    fn prune_names(&mut self) {
+        let recents = &self.recent_workspaces;
+        self.names.retain(|dir, _| recents.contains(dir));
+    }
+
+    /// Remember `dir`'s name, if `dir` is remembered at all; whether that
+    /// changed anything, so a caller writes only what is new.
+    pub fn set_name(&mut self, dir: &Path, name: &str) -> bool {
+        if !self.recent_workspaces.iter().any(|d| d == dir) || self.name_of(dir) == Some(name) {
+            return false;
+        }
+        self.names.insert(dir.to_path_buf(), name.to_string());
+        true
+    }
+
+    /// What a list of workspaces calls `dir`: its remembered name, else its
+    /// folder's, else the whole path.
+    pub fn label_of(&self, dir: &Path) -> String {
+        self.name_of(dir).map_or_else(
+            || {
+                dir.file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| dir.display().to_string())
+            },
+            str::to_string,
+        )
+    }
+
+    /// The name `dir` was last opened or renamed under, if one was remembered.
+    pub fn name_of(&self, dir: &Path) -> Option<&str> {
+        self.names.get(dir).map(String::as_str)
     }
 
     /// Move `dir` to the front of the recents (inserting if absent), keep the
@@ -933,6 +973,7 @@ impl AppState {
         self.recent_workspaces.insert(0, dir);
         self.recent_workspaces.truncate(Self::MAX_RECENTS);
         self.workspace_dir = self.recent_workspaces.first().cloned();
+        self.prune_names();
     }
 
     /// Drop `dir` from the recents and re-mirror the legacy field (used by
@@ -940,6 +981,7 @@ impl AppState {
     pub fn forget(&mut self, dir: &Path) {
         self.recent_workspaces.retain(|d| d != dir);
         self.workspace_dir = self.recent_workspaces.first().cloned();
+        self.prune_names();
     }
 
     pub fn save(&self) -> std::io::Result<()> {

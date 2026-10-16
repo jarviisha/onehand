@@ -20,7 +20,7 @@ use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 pub(super) fn workspace_bar(
     name: SharedString,
     current: Option<std::path::PathBuf>,
-    recents: Vec<std::path::PathBuf>,
+    recents: Vec<(std::path::PathBuf, String)>,
     cx: &mut Context<Shell>,
 ) -> impl IntoElement + use<> {
     let initial: String = name.chars().take(1).collect();
@@ -112,15 +112,16 @@ const MAX_PARENT: usize = 30;
 /// is drawing is marked and cannot be picked, because "switch to where you
 /// already are" is a click that does nothing and reads as a failure.
 ///
-/// A row is named by its folder, with the parent path beside it, because the
-/// list is directories and a workspace's own name lives inside a file that
-/// reading here would put disk I/O in the middle of a frame.
+/// A row is named as the rail names its workspace, from the name the recents
+/// remember, with the parent path beside it; a workspace remembered before
+/// names were reads as its folder until it is next opened. Never read from the
+/// workspace's own file here, which would put disk I/O in the middle of a frame.
 ///
 /// The builder, not the trigger: the menu is rebuilt every time it opens, so the
 /// row it hangs off is free to be any element the rail wants.
 fn workspace_menu(
     current: Option<std::path::PathBuf>,
-    recents: Vec<std::path::PathBuf>,
+    recents: Vec<(std::path::PathBuf, String)>,
     shell: WeakEntity<Shell>,
 ) -> impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static {
     move |menu, _, cx| {
@@ -134,14 +135,9 @@ fn workspace_menu(
         if !recents.is_empty() {
             menu = menu.label("Workspaces");
         }
-        for dir in &recents {
+        for (dir, name) in &recents {
             let is_current = current.as_deref() == Some(dir.as_path());
-            let label = ellipsize(
-                &dir.file_name()
-                    .map(|name| name.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| dir.display().to_string()),
-                MAX_LABEL,
-            );
+            let label = ellipsize(name, MAX_LABEL);
             let parent = dir
                 .parent()
                 .map(|parent| ellipsize_front(&parent.display().to_string(), MAX_PARENT));

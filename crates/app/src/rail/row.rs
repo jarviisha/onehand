@@ -22,8 +22,13 @@ pub(super) const MAX_LABEL: usize = 24;
 const FADE_W: Rems = rems(1.25);
 
 /// The branch is the least important thing on a project row and must never
-/// cost the project's name its space, so it is capped.
+/// cost the project's name its space, so it is capped, and it is the part of
+/// the row that gives way first.
 pub(super) const MAX_BRANCH_W: Rems = rems(4.5);
+
+/// What a project's name keeps before the branch beside it gives way: room
+/// for a short name read whole, as most are.
+pub(super) const NAME_MIN_W: Rems = rems(6.);
 
 /// The fill a hovered rail row takes: the ramp's step the rail owns, whole.
 /// Thinned, as the library thins its hovered sidebar rows, it sank into the

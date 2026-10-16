@@ -143,7 +143,7 @@ async fn main() {
                 eprintln!("\n== TURN ENDED: {stop_reason} ==");
                 break;
             }
-            AcpEvent::Error(e) => eprintln!("== ERROR: {e} =="),
+            AcpEvent::Error { text, .. } => eprintln!("== ERROR: {text} =="),
             AcpEvent::Disconnected(e) => {
                 eprintln!("== DISCONNECTED: {e} ==");
                 break;

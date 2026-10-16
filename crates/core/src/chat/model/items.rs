@@ -679,8 +679,13 @@ pub enum ChatItem {
     Permission(PermItem),
     /// A question from the agent with its choice buttons.
     Ask(AskItem),
-    /// A line the session says about itself: a remark, or a failure.
-    Notice { text: String, level: NoticeLevel },
+    /// A line the session says about itself: a remark, or a failure, with
+    /// whatever machine text the agent attached to it.
+    Notice {
+        text: String,
+        level: NoticeLevel,
+        detail: Option<String>,
+    },
 }
 
 /// How loudly a notice draws.
@@ -700,12 +705,18 @@ pub enum NoticeLevel {
     Info,
     /// A real failure — the turn or the connection did not survive it.
     Error,
+    /// The failure a turn ended on: drawn as any failure, and what makes the
+    /// session failed until a prompt goes out again. Its own level so that a
+    /// chat rebuilt from what was written still knows, where an error a Stop
+    /// drew, or a lost connection, does not make a turn failed.
+    Failed,
 }
 
 impl NoticeLevel {
     pub fn parse(s: &str) -> Self {
         match s {
             "error" => Self::Error,
+            "failed" => Self::Failed,
             _ => Self::Info,
         }
     }
@@ -716,6 +727,15 @@ impl NoticeLevel {
         match self {
             Self::Info => "",
             Self::Error => "error",
+            Self::Failed => "failed",
+        }
+    }
+
+    /// Whether the notice is a failure rather than a remark.
+    pub fn is_failure(self) -> bool {
+        match self {
+            Self::Info => false,
+            Self::Error | Self::Failed => true,
         }
     }
 }
@@ -726,14 +746,21 @@ impl ChatItem {
         Self::Notice {
             text: text.into(),
             level: NoticeLevel::Info,
+            detail: None,
         }
     }
 
-    /// A failure the user has to see.
-    pub(crate) fn error(text: impl Into<String>) -> Self {
+    /// A failure the user has to see, and the machine text the agent attached
+    /// to it.
+    pub(crate) fn failure(
+        text: impl Into<String>,
+        level: NoticeLevel,
+        detail: Option<String>,
+    ) -> Self {
         Self::Notice {
             text: text.into(),
-            level: NoticeLevel::Error,
+            level,
+            detail,
         }
     }
 }

@@ -517,6 +517,7 @@ pub(super) fn project_row(
                 rest,
                 hovered,
             )
+            .min_w(super::row::NAME_MIN_W)
             .tooltip(move |window, cx| {
                 let hint = hint.clone();
                 Tooltip::element(move |_, _| div().v_flex().gap_0p5().children(hint.clone()))
@@ -524,19 +525,28 @@ pub(super) fn project_row(
             }),
         )
         .child(
+            // Shrinks, by its branch alone: everything else on it keeps its
+            // width, and the branch truncates once the name is down to its
+            // minimum.
             div()
                 .h_flex()
                 .items_center()
-                .flex_none()
+                .min_w_0()
                 .gap_1()
                 .text_xs()
                 .font_normal()
                 .text_color(meta_ink)
                 .when_some(git, |row, git| {
+                    let branch = git.branch.clone();
                     row.child(
                         div()
+                            .id(("project-branch", root_idx))
+                            .min_w_0()
                             .max_w(MAX_BRANCH_W)
                             .truncate()
+                            .tooltip(move |window, cx| {
+                                Tooltip::new(format!("Branch: {branch}")).build(window, cx)
+                            })
                             .font_family(cx.theme().mono_font_family.clone())
                             .text_size(crate::tokens::CODE_TEXT)
                             .child(git.branch.clone()),

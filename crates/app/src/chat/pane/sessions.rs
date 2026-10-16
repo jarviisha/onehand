@@ -605,7 +605,7 @@ impl ChatPane {
         let chat = &conv.session()?.read(cx).chat;
         SessionSignal::pick(
             chat.link,
-            chat.failed,
+            chat.failed(),
             chat.awaiting_permission(),
             chat.busy,
             conv.unseen,
