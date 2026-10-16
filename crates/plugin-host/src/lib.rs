@@ -319,21 +319,18 @@ pub fn faint_rule(cx: &App) -> Hsla {
 /// selected step.
 const CONTROL_FILL: f32 = 0.8;
 
-/// The fill a control takes: a secondary button at rest, a ghost hovered,
-/// pressed or chosen, a picker pointed at. Between the hover step a row takes
-/// and the selected step a chosen row does, nearer the hover: at the selected
-/// step every filled control was the heaviest grey on screen, heavier than
-/// the user's own message, and a secondary button had nowhere to go under the
-/// pointer. The selected step is left to a chosen row, beside the hovered rows
-/// it has to stand out from, and to a filled button pointed at.
+/// The fill a ghost control takes hovered, pressed or chosen, and a picker
+/// pointed at. Between the hover step a row takes and the selected step a
+/// chosen row does, nearer the hover: at the selected step every such control
+/// was the heaviest fill on screen. The selected step is left to a chosen row,
+/// beside the hovered rows it has to stand out from.
 pub fn control_fill(cx: &App) -> Hsla {
     let theme = cx.theme();
     control_fill_of(theme.list_hover, theme.accent)
 }
 
 /// [`control_fill`] from the two steps it lies between. `pub` for the reason
-/// [`status_hue`] is: the app writes it into the theme's secondary button and
-/// its contrast test works from a resolved ramp.
+/// [`status_hue`] is: the app's contrast test works from a resolved ramp.
 pub fn control_fill_of(hover: Hsla, selected: Hsla) -> Hsla {
     hover.mix_oklab(selected, CONTROL_FILL)
 }

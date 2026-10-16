@@ -1,20 +1,21 @@
 # DESIGN.md: onehand UI contract
 
 The whole-app UI contract for `onehand`: how the window is laid out and the rules every view
-follows, as structure and behaviour, not values. It binds at the level written here; below it,
-the code and its tests decide. A feature's own document (`docs/tasks.md`, `docs/workflows.md`,
-`docs/unattended.md`) holds its screens' detail, and `docs/ui-patterns.md` the patterns every
-screen repeats and how they behave. Code never cites this file.
+follows, as structure and behaviour, not values, save the palette's (*Colour and state*). It
+binds at the level written here; below it, the code and its tests decide. A feature's own
+document (`docs/tasks.md`, `docs/workflows.md`, `docs/unattended.md`) holds its screens' detail,
+and `docs/ui-patterns.md` the patterns every screen repeats and how they behave. Code never cites
+this file.
 
 This contract defines onehand's own visual language: quiet navigation, clear content hierarchy,
 compact controls and predictable alignment. It keeps no standing exceptions: a treatment that
 differs is a rule of the role it belongs to, written where that role is. A departure is a bug,
 put right or recorded in `docs/known-gaps.md` with its reason within the change that makes it.
 
-**No palette lives here.** gpui-component's theme, overridden at boot by the app's palette
-(`crate::theme::install`, with its contrast tests). Every colour, radius and size is a token read
-at the call site (see `.claude/skills/design-tokens/reference.md`); a hex literal in the render
-layer is a bug even when it looks right, as no theme switch reaches it.
+**The palette is VS Code's Dark Modern and Light Modern** (*Colour and state*), installed over
+gpui-component's theme at boot (`crate::theme::install`, with its contrast tests). Every colour,
+radius and size is a token read at the call site (see `.claude/skills/design-tokens/reference.md`);
+a hex literal outside the ramp is a bug even when it looks right, as no theme switch reaches it.
 
 ## Principles
 
@@ -31,9 +32,10 @@ layer is a bug even when it looks right, as no theme switch reaches it.
    it, the to-bottom button, and on a list page the item floating over the list.
 3. **Content leads; navigation recedes.** Neutral surfaces carry the layout. Hue identifies a
    state, a link, a label's kind or code in prose, never a decorative section background.
-   Attention is earned: the signals that call for the person (a state's hue, a count or badge of
-   what waits, a dot, weight past what the role takes) mark only what needs them or has just
-   changed, so a view at rest is calm. Hierarchy and identity are not attention: a heading keeps
+   The palette's blue also marks keyboard focus and the primary action, and in the dark
+   palette the selected item's fill. Attention is earned: the signals that call for the person
+   (a state's hue, a count or badge of what waits, a dot, weight past what the role takes) mark
+   only what needs them or has just changed, so a view at rest is calm. Hierarchy and identity are not attention: a heading keeps
    its weight, a list its muted count, a label its kind's hue. All colours are theme tokens with
    legible contrast on their actual surfaces in both modes.
 4. **Mono for machines, sans for people.** Code, paths, terminal output and diffs use
@@ -112,7 +114,7 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   ringed while the keys move it, `Enter` and `←`/`→` act on it, `Alt+↑`/`↓` step through
   sessions in its order. The tree's order is the user's, set by dragging; pinned projects stay on
   top and sessions never leave their project. `Ctrl+Shift+B` hides the rail completely, never to an
-  icon column. It resizes between 232 and 448px, on the ramp's lifted surface.
+  icon column. It resizes between 232 and 448px, on the side bar's surface.
 - **Agent pane header**, left to right: the show-rail button (only while the rail is hidden); the
   conversation's name, medium weight; a dots menu (*Rename…*, *Export as Markdown…*; *Resume in
   this session…*, refused mid-turn, and *Restart the agent*; *Delete conversation* in the danger
@@ -292,6 +294,50 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
 
 ## Colour and state
 
+The palette is VS Code's **Dark Modern** and **Light Modern**, each value the one VS Code gives
+the key named beside it: resolved through the theme's include chain (`dark_modern.json` over
+`dark_plus.json` over `dark_vs.json`, and the light trio likewise), and for a key no theme file
+sets, the default VS Code registers in its source. The values live in `crate::theme`'s ramp and,
+for the terminal, `onehand_terminal_ui::ansi`; this table is their contract and changes with them.
+A new colour is the value of a VS Code key, and a colour read anywhere but through a token is a bug.
+
+| Role | VS Code key | Dark | Light |
+|---|---|---|---|
+| reading surface (`background`), an open tab | `editor.background`, `tab.activeBackground` | `#1F1F1F` | `#FFFFFF` |
+| prose (`foreground`), the rail's slot ink | `foreground`, `sideBar.foreground` | `#CCCCCC` | `#3B3B3B` |
+| docks, the rail, title, status and tab bars, list and table heads | `panel.background`, `sideBar.background`, `titleBar.activeBackground`, `statusBar.background`, `editorGroupHeader.tabsBackground`, `sideBarSectionHeader.background` | `#181818` | `#F8F8F8` |
+| every well, the prompt bubble (`muted`), a skeleton | `textCodeBlock.background` | `#2B2B2B` | `#F8F8F8` |
+| meta text (`muted_foreground`), an off switch, a tab's word | `descriptionForeground` (dark), `tab.inactiveForeground` | `#9D9D9D` | `#616161` |
+| a step past the well (`secondary` and its ink) | `textPreformat.background`, `textPreformat.foreground` | `#3C3C3C`, `#D0D0D0` | black at 12% (`#E0E0E0`), `#3B3B3B` |
+| hover (`list_hover`) | `list.hoverBackground` | `#2A2D2E` | `#F2F2F2` |
+| the selected item (`accent` and its ink) | `list.activeSelectionBackground`, `list.activeSelectionForeground` | `#04395E`, `#FFFFFF` | `#E8E8E8`, `#000000` |
+| the rail's hovered row (`sidebar_accent`) | `list.inactiveSelectionBackground` | `#37373D` | `#E4E6F1` |
+| every hairline (`border`), the window's edge | `panel.border`, `titleBar.border` | `#2B2B2B` | `#E5E5E5` |
+| floating surfaces (`popover`) | `editorWidget.background` | `#202020` | `#F8F8F8` |
+| the composer card, an edgeless field (`theme::raised`, `theme::inset`) | `input.background` | `#313131` | `#FFFFFF` |
+| a control's edge (`input`) | `input.border` | `#3C3C3C` | `#CECECE` |
+| a secondary button at rest, pointed at, its word | `button.secondaryBackground` (dark: `input.background`, as Dark Modern's is transparent), `button.secondaryHoverBackground`, `button.secondaryForeground` | `#313131`, `#2B2B2B`, `#CCCCCC` | `#E5E5E5`, `#CCCCCC`, `#3B3B3B` |
+| the open tab's word | `tab.activeForeground` | `#FFFFFF` | `#3B3B3B` |
+| what runs, links (`link`, `info`), at rest, pointed at, pressed | `textLink.foreground`, `textLink.activeForeground` | `#4DAAFC` | `#005FB8` |
+| keyboard focus (`ring`), a dragged panel's edge | `focusBorder`, `sash.hoverBorder` | `#0078D4` | `#005FB8` |
+| where a dragged panel lands | `editorGroup.dropBackground` | `#53595D` at 50% | `#2677CB` at 18% |
+| a dialog's backdrop | `widget.shadow` | black at 36% | black at 16% |
+| the scrollbar thumb, pointed at | `scrollbarSlider.background`, `scrollbarSlider.hoverBackground` | `#797979` at 40%, `#646464` at 70% | `#646464` at 40%, `#646464` at 70% |
+| the caret | `editorCursor.foreground` | `#AEAFAD` | `#000000` |
+| selected text (`selection`) | `editor.selectionBackground` | `#264F78` | `#ADD6FF` |
+| the primary action (`primary` and its ink), pointed at and pressed, a progress bar | `button.background`, `button.hoverBackground`, `button.foreground`, `progressBar.background` | `#0078D4`, `#026EC1`, `#FFFFFF` | `#005FB8`, `#0258A8`, `#FFFFFF` |
+| danger as a fill (`danger`) | `statusBarItem.errorBackground` | `#B90F07` (`errorForeground` darkened by 0.4) | `#C72E0F` |
+| danger pointed at and pressed | none: the fill mixed 15% and 25% toward Light Modern's ink | | |
+| the status hues `status_ink()` is derived from | `errorForeground`, `editorWarning.foreground`, `testing.iconPassed` | `#F85149`, `#CCA700`, `#73C991` | `#F85149`, `#BF8803`, `#73C991` |
+| a label's kind (`magenta`, `cyan`) | `terminal.ansiMagenta`, `terminal.ansiCyan` | `#BC3FBC`, `#11A8CD` | `#BC05BC`, `#0598BC` |
+| the terminal's sixteen colours | `terminal.ansi*` | `onehand_terminal_ui::ansi::DARK` | `onehand_terminal_ui::ansi::LIGHT` |
+| a chart's series | `charts.blue`, `charts.green`, `charts.yellow`, `charts.orange`, `charts.purple`, `charts.red` | `#59A4F9`, `#89D185`, `#CCA700`, `#D18616`, `#B180D7`, `#F14C4C` | `#0063D3`, `#388A34`, `#BF8803`, `#D18616`, `#652D90`, `#E51400` |
+
+VS Code's surfaces sit closer than a stepped ramp's would: a region may be as little as 1.01 off
+what it sits on, and a hairline or a shadow says where it ends. Its status hues and its focus ring
+fall under WCAG AA on some of the surfaces they land on; those pairs are in `docs/known-gaps.md`,
+and the ramp's tests hold each at what it reaches.
+
 | Token | Use |
 |---|---|
 | `background` / `foreground` | surface and text |
@@ -313,20 +359,21 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
   inherits its surface unless it has a distinct role: well, selection or floating content.
 - Boxes are borders; wells and the bubble are fills. Ordinary sections remain unboxed. Do not
   combine a border, contrasting fill and shadow just to make a group visible.
-- Hover and selection are fills: distinct steps on a row (`list_hover`, `accent`; on the rail's lifted surface its
+- Hover and selection are fills: distinct steps on a row (`list_hover`, `accent`; on the rail's side bar surface its
   own pair, `sidebar_accent` and `rail_chosen`, as a fill is a step from the surface under it), one step on a ghost button (`control_fill`, between a
-  row's hover and its selected step). A secondary button rests on that fill and lifts to the
-  selected step under the pointer; the selected step is otherwise a chosen row's. Keyboard
+  row's hover and its selected step). A secondary button rests on a fill of its own and takes
+  its pointed-at step under the pointer; the selected step is a chosen row's. Keyboard
   focus on a control is the ring. A field is marked by its edge, so its focus is that edge turned
   the `ring` ink, and an edgeless one gains it while focused; the composer, the input surface,
   shows focus by its caret (*Components*).
 - At most one primary in a view; a view needs none (the Settings page has none). Where layers
   stack, what waits on the person holds it while it shows (a floating issue, an open form, a
   pinned card, a run's approval), and what it covers steps down to `secondary`.
-- The palette is neutral: surfaces and inks carry next to no hue, so a hue on screen means
-  something. A missing surface or ink goes into the ramp with its contrast asserted, never into
-  one view; a step between two the ramp holds is mixed from them perceptually (`mix_oklab`), so
-  both modes derive it by one rule.
+- Surfaces and inks are greys, so a hue on screen means something: a state, a link, a label's
+  kind, focus, the primary action, or in the dark palette a selected item. A missing surface or
+  ink is a VS Code key's value added to the ramp with its contrast asserted, never a value in
+  one view; a step between two the ramp holds is mixed from them perceptually
+  (`mix_oklab`), so both modes derive it by one rule.
 
 ## Components
 

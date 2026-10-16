@@ -178,7 +178,8 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
   the reason in the comment's own words. Pointing at code is fine. Documents point at code, never
   the reverse.
 - **Every `.md` file is written in English.** Quoted non-English data stays as it is.
-- **Never hard-code a colour, radius or size.** Read `cx.theme()`; sizes are rems, because zoom
+- **Never hard-code a colour, radius or size.** The palette and its source are in DESIGN.md's
+  *Colour and state*. Read `cx.theme()`; sizes are rems, because zoom
   overrides the rem base per panel.
 - **Reuse gpui-component before building.** Buttons go through `crate::controls::action`, menu
   rows through `controls::menu_item`/`menu_row` (re-exported from `onehand_plugin_host`, where a

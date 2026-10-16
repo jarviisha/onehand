@@ -53,6 +53,7 @@ minor bump may break any of them.
   `Shift+Tab` in the composer steps through the session's modes.
 - Terminal tabs size to their names and scroll; the terminal caches rows and coalesces redraws.
 - The interface font is Be Vietnam Pro, shipped inside the binary in place of Inter.
+- The palette is VS Code's Dark Modern and Light Modern, the rail on its side bar's grey.
 
 ### Project
 

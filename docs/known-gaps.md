@@ -5,6 +5,14 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
 [workflows.md](workflows.md#not-built), [tasks.md](tasks.md#not-built) and
 [unattended.md](unattended.md#not-built-on-purpose).
 
+- **Some status words and the focus ring fall under WCAG AA.** The palette is VS Code's, whose
+  status hues and `focusBorder` are not lightened here. For text: status ink, a tint's words and
+  a diff line's sign on some surfaces they land on, Light Modern's success green lowest of them,
+  and Dark Modern's meta text on the step past the well. For a control: the focus ring at the
+  library's half strength, and whole on the composer in Dark Modern. The floors the ramp's tests
+  hold them at are `HUE_INK` and those of `the_focus_ring_shows_on_every_surface` in
+  `crates/app/src/theme.rs`. Fixing them means changing VS Code's own values, which this palette
+  does not do.
 - **The newest terminal tab is not scrolled into view.** Past the width of the strip a new shell can
   be the active one with its tab off the end of the list: the grid is right, the strip is behind.
   Fixing it means a `ScrollHandle` on the panel, and `scroll_to_item` on a tab that has never been

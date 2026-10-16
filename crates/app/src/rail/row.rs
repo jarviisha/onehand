@@ -32,7 +32,7 @@ pub(super) const NAME_MIN_W: Rems = rems(6.);
 
 /// The fill a hovered rail row takes: the ramp's step the rail owns, whole.
 /// Thinned, as the library thins its hovered sidebar rows, it sank into the
-/// well it lies on.
+/// rail it lies on.
 pub(super) fn hover_fill(cx: &App) -> Hsla {
     cx.theme().sidebar_accent
 }
@@ -93,7 +93,7 @@ pub(super) fn key_ring(cx: &App) -> Div {
 pub(super) fn row_surfaces(chosen: bool, cx: &App) -> (Hsla, Hsla) {
     match chosen {
         true => (chosen_fill(cx), chosen_fill(cx)),
-        false => (cx.theme().muted, hover_fill(cx)),
+        false => (cx.theme().sidebar, hover_fill(cx)),
     }
 }
 
