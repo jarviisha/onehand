@@ -304,7 +304,8 @@ sizes disagree across components (its default button letters at the body size be
 at the chrome size), so a button takes one of three: `.short()` the default for any button with
 words, `.small()` for an icon alone, square at the same height, and `.tall()` in a list page's
 head; never the library's default, and never `.xsmall()`, whose words run to its edges and
-whose box is under a pointer's comfortable reach. A correction a component needs lives in its
+whose box is under a pointer's comfortable reach. A field takes `.short()` wherever it stands, or
+`.tall()` in a list page's head, so it is as tall as the buttons beside it. A correction a component needs lives in its
 shared wrapper (`Short`, `Tall`), never at a call site. `docs/ui-patterns.md` (*Control sizes*) maps
 each role to its component and size.
 

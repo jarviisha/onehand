@@ -8,7 +8,6 @@ use gpui::{
     InteractiveElement as _, IntoElement, ParentElement, Render, SharedString,
     StatefulInteractiveElement as _, Styled, Task, Window, div,
 };
-use gpui_component::Sizable as _;
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{InputEvent, InputState};
 use gpui_component::{ActiveTheme, StyledExt};
@@ -755,7 +754,7 @@ fn filter_bar(query: &Entity<InputState>, choices: Option<gpui::Div>, cx: &App) 
             div()
                 .flex_1()
                 .min_w(SEARCH_MIN)
-                .child(search_input(query, cx).xsmall()),
+                .child(search_input(query, cx).short()),
         )
         .children(choices)
         .into_any_element()

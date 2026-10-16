@@ -133,7 +133,7 @@ Moving the library's rev means checking this table.
 
 | Size | Button: height / words / icon / icon–label gap / inset | Input: height / words / inset | Icon alone |
 |---|---|---|---|
-| `.xsmall()`: no button's size | 20 / 12 / 12 / 4 / 4 | 20 / 12 / 4 **px** | 12 |
+| `.xsmall()`: no button's or field's size | 20 / 12 / 12 / 4 / 4 | 20 / 12 / 4 **px** | 12 |
 | `.short()` (`CONTROL_H`) | 24 / 12 / 12 / 4 / 8 | 24 / 12 / 8 **px** | 12 |
 | `.tall()` (`FIELD_H`) | 30 / 14 / 14 / 4 / 12 | 30 / 14 / 8 **px** | 14 |
 | `.small()`: an icon-only button | 24 / 14 / 14 / 4 / 8: never with words | 24 / 14 / 8 **px** | 14 |

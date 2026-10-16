@@ -102,7 +102,7 @@ size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in ea
 | A form's fields and buttons; a dialog's footer; a page's filter bar: its search and pickers | Button, Input | `.short()` |
 | Every other button with words: a column page head's actions, a strip's, a box's, a row's, a secondary action inside dense content (a line of meta text, a transcript block, a chip), a tab, a fold toggle, a pinned card's answers | Button | `.short()`, under a row, so the controls never outweigh what they act on |
 | Every other icon-only button: a strip's, a row's, a copy control, the composer's send | Button | `.small()`, square at `CONTROL_H`, so an icon alone is as tall as a worded peer beside it |
-| A field in a strip or the rail | Input | `.xsmall()` |
+| A field in a strip or the rail | Input | `.short()`, as tall as the buttons beside it |
 | An icon in a button | Icon | the button's own: `small` in a `.tall()` button and in an icon-only `.small()` one, `xsmall` beside words in a `.short()` one |
 | An icon leading a label the app draws: a row, a menu item | Icon | `.small()` |
 | A state's mark leading a row's label (a session's) | Icon | `.xsmall()`, a step under the label |
@@ -119,8 +119,7 @@ size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in ea
   in its shared wrapper, never at the call site. The library's `.small()` is an icon-only
   button's size, square at the same height as `.short()`; a worded button never takes it, as its
   words would stand at the chrome size. A control holding a badge keeps it, being the one tall
-  enough. `.xsmall()` is no button's size: a field in a strip or the rail, an icon and a checkbox
-  take it.
+  enough. `.xsmall()` is no button's or field's size: an icon and a checkbox take it.
 - **The hit area is not the icon.** A worded `.short()` button carries the extra small icon
   beside its words; an icon alone at `.small()` takes the small one, its box no larger than a
   worded peer's. Nothing is enlarged to fill its box.
@@ -220,7 +219,7 @@ The list takes the pane's whole width, a whole list scanned at a glance:
 
 Whatever filters its content draws its filters in one order. On a page they stand under its head
 at `.short()`, as below. In a dock, which is dense chrome with no head, the bar leads with its
-search (`.xsmall()`) and takes the same order, its choices at `.short()` (the Plugins mode's marketplaces as choices).
+search and takes the same order, all at `.short()` (the Plugins mode's marketplaces as choices).
 
 - where the content splits into a few states that each count (*Open*, *Closed*), those first,
   each a `.short()` `choice`, the shown one filled, its count a slim `badge` in the hue of that

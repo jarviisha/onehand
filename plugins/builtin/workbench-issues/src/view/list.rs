@@ -176,7 +176,7 @@ impl IssuesView {
                 div()
                     .flex_1()
                     .min_w_0()
-                    .child(search_input(&query, cx).xsmall()),
+                    .child(search_input(&query, cx).short()),
             )
             .child(
                 action("issues-new")

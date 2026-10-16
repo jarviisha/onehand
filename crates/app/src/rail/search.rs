@@ -21,7 +21,7 @@ use gpui_component::{ActiveTheme, Icon, Selectable as _, Sizable as _, StyledExt
 pub(super) fn search_field(state: &RailState, cx: &Context<Shell>) -> impl IntoElement + use<> {
     div().flex_1().min_w_0().child(
         search_input(&state.search, cx)
-            .xsmall()
+            .short()
             // No edge at rest, but one to turn the ring ink on focus.
             .border_color(crate::theme::inset(cx))
             .bg(crate::theme::inset(cx))
