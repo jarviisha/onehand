@@ -7,8 +7,9 @@
 //! makes the text the same everywhere, and a family that is registered here
 //! always resolves.
 //!
-//! Inter is drawn for interface text at the sizes the chrome uses; JetBrains
-//! Mono for code and the terminal grid. Both are under the SIL Open Font
+//! Be Vietnam Pro is drawn for interface text, with Vietnamese diacritics
+//! designed in rather than stacked on; JetBrains Mono for code and the
+//! terminal grid. Both are under the SIL Open Font
 //! License, whose text sits beside the files in `assets/fonts/`.
 //!
 //! Static faces rather than the variable ones: one file per weight the app
@@ -19,17 +20,17 @@ use gpui::App;
 use std::borrow::Cow;
 
 /// The interface family: the theme's `font_family`.
-pub(crate) const UI_FAMILY: &str = "Inter";
+pub(crate) const UI_FAMILY: &str = "Be Vietnam Pro";
 /// The family for code, paths, diffs and the terminal: the theme's
 /// `mono_font_family`, unless `[font].monospace` names another installed one.
 pub(crate) const MONO_FAMILY: &str = "JetBrains Mono";
 
 const FACES: &[&[u8]] = &[
-    include_bytes!("../../../assets/fonts/Inter-Regular.ttf"),
-    include_bytes!("../../../assets/fonts/Inter-Italic.ttf"),
-    include_bytes!("../../../assets/fonts/Inter-Medium.ttf"),
-    include_bytes!("../../../assets/fonts/Inter-SemiBold.ttf"),
-    include_bytes!("../../../assets/fonts/Inter-Bold.ttf"),
+    include_bytes!("../../../assets/fonts/BeVietnamPro-Regular.ttf"),
+    include_bytes!("../../../assets/fonts/BeVietnamPro-Italic.ttf"),
+    include_bytes!("../../../assets/fonts/BeVietnamPro-Medium.ttf"),
+    include_bytes!("../../../assets/fonts/BeVietnamPro-SemiBold.ttf"),
+    include_bytes!("../../../assets/fonts/BeVietnamPro-Bold.ttf"),
     include_bytes!("../../../assets/fonts/JetBrainsMono-Regular.ttf"),
     include_bytes!("../../../assets/fonts/JetBrainsMono-Italic.ttf"),
     include_bytes!("../../../assets/fonts/JetBrainsMono-Bold.ttf"),
