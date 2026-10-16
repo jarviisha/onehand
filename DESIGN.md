@@ -1,11 +1,12 @@
 # DESIGN.md: onehand UI contract
 
-The whole-app UI contract for `onehand`: how the window is laid out and the rules every view
-follows, as structure and behaviour, not values, save the palette's (*Colour and state*). It
-binds at the level written here; below it, the code and its tests decide. A feature's own
-document (`docs/tasks.md`, `docs/workflows.md`, `docs/unattended.md`) holds its screens' detail,
-and `docs/ui-patterns.md` the patterns every screen repeats and how they behave. Code never cites
-this file.
+The whole-app UI contract for `onehand`: the principles every view follows, the window's frame,
+the transcript and the visual system, as structure and behaviour, not values (the palette names
+VS Code's keys, not their values: *Colour and state*). It binds at the level written here; below
+it, the code and its tests decide. `docs/screens.md` says what each region holds and in what
+order, a feature's own document (`docs/tasks.md`, `docs/workflows.md`, `docs/unattended.md`) its
+screens' detail, and `docs/ui-patterns.md` the patterns every screen repeats and how they behave.
+Code never cites this file.
 
 This contract defines onehand's own visual language: quiet navigation, clear content hierarchy,
 compact controls and predictable alignment. It keeps no standing exceptions: a treatment that
@@ -24,12 +25,8 @@ a hex literal outside the ramp is a bug even when it looks right, as no theme sw
    narrow for both, the Workbench takes the area under *← Conversation*, which steps it aside. Pages
    take the agent pane and put the docks away; a page opens over a session only when picked.
 2. **Give each boundary a purpose.** Separate with space first, then a line, then a fill, then a
-   shadow, taking each step only for a reason the one before cannot give. Docks use a distinct
-   surface; independent boxes and tables use a 1px `border`; a subsection is a heading and space,
-   not a frame, and a hairline parts groups only where space alone runs many peers together (a
-   settings sub-page). Shadows only for what floats, the app's own in
-   `lift`: dialogs, popovers, menus, over the transcript the composer card, the cards pinned above
-   it, the to-bottom button, and on a list page the item floating over the list.
+   shadow, taking each step only for a reason the one before cannot give (`docs/ui-patterns.md`,
+   *Separation*).
 3. **Content leads; navigation recedes.** Neutral surfaces carry the layout. Hue identifies a
    state, a link, a label's kind or code in prose, never a decorative section background.
    The palette's blue also marks keyboard focus and the primary action, and in the dark
@@ -78,132 +75,18 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
         rail                     DockArea
 ```
 
-- **Rail.** App chrome outside the dock, so a layout restore cannot lose it. Top to bottom: the
-  workspace bar (letter tile, name, switcher, *Hide the rail*); the search over session titles and
-  project names (`Ctrl+K` outside a terminal, showing a hidden rail) beside *New*, which starts in
-  the keyboard's project, else the one on screen, its caret picking *Start in* or *With agent*;
-  *Overview*, *Tasks* (a pill counting tasks that need attention, none at zero), *Issues* and
-  *Workflows*, each filled while its page shows; *Sessions* with a warning-ink *N need attention*
-  chip (shown above zero or while on, toggling that filter and back) and the filter menu (*By
-  project*, *All sessions*, *Needs attention*, *Recent activity*) over a hairline; the scrolling
-  list, ending on *Add project…*; a foot with *Settings*, a page row like the four above, filled
-  while it shows. Every row at rest is in the muted ink; the one where the person is takes its
-  fill and the ink paired with it. A neutral badge sinks a step into the surface it sits on, here
-  the inset step.
+What each region holds, and in what order, is `docs/screens.md`'s, under the region's name:
 
-  *By project* lists pinned projects first, a gap between projects. A project row: the fold
-  chevron, folder and name, its git line (branch, uncommitted changes, commits ahead and behind,
-  each only above zero and named in full on hover), the pin, the unattended pill (*auto*, *auto ·
-  N*, *auto · N waiting*; a run's pill opens its issue on the Issues page), and while folded its
-  sessions' most urgent state. Narrowed, the name keeps a minimum and the branch gives way first.
-  Its chevron alone folds it (not during a search); the rest of the
-  row shows the project's last session, or its page, which then fills the row. `+` and `⋯` show
-  on hover and on the keyboard's row, right-click opens the same menu. A session row, indented
-  under its project: its state mark, title and `⋯` (on hover, on the keyboard's row, always on
-  the one shown), and under them `state · agent · age` (*waiting Nm* while it needs input, the
-  state's word in its ink while it waits on the person), over which the pointer and the
-  keyboard's row lay *Stop* (running), *Send the last prompt again* (failed) and *Close*; the
-  keyboard's row lays them on any session but the one shown, whose conversation already holds
-  *Stop* and the way back, so a row the keys only pass through stays still. The
-  other filters are flat, the project in place of the agent. A group lists six sessions, then *N
-  more*; an open project with none says *No open sessions*, a search or filter with none *No
-  sessions match*. Each state has its own ink, and a mark per thing the person can do, none
-  animated (running is a filled dot): failed and disconnected share one, both answered by trying
-  again, their words telling them apart. The inks: failed or disconnected danger, needs input
-  warning, running the accent, done unread success, idle muted. `↑`/`↓` move the list's row,
-  ringed while the keys move it, `Enter` and `←`/`→` act on it, `Alt+↑`/`↓` step through
-  sessions in its order. The tree's order is the user's, set by dragging; pinned projects stay on
-  top and sessions never leave their project. `Ctrl+Shift+B` hides the rail completely, never to an
-  icon column. It resizes between 232 and 448px, on the side bar's surface.
-- **Agent pane header**, left to right: the show-rail button (only while the rail is hidden); the
-  conversation's name, medium weight; a dots menu (*Rename…*, *Export as Markdown…*; *Resume in
-  this session…*, refused mid-turn, and *Restart the agent*; *Delete conversation* in the danger
-  tint, refused until the first turn ends); a spacer; past conversations and *Close session*
-  (only while a session shows); the terminal, an accent dot on it while its dock is closed over a
-  shell running a command; last, the Workbench. The two dock buttons are filled while their dock is open. On
-  a page (the overview, Tasks, Issues, Workflows, Settings) it reads the page's name, with no dots
-  menu and no dock buttons. As the pane narrows, the name gives way first, down to a minimum.
-  Without a session it names the project, its dots menu holding the project's
-  actions but *New session* and *Open terminal*, which the page and the header already offer.
-- **Step strip.** Under the header, only while a run drives the session on screen: the workflow's
-  name muted, each step's label between chevrons (done ones with a muted check, the current one in
-  full ink), then *Review…*, *Revise…* and *Continue* (primary) while it waits for approval, and
-  *Stop* always. Only the step labels clip. *Review…* reads the answer from the run; *Revise…*
-  refuses an empty note; a press the run no longer waits at shows the new answer, in the warning
-  ink, rather than approving it unread.
-- **Composer.** A card with no edge, set off by its raised fill and lift; the caret alone shows
-  focus, and no line is ever added to it (a refusal is Send's tooltip, a failure a toast). The
-  field, then the `+` menu, *Fast* (*Fast: On* or *Off*, a toggle with no caret, when its choices
-  read as on and off; else *Fast:* and the value in force), the model and
-  effort chips, then *Send*, or *Stop* (solid danger, worded) and *Queue* over a draft. Under it
-  the branch and the mode, stacked when narrow. Each chip's menu opens just above it, without
-  its tooltip. Above the card: one pinned permission or question, the oldest, with how many more
-  wait; then the queue and a reconnect as plain lines; then the staged files as one row of chips,
-  faded where cut beside *Show all N*. *Run a workflow…* (the `+` menu, the keymap, the Workflows
-  page's *Run…*) opens the launcher, and an issue's *Run workflow…* its start form; both are
-  drawn as `docs/workflows.md` describes.
-- **Docks.** Bare panels on the dock surface with strips of their own, no library tab bars; the
-  terminal is a block held off its neighbours by a gap, drawn no taller than leaves the
-  conversation a readable height (its dragged height kept).
-  - Strips as tall as the header. The Workbench's: *← Conversation* while it has the area, the
-    modes (Editor, Markdown, Issues, Plugins, Neovim; a select when narrow), maximize, hide. The
-    terminal's: shell tabs (each capped in width, scrolling, so none is left out), `+`, maximize,
-    hide. Crowded file tabs: a select.
-  - A list beside its detail (files, documents, issues) only while the dock holds both; else one at
-    a time, the detail under a link back naming the list. Picking shows it; going back keeps it.
-    Files and Markdown draw one tree row (`tree_row`); the file or document open beside the tree
-    is its picked row, a changed file's letter in its state's ink at the row's end.
-  - A failed open or save in the Editor or Markdown is a toast; a file changed on disk, a
-    Neovim that would not start and a listing that failed stand as a status line under the mode.
-  - Plugins: the search and filters a filter bar; a row's actions on hover and on keyboard focus, its switch always;
-    what runs and what waits on a restart under the list, so neither moves it.
-  - The Issues tab's issue: a trail (project › reference, linked to its forge, or *Draft*) with
-    its actions (one primary, one other, ⋯); its tags (a neutral state badge, labels); the title,
-    large; one line of facts; what it waits on (a conflict, where its work stands, the review);
-    then two chips: *Description* (the body as a document, the files it names, what the work
-    left, *Before*) and *Activity N* (the history). Sections are parted by space, not rules.
-    ⋯ ▸ *Open in Issues* and *Review…* open it on the Issues page, the latter with its review open.
-  - Hiding a dock keeps its buffers and processes; the terminal's open state follows the project.
-- **Pages without a session.**
-  - A project with no session shows one column from the top: a head, the line counting its
-    tasks that need attention, run or wait at the start (not drawn at zero, and opening the
-    Tasks page narrowed to the project), *Run check* (spinning while a check runs) and *New
-    session* (primary) at the end; its *Check command* field; and its past conversations as
-    rows, capped, each with *Delete…* on hover. The page scrolls as one.
-  - *Workspace overview* shows, across all projects, the boxes *Waiting on you* (runs waiting
-    for an answer or an approval, and sessions waiting, failed, finished or lost) and *Working*, then
-    *Projects* as a grid of tiles (not drawn without projects), then the sections *Recent
-    conversations* and *Open issues* (its project picker kept while the page is left), plain
-    lists on the page's surface. The page scrolls as one.
-  - *Tasks*: a filter bar (the project picker), then four boxes two by two, *Needs attention*,
-    *Running*, *Queued*, *Finished*, each with a count, an empty line and a cap. A row is the
-    title over workflow, step or outcome and project, with ghost actions by state (*Open
-    session*, *Stop*, *Resume*, *Retry…*, *Dismiss*) shown on hover, kept under *Needs attention*;
-    its text opens the task's detail, a page of its own at the prose width: a trail, the title,
-    then *Awaiting approval*, *Way out* and the runs as plain sections.
-  - *Issues*, a list page (`docs/ui-patterns.md`, *List pages*): a head (the search, then
-    *Refresh* and *New issue*, its primary, at the end); a filter bar (*Open* and
-    *Closed* as choices, each its count in a badge on its corner, then pickers for progress,
-    project and label and *Clear filters*); a row is its state mark (open in the success ink,
-    closed in the closed ink), reference, title, priority and note, then its labels, project
-    and age in slots at the end, the labels and project dropped first; *Showing N of M open
-    issues* at the foot. *Reading the issues…* until the first read lands; *Refresh* spins while
-    it reads. *No issues yet* or *No issues match* when empty.
-  - The **review block** opens below where the work stands only on *Review…*, as
-    `docs/unattended.md` draws it.
-  - *Workflows*: a head (*New workflow*, its primary, *Import…*, then how many), then
-    the workflows as rows, capped, shipped ones *Built in* (read-only) in a slot of their own,
-    *Run…* (projects, the rail's first) and the rest shown on hover. *New workflow* or *Edit*
-    opens a form below, one box per step (its kind its first field, one ⋯ to move or remove it),
-    a margin marking where a failure goes back to, problems (a name clash among them) above a
-    *Save* that refuses with the first and spins while it writes.
+- **Rail**: app chrome outside the dock, from the workspace bar down to *Settings*.
+- **Agent pane header**: the conversation's name, its menu and the dock buttons.
+- **Step strip**: a run's steps under the header, while it drives the session on screen.
+- **Composer**: the input surface under the transcript, and what waits pinned above it.
+- **Docks**: the Workbench and the terminal, bare panels with strips of their own.
+- **Pages without a session**: a project's page, the overview, Tasks, Issues and Workflows.
+- **Settings**: a page of its own, a nav column beside the sub-page it shows.
+- **Persistence**: what the layout saves.
 - **No top bar, no status bar, no right toolbar.** Transient status goes in a toast; modals are
-  `Dialog`s. Settings is a page: a nav column with Appearance, Workspace, Agents, Connections and
-  Shortcuts (rows as the rail's page rows), and beside it the sub-page, untitled (its nav row
-  names it), opening on its scope as a badge and a hint, its groups split by hairlines with
-  semibold headings, not boxes. Every button there is secondary: Settings holds no primary.
-- **Persistence.** The layout is saved as the Workbench's dragged width, the terminal and rail
-  sizes and whether each dock is open, never as the library's `DockAreaState`.
+  `Dialog`s.
 
 ## Transcript
 
@@ -294,44 +177,45 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
 
 ## Colour and state
 
-The palette is VS Code's **Dark Modern** and **Light Modern**, each value the one VS Code gives
-the key named beside it: resolved through the theme's include chain (`dark_modern.json` over
+The palette is VS Code's **Dark Modern** and **Light Modern**. Each role takes the value VS Code
+gives the key named beside it, resolved through the theme's include chain (`dark_modern.json` over
 `dark_plus.json` over `dark_vs.json`, and the light trio likewise), and for a key no theme file
-sets, the default VS Code registers in its source. The values live in `crate::theme`'s ramp and,
-for the terminal, `onehand_terminal_ui::ansi`; this table is their contract and changes with them.
-A new colour is the value of a VS Code key, and a colour read anywhere but through a token is a bug.
+sets, the default VS Code registers in its source. The key is the value's source; `crate::theme`'s
+ramp holds the value (for the terminal, `onehand_terminal_ui::ansi`), already derived where VS
+Code derives it. This table names the key, and changes only when a role takes another. A new
+colour is the value of a VS Code key, and a colour read anywhere but through a token is a bug.
 
-| Role | VS Code key | Dark | Light |
-|---|---|---|---|
-| reading surface (`background`), an open tab | `editor.background`, `tab.activeBackground` | `#1F1F1F` | `#FFFFFF` |
-| prose (`foreground`), the rail's slot ink | `foreground`, `sideBar.foreground` | `#CCCCCC` | `#3B3B3B` |
-| docks, the rail, title, status and tab bars, list and table heads | `panel.background`, `sideBar.background`, `titleBar.activeBackground`, `statusBar.background`, `editorGroupHeader.tabsBackground`, `sideBarSectionHeader.background` | `#181818` | `#F8F8F8` |
-| every well, the prompt bubble (`muted`), a skeleton | `textCodeBlock.background` | `#2B2B2B` | `#F8F8F8` |
-| meta text (`muted_foreground`), an off switch, a tab's word | `descriptionForeground` (dark), `tab.inactiveForeground` | `#9D9D9D` | `#616161` |
-| a step past the well (`secondary` and its ink) | `textPreformat.background`, `textPreformat.foreground` | `#3C3C3C`, `#D0D0D0` | black at 12% (`#E0E0E0`), `#3B3B3B` |
-| hover (`list_hover`) | `list.hoverBackground` | `#2A2D2E` | `#F2F2F2` |
-| the selected item (`accent` and its ink) | `list.activeSelectionBackground`, `list.activeSelectionForeground` | `#04395E`, `#FFFFFF` | `#E8E8E8`, `#000000` |
-| the rail's hovered row (`sidebar_accent`) | `list.inactiveSelectionBackground` | `#37373D` | `#E4E6F1` |
-| every hairline (`border`), the window's edge | `panel.border`, `titleBar.border` | `#2B2B2B` | `#E5E5E5` |
-| floating surfaces (`popover`) | `editorWidget.background` | `#202020` | `#F8F8F8` |
-| the composer card, an edgeless field (`theme::raised`, `theme::inset`) | `input.background` | `#313131` | `#FFFFFF` |
-| a control's edge (`input`) | `input.border` | `#3C3C3C` | `#CECECE` |
-| a secondary button at rest, pointed at, its word | `button.secondaryBackground` (dark: `input.background`, as Dark Modern's is transparent), `button.secondaryHoverBackground`, `button.secondaryForeground` | `#313131`, `#2B2B2B`, `#CCCCCC` | `#E5E5E5`, `#CCCCCC`, `#3B3B3B` |
-| the open tab's word | `tab.activeForeground` | `#FFFFFF` | `#3B3B3B` |
-| what runs, links (`link`, `info`), at rest, pointed at, pressed | `textLink.foreground`, `textLink.activeForeground` | `#4DAAFC` | `#005FB8` |
-| keyboard focus (`ring`), a dragged panel's edge | `focusBorder`, `sash.hoverBorder` | `#0078D4` | `#005FB8` |
-| where a dragged panel lands | `editorGroup.dropBackground` | `#53595D` at 50% | `#2677CB` at 18% |
-| a dialog's backdrop | `widget.shadow` | black at 36% | black at 16% |
-| the scrollbar thumb, pointed at | `scrollbarSlider.background`, `scrollbarSlider.hoverBackground` | `#797979` at 40%, `#646464` at 70% | `#646464` at 40%, `#646464` at 70% |
-| the caret | `editorCursor.foreground` | `#AEAFAD` | `#000000` |
-| selected text (`selection`) | `editor.selectionBackground` | `#264F78` | `#ADD6FF` |
-| the primary action (`primary` and its ink), pointed at and pressed, a progress bar | `button.background`, `button.hoverBackground`, `button.foreground`, `progressBar.background` | `#0078D4`, `#026EC1`, `#FFFFFF` | `#005FB8`, `#0258A8`, `#FFFFFF` |
-| danger as a fill (`danger`) | `statusBarItem.errorBackground` | `#B90F07` (`errorForeground` darkened by 0.4) | `#C72E0F` |
-| danger pointed at and pressed | none: the fill mixed 15% and 25% toward Light Modern's ink | | |
-| the status hues `status_ink()` is derived from | `errorForeground`, `editorWarning.foreground`, `testing.iconPassed` | `#F85149`, `#CCA700`, `#73C991` | `#F85149`, `#BF8803`, `#73C991` |
-| a label's kind (`magenta`, `cyan`) | `terminal.ansiMagenta`, `terminal.ansiCyan` | `#BC3FBC`, `#11A8CD` | `#BC05BC`, `#0598BC` |
-| the terminal's sixteen colours | `terminal.ansi*` | `onehand_terminal_ui::ansi::DARK` | `onehand_terminal_ui::ansi::LIGHT` |
-| a chart's series | `charts.blue`, `charts.green`, `charts.yellow`, `charts.orange`, `charts.purple`, `charts.red` | `#59A4F9`, `#89D185`, `#CCA700`, `#D18616`, `#B180D7`, `#F14C4C` | `#0063D3`, `#388A34`, `#BF8803`, `#D18616`, `#652D90`, `#E51400` |
+| Role | VS Code key |
+|---|---|
+| reading surface (`background`), an open tab | `editor.background`, `tab.activeBackground` |
+| prose (`foreground`), the rail's slot ink | `foreground`, `sideBar.foreground` |
+| docks, the rail, title, status and tab bars, list and table heads | `panel.background`, `sideBar.background`, `titleBar.activeBackground`, `statusBar.background`, `editorGroupHeader.tabsBackground`, `sideBarSectionHeader.background` |
+| every well, the prompt bubble (`muted`), a skeleton | `textCodeBlock.background` |
+| meta text (`muted_foreground`), an off switch, a tab's word | `descriptionForeground` (dark), `tab.inactiveForeground` |
+| a step past the well (`secondary` and its ink) | `textPreformat.background` (light: black at 12% over `editor.background`), `textPreformat.foreground` |
+| hover (`list_hover`) | `list.hoverBackground` |
+| the selected item (`accent` and its ink) | `list.activeSelectionBackground`, `list.activeSelectionForeground` |
+| the rail's hovered row (`sidebar_accent`) | `list.inactiveSelectionBackground` |
+| every hairline (`border`), the window's edge | `panel.border`, `titleBar.border` |
+| floating surfaces (`popover`) | `editorWidget.background` |
+| the composer card, an edgeless field (`theme::raised`, `theme::inset`) | `input.background` |
+| a control's edge (`input`) | `input.border` |
+| a secondary button at rest, pointed at, its word | `button.secondaryBackground` (dark: `input.background`, as Dark Modern's is transparent), `button.secondaryHoverBackground`, `button.secondaryForeground` |
+| the open tab's word | `tab.activeForeground` |
+| what runs, links (`link`, `info`), at rest, pointed at, pressed | `textLink.foreground`, `textLink.activeForeground` |
+| keyboard focus (`ring`), a dragged panel's edge | `focusBorder`, `sash.hoverBorder` |
+| where a dragged panel lands | `editorGroup.dropBackground` |
+| a dialog's backdrop | `widget.shadow` |
+| the scrollbar thumb, pointed at | `scrollbarSlider.background`, `scrollbarSlider.hoverBackground` |
+| the caret | `editorCursor.foreground` |
+| selected text (`selection`) | `editor.selectionBackground` |
+| the primary action (`primary` and its ink), pointed at and pressed, a progress bar | `button.background`, `button.hoverBackground`, `button.foreground`, `progressBar.background` |
+| danger as a fill (`danger`) | `statusBarItem.errorBackground` (dark: `errorForeground` darkened by 0.4) |
+| danger pointed at and pressed | none: the fill mixed 15% and 25% toward Light Modern's ink |
+| the status hues `status_ink()` is derived from | `errorForeground`, `editorWarning.foreground`, `testing.iconPassed` |
+| a label's kind (`magenta`, `cyan`) | `terminal.ansiMagenta`, `terminal.ansiCyan` |
+| the terminal's sixteen colours | `terminal.ansi*` |
+| a chart's series | `charts.blue`, `charts.green`, `charts.yellow`, `charts.orange`, `charts.purple`, `charts.red` |
 
 VS Code's surfaces sit closer than a stepped ramp's would: a region may be as little as 1.01 off
 what it sits on, and a hairline or a shadow says where it ends. Its status hues and its focus ring
@@ -416,16 +300,10 @@ draws on (a radio's or a checkbox's ring on the selected step), `choice_mark` dr
 
 **A size names a role, and means one height and one text size in every control.** The library's
 sizes disagree across components (its default button letters at the reading size beside a field
-at the chrome size), so the app uses three: `.xsmall()`, the compact default, in a strip, a box, a
-column page's head, for a row's actions and for a secondary action inside dense content (a line of
-meta text, a transcript block, a chip); `.short()` (`CONTROL_H`) in a form, a page's filter bar
-and a dialog's footer; `.tall()` (`FIELD_H`, chrome-size words) in a list page's head, its
-search and actions. Never the library's default. **`.xsmall()` and `.short()` letter their words
-at `.text_xs()`**, so a `.short()` control's sit in its box with room above and below. A
-correction a component needs lives in its shared wrapper (`Short`, `Tall`), never at a call site. An icon
-keeps its role's size whatever the hit area round it, and a badge, a checkbox or a switch keeps
-the library's own geometry, centred in its row. `docs/ui-patterns.md` (*Control sizes*) maps each
-role to its component and size.
+at the chrome size), so the app uses three, `.xsmall()` the compact default, `.short()` and
+`.tall()`, and never the library's default. A correction a component needs lives in its shared
+wrapper (`Short`, `Tall`), never at a call site. `docs/ui-patterns.md` (*Control sizes*) maps
+each role to its component and size.
 
 The app owns only its own: the transcript renderers, the icon registry, the terminal panel,
 per-panel zoom, and the composer popup (one shell for `@`, `/`, the pickers, the `+` and branch

@@ -5,17 +5,16 @@ description: Compose onehand screens with consistent hierarchy, alignment and de
 
 # Layout
 
-Read [DESIGN.md](../../../DESIGN.md) (*Principles*, *Layout*) and
-[UI patterns](../../../docs/ui-patterns.md) (*Choose the container*, *Hierarchy*, *Separation*,
-*Spacing and density*, then the relevant layout pattern). The window structure and feature content remain their own
+Read [DESIGN.md](../../../DESIGN.md) (*Principles*, *Layout*), [screens.md](../../../docs/screens.md)
+for the region being built, and [UI patterns](../../../docs/ui-patterns.md) (*Choose the container*,
+*Hierarchy*, *Separation*, *Spacing and density*, then the relevant layout pattern). The window structure and feature content remain their own
 contracts; visual cleanup does not authorize removing actions or changing navigation.
 
 ## Building a screen
 
 1. **Identify hierarchy**: region identity, local filters, content groups and actions. Choose the
    least decorated container that expresses each relationship, preserving feature-required boxes.
-   Separate with space before a line, a line before a fill, a fill before a shadow, and give each
-   text its ink by role.
+   Separate by the ladder (UI patterns, *Separation*), and give each text its ink by role.
 2. **Pick its pattern** from the table, inspect an equivalent screen and build from its builders.
    Compare text axes, action slots and section gaps. Existing code may need migration itself.
 3. **Measure the container** for every split or stack: a dock or a pane can be narrow in a wide
@@ -98,5 +97,5 @@ div().p_3().border_1().border_color(theme.border).bg(theme.muted).shadow(lift(cx
 div().v_flex().gap_2().child(heading).child(group)
 ```
 
-A change to what a screen holds or the order it holds it in updates `DESIGN.md` (or the
+A change to what a screen holds or the order it holds it in updates `docs/screens.md` (or the
 feature's own document) in the same change; the `ui-review` skill checks it.

@@ -49,18 +49,8 @@ motion (UI patterns, *Motion*).
 
 ## Variants
 
-Every button names one, by role (the rule is in `DESIGN.md` *Components*):
-
-| Variant | For |
-|---|---|
-| `primary` | the view's one main action |
-| `secondary` | a weighed alternative beside the primary; a set picker's trigger (`picker`; unset it is a ghost); every button on the Settings page |
-| ghost, `.quiet(cx)` | dismissing, a strip's or a row's actions; hovers on the control fill, never a bare `ghost()`; an icon with no words through `.quiet_icon(on, cx)`, muted at rest |
-| `danger` | only the two solid fills `DESIGN.md` names under *Components*: the composer's *Stop* and a removal's confirming button |
-| `choice` | each option of a pick-one row |
-
-No button draws an edge: never the library's default variant nor `outline()`. A text field is
-the one control marked by its edge.
+Every button names its variant by role, and no button draws an edge: `DESIGN.md` (*Components*)
+says which variant each role takes, and [catalog.md](catalog.md) which builder draws it.
 
 ## Right and wrong
 

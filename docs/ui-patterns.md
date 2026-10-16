@@ -2,8 +2,9 @@
 
 The patterns every screen repeats, in the app and its built-in plugins: how a screen is put
 together, and how it behaves while it waits, fails, refuses or removes something. `DESIGN.md`
-owns the window's layout and the visual rules these patterns are drawn with; a feature's own
-document holds its screens' detail. Code never cites this file.
+owns the window's frame and the visual rules these patterns are drawn with, `docs/screens.md`
+what each region holds, and a feature's own document its screens' detail. Code never cites this
+file.
 
 ## Layout
 
@@ -36,16 +37,9 @@ The neutral inks of `DESIGN.md` (*Type, space and shape*), applied on a neutral 
 | A box, a detail | its title, its content | none | its count, its line of facts |
 | A page head, a strip | what it names | none | a count beside the name |
 
-Hover and selection fills are steps taken from the surface a row sits on, so a row on another
-surface takes its own pair: the rail, on the side bar's surface, hovers on `sidebar_accent` and marks
-its chosen row with `rail_chosen`; a list on the reading surface or a dock takes `list_hover` and
-`accent`.
-
-On a fill, text takes the fill's paired ink instead: the rail's current row
-`sidebar_accent_foreground`, a selected row elsewhere `accent_foreground`, a badge its `Tint`'s
-ink, a button the ink its variant sets. A quieter step on a fill is mixed from that pair toward
-the muted ink, its contrast asserted on the fill, never an alpha. A state, a link and code in
-prose keep their semantic inks on any surface.
+Text on a fill, and text that carries meaning, takes the ink `DESIGN.md` names for it (*Type,
+space and shape*). A row's hover and selected fills are steps from the surface under it
+(`DESIGN.md`, *Colour and state*).
 
 Hover changes a list row's fill, never its inks or its layout; a line row answers by its ink
 instead (*Line rows*). Weight follows the role (`DESIGN.md`,
@@ -54,14 +48,15 @@ and a word.
 
 ### Separation
 
-Space, then a line, then a fill, then a shadow (`DESIGN.md`, *Principles*):
+Separate with space, then a line, then a fill, then a shadow, taking each step only for a reason
+the one before cannot give:
 
 | Step | For | Not for |
 |---|---|---|
 | Space | sections, groups of rows, a heading from what it heads | |
 | Hairline | a box's or a table's edge; a table's rows and its head; groups space alone runs together (Settings) | framing a subsection, one field or one row |
 | Fill | a well, the bubble, hover and selection, a dock's surface | a section's background; a box that already has an edge |
-| Shadow | what floats over other content, through `lift` | anything in the flow |
+| Shadow | what floats over other content: dialogs, popovers, menus, over the transcript the composer card, the cards pinned above it, the to-bottom button, and on a list page the item floating over the list; the app's own through `lift`, the composer card through `composer_lift` | anything in the flow |
 
 A boundary is drawn once: no line along a change of surface, no edge doubled by a neighbour's.
 
@@ -105,7 +100,7 @@ size it takes; `design-tokens/reference.md` holds what each size measures in eac
 |---|---|---|
 | A list page's head: its search, its icon-only actions and its creating action | Button, Input | `.tall()` |
 | A form's fields and buttons; a dialog's footer; a page's filter bar: its search and pickers | Button, Input | `.short()` |
-| A page head's actions; a strip's controls; a box's control; a row's actions; a secondary action inside dense content (a line of meta text, a transcript block, a chip) | Button, Input | `.xsmall()`, well under a row, so the controls never outweigh what they act on |
+| A column page head's actions; a strip's controls; a box's control; a row's actions; a secondary action inside dense content (a line of meta text, a transcript block, a chip) | Button, Input | `.xsmall()`, well under a row, so the controls never outweigh what they act on |
 | A field in a strip or the rail | Input | `.xsmall()` |
 | An icon in a button | Icon | the button's own: `small` in a `.tall()` button, `xsmall` in a `.short()` or `.xsmall()` one |
 | An icon leading a label the app draws: a row, a menu item | Icon | `.small()` |

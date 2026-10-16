@@ -1,106 +1,48 @@
 # UI review checklist
 
 For an implementation change, answer each: yes, no (with file and line) or n/a (with the reason).
-Name the evidence: code inspection, automated check or user observation. Do not call a visual
-judgment verified from a source scan. For prose-only work, use the contract path in `SKILL.md`.
-Each section names the document owning its rules; read it before answering.
+Name the evidence: code inspection, an automated check or the user's observation; never call a
+visual judgment verified from a source scan. Each item names the section that owns its rule; read
+the rule, not just the question. For prose-only work, use the contract path in `SKILL.md`.
 
-## Tokens: `DESIGN.md` (*Type, space and shape*, *Colour and state*), the `design-tokens` skill
-
-1. Every colour a theme slot or helper, with no hex, `rgb` or `hsla` outside `theme.rs`?
-2. Every length a gpui step or a named constant, with no number inside `rems(` or `px(` at a call
-   site, and pixels only for lines, rings, shadows, window bounds, an inset cancelling the
-   library's, and the terminal's grid?
-3. Every spacing on the steps `0p5`, `1`, `1p5`, `2`, `3`, `4`, `6`, `8`?
-4. Every text size from the six roles, weights only `medium` and `semibold`, line heights only
-   gpui's, `LEADING` and `LEADING_TIGHT`?
-5. Every corner the one `radius`, `rounded_full` only on a badge, a dot or a status mark, with
-   no `radius_lg` or `radius_tokens().sm` written?
-6. Shadows only on what floats, through `lift` (the composer through its own)?
-7. A new colour in both palettes, its contrast asserted in `theme.rs`'s tests?
-8. Token values kept in code and its token reference, with no duplicate palette or scale in
-   contracts, skills or call-site comments?
-
-## Components: `DESIGN.md` (*Components*, *Icons*), `docs/ui-patterns.md` (*Control sizes*), the `ui-components` skill
-
-9. Nothing drawn by hand that the library or `catalog.md` draws?
-10. Every button through `action` and with a variant by role (`primary`, `secondary`, ghost as
-    `.quiet(cx)`, `danger`, or `choice` in a pick-one row); no button edged (never the library's
-    default nor `outline()`); every field through `text_input`, `search_input` or `text_area`; every
-    refusing button through `.refuses(why)`, never `.disabled(`, its reason the tooltip?
-11. Every state the component can be in: hover, selected or open, keyboard focus, refusing, loading?
-12. Every control at the size its role takes: `.tall()` in a list page's head; `.short()` in a
-    form, a page's filter bar and a dialog's footer; `.xsmall()` in a column page's head, a strip, a box, for a row's actions and for a
-    secondary action inside meta text, a transcript block or a chip; never the library's default;
-    an icon at its role's size, not grown with the hit area; a badge, checkbox or switch at the
-    library's own geometry, centred; any size correction in the shared wrapper, not the call site?
-13. Every icon an `IconName` or registry SVG; every icon-only button with a tooltip?
-14. A new builder listed in `catalog.md`, duplicating none listed there?
-
-## Layout: `DESIGN.md` (*Layout*), `docs/ui-patterns.md` (*Layout*), the `layout-patterns` skill
-
-15. Each page a column page or a list page by what it holds, and each group the right pattern: plain section, box, strip, list, list and detail, form,
-    dialog or detail within its page, without unnecessary nested frames?
-16. Every split or stack reads the measured container, never the window?
-17. Every list capped, saying how many it left out?
-18. Text that can run long truncates or wraps, as its neighbours do?
-19. A transition (presentation, back link, page switch, a dock hiding) keeps the state the
-    contract keeps, and saves no narrow size over the layout?
-
-## Behaviour: `docs/ui-patterns.md` (*Behaviour*), the `ux-patterns` skill
-
-20. Waiting, empty, failed and refusing states each drawn by their pattern?
-21. Every failure of something a person started reaches the screen once: a toast or a line, never
-    both, never a log line alone?
-22. Every toast's kind chosen by what it means?
-23. Every removal that cannot be undone confirmed through `Confirm`: the thing named, *Keep*, then
-    the verb in the danger tint?
-24. Every new key a keymap command, every control bound to one showing its key?
-25. Esc closes what opened; focus lands on the first field and returns on close; no focus left on
-    something no longer drawn?
-26. Every new word in sentence case, its ellipsis, verb and dismissal per *Words*, and the
-    glossary's (`CONTEXT.md`)?
-
-## Contract: `DESIGN.md`, `CLAUDE.md` (*Rules*)
-
-27. At most one primary action per view (none is fine)?
-28. No departure from a rule: a treatment that differs written as a rule of its role, inside the
-    user's authorized scope, or recorded in `docs/known-gaps.md`, without silently changing the
-    contract to fit existing code?
-29. `DESIGN.md`, `docs/ui-patterns.md` and the feature's own document still describe what the
-    change draws?
-30. No code, comment or runtime string citing a document?
-31. No file past about 800 lines of code?
-
-## Consistency: `DESIGN.md` (*Principles*, *Colour and state*, *Icons*), `docs/ui-patterns.md` (*Layout*, *Waiting*)
-
-32. An equivalent component elsewhere identified and compared for height, text axis, icon size,
-    spacing, corner and states; shared changes checked in their affected app and plugin callers?
-33. Main content remains the visual anchor, with neutral chrome, meaningful local colour and
-    no extra surface for an ordinary nested group?
-34. Spacing follows relationships as well as the legal scale; equivalent strips align actions,
-    page names are not repeated and related pages use the same column role?
-35. Density follows the content: compact chrome, readable prose, multi-line rows allowed to
-    grow, and narrow views handled without shrinking type or hit targets?
-36. Hover actions keep their slots and are available through keyboard focus; loading does not
-    shift neighboring content; selected + hovered and selected + focused remain distinct?
-37. Required user visual checks named for both themes, zoom, narrow containers, long text and
-    relevant empty/loading/failure states, with observed results separated from pending checks?
-
-## Calm: `DESIGN.md` (*Principles*, *Type, space and shape*, *Icons*), `docs/ui-patterns.md` (*Hierarchy*, *Separation*, *Filter bars*, *Immediate feedback*, *Motion*)
-
-38. Text on a neutral surface in one of the three neutral inks by its role, text on a fill in
-    that fill's paired ink, a state, a link and code in their semantic inks, and no alpha on
-    text or on a container to quieten it?
-39. Attention signals (a state's hue, a count or badge of what waits, a dot, weight past the
-    role's) only where something needs the person or has just changed, while hierarchy and
-    identity (a heading's weight, a list's muted count, a label's kind) stay as their roles give?
-40. Separation by the ladder (space, then a line, then a fill, then a shadow), and no boundary
-    drawn twice?
-41. A page with a head and filters drawing them in the shared order?
-42. A change the person can take back shown at once; saves of one thing run in order; a failed
-    save, only while its change is the newest, put back to the last saved value with one toast;
-    and nothing animated but a `Spinner` on running work (the library's overlays and controls
-    aside)?
-43. Icons at one size per role, in slots of one width on one centre line, none on a tile of its
-    own; numbers and times in fixed-width slots?
+1. `cargo test -p onehand --locked` passes, its source guards included? They hold what a scan
+   can see (colour, length, spacing, type, corner, shadow, alpha, motion, the button and field
+   wrappers, an edged button, the accent fill as text, icons, citations), each with its limits in
+   `docs/rules-and-gotchas.md` (*Guard coverage*); the items below are what they cannot see.
+2. A same-role component or screen named and compared for height, text axis, ink, icon size and
+   slot, spacing, corner and states, and a shared change checked in its callers across app and
+   plugins (`DESIGN.md`, *Principles*)?
+3. Each page a column page or a list page by what it holds, its filters in the shared order,
+   each group in the container its role takes, and each boundary the first step of the ladder
+   that serves it, drawn once (`docs/ui-patterns.md`, *Pages*, *Filter bars*, *Choose the
+   container*, *Separation*)?
+4. Every state the component can be in drawn, the combined ones (selected and hovered, selected
+   and focused) kept apart, and a transition (a page switch, a back link, a dock hiding) keeping
+   the state the contract keeps (the `ui-components` skill, *States*)?
+5. Every control at the size its role takes (`docs/ui-patterns.md`, *Control sizes*)?
+6. Every control drawn by the builder `catalog.md` lists for it, every button's variant named by
+   its role, and at most one primary in a view (`DESIGN.md`, *Components*, *Colour and state*)?
+7. A refusing button through `.refuses(why)` (`DESIGN.md`, *Components*), never `.disabled(`,
+   which only a menu item or a switch takes, as `.refuses` does not reach them?
+8. `rounded_full` only on a badge, a dot or a status mark (`DESIGN.md`, *Type, space and shape*)?
+9. Every list capped, saying how many it left out, and text that can run long truncating or
+   wrapping as its neighbours do (`docs/ui-patterns.md`, *Lists*, *Cuts*)?
+10. Every split or stack reading the measured container, never the window (`docs/ui-patterns.md`,
+    *List and detail*, *Boxes*)?
+11. Attention signals (a state's hue, a count or badge of what waits, a dot, weight past the
+    role's) only where something needs the person or has just changed (`DESIGN.md`,
+    *Principles*)?
+12. A change the person can take back shown at once, and every failure of something a person
+    started said once: a toast of the kind its meaning takes or a line, never both and never a
+    log alone (`docs/ui-patterns.md`, *Immediate feedback*, *Failing and refusing*, *Toasts*)?
+13. Every removal that cannot be undone confirmed through `Confirm` (`docs/ui-patterns.md`,
+    *Confirming a removal*)?
+14. Every new key a keymap command, shown on its control, and focus landing, returning and never
+    left on what is no longer drawn (`docs/ui-patterns.md`, *Keys and focus*)?
+15. Every new word as *Words* has it, in the glossary's terms (`docs/ui-patterns.md`, *Words*;
+    `CONTEXT.md`)?
+16. The documents carried in the same change, a treatment that differs written as a rule of its
+    role or recorded in `docs/known-gaps.md`, and no file past about 800 lines of code
+    (`SKILL.md`, *Implementation changes*; `CLAUDE.md`, *Rules*)?
+17. The user's visual checks named: both themes, zoom, narrow and wide containers, long text and
+    the states that apply, with what was observed kept apart from what is pending?
