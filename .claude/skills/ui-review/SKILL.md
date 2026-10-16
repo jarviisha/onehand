@@ -13,8 +13,9 @@ different evidence; neither proves the other is complete.
 1. Check ownership: [DESIGN.md](../../../DESIGN.md) owns visual roles and window structure;
    [UI patterns](../../../docs/ui-patterns.md) owns reusable layouts and behavior. References
    inventory actual tokens and builders. Skills explain how to apply them, not a second system.
-   The contract is onehand's own: it names no other product as its model or its source, and no
-   rule rests on one.
+   The contract is onehand's own: it names no other product as its model, and no rule rests on
+   one. The one source it names is its palette's, VS Code's Dark Modern and Light Modern, whose
+   values a colour takes by key.
 2. Follow the changed rule through the five skills, their references, this checklist and
    `CLAUDE.md`. Resolve contradictions and broken links. Preserve feature behavior unless the
    user requested changing it. Identify target rules separately from implementation claims.

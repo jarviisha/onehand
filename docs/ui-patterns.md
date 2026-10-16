@@ -37,7 +37,7 @@ The neutral inks of `DESIGN.md` (*Type, space and shape*), applied on a neutral 
 | A page head, a strip | what it names | none | a count beside the name |
 
 Hover and selection fills are steps taken from the surface a row sits on, so a row on another
-surface takes its own pair: the rail, on the lifted surface, hovers on `sidebar_accent` and marks
+surface takes its own pair: the rail, on the side bar's surface, hovers on `sidebar_accent` and marks
 its chosen row with `rail_chosen`; a list on the reading surface or a dock takes `list_hover` and
 `accent`.
 

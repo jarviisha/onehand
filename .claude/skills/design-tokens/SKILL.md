@@ -91,8 +91,9 @@ Tag::custom(fill, ink, fill).small().rounded_full().py_1().child(text)
 
 ## Adding a token
 
-- **A colour**: a step in both palettes of `Ramp` in `crates/app/src/theme.rs`, written into its
-  slot in `paint`, its contrast asserted in that file's tests against every surface it lands on.
+- **A colour**: a key's value in both palettes of `Ramp` in `crates/app/src/theme.rs`, from the
+  source `DESIGN.md` names (*Colour and state*), the key beside it and a row in that table, written
+  into its slot in `paint`, its contrast asserted in that file's tests against every surface it lands on.
   A plugin reads it through the theme slot. A step between two the ramp holds is derived from
   them with `mix_oklab`, as `meta_ink` and `tint` are, not written as a value of its own.
 - **A size one module uses**: a `const` of type `Rems` beside its use, its reason in its doc

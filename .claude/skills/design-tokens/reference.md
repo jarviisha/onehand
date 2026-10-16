@@ -10,7 +10,8 @@ and density, use [UI patterns](../../../docs/ui-patterns.md#spacing-and-density)
 ## Colour
 
 Read from `cx.theme()`. The ramp in `crates/app/src/theme.rs` writes them for both palettes, with
-contrast tests. Roles: `DESIGN.md`, *Colour and state*.
+contrast tests; the terminal's sixteen colours are `onehand_terminal_ui::ansi`. Roles, the
+palette's source, keys and values: `DESIGN.md`, *Colour and state*.
 
 Slot names that mislead (the library's names, kept because its own controls read them):
 
@@ -20,10 +21,11 @@ Slot names that mislead (the library's names, kept because its own controls read
 | `link` (also `info`) | the accent hue: what runs, and links |
 | `muted` | the well's fill, and the user's bubble |
 | `secondary` | a step past the well: code inside the bubble |
-| `button_secondary`, `button_secondary_foreground` | the secondary button: the control fill at rest (the selected step when pointed at or pressed) and its ink |
-| `primary` | the primary action: ink on light, light on dark, not a hue |
+| `button_secondary`, `button_secondary_foreground` | the secondary button's own fill at rest (its pointed-at step under the pointer or pressed) and its ink |
+| `primary` | the primary action: a blue, with white on it |
 | `danger`, `warning`, `success` | fills with white on them; their text is `status_ink(cx)` |
 | `tiles` | the docks' surface, read through `dock_surface(cx)` |
+| `sidebar` | the rail's fill: the side bar's grey, the docks' too |
 | `sidebar_accent` | the rail's hovered row; its chosen row is `rail_chosen(cx)` |
 
 Helpers:
@@ -34,13 +36,13 @@ Helpers:
 | `tint(base, cx)` | a label's `Tint { fill, ink }` by its hue | `crates/plugin-host/src/lib.rs` |
 | `dock_surface(cx)` | the Workbench's and the terminal's surface | `crates/plugin-host/src/lib.rs` |
 | `badge_edge(tint)` | a badge's edge: halfway from its `Tint`'s fill to its ink | `crates/plugin-host/src/lib.rs` |
-| `control_fill(cx)` | a control's fill: a secondary button at rest, a ghost hovered, pressed or chosen; between `list_hover` and `accent` | `crates/plugin-host/src/lib.rs` |
+| `control_fill(cx)` | a ghost control's fill hovered, pressed or chosen; between `list_hover` and `accent` | `crates/plugin-host/src/lib.rs` |
 | `faint_rule(cx)` | a hairline a step fainter, halfway to the surface: the lines across the pane parting a list page's list from its header, filter bar and foot | `crates/plugin-host/src/lib.rs` |
 | `meta_ink(cx)` | the middle ink: a detail beside a name, between prose and muted | `crates/plugin-host/src/lib.rs`; the app says `crate::theme::meta_ink` |
 | `middle_ink(full, meta)` | the same step under another full ink: on a fill, under that fill's paired ink | `crates/plugin-host/src/lib.rs` |
 | `hue_ink(base, cx)` | a hue tempered for ink: code inside prose | `crates/app/src/theme.rs` |
 | `raised(cx)` | the composer card's fill | `crates/app/src/theme.rs` |
-| `inset(cx)` | a field with no edge sunk into the well: the rail's search; a badge in the rail | `crates/app/src/theme.rs` |
+| `inset(cx)` | a field with no edge on the rail: its search; a badge in the rail | `crates/app/src/theme.rs` |
 | `rail_chosen(cx)` | the rail's chosen row | `crates/app/src/theme.rs` |
 | `floating_well(cx)` | a well on a floating card: the command a pinned permission asks to run | `crates/app/src/theme.rs` |
 
@@ -51,7 +53,7 @@ neutral ones, for text on a neutral surface:
 |---|---|---|
 | Full | `cx.theme().foreground` | yes |
 | Middle | `meta_ink(cx)`; on a fill, `middle_ink(pair, muted_foreground)` | yes |
-| Muted | `cx.theme().muted_foreground`; the rail's `sidebar_foreground` holds the same step | yes |
+| Muted | `cx.theme().muted_foreground`, which the rail's names take too | yes |
 
 Text on a fill takes the ink paired with it:
 
