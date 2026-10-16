@@ -52,6 +52,7 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | Chat or Workbench in the area | `presentation` | `crates/app/src/shell/presentation.rs` |
 | A toast | `toast::failed(what, why)`, `toast::error`, `warning`, `success`, `info` | `crates/plugin-host/src/toast.rs`; the app says `crate::toast` |
 | A confirmation | `Confirm` with `confirm_on`, or `Shell::confirm` from the shell | `crates/plugin-host/src/confirm.rs`; `crates/app/src/shell/confirm.rs` |
+| A change shown at once and saved in the order made, a failure one toast | `OrderedWriter`, `Saving` and `Saves`, as `ChatPane::save_title` uses them; `saves::write_config` for `onehand.toml`, `Shell::save_change` for the workspace file | `crates/core/src/saving.rs`; `crates/app/src/chat/pane/sessions.rs`, `crates/app/src/saves.rs`, `crates/app/src/shell/storage.rs` |
 | A dialog's title row | `title_row` | `crates/app/src/dialogs.rs` |
 | A form field | `field` (its line about the setting in meta text) | `crates/plugin-host/src/lib.rs`, re-exported by `crates/app/src/settings.rs` |
 | A Settings group, a Settings row | `section`, `list_row` | `crates/app/src/settings.rs` |
@@ -70,3 +71,39 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 
 A page part not listed above: take the nearest one, and when a second page needs the same
 thing, lift it into `page_parts.rs` in that change rather than copying it.
+
+## Keys and focus
+
+How a key and a focus are wired (the rules: UI patterns, *Keys and focus*):
+
+- A new command goes into `COMMANDS` in `crates/app/src/keymap.rs` (id, label, default keys,
+  action, context), never into an `on_key_down` arm.
+- A window command's context starts `Shell`, and its key has a modifier. A region's starts with
+  its own context (`Rail`, `IssuesPage`, `TasksPage`, `WorkflowsPage`, `PluginList`,
+  `QuestionCard`, `PermissionCard`): a key without a modifier adds `&& !Input`, and Escape
+  `&& !Dialog && !Input`. One key serves one command per region; `validate` refuses the rest.
+- A control bound to one shows its key through the library's lookup, so a rebound key shows:
+  `.tooltip_with_action(tip, &action, None)` on a button, a `Tooltip::new(tip).action(&action,
+  None)` built in `.tooltip(…)` on anything else.
+- An element you draw that takes focus tracks it and rings for the keyboard only:
+  `.track_focus(&handle).focus_visible(|s| s.border_color(cx.theme().ring))`. Esc in a field
+  reaches the view as the library's `gpui_component::input::Escape` action.
+
+## Patterns
+
+The screen to build from for each pattern in [UI patterns](../../../docs/ui-patterns.md); it may
+need migrating itself.
+
+| Building | Pattern | Example |
+|---|---|---|
+| Fields, boxes or one thing read in full, in the agent pane | Column page | `tasks_frame` in `crates/app/src/chat/pane/tasks_page.rs` |
+| One long list to scan, filter and pick from, in the agent pane | List page | the Issues page, `plugins/builtin/workbench-issues/src/view/page.rs` |
+| The filters under a page's head | Filter bar | `plugins/builtin/workbench-issues/src/view/page/head.rs` |
+| Related fields or a subsection | Plain section | `section` in `crates/app/src/settings.rs` |
+| The facts about one thing on a page | Box | `card_box` (plugin host); `page_card`, `card_title`, `page_section` and `pair` in `crates/app/src/chat/pane/page_parts.rs` |
+| A bar along the top of a region | Strip | `strip` and `strip_control` (plugin host) |
+| Rows to pick from | List | the Files tree, `plugins/builtin/workbench-files/src/view.rs` |
+| A list beside its detail | List and detail | `list_detail` in `crates/plugin-host/src/list_detail.rs`; the Markdown mode |
+| Inputs and a submit | Form | `field` in `crates/app/src/settings.rs`; the Workflows form |
+| A modal question or form | Dialog | `crates/app/src/dialogs.rs` |
+| One thing read in full | Detail | the issue, `plugins/builtin/workbench-issues/src/view/detail.rs` |

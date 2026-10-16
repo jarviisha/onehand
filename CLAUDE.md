@@ -22,10 +22,9 @@ How the repository is held together:
   binding at the level written, as DESIGN.md is.
 - [docs/ui-patterns.md](docs/ui-patterns.md): the patterns every screen repeats (pages, boxes,
   lists, forms, dialogs) and how they behave (waiting, empty, failing, confirming, keys, words).
-- **Every UI change** follows the `design-tokens`, `ui-components`, `layout-patterns` and
-  `ux-patterns` skills, and runs the `ui-review` checklist before it is finished. Read their
-  files under [.claude/skills/](.claude/skills/) when your host does not load skills.
-  Contract-only work follows `ui-review`'s document path; it does not imply a UI migration.
+- **Every UI change** follows the `ui` skill and answers its checklist before it is finished.
+  Read [.claude/skills/ui/](.claude/skills/ui/) when your host does not load skills.
+  Contract-only work follows the skill's contract path; it does not imply a UI migration.
 - [docs/rules-and-gotchas.md](docs/rules-and-gotchas.md): the full reasons behind the short rules
   and gotchas below.
 - [docs/known-gaps.md](docs/known-gaps.md): what this build deliberately does not do yet, and why.
@@ -64,11 +63,7 @@ Availability or installation does not authorize a skill's side effects.
 
 | Tool or workflow | Fit for this repository |
 |---|---|
-| `design-tokens` | Any colour, spacing, type, corner, shadow or size: where each token lives, and how to add one. |
-| `ui-components` | Any control, row, label, box, menu or dialog: what already draws it, and the states it needs. |
-| `layout-patterns` | Any screen, panel or dialog: which pattern it follows, and how it splits or stacks. |
-| `ux-patterns` | Any waiting, empty, failing or refusing state, toast, removal, key, focus or on-screen word. |
-| `ui-review` | Before finishing any visible change: the checklist and the checks. |
+| `ui` | Any visible change (tokens, controls, layout, states, keys and words) and, before it is finished, the checklist and the checks. |
 | Matt Pocock review, debugging, domain modeling | Use for the requested concern; keep the existing glossary and document ownership. Tracker/triage workflows publish to this repository's GitHub issues: a spec gets `ready-for-agent`, never `auto` (the trigger label: an unattended run would claim it). A proposal under `docs/proposals/` keeps its own table of which step has a spec. |
 | Matt Pocock `setup-pre-commit`, TypeScript setup | Do not apply npm/Husky/Prettier or TypeScript defaults to this Rust workspace. Use the Makefile and Cargo checks. |
 | `ponytail` | Simplify within the requested behaviour. Preserve the module seams, guards, rendering bounds and deliberate exceptions; fewer files is not a reason to bypass them. |

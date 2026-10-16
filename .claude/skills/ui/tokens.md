@@ -2,7 +2,7 @@
 
 A lookup, not the rules: which token serves which role is ruled in `DESIGN.md`. Values here are
 the ones the code holds; when this file and the code disagree, the code is right and this file is
-fixed in the same change.
+fixed in the same change. Its last section says how to add a token.
 
 For role selection, start with [the UI contract](../../../DESIGN.md); for spacing relationships
 and density, use [UI patterns](../../../docs/ui-patterns.md#spacing-and-density).
@@ -182,3 +182,19 @@ All in `onehand_plugin_host::tokens` (`crates/plugin-host/src/tokens.rs`), which
 
 Equal values kept apart on purpose, each one decision beside its one use: `CHAT_MIN`,
 `NARROW_PANEL` and `MODES_MIN_W` (30rem); `CONTENT_COLUMN` and `COMPOSER_COLUMN` (44rem).
+
+## Adding a token
+
+- **A colour**: a key's value in both palettes of `Ramp` in `crates/app/src/theme.rs`, from the
+  source `DESIGN.md` names (*Colour and state*), the key beside it and a row in that table, written
+  into its slot in `paint`, its contrast asserted in that file's tests against every surface it lands on.
+  A plugin reads it through the theme slot. A step between two the ramp holds is derived from
+  them with `mix_oklab`, as `meta_ink` and `tint` are, not written as a value of its own.
+- **A size one module uses**: a `const` of type `Rems` beside its use, its reason in its doc
+  comment. A spacing value equals a step.
+- **A size a second module needs**: move the constant into `onehand_plugin_host::tokens` in that
+  change, and point both modules at it.
+- **A new step in a scale** (a type size, a corner, a spacing step, an elevation): a system change.
+  Use the user's authorized scope; when it covers the system, update the owning contract and
+  implementation together. Otherwise use an existing role or raise the specific unresolved decision.
+- List the token in this file in the same change.
