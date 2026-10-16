@@ -18,6 +18,7 @@ use gpui_component::text::{TextView, TextViewState, TextViewStyle};
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_plugin_host::Quiet as _;
+use onehand_plugin_host::Short as _;
 use onehand_plugin_host::{mark_slot, tokens, tree_row};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -26,12 +27,12 @@ use std::time::SystemTime;
 /// The widest a document's column runs: a comfortable line of prose, so a
 /// wide dock does not stretch a paragraph into lines too long to follow.
 const DOC_MEASURE: Rems = rems(34.);
-/// A document's headings on the type scale: `text_xl`, `text_lg`, then the
+/// A document's headings on the type scale: `text_lg`, `text_base`, then the
 /// body's own size, so a deep heading is told apart by weight. The renderer
 /// asks a size of each level and keeps its own weights.
-const HEADING_1: Rems = rems(1.25);
-const HEADING_2: Rems = rems(1.125);
-const HEADING_REST: Rems = rems(1.);
+const HEADING_1: Rems = rems(1.125);
+const HEADING_2: Rems = rems(1.);
+const HEADING_REST: Rems = rems(0.875);
 
 /// One project root's document view: what was found, what is folded away, and
 /// what is being read.
@@ -307,7 +308,7 @@ pub(crate) fn reader(
                 // where there is a document for it to act on.
                 .children(doc.map(|_| {
                     onehand_plugin_host::action("markdown-edit")
-                        .xsmall()
+                        .short()
                         .quiet(cx)
                         .flex_none()
                         .label("Edit source")
@@ -327,7 +328,7 @@ pub(crate) fn reader(
                     div()
                         .h_full()
                         .max_w(DOC_MEASURE)
-                        .text_base()
+                        .text_sm()
                         .line_height(relative(tokens::LEADING))
                         .child(
                             TextView::new(&doc.state)

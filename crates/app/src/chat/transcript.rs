@@ -182,7 +182,7 @@ fn notice(
             .gap_2()
             .w_full()
             .min_w_0()
-            .text_sm()
+            .text_size(TEXT_SM)
             .text_color(cx.theme().muted_foreground)
             .child(
                 div()
@@ -236,7 +236,7 @@ fn notice(
         .py_2()
         .rounded(cx.theme().radius)
         .bg(tint.fill)
-        .text_sm()
+        .text_size(TEXT_SM)
         .text_color(tint.ink)
         .child(
             // The glyph is held to the first line's height, so a message that

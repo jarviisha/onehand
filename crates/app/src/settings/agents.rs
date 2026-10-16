@@ -86,7 +86,7 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
                 row.child(
                     crate::controls::action(("default-agent", idx))
                         .secondary()
-                        .xsmall()
+                        .short()
                         .label("Make default")
                         .on_click({
                             let shell = shell.clone();
@@ -103,7 +103,7 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
             .child(
                 crate::controls::action(("check-agent", idx))
                     .secondary()
-                    .xsmall()
+                    .short()
                     .label("Test")
                     .loading(running)
                     .tooltip("Look for the command without starting it")
@@ -116,7 +116,7 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
             )
             .child(
                 crate::controls::action(("edit-agent", idx))
-                    .xsmall()
+                    .small()
                     .secondary()
                     // Not the bundled `replace`, which is a find-and-replace
                     // mark: it reads as swapping this agent for another one
@@ -135,7 +135,7 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
             .child(
                 crate::controls::action(("delete-agent", idx))
                     .secondary()
-                    .xsmall()
+                    .short()
                     .text_color(ink.danger)
                     .label("Delete…")
                     .on_click({

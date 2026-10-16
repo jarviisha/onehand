@@ -8,6 +8,7 @@ use super::super::{ChatPane, ChatPaneEvent, rel_time};
 use super::{Page, Press, TasksPage, open_session, row_said, task_acts};
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
+use crate::controls::Short as _;
 use crate::task::Row;
 use crate::tokens::LEADING_TIGHT;
 use gpui::{
@@ -379,7 +380,7 @@ fn trail(
     let more = crate::controls::menu_below(
         SharedString::from(format!("task-more-{}", task.id)),
         crate::controls::action("task-more")
-            .xsmall()
+            .small()
             .quiet_icon(false, cx)
             .icon(IconName::Ellipsis)
             .tooltip("More actions")
@@ -707,7 +708,7 @@ fn way_out(
     let primary = offered.iter().any(|act| Some(*act) == next.primary);
     let buttons = offered.into_iter().map(|act| {
         let button = crate::controls::action(SharedString::from(format!("task-way-{act:?}")))
-            .xsmall()
+            .short()
             .label(act.label());
         let button = match Some(act) == next.primary {
             true => button.primary(),
@@ -770,7 +771,7 @@ fn review_card(
             div().h_flex().child(
                 crate::controls::action("task-review-read")
                     .quiet(cx)
-                    .xsmall()
+                    .short()
                     .label("Review…")
                     .on_click({
                         let pane = pane.clone();
@@ -783,7 +784,7 @@ fn review_card(
         .child(answer_row(
             crate::controls::action("task-review-revise")
                 .quiet(cx)
-                .xsmall()
+                .short()
                 .label("Revise…")
                 .on_click(
                     cx.listener(move |_, _, window, cx| open_revise(revised.clone(), window, cx)),
@@ -793,7 +794,7 @@ fn review_card(
         .child(answer_row(
             crate::controls::action("task-review-continue")
                 .primary()
-                .xsmall()
+                .short()
                 .label("Continue")
                 .on_click(move |_, window, cx| press_continue(pane.clone(), &pressed, window, cx)),
             review.continue_said(),

@@ -1,6 +1,7 @@
 //! A tool's diff: the lines it changed, their path, and the rows they draw as.
 
 use super::*;
+use crate::controls::Short as _;
 
 /// A diff's rows as the lines they would be in a file.
 pub(super) fn diff_text(t: &ToolItem) -> Vec<String> {
@@ -74,7 +75,7 @@ pub(super) fn diff_detail(
                     .child(
                         crate::controls::action(("load-diff", key))
                             .quiet(cx)
-                            .xsmall()
+                            .short()
                             .label("Load diff")
                             .on_click(move |_, _, cx: &mut App| {
                                 session.update(cx, |s, cx| {
@@ -168,7 +169,7 @@ pub(super) fn diff_path(
         .child(
             crate::controls::action(("diff-path", key))
                 .quiet(cx)
-                .xsmall()
+                .short()
                 .min_w_0()
                 .label(shown)
                 .text_color(accent(cx))

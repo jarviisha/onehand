@@ -7,6 +7,7 @@
 //! tab is ever pushed out of reach.
 
 use crate::Quiet as _;
+use crate::Short as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, ElementId, InteractiveElement as _, ParentElement as _, Rems, SharedString,
@@ -106,7 +107,7 @@ pub fn tab_select(
 ) -> gpui_component::button::Button {
     crate::action(id)
         .quiet(cx)
-        .xsmall()
+        .short()
         .max_w(TAB_MAX_W)
         .tooltip(hint)
         .dropdown_caret(true)
@@ -155,7 +156,7 @@ pub fn tab_chip(
 pub fn tab_close(id: impl Into<ElementId>, hint: &'static str, cx: &App) -> Button {
     crate::action(id)
         .quiet_icon(false, cx)
-        .xsmall()
+        .small()
         .flex_none()
         .icon(Icon::new(IconName::Close))
         .tooltip(hint)

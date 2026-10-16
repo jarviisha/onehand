@@ -621,15 +621,13 @@ impl Short for Input {
 }
 
 /// The sizes a builder's controls take, each the role it serves:
-/// `.xsmall()` the compact default, `.short()` in a form, a filter bar and a
-/// dialog's footer, `.tall()` in the Issues page's head.
+/// `.short()` the default, `.tall()` in a list page's head.
 ///
 /// For a builder that sizes the controls it makes, so a caller names one of
 /// these: the library's own scale also holds its default size, which
 /// letters a button at the reading size and is never used.
 #[derive(Clone, Copy)]
 pub enum ControlSize {
-    XSmall,
     Short,
     Tall,
 }
@@ -637,7 +635,6 @@ pub enum ControlSize {
 impl ControlSize {
     fn on(self, button: Button) -> Button {
         match self {
-            Self::XSmall => button.xsmall(),
             Self::Short => button.short(),
             Self::Tall => button.tall(),
         }
@@ -662,7 +659,7 @@ pub fn card_box(cx: &App) -> Div {
 }
 
 /// What opens a block held folded under it: its chevron first, then its
-/// words, a quiet button at the dense size, so the keyboard reaches it too.
+/// words, a quiet button at a control's size, so the keyboard reaches it too.
 /// The caller says what a press does, and refuses it where there is nothing
 /// to open.
 pub fn fold_toggle(
@@ -673,7 +670,7 @@ pub fn fold_toggle(
 ) -> Button {
     action(id)
         .quiet(cx)
-        .xsmall()
+        .short()
         .icon(Icon::new(match open {
             true => IconName::ChevronDown,
             false => IconName::ChevronRight,

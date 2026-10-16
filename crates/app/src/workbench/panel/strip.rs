@@ -3,9 +3,9 @@
 
 use super::{Workbench, WorkbenchEvent};
 use crate::controls::Quiet as _;
+use crate::controls::Short as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{App, Context, IntoElement, ParentElement, Styled, Window, div};
-use gpui_component::Sizable as _;
 use gpui_component::button::Button;
 use gpui_component::{ActiveTheme, IconName, Selectable as _, StyledExt};
 use onehand_plugin_api::{PluginId, WorkbenchModeSpec};
@@ -114,7 +114,7 @@ fn mode_tab(
 ) -> Button {
     crate::controls::action(which.as_str())
         .quiet(cx)
-        .xsmall()
+        .short()
         .max_w(onehand_plugin_host::TAB_MAX_W)
         .selected(which == active)
         // The rest in muted ink, so the showing mode is the one that reads.

@@ -92,7 +92,7 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
 
 - **Two sides.** The user's prompt is the one filled bubble, against the right edge. Everything
   the agent produces starts on a shared left axis and runs bare. Nothing else is right-aligned.
-- **A centred reading column**, narrowed on small panels, read a step over the chrome; what is
+- **A centred reading column**, narrowed on small panels, read at the chrome's size; what is
   wider scrolls inside its well. A scrollbar runs on the panel's edge down to the composer.
 - **One turn, many blocks**: prose, thoughts, plans, activity clusters (tools only), commands,
   diffs, answered permissions and questions, notices and errors, the files the turn changed,
@@ -107,7 +107,7 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   in one slot (a spinner while it runs, so nothing moves as it settles), and takes no focus. A
   path or a command is mono; the agent's own wording, a folder and what the agent did (a
   thought, a command's output, a read or search list) read in the middle ink. One copy control
-  (`.xsmall()`, quiet, named in its tooltip, in a column of its own; a permission's on the line
+  (`.small()`, quiet, named in its tooltip, in a column of its own; a permission's on the line
   under its command, beside where it runs; a prompt's under its bubble, shown while the prompt
   is pointed at or the control holds focus) and one show-more control serve every block. Text
   that scrolls keeps a gutter for its scrollbar.
@@ -118,7 +118,7 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   that restarts it. A failed turn holds until a prompt goes out; a restart does not answer it. An
   error that failed no turn (one answering a *Stop*, a resume that fell back) is past at once.
 - **The pinned cards** (a permission, a question) share one shell: a head, the body, the
-  answers at the end at `.xsmall()` (a hairline under the head and over the answers, padded as a box
+  answers at the end at `.short()` (a hairline under the head and over the answers, padded as a box
   whose body scrolls), the dismissing one a quiet ghost. A choice is a row on a well
   of its own at rest and on the selected step when taken, a radio or checkbox drawn in ink at
   its head (the library's rings vanish on the selected step) and its number as a `Kbd`, at least
@@ -132,8 +132,9 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
 | Meta, hints, counts, a small label | `.text_xs()`, in `muted_foreground` when it is meta |
 | Machine text | `CODE_TEXT`, in `mono_font_family` |
 | Chrome: a panel's rows, boxes and forms | `.text_sm()` |
-| A control's words (`.short()`, `.xsmall()`) | `.text_xs()` |
-| Reading text: the transcript, the composer's field, a document | the inherited size, `.text_base()` |
+| A control's words (`.short()`) | `.text_xs()` |
+| Reading text: the transcript, the composer's field, a document | `.text_sm()`, on the reading leading; the transcript's `TEXT` |
+| The transcript's record: activity, thoughts, notices, a card's question | a step under the reading size, the transcript's `TEXT_SM` (13px) |
 | A heading in reading text | a step up the scale per level, two at most; then the body's size |
 | A page's or an issue's title | `.text_xl()` |
 
@@ -284,7 +285,7 @@ danger ink.
 **The composer is the input surface**, a role of its own rather than a box or a field: a card
 with no edge, standing off the page on its own fill (`theme::raised`) and lift (`composer_lift`),
 showing focus by the caret alone. Its pickers (the model, the effort, the mode, *Fast*, the
-branch) are `.xsmall()` ghosts with a caret whatever they hold (*Fast* as a toggle opens no menu
+branch) are `.short()` ghosts with a caret whatever they hold (*Fast* as a toggle opens no menu
 and carries none), where a picker elsewhere takes
 the secondary fill once set: each always holds a choice, and a fill on every chip would crowd
 the field they sit under.
@@ -299,10 +300,13 @@ library only through a shared wrapper: where the library's mark vanishes on a fi
 draws on (a radio's or a checkbox's ring on the selected step), `choice_mark` draws it in ink.
 
 **A size names a role, and means one height and one text size in every control.** The library's
-sizes disagree across components (its default button letters at the reading size beside a field
-at the chrome size), so the app uses three, `.xsmall()` the compact default, `.short()` and
-`.tall()`, and never the library's default. A correction a component needs lives in its shared
-wrapper (`Short`, `Tall`), never at a call site. `docs/ui-patterns.md` (*Control sizes*) maps
+sizes disagree across components (its default button letters at the body size beside a field
+at the chrome size), so a button takes one of three: `.short()` the default for any button with
+words, `.small()` for an icon alone, square at the same height, and `.tall()` in a list page's
+head; never the library's default, and never `.xsmall()`, whose words run to its edges and
+whose box is under a pointer's comfortable reach. A field takes `.short()` wherever it stands, or
+`.tall()` in a list page's head, so it is as tall as the buttons beside it. A correction a component needs lives in its
+shared wrapper (`Short`, `Tall`), never at a call site. `docs/ui-patterns.md` (*Control sizes*) maps
 each role to its component and size.
 
 The app owns only its own: the transcript renderers, the icon registry, the terminal panel,

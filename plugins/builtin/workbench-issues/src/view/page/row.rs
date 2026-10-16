@@ -15,6 +15,7 @@ use onehand_core::issues::LabelKind;
 use onehand_core::task::Group;
 use onehand_core::task::work::list::Row;
 use onehand_plugin_host::Quiet as _;
+use onehand_plugin_host::Short as _;
 use onehand_plugin_host::{AppIcon, action, meta_ink, middle_ink, row as row_surface, status_ink};
 
 /// How many labels a row draws before it counts the rest.
@@ -254,7 +255,7 @@ pub(super) fn issue_row(
                     .child(div().flex_1().child("Outside current filters"))
                     .child(
                         action(("issues-page-clear", i))
-                            .xsmall()
+                            .short()
                             .quiet(cx)
                             .label("Clear filters")
                             .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {

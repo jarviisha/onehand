@@ -17,6 +17,7 @@ use onehand_core::issues::{LocalIssue, sync};
 use onehand_core::task::Group;
 use onehand_core::task::work::{IssueWork, PrSeen};
 use onehand_plugin_host::Quiet as _;
+use onehand_plugin_host::Short as _;
 use onehand_plugin_host::tokens::{CODE_TEXT, LEADING, LEADING_TIGHT, PAGE_PROSE};
 use onehand_plugin_host::{action, card_box, middle_ink, row, status_ink, tab_chip};
 use priority::{priority, priority_icon, priority_name};
@@ -256,7 +257,7 @@ pub(super) fn issue_view(
                 Some((parsed, _)) => div()
                     .px_4()
                     .py_3()
-                    .text_base()
+                    .text_sm()
                     .line_height(gpui::relative(LEADING))
                     .child(
                         TextView::new(parsed)
@@ -428,7 +429,7 @@ fn activity(issue: &LocalIssue, cx: &mut Context<IssuesView>) -> AnyElement {
                         .child(div().flex_1().min_w_0().child(text))
                         .children(session.map(|session| {
                             action(("issue-history-session", i))
-                                .xsmall()
+                                .short()
                                 .quiet(cx)
                                 .label("Open session")
                                 .tooltip("Show the conversation that took this issue up")
@@ -511,7 +512,7 @@ fn conflict_view(issue: &LocalIssue, cx: &mut Context<IssuesView>) -> Option<Any
                     .justify_end()
                     .child(
                         action("issue-keep-mine")
-                            .xsmall()
+                            .short()
                             .quiet(cx)
                             .label("Keep mine")
                             .tooltip(format!("Send what it says here to {forge}"))
@@ -521,7 +522,7 @@ fn conflict_view(issue: &LocalIssue, cx: &mut Context<IssuesView>) -> Option<Any
                     )
                     .child(
                         action("issue-take-theirs")
-                            .xsmall()
+                            .short()
                             .quiet(cx)
                             .label(format!("Take {forge}'s"))
                             .tooltip("Replace what it says here with the other side")

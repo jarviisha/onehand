@@ -83,7 +83,7 @@ impl ChatPane {
                             let (read, revised) = (review, pressed.clone());
                             row.child(
                                 crate::controls::action("workflow-review")
-                                    .xsmall()
+                                    .short()
                                     .quiet(cx)
                                     .label("Review…")
                                     .tooltip("Read what is waiting for approval")
@@ -94,7 +94,7 @@ impl ChatPane {
                             )
                             .child(
                                 crate::controls::action("workflow-revise")
-                                    .xsmall()
+                                    .short()
                                     .quiet(cx)
                                     .label("Revise…")
                                     .on_click(cx.listener(move |_, _, window, cx| {
@@ -103,7 +103,7 @@ impl ChatPane {
                             )
                             .child(
                                 crate::controls::action("workflow-continue")
-                                    .xsmall()
+                                    .short()
                                     .primary()
                                     .label("Continue")
                                     .tooltip("Approve it and go on to the next step")
@@ -115,7 +115,7 @@ impl ChatPane {
                         })
                         .child(
                             crate::controls::action("workflow-stop")
-                                .xsmall()
+                                .short()
                                 .quiet(cx)
                                 .label("Stop")
                                 .loading(shown.stopping)

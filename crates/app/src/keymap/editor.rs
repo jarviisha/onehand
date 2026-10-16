@@ -4,7 +4,6 @@
 use super::*;
 use crate::controls::Short as _;
 use crate::controls::text_input;
-use gpui_component::Sizable as _;
 
 pub struct Editor {
     editing: Option<usize>,
@@ -193,7 +192,7 @@ impl Render for Editor {
                         row.child(
                             crate::controls::action(("reset-shortcut", index))
                                 .secondary()
-                                .xsmall()
+                                .short()
                                 .label("Reset")
                                 .on_click(cx.listener(move |editor, _, window, cx| {
                                     editor.save(index, true, window, cx)
@@ -203,7 +202,7 @@ impl Render for Editor {
                     .child(
                         crate::controls::action(("edit-shortcut", index))
                             .secondary()
-                            .xsmall()
+                            .short()
                             .label("Edit")
                             .on_click(cx.listener(move |editor, _, window, cx| {
                                 editor.edit(index, window, cx)

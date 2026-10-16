@@ -6,6 +6,7 @@ use crate::chat::session::ChatSession;
 use crate::chat::transcript::{self};
 use crate::chat::viewport::{self};
 use crate::controls::Quiet as _;
+use crate::controls::Short as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, Context, Entity, IntoElement, ListState, ParentElement, SharedString, Styled, Window, div,
@@ -188,7 +189,7 @@ impl ChatPane {
                 .child(
                     crate::controls::action("edit-queued")
                         .quiet(cx)
-                        .xsmall()
+                        .short()
                         .label("Edit")
                         .tooltip("Put it back in the composer")
                         .on_click(cx.listener(|pane: &mut Self, _, window, cx| {
@@ -198,7 +199,7 @@ impl ChatPane {
                 .child(
                     crate::controls::action("drop-queued")
                         .quiet_icon(false, cx)
-                        .xsmall()
+                        .small()
                         .icon(Icon::new(IconName::Close))
                         .tooltip("Remove from the queue")
                         .on_click(cx.listener(|pane: &mut Self, _, _, cx| {
@@ -506,7 +507,7 @@ impl ChatPane {
                                             // tooltip.
                                             crate::controls::action("to-bottom")
                                                 .quiet_icon(false, cx)
-                                                .xsmall()
+                                                .small()
                                                 .rounded(cx.theme().radius)
                                                 .icon(Icon::new(IconName::ChevronDown))
                                                 .tooltip("Jump to the latest activity")

@@ -2,15 +2,15 @@ use gpui::{Rems, rems};
 
 /// The transcript's reading size: what the agent and the person say.
 ///
-/// A step over the app's chrome, because a conversation is read the way a page
-/// is, line after line, while the rows and controls around it are aimed at.
+/// The chrome's own size: a conversation is read line after line, but at a
+/// larger size the transcript outweighed the panels and controls around it.
 /// Fed to the markdown renderer's heading base as well, so an answer's headings
 /// are scaled off the prose they sit in rather than off the app's base.
-pub(in crate::chat) const TEXT: Rems = rems(1.);
+pub(in crate::chat) const TEXT: Rems = rems(0.875);
 /// One step under the reading size: the record of how an answer got made.
 /// Activity lines, a thought's reasoning, code and every well of machine text
 /// take it, so what the agent did reads quieter than what it said.
-pub(in crate::chat) const TEXT_SM: Rems = rems(0.875);
+pub(in crate::chat) const TEXT_SM: Rems = rems(0.8125);
 /// An answer's first two heading levels over its body; below them a heading
 /// is told apart by weight alone, so a deep one never prints smaller than the
 /// prose it names.

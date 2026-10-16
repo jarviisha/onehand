@@ -1,7 +1,8 @@
 use super::fold_key;
-use super::metrics::{CARD_PAD, DETAIL_OPEN_H, FOLD_INDENT, SCROLLBAR_W, TIGHT_GAP};
+use super::metrics::{CARD_PAD, DETAIL_OPEN_H, FOLD_INDENT, SCROLLBAR_W, TEXT_SM, TIGHT_GAP};
 use crate::chat::session::ChatSession;
 use crate::controls::Quiet as _;
+use crate::controls::Short as _;
 use crate::tokens::LEADING;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -101,11 +102,11 @@ impl RenderOnce for BlockingBody {
 
 /// Copy to the clipboard: the one copy control the transcript draws, on a
 /// fenced block, a tool's well, a permission's command and the turn's footer.
-/// A quiet icon at the dense size, named by `tip`, at rest in the muted ink.
+/// A quiet icon at an icon button's size, named by `tip`, at rest in the muted ink.
 fn copy_control(id: impl Into<gpui::ElementId>, tip: &'static str, cx: &App) -> Button {
     crate::controls::action(id)
         .quiet_icon(false, cx)
-        .xsmall()
+        .small()
         .flex_none()
         .icon(IconName::Copy)
         .tooltip(tip)
@@ -142,7 +143,7 @@ pub(super) fn copy_turn_button(
 }
 
 /// The one control that shows what a block holds back and takes it away
-/// again: a quiet worded button at the dense size, whose words say how much.
+/// again: a quiet worded button at a control's size, whose words say how much.
 /// Its words are a person's, so it sets the default family itself rather than
 /// inheriting the mono one of the output well it often sits in.
 pub(super) fn show_more(
@@ -152,7 +153,7 @@ pub(super) fn show_more(
 ) -> Button {
     crate::controls::action(id)
         .quiet(cx)
-        .xsmall()
+        .short()
         .flex_none()
         .font_family(cx.theme().font_family.clone())
         .label(label.into())
@@ -187,21 +188,17 @@ pub(super) fn chevron_slot(fold: Option<bool>) -> gpui::Div {
     div().w_3().flex_none().children(fold.map(chevron))
 }
 
-/// The spinner's column on a fold line, kept whether or not anything runs, so
-/// the words after it stand where they stood once the work settles.
-pub(super) fn spinner_slot(running: bool, cx: &App) -> gpui::Div {
-    div()
-        .w_3()
-        .flex_none()
-        .children(running.then(|| Spinner::new().xsmall().color(accent(cx))))
-}
-
 /// The line every folding block opens from: its arrow first, then what the
 /// block says about itself, in the quiet ink and lit to full ink under the
 /// pointer. The caller adds the words and what a press does.
+///
+/// While the block runs a spinner stands in the arrow's column, the same
+/// width, so the words neither sit further out than a settled line's nor move
+/// when the work settles.
 pub(super) fn fold_line(
     id: impl Into<gpui::ElementId>,
     open: bool,
+    running: bool,
     cx: &App,
 ) -> gpui::Stateful<gpui::Div> {
     let lit = cx.theme().foreground;
@@ -212,10 +209,13 @@ pub(super) fn fold_line(
         .gap_2()
         .min_w_0()
         .cursor_pointer()
-        .text_sm()
+        .text_size(TEXT_SM)
         .text_color(cx.theme().muted_foreground)
         .hover(move |line| line.text_color(lit))
-        .child(chevron(open))
+        .child(div().w_3().flex_none().map(|slot| match running {
+            true => slot.child(Spinner::new().xsmall().color(accent(cx))),
+            false => slot.child(chevron(open)),
+        }))
 }
 
 /// A detail that has outgrown its box, scrolling inside it and nowhere else.
@@ -401,21 +401,20 @@ pub(super) fn sideways(
 /// overlapping text rather than as a form. Auto height is what puts the space
 /// reserved and the text drawn back in agreement.
 ///
-/// **The floor and the padding come with it.** The library gives a button of
-/// this size no vertical padding at all, because the fixed row plus centring
-/// already held the label off both edges — so taking the row away and nothing
-/// else leaves every control shrink-wrapped around its text, which is a
-/// different card to be wrong about in the same place. A single line lands back
-/// on exactly the row the library would have drawn: [`XSMALL_H`] is that
-/// height, and the padding is what a second line grows by rather than what a
-/// first line needs.
+/// **The floor and the padding come with it.** A button has no vertical
+/// padding at all, because the fixed row plus centring already held the label
+/// off both edges — so taking the row away and nothing else leaves every
+/// control shrink-wrapped around its text, which is a different card to be
+/// wrong about in the same place. A single line lands back on exactly the row
+/// `.short()` draws: [`crate::tokens::CONTROL_H`] is that height, and the
+/// padding is what a second line grows by rather than what a first line needs.
 pub(super) fn grows(button: Button) -> Button {
-    button.xsmall().h(Length::Auto).min_h(XSMALL_H).py_1()
+    button
+        .short()
+        .h(Length::Auto)
+        .min_h(crate::tokens::CONTROL_H)
+        .py_1()
 }
-
-/// The library's extra small row, carried as a number for the reason
-/// [`crate::tokens::CONTROL_H`] is: the floor a growing answer lands back on at one line.
-const XSMALL_H: gpui::Rems = gpui::rems(1.25);
 
 // ── permission — blocking; the agent parks until answered ───────────────────
 
@@ -490,7 +489,7 @@ pub(super) fn card_head(
                 .flex_1()
                 .min_w_0()
                 .truncate()
-                .text_sm()
+                .text_size(TEXT_SM)
                 .font_semibold()
                 .child(title.into()),
         )
@@ -718,7 +717,7 @@ pub(super) fn activity_row(
             .gap_2()
             .w_full()
             .min_w_0()
-            .text_sm()
+            .text_size(TEXT_SM)
             .text_color(muted)
             .child(chevron_slot(row.fold))
             .child(row.mark.draw(row.kind, cx))

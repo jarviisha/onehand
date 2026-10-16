@@ -1,6 +1,7 @@
 use super::row::{MAX_LABEL, ellipsize, faded};
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
+use crate::controls::Short as _;
 use crate::shell::Shell;
 use crate::state::WorkspaceWindow;
 use gpui::{
@@ -64,7 +65,7 @@ pub(super) fn workspace_bar(
         .child(
             crate::controls::action("workspace")
                 .quiet_icon(false, cx)
-                .xsmall()
+                .small()
                 .icon(Icon::new(IconName::ChevronsUpDown))
                 .tooltip("Other workspaces, and opening or starting one")
                 .dropdown_menu_with_anchor(
@@ -75,7 +76,7 @@ pub(super) fn workspace_bar(
         .child(
             crate::controls::action("hide-rail")
                 .quiet_icon(false, cx)
-                .xsmall()
+                .small()
                 .icon(Icon::new(IconName::PanelLeftClose))
                 .tooltip_with_action("Hide the rail", &crate::shell::ToggleRail, None)
                 .on_click(
@@ -259,11 +260,11 @@ pub(super) fn new_button(
         .h_flex()
         .items_center()
         .flex_none()
-        .child(new.quiet(cx).xsmall())
+        .child(new.quiet(cx).short())
         .child(
             crate::controls::action("new-session-target")
                 .quiet(cx)
-                .xsmall()
+                .small()
                 .dropdown_caret(true)
                 .tooltip("Start a session in another project, or with another agent")
                 .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, window, cx| {
