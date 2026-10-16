@@ -11,7 +11,7 @@ and density, use [UI patterns](../../../docs/ui-patterns.md#spacing-and-density)
 
 Read from `cx.theme()`. The ramp in `crates/app/src/theme.rs` writes them for both palettes, with
 contrast tests; the terminal's sixteen colours are `onehand_terminal_ui::ansi`. Roles, the
-palette's source, keys and values: `DESIGN.md`, *Colour and state*.
+palette's source and the key each role takes: `DESIGN.md`, *Colour and state*.
 
 Slot names that mislead (the library's names, kept because its own controls read them):
 

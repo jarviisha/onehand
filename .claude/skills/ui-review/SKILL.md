@@ -10,8 +10,9 @@ different evidence; neither proves the other is complete.
 
 ## Contract and skill changes only
 
-1. Check ownership: [DESIGN.md](../../../DESIGN.md) owns visual roles and window structure;
-   [UI patterns](../../../docs/ui-patterns.md) owns reusable layouts and behavior. References
+1. Check ownership: [DESIGN.md](../../../DESIGN.md) owns visual roles and the window's frame;
+   [screens.md](../../../docs/screens.md) what each region holds and in what order;
+   [UI patterns](../../../docs/ui-patterns.md) reusable layouts and behavior. References
    inventory actual tokens and builders. Skills explain how to apply them, not a second system.
    The contract is onehand's own: it names no other product as its model, and no rule rests on
    one. The one source it names is its palette's, VS Code's Dark Modern and Light Modern, whose
@@ -35,13 +36,14 @@ different evidence; neither proves the other is complete.
    of every other crate the change touched (`cargo test -p <crate> --locked`), `make clippy
    CLIPPY_EXTRA="-- -D warnings"` and `make fmt`. Quote any failure.
 3. **Carry the documents** in the same change:
-   - what a screen holds, its order, or a rule changed: `DESIGN.md`, or the feature's own
-     document (`docs/tasks.md`, `docs/workflows.md`, `docs/unattended.md`);
+   - what a screen holds or its order: `docs/screens.md`, or the feature's own document
+     (`docs/tasks.md`, `docs/workflows.md`, `docs/unattended.md`);
+   - a principle, the window's frame, the transcript or a visual rule: `DESIGN.md`;
    - a pattern or a behaviour changed: `docs/ui-patterns.md`;
    - a token or a builder added: `design-tokens/reference.md` or `ui-components/catalog.md`.
 
-   Keep `DESIGN.md` a compact overview, at most six lines for a new screen; reusable pattern
-   detail belongs in `docs/ui-patterns.md`. Code never cites a document: a comment gives its reason in its own
+   Keep `DESIGN.md` a compact overview: it gets at most one line per new region, and reusable
+   pattern detail goes in `docs/ui-patterns.md`. Code never cites a document: a comment gives its reason in its own
    words. A file past about 800 lines of code splits along a seam in the same change.
 4. **Compare peers and report**: name a same-role component or screen used for comparison and
    the shared builder or tokens checked. If a shared default changed, inspect its affected

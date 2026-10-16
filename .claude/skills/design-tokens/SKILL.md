@@ -19,10 +19,9 @@ its values describe the code, not a promise that every caller uses them correctl
    type, corner, fill and state treatment against the contract, not just against current code.
 3. Use the pattern's token choices through its shared builder. Repair a shared default at its
    owner when that is the cause; avoid per-screen overrides that leave peers inconsistent.
-4. For text on a neutral surface, take one of the three neutral inks by its role; on a fill, the
-   ink paired with that fill; for a state, a link or code in prose, its semantic ink (UI
-   patterns, *Hierarchy*). For a colour the ramp lacks between two it holds, mix those two
-   (`mix_oklab`) rather than thinning one with an alpha or picking a value of your own.
+4. Take each text's ink by its role and the surface under it (`DESIGN.md`, *Type, space and
+   shape*; by place, UI patterns, *Hierarchy*). Mix a colour the ramp lacks from the two it falls
+   between (`mix_oklab`); never thin one with an alpha or pick a value of your own.
 5. Add a token only for a missing role. A new name for an existing value does not justify a new
    visual treatment. If a shared change affects other callers, include them in the review.
 

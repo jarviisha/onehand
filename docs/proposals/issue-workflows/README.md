@@ -28,7 +28,7 @@ follow it, judge what it left and send it back, without going looking for it.**
 | 2 | An issue written to be worked, and the brief shown before it is | built: [unattended.md](../../unattended.md); later ideas in [issue-brief.md](issue-brief.md) | 1 |
 | 3 | Everything a start needs, checked before it claims or cuts anything | built: [workflows.md](../../workflows.md); *Place taken* left in [preflight.md](preflight.md) | 1 |
 | 4 | Approve, revise, resume or retry next to what is judged | built: [tasks.md](../../tasks.md), [unattended.md](../../unattended.md), [workflows.md](../../workflows.md) | 1 |
-| 5 | Issues and workflows as pages of their own | built: [DESIGN.md](../../../DESIGN.md), [workflows.md](../../workflows.md) | the Issues page 1, the Workflows page 2 |
+| 5 | Issues and workflows as pages of their own | built: [screens.md](../../screens.md), [workflows.md](../../workflows.md) | the Issues page 1, the Workflows page 2 |
 | 6 | Unattended runs when there are many issues | built: [unattended.md](../../unattended.md), [tasks.md](../../tasks.md); a queue for slots left in [operations.md](operations.md) | 2, except its first item |
 | 7 | Workflows past a straight line | below | 3 |
 
@@ -184,7 +184,7 @@ worth deciding. `workflows.md` already lists the straight line as not built. The
 1. ~~Whether the issue's progress (piece 1) is drawn in the Issues tab first or waits for piece 5.~~
    Taken: the tab first, in its short form; the Issues page comes in wave 1, right after, and holds
    the full view and the review. The tab and the page are two views of one model, not one view
-   shrunk (DESIGN.md's Issues tab and Issues page bullets).
+   shrunk (screens.md's Issues tab and Issues page bullets).
 2. ~~The principle the Issues page needs.~~ Taken: *The
    conversation is the centre while a session shows; pages take the agent pane and put the docks
    away. A page never opens over a session by itself; only a person picking it does.*

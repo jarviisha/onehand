@@ -15,9 +15,11 @@ duplicating the rules. Automatic skill discovery is optional; the reading routes
 How the repository is held together:
 
 - [CONTEXT.md](CONTEXT.md): the glossary; use its terms and never the words it says to avoid.
-- [DESIGN.md](DESIGN.md): the **binding** UI overview (layout, transcript, the visual system
-  and its roles), structure and behaviour only. It defines onehand's own visual language;
+- [DESIGN.md](DESIGN.md): the **binding** UI overview (principles, window frame, transcript,
+  visual system), structure and behaviour only. It defines onehand's own visual language;
   implementation may lag the contract and must not be treated as its authority.
+- [docs/screens.md](docs/screens.md): what each region of the window holds and in what order,
+  binding at the level written, as DESIGN.md is.
 - [docs/ui-patterns.md](docs/ui-patterns.md): the patterns every screen repeats (pages, boxes,
   lists, forms, dialogs) and how they behave (waiting, empty, failing, confirming, keys, words).
 - **Every UI change** follows the `design-tokens`, `ui-components`, `layout-patterns` and
