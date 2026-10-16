@@ -1,22 +1,21 @@
-//! The app's own surface ramp, and the one semantic role derived from it.
+//! The app's palette: VS Code's default themes, Dark Modern and Light Modern,
+//! written into the component library's tokens.
 //!
-//! ## Why there is a palette here at all
+//! ## Where every value comes from
 //!
-//! The component library's neutral palette is built for panels and forms, where
-//! two or three surfaces is plenty. A transcript needs more of them at once: the
-//! reading surface, a well sunk into it for machine output, a filled bubble for
-//! what the user said, a raised card for the composer floating over all of it —
-//! and every pair of those is adjacent on screen at the same moment. The
-//! shipped ramp does not have that many distinct steps. In the dark palette it
-//! collapses hardest: hover, well fill, bubble fill and hairline are one and
-//! the same value, so a quoted command and the user's own message are drawn
-//! identically and the composer paints exactly the surface it floats above.
+//! Each step of the ramp is the value of one VS Code colour key, named beside
+//! it, resolved the way VS Code resolves it: `dark_modern.json` over
+//! `dark_plus.json` over `dark_vs.json` (and the light trio the same way), and
+//! for a key none of those files sets, the default VS Code registers for it in
+//! its own source. A value VS Code derives (a colour at an opacity, a darkened
+//! colour) is written out already derived, and says what it was derived from.
+//! A step is never tuned by eye here: changing one means choosing a different
+//! key.
 //!
-//! So the app names its own steps, and its own hues with them: neutral greys
-//! carry everything, and a hue only ever means state. Where two roles must be
-//! told apart (a bubble apart from a well, selected apart from hover, a marked
-//! rail row), the step is the nearest grey that keeps the tests below.
-//! Every token not written here keeps the value the library shipped.
+//! The app names its steps by what they are *for* (the reading surface, a
+//! well, the user's own message), so a view never names a VS Code key; the
+//! mapping happens once, in [`paint`]. Every library token not written here
+//! keeps the value the library shipped.
 //!
 //! ## Status colour is still not a surface
 //!
@@ -29,6 +28,7 @@
 
 use gpui::{App, Hsla, SharedString};
 use gpui_component::{ActiveTheme as _, Colorize as _, Theme, ThemeConfigColors, ThemeRegistry};
+use onehand_terminal_ui::ansi::{self, Ansi};
 use std::rc::Rc;
 
 /// Status ink is the plugin host's, because a built-in plugin needs it too and
@@ -47,166 +47,190 @@ pub(crate) use onehand_plugin_host::dock_surface;
 /// a name as well, and named through this module like the two above.
 pub(crate) use onehand_plugin_host::meta_ink;
 
-/// One mode's surfaces, and the ink that has to be legible on each.
-///
-/// Named by what the step is *for* rather than by the token it lands in: the
-/// mapping onto token names happens once, in [`paint`], and the reason a value
-/// is where it is belongs next to the value.
+/// One mode's surfaces, and the ink that has to be legible on each, each with
+/// the VS Code key it is the value of.
 struct Ramp {
-    /// The reading surface, and the prose on it.
+    /// The reading surface, and the prose on it: `editor.background`,
+    /// `foreground`.
     background: &'static str,
     foreground: &'static str,
-    /// The docks: the Workbench and the terminal, one step off the reading
-    /// surface, so each reads as a surface of its own beside the conversation
-    /// rather than as a card inset in it.
+    /// The docks and the rail: `panel.background`, which VS Code gives
+    /// `sideBar.background` too.
     panel: &'static str,
     /// A well sunk into the surface: quoted commands, output, diffs, a folded
-    /// thought. Every one of them is small text, so the ink is chosen against
-    /// *this* rather than against the surface.
+    /// thought. `textCodeBlock.background`.
     well: &'static str,
+    /// Meta text: Dark Modern's `descriptionForeground`; Light Modern's
+    /// `tab.inactiveForeground`, as its `descriptionForeground` is the prose
+    /// ink itself and would leave meta text no quieter than what it annotates.
     well_ink: &'static str,
-    /// The user's own message. One step further from the surface than a well,
-    /// because it is the block a reader scans back through a long conversation
-    /// looking for.
-    bubble: &'static str,
-    bubble_ink: &'static str,
-    /// Pointer feedback on a row or chip. Deliberately the faintest step there
-    /// is: the pointer resting somewhere is not a state the control is *in*.
+    /// A step past the well: code inside the user's message, a neutral label,
+    /// a document's code on a dock. `textPreformat.background` and
+    /// `textPreformat.foreground`.
+    chip: &'static str,
+    chip_ink: &'static str,
+    /// Pointer feedback on a row or chip: `list.hoverBackground`.
     hover: &'static str,
-    /// The one item selected among several — a completion candidate, the open
-    /// tab of a question card, a chip whose popup is showing.
-    ///
-    /// **This has to carry the state by itself**, with no ring beside it, so it
-    /// is a real step rather than a wash: clearly stronger than `hover`, since
-    /// a row can be both at once, and the reader has to see which of the two is
-    /// telling them where Enter will land.
+    /// The one item selected among several, which no ring marks:
+    /// `list.activeSelectionBackground` and its foreground.
     selected: &'static str,
     selected_ink: &'static str,
-    /// A filled row *on chrome*: the rail's selected project or session.
-    ///
-    /// Its own step because none of the others fits. The rail is drawn in the
-    /// well, and against the well `hover` is 1.04 apart in the light palette —
-    /// a fill nobody can see — while the reading surface is 1.19 in the dark
-    /// one, which punches a near-black hole through a panel rather than lifting
-    /// a row out of it. This sits between: the hover tint laid over the rail,
-    /// so in the dark palette it lifts toward the light rather than sinking
-    /// toward the near-black surface.
-    ///
-    /// It can afford to be quiet where a *surface* could not. A region has only
-    /// its fill to be found by; a chosen row has its ink at full strength among
-    /// rows in the muted one, so the fill is the second thing saying it and not
-    /// the only one.
+    /// A filled row on the rail, hovered: `list.inactiveSelectionBackground`.
     marked: &'static str,
-    /// Every hairline and card border.
+    /// Every hairline and card border: `panel.border`.
     hairline: &'static str,
-    /// A control floating over the transcript: the completion popup, the
-    /// cards pinned above the composer, the jump-to-latest pill.
+    /// A control floating over the transcript, a menu, a dialog:
+    /// `editorWidget.background`.
     floating: &'static str,
-    /// The composer card, which draws no edge: its fill and its own lift are
-    /// all that stand it off the page and off the wells beside it. White in the
-    /// light palette, where the lift carries it; in the dark one a clear step
-    /// above the well, because a shadow barely shows on near-black.
+    /// The composer card, and a field with no edge (the rail's search, its
+    /// badges): `input.background`.
     raised: &'static str,
-    /// A field with no edge sunk into the well: the rail's search, and the
-    /// rail's badges. It has its fill alone to be found by, so it steps away
-    /// from the well the other way from a row lifting off it. White in the
-    /// light palette, where the panel step sat too close to the well to see; in
-    /// the dark one the panel step, because the reading surface cut a hole the
-    /// eye went to first.
     inset: &'static str,
-    /// A control's edge, and the scrollbar thumb.
+    /// A control's edge: `input.border`.
     control: &'static str,
-    /// Running and links; the text selection is this, thinned.
+    /// A secondary button at rest, pointed at or pressed, and its word:
+    /// `button.secondaryBackground`, `button.secondaryHoverBackground`,
+    /// `button.secondaryForeground`.
+    button: &'static str,
+    button_hover: &'static str,
+    button_ink: &'static str,
+    /// The scrollbar thumb, at rest and pointed at: `scrollbarSlider.background`,
+    /// `scrollbarSlider.hoverBackground`.
+    thumb: &'static str,
+    thumb_hover: &'static str,
+    /// The word on the open tab: `tab.activeForeground`.
+    tab_ink: &'static str,
+    /// Where a dragged panel would land: `editorGroup.dropBackground`.
+    drop: &'static str,
+    /// What a dialog dims behind it: `widget.shadow`.
+    shadow: &'static str,
+    /// Running and links: `textLink.foreground`.
     accent: &'static str,
-    /// The base hues status ink is derived from.
+    /// Keyboard focus: `focusBorder`.
+    focus: &'static str,
+    /// The text caret: `editorCursor.foreground`.
+    caret: &'static str,
+    /// Selected text: `editor.selectionBackground`. The library caps its
+    /// alpha, so it is drawn thinned over the text.
+    selection: &'static str,
+    /// The base hues status ink is derived from: `editorWarning.foreground`,
+    /// `testing.iconPassed`, `errorForeground`.
     warning: &'static str,
     success: &'static str,
     danger: &'static str,
-    /// Danger as a fill, with white on it: the same red in both modes, because
-    /// the lighter red of the dark palette is only ever ink.
+    /// Danger as a fill, with `button.foreground` on it:
+    /// `statusBarItem.errorBackground`.
     danger_fill: &'static str,
-    /// The one primary action in a view: ink on light, light on dark.
+    /// The one primary action in a view: `button.background`,
+    /// `button.hoverBackground`, `button.foreground`.
     primary: &'static str,
+    primary_hover: &'static str,
     primary_ink: &'static str,
+    /// A chart's series: `charts.blue`, `charts.green`, `charts.orange`,
+    /// `charts.purple`, `charts.red` (`charts.yellow` is the warning hue).
+    chart_blue: &'static str,
+    chart_green: &'static str,
+    chart_orange: &'static str,
+    chart_purple: &'static str,
+    chart_red: &'static str,
+    /// The terminal's sixteen colours, whose magenta and cyan a label's kind
+    /// takes too: `terminal.ansi*`.
+    ansi: &'static Ansi,
 }
 
-/// Light steps *down* from a white surface, which is the only direction there
-/// is: nothing is lighter than the surface, so a floating control stays white
-/// and is separated by its shadow instead.
+/// Light Modern.
 const LIGHT: Ramp = Ramp {
     background: "#ffffff",
-    foreground: "#1f1f1f",
-    panel: "#f3f3f3",
-    well: "#eeeeee",
-    // A secondary ink rather than a metadata grey: this one is drawn as small
-    // text on every surface, and a lighter grey falls under AA on white.
+    foreground: "#3b3b3b",
+    panel: "#f8f8f8",
+    well: "#f8f8f8",
     well_ink: "#616161",
-    // A step past the well, so the user's own message is the block a reader
-    // finds scanning back through a long conversation.
-    bubble: "#dedede",
-    bubble_ink: "#1f1f1f",
-    // Dark enough that a hovered row shows on a dock as well as on the surface:
-    // a lighter tint vanished on the panel.
-    hover: "#e8e8e8",
-    // Far enough past hover that a row both hovered and selected still reads
-    // as selected.
-    selected: "#d0d0d0",
-    selected_ink: "#1f1f1f",
-    // Its own step, darker than `hover`, so a marked rail row shows on the
-    // well the rail is drawn in.
-    marked: "#dedede",
-    hairline: "#d4d4d4",
-    floating: "#ffffff",
+    // Black at 12% over `editor.background`.
+    chip: "#e0e0e0",
+    chip_ink: "#3b3b3b",
+    hover: "#f2f2f2",
+    selected: "#e8e8e8",
+    selected_ink: "#000000",
+    marked: "#e4e6f1",
+    hairline: "#e5e5e5",
+    floating: "#f8f8f8",
     raised: "#ffffff",
     inset: "#ffffff",
-    control: "#c7c7c7",
-    // Darker than the usual editor blue, which inline code tempered toward
-    // the meta ink drew under AA in a well.
-    accent: "#006eb8",
-    warning: "#854f0b",
-    success: "#16825d",
-    danger: "#a32d2d",
-    danger_fill: "#a32d2d",
-    primary: "#1f1f1f",
+    control: "#cecece",
+    button: "#e5e5e5",
+    button_hover: "#cccccc",
+    button_ink: "#3b3b3b",
+    thumb: "#64646466",
+    thumb_hover: "#646464b3",
+    tab_ink: "#3b3b3b",
+    drop: "#2677cb2e",
+    shadow: "#00000029",
+    accent: "#005fb8",
+    focus: "#005fb8",
+    caret: "#000000",
+    selection: "#add6ff",
+    warning: "#bf8803",
+    success: "#73c991",
+    danger: "#f85149",
+    danger_fill: "#c72e0f",
+    primary: "#005fb8",
+    primary_hover: "#0258a8",
     primary_ink: "#ffffff",
+    chart_blue: "#0063d3",
+    chart_green: "#388a34",
+    chart_orange: "#d18616",
+    chart_purple: "#652d90",
+    chart_red: "#e51400",
+    ansi: &ansi::LIGHT,
 };
 
-/// Dark steps *up* from a near-black surface, for the same reason in reverse —
-/// and here the floating step is not optional, because a drop shadow over
-/// near-black is invisible and would leave a card divided from the conversation
-/// by one hairline.
+/// Dark Modern.
 const DARK: Ramp = Ramp {
-    background: "#181818",
-    foreground: "#ececec",
-    panel: "#202020",
-    well: "#282828",
-    // Light enough to clear AA on the bubble as well as the well, which the
-    // ramp's own test checks.
-    well_ink: "#a0a0a0",
-    bubble: "#333333",
-    bubble_ink: "#ececec",
-    hover: "#2a2a2a",
-    selected: "#3e3e3e",
-    selected_ink: "#ececec",
-    // Past the light palette's step: at the same 1.12 from the well a hovered
-    // rail row did not show on a dark screen at all.
-    marked: "#404040",
-    hairline: "#404040",
-    // The well's grey: `panel` sits too close to the surface for a
-    // card that has no visible shadow to stand on.
-    floating: "#282828",
-    raised: "#303030",
-    inset: "#202020",
-    control: "#404040",
-    // Blue in both modes, lifted to read on near-black: running and waiting
-    // must never be told apart by a shade, and a yellow sat beside the amber.
-    accent: "#3794ff",
-    warning: "#fac775",
-    success: "#1fbd53",
-    danger: "#f09595",
-    danger_fill: "#a32d2d",
-    primary: "#ececec",
-    primary_ink: "#181818",
+    background: "#1f1f1f",
+    foreground: "#cccccc",
+    panel: "#181818",
+    well: "#2b2b2b",
+    well_ink: "#9d9d9d",
+    chip: "#3c3c3c",
+    chip_ink: "#d0d0d0",
+    hover: "#2a2d2e",
+    selected: "#04395e",
+    selected_ink: "#ffffff",
+    marked: "#37373d",
+    hairline: "#2b2b2b",
+    floating: "#202020",
+    raised: "#313131",
+    inset: "#313131",
+    control: "#3c3c3c",
+    // Dark Modern leaves `button.secondaryBackground` transparent and edges the
+    // button with `button.border`; a button here draws no edge, so it rests on
+    // Dark Modern's control fill, `input.background`, instead.
+    button: "#313131",
+    button_hover: "#2b2b2b",
+    button_ink: "#cccccc",
+    thumb: "#79797966",
+    thumb_hover: "#646464b3",
+    tab_ink: "#ffffff",
+    drop: "#53595d80",
+    shadow: "#0000005c",
+    accent: "#4daafc",
+    focus: "#0078d4",
+    caret: "#aeafad",
+    selection: "#264f78",
+    warning: "#cca700",
+    success: "#73c991",
+    danger: "#f85149",
+    // `errorForeground` darkened by 0.4, as VS Code derives it.
+    danger_fill: "#b90f07",
+    primary: "#0078d4",
+    primary_hover: "#026ec1",
+    primary_ink: "#ffffff",
+    chart_blue: "#59a4f9",
+    chart_green: "#89d185",
+    chart_orange: "#d18616",
+    chart_purple: "#b180d7",
+    chart_red: "#f14c4c",
+    ansi: &ansi::DARK,
 };
 
 /// A step of the ramp as a colour, to derive another from. Every step is a
@@ -229,93 +253,57 @@ fn paint(colors: &mut ThemeConfigColors, ramp: &Ramp) {
     set(&mut colors.tiles, ramp.panel);
     set(&mut colors.muted, ramp.well);
     set(&mut colors.muted_foreground, ramp.well_ink);
-    set(&mut colors.secondary, ramp.bubble);
-    set(&mut colors.secondary_foreground, ramp.bubble_ink);
-    // The two states a *filled button* takes, which the library keeps as slots
-    // of their own rather than deriving from the fill above. Left alone they
-    // stayed on the shipped palette, and in the dark one that palette's hover
-    // is *darker* than this ramp's bubble -- so the rail's one filled control
-    // receded toward the well under the pointer, and its pressed step landed
-    // 1.04 from the well, which is a hole rather than a button. The same
-    // collapse the sidebar tokens above are written out to avoid, on a second
-    // triple.
+    set(&mut colors.secondary, ramp.chip);
+    set(&mut colors.secondary_foreground, ramp.chip_ink);
+    // A filled button pointed at or held open: VS Code's secondary hover, in
+    // every slot the library keeps for it, since a slot left alone stays on
+    // the config the ramp is written over.
     //
-    // **Both take the one step this ramp has above the bubble fill**, and that
-    // is deliberate rather than a shortage: `selected` is already the answer to
-    // "this control is the one being acted on", it moves the right way in both
-    // palettes (lighter in the dark, darker in the light), and inventing a
-    // third shade so that *held open* could differ from *pointed at* would be a
-    // ramp step existing for one caret.
-    //
-    // Their being equal is also what keeps the open state visible at all. gpui
-    // refines a hover style over the base, and `hover_style` is crate-private,
-    // so a trigger that fills itself while its menu is open cannot outrank the
-    // hover underneath it -- with two different shades the pressed one would
-    // vanish for as long as the pointer stayed on the control that opened it.
-    set(&mut colors.secondary_hover, ramp.selected);
-    set(&mut colors.secondary_active, ramp.selected);
+    // Pointed at and held open are one fill on purpose. gpui refines a hover
+    // style over the base, and `hover_style` is crate-private, so a trigger
+    // that fills itself while its menu is open cannot outrank the hover
+    // underneath it -- with two different shades the pressed one would vanish
+    // for as long as the pointer stayed on the control that opened it.
+    for slot in [
+        &mut colors.secondary_hover,
+        &mut colors.secondary_active,
+        &mut colors.button_secondary_hover,
+        &mut colors.button_secondary_active,
+    ] {
+        set(slot, ramp.button_hover);
+    }
     // `accent` is the selected fill, not the hover one. That is the library's
     // own reading of it -- a list item falls back to `accent` for the selected
     // row whenever the highlight ring is off, which here it always is -- and it
     // leaves `list_hover` free to be the fainter of the two.
     set(&mut colors.accent, ramp.selected);
-    // A secondary button rests on the control fill, the one a ghost shows
-    // hovered or chosen, rather than the bubble the library falls back to:
-    // one filled grey for a control, wherever a control is filled. Pointed at
-    // or pressed it takes the selected step, through the hover slots above.
-    colors.button_secondary = Some(
-        onehand_plugin_host::control_fill_of(hex(ramp.hover), hex(ramp.selected))
-            .to_hex()
-            .into(),
-    );
-    set(&mut colors.button_secondary_foreground, ramp.selected_ink);
+    set(&mut colors.button_secondary, ramp.button);
+    set(&mut colors.button_secondary_foreground, ramp.button_ink);
     set(&mut colors.accent_foreground, ramp.selected_ink);
     set(&mut colors.border, ramp.hairline);
     // A switch that is off is a track and a thumb, and both have to be seen
     // for the control to say anything: the library draws the track in
-    // `secondary_active` — the selected step above, a fill meant to be quiet —
-    // and the thumb in the surface, so an off switch was a faint smudge with an
+    // `secondary_active`, a fill meant to be quiet, and the thumb in the
+    // surface, so an off switch was a faint smudge with an
     // invisible knob. A control's parts are held to 3:1 against what they sit
     // on, and the well's ink is already the ramp's answer to "readable on the
     // surface": as the track, the surface-coloured thumb stands off it too.
     set(&mut colors.switch, ramp.well_ink);
-    // The rail runs on the ramp too, but one notch quieter than the
-    // conversation, because it is chrome rather than a second thing to read.
+    // The rail is VS Code's side bar. Every one of these has to be written
+    // out: the library ships a whole second set of sidebar tokens with values
+    // of their own rather than letting them fall back on the ones above, so a
+    // ramp that stopped at `accent` left the rail on somebody else's palette.
     //
-    // Every one of these has to be written out. The library ships a whole
-    // second set of sidebar tokens with values of their own rather than letting
-    // them fall back on the ones above, so a ramp that stopped at `accent` left
-    // the most-clicked panel in the window running on somebody else's palette:
-    // its fill sat a notch off white in the light palette and dead level with
-    // the surface in the dark one, and its ink and its selected row were
-    // whatever that other palette happened to say.
-    //
-    // Written from the steps already named rather than added to the `Ramp`,
-    // because none of them is a new step:
-    //
-    // - The rail's own fill is no longer this: it names the well at its call
-    //   site, because this token is the reading surface and the library applies
-    //   it before the caller's refinement, so left alone it would bring the
-    //   panel up level with the conversation beside it. What this token still
-    //   decides is the fallback for anything in the library that reads it
-    //   without going through the rail.
-    // - Its ink is the ramp's quiet ink. A rail row is a name to aim at, not a
-    //   sentence to read, and at prose strength a column of thirty of them
-    //   out-shouted the conversation they exist to get you to.
-    // - A filled row takes `marked`, which is the one step here that is the
-    //   rail's own. It was `hover`, chosen while the rail sat on the reading
-    //   surface and 1.04 from the well once the rail moved onto it; then the
-    //   reading surface, which reads at 1.19 in the dark palette and punches a
-    //   near-black hole through the panel rather than lifting a row out of it.
-    //   `marked` lifts in both, and is what a hovered rail row takes whole; the
-    //   chosen row is that step pulled toward its ink ([`rail_chosen`]).
+    // - Its fill is `sideBar.background`, which VS Code gives the panel too.
+    // - Its ink is `sideBar.foreground`, the prose ink; the rail's names are
+    //   drawn in meta ink where it lays them out, as chrome rather than a
+    //   second thing to read.
+    // - A hovered row takes `marked`; the chosen row is that step pulled toward
+    //   its ink ([`rail_chosen`]).
     // - The guide line down an expanded project is the same hairline as any
     //   other.
-    //
-    // Naming any of it again with values of its own would be inventing a second
-    // ramp for one panel and having to keep the two in step by hand.
-    set(&mut colors.sidebar, ramp.background);
-    set(&mut colors.sidebar_foreground, ramp.well_ink);
+    set(&mut colors.sidebar, ramp.panel);
+    set(&mut colors.sidebar_foreground, ramp.foreground);
     set(&mut colors.sidebar_accent, ramp.marked);
     set(&mut colors.sidebar_accent_foreground, ramp.selected_ink);
     set(&mut colors.sidebar_border, ramp.hairline);
@@ -326,14 +314,19 @@ fn paint(colors: &mut ThemeConfigColors, ramp: &Ramp) {
     set(&mut colors.list_hover, ramp.hover);
 
     set(&mut colors.input, ramp.control);
-    set(&mut colors.scrollbar_thumb, ramp.control);
-    // The keyboard's ring is the ink itself. The library draws it round a
-    // focused control at half strength, a figure the app cannot reach, and only
-    // the full ink keeps that half-strength band at 3:1 on every surface: the
-    // grey it was before read at 1.7.
-    set(&mut colors.ring, ramp.foreground);
-    set(&mut colors.caret, ramp.foreground);
-    set(&mut colors.link, ramp.accent);
+    set(&mut colors.scrollbar_thumb, ramp.thumb);
+    set(&mut colors.scrollbar_thumb_hover, ramp.thumb_hover);
+    set(&mut colors.ring, ramp.focus);
+    set(&mut colors.caret, ramp.caret);
+    // A link keeps its blue pointed at and pressed, as `textLink.activeForeground`
+    // does; left alone these were the neutral steps of the config under the ramp.
+    for slot in [
+        &mut colors.link,
+        &mut colors.link_hover,
+        &mut colors.link_active,
+    ] {
+        set(slot, ramp.accent);
+    }
     set(&mut colors.info, ramp.accent);
     set(&mut colors.success, ramp.success);
     set(&mut colors.warning, ramp.warning);
@@ -341,8 +334,20 @@ fn paint(colors: &mut ThemeConfigColors, ramp: &Ramp) {
     set(&mut colors.primary_foreground, ramp.primary_ink);
     set(&mut colors.button_primary, ramp.primary);
     set(&mut colors.button_primary_foreground, ramp.primary_ink);
-    // Danger is solid red with white on it in both modes; the lighter red is
-    // only ever ink, through the base hue below.
+    // Pressed takes the hover fill, as VS Code draws a pressed button. Every
+    // one of these is written: the config the ramp is written over carries a
+    // neutral pressed step of its own, which flashed a blue button near-black
+    // or near-white under the click.
+    for slot in [
+        &mut colors.primary_hover,
+        &mut colors.primary_active,
+        &mut colors.button_primary_hover,
+        &mut colors.button_primary_active,
+    ] {
+        set(slot, ramp.primary_hover);
+    }
+    // Danger is a solid red with the button ink on it; the lighter red is only
+    // ever ink, through the base hue below.
     for slot in [&mut colors.danger, &mut colors.button_danger] {
         set(slot, ramp.danger_fill);
     }
@@ -350,28 +355,115 @@ fn paint(colors: &mut ThemeConfigColors, ramp: &Ramp) {
         &mut colors.danger_foreground,
         &mut colors.button_danger_foreground,
     ] {
-        set(slot, "#ffffff");
+        set(slot, ramp.primary_ink);
     }
-    // Its hover and pressed fills, which the library otherwise thins to a third
-    // of the red: white on that over a white dialog read at 1.7. A step darker
-    // instead, mixed toward the light palette's ink, so the word gains contrast
-    // as it is acted on; the fill is the same red in both modes, so the steps are.
+    // Its hover and pressed fills. VS Code has no danger button to take them
+    // from, and the library would thin the red to a third, under which white
+    // reads at under 2 on a light dialog. Derived instead: the fill mixed 15%
+    // and 25% toward Light Modern's ink, so the word gains contrast as it is
+    // acted on.
     let danger = hex(ramp.danger_fill);
     let ink = hex(LIGHT.foreground);
     colors.button_danger_hover = Some(danger.mix_oklab(ink, 0.85).to_hex().into());
     colors.button_danger_active = Some(danger.mix_oklab(ink, 0.75).to_hex().into());
-    // The text selection: the accent, thinned so the text under it still reads.
-    colors.selection = Some(format!("{}40", ramp.accent).into());
+    set(&mut colors.selection, ramp.selection);
 
-    // The base hues status ink and inline code are derived from. The library
-    // keeps these slots private, so they go in through the config's serde form,
-    // under the names a theme file would give them.
+    // The rest of what the config under the ramp sets a value of its own for,
+    // each on the VS Code key its part is. A slot left alone here keeps the
+    // library's palette, whether or not this app draws the part today.
+    for (slot, value) in [
+        // The title bar and the status bar: `titleBar.*`, `statusBar.*`; the
+        // window's edge is `titleBar.border`, as VS Code sets no
+        // `window.activeBorder` outside its high-contrast themes.
+        (&mut colors.title_bar, ramp.panel),
+        (&mut colors.title_bar_border, ramp.hairline),
+        (&mut colors.status_bar, ramp.panel),
+        (&mut colors.status_bar_border, ramp.hairline),
+        (&mut colors.window_border, ramp.hairline),
+        // Tabs: `editorGroupHeader.tabsBackground`, `tab.inactive*`,
+        // `tab.active*`.
+        (&mut colors.tab_bar, ramp.panel),
+        (&mut colors.tab_bar_segmented, ramp.panel),
+        (&mut colors.tab, ramp.panel),
+        (&mut colors.tab_foreground, ramp.well_ink),
+        (&mut colors.tab_active, ramp.background),
+        (&mut colors.tab_active_foreground, ramp.tab_ink),
+        // Dragging a panel: `sash.hoverBorder`, which is `focusBorder`, and
+        // `editorGroup.dropBackground`; a dialog's backdrop, `widget.shadow`.
+        (&mut colors.drag_border, ramp.focus),
+        (&mut colors.drop_target, ramp.drop),
+        (&mut colors.overlay, ramp.shadow),
+        // The library's lists and tables, on the editor with VS Code's list
+        // keys; their heads on `sideBarSectionHeader.background`.
+        (&mut colors.list, ramp.background),
+        (&mut colors.list_even, ramp.background),
+        (&mut colors.list_head, ramp.panel),
+        (&mut colors.list_active, ramp.selected),
+        (&mut colors.list_active_border, ramp.focus),
+        (&mut colors.table, ramp.background),
+        (&mut colors.table_even, ramp.background),
+        (&mut colors.table_head, ramp.panel),
+        (&mut colors.table_head_foreground, ramp.well_ink),
+        (&mut colors.table_hover, ramp.hover),
+        (&mut colors.table_active, ramp.selected),
+        (&mut colors.table_active_border, ramp.focus),
+        (&mut colors.table_row_border, ramp.hairline),
+        // Grouping: `sideBarSectionHeader.*`.
+        (&mut colors.accordion, ramp.panel),
+        (&mut colors.group_box, ramp.panel),
+        (&mut colors.group_box_foreground, ramp.foreground),
+        (&mut colors.description_list_label, ramp.panel),
+        (
+            &mut colors.description_list_label_foreground,
+            ramp.foreground,
+        ),
+        // Progress: `progressBar.background`. VS Code has no slider or
+        // skeleton; the slider takes the progress bar's blue on the editor,
+        // and a skeleton the code block's grey.
+        (&mut colors.progress_bar, ramp.primary),
+        (&mut colors.slider_bar, ramp.primary),
+        (&mut colors.slider_thumb, ramp.background),
+        (&mut colors.skeleton, ramp.well),
+        // The rail's own primary: `button.*`.
+        (&mut colors.sidebar_primary, ramp.primary),
+        (&mut colors.sidebar_primary_foreground, ramp.primary_ink),
+        // The word on a status fill a library part writes, which the app does
+        // not draw: the editor's own surface, so it is the page's colour and
+        // not the library's.
+        (&mut colors.info_foreground, ramp.background),
+        (&mut colors.success_foreground, ramp.background),
+        (&mut colors.warning_foreground, ramp.background),
+        // Charts: `charts.*`, rising green and falling red.
+        (&mut colors.chart_1, ramp.chart_blue),
+        (&mut colors.chart_2, ramp.chart_green),
+        (&mut colors.chart_3, ramp.warning),
+        (&mut colors.chart_4, ramp.chart_orange),
+        (&mut colors.chart_5, ramp.chart_purple),
+        (&mut colors.chart_bullish, ramp.chart_green),
+        (&mut colors.chart_bearish, ramp.chart_red),
+    ] {
+        set(slot, value);
+    }
+
+    // The base hues status ink, inline code and a label's kind are derived
+    // from, and their light halves, which are the terminal's bright colours.
+    // The library keeps these slots private, so they go in through the
+    // config's serde form, under the names a theme file would give them.
     let mut value = serde_json::to_value(&*colors).expect("a theme config serializes");
+    let a = ramp.ansi;
     for (key, hue) in [
-        ("base.blue", ramp.accent),
-        ("base.yellow", ramp.warning),
-        ("base.green", ramp.success),
-        ("base.red", ramp.danger),
+        ("base.blue", ramp.accent.to_string()),
+        ("base.yellow", ramp.warning.to_string()),
+        ("base.green", ramp.success.to_string()),
+        ("base.red", ramp.danger.to_string()),
+        ("base.magenta", ansi::hex(a.magenta)),
+        ("base.cyan", ansi::hex(a.cyan)),
+        ("base.red.light", ansi::hex(a.bright_red)),
+        ("base.green.light", ansi::hex(a.bright_green)),
+        ("base.yellow.light", ansi::hex(a.bright_yellow)),
+        ("base.blue.light", ansi::hex(a.bright_blue)),
+        ("base.magenta.light", ansi::hex(a.bright_magenta)),
+        ("base.cyan.light", ansi::hex(a.bright_cyan)),
     ] {
         value[key] = hue.into();
     }
@@ -384,10 +476,8 @@ fn paint(colors: &mut ThemeConfigColors, ramp: &Ramp) {
 /// leaves unset does not fall back to the shipped palette — it falls back to a
 /// value *computed* from whatever base colours are in force. Starting from an
 /// empty config would therefore recolour about eighty things nobody asked to
-/// change, including the scrollbar thumb, the text selection, the tab bar and
-/// the focus ring, each of them silently and none of them here. Cloning the
-/// shipped config and overwriting a dozen fields keeps every other value
-/// exactly as it arrived.
+/// change, silently. Cloning the shipped config and overwriting every field it
+/// sets a value of its own for keeps the derived ones derived from the ramp.
 ///
 /// Runs at boot, before a mode is chosen, because choosing one applies whichever
 /// of these two configs the mode names.
@@ -428,8 +518,8 @@ pub(crate) fn install(cx: &mut App) {
 /// **A different problem from status ink, so a different target.** A status
 /// colour is pulled toward the *foreground* because it arrives as a fill and
 /// has to be made bright or dark enough to read. The hue that marks inline code
-/// has no such trouble — the shipped dark blue already clears AA comfortably on
-/// every surface here. What it does is **glare**: a 94%-saturated blue beside
+/// has no such trouble: the link blue already clears AA on the surface and the
+/// well, which the tests below hold. What it does is **glare**: a 94%-saturated blue beside
 /// neutral grey prose on a near-black surface vibrates, and the eye is pulled
 /// to it over the sentence it belongs to. Pulling it toward the *meta ink*
 /// instead — a neutral of about its own lightness — takes a third of the
@@ -462,33 +552,31 @@ fn chosen_over(marked: Hsla, ink: Hsla) -> Hsla {
     marked.mix_oklab(ink, 0.95)
 }
 
-/// The composer card's fill. No library token holds it, so it is read off the
-/// ramp by mode, the way [`crate::tokens::lift`] chooses its alpha.
-pub(crate) fn raised(cx: &App) -> Hsla {
-    let ramp = match cx.theme().mode.is_dark() {
+/// The ramp of the mode in force, for a step no library token holds, the way
+/// [`crate::tokens::lift`] chooses its alpha.
+fn ramp_in_force(cx: &App) -> &'static Ramp {
+    match cx.theme().mode.is_dark() {
         true => &DARK,
         false => &LIGHT,
-    };
-    Hsla::parse_hex(ramp.raised).unwrap_or(cx.theme().popover)
+    }
 }
 
-/// The fill of a field with no edge sunk into the well, and of a badge in the
-/// rail, which has to stand off the well, a hovered row and a chosen one at
-/// once. No library token holds it, so it is read off the ramp by mode, as
-/// [`raised`] is.
+/// The composer card's fill.
+pub(crate) fn raised(cx: &App) -> Hsla {
+    Hsla::parse_hex(ramp_in_force(cx).raised).unwrap_or(cx.theme().popover)
+}
+
+/// The fill of a field with no edge on the rail, and of a badge in the rail,
+/// which has to stand off the rail, a hovered row and a chosen one at once.
 pub(crate) fn inset(cx: &App) -> Hsla {
-    let ramp = match cx.theme().mode.is_dark() {
-        true => &DARK,
-        false => &LIGHT,
-    };
-    Hsla::parse_hex(ramp.inset).unwrap_or(cx.theme().background)
+    Hsla::parse_hex(ramp_in_force(cx).inset).unwrap_or(cx.theme().background)
 }
 
 /// A well on a floating card: the command a pinned permission asks to run.
 ///
-/// Its own step because the dark palette floats its cards on the well's own
-/// grey, where a well drawn in `muted` would vanish into the card. Mixed from
-/// the card's fill toward the ink, so both palettes sink it by one rule.
+/// Its own step because a card floats on a fill a step from the page, where a
+/// well drawn in `muted` would sit level with or under the card. Mixed from the
+/// card's fill toward the ink, so both palettes sink it by one rule.
 pub(crate) fn floating_well(cx: &App) -> Hsla {
     floating_well_on(cx.theme().popover, cx.theme().foreground)
 }
@@ -549,20 +637,25 @@ mod tests {
     /// The ratio small text has to clear to be readable.
     const AA: f32 = 4.5;
 
-    /// The smallest ratio at which a fill still reads as a region of its own
-    /// rather than as an artefact of the display.
-    const STEP: f32 = 1.14;
-
-    /// The same question for a *row* rather than a region, which is a lower
-    /// floor on purpose.
+    /// The smallest ratio at which two fills are still two colours.
     ///
-    /// A region has only its fill to be found by. A marked row has ink at full
-    /// strength among rows in the muted one, so the fill is the second thing
-    /// saying which row it is and not the only one — and it is read at a glance
-    /// down a column of thirty, where the loud answer is worse than the quiet
-    /// one. Below this it stops being a fill at all: `hover` against the well is
-    /// 1.04, which is what the rail drew for a while and nobody could see.
-    const ROW: f32 = 1.10;
+    /// VS Code's surfaces sit this close: a widget is 1.01 off the editor
+    /// under it, a code block 1.06 off a Light Modern page, and a hairline or
+    /// a shadow says where one ends. A fill under this is the one beside it.
+    const STEP: f32 = 1.01;
+
+    /// The floor for hue ink: status words and marks, a tint's words, a diff
+    /// line's sign.
+    ///
+    /// Under AA on purpose. VS Code's status hues are its own and are not
+    /// lightened here, and the lowest of them on a surface it lands on is
+    /// Light Modern's passed green at 2.75. Held at that, so a hue that drops
+    /// further shows.
+    const HUE_INK: f32 = 2.7;
+
+    /// The smallest ratio at which a shadow still reads as one rather than
+    /// as an artefact of the display.
+    const SHADOW: f32 = 1.10;
 
     /// Relative luminance, as the contrast ratio defines it.
     fn luminance(color: Hsla) -> f32 {
@@ -655,13 +748,13 @@ mod tests {
             STEP,
         );
         check(
-            "the bubble against the well",
+            "code in a message against the well",
             theme.secondary,
             theme.muted,
             STEP,
         );
         check(
-            "the bubble against the surface",
+            "code in a message against the surface",
             theme.secondary,
             theme.background,
             STEP,
@@ -678,15 +771,13 @@ mod tests {
             theme.background,
             STEP,
         );
-        // The rail is drawn in the well, so its marked row is measured against
-        // *that* and not against the reading surface. Both of these have been
-        // wrong: the fill was invisible when it was `hover`, and shouted when it
-        // was the reading surface.
+        // The rail is drawn on the side bar's fill, so its marked row is
+        // measured against that and not against the reading surface.
         check(
             "a marked row against the rail it sits in",
             theme.sidebar_accent,
-            theme.muted,
-            ROW,
+            theme.sidebar,
+            STEP,
         );
         check(
             "the ink on a marked row",
@@ -742,15 +833,18 @@ mod tests {
             theme.muted,
             AA,
         );
+        // Under AA in Dark Modern, where `descriptionForeground` on
+        // `textPreformat.background` is 4.07: an attachment's name on its
+        // caption bar. Held there, so it does not drop further.
         check(
-            "meta ink on a bubble",
+            "meta ink on code in a message",
             theme.muted_foreground,
             theme.secondary,
-            AA,
+            4.0,
         );
         check("prose in a well", theme.foreground, theme.muted, AA);
         check(
-            "prose on a bubble",
+            "prose on code in a message",
             theme.secondary_foreground,
             theme.secondary,
             AA,
@@ -815,15 +909,13 @@ mod tests {
 
     /// A filled button runs on the ramp in all three of its states.
     ///
-    /// The fill alone is not enough, and that is the whole finding this
-    /// records: `secondary_hover` and `secondary_active` are slots of their
-    /// own, so a ramp that wrote only `secondary` left the app's one filled
-    /// control taking the shipped palette's other two -- whose dark hover is
-    /// *darker* than this ramp's bubble, so the button receded under the
-    /// pointer instead of lifting.
+    /// The fill alone is not enough: `secondary_hover` and `secondary_active`
+    /// are slots of their own, so a ramp that wrote only `secondary` left a
+    /// filled control's other two states on the config under the ramp.
     ///
     /// Both halves are checked: that the steps are ours at all, and that each
-    /// moves away from the fill rather than toward the well behind it.
+    /// shows against the resting fill and against the surfaces a filled
+    /// control sits on, the page and the rail.
     #[test]
     fn a_filled_button_runs_on_the_ramp_in_every_state() {
         for (name, ramp, mode) in [
@@ -845,16 +937,58 @@ mod tests {
             }
 
             let theme = resolve(ramp, mode);
-            // Away from the well, not toward it. A hover that closes on the
-            // surface behind the control is the shipped palette's failure, and
-            // it reads as the button going away when it is pointed at.
             for (label, state) in [
                 ("hovered", theme.secondary_hover),
                 ("held open", theme.secondary_active),
             ] {
                 assert!(
-                    contrast(state, theme.muted) > contrast(theme.secondary, theme.muted),
-                    "{name}: a {label} filled button sits closer to the well than its own resting fill"
+                    contrast(state, theme.secondary) >= STEP,
+                    "{name}: a {label} filled button is its own resting fill"
+                );
+                for (surface, under) in [("page", theme.background), ("rail", theme.sidebar)] {
+                    assert!(
+                        contrast(state, under) >= STEP,
+                        "{name}: a {label} filled button is the {surface} behind it"
+                    );
+                }
+            }
+        }
+    }
+
+    /// A primary button and a link keep their own blue in every state: the slots are all
+    /// written, so none is left to the neutral steps of the config the ramp is
+    /// written over, and its word reads on each.
+    #[test]
+    fn a_primary_button_stays_on_the_ramp_in_every_state() {
+        for (name, ramp, mode) in [
+            ("light", &LIGHT, ThemeMode::Light),
+            ("dark", &DARK, ThemeMode::Dark),
+        ] {
+            let mut colors = ThemeConfigColors::default();
+            paint(&mut colors, ramp);
+            for (state, slot) in [
+                ("the primary fill hovered", &colors.primary_hover),
+                ("the primary fill pressed", &colors.primary_active),
+                ("a button hovered", &colors.button_primary_hover),
+                ("a button pressed", &colors.button_primary_active),
+                ("a link hovered", &colors.link_hover),
+                ("a link pressed", &colors.link_active),
+            ] {
+                assert!(
+                    slot.is_some(),
+                    "{name}: the blue of {state} is left to the config under the ramp"
+                );
+            }
+            let theme = resolve(ramp, mode);
+            for (state, fill) in [
+                ("at rest", theme.button_primary),
+                ("hovered", theme.button_primary_hover),
+                ("pressed", theme.button_primary_active),
+            ] {
+                let ratio = contrast(theme.button_primary_foreground, fill);
+                assert!(
+                    ratio >= AA,
+                    "{name}: a primary button's word {state} is {ratio:.2}"
                 );
             }
         }
@@ -891,15 +1025,21 @@ mod tests {
         }
     }
 
-    /// The keyboard's ring reads against every surface a control sits on, as
+    /// The keyboard's ring shows against every surface a control sits on, as
     /// it is drawn: the library lays it round a focused control at half the
-    /// ring's strength, a figure it keeps to itself, so the ring is judged at
-    /// that strength over each surface. The app's own rings, a field's focused
-    /// edge among them, draw it whole and clear the same bar more easily.
+    /// ring's strength, a figure it keeps to itself, and the app's own rings,
+    /// a field's focused edge among them, draw it whole.
+    ///
+    /// Under the 3:1 a control's parts are held to, on purpose: the ring is
+    /// VS Code's `focusBorder`, which clears 3:1 drawn whole on the editor but
+    /// not at half strength, nor on the input fill the composer is drawn in.
+    /// Held at what it reaches, so a ring that fades further shows.
     #[test]
-    fn the_focus_ring_reads_on_every_surface() {
+    fn the_focus_ring_shows_on_every_surface() {
         // The library's `FOCUS_RING_OPACITY`, which it does not export.
         const DRAWN: f32 = 0.5;
+        const AT_HALF: f32 = 1.6;
+        const WHOLE: f32 = 2.8;
         for (name, ramp, mode) in [
             ("light", &LIGHT, ThemeMode::Light),
             ("dark", &DARK, ThemeMode::Dark),
@@ -909,16 +1049,16 @@ mod tests {
                 ("the reading surface", theme.background),
                 ("the composer", hex(ramp.raised)),
                 ("a dock", hex(ramp.panel)),
-                ("the rail", theme.muted),
+                ("the rail", theme.sidebar),
                 ("a floating surface", theme.popover),
             ] {
-                for (how, ring) in [
-                    ("as a control's ring", theme.ring.alpha(DRAWN)),
-                    ("whole", theme.ring),
+                for (how, ring, floor) in [
+                    ("as a control's ring", theme.ring.alpha(DRAWN), AT_HALF),
+                    ("whole", theme.ring, WHOLE),
                 ] {
                     let ratio = contrast(over(ring, under), under);
                     assert!(
-                        ratio >= 3.0,
+                        ratio >= floor,
                         "{name}: the focus ring {how} on {surface} is {ratio:.2}"
                     );
                 }
@@ -926,8 +1066,9 @@ mod tests {
         }
     }
 
-    /// A filled control rests a step under a chosen row, above a hovered one,
-    /// and lifts to the chosen row's step under the pointer.
+    /// A ghost control's fill sits between a hovered row and a chosen one, and
+    /// a secondary button rests on VS Code's secondary fill and steps off it
+    /// under the pointer.
     #[test]
     fn a_control_fill_sits_between_hover_and_selected() {
         for (name, ramp, mode) in [
@@ -950,13 +1091,18 @@ mod tests {
                 off(fill)
             );
             assert_eq!(
-                theme.button_secondary.to_hex(),
-                fill.to_hex(),
-                "{name}: a secondary button does not rest on the control fill"
+                theme.button_secondary,
+                hex(ramp.button),
+                "{name}: a secondary button does not rest on its own fill"
             );
             assert!(
-                off(theme.button_secondary_hover) > off(theme.button_secondary),
-                "{name}: a secondary button does not lift under the pointer"
+                contrast(theme.button_secondary_hover, theme.button_secondary) >= STEP,
+                "{name}: a secondary button does not change under the pointer"
+            );
+            let ratio = contrast(theme.button_secondary_foreground, theme.button_secondary);
+            assert!(
+                ratio >= AA,
+                "{name}: a secondary button's word is {ratio:.2}"
             );
         }
     }
@@ -970,15 +1116,32 @@ mod tests {
             ("dark", &DARK, ThemeMode::Dark),
         ] {
             let theme = resolve(ramp, mode);
+            let a = ramp.ansi;
             for (hue, got, want) in [
-                ("blue", theme.blue, ramp.accent),
-                ("yellow", theme.yellow, ramp.warning),
-                ("green", theme.green, ramp.success),
-                ("red", theme.red, ramp.danger),
+                ("blue", theme.blue, ramp.accent.to_string()),
+                ("yellow", theme.yellow, ramp.warning.to_string()),
+                ("green", theme.green, ramp.success.to_string()),
+                ("red", theme.red, ramp.danger.to_string()),
+                ("magenta", theme.magenta, ansi::hex(a.magenta)),
+                ("cyan", theme.cyan, ansi::hex(a.cyan)),
+                ("light red", theme.red_light, ansi::hex(a.bright_red)),
+                ("light green", theme.green_light, ansi::hex(a.bright_green)),
+                (
+                    "light yellow",
+                    theme.yellow_light,
+                    ansi::hex(a.bright_yellow),
+                ),
+                ("light blue", theme.blue_light, ansi::hex(a.bright_blue)),
+                (
+                    "light magenta",
+                    theme.magenta_light,
+                    ansi::hex(a.bright_magenta),
+                ),
+                ("light cyan", theme.cyan_light, ansi::hex(a.bright_cyan)),
             ] {
                 assert_eq!(
                     got,
-                    Hsla::parse_hex(want).unwrap(),
+                    Hsla::parse_hex(&want).unwrap(),
                     "{name}: base {hue} is not the ramp's"
                 );
             }
@@ -988,8 +1151,9 @@ mod tests {
     /// The rail is quieter than the conversation, and the marked row is still
     /// the loud thing in it.
     ///
-    /// Both halves matter. The rail's ink is deliberately below prose strength
-    /// — a column of names to aim at, not a body of text — and the fill under a
+    /// Both halves matter. The rail lays its names out in meta ink, below
+    /// prose strength — a column of names to aim at, not a body of text — and
+    /// the fill under a
     /// marked row is the faintest step there is, so what says *which* row is
     /// selected is the ink on it rather than a slab of colour.
     /// That only works while that ink is legible on that fill and clearly
@@ -1010,13 +1174,13 @@ mod tests {
                 "{name}: ink on the rail's marked row is {ratio:.2}, under {AA}"
             );
             assert!(
-                contrast(theme.sidebar_foreground, theme.sidebar)
+                contrast(theme.muted_foreground, theme.sidebar)
                     < contrast(theme.foreground, theme.background),
                 "{name}: the rail's ink is as loud as the conversation's prose"
             );
             assert!(
                 contrast(theme.sidebar_accent_foreground, theme.sidebar)
-                    > contrast(theme.sidebar_foreground, theme.sidebar),
+                    > contrast(theme.muted_foreground, theme.sidebar),
                 "{name}: the rail's marked row is no louder than the rows around it"
             );
         }
@@ -1043,7 +1207,7 @@ mod tests {
             );
             for (label, fill, floor) in [
                 ("the hairline", theme.border, STEP),
-                ("a hovered row", theme.list_hover, ROW),
+                ("a hovered row", theme.list_hover, STEP),
                 ("the selected fill", theme.accent, STEP),
                 ("an off switch's track", theme.switch, 3.0),
                 ("prose", theme.foreground, AA),
@@ -1058,18 +1222,18 @@ mod tests {
         }
     }
 
-    /// The collapse that made the app own a palette in the first place: the
-    /// shipped dark values put hover, well, bubble and hairline on one colour,
-    /// so a quoted command and the user's own message were the same block.
+    /// The library's own dark palette puts hover, the well and the step past
+    /// it on one colour, so a quoted command and the code inside the user's
+    /// message were the same block; the ramp keeps them apart. A hairline is not among them: Dark
+    /// Modern draws its borders in its code block's grey.
     #[test]
     fn the_dark_ramp_keeps_its_surfaces_apart() {
         let theme = resolve(&DARK, ThemeMode::Dark);
         let surfaces = [
             ("the well", theme.muted),
-            ("the bubble", theme.secondary),
+            ("the step past the well", theme.secondary),
             ("hover", theme.list_hover),
             ("the selected fill", theme.accent),
-            ("the hairline", theme.border),
         ];
         for (i, (a_name, a)) in surfaces.iter().enumerate() {
             for (b_name, b) in surfaces.iter().skip(i + 1) {
@@ -1081,9 +1245,9 @@ mod tests {
     /// Status words and marks are small, and most of them land inside a well —
     /// a tool's status word, a diff's added and removed lines, an exit code.
     ///
-    /// The bubble is checked for `danger` alone because that is the only status
-    /// drawn there: an attachment the agent never received is marked inside the
-    /// user's own message. Asserting the other two against a surface they are
+    /// The step past the well is checked for `danger` alone because that is the
+    /// only status drawn there: an attachment the agent never received is
+    /// marked on its caption bar inside the user's own message. Asserting the other two against a surface they are
     /// never drawn on would be inventing a requirement.
     #[test]
     fn status_ink_is_readable_on_every_surface_it_lands_on() {
@@ -1107,14 +1271,14 @@ mod tests {
                 // A removal on a secondary button is its word in the danger
                 // ink, on the button's own fill.
                 if role == "danger" {
-                    on.push(("bubble", theme.secondary));
+                    on.push(("caption bar", theme.secondary));
                     on.push(("secondary button", theme.button_secondary));
                 }
                 for (surface, fill) in on {
                     let ratio = contrast(ink, fill);
                     assert!(
-                        ratio >= AA,
-                        "{name}: {role} ink on the {surface} is {ratio:.2}, under {AA}"
+                        ratio >= HUE_INK,
+                        "{name}: {role} ink on the {surface} is {ratio:.2}, under {HUE_INK}"
                     );
                 }
             }
@@ -1143,8 +1307,8 @@ mod tests {
                 let tint = onehand_plugin_host::tint_over(base, theme.background, theme.foreground);
                 let ratio = contrast(tint.ink, tint.fill);
                 assert!(
-                    ratio >= AA,
-                    "{name}: {hue} ink on its tint is {ratio:.2}, under {AA}"
+                    ratio >= HUE_INK,
+                    "{name}: {hue} ink on its tint is {ratio:.2}, under {HUE_INK}"
                 );
                 assert!(
                     contrast(tint.fill, theme.background) > 1.0,
@@ -1170,10 +1334,12 @@ mod tests {
                     contrast(wash.fill, theme.muted) > 1.0,
                     "{name}: the {side} wash is the well"
                 );
-                for (label, ink) in [("words", theme.foreground), ("sign", wash.ink)] {
+                for (label, ink, floor) in
+                    [("words", theme.foreground, AA), ("sign", wash.ink, HUE_INK)]
+                {
                     let ratio = contrast(ink, wash.fill);
                     assert!(
-                        ratio >= AA,
+                        ratio >= floor,
                         "{name}: an {side} line's {label} are {ratio:.2} on its wash"
                     );
                 }
@@ -1181,8 +1347,8 @@ mod tests {
         }
     }
 
-    /// A neutral label is drawn on the bubble, and on a picked row, whose fill
-    /// is a step past the bubble, on the well instead: either way its fill has
+    /// A neutral label is drawn on the step past the well, and on a picked row,
+    /// whose fill is a step past that, on the well instead: either way its fill has
     /// to show against the row it sits in, or it reads as loose words.
     #[test]
     fn a_neutral_label_shows_on_its_row() {
@@ -1208,7 +1374,7 @@ mod tests {
     }
 
     /// The accent is ink as well as a link: it marks a running session in the
-    /// rail, on the well and on the rail's marked fill. A mark is a graphic,
+    /// rail, on the rail's fill and on its marked one. A mark is a graphic,
     /// so it is held to the 3:1 a control's parts are.
     #[test]
     fn the_accent_reads_as_a_mark_in_the_rail() {
@@ -1221,7 +1387,7 @@ mod tests {
             let theme = resolve(ramp, mode);
             let chosen = chosen_over(theme.sidebar_accent, theme.sidebar_accent_foreground);
             for (surface, fill) in [
-                ("well", theme.muted),
+                ("rail", theme.sidebar),
                 ("hovered row", theme.sidebar_accent),
                 ("chosen row", chosen),
             ] {
@@ -1232,12 +1398,12 @@ mod tests {
                 );
             }
             // The rail's chosen row: its text reads, and it stands off the
-            // well further than a hovered one does.
+            // rail further than a hovered one does.
             let ink = contrast(theme.sidebar_accent_foreground, chosen);
             assert!(ink >= AA, "{name}: ink on the chosen row is {ink:.2}");
             let (hovered, picked) = (
-                contrast(theme.sidebar_accent, theme.muted),
-                contrast(chosen, theme.muted),
+                contrast(theme.sidebar_accent, theme.sidebar),
+                contrast(chosen, theme.sidebar),
             );
             assert!(
                 hovered >= floor,
@@ -1250,7 +1416,7 @@ mod tests {
         }
     }
 
-    /// Everything a rail row writes on the fills it takes: at rest the well,
+    /// Everything a rail row writes on the fills it takes: at rest the rail,
     /// hovered `sidebar_accent`, chosen `rail_chosen`.
     ///
     /// A badge sinks on the inset step, which has to stand off all three or it
@@ -1270,7 +1436,7 @@ mod tests {
             let chosen = chosen_over(theme.sidebar_accent, theme.sidebar_accent_foreground);
             let inset = Hsla::parse_hex(ramp.inset).unwrap();
             let fills = [
-                ("the well", theme.muted),
+                ("the rail", theme.sidebar),
                 ("a hovered row", theme.sidebar_accent),
                 ("the chosen row", chosen),
             ];
@@ -1286,8 +1452,8 @@ mod tests {
                 for (state, ink) in [("warning", warning), ("danger", danger)] {
                     let ratio = contrast(ink, fill);
                     assert!(
-                        ratio >= AA,
-                        "{name}: a {state} word on {row} is {ratio:.2}, under {AA}"
+                        ratio >= HUE_INK,
+                        "{name}: a {state} word on {row} is {ratio:.2}, under {HUE_INK}"
                     );
                 }
             }
@@ -1300,7 +1466,7 @@ mod tests {
             }
             let on_chip = contrast(warning, theme.secondary_active);
             assert!(
-                on_chip >= AA,
+                on_chip >= HUE_INK,
                 "{name}: the attention chip's words while on are {on_chip:.2}"
             );
 
@@ -1408,7 +1574,7 @@ mod tests {
             let alpha = onehand_plugin_host::tokens::lift_alpha(mode == ThemeMode::Dark);
             let ratio = contrast(under(theme.popover, alpha), theme.popover);
             assert!(
-                ratio >= ROW,
+                ratio >= SHADOW,
                 "{name}: the lift is {ratio:.2} against the card it falls on, which is not a shadow"
             );
 
@@ -1417,7 +1583,7 @@ mod tests {
             // message.
             let shipped = contrast(under(theme.popover, 0.1), theme.popover);
             assert!(
-                mode == ThemeMode::Light || shipped < ROW,
+                mode == ThemeMode::Light || shipped < SHADOW,
                 "dark: the component ladder's shadow is visible after all, so this is not needed"
             );
         }
@@ -1441,12 +1607,11 @@ mod tests {
                     "{name}: the card is {ratio:.2} from the page"
                 );
             }
-            // A notch under a surface step: the card's lift draws the edge a
-            // fill would otherwise have to, so the fill only has to differ.
-            const CARD_STEP: f32 = 1.1;
+            // The card's lift draws the edge a fill would otherwise have to, so
+            // the fill only has to differ.
             let ratio = contrast(raised, theme.muted);
             assert!(
-                ratio >= CARD_STEP,
+                ratio >= STEP,
                 "{name}: the card is {ratio:.2} from the well"
             );
             for (label, ink) in [
@@ -1459,25 +1624,21 @@ mod tests {
         }
     }
 
-    /// An edgeless field in the well has its fill alone to be found by, so the
-    /// fill has to differ from the well it is sunk into, and what is written in
+    /// An edgeless field in the rail has its fill alone to be found by, so the
+    /// fill has to differ from the rail it is sunk into, and what is written in
     /// it, the typed words and the placeholder in meta ink, has to read.
     #[test]
-    fn an_inset_field_stands_off_the_well() {
+    fn an_inset_field_stands_off_the_rail() {
         for (name, ramp, mode) in [
             ("light", &LIGHT, ThemeMode::Light),
             ("dark", &DARK, ThemeMode::Dark),
         ] {
             let theme = resolve(ramp, mode);
             let inset = Hsla::parse_hex(ramp.inset).unwrap();
-            // A notch under a surface step, as the composer card's: the field
-            // is small and has a mark and words in it, so the fill only has
-            // to differ.
-            const FIELD_STEP: f32 = 1.1;
-            let ratio = contrast(inset, theme.muted);
+            let ratio = contrast(inset, theme.sidebar);
             assert!(
-                ratio >= FIELD_STEP,
-                "{name}: the inset field is {ratio:.2} from the well"
+                ratio >= STEP,
+                "{name}: the inset field is {ratio:.2} from the rail"
             );
             for (label, ink) in [
                 ("prose", theme.foreground),
@@ -1532,7 +1693,7 @@ mod tests {
             let (edge, soft) = composer_shades(mode == ThemeMode::Dark);
             let ratio = contrast(over(edge, theme.background), theme.background);
             assert!(
-                ratio >= ROW,
+                ratio >= SHADOW,
                 "{name}: the card's edge is {ratio:.2} on the page"
             );
             assert!(

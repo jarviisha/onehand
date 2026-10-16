@@ -6,6 +6,8 @@
 // a working feature.
 #![warn(unreachable_pub)]
 
+pub mod ansi;
+
 use gpui::{App, AppContext as _, Entity, SharedString, Window};
 use gpui_component::ActiveTheme as _;
 use gpui_terminal::{ColorPalette, TerminalConfig, TerminalView};
@@ -381,12 +383,9 @@ pub fn spawn_pty(
     })
 }
 
-/// Build a terminal palette from the same active theme as the surrounding app.
-///
-/// ANSI colours remain ANSI colours, but their normal/bright variants come from
-/// the theme's adaptive base scales. Default text and cursor use their exact
-/// semantic roles, which is what removes the vendored terminal's fixed
-/// light-on-charcoal palette from light mode.
+/// Build a terminal palette: VS Code's sixteen ANSI colours for the mode the
+/// app is in ([`ansi`]), with the app's own ink as the default text and its
+/// caret as the cursor.
 ///
 /// **`surface` is passed in and not read from the theme**, because it is a fact
 /// about the panel rather than about the palette: a grid fills every cell it has
@@ -395,11 +394,6 @@ pub fn spawn_pty(
 /// rectangle of a different shade. Both callers hand it whatever their own card
 /// is drawn in, through one function so the two cannot answer differently; the
 /// parameter is there so neither has to guess what the other did.
-///
-/// It is the *black* half of the ANSI pair in a dark palette, too, and
-/// deliberately still is: a program asking for black means "the background",
-/// and answering with the reading surface would put a dark plate behind exactly
-/// the runs that asked to disappear.
 pub fn terminal_palette(surface: gpui::Hsla, cx: &App) -> ColorPalette {
     fn rgb(color: gpui::Hsla) -> (u8, u8, u8) {
         let color = color.to_rgb();
@@ -407,34 +401,34 @@ pub fn terminal_palette(surface: gpui::Hsla, cx: &App) -> ColorPalette {
         (c(color.r), c(color.g), c(color.b))
     }
     let t = cx.theme();
+    let a = ansi::of(t.mode.is_dark());
     let background = rgb(surface);
     let foreground = rgb(t.foreground);
-    let muted = rgb(t.muted_foreground);
-    let border = rgb(t.border);
-    let black = if t.mode.is_dark() {
-        background
-    } else {
-        foreground
-    };
-    let white = if t.mode.is_dark() { muted } else { border };
-    let bright_white = if t.mode.is_dark() {
-        foreground
-    } else {
-        background
-    };
-    let red = rgb(t.red);
-    let red_b = rgb(t.red_light);
-    let green = rgb(t.green);
-    let green_b = rgb(t.green_light);
-    let yellow = rgb(t.yellow);
-    let yellow_b = rgb(t.yellow_light);
-    let blue = rgb(t.blue);
-    let blue_b = rgb(t.blue_light);
-    let magenta = rgb(t.magenta);
-    let magenta_b = rgb(t.magenta_light);
-    let cyan = rgb(t.cyan);
-    let cyan_b = rgb(t.cyan_light);
     let cursor = rgb(t.caret);
+    let [black, red, green, yellow, blue, magenta, cyan, white] = [
+        a.black, a.red, a.green, a.yellow, a.blue, a.magenta, a.cyan, a.white,
+    ]
+    .map(ansi::rgb);
+    let [
+        b_black,
+        b_red,
+        b_green,
+        b_yellow,
+        b_blue,
+        b_magenta,
+        b_cyan,
+        b_white,
+    ] = [
+        a.bright_black,
+        a.bright_red,
+        a.bright_green,
+        a.bright_yellow,
+        a.bright_blue,
+        a.bright_magenta,
+        a.bright_cyan,
+        a.bright_white,
+    ]
+    .map(ansi::rgb);
     ColorPalette::builder()
         .background(background.0, background.1, background.2)
         .foreground(foreground.0, foreground.1, foreground.2)
@@ -447,14 +441,14 @@ pub fn terminal_palette(surface: gpui::Hsla, cx: &App) -> ColorPalette {
         .magenta(magenta.0, magenta.1, magenta.2)
         .cyan(cyan.0, cyan.1, cyan.2)
         .white(white.0, white.1, white.2)
-        .bright_black(muted.0, muted.1, muted.2)
-        .bright_red(red_b.0, red_b.1, red_b.2)
-        .bright_green(green_b.0, green_b.1, green_b.2)
-        .bright_yellow(yellow_b.0, yellow_b.1, yellow_b.2)
-        .bright_blue(blue_b.0, blue_b.1, blue_b.2)
-        .bright_magenta(magenta_b.0, magenta_b.1, magenta_b.2)
-        .bright_cyan(cyan_b.0, cyan_b.1, cyan_b.2)
-        .bright_white(bright_white.0, bright_white.1, bright_white.2)
+        .bright_black(b_black.0, b_black.1, b_black.2)
+        .bright_red(b_red.0, b_red.1, b_red.2)
+        .bright_green(b_green.0, b_green.1, b_green.2)
+        .bright_yellow(b_yellow.0, b_yellow.1, b_yellow.2)
+        .bright_blue(b_blue.0, b_blue.1, b_blue.2)
+        .bright_magenta(b_magenta.0, b_magenta.1, b_magenta.2)
+        .bright_cyan(b_cyan.0, b_cyan.1, b_cyan.2)
+        .bright_white(b_white.0, b_white.1, b_white.2)
         .build()
 }
 
