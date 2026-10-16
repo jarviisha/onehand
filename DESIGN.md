@@ -15,7 +15,7 @@ put right or recorded in `docs/known-gaps.md` with its reason within the change 
 
 **The palette is VS Code's Dark Modern and Light Modern** (*Colour and state*), installed over
 gpui-component's theme at boot (`crate::theme::install`, with its contrast tests). Every colour,
-radius and size is a token read at the call site (see `.claude/skills/design-tokens/reference.md`);
+radius and size is a token read at the call site (see `.claude/skills/ui/tokens.md`);
 a hex literal outside the ramp is a bug even when it looks right, as no theme switch reaches it.
 
 ## Principles

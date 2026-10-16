@@ -94,7 +94,7 @@ and leading, rather than clipping to that height.
 ### Control sizes
 
 A size names a role (`DESIGN.md`, *Components*). Each role, the component that serves it, and the
-size it takes; `design-tokens/reference.md` holds what each size measures in each component.
+size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in each component.
 
 | Role | Component | Size |
 |---|---|---|

@@ -18,7 +18,7 @@ the rule, not just the question. For prose-only work, use the contract path in `
    container*, *Separation*)?
 4. Every state the component can be in drawn, the combined ones (selected and hovered, selected
    and focused) kept apart, and a transition (a page switch, a back link, a dock hiding) keeping
-   the state the contract keeps (the `ui-components` skill, *States*)?
+   the state the contract keeps (`SKILL.md`, *States*)?
 5. Every control at the size its role takes (`docs/ui-patterns.md`, *Control sizes*)?
 6. Every control drawn by the builder `catalog.md` lists for it, every button's variant named by
    its role, and at most one primary in a view (`DESIGN.md`, *Components*, *Colour and state*)?
@@ -43,6 +43,6 @@ the rule, not just the question. For prose-only work, use the contract path in `
     `CONTEXT.md`)?
 16. The documents carried in the same change, a treatment that differs written as a rule of its
     role or recorded in `docs/known-gaps.md`, and no file past about 800 lines of code
-    (`SKILL.md`, *Implementation changes*; `CLAUDE.md`, *Rules*)?
+    (`SKILL.md`, *Finishing*; `CLAUDE.md`, *Rules*)?
 17. The user's visual checks named: both themes, zoom, narrow and wide containers, long text and
     the states that apply, with what was observed kept apart from what is pending?
