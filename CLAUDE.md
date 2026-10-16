@@ -66,7 +66,7 @@ Availability or installation does not authorize a skill's side effects.
 | `ui-components` | Any control, row, label, box, menu or dialog: what already draws it, and the states it needs. |
 | `layout-patterns` | Any screen, panel or dialog: which pattern it follows, and how it splits or stacks. |
 | `ux-patterns` | Any waiting, empty, failing or refusing state, toast, removal, key, focus or on-screen word. |
-| `ui-review` | Before finishing any visible change: the checklist, the scan of added lines, and the checks. |
+| `ui-review` | Before finishing any visible change: the checklist and the checks. |
 | Matt Pocock review, debugging, domain modeling | Use for the requested concern; keep the existing glossary and document ownership. Tracker/triage workflows publish to this repository's GitHub issues: a spec gets `ready-for-agent`, never `auto` (the trigger label: an unattended run would claim it). A proposal under `docs/proposals/` keeps its own table of which step has a spec. |
 | Matt Pocock `setup-pre-commit`, TypeScript setup | Do not apply npm/Husky/Prettier or TypeScript defaults to this Rust workspace. Use the Makefile and Cargo checks. |
 | `ponytail` | Simplify within the requested behaviour. Preserve the module seams, guards, rendering bounds and deliberate exceptions; fewer files is not a reason to bypass them. |

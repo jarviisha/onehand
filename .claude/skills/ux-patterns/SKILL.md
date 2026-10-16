@@ -21,7 +21,7 @@ Check loading-to-content and empty-to-content transitions, not just their final 
 // Content on its way: one meta line where it will appear
 div().text_xs().text_color(cx.theme().muted_foreground).child("Reading the workflows…")
 // An action in flight, on the button that started it
-action("run-check").secondary().small().label("Run check").loading(running)
+action("run-check").secondary().xsmall().label("Run check").loading(running)
     .refuses(running.then_some("The check is running"))
 ```
 

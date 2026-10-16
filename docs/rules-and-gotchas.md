@@ -92,19 +92,21 @@ Review the uncovered part when changing the relevant area:
 | Exhaustive handling of our events | Finds `matches!` naming discovered `pub enum *Event` types in UI sources | Partial `if let`, wildcard match arms, aliases and other enum declarations |
 | Code does not cite documents | Checks `//` lines against document names and citation patterns | Block comments, runtime strings and citations outside those patterns |
 | Fields have readers | Scans field-name uses; comments in the guard explain exceptions | Collection mutation counted as a read and unrelated fields sharing a name |
-| Registry icons and button wrapper | Finds listed glyph literals and direct `Button::new(` spelling | Other glyphs, aliases and differently formatted construction |
+| Registry icons and button wrapper | Finds listed glyph literals and direct `Button::new(` spelling | Other glyphs, aliases and differently formatted construction; a button refusing through `.disabled(`, which a menu item and a switch take rightly, rather than `.refuses(` |
 | Text fields through `text_input`, `search_input` and `text_area` | Finds direct `Input::new(` and `Textarea::new(` spelling | Aliases and differently formatted construction |
 | Ghost buttons through `quiet` | Finds `.ghost()` on any line | A ghost variant reached through `with_variant` |
+| No button draws an edge | Finds `.outline()` in UI sources | A button left on the library's default variant, which draws an edge too, and an outline reached through `with_variant` |
 | An icon alone rests muted | Reads the whole chain round each `.quiet(cx)`, from its `action(` to its press handler or the statement's end, and finds one with an `.icon(` and no `.label(` or `.child(` | A chain whose words come from a variable rather than `.label(` or `.child(`, which reads as having words; an `.icon(` set after the press handler; a chain started by a name ending in `action(` (`tooltip_with_action(`, `on_action(`). A button not built through `action` is the button-wrapper guard's to catch |
 | English documents | Detects selected Vietnamese diacritics | Other languages and quoted data |
 | Named sizes | Finds a non-zero number written as the first argument of `rems(` or `px(` outside a `const` | Arithmetic on a number (`x * 0.5`) and sizes passed through other helpers |
 | Colours from the palette | Finds a `"#rrggbb"` string or a call to `rgb(`, `rgba(` or `hsla(` outside the palette file and the terminal's grid | Colours built from numbers some other way, and hex written without quotes |
+| Accent is a fill, not an ink | Finds `text_color(` and `border_color(` whose argument, up to the parenthesis closing the call, ends in `.accent` | `accent` reached through a variable or a helper, or chosen inside the call (`text_color(if on { t.accent } else { … })`), a call split across lines, and other ink setters (an icon's or a spinner's `.color(`) |
 | Spacing on the steps | Finds gpui's spacing methods with a step off the scale (`_2p5`, `_5`, `_10`…) | Lengths handed to `p(`, `gap(` and the like, which the named-size rule sees only when written as a number |
 | Shadows | Finds gpui's own shadow steps (`shadow_md()`…) | A `BoxShadow` built by hand |
-| Type on the scale | Finds `text_2xl` and above, bold and heavier, and `text_size(rems(` with a number | A size or weight reached through a named constant or a style refinement |
+| Type on the scale | Finds `text_2xl` and above, bold and heavier, light and lighter, and `text_size(rems(` with a number | A size or weight reached through a named constant or a style refinement |
 | Nothing animates | Finds `with_animation(`, `Animation::new(` and the library's sliding `TabBar::new(` | Motion through a library component other than a `Spinner` |
 | Nothing see-through | Finds `.opacity(`, `.fade_out(` and an `.alpha(` other than `alpha(0.)` and `alpha(1.)` outside the palette's shadows | An alpha written into a colour some other way |
-| One corner | Finds `radius_lg` and `radius_tokens().sm` in UI sources | A corner written as a number in a `const`, and `ButtonRounded` other than `Medium` |
+| One corner | Finds `radius_lg`, `radius_tokens().sm` and gpui's corner steps (`rounded_xs()` to `rounded_3xl()`) in UI sources | A corner written as a number in a `const`, gpui's per-side steps (`rounded_t_md()`…), `ButtonRounded` other than `Medium`, and `rounded_full` on anything but a badge, a dot or a status mark |
 | Theme, bounded rendering, module size and UI contract | Dedicated tests cover individual behaviours | No general guard proves these rules or synchronizes documentation with code |
 
 Keep the checks that catch real regressions. Add a targeted check when a concrete failure

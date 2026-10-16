@@ -1276,9 +1276,26 @@ mod tests {
         );
     }
 
+    /// The corners written on one line other than the theme's `radius`: the
+    /// theme's other two, and gpui's own steps.
+    fn off_theme_corners(line: &str) -> Vec<String> {
+        let mut found: Vec<String> = ["radius_lg", "radius_tokens().sm"]
+            .iter()
+            .filter(|name| line.contains(*name))
+            .map(|name| name.to_string())
+            .collect();
+        let steps: Vec<String> = ["xs", "sm", "md", "lg", "xl", "2xl", "3xl"]
+            .iter()
+            .map(|step| format!("rounded_{step}"))
+            .collect();
+        found.extend(named_calls(line, &steps));
+        found
+    }
+
     /// One corner: the theme's `radius`. `radius_lg` is set to the same and
     /// `radius_tokens().sm` is half of it, so writing either is a second
-    /// corner by another name.
+    /// corner by another name; gpui's own steps (`rounded_md()`…) are corners
+    /// the theme never sets.
     #[test]
     fn one_corner() {
         // The palette is where the theme's two corners are set to one.
@@ -1288,14 +1305,68 @@ mod tests {
             .collect();
         forbid(
             sources,
-            |line| {
-                ["radius_lg", "radius_tokens().sm"]
-                    .iter()
-                    .filter(|name| line.contains(*name))
-                    .map(|name| name.to_string())
-                    .collect()
-            },
+            off_theme_corners,
             "a second corner; every box takes `radius`, a badge `rounded_full`",
+        );
+    }
+
+    /// The library's `.outline()`, which edges the control it is called on.
+    fn outlines(line: &str) -> Vec<String> {
+        named_calls(line, &["outline".to_string()])
+    }
+
+    /// No button draws an edge. A field is the one control its edge marks, so
+    /// an outlined button reads as a place to type; a button says its weight
+    /// by its fill, or by having none.
+    #[test]
+    fn no_button_draws_an_edge() {
+        forbid(
+            ui_sources(),
+            outlines,
+            "an outlined control; no button draws an edge -- name its variant by role: \
+             primary, secondary, `.quiet(cx)`, danger or `choice`",
+        );
+    }
+
+    /// The `text_color(` and `border_color(` calls on one line whose argument,
+    /// up to the parenthesis closing the call, is a theme's `accent`.
+    fn accent_inks(line: &str) -> Vec<String> {
+        let mut found = Vec::new();
+        for call in ["text_color(", "border_color("] {
+            for (at, _) in line.match_indices(call) {
+                let arg = &line[at + call.len()..];
+                let mut depth = 0;
+                let mut end = arg.len();
+                for (i, c) in arg.char_indices() {
+                    match c {
+                        '(' => depth += 1,
+                        ')' if depth == 0 => {
+                            end = i;
+                            break;
+                        }
+                        ')' => depth -= 1,
+                        _ => {}
+                    }
+                }
+                if arg[..end].trim_end().ends_with(".accent") {
+                    found.push(call.trim_end_matches('(').to_string());
+                }
+            }
+        }
+        found
+    }
+
+    /// `accent` is the selected item's fill: a deep blue on the dark palette
+    /// and a pale grey on the light one, so as text or an edge it all but
+    /// vanishes into the surfaces round it. Text on it takes
+    /// `accent_foreground`, and the accent hue is `link`.
+    #[test]
+    fn accent_is_a_fill_not_an_ink() {
+        forbid(
+            ui_sources(),
+            accent_inks,
+            "`accent` as an ink; it is the selected fill -- text on it takes \
+             `accent_foreground`, and the accent hue is `link`",
         );
     }
 
@@ -1367,11 +1438,12 @@ mod tests {
     }
 
     /// Text sized or weighted off the scale: `text_2xl` and above, bold and
-    /// heavier, and a size written as a number.
+    /// heavier, light and lighter, and a size written as a number.
     fn off_scale_type(line: &str) -> Vec<String> {
         let names: Vec<String> = ["text_2xl", "text_3xl", "text_4xl", "text_5xl", "text_6xl"]
             .iter()
             .chain(["font_bold", "font_extrabold", "font_black"].iter())
+            .chain(["font_light", "font_extralight", "font_thin"].iter())
             .map(|name| name.to_string())
             .collect();
         let mut found = named_calls(line, &names);
@@ -1388,15 +1460,16 @@ mod tests {
     }
 
     /// Type stays on the scale: the library's sizes up to `text_xl`, and
-    /// semibold at the heaviest. A step above is a second page title on a
-    /// screen that has one, and a number is a size the zoom and the next
-    /// reader cannot place.
+    /// weights from regular to semibold. A step above is a second page title
+    /// on a screen that has one, a weight under regular thins text past the
+    /// contrast its ink was chosen for, and a number is a size the zoom and
+    /// the next reader cannot place.
     #[test]
     fn type_stays_on_the_scale() {
         forbid(
             ui_sources(),
             off_scale_type,
-            "type off the scale; take text_xs to text_xl and at most semibold, or a named size",
+            "type off the scale; take text_xs to text_xl, regular to semibold, or a named size",
         );
     }
 
@@ -1429,7 +1502,34 @@ mod tests {
             off_scale_type(".text_size(rems(0.7))"),
             vec!["text_size(rems("]
         );
+        assert_eq!(off_scale_type(".font_light()"), vec!["font_light"]);
         assert!(off_scale_type(".text_size(CODE_TEXT).font_semibold()").is_empty());
         assert!(off_scale_type(".text_size(rems(TEXT.0))").is_empty());
+
+        assert_eq!(off_theme_corners(".rounded_md()"), vec!["rounded_md"]);
+        assert_eq!(
+            off_theme_corners(".rounded(cx.theme().radius_lg)"),
+            vec!["radius_lg"]
+        );
+        assert!(off_theme_corners(".rounded(cx.theme().radius)").is_empty());
+        assert!(off_theme_corners(".rounded_full()").is_empty());
+
+        assert_eq!(
+            outlines(r#"action("x").outline().xsmall()"#),
+            vec!["outline"]
+        );
+        assert!(outlines("fn the_composer_lift_outlines_the_card_on_both_palettes() {").is_empty());
+
+        assert_eq!(
+            accent_inks(".text_color(cx.theme().accent)"),
+            vec!["text_color"]
+        );
+        assert_eq!(
+            accent_inks(".border_color(theme.accent)"),
+            vec!["border_color"]
+        );
+        assert!(accent_inks("row.bg(theme.accent).text_color(theme.accent_foreground)").is_empty());
+        assert!(accent_inks(".text_color(cx.theme().sidebar_accent_foreground)").is_empty());
+        assert!(accent_inks(".text_color(accent(cx))").is_empty());
     }
 }
