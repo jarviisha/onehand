@@ -26,9 +26,10 @@ its values describe the code, not a promise that every caller uses them correctl
 5. Add a token only for a missing role. A new name for an existing value does not justify a new
    visual treatment. If a shared change affects other callers, include them in the review.
 
-For implementation changes, run the token scan and source guards through `ui-review`. They catch
-literal values, not incorrect role assignments. Report which equivalent components were compared;
-passing a scan alone is not completion. Documentation-only work follows that skill's document path.
+For implementation changes, run the source guards through `ui-review`. They catch literal
+values, not incorrect role assignments. Report which equivalent components were compared;
+passing the guards alone is not completion. Documentation-only work follows that skill's
+document path.
 
 ## Right and wrong
 
@@ -104,7 +105,3 @@ Tag::custom(fill, ink, fill).small().rounded_full().py_1().child(text)
   Use the user's authorized scope; when it covers the system, update the owning contract and
   implementation together. Otherwise use an existing role or raise the specific unresolved decision.
 - Add the token to reference.md in the same change.
-
-A file written before the rules names a number when a change touches its line:
-`every_length_has_a_name` in `crates/app/src/guards.rs` lists those files with counts that only
-go down.

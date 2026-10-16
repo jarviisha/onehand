@@ -14,7 +14,7 @@ Each section names the document owning its rules; read it before answering.
 3. Every spacing on the steps `0p5`, `1`, `1p5`, `2`, `3`, `4`, `6`, `8`?
 4. Every text size from the six roles, weights only `medium` and `semibold`, line heights only
    gpui's, `LEADING` and `LEADING_TIGHT`?
-5. Every corner the one `radius`, a badge and a dot `rounded_full`, with
+5. Every corner the one `radius`, `rounded_full` only on a badge, a dot or a status mark, with
    no `radius_lg` or `radius_tokens().sm` written?
 6. Shadows only on what floats, through `lift` (the composer through its own)?
 7. A new colour in both palettes, its contrast asserted in `theme.rs`'s tests?
@@ -27,7 +27,7 @@ Each section names the document owning its rules; read it before answering.
 10. Every button through `action` and with a variant by role (`primary`, `secondary`, ghost as
     `.quiet(cx)`, `danger`, or `choice` in a pick-one row); no button edged (never the library's
     default nor `outline()`); every field through `text_input`, `search_input` or `text_area`; every
-    refusal through `.refuses(why)`, its reason the tooltip?
+    refusing button through `.refuses(why)`, never `.disabled(`, its reason the tooltip?
 11. Every state the component can be in: hover, selected or open, keyboard focus, refusing, loading?
 12. Every control at the size its role takes: `.tall()` in a list page's head; `.short()` in a
     form, a page's filter bar and a dialog's footer; `.xsmall()` in a column page's head, a strip, a box, for a row's actions and for a
@@ -87,7 +87,7 @@ Each section names the document owning its rules; read it before answering.
 37. Required user visual checks named for both themes, zoom, narrow containers, long text and
     relevant empty/loading/failure states, with observed results separated from pending checks?
 
-## Calm: `DESIGN.md` (*Principles*, *Type, space and shape*, *Icons*), `docs/ui-patterns.md` (*Hierarchy*, *Separation*, *Page heads and filters*, *Immediate feedback*, *Motion*)
+## Calm: `DESIGN.md` (*Principles*, *Type, space and shape*, *Icons*), `docs/ui-patterns.md` (*Hierarchy*, *Separation*, *Filter bars*, *Immediate feedback*, *Motion*)
 
 38. Text on a neutral surface in one of the three neutral inks by its role, text on a fill in
     that fill's paired ink, a state, a link and code in their semantic inks, and no alpha on
