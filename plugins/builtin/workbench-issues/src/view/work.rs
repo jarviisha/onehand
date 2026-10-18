@@ -151,9 +151,15 @@ pub(super) fn actions(
         .take(SECONDARY_SHOWN)
         .collect();
     secondary.retain(|act| !shown.contains(act));
-    let primary = next
-        .primary
-        .map(|act| act_button(("issue-primary", 0), act, number, doing, cx).primary());
+    // In the Workbench tab `+` is the one primary, so the issue's actions
+    // each step down a variant there: its first secondary, the other a ghost.
+    let primary = next.primary.map(|act| {
+        let button = act_button(("issue-primary", 0), act, number, doing, cx);
+        match doing.dock {
+            true => button.secondary(),
+            false => button.primary(),
+        }
+    });
     div()
         .h_flex()
         .flex_none()
@@ -167,11 +173,13 @@ pub(super) fn actions(
                 .justify_end()
                 .children(primary),
         )
-        .children(
-            shown.into_iter().enumerate().map(|(i, act)| {
-                act_button(("issue-secondary", i), act, number, doing, cx).secondary()
-            }),
-        )
+        .children(shown.into_iter().enumerate().map(|(i, act)| {
+            let button = act_button(("issue-secondary", i), act, number, doing, cx);
+            match doing.dock {
+                true => button.quiet(cx),
+                false => button.secondary(),
+            }
+        }))
         .child(more_menu(root, issue, doing, secondary, publish_to, cx))
         .into_any_element()
 }

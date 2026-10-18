@@ -1,9 +1,14 @@
-//! The Workbench's Issues tab at a dock's width: the search over both halves,
+//! The Workbench's Issues tab at a dock's width: the filter bar over both halves,
 //! then the list beside the issue, or one of the two at a time where there is
-//! no room for both.
+//! no room for both. ↑ and ↓ step the list as on the Issues page, and Esc
+//! closes the form or, one at a time, goes back to the list.
 
 use super::IssuesView;
-use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, Window, div};
+use crate::{IssuesClose, IssuesDown, IssuesUp};
+use gpui::{
+    AnyElement, App, Context, InteractiveElement as _, IntoElement, ParentElement, Styled, Window,
+    div,
+};
 use gpui_component::{ActiveTheme, StyledExt, h_resizable, resizable_panel};
 use onehand_core::issues::Issues;
 use onehand_plugin_host::{ListWidths, back_link, list_detail};
@@ -28,7 +33,7 @@ impl IssuesView {
             self.width.get(),
             window.rem_size(),
         );
-        let search = self.search_bar(window, cx);
+        let search = self.search_bar(issues, window, cx);
         // `flex` and not `v_flex` around a half: each half is a column that
         // takes the height it is given, which a row hands down whole.
         let half = |element: AnyElement| div().flex_1().min_h_0().flex().child(element);
@@ -62,12 +67,12 @@ impl IssuesView {
                     .child(resizable_panel().child(detail)),
             )
         } else if self.detail && self.has_detail(root, issues) {
-            let back = back_link("issues-back", "Issues", cx).on_click(cx.listener(
-                |view: &mut Self, _, _, cx| {
+            let back = back_link("issues-back", "Issues", cx)
+                .tooltip_with_action("Back to the list", &IssuesClose, Some("Issues"))
+                .on_click(cx.listener(|view: &mut Self, _, _, cx| {
                     view.detail = false;
                     cx.notify();
-                },
-            ));
+                }));
             let detail = self.detail(root, issues, None, window, cx);
             div()
                 .flex_1()
@@ -79,12 +84,71 @@ impl IssuesView {
             half(self.list(issues, window, cx))
         };
         div()
+            .key_context("Issues")
+            .track_focus(&self.tab_focus)
+            .on_action(cx.listener(|view, _: &IssuesUp, window, cx| view.tab_step(-1, window, cx)))
+            .on_action(cx.listener(|view, _: &IssuesDown, window, cx| view.tab_step(1, window, cx)))
+            .on_action(cx.listener(|view, _: &IssuesClose, window, cx| view.tab_close(window, cx)))
             .flex_1()
             .min_h_0()
             .v_flex()
             .child(search)
             .child(halves)
             .into_any_element()
+    }
+
+    /// Whether the tab is wide enough for the list beside the issue.
+    fn side_by_side(&self, window: &Window, cx: &App) -> bool {
+        list_detail(
+            self.split.read(cx),
+            &LIST,
+            self.width.get(),
+            window.rem_size(),
+        )
+        .side_by_side
+    }
+
+    /// Pick the row `step` away from the one picked. Where the list shows
+    /// alone, the first press opens the row picked rather than moving, as a
+    /// closed issue on the page does.
+    fn tab_step(&mut self, step: isize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(root) = self.root.clone() else {
+            return;
+        };
+        let Some(issues) = self.issues_of(&root, cx) else {
+            return;
+        };
+        let rows = self.rows_shown(issues, cx);
+        let at = self
+            .roots
+            .get(&root)
+            .and_then(|state| state.selected)
+            .and_then(|number| rows.iter().position(|row| *row == number));
+        let open = self.detail || self.side_by_side(window, cx);
+        let next = match at {
+            Some(at) if !open => Some(at),
+            Some(at) => at.checked_add_signed(step),
+            None => Some(0),
+        };
+        if let Some(&number) = next.and_then(|next| rows.get(next)) {
+            self.select(number, window, cx);
+        }
+    }
+
+    /// Close the form, else, where the issue shows in place of the list, go
+    /// back to the list. With neither, Esc is left to whatever holds the tab.
+    fn tab_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.state_mut().is_some_and(|state| state.form.is_some()) {
+            self.unless_drafting(window, cx, |view, _, cx| view.cancel_form(cx));
+        } else if self.detail && !self.side_by_side(window, cx) {
+            self.detail = false;
+            cx.notify();
+        } else {
+            cx.propagate();
+            return;
+        }
+        // What held the keyboard may be gone with what closed.
+        window.focus(&self.tab_focus, cx);
     }
 
     /// Whether there is an issue or a form to show in place of the list.

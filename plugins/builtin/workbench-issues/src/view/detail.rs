@@ -66,6 +66,8 @@ pub(super) struct Doing<'a> {
     pub(super) project: SharedString,
     /// Which of the issue's sections shows under its head.
     pub(super) tab: IssueTab,
+    /// Drawn in the Workbench tab, whose `+` holds its one primary.
+    pub(super) dock: bool,
     /// On the Issues page, where the issue stands in the list and the way to
     /// close it, at the end of the trail.
     pub(super) nav: Option<AnyElement>,

@@ -314,7 +314,7 @@ impl IssuesView {
         let panel = (open && self.has_page_issue()).then(|| self.page_panel(window, cx));
         div()
             .id("issues-page")
-            .key_context("IssuesPage")
+            .key_context("Issues")
             .track_focus(&focus)
             .on_action(cx.listener(|view, _: &IssuesUp, window, cx| view.page_step(-1, window, cx)))
             .on_action(

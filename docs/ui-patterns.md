@@ -232,7 +232,9 @@ The list takes the pane's whole width, a whole list scanned at a glance:
 
 Whatever filters its content draws its filters in one order. On a page they stand under its head
 at `.short()`, as below. In a dock, which is dense chrome with no head, the bar leads with its
-search and takes the same order, all at `.short()` (the Plugins mode's marketplaces as choices).
+search and takes the same order, all at `.short()` (the Plugins mode's marketplaces as choices). A
+dock's bar that stands over a list and its detail both (the Issues tab) leaves the choices out:
+they split the list, so they stand over its rows, under the bar's line.
 
 - where the content splits into a few states that each count (*Open*, *Closed*), those first,
   each a `.short()` `choice`, the shown one filled, its count a slim `badge` in the hue of that

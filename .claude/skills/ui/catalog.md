@@ -80,7 +80,7 @@ How a key and a focus are wired (the rules: UI patterns, *Keys and focus*):
 - A new command goes into `COMMANDS` in `crates/app/src/keymap.rs` (id, label, default keys,
   action, context), never into an `on_key_down` arm.
 - A window command's context starts `Shell`, and its key has a modifier. A region's starts with
-  its own context (`Rail`, `IssuesPage`, `TasksPage`, `WorkflowsPage`, `PluginList`,
+  its own context (`Rail`, `Issues`, `TasksPage`, `WorkflowsPage`, `PluginList`,
   `QuestionCard`, `PermissionCard`): a key without a modifier adds `&& !Input`, and Escape
   `&& !Dialog && !Input`. One key serves one command per region; `validate` refuses the rest.
 - A control bound to one shows its key through the library's lookup, so a rebound key shows:

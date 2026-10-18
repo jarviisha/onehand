@@ -5,8 +5,10 @@ use super::{IssuesView, LIST_CAP};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, AppContext as _, ClickEvent, Context, Entity, InteractiveElement as _,
-    IntoElement, ParentElement, SharedString, StatefulInteractiveElement as _, Styled, Window, div,
+    IntoElement, ParentElement, Rems, SharedString, StatefulInteractiveElement as _, Styled,
+    Window, div, rems,
 };
+use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{InputEvent, InputState};
 use gpui_component::tag::Tag;
 use gpui_component::tooltip::Tooltip;
@@ -16,14 +18,18 @@ use onehand_plugin_host::Quiet as _;
 use onehand_plugin_host::Short as _;
 use onehand_plugin_host::search_input;
 use onehand_plugin_host::{
-    ControlSize, Tint, action, menu_below, menu_item, middle_ink, picker, row as row_surface,
-    status_ink, switch,
+    ControlSize, Tint, action, faint_rule, menu_below, menu_item, middle_ink, picker,
+    row as row_surface, status_ink, switch,
 };
 use std::collections::BTreeSet;
 
 /// How many labels the label filter offers, in name order. A project with more
 /// is said to have them under the last one.
 const LABELS_SHOWN: usize = 100;
+
+/// The least the search is squeezed to before the choices after it wrap under
+/// it: room for its hint to be read.
+const SEARCH_MIN: Rems = rems(10.);
 
 /// Which half of the issues the list shows. Open by default: an open issue is
 /// work, a closed one a record.
@@ -88,6 +94,36 @@ fn listed<'a>(
 }
 
 impl IssuesView {
+    /// The numbers of the rows the list draws, in its order.
+    pub(super) fn rows_shown(&self, issues: &Issues, cx: &App) -> Vec<u64> {
+        let text = self
+            .query
+            .as_ref()
+            .map(|query| query.read(cx).value().to_string())
+            .unwrap_or_default();
+        let narrowing = Narrowing {
+            query: &text,
+            label: self.label.as_deref(),
+        };
+        listed(issues, &narrowing, self.showing)
+            .0
+            .iter()
+            .take(LIST_CAP)
+            .map(|issue| issue.number)
+            .collect()
+    }
+
+    /// The search and the label back to where they start; which half shows
+    /// is a choice, not a filter, and stays.
+    fn clear_tab_filters(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(query) = self.query.clone() {
+            query.update(cx, |input, cx| input.set_value("", window, cx));
+        }
+        self.label = None;
+        self.detail = false;
+        cx.notify();
+    }
+
     /// The search box, made on first draw since an input needs a window.
     pub(super) fn query(
         &mut self,
@@ -158,41 +194,11 @@ impl IssuesView {
         }
     }
 
-    /// The search and the way to start a new issue, over the list and the
-    /// issue both, so they stay in reach while the two show one at a time.
-    pub(super) fn search_bar(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        let query = self.query(window, cx);
-        // A filter bar, as a page's is, with no line under it: the space and
-        // the change from controls to rows part the two.
-        div()
-            .h_flex()
-            .items_center()
-            .gap_2()
-            .w_full()
-            .flex_none()
-            .px_3()
-            .py_2()
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .child(search_input(&query, cx).short()),
-            )
-            .child(
-                action("issues-new")
-                    .small()
-                    .quiet_icon(false, cx)
-                    .icon(Icon::new(IconName::Plus))
-                    .tooltip("New issue")
-                    .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
-                        view.open_form(None, window, cx)
-                    })),
-            )
-            .into_any_element()
-    }
-
-    /// The list: the filters, then a row per issue, and the sync footer.
-    pub(super) fn list(
+    /// The dock's filter bar, over the list and the issue both, so it stays
+    /// in reach while the two show one at a time: the search, the label,
+    /// *Clear filters*, and the way to start a new issue. The filters wrap
+    /// under the search where the dock is too narrow for all.
+    pub(super) fn search_bar(
         &mut self,
         issues: &Issues,
         window: &mut Window,
@@ -209,11 +215,83 @@ impl IssuesView {
             self.label = None;
         }
         let query = self.query(window, cx);
+        let narrowed = !query.read(cx).value().is_empty() || self.label.is_some();
+        // The form's *Save* holds the tab's one primary while it shows.
+        let drafting = self.state_mut().is_some_and(|state| state.form.is_some());
+        // A filter bar, parted from what is under it by a line the tab's
+        // whole width, as a page's toolbar is from its list. A filter picked
+        // behind the issue changes nothing on screen, so a narrow tab shows
+        // the list it narrowed.
+        div()
+            .h_flex()
+            .flex_wrap()
+            .items_center()
+            .gap_2()
+            .w_full()
+            .flex_none()
+            .px_3()
+            .py_2()
+            .border_b_1()
+            .border_color(faint_rule(cx))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(SEARCH_MIN)
+                    .child(search_input(&query, cx).short()),
+            )
+            // Kept to the row's end, on a line of their own when the search
+            // leaves them no room; *Clear filters* last of the filters, so
+            // nothing moves as it comes and goes, and `+` at the very end.
+            .child(
+                div()
+                    .flex_none()
+                    .ml_auto()
+                    .h_flex()
+                    .items_center()
+                    .gap_2()
+                    .children(self.label_menu(issues, cx))
+                    .when(narrowed, |group| {
+                        group.child(
+                            action("issues-clear-filters")
+                                .short()
+                                .quiet(cx)
+                                .label("Clear filters")
+                                .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
+                                    view.clear_tab_filters(window, cx)
+                                })),
+                        )
+                    })
+                    .child(
+                        // The tab's one primary, what it is for, but while
+                        // the form it opened holds that.
+                        action("issues-new")
+                            .when(drafting, |button| button.secondary())
+                            .when(!drafting, |button| button.primary())
+                            .small()
+                            .icon(Icon::new(IconName::Plus))
+                            .tooltip("New issue")
+                            .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
+                                view.open_form(None, window, cx)
+                            })),
+                    ),
+            )
+            .into_any_element()
+    }
+
+    /// The list: the open/closed choices, a row per issue, and the sync footer.
+    pub(super) fn list(
+        &mut self,
+        issues: &Issues,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let query = self.query(window, cx);
         let text = query.read(cx).value().to_string();
         let narrowing = Narrowing {
             query: &text,
             label: self.label.as_deref(),
         };
+        let narrowed = !text.is_empty() || self.label.is_some();
         let (rows, open, closed) = listed(issues, &narrowing, self.showing);
         let selected = self
             .root
@@ -223,47 +301,35 @@ impl IssuesView {
         let muted = cx.theme().muted_foreground;
 
         let view = cx.entity();
-        let filters = div()
-            .h_flex()
-            .items_center()
-            .gap_2()
-            .w_full()
-            .flex_none()
-            .px_3()
-            .pb_2()
-            .child(div().flex_1().min_w_0().child(switch(
-                "issues-showing",
-                &[
-                    SharedString::from(format!("Open {open}")),
-                    SharedString::from(format!("Closed {closed}")),
-                ],
-                match self.showing {
-                    Showing::Open => 0,
-                    Showing::Closed => 1,
-                },
-                ControlSize::Short,
-                move |picked, _, cx| {
-                    view.update(cx, |view, cx| {
-                        view.showing = if *picked == 0 {
-                            Showing::Open
-                        } else {
-                            Showing::Closed
-                        };
-                        cx.notify();
-                    })
-                },
-                cx,
-            )))
-            .children(self.label_menu(issues, cx));
+        let choices = div().w_full().flex_none().px_3().py_2().child(switch(
+            "issues-showing",
+            &[
+                SharedString::from(format!("Open {open}")),
+                SharedString::from(format!("Closed {closed}")),
+            ],
+            match self.showing {
+                Showing::Open => 0,
+                Showing::Closed => 1,
+            },
+            ControlSize::Short,
+            move |picked, _, cx| {
+                view.update(cx, |view, cx| {
+                    view.showing = if *picked == 0 {
+                        Showing::Open
+                    } else {
+                        Showing::Closed
+                    };
+                    cx.notify();
+                })
+            },
+            cx,
+        ));
 
         let cut = rows.len().saturating_sub(LIST_CAP);
         let empty = if issues.listed().is_empty() {
             Some("No issues yet")
         } else if rows.is_empty() {
-            Some(match self.showing {
-                Showing::Open => "No open issues match",
-                Showing::Closed => "No closed issues match",
-            })
+            Some("No issues match")
         } else {
             None
         };
@@ -273,12 +339,26 @@ impl IssuesView {
             .take(LIST_CAP)
             .map(|issue| self.row(issue, selected == Some(issue.number), now, cx))
             .collect();
+        // How many a search or a label left of the half that shows, said only
+        // while one narrows it: unnarrowed, the count on the choice says it.
+        let of = issues
+            .listed()
+            .iter()
+            .filter(|issue| issue.open == (self.showing == Showing::Open))
+            .count();
+        let showing = (narrowed && !drawn.is_empty()).then(|| {
+            let which = match self.showing {
+                Showing::Open => "open",
+                Showing::Closed => "closed",
+            };
+            format!("Showing {} of {of} {which} issues", drawn.len())
+        });
         let footer = self.sync_footer(issues, cx);
 
         div()
             .size_full()
             .v_flex()
-            .child(filters)
+            .child(choices)
             .child(
                 div()
                     .id("issues-list")
@@ -303,7 +383,15 @@ impl IssuesView {
                                 .text_color(muted)
                                 .child(format!("… {cut} more not shown")),
                         )
-                    }),
+                    })
+                    .children(showing.map(|showing| {
+                        div()
+                            .px_2()
+                            .py_1()
+                            .text_xs()
+                            .text_color(muted)
+                            .child(showing)
+                    })),
             )
             .children(footer)
             .into_any_element()
@@ -340,6 +428,7 @@ impl IssuesView {
                 let label = label.clone();
                 view.update(cx, |view, cx| {
                     view.label = label;
+                    view.detail = false;
                     cx.notify();
                 })
             }
@@ -567,11 +656,10 @@ impl IssuesView {
                     .child(issue.title.clone()),
             )
             .child(meta)
-            .on_click(
-                cx.listener(move |view, _: &ClickEvent, window, cx| {
-                    view.select(number, window, cx)
-                }),
-            )
+            .on_click(cx.listener(move |view, _: &ClickEvent, window, cx| {
+                window.focus(&view.tab_focus, cx);
+                view.select(number, window, cx)
+            }))
             .into_any_element()
     }
 }
