@@ -254,23 +254,17 @@ pub(super) fn new_button(
                 }
             }),
         );
-    // Two ghost halves rather than the library's split button, whose caret
-    // half is built past the app's wrapper and so takes the arrow cursor.
-    div()
-        .h_flex()
-        .items_center()
-        .flex_none()
-        .child(new.quiet(cx).short())
-        .child(
-            crate::controls::action("new-session-target")
-                .quiet(cx)
-                .small()
-                .dropdown_caret(true)
-                .tooltip("Start a session in another project, or with another agent")
-                .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, window, cx| {
-                    build(menu, window, cx)
-                }),
-        )
+    crate::controls::split_action(
+        "new-session-menu",
+        new.quiet(cx).short(),
+        crate::controls::action("new-session-target")
+            .quiet(cx)
+            .small()
+            .tooltip("Start a session in another project, or with another agent"),
+        cx.theme().sidebar,
+        Anchor::TopRight,
+        move |menu, window, cx| build(menu, window, cx),
+    )
 }
 
 /// Where a new session can go: which project, then which agent. A project

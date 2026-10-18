@@ -306,7 +306,7 @@ with its block open; the review is never drawn at the dock's width. A press
 carries the visit it was drawn from, so it approves only what was read.
 
 The block never opens by itself, and closes only by *Close* or another issue.
-It is a hairline box scrolling past its cap: *Review: <step>*, the answer (its
+It is a box scrolling past its cap: *Review: <step>*, the answer (its
 last 60 lines, *Show all N lines*), each changed file as a diff, the check's
 last 20 lines in a mono well, *Acceptance* collapsed, then *Revise…* and
 *Continue* (primary). A cut answer says so above them in the warning ink. A

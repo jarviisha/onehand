@@ -52,11 +52,12 @@ weight; a dots menu (*Rename…*, *Export as Markdown…*; *Resume in this sessi
 and *Restart the agent*; *Delete conversation* in the danger tint, refused until the first turn
 ends); a spacer; past conversations and *Close session* (only while a session shows); the terminal,
 an accent dot on it while its dock is closed over a shell running a command; last, the Workbench.
-The two dock buttons are filled while their dock is open. On a page (the overview, Tasks, Issues,
-Workflows, Settings) it reads the page's name, with no dots menu and no dock buttons. As the pane
-narrows, the name gives way first, down to a minimum. Without a session it names the project, its
-dots menu holding the project's actions but *New session* and *Open terminal*, which the page and
-the header already offer.
+The two dock buttons are filled while their dock is open. On Issues and Settings it reads the
+page's name; on the overview, Tasks and Workflows, which name themselves in their head, it carries
+no name; none of these has a dots menu or dock buttons. As the pane narrows, the name gives way
+first, down to a minimum. Without a session it carries no name, the page naming the project, but
+keeps the project's dots menu, holding the project's actions but *New session* and *Open
+terminal*, which the page and the header already offer.
 
 ## Step strip
 
@@ -108,18 +109,23 @@ height (its dragged height kept).
 
 ## Pages without a session
 
-- A project with no session shows one column from the top: a head, the line counting its tasks that
-  need attention, run or wait at the start (not drawn at zero, and opening the Tasks page narrowed
-  to the project), *Run check* (spinning while a check runs) and *New session* (primary) at the end;
-  its *Check command* field; and its past conversations as rows, capped, each with *Delete…* on
-  hover. The page scrolls as one.
-- *Workspace overview* shows, across all projects, the boxes *Waiting on you* (runs waiting for an
-  answer or an approval, and sessions waiting, failed, finished or lost) and *Working*, then
-  *Projects* as a grid of tiles (not drawn without projects), then the sections *Recent
-  conversations* and *Open issues* (its project picker kept while the page is left), plain lists on
-  the page's surface. The page scrolls as one.
-- *Tasks*: a filter bar (the project picker), then four boxes two by two, *Needs attention*,
-  *Running*, *Queued*, *Finished*, each with a count, an empty line and a cap. A row is the title
+- A project with no session shows, from the top: a head (the project's name, its path and git line
+  under it, *Run check* (spinning while a check runs) and *New session* (primary, with a caret
+  picking another agent while more than one is configured) at the end); then the box *Past
+  conversations* with its count, its rows the overview's (age, title, then items and agent at the
+  edge, *Delete…* laid over them on hover), capped, its wait and empty lines inside it, and beside
+  it a column of the box *Tasks* (how many need attention, run or wait, each opening the Tasks page
+  narrowed to the project; *Nothing running here* at zero) over the box *Settings* (its *Check
+  command* field). The column wraps under the history where both do not fit. The page scrolls as
+  one.
+- *Workspace overview* shows, under its head (*Overview*), across all projects, the boxes *Waiting
+  on you* (runs waiting for an answer or an approval, and sessions waiting, failed, finished or
+  lost) and *Working*, then *Projects* as a grid of tiles (not drawn without projects), then the
+  boxes *Recent conversations* and *Open issues* (its project picker kept while the page is left).
+  The page scrolls as one.
+- *Tasks*: a head (*Tasks*), a filter bar (the project picker), then four boxes two by two,
+  *Needs attention*, *Running*, *Queued*, *Finished*, each with a count, an empty line and a cap,
+  its rows parted by hairlines. A row is the title
   over workflow, step or outcome and project, with ghost actions by state (*Open session*, *Stop*,
   *Resume*, *Retry…*, *Dismiss*) shown on hover, kept under *Needs attention*; its text opens the
   task's detail, a page of its own at the prose width: a trail, the title, then *Awaiting approval*,
@@ -133,8 +139,8 @@ height (its dragged height kept).
   read lands; *Refresh* spins while it reads. *No issues yet* or *No issues match* when empty.
 - The **review block** opens below where the work stands only on *Review…*, as `docs/unattended.md`
   draws it.
-- *Workflows*: a head (*New workflow*, its primary, *Import…*, then how many), then the workflows as
-  rows, capped, shipped ones *Built in* (read-only) in a slot of their own, *Run…* (projects, the
+- *Workflows*: a head (*Workflows*, how many and what a workflow is under it, *Import…* and *New
+  workflow*, its primary, at the end), then the workflows in one box as rows, capped, shipped ones *Built in* (read-only) in a slot of their own, *Run…* (projects, the
   rail's first) and the rest shown on hover. *New workflow* or *Edit* opens a form below, one box
   per step (its kind its first field, one ⋯ to move or remove it), a margin marking where a failure
   goes back to, problems (a name clash among them) above a *Save* that refuses with the first and

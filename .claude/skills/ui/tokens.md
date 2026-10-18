@@ -170,7 +170,7 @@ All in `onehand_plugin_host::tokens` (`crates/plugin-host/src/tokens.rs`), which
 | `BAR_H` | 2.75rem | every strip along the top of a region |
 | `ROW_H` | 1.875rem | a list row |
 | `CONTROL_H` | 1.5rem | a small control: `.short()`, and an icon-only `.small()` button |
-| `FIELD_H` | 1.875rem | a control a step over `.short()`: a list page's head (`.tall()`) |
+| `FIELD_H` | 1.875rem | the tallest control, a step over `.short()`: a page's head and form (`.tall()`); nothing stands taller |
 | `CODE_TEXT` | 0.8125rem | machine text |
 | `LEADING` | 1.6 | reading text |
 | `LEADING_TIGHT` | 1.4 | a wrapped title |

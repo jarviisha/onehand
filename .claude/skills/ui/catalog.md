@@ -36,11 +36,12 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | A row's actions shown on hover | `hover_slot(group, shown, child)`, then `.focus(&row_handle)`: a trailing slot keeping its width, visible while the row named `group` is hovered, while the keyboard holds the row, or while `shown` (selected, or its action running). A hidden slot's controls are not tab stops, so the row itself is one | `crates/plugin-host/src/row_actions.rs` |
 | An issue's label | `label_badge(label, cx)`: a badge tinted by the label's kind | `crates/plugin-host/src/lib.rs` |
 | A block held folded | `fold_toggle(id, label, open, cx)`: the chevron first, quiet, `.short()` | `crates/plugin-host/src/lib.rs` |
-| A box on a page | `card_box(cx)`: hairline, `p_3`, `gap_2` | `crates/plugin-host/src/lib.rs` |
+| A box on a page | `card_box(cx)`: a control's edge (`input`), no fill, `p_3`, `gap_2` | `crates/plugin-host/src/lib.rs` |
 | A radio or checkbox at a choice row's head | `choice_mark(on, single, cx)`: drawn in ink, round for one choice and square for several, so it shows on the selected step where the library's ring vanishes | `crates/plugin-host/src/choice_mark.rs` |
 | A picker's trigger | `picker(id, label, set, size, cx)`: a ghost in the muted ink naming what it picks, on the secondary fill once set, with the caret | `crates/plugin-host/src/lib.rs` |
-| A list or table row's surface | `row(picked, cx)`: `ROW_H`, `px_2`, the hover and picked fills with their inks; the caller lays it out | `crates/plugin-host/src/lib.rs` |
+| A list or table row's surface | `row(picked, cx)`: `ROW_H`, `px_2`, the hover and picked fills with their inks; the caller lays it out. | `crates/plugin-host/src/lib.rs` |
 | A menu, its rows, a menu under its control | `menu_item`, `menu_row`, `menu_below`; `menu_command(label, action)` for a row that runs a keymap command and shows its key | `crates/plugin-host/src/menu.rs` |
+| An action joined to a menu of its alternatives (*New* and its caret) | `split_action(id, main, caret, surface, anchor, build)`: both halves built by the caller through `action` at their role's size and one variant, joined with square inner corners and parted by a seam in `surface`, the fill under it, the caret's menu opened below it | `crates/plugin-host/src/menu.rs` |
 | A strip along the top of a region, and its icon control | `strip(cx)`, `strip_control(id, icon, on, cx)` | `crates/plugin-host/src/strip.rs` |
 | One of a few choices, the taken one filled (filter chips) | `choice` (a `quiet` ghost button, `selected` when taken, at the `ControlSize` its role takes) | `crates/plugin-host/src/lib.rs` |
 | A choice between a few views, every one the same width | `switch` (a `choice` per view at `flex_1`, at one `ControlSize`) | `crates/plugin-host/src/lib.rs` |
@@ -56,7 +57,7 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | A dialog's title row | `title_row` | `crates/app/src/dialogs.rs` |
 | A form field | `field` (its line about the setting in meta text) | `crates/plugin-host/src/lib.rs`, re-exported by `crates/app/src/settings.rs` |
 | A Settings group, a Settings row | `section`, `list_row` | `crates/app/src/settings.rs` |
-| A page's box, its title row, a list section and two to a row | `page_card`, `card_title`, `page_section`, `pair` | `crates/app/src/chat/pane/page_parts.rs` |
+| A page's head, its box and title row, a list section (a box too), rows parted by hairlines, two boxes to a row | `page_head(title, facts, actions, cx)`, `page_card`, `card_title`, `page_section`, `ruled(rows, cx)`, `pair` | `crates/app/src/chat/pane/page_parts.rs` |
 | A dialog's footer (a third action at its start) | `footer_row` | `crates/app/src/dialogs.rs` |
 | A Settings sub-page's scope line | `page_head` | `crates/app/src/settings.rs` |
 | A sunk box of machine text | `well` (sets the code text size; callers set padding) | `crates/plugin-host/src/lib.rs` |

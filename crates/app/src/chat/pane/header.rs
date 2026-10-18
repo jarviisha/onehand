@@ -84,12 +84,13 @@ impl ChatPane {
         let chat = self.active_chat(cx);
         let title = chat.and_then(Chat::conversation_title).unwrap_or_else(|| {
             match (&self.page, &self.empty) {
-                (Some(super::Page::Workspace(_)), _) => "Overview".to_string(),
-                (Some(super::Page::Tasks(_)), _) => "Tasks".to_string(),
+                // These pages name themselves at their own head's title size.
+                (Some(super::Page::Workspace(_) | super::Page::Tasks(_)), _) => String::new(),
+                (Some(super::Page::Workflows(_)), _) => String::new(),
                 (Some(super::Page::Issues(_)), _) => "Issues".to_string(),
-                (Some(super::Page::Workflows(_)), _) => "Workflows".to_string(),
                 (Some(super::Page::Settings(_)), _) => "Settings".to_string(),
-                (None, Some(project)) => project.label.to_string(),
+                // The page names its project at its own title size.
+                (None, Some(_)) => String::new(),
                 (None, None) => String::new(),
             }
         });

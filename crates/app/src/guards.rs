@@ -690,6 +690,40 @@ mod tests {
         }
     }
 
+    /// A caret with no words of its own is the menu half of an action, and
+    /// standing apart beside that action it reads as a second, unrelated
+    /// button. `split_action` joins the two into one control; a caret
+    /// anywhere else ends a picker or a tab, after its words.
+    ///
+    /// Partial: it reads a few lines either side of the caret for the words,
+    /// so a chain spread wider than that, or words named in a variable built
+    /// further up, passes unseen.
+    #[test]
+    fn a_caret_alone_is_the_menu_half_of_a_split_action() {
+        let caret = format!(".{}(", "dropdown_caret");
+        for (path, source) in ui_sources() {
+            if path.ends_with("plugin-host/src/menu.rs") {
+                continue;
+            }
+            let lines: Vec<&str> = source.lines().collect();
+            for (n, line) in lines.iter().enumerate() {
+                if !line.contains(&caret) || line.trim_start().starts_with("//") {
+                    continue;
+                }
+                let near = &lines[n.saturating_sub(6)..(n + 4).min(lines.len())];
+                assert!(
+                    near.iter().any(|l| [".label(", ".child(", ".children("]
+                        .iter()
+                        .any(|words| l.contains(words))),
+                    "{path}:{}: a caret with no words beside its action. Join the \
+                     two with split_action.\n    {}",
+                    n + 1,
+                    line.trim()
+                );
+            }
+        }
+    }
+
     /// The lengths written into `rems(` or `px(` on one line, unless the line
     /// declares a constant or is a comment. Zero is not a length anyone tunes.
     fn written_lengths(line: &str) -> Vec<String> {

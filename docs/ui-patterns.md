@@ -15,16 +15,17 @@ plugin views alike; the feature contract still decides what content and actions 
 
 | Content | Container | Separation |
 |---|---|---|
-| Related settings or a page subsection | Plain section | Heading, shared text axis and section gap |
-| Independent summary of one thing | Box | One outer hairline; no nested boxes for its fields |
+| Related settings (Settings), a group inside a form | Plain section | Heading, shared text axis and section gap |
+| A group on a page: one thing's facts, a list, a status, what a project is set to | Box | One outer edge in a control's edge, no fill; no nested boxes for its fields |
 | Repeated items to scan or pick | List or table | Stable columns and row states; table hairlines |
 | Code, output or a diff | Well | Quiet fill; overflow stays inside it |
 | One selected item read in full | Detail | Title, metadata, content; no extra enclosing card |
 | A temporary choice or confirmation | Menu, popover or dialog | Floating surface and lift |
 
-The transcript and composer keep their specific treatments in `DESIGN.md`. A page containing
-several groups is not automatically a grid of cards. Keep the explicit boxes required by a
-feature contract; use plain sections for their internal groupings.
+The transcript and composer keep their specific treatments in `DESIGN.md`. On a page each group
+stands in a box, so what belongs together reads as one object rather than as text loose on the
+page; what groups inside a box (a form's fields, a box's rows) takes the plain treatments, never
+a box of its own.
 
 ### Hierarchy
 
@@ -35,7 +36,8 @@ The neutral inks of `DESIGN.md` (*Type, space and shape*), applied on a neutral 
 | A row in content: a page, a Workbench list, a menu | its name | the detail on its line: a folder, a number, a kind | its meta, trailing or on a line under it; the label over a run of rows |
 | Navigation: the rail, a section nav | the current location, in its fill's paired ink | none | every other row at rest |
 | A box, a detail | its title, its content | none | its count, its line of facts |
-| A page head, a strip | what it names | none | a count beside the name |
+| A page's head | its name, at the title size | its line of facts | none |
+| A strip | what it names | none | a count beside the name |
 
 Text on a fill, and text that carries meaning, takes the ink `DESIGN.md` names for it (*Type,
 space and shape*). A row's hover and selected fills are steps from the surface under it
@@ -54,7 +56,7 @@ the one before cannot give:
 | Step | For | Not for |
 |---|---|---|
 | Space | sections, groups of rows, a heading from what it heads | |
-| Hairline | a box's or a table's edge; a table's rows and its head; groups space alone runs together (Settings) | framing a subsection, one field or one row |
+| Hairline | a table's edge, its rows and its head; rows in a box (`ruled`); groups space alone runs together (Settings). A box's edge is a step stronger, a control's edge (`input`) | framing a subsection, one field or one row |
 | Fill | a well, the bubble, hover and selection, a dock's surface | a section's background; a box that already has an edge |
 | Shadow | what floats over other content: dialogs, popovers, menus, over the transcript the composer card, the cards pinned above it, the to-bottom button, and on a list page the item floating over the list; the app's own through `lift`, the composer card through `composer_lift` | anything in the flow |
 
@@ -98,9 +100,10 @@ size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in ea
 
 | Role | Component | Size |
 |---|---|---|
-| A list page's head: its search, its icon-only actions and its creating action | Button, Input | `.tall()` |
-| A form's fields and buttons; a dialog's footer; a page's filter bar: its search and pickers | Button, Input | `.short()` |
-| Every other button with words: a column page head's actions, a strip's, a box's, a row's, a secondary action inside dense content (a line of meta text, a transcript block, a chip), a tab, a fold toggle, a pinned card's answers | Button | `.short()`, under a row, so the controls never outweigh what they act on |
+| A page's head: a list page's search, icon-only actions and creating action; a column page's actions, a split action's both halves | Button, Input | `.tall()` |
+| A page's form: its fields, its pickers, its switch and its buttons | Button, Input | `.tall()` |
+| A dialog's fields and footer; a page's filter bar: its search and pickers | Button, Input | `.short()` |
+| Every other button with words: a strip's, a box's, a row's, a secondary action inside dense content (a line of meta text, a transcript block, a chip), a tab, a fold toggle, a pinned card's answers | Button | `.short()`, under a row, so the controls never outweigh what they act on |
 | Every other icon-only button: a strip's, a row's, a copy control, the composer's send | Button | `.small()`, square at `CONTROL_H`, so an icon alone is as tall as a worded peer beside it |
 | A field in a strip or the rail | Input | `.short()`, as tall as the buttons beside it |
 | An icon in a button | Icon | the button's own: `small` in a `.tall()` button and in an icon-only `.small()` one, `xsmall` beside words in a `.short()` one |
@@ -112,6 +115,8 @@ size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in ea
 | A single-line row; a row with a second line | drawn by the app | `ROW_H`; at least `ROW_H` |
 | A strip along the top of a region | `strip` (plugin host) | `BAR_H` |
 
+- **`.tall()` is the ceiling.** No control stands taller than `FIELD_H`; a page gives a field
+  room by its size, never by a larger control.
 - **One size, one measure.** The library's default letters a button at the body size beside a
   field at the chrome size, so it is never used. `.short()` is the wrapper that gives a Button and
   an Input the small height with words at `.text_xs()`, so they breathe inside it, and `.tall()`
@@ -120,6 +125,11 @@ size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in ea
   button's size, square at the same height as `.short()`; a worded button never takes it, as its
   words would stand at the chrome size. A control holding a badge keeps it, being the one tall
   enough. `.xsmall()` is no button's or field's size: only an icon takes it.
+- **One row of actions, one height.** Every control standing in one row of actions (a button, both
+  halves of a split action, a field, a picker, a choice, an icon alone) takes the same size, so
+  their tops and bottoms meet on one line. The row takes the size its leading role takes, and
+  every other control in it follows; a control whose role elsewhere takes another size takes
+  the row's here. Only the components that keep their own geometry (below) stand apart, centred.
 - **The hit area is not the icon.** A worded `.short()` button carries the extra small icon
   beside its words; an icon alone at `.small()` takes the small one, its box no larger than a
   worded peer's. Nothing is enlarged to fill its box.
@@ -160,8 +170,10 @@ Nothing else is drawn see-through.
 
 ### Pages
 
-A page takes the agent pane, its name in the pane's header; do not repeat it as a large heading
-in the body. A section heading identifies its own content. A page is one of two kinds, chosen by
+A page takes the agent pane. A column page names itself in its head, in the body (`page_head`):
+its name at the title size, a line of facts under it in the middle ink, its actions at the end;
+the pane's header above it then carries chrome alone. A list page keeps its name in the header,
+a bar over the list (*List pages*). A box's heading identifies its own content. A page is one of two kinds, chosen by
 what it holds, and the kind decides its width, its density and its head:
 
 - a **column page** holds fields, boxes or one thing read in full (a project's page, the
@@ -176,12 +188,13 @@ content scrolls under them, so the filters stay in reach beside what they filter
 The body scrolls as one column centred in the pane, padded `px_8` at its sides and `py_6` at its
 ends, its sections `gap_6` apart, as wide as one of these:
 
-- `PAGE_NARROW`: one column of fields or rows (a project's page);
+- `PAGE_NARROW`: one column of fields or rows;
 - `PAGE_PROSE`: an editor, or one thing read in full (Workflows, an issue, a task);
-- `PAGE_WIDE`: boxes side by side (the overview, Tasks).
+- `PAGE_WIDE`: boxes side by side (the overview, Tasks, a project's page, its history beside a
+  column of what it needs and is set to, the column wrapping under it where both do not fit).
 
 The pane header is inset `px_8`, as the body is. A page holding sections of its own (Settings)
-puts their nav column at its start. Its head's actions are `.short()`; its creating action
+puts their nav column at its start. Its head's actions are `.tall()`, at one height; its creating action
 (*New session*, *New workflow*) is the view's one primary, stepping down to `secondary` while a
 form it opened is open and holds it. A page that only sets values (Settings) holds no primary,
 every button on it secondary, and parts its many peer groups by hairlines with semibold
@@ -240,8 +253,10 @@ kept while the page is left and shown again.
 
 ### Boxes
 
-A box groups the facts about one thing on a page: a hairline at `radius`, padded `p_3`, its
-parts `gap_2` apart (`card_box`). Its title row (`card_title`) holds the title in semibold, a
+A box groups one thing on a page: edged in a control's edge (`input`) at `radius`, on no fill,
+padded `p_3`, its parts `gap_2` apart (`card_box`). Every fill under a page read as a slab too
+heavy for it or swallowed the fields and lines drawn on it, and the hairline sits too near the
+page's fill in Dark Modern to group anything. Its title row (`card_title`) holds the title in semibold, a
 muted count, and at most one control at the end, at a fixed height so boxes side by side line up.
 Boxes sit side by side while the measured column holds two, and stack when it does not.
 
@@ -254,7 +269,11 @@ text, says why the list is short: a list the cap cut says how many more there ar
 list a search or a filter narrows says how many it shows of how many there are (*Showing N of
 M*). A table is rows split by hairlines, each with one under it, under a head row in
 meta text on the page's own surface, its rows square `row`s at the row inset.
-Keep metadata and actions in stable trailing slots. Multi-line row variants align their primary
+Rows in a box are parted by a hairline (`ruled`), drawn on a wrapper of the row's own so its
+focus ring moves nothing. A row's trailing facts reach the box's edge; where a row has them, its
+hover actions are laid over them, hiding them while they show, rather than holding a slot beside
+them. A row without trailing facts keeps its actions in a held slot. Keep metadata and actions in
+stable trailing slots. Multi-line row variants align their primary
 labels and secondary lines across peers. A hovered selected row remains recognizably selected;
 keyboard focus remains separately visible, but on a list page, whose arrow keys move the
 selection itself (*List pages*). Hover actions are also available on keyboard focus, so
@@ -282,7 +301,8 @@ going back keeps the list's place.
 
 Each input is a `field`: its title in chrome text, an optional hint under it in meta text, `gap_2`
 to the control. Fields stand `gap_4` apart. An input is built with `text_input`, at a control's
-corner and the `.short()` size its buttons take. Problems stand above the submit button in the danger
+corner and the size of the place it stands in: `.tall()` in a page's form, `.short()` in a
+dialog; its buttons, pickers and switch take the same. Problems stand above the submit button in the danger
 ink. The submit is the form's one primary action; while the form cannot be sent it refuses, its
 tooltip saying why.
 
