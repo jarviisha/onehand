@@ -108,7 +108,8 @@ height (its dragged height kept).
   Issues page (where the list shows alone, the first press opens the row picked); Esc closes the
   form, else goes back from the issue to the list where the two show one at a time.
 - The Issues tab's issue: a trail (project › reference, linked to its forge, or *Draft*) with its
-  actions (the next one secondary, one other a ghost, ⋯; the tab's `+` holds its one primary);
+  actions (the next one secondary, one other a ghost, ⋯; here and on the Issues page, *New
+  issue* holds the view's primary);
   its tags (a neutral state badge, labels); the title, large; one line of facts; what it waits on
   (a conflict, where its work stands, the review); then two chips: *Description* (the body as a
   document, the files it names, what the work left, *Before*)

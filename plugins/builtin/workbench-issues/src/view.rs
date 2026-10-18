@@ -644,7 +644,6 @@ impl IssuesView {
                 .and_then(|page| page.label_of(root))
                 .unwrap_or_else(|| project_name(root)),
             tab: self.issue_tab,
-            dock: self.page.is_none(),
             nav,
             work,
         };

@@ -322,7 +322,8 @@ dialog of its own; a start that fails is said once, in an error toast.
 ### Details
 
 A detail shows one thing in full (an issue, a task): a trail naming where it sits, with its
-actions beside it (one primary, one other, `⋯`); its title in `text_xl` semibold; one line of
+actions beside it (one primary, one other, `⋯`; an issue's next one secondary and the other a
+ghost, since *New issue* holds its view's primary); its title in `text_xl` semibold; one line of
 facts in meta text; what it waits on; then its tabs.
 
 ## Behaviour
