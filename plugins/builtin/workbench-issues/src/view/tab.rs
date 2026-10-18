@@ -124,7 +124,7 @@ impl IssuesView {
             .get(&root)
             .and_then(|state| state.selected)
             .and_then(|number| rows.iter().position(|row| *row == number));
-        let open = self.detail || self.side_by_side(window, cx);
+        let open = self.side_by_side(window, cx) || self.issue_alone(window, cx);
         let next = match at {
             Some(at) if !open => Some(at),
             Some(at) => at.checked_add_signed(step),
@@ -140,7 +140,7 @@ impl IssuesView {
     fn tab_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.state_mut().is_some_and(|state| state.form.is_some()) {
             self.unless_drafting(window, cx, |view, _, cx| view.cancel_form(cx));
-        } else if self.detail && !self.side_by_side(window, cx) {
+        } else if self.issue_alone(window, cx) {
             self.detail = false;
             cx.notify();
         } else {
@@ -149,6 +149,19 @@ impl IssuesView {
         }
         // What held the keyboard may be gone with what closed.
         window.focus(&self.tab_focus, cx);
+    }
+
+    /// Whether an issue shows in place of the list, as the tab draws it: the
+    /// flag alone can outlive the issue or form it was set for.
+    fn issue_alone(&self, window: &Window, cx: &App) -> bool {
+        let Some(root) = self.root.as_deref() else {
+            return false;
+        };
+        self.detail
+            && !self.side_by_side(window, cx)
+            && self
+                .issues_of(root, cx)
+                .is_some_and(|issues| self.has_detail(root, issues))
     }
 
     /// Whether there is an issue or a form to show in place of the list.
