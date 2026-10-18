@@ -31,17 +31,6 @@ pub(super) fn page_card(
     card_box(cx).child(card_title(title, count, control, cx))
 }
 
-/// A section of a page that is a list: a box like any other, so every group
-/// on a page stands as one object rather than as text loose on the page.
-pub(super) fn page_section(
-    title: impl Into<SharedString>,
-    count: Option<usize>,
-    control: Option<gpui::AnyElement>,
-    cx: &App,
-) -> Div {
-    page_card(title, count, control, cx)
-}
-
 /// A page's head, in its body: the page's name at the title size, a line of
 /// facts under it in the middle ink, and its actions at the end, each at the
 /// head's size. The pane's header above it carries only chrome.

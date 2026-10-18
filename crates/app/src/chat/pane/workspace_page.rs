@@ -1,4 +1,4 @@
-use super::page_parts::{card_box, card_title, page_card, page_head, page_section, pair, ruled};
+use super::page_parts::{card_box, card_title, page_card, page_head, pair, ruled};
 use super::project_page::count_of;
 use super::{ChatPane, ChatPaneEvent, Page, SessionSignal, rel_time};
 use crate::tokens::PAGE_WIDE;
@@ -603,16 +603,15 @@ impl ChatPane {
             .collect();
         // A section, not a box: a list read down the page, which the boxes
         // above set apart from the rest.
-        let recent =
-            page_section("Recent conversations", None, None, cx).child(match page.recent {
-                None => div().child(muted_line("Reading past conversations…".to_string())),
-                Some(_) => list(
-                    recent,
-                    PAGE_RECENT,
-                    "older",
-                    "No past conversations to pick up",
-                ),
-            });
+        let recent = page_card("Recent conversations", None, None, cx).child(match page.recent {
+            None => div().child(muted_line("Reading past conversations…".to_string())),
+            Some(_) => list(
+                recent,
+                PAGE_RECENT,
+                "older",
+                "No past conversations to pick up",
+            ),
+        });
 
         let unbound = !page.projects.is_empty()
             && page.projects.iter().all(|project| project.issues.is_none());
@@ -690,7 +689,7 @@ impl ChatPane {
             .collect();
         let (closed, left_out) = (page.shown.closed, page.shown.left_out);
 
-        let issues = page_section(
+        let issues = page_card(
             "Open issues",
             page.read.as_ref().map(|_| page.shown.rows.len() + left_out),
             (!unbound).then(|| filter.into_any_element()),

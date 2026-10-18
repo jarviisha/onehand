@@ -695,12 +695,21 @@ mod tests {
     /// button. `split_action` joins the two into one control; a caret
     /// anywhere else ends a picker or a tab, after its words.
     ///
-    /// Partial: it reads a few lines either side of the caret for the words,
-    /// so a chain spread wider than that, or words named in a variable built
-    /// further up, passes unseen.
+    /// It reads the caret's own chain: up to the line that starts it, and
+    /// on down while the lines go on with a call. Reading a window of lines
+    /// around it instead passed the very caret this was written against,
+    /// beside its action's `.child(`.
+    ///
+    /// Partial: words given inside a closure of the chain, or in a variable
+    /// built further up, pass unseen.
     #[test]
     fn a_caret_alone_is_the_menu_half_of_a_split_action() {
         let caret = format!(".{}(", "dropdown_caret");
+        // A comment inside the chain carries it on, as a call does.
+        let link = |l: &str| {
+            let l = l.trim_start();
+            l.starts_with('.') || l.starts_with("//")
+        };
         for (path, source) in ui_sources() {
             if path.ends_with("plugin-host/src/menu.rs") {
                 continue;
@@ -710,11 +719,15 @@ mod tests {
                 if !line.contains(&caret) || line.trim_start().starts_with("//") {
                     continue;
                 }
-                let near = &lines[n.saturating_sub(6)..(n + 4).min(lines.len())];
+                let head = lines[..n].iter().rposition(|l| !link(l)).unwrap_or(0);
+                let head = if link(line) { head } else { n };
+                let tail = n + 1 + lines[n + 1..].iter().take_while(|l| link(l)).count();
                 assert!(
-                    near.iter().any(|l| [".label(", ".child(", ".children("]
+                    lines[head..tail]
                         .iter()
-                        .any(|words| l.contains(words))),
+                        .any(|l| [".label(", ".child(", ".children("]
+                            .iter()
+                            .any(|words| l.contains(words))),
                     "{path}:{}: a caret with no words beside its action. Join the \
                      two with split_action.\n    {}",
                     n + 1,

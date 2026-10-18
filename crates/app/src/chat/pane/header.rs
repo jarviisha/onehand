@@ -83,15 +83,15 @@ impl ChatPane {
     fn header_row(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let chat = self.active_chat(cx);
         let title = chat.and_then(Chat::conversation_title).unwrap_or_else(|| {
-            match (&self.page, &self.empty) {
-                // These pages name themselves at their own head's title size.
-                (Some(super::Page::Workspace(_) | super::Page::Tasks(_)), _) => String::new(),
-                (Some(super::Page::Workflows(_)), _) => String::new(),
-                (Some(super::Page::Issues(_)), _) => "Issues".to_string(),
-                (Some(super::Page::Settings(_)), _) => "Settings".to_string(),
-                // The page names its project at its own title size.
-                (None, Some(_)) => String::new(),
-                (None, None) => String::new(),
+            match &self.page {
+                Some(super::Page::Issues(_)) => "Issues".to_string(),
+                Some(super::Page::Settings(_)) => "Settings".to_string(),
+                // These pages, and a project's page, name themselves in their
+                // own head at its title size.
+                Some(
+                    super::Page::Workspace(_) | super::Page::Tasks(_) | super::Page::Workflows(_),
+                )
+                | None => String::new(),
             }
         });
         let busy = chat.is_some_and(|chat| chat.busy);
@@ -103,8 +103,9 @@ impl ChatPane {
             .and_then(|chat| chat.session_id.as_deref())
             .map(|sid| onehand_core::chat::conv_dir(&onehand_core::chat::conversations_dir(), sid));
         // The title is a menu only where there *is* a conversation. Standing on
-        // a project with no session the same line names the project, and every
-        // entry behind it would be about something that does not exist yet.
+        // a project with no session the line carries no name, the page naming
+        // the project, and every entry behind it would be about something that
+        // does not exist yet.
         let live = chat.is_some();
 
         // **A strip, at a fixed height rather than one the tallest control
@@ -363,10 +364,10 @@ impl ChatPane {
             .font_medium()
             .child(title);
         if !live && project.is_none() {
-            // A page's name is the page's title, at the size a page's title
-            // takes: the page draws none of its own in its body. The Issues
-            // page keeps the strip's chrome size instead: its line under the
-            // header makes the header a bar over the list, not a heading.
+            // A page that draws no head of its own (Settings) is named here at
+            // the size a page's title takes. The Issues page keeps the strip's
+            // chrome size instead: its line under the header makes the header
+            // a bar over the list, not a heading.
             let issues = matches!(self.page, Some(super::Page::Issues(_)));
             return div()
                 .min_w_0()
