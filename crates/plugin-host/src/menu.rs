@@ -2,7 +2,7 @@
 //! pointer, and a menu that opens below its trigger.
 
 use gpui::{
-    Action, App, Context, DismissEvent, ElementId, Entity, Focusable as _, IntoElement,
+    Action, Anchor, App, Context, DismissEvent, ElementId, Entity, Focusable as _, IntoElement,
     ParentElement as _, SharedString, Styled as _, Window, div, px,
 };
 use gpui_component::StyledExt as _;
@@ -163,4 +163,51 @@ pub fn menu_below(
                 }
             }
         })
+}
+
+/// An action and the menu of its alternatives as one control: `main` and a
+/// caret half that opens `build`, joined edge to edge like the library's
+/// `ButtonGroup`, the inner corners square.
+///
+/// **Not the library's `ButtonGroup` or `DropdownButton`.** A group takes
+/// only buttons, so neither half can carry a menu; the split button builds
+/// its caret half itself, past [`crate::action`], with the arrow cursor and
+/// the library's size rather than the role's. So both halves come from the
+/// caller, through `action`, at their role's size and one variant, and only
+/// the joining and the menu are done here.
+///
+/// A caret standing apart beside its action reads as a second, unrelated
+/// button; this is the one way to offer one.
+///
+/// **A seam in `surface`, the fill the control sits on, parts the halves.**
+/// Each half answers the pointer on its own, and without it the two read as
+/// one button that does two things depending on where it is pressed. Drawn in
+/// the surface's own colour it reads as a cut through the control rather
+/// than an edge on it, so no button gains an edge.
+pub fn split_action(
+    id: impl Into<ElementId>,
+    main: Button,
+    caret: Button,
+    surface: gpui::Hsla,
+    anchor: Anchor,
+    build: impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static,
+) -> impl IntoElement {
+    div()
+        .h_flex()
+        .items_center()
+        .flex_none()
+        .child(main.rounded_tr_none().rounded_br_none())
+        .child(
+            menu_below(
+                id,
+                caret
+                    .dropdown_caret(true)
+                    .rounded_tl_none()
+                    .rounded_bl_none()
+                    .border_l_1()
+                    .border_color(surface),
+                build,
+            )
+            .anchor(anchor),
+        )
 }

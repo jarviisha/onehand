@@ -1,17 +1,20 @@
 use super::header::Archives;
+use super::page_parts::{page_card, page_head, ruled};
 use super::{ChatPane, ChatPaneEvent, ProjectFacts, rel_time};
 use crate::chat::conversation::Conversation;
 use crate::controls::Quiet as _;
 use crate::controls::Short as _;
 use crate::controls::text_input;
-use crate::tokens::PAGE_NARROW;
+use crate::tokens::PAGE_WIDE;
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, Context, Div, ElementId, FocusHandle, InteractiveElement, IntoElement, ParentElement,
-    SharedString, Stateful, StatefulInteractiveElement, Styled, Window, div,
+    App, Context, Div, FocusHandle, InteractiveElement, IntoElement, ParentElement, Rems,
+    SharedString, StatefulInteractiveElement, Styled, Window, div, rems,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::chat::ConvMeta;
+use onehand_plugin_host::Tall as _;
 use std::path::{Path, PathBuf};
 
 /// How many past conversations the project page lists.
@@ -23,9 +26,16 @@ use std::path::{Path, PathBuf};
 /// scrolls as well, because this many rows already outgrows a short window.
 const HOME_ROWS: usize = 8;
 
-/// How many past conversations a session's resume picker offers before the
-/// older ones are counted instead.
-const RESUME_ROWS: usize = 30;
+/// The width the history starts from before it grows into its row; the side
+/// column wraps under it where both do not fit.
+const HOME_MAIN: Rems = rems(26.);
+
+/// The width the side column starts from beside the history.
+const HOME_SIDE: Rems = rems(16.);
+
+/// The slot a conversation's age stands in, the overview row's, so every
+/// title starts on one edge.
+const AGE_W: Rems = rems(3.);
 
 /// The project the pane is standing in while no conversation is showing.
 ///
@@ -263,101 +273,6 @@ impl ChatPane {
         .detach();
     }
 
-    /// The past conversations `uid` is choosing between, or nothing if it is
-    /// not choosing.
-    fn choices_of(&self, uid: u64) -> Vec<ConvMeta> {
-        self.conversations
-            .get(&uid)
-            .and_then(Conversation::choices)
-            .unwrap_or_default()
-            .to_vec()
-    }
-
-    /// The resume picker: past conversations for this root + agent, newest
-    /// first, plus the option to start fresh.
-    pub(super) fn resume_picker(
-        &mut self,
-        uid: u64,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement + use<> {
-        let past = self.choices_of(uid);
-        let older = past.len().saturating_sub(RESUME_ROWS);
-        let now = onehand_core::chat::now_secs();
-
-        div()
-            .size_full()
-            .v_flex()
-            .items_center()
-            .justify_center()
-            .p_6()
-            .child(
-                div()
-                    .v_flex()
-                    .gap_3()
-                    .w_full()
-                    .max_w(PAGE_NARROW)
-                    // Bounded by the panel, for the same reason the project
-                    // page's column is: this list is every conversation the
-                    // agent has had in the project, and a column taller than
-                    // the panel is centred into rows nothing can reach.
-                    .max_h_full()
-                    .min_h_0()
-                    .child(div().font_semibold().child("Resume a conversation"))
-                    // The rows are what grows, so the rows are what scrolls. The
-                    // heading above and the way out below stay where they are --
-                    // a picker whose *Start a new conversation* scrolls off the
-                    // bottom is a screen with no way out of it.
-                    .child(
-                        div()
-                            .id("resume-choices")
-                            .v_flex()
-                            .gap_3()
-                            .w_full()
-                            .min_h_0()
-                            .overflow_y_scroll()
-                            .children(past.into_iter().take(RESUME_ROWS).enumerate().map(
-                                |(i, meta)| {
-                                    // The agent is not named here: this picker belongs to a
-                                    // session that already has one, and every row in it was
-                                    // run by that same agent.
-                                    let subtitle = format!(
-                                        "{} · {} items",
-                                        rel_time(now, meta.updated),
-                                        meta.item_count
-                                    );
-                                    conversation_card(
-                                        ("resume", i),
-                                        meta.title.clone().into(),
-                                        subtitle.into(),
-                                        cx,
-                                    )
-                                    .on_click(cx.listener(
-                                        move |pane: &mut Self, _, _, cx| {
-                                            let meta = pane.choices_of(uid).get(i).cloned();
-                                            pane.start(uid, meta, cx);
-                                        },
-                                    ))
-                                },
-                            )),
-                    )
-                    .children((older > 0).then(|| {
-                        div()
-                            .text_xs()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(format!("{older} older not shown"))
-                    }))
-                    .child(
-                        crate::controls::action("resume-fresh")
-                            .short()
-                            .primary()
-                            .label("Start a new conversation")
-                            .on_click(cx.listener(move |pane: &mut Self, _, _, cx| {
-                                pane.start(uid, None, cx);
-                            })),
-                    ),
-            )
-    }
-
     /// The project page: what the centre of the window shows while the selected
     /// project has no conversation on it.
     ///
@@ -368,10 +283,17 @@ impl ChatPane {
     /// entered by is here instead: the conversations already had in it, newest
     /// first and across every agent, and the button that starts a fresh one.
     ///
-    /// The history is drawn from the same card the resume picker uses, because
-    /// it is the same question -- which past conversation -- and one of the two
-    /// looking unclickable is how a list stops being read as a list.
-    pub(super) fn project_home(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+    /// **Three layers.** The page's own surface carries its head: the
+    /// project's name, where it is and what git says, and what it can start.
+    /// Each group under it stands on a surface a step up, the history as the
+    /// main column and what the project needs and is set to beside it, so
+    /// what belongs together reads as one object rather than as text loose on
+    /// the page.
+    pub(super) fn project_home(
+        &self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
         let Some(project) = self.empty.as_ref() else {
             // Not a project with nothing in it -- no project at all. Naming
             // what has to happen first beats an offer that cannot be taken:
@@ -382,8 +304,9 @@ impl ChatPane {
         let now = onehand_core::chat::now_secs();
         let (muted, ring) = (cx.theme().muted_foreground, cx.theme().ring);
         let danger = crate::theme::status_ink(cx).danger;
+        let muted_line = |text: String| div().text_xs().text_color(muted).child(text);
         // Bounded, and the bound says so below. A project worked in for months
-        // has more archives than this page is for, and none of this scrolls.
+        // has more archives than this page is for.
         let shown: Vec<ConvMeta> = project
             .history
             .iter()
@@ -408,100 +331,129 @@ impl ChatPane {
 
         let root = project.path.clone();
         let checking = crate::task::checking(&root, cx);
-        // The head: what the project's tasks need at the start, then *Run
-        // check* and the page's one primary at the end.
-        let head = div()
-            .h_flex()
-            .items_center()
-            .gap_2()
-            .w_full()
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .h_flex()
-                    .children(tasks_link(&project.path, cx)),
-            )
-            .children(project.facts.check.then(|| {
-                crate::controls::action("project-run-check")
-                    .short()
-                    .secondary()
-                    .label("Run check")
-                    .loading(checking)
-                    .tooltip("Run the project's check command")
-                    .on_click(cx.listener(|_: &mut Self, _, _, cx| {
-                        cx.emit(ChatPaneEvent::RunCheck);
-                    }))
-            }))
-            .child(
-                crate::controls::action("project-new-session")
-                    .short()
-                    .primary()
-                    .label("New session")
-                    .on_click(cx.listener(|_: &mut Self, _, _, cx| {
-                        cx.emit(ChatPaneEvent::StartSession {
-                            agent: None,
-                            resume: None,
-                        });
-                    })),
+        let path = std::env::home_dir()
+            .and_then(|home| project.path.strip_prefix(&home).ok())
+            .map_or_else(
+                || project.path.display().to_string(),
+                |rest| format!("~/{}", rest.display()),
             );
-        // The command *Run check* runs, and a command step naming none: kept
-        // with the project, saved as it is typed.
-        let check = project.check_input.as_ref().map(|input| {
-            onehand_plugin_host::field(
-                "Check command",
-                Some("What Run check and a command step naming none run here".into_any_element()),
-                text_input(input, cx).short(),
-                cx,
-            )
-        });
-        let history =
-            (!shown.is_empty()).then(|| {
-                div()
-                    .v_flex()
-                    .gap_2()
-                    .w_full()
-                    .child(div().font_semibold().child("Past conversations"))
-                    .child(div().v_flex().children(
-                        shown.into_iter().zip(&project.rows).enumerate().map(
-                            |(i, (meta, focus))| {
-                                // The agent *is* named here, unlike in a session's own
-                                // picker: this list crosses every agent that has worked
-                                // in the project, and resuming a row starts a session on
-                                // the one that held it.
-                                let subtitle = format!(
-                                    "{} · {} items · {}",
-                                    rel_time(now, meta.updated),
-                                    meta.item_count,
+        let place = std::iter::once(path)
+            .chain(self.git.as_ref().map(ToString::to_string))
+            .collect::<Vec<_>>()
+            .join(" · ");
+        // The head: the project named at the page's title size over where it
+        // is, and what it can start at the end.
+        let head = page_head(
+            project.label.clone(),
+            Some(place.into_any_element()),
+            project
+                .facts
+                .check
+                .then(|| {
+                    crate::controls::action("project-run-check")
+                        .tall()
+                        .secondary()
+                        .label("Run check")
+                        .loading(checking)
+                        .tooltip("Run the project's check command")
+                        .on_click(cx.listener(|_: &mut Self, _, _, cx| {
+                            cx.emit(ChatPaneEvent::RunCheck);
+                        }))
+                        .into_any_element()
+                })
+                .into_iter()
+                .chain([new_session(cx)])
+                .collect(),
+            cx,
+        );
+
+        let history = page_card(
+            "Past conversations",
+            project.history.as_ref().map(Vec::len),
+            None,
+            cx,
+        )
+        .children(note.map(|note| muted_line(note.to_string())))
+        .child(ruled(
+            shown
+                .into_iter()
+                .zip(&project.rows)
+                .enumerate()
+                .map(|(i, (meta, focus))| {
+                    let (agent, archive) =
+                        (SharedString::from(meta.agent.clone()), meta.dir.clone());
+                    let dir = meta.dir.clone();
+                    let name = SharedString::from(meta.title.clone());
+                    let group = SharedString::from(format!("home-row-{i}"));
+                    // The keyboard on the row shows its *Delete…* as the
+                    // pointer does, and either way it takes the place of
+                    // the facts it covers.
+                    let keyed =
+                        window.last_input_was_keyboard() && focus.contains_focused(window, cx);
+                    let row = onehand_plugin_host::row(false, cx)
+                        .id(("home", i))
+                        .relative()
+                        .h_flex()
+                        .items_center()
+                        .gap_2()
+                        .w_full()
+                        .rounded_none()
+                        .group(group.clone())
+                        .track_focus(focus)
+                        .border_1()
+                        .border_color(gpui::transparent_black())
+                        .focus_visible(|row| row.border_color(ring))
+                        .child(
+                            div()
+                                .flex_none()
+                                .w(AGE_W)
+                                .text_xs()
+                                .text_color(crate::theme::meta_ink(cx))
+                                .child(rel_time(now, meta.updated)),
+                        )
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .truncate()
+                                .child(meta.title.clone()),
+                        )
+                        // The agent *is* named here, unlike in a session's
+                        // own picker: this list crosses every agent that
+                        // has worked in the project, and resuming a row
+                        // starts a session on the one that held it.
+                        .child(
+                            div()
+                                .flex_none()
+                                .text_xs()
+                                .text_color(muted)
+                                .when(keyed, |facts| facts.invisible())
+                                .group_hover(group.clone(), |facts| facts.invisible())
+                                .child(format!(
+                                    "{} · {}",
+                                    count_of(meta.item_count, "item"),
                                     meta.agent
-                                );
-                                let (agent, archive) =
-                                    (SharedString::from(meta.agent.clone()), meta.dir.clone());
-                                let dir = meta.dir.clone();
-                                let name = SharedString::from(meta.title.clone());
-                                let group = SharedString::from(format!("home-row-{i}"));
-                                conversation_card(
-                                    ("home", i),
-                                    meta.title.clone().into(),
-                                    subtitle.into(),
-                                    cx,
-                                )
-                                .group(group.clone())
-                                .track_focus(focus)
-                                .border_1()
-                                .border_color(gpui::transparent_black())
-                                .focus_visible(|row| row.border_color(ring))
-                                .on_click(cx.listener(move |_: &mut Self, _, _, cx| {
-                                    cx.emit(ChatPaneEvent::StartSession {
-                                        agent: Some(agent.clone()),
-                                        resume: Some(archive.clone()),
-                                    });
-                                }))
-                                // A word rather than a glyph: everything else here can
-                                // be done again, and a deleted conversation cannot. In
-                                // the row's trailing slot, shown while it is pointed
-                                // at or the keyboard is on it; the press stops
-                                // there, or it also opens the row.
+                                )),
+                        )
+                        .on_click(cx.listener(move |_: &mut Self, _, _, cx| {
+                            cx.emit(ChatPaneEvent::StartSession {
+                                agent: Some(agent.clone()),
+                                resume: Some(archive.clone()),
+                            });
+                        }))
+                        // A word rather than a glyph: everything else here
+                        // can be done again, and a deleted conversation
+                        // cannot. Laid over the row's facts rather than
+                        // beside them, so the facts reach the edge; the
+                        // press stops there, or it also opens the row.
+                        .child(
+                            div()
+                                .absolute()
+                                .top_0()
+                                .bottom_0()
+                                .right_0()
+                                .h_flex()
+                                .items_center()
                                 .child(
                                     onehand_plugin_host::hover_slot(
                                         group,
@@ -525,22 +477,46 @@ impl ChatPane {
                                             )),
                                     )
                                     .focus(focus),
-                                )
-                            },
-                        ),
-                    ))
-                    .children((hidden > 0).then(|| {
-                        div()
-                            .text_xs()
-                            .text_color(muted)
-                            .child(format!("{hidden} older not shown"))
-                    }))
-            });
+                                ),
+                        );
+                    row.into_any_element()
+                }),
+            cx,
+        ))
+        .children((hidden > 0).then(|| muted_line(format!("{hidden} more"))));
 
-        // The header stays: it is the panel's only chrome, and what it still
-        // answers here is about the project (the file tree, a shell, the way
-        // back to a hidden rail). Under it the page is one column from the top
-        // that scrolls as one; the project's name is the header's to say.
+        let tasks = tasks_box(&project.path, cx);
+        // What the project is set to: its check command, the shell's field.
+        let settings = project.check_input.as_ref().map(|input| {
+            page_card("Settings", None, None, cx).child(onehand_plugin_host::field(
+                "Check command",
+                Some("What Run check and a command step naming none run here".into_any_element()),
+                text_input(input, cx).tall(),
+                cx,
+            ))
+        });
+
+        // The history leads and what stands beside it follows. Wrapped rather
+        // than measured: the side column drops under the history wherever the
+        // two bases do not fit the column the pane gives them.
+        let body = div()
+            .h_flex()
+            .flex_wrap()
+            .items_start()
+            .gap_4()
+            .w_full()
+            .child(history.flex_grow_1().flex_basis(HOME_MAIN).min_w_0())
+            .child(
+                div()
+                    .v_flex()
+                    .gap_4()
+                    .flex_grow_1()
+                    .flex_basis(HOME_SIDE)
+                    .min_w_0()
+                    .child(tasks)
+                    .children(settings),
+            );
+
         div()
             .size_full()
             .v_flex()
@@ -559,14 +535,10 @@ impl ChatPane {
                                 .v_flex()
                                 .gap_6()
                                 .w_full()
-                                .max_w(PAGE_NARROW)
+                                .max_w(PAGE_WIDE)
                                 .text_sm()
                                 .child(head)
-                                .children(check)
-                                .children(
-                                    note.map(|note| div().text_xs().text_color(muted).child(note)),
-                                )
-                                .children(history),
+                                .child(body),
                         ),
                     ),
             )
@@ -582,9 +554,68 @@ pub(super) fn count_of(n: usize, noun: &str) -> String {
     }
 }
 
-/// One line saying what the tasks of the project at `root` need, leading
-/// to the Tasks page narrowed to it; nothing when no task needs anything.
-fn tasks_link(root: &Path, cx: &mut Context<ChatPane>) -> Option<gpui::AnyElement> {
+/// *New session*, the page's one primary, joined to a caret starting one with
+/// another agent while more than one is configured.
+fn new_session(cx: &mut Context<ChatPane>) -> gpui::AnyElement {
+    let agents: Vec<SharedString> = crate::state::Shared::global(cx)
+        .agents
+        .iter()
+        .map(|spec| SharedString::from(spec.name.clone()))
+        .collect();
+    // At the head's size, as *Run check* beside it is: one row of actions
+    // stands at one height.
+    let start = crate::controls::action("project-new-session")
+        .tall()
+        .primary()
+        .label("New session")
+        .tooltip_with_action(
+            "Start a session in this project",
+            &crate::shell::NewSession,
+            None,
+        )
+        .on_click(cx.listener(|_: &mut ChatPane, _, _, cx| {
+            cx.emit(ChatPaneEvent::StartSession {
+                agent: None,
+                resume: None,
+            });
+        }));
+    if agents.len() < 2 {
+        return start.into_any_element();
+    }
+    let pane = cx.entity();
+    crate::controls::split_action(
+        "project-new-session-menu",
+        start,
+        crate::controls::action("project-new-session-agent")
+            .primary()
+            .tall()
+            .tooltip("Start a session with another agent"),
+        cx.theme().background,
+        gpui::Anchor::TopRight,
+        move |mut menu, _, _| {
+            menu = menu.label("With agent");
+            for name in &agents {
+                let (name, pane) = (name.clone(), pane.clone());
+                menu = menu.item(crate::controls::menu_item(name.clone()).on_click(
+                    move |_, _, cx: &mut App| {
+                        pane.update(cx, |_: &mut ChatPane, cx| {
+                            cx.emit(ChatPaneEvent::StartSession {
+                                agent: Some(name.clone()),
+                                resume: None,
+                            });
+                        });
+                    },
+                ));
+            }
+            menu
+        },
+    )
+    .into_any_element()
+}
+
+/// What the tasks of the project at `root` need, run or wait on, a row each
+/// leading to the Tasks page narrowed to it.
+fn tasks_box(root: &Path, cx: &mut Context<ChatPane>) -> Div {
     use onehand_core::task::Section;
     let (mut attention, mut running, mut queued) = (0, 0, 0);
     for row in crate::task::rows(&[root.to_path_buf()], cx) {
@@ -595,73 +626,48 @@ fn tasks_link(root: &Path, cx: &mut Context<ChatPane>) -> Option<gpui::AnyElemen
             Section::Finished => {}
         }
     }
-    let said: Vec<String> = [
-        (attention > 0).then(|| match attention {
-            1 => "1 task needs attention".to_string(),
-            n => format!("{n} tasks need attention"),
-        }),
-        (running > 0).then(|| format!("{running} running")),
-        (queued > 0).then(|| format!("{queued} queued")),
-    ]
-    .into_iter()
-    .flatten()
-    .collect();
-    if said.is_empty() {
-        return None;
-    }
+    let warning = crate::theme::status_ink(cx).warning;
+    let muted = cx.theme().muted_foreground;
+    let lines = [
+        ("Need attention", attention, Some(warning)),
+        ("Running", running, None),
+        ("Queued", queued, None),
+    ];
+    let total = attention + running + queued;
     let root = root.to_path_buf();
-    Some(
-        crate::controls::action("project-tasks")
-            .quiet(cx)
-            .short()
-            .label(said.join(" · "))
-            .tooltip("Show these tasks on the Tasks page")
-            .on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {
-                cx.emit(ChatPaneEvent::ShowTasks(Some(root.clone())));
-            }))
-            .into_any_element(),
-    )
-}
-
-/// One archived conversation, as a card that can be picked.
-///
-/// Shared by a session's resume picker and the project page, because they ask
-/// the same question from two places: the caller supplies the subtitle, which
-/// is the only part that differs, and hangs its own click on the result. Two
-/// hand-written card styles is how one of them ends up not looking clickable.
-///
-/// **A row, not a column, so a caller can add its own control at the end.** The
-/// name and the line under it are one column inside it, taking the width that
-/// is left; anything a caller hangs on afterwards sits at the right-hand edge,
-/// inside the card's own border rather than out beside it. The project page's
-/// delete is the reason -- a control that acts on one conversation belongs
-/// within the card naming it, and the same shape holds for the picker, which
-/// simply adds nothing.
-fn conversation_card(
-    id: impl Into<ElementId>,
-    title: SharedString,
-    subtitle: SharedString,
-    cx: &App,
-) -> Stateful<Div> {
-    onehand_plugin_host::row(false, cx)
-        .id(id)
-        .h_flex()
-        .items_center()
-        .gap_2()
-        .w_full()
-        .py_1p5()
-        .child(
-            div()
-                .v_flex()
-                .gap_0p5()
-                .flex_1()
-                .min_w_0()
-                .child(div().truncate().child(title))
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(subtitle),
-                ),
+    page_card("Tasks", Some(total), None, cx)
+        .when(total == 0, |tasks| {
+            tasks.child(
+                div()
+                    .text_xs()
+                    .text_color(muted)
+                    .child("Nothing running here"),
+            )
+        })
+        .children(
+            lines
+                .into_iter()
+                .enumerate()
+                .filter(|(_, (_, n, _))| *n > 0)
+                .map(|(i, (label, n, ink))| {
+                    let root = root.clone();
+                    onehand_plugin_host::row(false, cx)
+                        .id(("project-tasks", i))
+                        .h_flex()
+                        .items_center()
+                        .justify_between()
+                        .when_some(ink, |row, ink| row.text_color(ink))
+                        .child(label)
+                        .child(div().text_xs().child(n.to_string()))
+                        .tooltip(|window, cx| {
+                            gpui_component::tooltip::Tooltip::new(
+                                "Show these tasks on the Tasks page",
+                            )
+                            .build(window, cx)
+                        })
+                        .on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {
+                            cx.emit(ChatPaneEvent::ShowTasks(Some(root.clone())));
+                        }))
+                }),
         )
 }

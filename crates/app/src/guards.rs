@@ -690,6 +690,53 @@ mod tests {
         }
     }
 
+    /// A caret with no words of its own is the menu half of an action, and
+    /// standing apart beside that action it reads as a second, unrelated
+    /// button. `split_action` joins the two into one control; a caret
+    /// anywhere else ends a picker or a tab, after its words.
+    ///
+    /// It reads the caret's own chain: up to the line that starts it, and
+    /// on down while the lines go on with a call. Reading a window of lines
+    /// around it instead passed the very caret this was written against,
+    /// beside its action's `.child(`.
+    ///
+    /// Partial: words given inside a closure of the chain, or in a variable
+    /// built further up, pass unseen.
+    #[test]
+    fn a_caret_alone_is_the_menu_half_of_a_split_action() {
+        let caret = format!(".{}(", "dropdown_caret");
+        // A comment inside the chain carries it on, as a call does.
+        let link = |l: &str| {
+            let l = l.trim_start();
+            l.starts_with('.') || l.starts_with("//")
+        };
+        for (path, source) in ui_sources() {
+            if path.ends_with("plugin-host/src/menu.rs") {
+                continue;
+            }
+            let lines: Vec<&str> = source.lines().collect();
+            for (n, line) in lines.iter().enumerate() {
+                if !line.contains(&caret) || line.trim_start().starts_with("//") {
+                    continue;
+                }
+                let head = lines[..n].iter().rposition(|l| !link(l)).unwrap_or(0);
+                let head = if link(line) { head } else { n };
+                let tail = n + 1 + lines[n + 1..].iter().take_while(|l| link(l)).count();
+                assert!(
+                    lines[head..tail]
+                        .iter()
+                        .any(|l| [".label(", ".child(", ".children("]
+                            .iter()
+                            .any(|words| l.contains(words))),
+                    "{path}:{}: a caret with no words beside its action. Join the \
+                     two with split_action.\n    {}",
+                    n + 1,
+                    line.trim()
+                );
+            }
+        }
+    }
+
     /// The lengths written into `rems(` or `px(` on one line, unless the line
     /// declares a constant or is a comment. Zero is not a length anyone tunes.
     fn written_lengths(line: &str) -> Vec<String> {

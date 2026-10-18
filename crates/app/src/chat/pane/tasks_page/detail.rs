@@ -2,7 +2,7 @@
 //! what it waits on approval for, its last run's visits with what each kept
 //! and changed, and its earlier runs.
 
-use super::super::page_parts::page_section;
+use super::super::page_parts::page_card;
 use super::super::step_strip::{open_review, open_revise, press_continue};
 use super::super::{ChatPane, ChatPaneEvent, rel_time};
 use super::{Page, Press, TasksPage, open_session, row_said, task_acts};
@@ -278,13 +278,13 @@ pub(super) fn task_detail(
     };
     let title = format!("Run {}", task.runs.len());
     out.push(
-        page_section(title, Some(last.visits().len()), None, cx)
+        page_card(title, Some(last.visits().len()), None, cx)
             .children(timeline(detail, last, live, cx))
             .into_any_element(),
     );
     if !earlier.is_empty() {
         let now = now_secs();
-        let mut section = page_section("Earlier runs", Some(earlier.len()), None, cx);
+        let mut section = page_card("Earlier runs", Some(earlier.len()), None, cx);
         for (n, run) in earlier.iter().enumerate().rev().take(EARLIER_SHOWN) {
             let open = detail.earlier_open.contains(&run.id);
             let ended = match &run.outcome {
@@ -717,7 +717,7 @@ fn way_out(
         button.on_click(super::emit(&task.id, cx, ChatPaneEvent::RetryTaskCurrent))
     });
     Some((
-        page_section("Way out", None, None, cx)
+        page_card("Way out", None, None, cx)
             .child(div().text_sm().child(said))
             .child(div().h_flex().gap_2().children(buttons))
             .into_any_element(),
@@ -764,7 +764,7 @@ fn review_card(
             .child(button)
             .child(div().text_xs().text_color(muted).child(said))
     };
-    page_section("Awaiting approval", None, open, cx)
+    page_card("Awaiting approval", None, open, cx)
         .children(said)
         .children(cut)
         .child(

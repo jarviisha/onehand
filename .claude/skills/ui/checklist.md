@@ -19,7 +19,7 @@ the rule, not just the question. For prose-only work, use the contract path in `
 4. Every state the component can be in drawn, the combined ones (selected and hovered, selected
    and focused) kept apart, and a transition (a page switch, a back link, a dock hiding) keeping
    the state the contract keeps (`SKILL.md`, *States*)?
-5. Every control at the size its role takes (`docs/ui-patterns.md`, *Control sizes*)?
+5. Every control at the size its role takes, and every control in one row of actions at one height (`docs/ui-patterns.md`, *Control sizes*)?
 6. Every control drawn by the builder `catalog.md` lists for it, every button's variant named by
    its role, and at most one primary in a view (`DESIGN.md`, *Components*, *Colour and state*)?
 7. A refusing button through `.refuses(why)` (`DESIGN.md`, *Components*), never `.disabled(`,

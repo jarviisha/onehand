@@ -78,7 +78,8 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
 What each region holds, and in what order, is `docs/screens.md`'s, under the region's name:
 
 - **Rail**: app chrome outside the dock, from the workspace bar down to *Settings*.
-- **Agent pane header**: the conversation's name, its menu and the dock buttons.
+- **Agent pane header**: the conversation's name, its menu and the dock buttons; chrome alone over
+  a page that names itself in its head.
 - **Step strip**: a run's steps under the header, while it drives the session on screen.
 - **Composer**: the input surface under the transcript, and what waits pinned above it.
 - **Docks**: the Workbench and the terminal, bare panels with strips of their own.
@@ -174,7 +175,9 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   corner (*Components*). A part joined to its container's edge takes its corner there.
 - **Lines** part regions and are a 1px `border`. A **mark** says where the person is, not where
   a region ends: the one under an open tab is 2px, as a stroke a step heavier than a line. A list page's lines across
-  the pane are a step fainter (`faint_rule`), so the edge-to-edge list reads as one surface.
+  the pane are a step fainter (`faint_rule`), so the edge-to-edge list reads as one surface. A
+  box's edge is a step stronger, a control's edge (`input`): in Dark Modern the hairline sits too
+  near the page's fill to group anything.
 
 ## Colour and state
 
@@ -200,7 +203,7 @@ colour is the value of a VS Code key, and a colour read anywhere but through a t
 | every hairline (`border`), the window's edge | `panel.border`, `titleBar.border` |
 | floating surfaces (`popover`) | `editorWidget.background` |
 | the composer card, an edgeless field (`theme::raised`, `theme::inset`) | `input.background` |
-| a control's edge (`input`) | `input.border` |
+| a control's edge, a box's edge (`input`) | `input.border` |
 | a secondary button at rest, pointed at, its word | `button.secondaryBackground` (dark: `input.background`, as Dark Modern's is transparent), `button.secondaryHoverBackground`, `button.secondaryForeground` |
 | the open tab's word | `tab.activeForeground` |
 | what runs, links (`link`, `info`), at rest, pointed at, pressed | `textLink.foreground`, `textLink.activeForeground` |
@@ -229,7 +232,7 @@ and the ramp's tests hold each at what it reaches.
 | `theme::dock_surface` | the Workbench and the terminal, a step off the reading surface |
 | `muted` / `muted_foreground` | quiet fills (the prompt bubble, every well), meta text |
 | `theme::meta_ink` | the middle ink: a detail beside a name, between prose and meta, contrast-tested |
-| `border` | every hairline |
+| `border` | every hairline; a box takes `input` for its edge |
 | `ring` | keyboard focus, drawn only when the keyboard moved it; the composer while a file is dragged over it |
 | `accent` | the one item selected among several (a fill, not a hue) |
 | `link` | the accent hue: what runs, and links |
@@ -277,6 +280,12 @@ is the control fill) the rest. **No button draws an edge** (no default variant, 
 field is the one control marked by its edge, or, searching, by its sunk fill. A control that refuses says so
 and why (`.refuses(why)`, the reason its tooltip) and goes back to the arrow.
 
+**An action with a menu of alternatives is one control.** The action and its caret half are joined
+edge to edge, one variant and one height, the inner corners square, parted by a seam in the colour of the surface
+under them (`split_action`); a caret never
+stands as a button apart beside the action it qualifies. A caret otherwise ends a picker or a tab,
+after its words.
+
 **Danger is a word, and a fill only to end or confirm.** A destructive action is a word in the
 danger tint. The solid `danger` fill marks two buttons: *Stop* in the composer while a turn runs,
 and the button confirming a removal inside its modal. Nothing that destroys nothing takes the
@@ -299,15 +308,19 @@ fill, in the ink the caller gave it, so a quiet icon stays muted there. The app 
 library only through a shared wrapper: where the library's mark vanishes on a fill the app
 draws on (a radio's or a checkbox's ring on the selected step), `choice_mark` draws it in ink.
 
-**A size names a role, and means one height and one text size in every control.** The library's
+**A size names a role, and the role follows the room the control stands in.** The library's
 sizes disagree across components (its default button letters at the body size beside a field
-at the chrome size), so a button takes one of three: `.short()` the default for any button with
-words, `.small()` for an icon alone, square at the same height, and `.tall()` in a list page's
-head; never the library's default, and never `.xsmall()`, whose words run to its edges and
-whose box is under a pointer's comfortable reach. A field takes `.short()` wherever it stands, or
-`.tall()` in a list page's head, so it is as tall as the buttons beside it. A correction a component needs lives in its
-shared wrapper (`Short`, `Tall`), never at a call site. `docs/ui-patterns.md` (*Control sizes*) maps
-each role to its component and size.
+at the chrome size), so a control takes one of two heights. On a page, where there is room and
+the person reads and types what a control holds, it takes `.tall()`: a page's head and a page's
+form, its fields, pickers and buttons alike, so a field's words stand at its title's size. In
+dense chrome (the rail, a dock, a strip, a filter bar, a dialog, a row, a box's title row, the
+composer) it takes `.short()`, so it never outweighs what it acts on. An icon alone is square at
+its row's height: `.small()` beside `.short()` peers, `.tall()` beside tall ones. `.tall()`
+(`FIELD_H`) is the ceiling: no control stands taller. Never the library's default, and never
+`.xsmall()`, whose words run to its edges and whose box is under a pointer's comfortable reach.
+Every control in one row of actions stands at one height. A correction a component needs lives
+in its shared wrapper (`Short`, `Tall`), never at a call site. `docs/ui-patterns.md` (*Control
+sizes*) maps each role to its component and size.
 
 The app owns only its own: the transcript renderers, the icon registry, the terminal panel,
 per-panel zoom, and the composer popup (one shell for `@`, `/`, the pickers, the `+` and branch

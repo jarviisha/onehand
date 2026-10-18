@@ -4,7 +4,6 @@ use super::draft::Kind;
 use super::step::{Earlier, step_box};
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
-use crate::controls::Short as _;
 use crate::controls::text_input;
 use crate::settings::{about, field, section};
 use gpui::{
@@ -13,6 +12,7 @@ use gpui::{
 use gpui_component::button::ButtonVariants;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::workflow::Place;
+use onehand_plugin_host::Tall as _;
 
 /// How wide the margin beside the steps runs.
 const MARGIN: gpui::Rems = gpui::rems(4.5);
@@ -132,13 +132,13 @@ pub(super) fn form(
     .child(field(
         "Name",
         about("What the launcher lists it as"),
-        text_input(&draft.name, cx).short(),
+        text_input(&draft.name, cx).tall(),
         cx,
     ))
     .child(field(
         "Description",
         None,
-        text_input(&draft.description, cx).short(),
+        text_input(&draft.description, cx).tall(),
         cx,
     ))
     .child(field(
@@ -151,7 +151,7 @@ pub(super) fn form(
             "workflow-place",
             &places,
             place_at,
-            onehand_plugin_host::ControlSize::Short,
+            onehand_plugin_host::ControlSize::Tall,
             pick_place,
             cx,
         ),
@@ -164,13 +164,13 @@ pub(super) fn form(
             .child(div().flex_1().child(field(
                 "Misses allowed",
                 about("Turns that fail their gates before the run stops"),
-                text_input(&draft.misses, cx).short(),
+                text_input(&draft.misses, cx).tall(),
                 cx,
             )))
             .child(div().flex_1().child(field(
                 "Timeout",
                 about("Working time, such as 45m or 2h"),
-                text_input(&draft.timeout, cx).short(),
+                text_input(&draft.timeout, cx).tall(),
                 cx,
             ))),
     )
@@ -184,7 +184,7 @@ pub(super) fn form(
             .children(Kind::ALL.into_iter().enumerate().map(|(at, kind)| {
                 crate::controls::action(("add-step", at))
                     .quiet(cx)
-                    .short()
+                    .tall()
                     .label(format!("Add {} step", kind.label().to_lowercase()))
                     .on_click(click(handle, move |page, window, cx| {
                         page.edit_workflow_draft(window, cx, |d, window, cx| {
@@ -204,7 +204,7 @@ pub(super) fn form(
             .gap_2()
             .child(
                 crate::controls::action("save-workflow")
-                    .short()
+                    .tall()
                     .primary()
                     .loading(writing)
                     .label("Save")
@@ -215,7 +215,7 @@ pub(super) fn form(
             )
             .child(
                 crate::controls::action("clear-workflow")
-                    .short()
+                    .tall()
                     .quiet(cx)
                     .label("Cancel")
                     // Asks first when the form holds changes, as Esc does.

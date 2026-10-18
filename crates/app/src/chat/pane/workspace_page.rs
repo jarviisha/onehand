@@ -1,4 +1,4 @@
-use super::page_parts::{card_box, card_title, page_card, page_section, pair};
+use super::page_parts::{card_box, card_title, page_card, page_head, pair, ruled};
 use super::project_page::count_of;
 use super::{ChatPane, ChatPaneEvent, Page, SessionSignal, rel_time};
 use crate::tokens::PAGE_WIDE;
@@ -439,7 +439,7 @@ impl ChatPane {
             div()
                 .v_flex()
                 .children(empty)
-                .children(rows.into_iter().take(cap))
+                .child(ruled(rows.into_iter().take(cap), cx))
                 .children((hidden > 0).then(|| muted_line(format!("{hidden} {cut} not shown"))))
         };
         let (waiting_n, working_n) = (waiting.len(), working.len());
@@ -603,16 +603,15 @@ impl ChatPane {
             .collect();
         // A section, not a box: a list read down the page, which the boxes
         // above set apart from the rest.
-        let recent =
-            page_section("Recent conversations", None, None, cx).child(match page.recent {
-                None => div().child(muted_line("Reading past conversations…".to_string())),
-                Some(_) => list(
-                    recent,
-                    PAGE_RECENT,
-                    "older",
-                    "No past conversations to pick up",
-                ),
-            });
+        let recent = page_card("Recent conversations", None, None, cx).child(match page.recent {
+            None => div().child(muted_line("Reading past conversations…".to_string())),
+            Some(_) => list(
+                recent,
+                PAGE_RECENT,
+                "older",
+                "No past conversations to pick up",
+            ),
+        });
 
         let unbound = !page.projects.is_empty()
             && page.projects.iter().all(|project| project.issues.is_none());
@@ -690,7 +689,7 @@ impl ChatPane {
             .collect();
         let (closed, left_out) = (page.shown.closed, page.shown.left_out);
 
-        let issues = page_section(
+        let issues = page_card(
             "Open issues",
             page.read.as_ref().map(|_| page.shown.rows.len() + left_out),
             (!unbound).then(|| filter.into_any_element()),
@@ -704,7 +703,7 @@ impl ChatPane {
         .children(note.map(muted_line))
         // The page scrolls as one; the list is capped, not boxed in a scroll
         // of its own.
-        .children((!rows.is_empty()).then(|| div().v_flex().children(rows)))
+        .children((!rows.is_empty()).then(|| ruled(rows, cx)))
         // Said, not hidden: a list cut silently reads as the whole of it.
         .children((left_out > 0).then(|| muted_line(format!("{left_out} more not shown"))))
         .children((closed > 0 && !unbound).then(|| {
@@ -739,6 +738,7 @@ impl ChatPane {
                                 .w_full()
                                 .max_w(PAGE_WIDE)
                                 .text_sm()
+                                .child(page_head("Overview", None, Vec::new(), cx))
                                 .child(pair(waiting, working))
                                 .children(projects)
                                 .child(pair(recent, issues)),

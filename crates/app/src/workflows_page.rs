@@ -33,6 +33,7 @@ use gpui::{
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme, Icon, Sizable as _, StyledExt};
 use onehand_core::workflow as core;
+use onehand_plugin_host::Tall as _;
 use std::path::PathBuf;
 
 /// What the page asks of its window.
@@ -153,17 +154,8 @@ impl Render for WorkflowsPage {
                         .gap_6()
                         .w_full()
                         .max_w(crate::tokens::PAGE_PROSE)
+                        .text_sm()
                         .child(head(&handle, form.is_some(), cx))
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(cx.theme().muted_foreground)
-                                .child(
-                                    "The workflows a run starts from, shared by every \
-                                     workspace. The ones onehand ships are read-only: duplicate \
-                                     one to change it.",
-                                ),
-                        )
                         .child(list)
                         .children(form),
                 ),
@@ -171,45 +163,44 @@ impl Render for WorkflowsPage {
     }
 }
 
-/// The page's head: the actions that make a workflow at the start, and how
-/// many there are at the end. *New workflow* is the page's one primary at
-/// rest; while the form is open it holds that, and this steps down under it.
+/// The page's head: its name over what a workflow is and how many there
+/// are, then the actions that make one at the end. *New workflow* is the
+/// page's one primary at rest; while the form is open it holds that, and this
+/// steps down under it.
 fn head(handle: &Entity<WorkflowsPage>, editing: bool, cx: &App) -> AnyElement {
     let count = crate::workflow::templates(cx).len();
-    div()
-        .h_flex()
-        .items_center()
-        .gap_2()
-        .child(
+    let about = "The workflows a run starts from, shared by every workspace. The ones \
+                 onehand ships are read-only: duplicate one to change it.";
+    let facts = match count {
+        0 => about.to_string(),
+        1 => format!("1 workflow · {about}"),
+        n => format!("{n} workflows · {about}"),
+    };
+    crate::chat::pane::page_parts::page_head(
+        "Workflows",
+        Some(facts.into_any_element()),
+        vec![
+            crate::controls::action("import-workflow")
+                .tall()
+                .quiet(cx)
+                .label("Import…")
+                .on_click(click(handle, |page, window, cx| {
+                    page.import_workflow(window, cx)
+                }))
+                .into_any_element(),
             crate::controls::action("new-workflow")
-                .short()
+                .tall()
                 .when(editing, |button| button.secondary())
                 .when(!editing, |button| button.primary())
                 .label("New workflow")
                 .on_click(click(handle, |page, window, cx| {
                     page.new_workflow(window, cx)
-                })),
-        )
-        .child(
-            crate::controls::action("import-workflow")
-                .short()
-                .quiet(cx)
-                .label("Import…")
-                .on_click(click(handle, |page, window, cx| {
-                    page.import_workflow(window, cx)
-                })),
-        )
-        .child(div().flex_1())
-        .children((count > 0).then(|| {
-            div()
-                .text_xs()
-                .text_color(cx.theme().muted_foreground)
-                .child(match count {
-                    1 => "1 workflow".to_string(),
-                    n => format!("{n} workflows"),
-                })
-        }))
-        .into_any_element()
+                }))
+                .into_any_element(),
+        ],
+        cx,
+    )
+    .into_any_element()
 }
 
 /// Every workflow on offer, capped and saying what it left out: a row each,
@@ -336,10 +327,10 @@ fn list(
         })
         .collect::<Vec<_>>();
     let meta = |text: String| div().text_xs().text_color(muted).child(text);
-    div()
-        .v_flex()
+    // In a box of its own, with no title row: the page's head names it.
+    crate::chat::pane::page_parts::card_box(cx)
         .w_full()
-        .children(rows)
+        .child(crate::chat::pane::page_parts::ruled(rows, cx))
         .when(left_out > 0, |list| {
             list.child(
                 div()

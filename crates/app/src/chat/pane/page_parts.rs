@@ -1,13 +1,16 @@
-//! What every page about more than one project is built from: a box with a
-//! title row, a section with the same title row and no box, and a pair of
-//! either set side by side while the column holds two.
+//! What every page is built from: its head, a box with a title row, rows
+//! parted by a line, and a pair of boxes set side by side while the column
+//! holds two.
 
-use gpui::{App, Div, ParentElement, Rems, SharedString, Styled, div, rems};
+use gpui::prelude::FluentBuilder as _;
+use gpui::{
+    AnyElement, App, Div, IntoElement, ParentElement, Rems, SharedString, Styled, div, rems,
+};
 use gpui_component::{ActiveTheme, StyledExt};
 
 /// The hairline box every card on a page is drawn in, the plugin host's so
 /// an issue's boxes are the same one.
-pub(super) use onehand_plugin_host::card_box;
+pub(crate) use onehand_plugin_host::card_box;
 
 /// The width a page's box starts from before it grows into its row. Two fit
 /// side by side within the page, and a narrower panel wraps them one under
@@ -28,19 +31,62 @@ pub(super) fn page_card(
     card_box(cx).child(card_title(title, count, control, cx))
 }
 
-/// A section of a page that is a list rather than a box: its title row over
-/// what it holds, on the page's own surface.
-pub(super) fn page_section(
+/// A page's head, in its body: the page's name at the title size, a line of
+/// facts under it in the middle ink, and its actions at the end, each at the
+/// head's size. The pane's header above it carries only chrome.
+pub(crate) fn page_head(
     title: impl Into<SharedString>,
-    count: Option<usize>,
-    control: Option<gpui::AnyElement>,
+    facts: Option<AnyElement>,
+    actions: Vec<AnyElement>,
     cx: &App,
 ) -> Div {
     div()
+        .h_flex()
+        .items_center()
+        .gap_4()
+        .w_full()
+        .child(
+            div()
+                .v_flex()
+                .gap_1()
+                .flex_1()
+                .min_w_0()
+                .child(
+                    div()
+                        .truncate()
+                        .text_xl()
+                        .font_semibold()
+                        .child(title.into()),
+                )
+                .children(facts.map(|facts| {
+                    div()
+                        .text_xs()
+                        .text_color(crate::theme::meta_ink(cx))
+                        .child(facts)
+                })),
+        )
+        .child(
+            div()
+                .flex_none()
+                .h_flex()
+                .items_center()
+                .gap_2()
+                .children(actions),
+        )
+}
+
+/// Rows in a box, a hairline between each two: the line on a wrapper of the
+/// row's own, so a row's focus ring moves nothing.
+pub(crate) fn ruled(rows: impl IntoIterator<Item = AnyElement>, cx: &App) -> Div {
+    let rule = cx.theme().border;
+    div()
         .v_flex()
-        .gap_2()
-        .min_w_0()
-        .child(card_title(title, count, control, cx))
+        .children(rows.into_iter().enumerate().map(|(i, row)| {
+            div()
+                .when(i > 0, |line| line.border_t_1().border_color(rule))
+                .child(row)
+                .into_any_element()
+        }))
 }
 
 /// A page heading: the title in bold, a muted count beside it and an

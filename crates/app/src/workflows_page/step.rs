@@ -1,7 +1,6 @@
 use super::WorkflowsPage;
 use super::draft::{Kind, StepDraft};
 use crate::controls::Quiet as _;
-use crate::controls::Short as _;
 use crate::controls::text_area;
 use crate::controls::text_input;
 use crate::settings::{about, field};
@@ -9,6 +8,7 @@ use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div,
 };
+use onehand_plugin_host::Tall as _;
 
 use gpui_component::switch::Switch;
 use gpui_component::{ActiveTheme, IconName, Sizable as _, StyledExt};
@@ -44,7 +44,7 @@ pub(super) fn step_box(
                 ("step-kind-trigger", i),
                 step.kind.label(),
                 true,
-                onehand_plugin_host::ControlSize::Short,
+                onehand_plugin_host::ControlSize::Tall,
                 cx,
             ),
             move |mut menu, _, _| {
@@ -129,14 +129,13 @@ pub(super) fn step_box(
         .child(
             div()
                 .flex_1()
-                .child(field("Id", None, text_input(&step.id, cx).short(), cx)),
+                .child(field("Id", None, text_input(&step.id, cx).tall(), cx)),
         )
-        .child(div().flex_1().child(field(
-            "Label",
-            None,
-            text_input(&step.label, cx).short(),
-            cx,
-        )));
+        .child(
+            div()
+                .flex_1()
+                .child(field("Label", None, text_input(&step.label, cx).tall(), cx)),
+        );
 
     let body = match step.kind {
         Kind::Agent => {
@@ -238,7 +237,7 @@ pub(super) fn step_box(
                             current.clone()
                         },
                         !current.is_empty(),
-                        onehand_plugin_host::ControlSize::Short,
+                        onehand_plugin_host::ControlSize::Tall,
                         cx,
                     ),
                     move |mut menu, _, _| {
@@ -271,7 +270,7 @@ pub(super) fn step_box(
                     col.child(field(
                         "Command",
                         about("Run by onehand in the work, through sh"),
-                        text_input(&step.command, cx).short(),
+                        text_input(&step.command, cx).tall(),
                         cx,
                     ))
                 })
@@ -279,7 +278,7 @@ pub(super) fn step_box(
                     col.child(field(
                         "Wait at most",
                         about("Such as 45m or 2h; passing all, the pull request leaves draft"),
-                        text_input(&step.wait, cx).short(),
+                        text_input(&step.wait, cx).tall(),
                         cx,
                     ))
                 })

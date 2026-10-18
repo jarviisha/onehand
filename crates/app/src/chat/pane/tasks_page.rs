@@ -1,4 +1,4 @@
-use super::page_parts::{page_card, pair};
+use super::page_parts::{page_card, page_head, pair, ruled};
 use super::workspace_page::{ALL_PROJECTS, PageProject};
 use super::{ChatPane, ChatPaneEvent, Page};
 use crate::controls::Quiet as _;
@@ -182,7 +182,7 @@ impl ChatPane {
                 .collect();
             page_card(title, Some(count), None, cx)
                 .children((count == 0).then(|| muted_line(empty.to_string())))
-                .children(drawn)
+                .child(ruled(drawn, cx))
                 .children((hidden > 0).then(|| muted_line(format!("{hidden} more not shown"))))
         };
         let attention = card(
@@ -214,10 +214,11 @@ impl ChatPane {
             })
         }));
 
-        // A filter bar over the cards and no head: the cards hold the counts,
-        // and the page has no action of its own. The cards two by two while
-        // the column holds two.
+        // The head names the page and holds no action, the page having none;
+        // then a filter bar over the cards, which hold the counts. The cards
+        // two by two while the column holds two.
         let body = vec![
+            page_head("Tasks", None, Vec::new(), cx).into_any_element(),
             div().h_flex().child(filter).into_any_element(),
             pair(attention, running).into_any_element(),
             pair(queued, finished).into_any_element(),

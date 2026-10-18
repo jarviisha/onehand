@@ -22,7 +22,7 @@ mod workbench;
 pub use choice_mark::choice_mark;
 pub use confirm::{Confirm, confirm_on};
 pub use list_detail::{ListDetail, ListWidths, back_link, list_detail};
-pub use menu::{menu_below, menu_command, menu_item, menu_row};
+pub use menu::{menu_below, menu_command, menu_item, menu_row, split_action};
 pub use onehand_core::worktree::removal::Process;
 pub use row_actions::{HoverSlot, hover_slot};
 pub use strip::{strip, strip_control};
@@ -641,9 +641,11 @@ impl ControlSize {
     }
 }
 
-/// The hairline box a page groups one thing's facts in: a card on the
-/// overview or Tasks, a project tile, a task's row, an issue's conflict or
-/// review. Padded `p_3`, its parts `gap_2` apart.
+/// The box a page groups one thing's facts in: a card on the overview or
+/// Tasks, a project tile, a task's row, an issue's conflict or review.
+/// Padded `p_3`, its parts `gap_2` apart, edged in a control's edge: the
+/// hairline is too near the page's fill in the dark palette to group
+/// anything.
 ///
 /// Here rather than in the app for the reason [`action`] is: the Issues page
 /// draws the same box as the overview's.
@@ -655,7 +657,7 @@ pub fn card_box(cx: &App) -> Div {
         .p_3()
         .rounded(cx.theme().radius)
         .border_1()
-        .border_color(cx.theme().border)
+        .border_color(cx.theme().input)
 }
 
 /// What opens a block held folded under it: its chevron first, then its
