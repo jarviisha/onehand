@@ -131,6 +131,7 @@ impl WorkflowsPage {
                     ))
                 });
                 page.picked = Some(pick.clone());
+                page.hold_focus(window, cx);
                 cx.notify();
             },
         );
@@ -178,9 +179,18 @@ impl WorkflowsPage {
                     window,
                     cx,
                 ));
+                page.picked = Some(Pick::New);
+                page.hold_focus(window, cx);
                 cx.notify();
             },
         );
+    }
+
+    /// Put the keyboard on the page itself: the row that took the click
+    /// leaves the frame when the editor shows alone, and a focus left on a
+    /// handle no longer drawn takes the page's keys with it.
+    fn hold_focus(&self, window: &mut Window, cx: &mut Context<Self>) {
+        window.focus(&self.focus_handle, cx);
     }
 
     /// Close the form, asking first when it holds changes.

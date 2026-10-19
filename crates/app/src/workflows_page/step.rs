@@ -239,7 +239,17 @@ fn step_row(
             .text_color(muted)
             .flex_none(),
         )
-        .when(!shipped, |head| head.child(more));
+        // A press on the ⋯ stays on it, or the row under it would open or
+        // close the step on the same click.
+        .when(!shipped, |head| {
+            head.child(
+                div()
+                    .id(("step-more-hold", i))
+                    .flex_none()
+                    .on_mouse_up(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .child(more),
+            )
+        });
     if !row.open {
         return head.into_any_element();
     }

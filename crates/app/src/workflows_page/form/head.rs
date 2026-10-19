@@ -52,10 +52,12 @@ fn run_menu(
 }
 
 /// The ⋯ beside *Run…*: *Duplicate* unless that is the head's primary,
-/// *Export…*, and *Delete…* for a file of the person's own.
+/// *Export…* once there is something saved to export, and *Delete…* for a
+/// file of the person's own.
 fn more_menu(
     handle: &Entity<WorkflowsPage>,
     duplicate: bool,
+    export: bool,
     delete: bool,
     cx: &App,
 ) -> AnyElement {
@@ -82,9 +84,11 @@ fn more_menu(
                         .on_click(act(WorkflowsPage::duplicate_open)),
                 );
             }
-            menu = menu.item(
-                crate::controls::menu_item("Export…").on_click(act(WorkflowsPage::export_open)),
-            );
+            if export {
+                menu = menu.item(
+                    crate::controls::menu_item("Export…").on_click(act(WorkflowsPage::export_open)),
+                );
+            }
             if delete {
                 menu = menu.separator().item(
                     crate::controls::menu_row(move |_, _| {
@@ -139,6 +143,7 @@ pub(super) fn editor_head(
     actions.push(more_menu(
         handle,
         !draft.shipped && draft.file.is_some(),
+        draft.shipped || draft.file.is_some(),
         draft.file.is_some(),
         cx,
     ));
