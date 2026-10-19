@@ -158,11 +158,12 @@ height (its dragged height kept).
   row opens it beside the list: a head (its name, how many steps and where it works under it,
   *Run…*, which refuses until it is saved, and a ⋯ with *Duplicate*, *Export…* and *Delete…*), then
   three groups under headings, *About* (name and description), *How it runs* (where it works,
-  misses allowed, timeout) and *Steps* (what a prompt may use, the steps in one box a row each,
+  misses allowed, timeout) and *Steps* (what a prompt may use, the steps down a rail,
   *Add step* and its menu of kinds), then the problems (a name clash among them) above *Save*,
-  which refuses with the first and spins while it writes, and *Cancel*. A step's row reads its
-  number, its kind, its name, where its failure goes back to (*on failure ↑ N*), and its first
-  problem; one step opens at a time under its row, its kind, id and label on one line, then its
+  which refuses with the first and spins while it writes, and *Cancel*. A step reads as a
+  numbered dot on a rail that joins it to the next (the open one's dot filled), then its name,
+  its kind, where its failure goes back to (*on failure ↑ N*), and its first problem; one step
+  opens at a time in a box under its line, its kind, id and label on one line, then its
   kind's fields (an agent step's prompt growing with what is written, *Write larger…* under it
   opening it in a dialog the width of a page, with what a prompt may use, *Cancel* and *Done*),
   its ⋯ moving or removing it. A shipped workflow opens read-only, *Duplicate to

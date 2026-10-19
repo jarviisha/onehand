@@ -15,12 +15,18 @@ use gpui_component::switch::Switch;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::workflow::{GateKind, Place};
 
-/// The slot a step's number stands in: two digits, so names do not move
-/// past the ninth step.
-const NUMBER_W: gpui::Rems = gpui::rems(1.25);
+/// How tall a step's line stands, its dot centred on it: the line the rail
+/// runs through from one step to the next.
+const STEP_LINE_H: gpui::Rems = gpui::rems(2.25);
 
-/// The slot a step's kind stands in: as wide as the widest kind's badge.
-const KIND_W: gpui::Rems = gpui::rems(6.5);
+/// A step's dot, its number inside it.
+const DOT: gpui::Rems = gpui::rems(1.375);
+
+/// Where the rail runs: through the dots' centres.
+const RAIL_X: gpui::Rems = gpui::rems(0.6875);
+
+/// Half a step's line: where the rail meets a dot's centre.
+const RAIL_JOIN: gpui::Rems = gpui::rems(1.125);
 
 /// The least a step's id or label takes before the line wraps under the kind.
 const NAME_MIN: gpui::Rems = gpui::rems(10.);
@@ -32,9 +38,9 @@ pub(super) struct Earlier {
     pub(super) keeps: bool,
 }
 
-/// The steps, in one box, a row each: its number, its kind, its name and
-/// what it does on failure, read without opening it; the one open shows its
-/// fields under its row.
+/// The steps as a run, read down a rail: a numbered dot each, joined to the
+/// next, then its name, its kind and what it does on failure, read without
+/// opening it; the one open shows its fields in a box under its line.
 pub(super) fn steps_box(
     handle: &Entity<WorkflowsPage>,
     draft: &WorkflowDraft,
@@ -65,12 +71,7 @@ pub(super) fn steps_box(
         };
         step_row(handle, &row, step, &earlier[..i], place, cx)
     });
-    crate::chat::pane::page_parts::card_box(cx)
-        .w_full()
-        .gap_0()
-        .p_0()
-        .child(crate::chat::pane::page_parts::ruled(rows, cx))
-        .into_any_element()
+    div().v_flex().w_full().children(rows).into_any_element()
 }
 
 /// What a step's row is drawn from besides the step itself.
@@ -181,44 +182,26 @@ fn step_row(
         .h_flex()
         .items_center()
         .gap_3()
-        .min_h(crate::tokens::ROW_H)
-        .px_4()
-        .py_2()
+        .min_h(STEP_LINE_H)
+        .px_2()
+        .rounded(cx.theme().radius)
         .cursor_pointer()
         .hover(|row| row.bg(cx.theme().list_hover))
         .on_click(click(handle, move |page, window, cx| {
             page.edit_open_step(window, cx, |d| d.toggle_step(i))
         }))
+        .child(div().min_w_0().truncate().font_medium().child(name.clone()))
         .child(
-            div()
-                .flex_none()
-                .w(NUMBER_W)
-                .text_color(muted)
-                .child(format!("{}", i + 1)),
+            onehand_plugin_host::badge(
+                step.kind.label(),
+                onehand_plugin_host::Tint {
+                    fill: cx.theme().secondary,
+                    ink: cx.theme().secondary_foreground,
+                },
+            )
+            .flex_none(),
         )
-        // The kind in a slot as wide as the widest, so every name starts on
-        // one line down the box.
-        .child(
-            div()
-                .flex_none()
-                .w(KIND_W)
-                .h_flex()
-                .child(onehand_plugin_host::badge(
-                    step.kind.label(),
-                    onehand_plugin_host::Tint {
-                        fill: cx.theme().secondary,
-                        ink: cx.theme().secondary_foreground,
-                    },
-                )),
-        )
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .truncate()
-                .font_medium()
-                .child(name.clone()),
-        )
+        .child(div().flex_1())
         .when(!row.facts.is_empty(), |head| {
             head.child(
                 div()
@@ -258,8 +241,60 @@ fn step_row(
                     .child(more),
             )
         });
+    let rail = cx.theme().border;
+    let dot = {
+        let (fill, edge, ink) = match row.open {
+            true => (
+                cx.theme().accent,
+                cx.theme().accent,
+                cx.theme().accent_foreground,
+            ),
+            false => (cx.theme().background, rail, muted),
+        };
+        div()
+            .flex_none()
+            .h(STEP_LINE_H)
+            .h_flex()
+            .items_center()
+            .child(
+                div()
+                    .size(DOT)
+                    .rounded_full()
+                    .border_1()
+                    .border_color(edge)
+                    .bg(fill)
+                    .h_flex()
+                    .justify_center()
+                    .text_xs()
+                    .text_color(ink)
+                    .child(format!("{}", i + 1)),
+            )
+    };
+    // The rail in two halves a step draws for itself, into its dot from the
+    // step before and out of it to the next, so it starts and ends on a dot
+    // however tall an open step stands.
+    let half = || {
+        div()
+            .absolute()
+            .left(RAIL_X)
+            .w_0()
+            .border_l_1()
+            .border_color(rail)
+    };
+    let step_line = |content: AnyElement| {
+        div()
+            .relative()
+            .h_flex()
+            .items_start()
+            .gap_2()
+            .when(i > 0, |line| line.child(half().top_0().h(RAIL_JOIN)))
+            .when(!last, |line| line.child(half().top(RAIL_JOIN).bottom_0()))
+            .child(dot)
+            .child(div().flex_1().min_w_0().v_flex().child(content))
+            .into_any_element()
+    };
     if !row.open {
-        return head.into_any_element();
+        return step_line(head.into_any_element());
     }
     // The kind picker is the first field: it decides every field after it.
     let names = div()
@@ -465,18 +500,18 @@ fn step_row(
         }
     };
 
-    div()
-        .v_flex()
-        .child(head)
-        .child(
-            div()
-                .v_flex()
-                .gap_4()
-                .px_4()
-                .pt_2()
-                .pb_6()
-                .child(names)
-                .child(body),
-        )
-        .into_any_element()
+    step_line(
+        div()
+            .v_flex()
+            .pb_3()
+            .child(head)
+            .child(
+                onehand_plugin_host::card_box(cx)
+                    .mt_1()
+                    .gap_4()
+                    .child(names)
+                    .child(body),
+            )
+            .into_any_element(),
+    )
 }
