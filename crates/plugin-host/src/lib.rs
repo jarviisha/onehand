@@ -812,8 +812,13 @@ pub fn choice(
 ///
 /// **One edged track.** Loose ghosts side by side read as two words, the
 /// unchosen one as plain text: nothing said they were one control with one
-/// choice standing. The choices sit flush in a control's edge, the chosen
-/// one filled, so the track says "one of these" before anything is pressed.
+/// choice standing. The choices sit in a control's edge, the chosen one
+/// filled, so the track says "one of these" before anything is pressed.
+///
+/// **No two fills touch.** A hovered choice beside the chosen one would run
+/// into it as one band, and either into the edge: the track pads its choices
+/// off its edge and parts them by a gap, a step taller than the control it
+/// holds for it.
 ///
 /// `size` is the role's, so a switch sits level with the buttons and inputs
 /// of that role beside it.
@@ -833,7 +838,8 @@ pub fn switch(
         .rounded(cx.theme().radius)
         .border_1()
         .border_color(cx.theme().input)
-        .overflow_hidden()
+        .p_0p5()
+        .gap_0p5()
         .children(labels.iter().enumerate().map(|(i, label)| {
             let pick = pick.clone();
             choice((id, i), label.clone(), i == active, size, cx)

@@ -62,6 +62,11 @@ the one before cannot give:
 
 A boundary is drawn once: no line along a change of surface, no edge doubled by a neighbour's.
 
+Where one of several items can be chosen (a list's rows, a switch's choices), no two of their
+fills touch and none touches the frame around them: a gap parts them, padding keeps them off the
+frame, so a hovered item beside the chosen one never runs into it as one band (*Lists*; `switch`
+pads its track `p_0p5` and parts its choices `gap_0p5`).
+
 ### Spacing and density
 
 | Relationship | Default |
