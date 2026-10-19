@@ -3,6 +3,12 @@ use gpui_component::input::{InputState, TextareaState};
 use onehand_core::workflow::{self as core, GateKind, Place, StepKind, StepSpec, Template};
 use std::path::PathBuf;
 
+/// The lines a step's prompt shows when it is short.
+const PROMPT_MIN_ROWS: usize = 6;
+
+/// The lines a step's prompt grows to before it scrolls.
+const PROMPT_MAX_ROWS: usize = 24;
+
 /// The template form's fields.
 ///
 /// `file` is the template being changed, or `None` for a new one or a
@@ -127,7 +133,15 @@ impl StepDraft {
             id: input(&spec.id, window, cx),
             label: input(&spec.label, window, cx),
             kind,
-            prompt: cx.new(|cx| TextareaState::new(window, cx).default_value(prompt)),
+            // A prompt is the step's whole instruction: it grows with what is
+            // written, from a paragraph to most of a screen, and scrolls past
+            // that. Only one step is open at a time, so its height pushes
+            // nothing a person is reading.
+            prompt: cx.new(|cx| {
+                TextareaState::new(window, cx)
+                    .auto_grow(PROMPT_MIN_ROWS, PROMPT_MAX_ROWS)
+                    .default_value(prompt)
+            }),
             gates,
             keep_answer,
             command: cx.new(|cx| {

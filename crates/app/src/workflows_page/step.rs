@@ -15,11 +15,6 @@ use gpui_component::switch::Switch;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::workflow::{GateKind, Place};
 
-/// How tall a step's prompt stands before it scrolls: a paragraph in view, so
-/// a step reads without opening it, and a form of several steps still fits a
-/// screen.
-const PROMPT_H: gpui::Rems = gpui::rems(8.);
-
 /// The slot a step's number stands in: two digits, so names do not move
 /// past the ninth step.
 const NUMBER_W: gpui::Rems = gpui::rems(1.25);
@@ -343,7 +338,7 @@ fn step_row(
                     None,
                     onehand_plugin_host::contained_scroll(
                         ("step-prompt", i),
-                        text_area(&step.prompt, cx).h(PROMPT_H).disabled(shipped),
+                        text_area(&step.prompt, cx).disabled(shipped),
                     ),
                     cx,
                 ))
