@@ -14,6 +14,7 @@
 mod actions;
 mod draft;
 mod form;
+mod pick;
 mod step;
 
 pub(crate) use draft::WorkflowDraft;
