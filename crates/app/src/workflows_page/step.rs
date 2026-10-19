@@ -295,9 +295,9 @@ fn step_row(
                     .quiet(cx)
                     .icon(Icon::new(IconName::Maximize))
                     .label(if shipped {
-                        "Read larger"
+                        "Read larger…"
                     } else {
-                        "Write larger"
+                        "Write larger…"
                     })
                     .on_click(move |_, window: &mut Window, cx: &mut App| {
                         super::prompt_dialog::open(

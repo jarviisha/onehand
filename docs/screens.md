@@ -163,7 +163,9 @@ height (its dragged height kept).
   which refuses with the first and spins while it writes, and *Cancel*. A step's row reads its
   number, its kind, its name, where its failure goes back to (*on failure ↑ N*), and its first
   problem; one step opens at a time under its row, its kind, id and label on one line, then its
-  kind's fields, its ⋯ moving or removing it. A shipped workflow opens read-only, *Duplicate to
+  kind's fields (an agent step's prompt growing with what is written, *Write larger…* under it
+  opening it in a dialog the width of a page, with what a prompt may use, *Cancel* and *Done*),
+  its ⋯ moving or removing it. A shipped workflow opens read-only, *Duplicate to
   edit* its primary, with no *Save*; an unreadable file of the person's own opens why, with
   *Delete…*.
 

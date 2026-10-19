@@ -518,6 +518,7 @@ change (`git checkout . && git clean -fd`).
 | A shipped workflow | Pick *Work in checkout* | Its fields are disabled, no *Save*; *Duplicate to edit* opens *Work in checkout copy*, picked, as a new workflow |
 | An unreadable file | Put a `.toml` that does not parse in the workflows folder, pick its row | Its reason in the warning ink and *Delete…*, which asks and removes the file |
 | Run from the page | Two projects, the second selected in the rail; pick *Work in checkout*, *Run…* | The menu lists the selected project first; picking it opens the launcher on it with *Work in checkout* picked; on a workflow with unsaved changes *Run…* refuses, saying to save first |
+| A prompt written larger | Open an agent step, *Write larger…*, type a line, *Done*; again, type, *Cancel* | The dialog holds the prompt and what it may use; *Done* puts the line in the step's prompt and the form holds a change; *Cancel* leaves it as it was. On a shipped workflow it reads *Read larger…*, the field disabled, *Close* alone |
 | A repair loop on the rows | Pick a workflow whose Verify goes back to Implement | Verify's row reads *on failure ↑ N* (Implement's number) without being opened |
 | The check command on the project page | Open a project with no session, type a command in *Check command* | *Run check* appears beside *New session*; the command is kept after a restart |
 | A full slot | With `at_once = 1` and an issue task running, *Run workflow…* on another issue | *Before it starts* names the issue being worked; *Run* is spent |
