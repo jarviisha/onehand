@@ -186,11 +186,16 @@ impl WorkflowsPage {
         );
     }
 
-    /// Put the keyboard on the page itself: the row that took the click
-    /// leaves the frame when the editor shows alone, and a focus left on a
-    /// handle no longer drawn takes the page's keys with it.
+    /// Keep the keyboard where the next key is meant for: on the list while
+    /// it stands beside the editor, so ↑ and ↓ go on stepping it; else on
+    /// the page itself, as the row that took the click leaves the frame when
+    /// the editor shows alone, and a focus left on a handle no longer drawn
+    /// takes the page's keys with it.
     fn hold_focus(&self, window: &mut Window, cx: &mut Context<Self>) {
-        window.focus(&self.focus_handle, cx);
+        match self.side_by_side.get() {
+            true => window.focus(&self.list_focus, cx),
+            false => window.focus(&self.focus_handle, cx),
+        }
     }
 
     /// Esc: the innermost thing open goes, the step drawer before the form.

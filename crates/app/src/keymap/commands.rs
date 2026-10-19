@@ -414,7 +414,7 @@ pub const COMMANDS: &[Command] = &[
         "Pick the workflow above",
         ["up"],
         crate::workflows_page::WorkflowsUp,
-        "WorkflowsPage && !Dialog && !Input",
+        "WorkflowsList && !Dialog && !Input",
         "Workflows page"
     ),
     command!(
@@ -422,7 +422,7 @@ pub const COMMANDS: &[Command] = &[
         "Pick the workflow below",
         ["down"],
         crate::workflows_page::WorkflowsDown,
-        "WorkflowsPage && !Dialog && !Input",
+        "WorkflowsList && !Dialog && !Input",
         "Workflows page"
     ),
     // `A > B` scores at `B`'s depth, so these tie with the input's own arrow

@@ -320,7 +320,8 @@ header floating over both with no fill; its edges are a list page's, the list's 
 and every word on the header's line, both halves starting `pt_3` under the header, a form at the
 top of its half, level with the list's head; nothing is picked on arrival, the detail a centred `hint` saying
 what to pick; picking another item over unsaved changes asks first, *Keep* leaving the first
-picked; ↑ and ↓ step the list, opening what they reach, never while a field holds the caret.
+picked; ↑ and ↓ step the list, opening what they reach, only while the list holds the keyboard: never
+from the detail beside it, nor while a field holds the caret.
 
 ### Forms
 
