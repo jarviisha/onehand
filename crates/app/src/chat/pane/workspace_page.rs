@@ -320,6 +320,25 @@ impl ChatPane {
         view: gpui::AnyView,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
+        // The Workflows page splits the pane from its top edge to its bottom,
+        // so its header floats over the page rather than standing above it:
+        // the strip draws no fill, and the page keeps its own content clear
+        // of it.
+        if self.showing_workflows() {
+            return div()
+                .relative()
+                .size_full()
+                .child(div().size_full().v_flex().child(view))
+                .child(
+                    div()
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .right_0()
+                        .child(self.header(cx)),
+                )
+                .into_any_element();
+        }
         div()
             .size_full()
             .v_flex()

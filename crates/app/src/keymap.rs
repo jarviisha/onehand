@@ -472,6 +472,24 @@ mod tests {
             Some(CompletionNext.name().into())
         );
         assert_eq!(
+            action_at(
+                &map,
+                "up",
+                &["Shell", "ChatComposerCard", "ChatComposer", "Input"]
+            ),
+            Some(CompletionPrev.name().into())
+        );
+        // The Workflows page's arrows step its step drawer, never the
+        // composer's suggestions nor a field's caret.
+        assert_eq!(
+            action_at(&map, "up", &["Shell", "Chat", "WorkflowsPage"]),
+            Some(crate::workflows_page::WorkflowStepUp.name().into())
+        );
+        assert_eq!(
+            action_at(&map, "up", &["Shell", "Chat", "WorkflowsPage", "Input"]),
+            None
+        );
+        assert_eq!(
             action_at(&map, "shift-tab", &["Shell", "ChatComposerCard", "Input"]),
             Some(CycleMode.name().into())
         );

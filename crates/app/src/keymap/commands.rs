@@ -409,6 +409,22 @@ pub const COMMANDS: &[Command] = &[
         "WorkflowsPage && !Dialog && !Input",
         "Workflows page"
     ),
+    command!(
+        "workflow_step_up",
+        "Open the step before",
+        ["up"],
+        crate::workflows_page::WorkflowStepUp,
+        "WorkflowsPage && !Dialog && !Input",
+        "Workflows page"
+    ),
+    command!(
+        "workflow_step_down",
+        "Open the step after",
+        ["down"],
+        crate::workflows_page::WorkflowStepDown,
+        "WorkflowsPage && !Dialog && !Input",
+        "Workflows page"
+    ),
     // `A > B` scores at `B`'s depth, so these tie with the input's own arrow
     // and Tab bindings and win by being registered later. The composer adds
     // `ChatComposer` only while a list is open, so otherwise the keys still

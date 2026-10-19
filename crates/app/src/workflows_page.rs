@@ -14,26 +14,32 @@
 mod actions;
 mod draft;
 mod form;
+mod list;
+mod pick;
+mod prompt_dialog;
 mod step;
 
 pub(crate) use draft::WorkflowDraft;
 
-// The Workflows page's key: the form open on the page closed, asked first
-// when it holds changes.
-gpui::actions!(workflows_page, [CloseWorkflowForm]);
+// The Workflows page's keys: the innermost thing open closed (the step
+// drawer, then the form, asked first when it holds changes), and the step
+// drawer stepped to the step before or after.
+gpui::actions!(
+    workflows_page,
+    [CloseWorkflowForm, WorkflowStepUp, WorkflowStepDown]
+);
 
-use crate::controls::Quiet as _;
-use crate::controls::Short as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, AppContext as _, ClickEvent, Context, Entity, EventEmitter, FocusHandle,
-    Focusable, InteractiveElement as _, IntoElement, ParentElement, Render, SharedString,
+    App, AppContext as _, ClickEvent, Context, Entity, EventEmitter, FocusHandle, Focusable,
+    InteractiveElement as _, IntoElement, ParentElement, Render, SharedString,
     StatefulInteractiveElement as _, Styled, Window, div,
 };
-use gpui_component::button::ButtonVariants as _;
-use gpui_component::{ActiveTheme, Icon, Sizable as _, StyledExt};
-use onehand_core::workflow as core;
-use onehand_plugin_host::Tall as _;
+use gpui_component::{ActiveTheme, StyledExt};
+use gpui_component::{ResizableState, h_resizable, resizable_panel};
+use onehand_plugin_host::{
+    ListWidths, Measured, back_link, list_detail, measure_width, unmeasured,
+};
 use std::path::PathBuf;
 
 /// What the page asks of its window.
@@ -47,6 +53,9 @@ pub(crate) struct WorkflowsPage {
     focus_handle: FocusHandle,
     /// The workflow being written, while one is.
     draft: Option<WorkflowDraft>,
+    /// The workflow open beside the list, by key: the list is read again
+    /// after every save.
+    picked: Option<pick::Pick>,
     /// The window's projects a run may start on, in rail order, and the one
     /// selected in the rail, which *Run…* offers first.
     projects: Vec<(PathBuf, SharedString)>,
@@ -55,8 +64,74 @@ pub(crate) struct WorkflowsPage {
     /// one write lands at a time.
     writing: bool,
     /// One focus handle per listed row, by place: each row is a tab stop, so
-    /// the keyboard reaches its actions as the pointer does.
+    /// the keyboard reaches it as the pointer does.
     rows: Vec<FocusHandle>,
+    /// The list's width as dragged beside the editor.
+    split: Entity<ResizableState>,
+    /// The page's width as last laid out, which decides whether the list and
+    /// the editor stand side by side.
+    width: Measured,
+    /// The editor's scroll, and the open step kept in view above the drawer.
+    reveal: Reveal,
+}
+
+/// Keeps the step open in the drawer in view: the form's scroll, and a mark
+/// set when a step opens, which the open step's line answers on the next
+/// frame by scrolling the form until the line stands clear of the drawer.
+#[derive(Clone)]
+pub(super) struct Reveal {
+    scroll: gpui::ScrollHandle,
+    pending: std::rc::Rc<std::cell::Cell<bool>>,
+    page: gpui::WeakEntity<WorkflowsPage>,
+}
+
+/// The most of the editor's height the step drawer takes: the rest is left
+/// to the form above, enough for the open step's line and its neighbours.
+const DRAWER_SHARE: f32 = 0.6;
+
+/// How far the open step's line stands clear of the drawer's edge, or of
+/// the form's top, once it has been scrolled into view.
+const REVEAL_MARGIN: gpui::Rems = gpui::rems(1.5);
+
+impl Reveal {
+    /// Ask for the open step to be brought into view.
+    pub(super) fn ask(&self) {
+        self.pending.set(true);
+    }
+
+    /// What the open step's line holds to say where it landed: laid out over
+    /// the line, it scrolls the form once, when asked.
+    pub(super) fn watch(&self) -> impl IntoElement {
+        let this = self.clone();
+        gpui::canvas(
+            move |bounds, window, cx| {
+                if !this.pending.replace(false) {
+                    return;
+                }
+                let view = this.scroll.bounds();
+                let margin = window.rem_size() * REVEAL_MARGIN.0;
+                let mut offset = this.scroll.offset();
+                if bounds.bottom() + margin > view.bottom() {
+                    offset.y -= bounds.bottom() + margin - view.bottom();
+                } else if bounds.top() - margin < view.top() {
+                    offset.y += view.top() - (bounds.top() - margin);
+                }
+                offset.y = offset.y.min(gpui::px(0.)).max(-this.scroll.max_offset().y);
+                if offset != this.scroll.offset() {
+                    this.scroll.set_offset(offset);
+                    // Prepaint runs inside the page's own frame: redraw it
+                    // after, never from here.
+                    let page = this.page.clone();
+                    cx.defer(move |cx| {
+                        let _ = page.update(cx, |_, cx| cx.notify());
+                    });
+                }
+            },
+            |_, _: (), _, _| {},
+        )
+        .absolute()
+        .size_full()
+    }
 }
 
 impl EventEmitter<WorkflowsPageEvent> for WorkflowsPage {}
@@ -72,10 +147,18 @@ impl WorkflowsPage {
         cx.new(|cx| Self {
             focus_handle: cx.focus_handle(),
             draft: None,
+            picked: None,
             projects: Vec::new(),
             selected: None,
             writing: false,
             rows: Vec::new(),
+            split: cx.new(|_| ResizableState::default()),
+            width: unmeasured(),
+            reveal: Reveal {
+                scroll: gpui::ScrollHandle::new(),
+                pending: Default::default(),
+                page: cx.entity().downgrade(),
+            },
         })
     }
 
@@ -107,7 +190,7 @@ impl WorkflowsPage {
 
     /// The projects in the order *Run…* offers them: the one selected in the
     /// rail first, then the rest as the rail has them.
-    fn run_choices(&self) -> Vec<(PathBuf, SharedString)> {
+    pub(super) fn run_choices(&self) -> Vec<(PathBuf, SharedString)> {
         let mut choices = self.projects.clone();
         if let Some(at) = choices
             .iter()
@@ -120,8 +203,13 @@ impl WorkflowsPage {
     }
 }
 
+/// The list's width before anybody drags it, and the range a drag may take
+/// it through: room for a long workflow name on one line beside the head's
+/// *New*, never so wide that it crowds the editor.
+const LIST: ListWidths = ListWidths::new(20., 16., 30.);
+
 impl Render for WorkflowsPage {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let handle = cx.entity();
         let listed = crate::workflow::templates(cx)
             .len()
@@ -129,11 +217,175 @@ impl Render for WorkflowsPage {
         while self.rows.len() < listed {
             self.rows.push(cx.focus_handle().tab_stop(true));
         }
-        let list = list(&handle, &self.run_choices(), &self.rows, cx);
-        let form = self
+        let layout = list_detail(
+            self.split.read(cx),
+            &LIST,
+            self.width.get(),
+            window.rem_size(),
+        );
+        let draft_name = self
             .draft
             .as_ref()
-            .map(|draft| form::form(&handle, draft, self.writing, cx));
+            .map(|draft| draft.name.read(cx).value().to_string());
+        // Its scroll starts under the pane's header, which floats over the
+        // page's top: rows scrolled up go under the header's edge, never
+        // behind its controls. The split's line still runs the whole height.
+        let list = div().size_full().pt(crate::tokens::BAR_H).child(
+            div()
+                .id("workflows-list")
+                .size_full()
+                .overflow_y_scroll()
+                // The rows' fills on this edge and their words a row's inset in,
+                // on the line the header's words stand on, as on the Issues page.
+                .px_6()
+                .pb_6()
+                .child(list::list_column(
+                    &handle,
+                    self.picked.as_ref(),
+                    draft_name,
+                    &self.rows,
+                    cx,
+                )),
+        );
+        let detail = |under_header: bool| {
+            // Only the hint stands in the middle of the region; a form starts
+            // at its top, level with the list's head.
+            let mut centred = false;
+            let body = match &self.draft {
+                Some(draft) => form::form(
+                    &handle,
+                    draft,
+                    self.writing,
+                    &self.run_choices(),
+                    &self.reveal,
+                    cx,
+                ),
+                None => match self.picked_entry(cx) {
+                    Some(crate::workflow::Entry {
+                        template: Err(why),
+                        file: Some(file),
+                    }) => form::unreadable(&handle, &why, &file, cx),
+                    _ => {
+                        centred = true;
+                        onehand_plugin_host::hint(
+                            "Pick a workflow to see and change it, or make a new one",
+                            cx,
+                        )
+                    }
+                },
+            };
+            let drawer = self
+                .draft
+                .as_ref()
+                .and_then(|draft| step::step_drawer(&handle, draft, draft.place, cx));
+            // Centred up to the column a form is read in, its gutters equal,
+            // so hiding the list centres it rather than stretching it.
+            let form = div()
+                .id("workflows-detail")
+                .size_full()
+                .overflow_y_scroll()
+                .track_scroll(&self.reveal.scroll)
+                .child(
+                    div()
+                        .h_flex()
+                        .justify_center()
+                        .when(!centred, |column| column.items_start())
+                        .when(!under_header, |column| column.pt_6())
+                        .px_8()
+                        .pb_6()
+                        .min_h_full()
+                        .child(
+                            div()
+                                .v_flex()
+                                .when(under_header, |column| column.pt_3())
+                                .w_full()
+                                .max_w(crate::tokens::PAGE_PROSE)
+                                .child(body),
+                        ),
+                );
+            // The open step's fields in a drawer docked under the form, which
+            // gives up the room it takes: the form above stays in reach, the
+            // open step's line kept in view just over the drawer's edge.
+            // Beside the list the region starts under the floating header,
+            // as the list does, so the form never scrolls behind its controls.
+            let region = div()
+                .size_full()
+                .v_flex()
+                .when(under_header, |region| region.pt(crate::tokens::BAR_H));
+            let Some(drawer) = drawer else {
+                return region
+                    .child(div().flex_1().min_h_0().child(form))
+                    .into_any_element();
+            };
+            region
+                .child(div().flex_1().min_h_0().child(form))
+                .child(
+                    div()
+                        .flex_none()
+                        // As tall as the open step's fields, up to its share:
+                        // a step with few fields leaves the form the room.
+                        .max_h(gpui::relative(DRAWER_SHARE))
+                        // A sheet laid over the form's foot: inset from the
+                        // region's sides, its top corners rounded, lifted by a
+                        // shadow cast upward, on the page's own surface, so it
+                        // is the lift and the edges that part it, not a second
+                        // fill, its edge a control's.
+                        .mx_3()
+                        .v_flex()
+                        .rounded_t(cx.theme().radius)
+                        .border_1()
+                        .border_b_0()
+                        .border_color(cx.theme().input)
+                        .bg(cx.theme().background)
+                        .shadow(onehand_plugin_host::tokens::lift_up(cx))
+                        .overflow_hidden()
+                        .child(
+                            div().id("step-drawer").min_h_0().overflow_y_scroll().child(
+                                div().h_flex().justify_center().px_8().py_4().child(
+                                    div()
+                                        .w_full()
+                                        .max_w(crate::tokens::PAGE_PROSE)
+                                        .child(drawer),
+                                ),
+                            ),
+                        ),
+                )
+                .into_any_element()
+        };
+        let halves = if layout.side_by_side {
+            h_resizable("workflows-split")
+                .with_state(&self.split)
+                .child(
+                    // `flex_none`, or the list grows into the room the editor
+                    // was opened to be written in.
+                    resizable_panel()
+                        .size(layout.start)
+                        .size_range(layout.range)
+                        .flex_none()
+                        .child(
+                            div()
+                                .size_full()
+                                .border_r_1()
+                                .border_color(cx.theme().border)
+                                .child(list),
+                        ),
+                )
+                .child(resizable_panel().child(detail(true)))
+                .into_any_element()
+        } else if self.picked.is_some() {
+            let back = back_link("workflows-back", "Workflows", cx)
+                .on_click(click(&handle, |page, window, cx| {
+                    page.close_workflow_form(window, cx)
+                }));
+            div()
+                .size_full()
+                .v_flex()
+                .child(div().px_8().pt(crate::tokens::BAR_H).child(back))
+                .child(div().flex_1().min_h_0().child(detail(false)))
+                .into_any_element()
+        } else {
+            list.into_any_element()
+        };
         // A bare page, so it tracks its own focus: a field typed in here
         // must be inside this, or the window's keys land elsewhere.
         div()
@@ -142,258 +394,25 @@ impl Render for WorkflowsPage {
             .track_focus(&self.focus_handle)
             .on_action(
                 cx.listener(|page: &mut Self, _: &CloseWorkflowForm, window, cx| {
-                    page.close_workflow_form(window, cx);
+                    page.escape(window, cx);
                 }),
             )
+            .on_action(
+                cx.listener(|page: &mut Self, _: &WorkflowStepUp, window, cx| {
+                    page.step_open(-1, window, cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|page: &mut Self, _: &WorkflowStepDown, window, cx| {
+                    page.step_open(1, window, cx)
+                }),
+            )
+            .relative()
             .size_full()
-            .overflow_y_scroll()
-            .child(
-                div().h_flex().justify_center().px_8().py_6().child(
-                    div()
-                        .v_flex()
-                        .gap_6()
-                        .w_full()
-                        .max_w(crate::tokens::PAGE_PROSE)
-                        .text_size(crate::tokens::CHROME_TEXT)
-                        .child(head(&handle, form.is_some(), cx))
-                        .child(list)
-                        .children(form),
-                ),
-            )
+            .text_size(crate::tokens::CHROME_TEXT)
+            .child(measure_width(self.width.clone(), cx.entity().downgrade()))
+            .child(halves)
     }
-}
-
-/// The page's head: its name over what a workflow is and how many there
-/// are, then the actions that make one at the end. *New workflow* is the
-/// page's one primary at rest; while the form is open it holds that, and this
-/// steps down under it.
-fn head(handle: &Entity<WorkflowsPage>, editing: bool, cx: &App) -> AnyElement {
-    let count = crate::workflow::templates(cx).len();
-    let about = "The workflows a run starts from, shared by every workspace. The ones \
-                 onehand ships are read-only: duplicate one to change it.";
-    let facts = match count {
-        0 => about.to_string(),
-        1 => format!("1 workflow · {about}"),
-        n => format!("{n} workflows · {about}"),
-    };
-    crate::chat::pane::page_parts::page_head(
-        "Workflows",
-        Some(facts.into_any_element()),
-        vec![
-            crate::controls::action("import-workflow")
-                .tall()
-                .quiet(cx)
-                .label("Import…")
-                .on_click(click(handle, |page, window, cx| {
-                    page.import_workflow(window, cx)
-                }))
-                .into_any_element(),
-            crate::controls::action("new-workflow")
-                .tall()
-                .when(editing, |button| button.secondary())
-                .when(!editing, |button| button.primary())
-                .label("New workflow")
-                .on_click(click(handle, |page, window, cx| {
-                    page.new_workflow(window, cx)
-                }))
-                .into_any_element(),
-        ],
-        cx,
-    )
-    .into_any_element()
-}
-
-/// Every workflow on offer, capped and saying what it left out: a row each,
-/// its name over what it does, *Built in* in a slot of its own, and *Run…*
-/// and what may be done to it while it is pointed at or the keyboard is on it.
-fn list(
-    handle: &Entity<WorkflowsPage>,
-    choices: &[(PathBuf, SharedString)],
-    focus: &[FocusHandle],
-    cx: &App,
-) -> AnyElement {
-    let entries = crate::workflow::templates(cx);
-    let (muted, ring) = (cx.theme().muted_foreground, cx.theme().ring);
-    let warning = crate::theme::status_ink(cx).warning;
-    let left_out = entries
-        .len()
-        .saturating_sub(crate::workflow::TEMPLATES_SHOWN);
-    let rows = entries
-        .iter()
-        .take(crate::workflow::TEMPLATES_SHOWN)
-        .zip(focus)
-        .enumerate()
-        .map(|(i, (entry, focus))| {
-            let shipped = entry.file.is_none();
-            let about = match &entry.template {
-                Ok(template) => div()
-                    .text_xs()
-                    .text_color(muted)
-                    .child(template.description.clone())
-                    .into_any_element(),
-                Err(why) => div()
-                    .text_xs()
-                    .text_color(warning)
-                    .child(format!("Cannot be read: {why}"))
-                    .into_any_element(),
-            };
-            let readable = entry.template.is_ok();
-            let group = SharedString::from(format!("workflow-row-{i}"));
-            let actions = div()
-                .h_flex()
-                .items_center()
-                .gap_1()
-                .when_some(entry.template.as_ref().ok(), |row, template| {
-                    row.child(run_menu(handle, i, &template.id, choices, cx))
-                })
-                .when(readable, |row| {
-                    row.child(row_action(
-                        handle,
-                        ("duplicate-workflow", i),
-                        "Duplicate",
-                        move |page, window, cx| page.duplicate_workflow(i, window, cx),
-                        cx,
-                    ))
-                })
-                .when(readable, |row| {
-                    row.child(row_action(
-                        handle,
-                        ("export-workflow", i),
-                        "Export…",
-                        move |page, window, cx| page.export_workflow(i, window, cx),
-                        cx,
-                    ))
-                })
-                .when(readable && !shipped, |row| {
-                    row.child(
-                        row_icon(
-                            ("edit-workflow", i),
-                            crate::icons::Icon::SquarePen,
-                            "Edit",
-                            cx,
-                        )
-                        .on_click(click(handle, move |page, window, cx| {
-                            page.edit_workflow(i, window, cx)
-                        })),
-                    )
-                })
-                .when(!shipped, |row| {
-                    row.child(row_delete(
-                        handle,
-                        ("delete-workflow", i),
-                        move |page, window, cx| page.confirm_delete_workflow(i, window, cx),
-                        cx,
-                    ))
-                });
-            onehand_plugin_host::row(false, cx)
-                .cursor_default()
-                .group(group.clone())
-                .track_focus(focus)
-                .border_1()
-                .border_color(gpui::transparent_black())
-                .focus_visible(|row| row.border_color(ring))
-                .h_flex()
-                .items_center()
-                .gap_2()
-                .py_1p5()
-                .child(
-                    div()
-                        .v_flex()
-                        .gap_0p5()
-                        .flex_1()
-                        .min_w_0()
-                        .child(div().truncate().child(entry.name()))
-                        .child(about),
-                )
-                // A content slot, always drawn and as wide whether or not it
-                // holds the badge, so the actions after it never move.
-                .child(div().flex_none().w(BUILT_IN_W).h_flex().justify_end().when(
-                    shipped,
-                    |slot| {
-                        slot.child(
-                            onehand_plugin_host::badge(
-                                "Built in",
-                                onehand_plugin_host::Tint {
-                                    fill: cx.theme().secondary,
-                                    ink: cx.theme().secondary_foreground,
-                                },
-                            )
-                            .flex_none(),
-                        )
-                    },
-                ))
-                .child(onehand_plugin_host::hover_slot(group, false, actions).focus(focus))
-                .into_any_element()
-        })
-        .collect::<Vec<_>>();
-    let meta = |text: String| div().text_xs().text_color(muted).child(text);
-    // In a box of its own, with no title row: the page's head names it.
-    crate::chat::pane::page_parts::card_box(cx)
-        .w_full()
-        .child(crate::chat::pane::page_parts::ruled(rows, cx))
-        .when(left_out > 0, |list| {
-            list.child(
-                div()
-                    .h_flex()
-                    .flex_wrap()
-                    .gap_1()
-                    .text_xs()
-                    .text_color(muted)
-                    .child(format!(
-                        "{left_out} more workflows not shown; remove some from"
-                    ))
-                    .child(
-                        div()
-                            .font_family(cx.theme().mono_font_family.clone())
-                            .child(core::store::dir().display().to_string()),
-                    ),
-            )
-        })
-        .when(entries.is_empty(), |list| {
-            list.child(meta("Reading the workflows…".to_string()))
-        })
-        .into_any_element()
-}
-
-/// The slot *Built in* stands in on every row, held whether or not a row
-/// carries it.
-const BUILT_IN_W: gpui::Rems = gpui::rems(4.5);
-
-/// *Run…* on row `i`: which project to start workflow `workflow` on, the
-/// rail's selection first, then the launcher.
-fn run_menu(
-    handle: &Entity<WorkflowsPage>,
-    i: usize,
-    workflow: &str,
-    choices: &[(PathBuf, SharedString)],
-    cx: &App,
-) -> impl IntoElement {
-    let (handle, choices, workflow) = (handle.clone(), choices.to_vec(), workflow.to_string());
-    crate::controls::menu_below(
-        ("run-workflow", i),
-        crate::controls::action(("run-workflow-trigger", i))
-            .quiet(cx)
-            .short()
-            .label("Run…"),
-        move |mut menu, _, _| {
-            menu = menu.label("Run on");
-            for (root, label) in &choices {
-                let (handle, root, workflow) = (handle.clone(), root.clone(), workflow.clone());
-                menu = menu.item(crate::controls::menu_item(label.clone()).on_click(
-                    move |_, _: &mut Window, cx: &mut App| {
-                        let (root, workflow) = (root.clone(), workflow.clone());
-                        handle.update(cx, |_, cx| {
-                            cx.emit(WorkflowsPageEvent::Run { workflow, root })
-                        });
-                    },
-                ));
-            }
-            if choices.is_empty() {
-                menu = menu.label("Add a project first");
-            }
-            menu
-        },
-    )
 }
 
 /// A click handler that hands `act` the page.
@@ -403,47 +422,4 @@ fn click(
 ) -> impl Fn(&ClickEvent, &mut Window, &mut App) + 'static {
     let handle = handle.clone();
     move |_, window, cx| handle.update(cx, |page, cx| act(page, window, cx))
-}
-
-fn row_action(
-    handle: &Entity<WorkflowsPage>,
-    id: (&'static str, usize),
-    label: &'static str,
-    act: impl Fn(&mut WorkflowsPage, &mut Window, &mut Context<WorkflowsPage>) + 'static,
-    cx: &App,
-) -> impl IntoElement {
-    crate::controls::action(id)
-        .quiet(cx)
-        .short()
-        .label(label)
-        .on_click(click(handle, act))
-}
-
-/// A row's *Delete*: a word in the danger tint, like every control that
-/// removes something.
-fn row_delete(
-    handle: &Entity<WorkflowsPage>,
-    id: (&'static str, usize),
-    act: impl Fn(&mut WorkflowsPage, &mut Window, &mut Context<WorkflowsPage>) + 'static,
-    cx: &App,
-) -> impl IntoElement {
-    crate::controls::action(id)
-        .quiet(cx)
-        .short()
-        .text_color(crate::theme::status_ink(cx).danger)
-        .label("Delete…")
-        .on_click(click(handle, act))
-}
-
-fn row_icon(
-    id: (&'static str, usize),
-    icon: impl Into<Icon>,
-    tip: &'static str,
-    cx: &App,
-) -> gpui_component::button::Button {
-    crate::controls::action(id)
-        .quiet_icon(false, cx)
-        .small()
-        .icon(Icon::new(icon))
-        .tooltip(tip)
 }

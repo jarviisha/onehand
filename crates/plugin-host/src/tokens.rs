@@ -139,6 +139,19 @@ pub fn lift(cx: &App) -> Vec<BoxShadow> {
     ]
 }
 
+/// [`lift`] cast upward, for a surface rising from a region's foot over
+/// what stands above it (a drawer docked under a form): the same two
+/// shadows, mirrored.
+pub fn lift_up(cx: &App) -> Vec<BoxShadow> {
+    lift(cx)
+        .into_iter()
+        .map(|mut shadow| {
+            shadow.offset.y = -shadow.offset.y;
+            shadow
+        })
+        .collect()
+}
+
 /// The tight shadow's alpha on the dark palette or the light one. Exposed for
 /// the palette's contrast test, which works from a resolved ramp rather than
 /// the theme in force; a call site wants [`lift`].

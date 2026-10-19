@@ -1,23 +1,37 @@
-use super::WorkflowsPage;
-use super::draft::{Kind, StepDraft};
+use super::draft::{Kind, StepDraft, WorkflowDraft, split_problems, step_facts};
+use super::{WorkflowsPage, click};
 use crate::controls::Quiet as _;
+use crate::controls::Refuses as _;
 use crate::controls::text_area;
 use crate::controls::text_input;
 use crate::settings::{about, field};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div,
+    AnyElement, App, Entity, InteractiveElement as _, IntoElement, ParentElement, SharedString,
+    StatefulInteractiveElement as _, Styled, Window, div,
 };
 use onehand_plugin_host::Tall as _;
 
 use gpui_component::switch::Switch;
-use gpui_component::{ActiveTheme, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::workflow::{GateKind, Place};
 
-/// How tall a step's prompt stands before it scrolls: a paragraph in view, so
-/// a step reads without opening it, and a form of several steps still fits a
-/// screen.
-const PROMPT_H: gpui::Rems = gpui::rems(8.);
+/// How tall a step's line stands, its dot centred on it: the line the rail
+/// runs through from one step to the next.
+const STEP_LINE_H: gpui::Rems = gpui::rems(2.25);
+
+/// A step's dot, its number inside it.
+const DOT: gpui::Rems = gpui::rems(1.375);
+
+/// Where the rail runs: through the dots' centres.
+const RAIL_X: gpui::Rems = gpui::rems(0.6875);
+
+/// Where the rail meets a dot's centre: the line's gutter above it, then
+/// half the line.
+const RAIL_JOIN: gpui::Rems = gpui::rems(1.25);
+
+/// The least a step's id or label takes before the line wraps under the kind.
+const NAME_MIN: gpui::Rems = gpui::rems(10.);
 
 /// What a later step's menus need to know of an earlier one.
 pub(super) struct Earlier {
@@ -26,44 +40,51 @@ pub(super) struct Earlier {
     pub(super) keeps: bool,
 }
 
-/// One step of the form, in a box of its own.
-pub(super) fn step_box(
+/// The steps as a run, read down a rail: a numbered dot each, joined to the
+/// next, then its name, its kind and what it does on failure, read without
+/// opening it; the one open is marked, its fields in the drawer under the form.
+pub(super) fn steps_box(
     handle: &Entity<WorkflowsPage>,
-    i: usize,
-    last: bool,
-    step: &StepDraft,
-    earlier: &[Earlier],
-    place: Place,
+    draft: &WorkflowDraft,
+    reveal: &super::Reveal,
     cx: &App,
 ) -> AnyElement {
-    let kind_menu = {
-        let handle = handle.clone();
-        crate::controls::menu_below(
-            ("step-kind", i),
-            onehand_plugin_host::picker(
-                ("step-kind-trigger", i),
-                step.kind.label(),
-                true,
-                onehand_plugin_host::ControlSize::Tall,
-                cx,
-            ),
-            move |mut menu, _, _| {
-                for kind in Kind::ALL {
-                    let handle = handle.clone();
-                    menu = menu.item(crate::controls::menu_item(kind.label()).on_click(
-                        move |_, window: &mut Window, cx: &mut App| {
-                            handle.update(cx, |page, cx| {
-                                page.edit_workflow_draft(window, cx, |d, _, _| {
-                                    d.steps[i].kind = kind
-                                })
-                            });
-                        },
-                    ));
-                }
-                menu
-            },
-        )
-    };
+    let specs: Vec<_> = draft.steps.iter().map(|step| step.to_spec(cx)).collect();
+    let problems = split_problems(&draft.problem_list(cx), draft.steps.len());
+    let rows = draft.steps.iter().enumerate().map(|(i, step)| {
+        let row = StepRow {
+            i,
+            last: i + 1 == draft.steps.len(),
+            open: draft.open_step == Some(i),
+            shipped: draft.shipped,
+            facts: step_facts(i, &specs),
+            problem: problems[i].clone(),
+        };
+        step_row(handle, &row, step, reveal, cx)
+    });
+    div().v_flex().w_full().children(rows).into_any_element()
+}
+
+/// What a step's row is drawn from besides the step itself.
+struct StepRow {
+    i: usize,
+    last: bool,
+    open: bool,
+    shipped: bool,
+    facts: Vec<String>,
+    problem: Option<String>,
+}
+
+/// One step's line on the rail: its dot, its name, its kind and what it does
+/// on failure; the one open in the drawer marked.
+fn step_row(
+    handle: &Entity<WorkflowsPage>,
+    row: &StepRow,
+    step: &StepDraft,
+    reveal: &super::Reveal,
+    cx: &App,
+) -> AnyElement {
+    let (i, last, shipped, open) = (row.i, row.last, row.shipped, row.open);
     // Its number and one ⋯ holding what is done to the step itself: moved
     // up or down, refusing at the ends, or removed.
     let more = {
@@ -104,7 +125,7 @@ pub(super) fn step_box(
                         .on_click(move |_, window: &mut Window, cx: &mut App| {
                             remove.update(cx, |page, cx| {
                                 page.edit_workflow_draft(window, cx, |d, _, _| {
-                                    d.steps.remove(i);
+                                    d.remove_step(i);
                                 })
                             })
                         }),
@@ -112,33 +133,309 @@ pub(super) fn step_box(
             },
         )
     };
+    let muted = crate::theme::meta_ink(cx);
+    let danger = crate::theme::status_ink(cx).danger;
+    let label = step.label.read(cx).value().trim().to_string();
+    let name = match label.is_empty() {
+        true => step.id.read(cx).value().trim().to_string(),
+        false => label,
+    };
+    let head = div()
+        .id(("step-row", i))
+        .h_flex()
+        .items_center()
+        .gap_3()
+        .min_h(STEP_LINE_H)
+        .px_2()
+        .rounded(cx.theme().radius)
+        .cursor_pointer()
+        // The step open in the drawer below is marked as a picked row is.
+        .map(|row| match open {
+            true => row
+                .bg(cx.theme().accent)
+                .text_color(cx.theme().accent_foreground),
+            false => row.hover(|row| row.bg(cx.theme().list_hover)),
+        })
+        .on_click(click(handle, move |page, window, cx| {
+            page.edit_open_step(window, cx, |d| d.toggle_step(i))
+        }))
+        // The open step's line reports where it landed, so the page can keep
+        // it in view above the drawer.
+        .when(open, |head| head.relative().child(reveal.watch()))
+        .child(div().min_w_0().truncate().font_medium().child(name.clone()))
+        .child(
+            onehand_plugin_host::badge(
+                step.kind.label(),
+                onehand_plugin_host::Tint {
+                    fill: cx.theme().secondary,
+                    ink: cx.theme().secondary_foreground,
+                },
+            )
+            .flex_none(),
+        )
+        .child(div().flex_1())
+        .when(!row.facts.is_empty(), |head| {
+            head.child(
+                div()
+                    .flex_none()
+                    .text_xs()
+                    .text_color(muted)
+                    .child(row.facts.join(" · ")),
+            )
+        })
+        .children(row.problem.clone().map(|problem| {
+            div()
+                .min_w_0()
+                .h_flex()
+                .gap_1()
+                .text_xs()
+                .text_color(danger)
+                .child(Icon::new(IconName::TriangleAlert).xsmall().flex_none())
+                .child(div().truncate().child(problem))
+        }))
+        // A press on the ⋯ stays on it, or the row under it would open or
+        // close the step on the same click.
+        .when(!shipped, |head| {
+            head.child(
+                div()
+                    .id(("step-more-hold", i))
+                    .flex_none()
+                    .on_mouse_up(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .child(more),
+            )
+        });
+    let rail = cx.theme().border;
+    let dot = {
+        let (fill, edge, ink) = match row.open {
+            true => (
+                cx.theme().accent,
+                cx.theme().accent,
+                cx.theme().accent_foreground,
+            ),
+            false => (cx.theme().background, rail, muted),
+        };
+        div()
+            .flex_none()
+            .h(STEP_LINE_H)
+            .h_flex()
+            .items_center()
+            .child(
+                div()
+                    .size(DOT)
+                    .rounded_full()
+                    .border_1()
+                    .border_color(edge)
+                    .bg(fill)
+                    .h_flex()
+                    .justify_center()
+                    .text_xs()
+                    .text_color(ink)
+                    .child(format!("{}", i + 1)),
+            )
+    };
+    // The rail in two halves a step draws for itself, into its dot from the
+    // step before and out of it to the next, so it starts and ends on a dot
+    // however tall an open step stands.
+    let half = || {
+        div()
+            .absolute()
+            .left(RAIL_X)
+            .w_0()
+            .border_l_1()
+            .border_color(rail)
+    };
+    let step_line = |content: AnyElement| {
+        div()
+            .relative()
+            .h_flex()
+            .items_start()
+            .gap_2()
+            .when(i > 0, |line| line.child(half().top_0().h(RAIL_JOIN)))
+            .when(!last, |line| line.child(half().top(RAIL_JOIN).bottom_0()))
+            // A gutter above and below each line, inside the step's own
+            // height so the rail runs on through it: the open step's fill and
+            // a hovered neighbour's never touch.
+            .child(div().flex_none().py_0p5().child(dot))
+            .child(div().flex_1().min_w_0().py_0p5().v_flex().child(content))
+            .into_any_element()
+    };
+    step_line(head.into_any_element())
+}
+
+/// The drawer the open step's fields stand in, under the form: its head
+/// names the step, steps to the one before or after, and closes it; then
+/// the step's kind, id and label, and its kind's own fields. `None` while no
+/// step is open.
+pub(super) fn step_drawer(
+    handle: &Entity<WorkflowsPage>,
+    draft: &WorkflowDraft,
+    place: Place,
+    cx: &App,
+) -> Option<AnyElement> {
+    let i = draft.open_step.filter(|i| *i < draft.steps.len())?;
+    let step = &draft.steps[i];
+    let shipped = draft.shipped;
+    let last = i + 1 == draft.steps.len();
+    // Every earlier agent step by id, for what a command goes back to and an
+    // approval approves.
+    let earlier: Vec<Earlier> = draft.steps[..i]
+        .iter()
+        .map(|step| Earlier {
+            id: step.id.read(cx).value().trim().to_string(),
+            agent: step.kind == Kind::Agent,
+            keeps: step.keep_answer,
+        })
+        .collect();
+    let earlier = &earlier[..];
+    let label = step.label.read(cx).value().trim().to_string();
+    let name = match label.is_empty() {
+        true => step.id.read(cx).value().trim().to_string(),
+        false => label,
+    };
+    let kind_menu = {
+        let handle = handle.clone();
+        crate::controls::menu_below(
+            ("step-kind", i),
+            onehand_plugin_host::picker(
+                ("step-kind-trigger", i),
+                step.kind.label(),
+                true,
+                onehand_plugin_host::ControlSize::Tall,
+                cx,
+            ),
+            move |mut menu, _, _| {
+                for kind in Kind::ALL {
+                    let handle = handle.clone();
+                    menu = menu.item(crate::controls::menu_item(kind.label()).on_click(
+                        move |_, window: &mut Window, cx: &mut App| {
+                            handle.update(cx, |page, cx| {
+                                page.edit_workflow_draft(window, cx, |d, _, _| {
+                                    d.steps[i].kind = kind
+                                })
+                            });
+                        },
+                    ));
+                }
+                menu
+            },
+        )
+    };
+    // Each sets which step is open: the one before, the one after, or none.
+    // A step past either end refuses, saying there is none.
+    let go = |id: &'static str,
+              icon: IconName,
+              tip: &'static str,
+              key: &'static dyn gpui::Action,
+              to: Option<usize>,
+              refused: Option<&'static str>| {
+        let handle = handle.clone();
+        crate::controls::action((id, i))
+            .small()
+            .quiet_icon(false, cx)
+            .icon(Icon::new(icon))
+            .tooltip_with_action(tip, key, Some("WorkflowsPage"))
+            .refuses(refused.map(str::to_string))
+            .on_click(move |_, window: &mut Window, cx: &mut App| {
+                handle.update(cx, |page, cx| {
+                    page.edit_open_step(window, cx, |d| d.open_step = to)
+                })
+            })
+    };
     let head = div()
         .h_flex()
         .items_center()
         .gap_2()
         .child(
             div()
-                .flex_1()
+                .min_w_0()
+                .truncate()
                 .font_semibold()
-                .child(format!("Step {}", i + 1)),
+                .child(format!("Step {} · {name}", i + 1)),
         )
-        .child(more);
+        .child(
+            onehand_plugin_host::badge(
+                step.kind.label(),
+                onehand_plugin_host::Tint {
+                    fill: cx.theme().secondary,
+                    ink: cx.theme().secondary_foreground,
+                },
+            )
+            .flex_none(),
+        )
+        .child(div().flex_1())
+        .child(go(
+            "step-drawer-up",
+            IconName::ChevronUp,
+            "The step before",
+            &super::WorkflowStepUp,
+            i.checked_sub(1),
+            (i == 0).then_some("This is the first step"),
+        ))
+        .child(go(
+            "step-drawer-down",
+            IconName::ChevronDown,
+            "The step after",
+            &super::WorkflowStepDown,
+            (!last).then_some(i + 1),
+            last.then_some("This is the last step"),
+        ))
+        .child(go(
+            "step-drawer-close",
+            IconName::Close,
+            "Close the step",
+            &super::CloseWorkflowForm,
+            None,
+            None,
+        ));
+    // The kind picker is the first field: it decides every field after it.
     let names = div()
         .h_flex()
+        .flex_wrap()
         .gap_4()
         .child(
             div()
-                .flex_1()
-                .child(field("Id", None, text_input(&step.id, cx).tall(), cx)),
+                .flex_none()
+                .child(field("Kind", None, div().h_flex().child(kind_menu), cx)),
         )
-        .child(
-            div()
-                .flex_1()
-                .child(field("Label", None, text_input(&step.label, cx).tall(), cx)),
-        );
+        .child(div().flex_1().min_w(NAME_MIN).child(field(
+            "Id",
+            None,
+            text_input(&step.id, cx).tall().disabled(shipped),
+            cx,
+        )))
+        .child(div().flex_1().min_w(NAME_MIN).child(field(
+            "Label",
+            None,
+            text_input(&step.label, cx).tall().disabled(shipped),
+            cx,
+        )));
 
     let body = match step.kind {
         Kind::Agent => {
+            // A prompt too long for the field is written in a dialog the
+            // size of a page, at the field's end where the eye leaves it.
+            let open_larger = {
+                let (page, prompt, name) = (handle.clone(), step.prompt.clone(), name.clone());
+                crate::controls::action(("step-prompt-larger", i))
+                    .tall()
+                    .quiet(cx)
+                    .icon(Icon::new(IconName::Maximize))
+                    .label(if shipped {
+                        "Read larger…"
+                    } else {
+                        "Write larger…"
+                    })
+                    .on_click(move |_, window: &mut Window, cx: &mut App| {
+                        super::prompt_dialog::open(
+                            page.clone(),
+                            name.clone(),
+                            prompt.clone(),
+                            shipped,
+                            window,
+                            cx,
+                        )
+                    })
+            };
             let gates = GateKind::ALL
                 .iter()
                 .filter(|gate| gate.fits(place) || step.gates.contains(gate))
@@ -189,7 +486,14 @@ pub(super) fn step_box(
                 .child(field(
                     "Prompt",
                     None,
-                    text_area(&step.prompt, cx).h(PROMPT_H),
+                    div()
+                        .v_flex()
+                        .gap_2()
+                        .child(onehand_plugin_host::contained_scroll(
+                            ("step-prompt", i),
+                            text_area(&step.prompt, cx).disabled(shipped),
+                        ))
+                        .child(div().h_flex().justify_end().child(open_larger)),
                     cx,
                 ))
                 .child(field(
@@ -270,7 +574,7 @@ pub(super) fn step_box(
                     col.child(field(
                         "Command",
                         about("Run by onehand in the work, through sh"),
-                        text_input(&step.command, cx).tall(),
+                        text_input(&step.command, cx).tall().disabled(shipped),
                         cx,
                     ))
                 })
@@ -278,7 +582,7 @@ pub(super) fn step_box(
                     col.child(field(
                         "Wait at most",
                         about("Such as 45m or 2h; passing all, the pull request leaves draft"),
-                        text_input(&step.wait, cx).tall(),
+                        text_input(&step.wait, cx).tall().disabled(shipped),
                         cx,
                     ))
                 })
@@ -287,12 +591,13 @@ pub(super) fn step_box(
         }
     };
 
-    // The kind picker is its first field: it decides every field after it.
-    onehand_plugin_host::card_box(cx)
-        .gap_4()
-        .child(head)
-        .child(field("Kind", None, div().h_flex().child(kind_menu), cx))
-        .child(names)
-        .child(body)
-        .into_any_element()
+    Some(
+        div()
+            .v_flex()
+            .gap_4()
+            .child(head)
+            .child(names)
+            .child(body)
+            .into_any_element(),
+    )
 }

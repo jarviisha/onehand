@@ -62,6 +62,11 @@ the one before cannot give:
 
 A boundary is drawn once: no line along a change of surface, no edge doubled by a neighbour's.
 
+Where one of several items can be chosen (a list's rows, a switch's choices), no two of their
+fills touch and none touches the frame around them: a gap parts them, padding keeps them off the
+frame, so a hovered item beside the chosen one never runs into it as one band (*Lists*; `switch`
+pads its track `p_0p5` and parts its choices `gap_0p5`).
+
 ### Spacing and density
 
 | Relationship | Default |
@@ -178,7 +183,8 @@ a bar over the list (*List pages*). A box's heading identifies its own content. 
 what it holds, and the kind decides its width, its density and its head:
 
 - a **column page** holds fields, boxes or one thing read in full (a project's page, the
-  overview, Tasks, a task, Workflows, Settings);
+  overview, Tasks, a task, Settings); Workflows is one beside a list of its own (*List and
+  detail*), its head at the top of that list;
 - a **list page** holds one long list to scan, filter and pick from (Issues).
 
 A page with a filter bar keeps its head, filters and a table's column names in place while its
@@ -190,13 +196,13 @@ The body scrolls as one column centred in the pane, padded `px_8` at its sides a
 ends, its sections `gap_6` apart, as wide as one of these:
 
 - `PAGE_NARROW`: one column of fields or rows;
-- `PAGE_PROSE`: an editor, or one thing read in full (Workflows, an issue, a task);
+- `PAGE_PROSE`: an editor, or one thing read in full (a workflow, an issue, a task);
 - `PAGE_WIDE`: boxes side by side (the overview, Tasks, a project's page, its history beside a
   column of what it needs and is set to, the column wrapping under it where both do not fit).
 
 The pane header is inset `px_8`, as the body is. A page holding sections of its own (Settings)
 puts their nav column at its start. Its head's actions are `.tall()`, at one height; its creating action
-(*New session*, *New workflow*) is the view's one primary, stepping down to `secondary` while a
+(*New session*, Workflows' *New*) is the view's one primary, stepping down to `secondary` while a
 form it opened is open and holds it. A page that only sets values (Settings) holds no primary,
 every button on it secondary, and parts its many peer groups by hairlines with semibold
 headings, as space alone would run them together. Reuse the same column width for the same kind of page.
@@ -308,6 +314,15 @@ it shows one at a time, the detail under a `back_link` naming the list. Picking 
 going back keeps the list's place. A detail read as prose (an issue, a Markdown document) is a
 column up to `PAGE_PROSE`, centred with equal gutters, so hiding the list widens it rather than
 leaving the freed width empty; its scroll spans the detail, the scrollbar on the detail's edge.
+A page set this way (Workflows) holds the list in a column the pane's whole height, in no box,
+parted from the detail by the split's hairline from the pane's top edge to its bottom, the pane's
+header floating over both with no fill, each half's scroll starting under it so nothing
+scrolls behind its controls; its edges are a list page's, the list's fills inset `px_6`
+and every word on the header's line, both halves starting `pt_3` under the header, a form at the
+top of its half, level with the list's head; nothing is picked on arrival, the detail a centred `hint` saying
+what to pick; picking another item over unsaved changes asks first, *Keep* leaving the first
+picked; its list takes no arrow keys: ↑ and ↓ step the drawer of the step open in the detail to the
+step before or after, never while a field holds the caret.
 
 ### Forms
 
@@ -315,7 +330,10 @@ Each input is a `field`: its title in chrome text, an optional hint under it in 
 to the control. Fields stand `gap_4` apart. An input is built with `text_input`, at a control's
 corner and the size of the place it stands in: `.tall()` in a page's form, `.short()` in a
 dialog; its buttons, pickers and switch take the same. Problems stand above the submit button in the danger
-ink. The submit is the form's one primary action; while the form cannot be sent it refuses, its
+ink; in a page's form, in one box on the danger tint's fill led by the warning mark, each a
+sentence. A new form nobody has changed yet shows none: its submit refuses, its tooltip saying
+the first, until the first change; one opened on something (a file, a copy, an import) says them
+at once. The submit is the form's one primary action; while the form cannot be sent it refuses, its
 tooltip saying why.
 
 ### Dialogs

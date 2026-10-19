@@ -1,11 +1,16 @@
+mod head;
+
+pub(super) use head::unreadable;
+
 use super::WorkflowsPage;
 use super::click;
 use super::draft::Kind;
-use super::step::{Earlier, step_box};
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
+use crate::controls::Short as _;
 use crate::controls::text_input;
 use crate::settings::{about, field, section};
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div,
 };
@@ -14,43 +19,18 @@ use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::workflow::Place;
 use onehand_plugin_host::Tall as _;
 
-/// How wide the margin beside the steps runs.
-const MARGIN: gpui::Rems = gpui::rems(4.5);
+/// The least a field of a pair takes before the pair stacks: a name stays
+/// readable beside its neighbour, or goes under it.
+const PAIR_MIN: gpui::Rems = gpui::rems(14.);
 
-/// A step's margin: where its failure sends the run back to, and which later
-/// steps send theirs back to it, by step number. The arrows of a loop read
-/// down the margin without opening a step.
-fn margin(back: Option<usize>, from: &[usize], muted: gpui::Hsla) -> impl IntoElement {
-    div()
-        .flex_none()
-        .w(MARGIN)
-        .pt_3()
-        .v_flex()
-        .gap_1()
-        .text_xs()
-        .text_color(muted)
-        .children(back.map(|to| {
-            div()
-                .h_flex()
-                .gap_1()
-                .child(Icon::new(IconName::ArrowUp).xsmall())
-                .child(format!("to {}", to + 1))
-        }))
-        .children(from.iter().map(|k| {
-            div()
-                .h_flex()
-                .gap_1()
-                .child(Icon::new(IconName::ArrowLeft).xsmall())
-                .child(format!("from {}", k + 1))
-        }))
-}
-
-/// The form: the template's own fields, its steps, what is wrong with it,
-/// and Save.
+/// The editor: its head, then the workflow's fields in three groups (what
+/// it is, how it runs, its steps), then what is wrong with it and *Save*.
 pub(super) fn form(
     handle: &Entity<WorkflowsPage>,
     draft: &super::WorkflowDraft,
     writing: bool,
+    choices: &[(std::path::PathBuf, SharedString)],
+    reveal: &super::Reveal,
     cx: &App,
 ) -> AnyElement {
     // What is wrong with it, said above *Save* before the press: a name
@@ -59,8 +39,8 @@ pub(super) fn form(
     let mut problems = draft.problems(cx);
     problems.extend(super::actions::name_clash(draft, cx));
     let danger = crate::theme::status_ink(cx).danger;
-    let muted = cx.theme().muted_foreground;
-    let editing = draft.file.is_some();
+    // A shipped workflow is read, never saved: it is changed by duplicating it.
+    let shipped = draft.shipped;
     let place = draft.place;
     let places: Vec<SharedString> = Place::ALL.iter().map(|p| p.label().into()).collect();
     let place_at = Place::ALL.iter().position(|p| *p == place).unwrap_or(0);
@@ -73,163 +53,183 @@ pub(super) fn form(
             });
         }
     };
-    // Every earlier agent step by id, for what a command goes back to and an
-    // approval approves.
-    let ids: Vec<Earlier> = draft
-        .steps
-        .iter()
-        .map(|step| Earlier {
-            id: step.id.read(cx).value().trim().to_string(),
-            agent: step.kind == Kind::Agent,
-            keeps: step.keep_answer,
-        })
-        .collect();
-
-    // Where each failure goes back to, by step number, for the margin.
-    let back: Vec<Option<usize>> = draft
-        .steps
-        .iter()
-        .enumerate()
-        .map(|(i, step)| {
-            matches!(step.kind, Kind::Command | Kind::StatusChecks)
-                .then(|| ids[..i].iter().position(|e| e.id == step.target))
-                .flatten()
-        })
-        .collect();
-    let steps = draft
-        .steps
-        .iter()
-        .enumerate()
-        .map(|(i, step)| {
-            let from: Vec<usize> = (0..back.len()).filter(|k| back[*k] == Some(i)).collect();
+    let steps = super::step::steps_box(handle, draft, reveal, cx);
+    let input = |state: &Entity<gpui_component::input::InputState>| {
+        text_input(state, cx).tall().disabled(shipped)
+    };
+    let half = |element: AnyElement| div().flex_1().min_w(PAIR_MIN).child(element);
+    // A pair stands on its controls' line: one field's hint must not push its
+    // input below its neighbour's.
+    let about_group = section(Some("About"), None, cx).child(
+        div()
+            .h_flex()
+            .items_end()
+            .flex_wrap()
+            .gap_4()
+            .child(half(
+                field(
+                    "Name",
+                    about("What the launcher lists it as"),
+                    input(&draft.name),
+                    cx,
+                )
+                .into_any_element(),
+            ))
+            .child(half(
+                field("Description", None, input(&draft.description), cx).into_any_element(),
+            )),
+    );
+    let runs_group = section(Some("How it runs"), None, cx)
+        .child(field(
+            "Where it works",
+            about(
+                "In the checkout leaves the change uncommitted for you; a new worktree gets a \
+                 branch of its own, and the work is committed there",
+            ),
+            onehand_plugin_host::switch(
+                "workflow-place",
+                &places,
+                place_at,
+                onehand_plugin_host::ControlSize::Tall,
+                pick_place,
+                cx,
+            ),
+            cx,
+        ))
+        .child(
             div()
                 .h_flex()
-                .items_start()
-                .gap_2()
-                .w_full()
-                .child(margin(back[i], &from, muted))
-                .child(div().flex_1().min_w_0().child(step_box(
-                    handle,
-                    i,
-                    i + 1 == draft.steps.len(),
-                    step,
-                    &ids[..i],
-                    place,
+                .items_end()
+                .gap_4()
+                .child(div().flex_1().child(field(
+                    "Misses allowed",
+                    about("Turns that fail their gates before the run stops"),
+                    input(&draft.misses),
                     cx,
                 )))
+                .child(div().flex_1().child(field(
+                    "Timeout",
+                    about("Working time, such as 45m or 2h"),
+                    input(&draft.timeout),
+                    cx,
+                ))),
+        );
+    let add_step = {
+        let handle = handle.clone();
+        crate::controls::menu_below(
+            "add-step",
+            crate::controls::action("add-step-trigger")
+                .quiet(cx)
+                .short()
+                .icon(Icon::new(IconName::Plus))
+                .label("Add step"),
+            move |mut menu, _, _| {
+                for kind in Kind::ALL {
+                    let handle = handle.clone();
+                    menu = menu.item(crate::controls::menu_item(kind.label()).on_click(
+                        move |_, window: &mut Window, cx: &mut App| {
+                            handle.update(cx, |page, cx| {
+                                page.edit_workflow_draft(window, cx, |d, window, cx| {
+                                    d.add_step(kind, window, cx)
+                                })
+                            });
+                        },
+                    ));
+                }
+                menu
+            },
+        )
+    };
+    // The steps decide what a run does, so they are the one group on the
+    // form standing in a box, its count and *Add step* on its title row,
+    // where the fields around it stand plain.
+    let steps_group = crate::chat::pane::page_parts::page_card(
+        "Steps",
+        Some(draft.steps.len()),
+        (!shipped).then(|| add_step.into_any_element()),
+        cx,
+    )
+    .p_4()
+    .gap_4()
+    .child(variables_hint(cx))
+    .child(steps);
+    // A new form nobody has touched yet is not wrong yet: *Save* refuses
+    // and says why on hover, and the list waits for the first change. One
+    // opened on something (a file, a copy, an import) says at once.
+    let untouched = draft.file.is_none() && draft.original.name.is_empty() && !draft.dirty(cx);
+    let foot = div()
+        .v_flex()
+        .gap_3()
+        .when(!untouched && !problems.is_empty(), |foot| {
+            foot.child(problems_box(&problems, danger, cx))
         })
-        .collect::<Vec<_>>();
+        .child(
+            div()
+                .h_flex()
+                .gap_2()
+                .child(
+                    crate::controls::action("save-workflow")
+                        .tall()
+                        .primary()
+                        .loading(writing)
+                        .label("Save")
+                        .refuses(problems.first().cloned())
+                        .on_click(click(handle, |page, window, cx| {
+                            page.save_workflow_draft(window, cx)
+                        })),
+                )
+                .child(
+                    crate::controls::action("clear-workflow")
+                        .tall()
+                        .secondary()
+                        .label("Cancel")
+                        // Asks first when the form holds changes, as Esc does.
+                        .on_click(click(handle, |page, window, cx| {
+                            page.close_workflow_form(window, cx)
+                        })),
+                ),
+        );
 
-    section(
-        Some(if editing {
-            "Edit workflow"
-        } else {
-            "New workflow"
-        }),
-        None,
-        cx,
-    )
-    .child(field(
-        "Name",
-        about("What the launcher lists it as"),
-        text_input(&draft.name, cx).tall(),
-        cx,
-    ))
-    .child(field(
-        "Description",
-        None,
-        text_input(&draft.description, cx).tall(),
-        cx,
-    ))
-    .child(field(
-        "Where it works",
-        about(
-            "In the checkout leaves the change uncommitted for you; a new worktree gets a \
-             branch of its own, and the work is committed there",
-        ),
-        onehand_plugin_host::switch(
-            "workflow-place",
-            &places,
-            place_at,
-            onehand_plugin_host::ControlSize::Tall,
-            pick_place,
-            cx,
-        ),
-        cx,
-    ))
-    .child(
-        div()
-            .h_flex()
-            .gap_4()
-            .child(div().flex_1().child(field(
-                "Misses allowed",
-                about("Turns that fail their gates before the run stops"),
-                text_input(&draft.misses, cx).tall(),
-                cx,
-            )))
-            .child(div().flex_1().child(field(
-                "Timeout",
-                about("Working time, such as 45m or 2h"),
-                text_input(&draft.timeout, cx).tall(),
-                cx,
-            ))),
-    )
-    .child(variables_hint(muted, cx))
-    .children(steps)
-    .child(
-        div()
-            .h_flex()
-            .flex_wrap()
-            .gap_2()
-            .children(Kind::ALL.into_iter().enumerate().map(|(at, kind)| {
-                crate::controls::action(("add-step", at))
-                    .quiet(cx)
-                    .tall()
-                    .label(format!("Add {} step", kind.label().to_lowercase()))
-                    .on_click(click(handle, move |page, window, cx| {
-                        page.edit_workflow_draft(window, cx, |d, window, cx| {
-                            d.add_step(kind, window, cx)
-                        });
-                    }))
-            })),
-    )
-    .children(
-        problems
-            .iter()
-            .map(|problem| div().text_xs().text_color(danger).child(problem.clone())),
-    )
-    .child(
-        div()
-            .h_flex()
-            .gap_2()
-            .child(
-                crate::controls::action("save-workflow")
-                    .tall()
-                    .primary()
-                    .loading(writing)
-                    .label("Save")
-                    .refuses(problems.first().cloned())
-                    .on_click(click(handle, |page, window, cx| {
-                        page.save_workflow_draft(window, cx)
-                    })),
-            )
-            .child(
-                crate::controls::action("clear-workflow")
-                    .tall()
-                    .quiet(cx)
-                    .label("Cancel")
-                    // Asks first when the form holds changes, as Esc does.
-                    .on_click(click(handle, |page, window, cx| {
-                        page.close_workflow_form(window, cx)
-                    })),
-            ),
-    )
-    .into_any_element()
+    div()
+        .v_flex()
+        .gap_6()
+        .w_full()
+        .child(head::editor_head(handle, draft, choices, cx))
+        .child(about_group)
+        .child(runs_group)
+        .child(steps_group)
+        .when(!shipped, |form| form.child(foot))
+        .into_any_element()
+}
+
+/// What keeps the form from being saved, on the danger tint's fill so it
+/// reads as one standing condition rather than loose words over *Save*.
+fn problems_box(problems: &[String], danger: gpui::Hsla, cx: &App) -> impl IntoElement {
+    let tint = onehand_plugin_host::tint(danger, cx);
+    div()
+        .h_flex()
+        .items_start()
+        .gap_2()
+        .px_3()
+        .py_2()
+        .rounded(cx.theme().radius)
+        .bg(tint.fill)
+        .text_xs()
+        .text_color(tint.ink)
+        .child(Icon::new(IconName::TriangleAlert).xsmall().flex_none())
+        .child(
+            div()
+                .v_flex()
+                .gap_1()
+                .min_w_0()
+                .children(problems.iter().map(|problem| div().child(problem.clone()))),
+        )
 }
 
 /// What a prompt may use, a hint in meta text with each variable in mono, so
 /// it reads as something to type.
-fn variables_hint(muted: gpui::Hsla, cx: &App) -> impl IntoElement {
+pub(super) fn variables_hint(cx: &App) -> impl IntoElement {
+    let muted = cx.theme().muted_foreground;
     let mono = cx.theme().mono_font_family.clone();
     let code = |text: &'static str| div().font_family(mono.clone()).child(text);
     div()

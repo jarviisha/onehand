@@ -22,7 +22,7 @@ const PAGE_TITLE_H: Rems = rems(1.75);
 
 /// A box on a page: its title in bold with a muted count beside it, an
 /// optional control at the far end, and whatever it holds below.
-pub(super) fn page_card(
+pub(crate) fn page_card(
     title: impl Into<SharedString>,
     count: Option<usize>,
     control: Option<gpui::AnyElement>,

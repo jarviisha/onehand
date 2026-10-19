@@ -307,6 +307,22 @@ fn validate_names_each_kind_of_problem() {
     }
     has(&t, "keeps no answer");
 
+    // A step pointing at no step yet says to pick one, not a blank name.
+    let mut t = checkout();
+    t.steps[3].kind = StepKind::Approval { of: String::new() };
+    has(
+        &t,
+        "it approves no step yet: pick the agent step it approves",
+    );
+    t.steps[3].kind = StepKind::Command {
+        command: None,
+        on_fail: String::new(),
+    };
+    has(
+        &t,
+        "on failure it goes back to no step yet: pick the agent step",
+    );
+
     let mut t = checkout();
     t.steps[3].kind = StepKind::Command {
         command: Some(" ".into()),
