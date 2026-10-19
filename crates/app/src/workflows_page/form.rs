@@ -14,7 +14,7 @@ use gpui::{
     AnyElement, App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div,
 };
 use gpui_component::button::ButtonVariants;
-use gpui_component::{ActiveTheme, Icon, IconName, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::workflow::Place;
 use onehand_plugin_host::Tall as _;
 
@@ -144,14 +144,16 @@ pub(super) fn form(
         .when(!shipped, |group| {
             group.child(div().h_flex().child(add_step))
         });
+    // A new form nobody has touched yet is not wrong yet: *Save* refuses
+    // and says why on hover, and the list waits for the first change. One
+    // opened on something (a file, a copy, an import) says at once.
+    let untouched = draft.file.is_none() && draft.original.name.is_empty() && !draft.dirty(cx);
     let foot = div()
         .v_flex()
-        .gap_2()
-        .children(
-            problems
-                .iter()
-                .map(|problem| div().text_xs().text_color(danger).child(problem.clone())),
-        )
+        .gap_3()
+        .when(!untouched && !problems.is_empty(), |foot| {
+            foot.child(problems_box(&problems, danger, cx))
+        })
         .child(
             div()
                 .h_flex()
@@ -189,6 +191,30 @@ pub(super) fn form(
         .child(steps_group)
         .when(!shipped, |form| form.child(foot))
         .into_any_element()
+}
+
+/// What keeps the form from being saved, on the danger tint's fill so it
+/// reads as one standing condition rather than loose words over *Save*.
+fn problems_box(problems: &[String], danger: gpui::Hsla, cx: &App) -> impl IntoElement {
+    let tint = onehand_plugin_host::tint(danger, cx);
+    div()
+        .h_flex()
+        .items_start()
+        .gap_2()
+        .px_3()
+        .py_2()
+        .rounded(cx.theme().radius)
+        .bg(tint.fill)
+        .text_xs()
+        .text_color(tint.ink)
+        .child(Icon::new(IconName::TriangleAlert).xsmall().flex_none())
+        .child(
+            div()
+                .v_flex()
+                .gap_1()
+                .min_w_0()
+                .children(problems.iter().map(|problem| div().child(problem.clone()))),
+        )
 }
 
 /// What a prompt may use, a hint in meta text with each variable in mono, so

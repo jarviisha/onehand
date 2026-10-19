@@ -323,7 +323,10 @@ Each input is a `field`: its title in chrome text, an optional hint under it in 
 to the control. Fields stand `gap_4` apart. An input is built with `text_input`, at a control's
 corner and the size of the place it stands in: `.tall()` in a page's form, `.short()` in a
 dialog; its buttons, pickers and switch take the same. Problems stand above the submit button in the danger
-ink. The submit is the form's one primary action; while the form cannot be sent it refuses, its
+ink; in a page's form, in one box on the danger tint's fill led by the warning mark, each a
+sentence. A new form nobody has changed yet shows none: its submit refuses, its tooltip saying
+the first, until the first change; one opened on something (a file, a copy, an import) says them
+at once. The submit is the form's one primary action; while the form cannot be sent it refuses, its
 tooltip saying why.
 
 ### Dialogs

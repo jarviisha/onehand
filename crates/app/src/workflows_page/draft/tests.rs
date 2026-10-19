@@ -103,3 +103,9 @@ fn follow_open_removed_before() {
 fn follow_open_removed_after() {
     assert_eq!(follow_open(Some(0), StepEdit::Removed(2), 2), Some(0));
 }
+
+#[test]
+fn sentence_raises_the_first_letter() {
+    assert_eq!(sentence("it has no name"), "It has no name");
+    assert_eq!(sentence(""), "");
+}

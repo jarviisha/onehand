@@ -251,7 +251,8 @@ impl WorkflowDraft {
             .into_iter()
             .map(|(step, said)| match step {
                 Some(at) => format!("Step {}: {said}", at + 1),
-                None => said,
+                // Said as a sentence on its own, so it starts as one.
+                None => sentence(&said),
             })
             .collect()
     }
@@ -327,6 +328,15 @@ impl WorkflowDraft {
             );
         }
     }
+}
+
+/// `said` with its first letter raised, as a sentence standing alone starts.
+fn sentence(said: &str) -> String {
+    let mut chars = said.chars();
+    chars
+        .next()
+        .map(|first| first.to_uppercase().chain(chars).collect())
+        .unwrap_or_default()
 }
 
 /// What a step's row says of it beside its name, in muted words: where a
