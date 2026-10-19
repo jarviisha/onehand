@@ -19,9 +19,12 @@ mod step;
 
 pub(crate) use draft::WorkflowDraft;
 
-// The Workflows page's key: the form open on the page closed, asked first
-// when it holds changes.
-gpui::actions!(workflows_page, [CloseWorkflowForm]);
+// The Workflows page's keys: the form open on the page closed, asked first
+// when it holds changes, and the list stepped, which opens what it reaches.
+gpui::actions!(
+    workflows_page,
+    [CloseWorkflowForm, WorkflowsUp, WorkflowsDown]
+);
 
 use crate::controls::Quiet as _;
 use crate::controls::Short as _;
@@ -32,7 +35,7 @@ use gpui::{
     StatefulInteractiveElement as _, Styled, Window, div,
 };
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::{ActiveTheme, Icon, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::workflow as core;
 use onehand_plugin_host::Tall as _;
 use std::path::PathBuf;
@@ -48,6 +51,9 @@ pub(crate) struct WorkflowsPage {
     focus_handle: FocusHandle,
     /// The workflow being written, while one is.
     draft: Option<WorkflowDraft>,
+    /// The workflow open beside the list, by key: the list is read again
+    /// after every save.
+    picked: Option<pick::Pick>,
     /// The window's projects a run may start on, in rail order, and the one
     /// selected in the rail, which *Run…* offers first.
     projects: Vec<(PathBuf, SharedString)>,
@@ -73,6 +79,7 @@ impl WorkflowsPage {
         cx.new(|cx| Self {
             focus_handle: cx.focus_handle(),
             draft: None,
+            picked: None,
             projects: Vec::new(),
             selected: None,
             writing: false,
@@ -130,7 +137,13 @@ impl Render for WorkflowsPage {
         while self.rows.len() < listed {
             self.rows.push(cx.focus_handle().tab_stop(true));
         }
-        let list = list(&handle, &self.run_choices(), &self.rows, cx);
+        let list = list(
+            &handle,
+            &self.run_choices(),
+            &self.rows,
+            self.picked.as_ref(),
+            cx,
+        );
         let form = self
             .draft
             .as_ref()
@@ -144,6 +157,14 @@ impl Render for WorkflowsPage {
             .on_action(
                 cx.listener(|page: &mut Self, _: &CloseWorkflowForm, window, cx| {
                     page.close_workflow_form(window, cx);
+                }),
+            )
+            .on_action(cx.listener(|page: &mut Self, _: &WorkflowsUp, window, cx| {
+                page.step_pick(-1, window, cx)
+            }))
+            .on_action(
+                cx.listener(|page: &mut Self, _: &WorkflowsDown, window, cx| {
+                    page.step_pick(1, window, cx)
                 }),
             )
             .size_full()
@@ -211,6 +232,7 @@ fn list(
     handle: &Entity<WorkflowsPage>,
     choices: &[(PathBuf, SharedString)],
     focus: &[FocusHandle],
+    picked: Option<&pick::Pick>,
     cx: &App,
 ) -> AnyElement {
     let entries = crate::workflow::templates(cx);
@@ -238,7 +260,6 @@ fn list(
                     .child(format!("Cannot be read: {why}"))
                     .into_any_element(),
             };
-            let readable = entry.template.is_ok();
             let group = SharedString::from(format!("workflow-row-{i}"));
             let actions = div()
                 .h_flex()
@@ -246,48 +267,17 @@ fn list(
                 .gap_1()
                 .when_some(entry.template.as_ref().ok(), |row, template| {
                     row.child(run_menu(handle, i, &template.id, choices, cx))
-                })
-                .when(readable, |row| {
-                    row.child(row_action(
-                        handle,
-                        ("duplicate-workflow", i),
-                        "Duplicate",
-                        move |page, window, cx| page.duplicate_workflow(i, window, cx),
-                        cx,
-                    ))
-                })
-                .when(readable, |row| {
-                    row.child(row_action(
-                        handle,
-                        ("export-workflow", i),
-                        "Export…",
-                        move |page, window, cx| page.export_workflow(i, window, cx),
-                        cx,
-                    ))
-                })
-                .when(readable && !shipped, |row| {
-                    row.child(
-                        row_icon(
-                            ("edit-workflow", i),
-                            crate::icons::Icon::SquarePen,
-                            "Edit",
-                            cx,
-                        )
-                        .on_click(click(handle, move |page, window, cx| {
-                            page.edit_workflow(i, window, cx)
-                        })),
-                    )
-                })
-                .when(!shipped, |row| {
-                    row.child(row_delete(
-                        handle,
-                        ("delete-workflow", i),
-                        move |page, window, cx| page.confirm_delete_workflow(i, window, cx),
-                        cx,
-                    ))
                 });
-            onehand_plugin_host::row(false, cx)
-                .cursor_default()
+            let key = pick::pick_of(entry);
+            let selected = key.is_some() && key.as_ref() == picked;
+            onehand_plugin_host::row(selected, cx)
+                .id(("workflow-row", i))
+                .when_some(key, |row, key| {
+                    row.cursor_pointer()
+                        .on_click(click(handle, move |page, window, cx| {
+                            page.pick(key.clone(), window, cx)
+                        }))
+                })
                 .group(group.clone())
                 .track_focus(focus)
                 .border_1()
@@ -404,47 +394,4 @@ fn click(
 ) -> impl Fn(&ClickEvent, &mut Window, &mut App) + 'static {
     let handle = handle.clone();
     move |_, window, cx| handle.update(cx, |page, cx| act(page, window, cx))
-}
-
-fn row_action(
-    handle: &Entity<WorkflowsPage>,
-    id: (&'static str, usize),
-    label: &'static str,
-    act: impl Fn(&mut WorkflowsPage, &mut Window, &mut Context<WorkflowsPage>) + 'static,
-    cx: &App,
-) -> impl IntoElement {
-    crate::controls::action(id)
-        .quiet(cx)
-        .short()
-        .label(label)
-        .on_click(click(handle, act))
-}
-
-/// A row's *Delete*: a word in the danger tint, like every control that
-/// removes something.
-fn row_delete(
-    handle: &Entity<WorkflowsPage>,
-    id: (&'static str, usize),
-    act: impl Fn(&mut WorkflowsPage, &mut Window, &mut Context<WorkflowsPage>) + 'static,
-    cx: &App,
-) -> impl IntoElement {
-    crate::controls::action(id)
-        .quiet(cx)
-        .short()
-        .text_color(crate::theme::status_ink(cx).danger)
-        .label("Delete…")
-        .on_click(click(handle, act))
-}
-
-fn row_icon(
-    id: (&'static str, usize),
-    icon: impl Into<Icon>,
-    tip: &'static str,
-    cx: &App,
-) -> gpui_component::button::Button {
-    crate::controls::action(id)
-        .quiet_icon(false, cx)
-        .small()
-        .icon(Icon::new(icon))
-        .tooltip(tip)
 }

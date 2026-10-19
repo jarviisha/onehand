@@ -1,6 +1,8 @@
-//! What the Workflows page does to workflows: the form opened on a new,
-//! duplicated, imported or own workflow, saving and deleting, and exporting.
+//! What the Workflows page does to workflows: picking one, which opens it;
+//! the form opened on a new, duplicated or imported one; saving, deleting
+//! and exporting the one open.
 
+use super::pick::{self, Pick};
 use super::{WorkflowDraft, WorkflowsPage};
 use gpui::{Context, Window};
 use gpui_component::WindowExt as _;
@@ -23,32 +25,19 @@ impl WorkflowsPage {
         self.open_workflow_form(template, None, window, cx);
     }
 
-    /// Open the form on a copy of template `at`, to be saved as a new one.
-    pub(crate) fn duplicate_workflow(
-        &mut self,
-        at: usize,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(Ok(mut template)) = crate::workflow::templates(cx)
-            .get(at)
-            .map(|entry| entry.template.clone())
-        else {
+    /// Open the form on a copy of the workflow open, to be saved as a new one.
+    pub(crate) fn duplicate_open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(mut template) = self.draft.as_ref().map(|d| d.original.clone()) else {
             return;
         };
         template.name = format!("{} copy", template.name);
         self.open_workflow_form(template, None, window, cx);
     }
 
-    /// Ask where to, then write template `at` to a file of the person's
-    /// choosing, shipped ones included.
-    pub(crate) fn export_workflow(
-        &mut self,
-        at: usize,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(entry) = crate::workflow::templates(cx).get(at).cloned() else {
+    /// Ask where to, then write the workflow open, as saved, to a file of
+    /// the person's choosing, shipped ones included.
+    pub(crate) fn export_open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(entry) = self.picked_entry(cx) else {
             return;
         };
         let Ok(template) = entry.template else {
@@ -113,18 +102,61 @@ impl WorkflowsPage {
         .detach();
     }
 
-    /// Open the form on the person's own template `at`.
-    pub(crate) fn edit_workflow(&mut self, at: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(entry) = crate::workflow::templates(cx).get(at).cloned() else {
-            return;
-        };
-        let (Ok(template), Some(file)) = (entry.template, entry.file) else {
-            return;
-        };
-        self.open_workflow_form(template, Some(file), window, cx);
+    /// The entry the page has picked, as last read.
+    pub(super) fn picked_entry(&self, cx: &gpui::App) -> Option<crate::workflow::Entry> {
+        let entries = crate::workflow::templates(cx);
+        let at = pick::repick(&entries, self.picked.as_ref()?)?;
+        entries.get(at).cloned()
     }
 
-    /// Put `template`, kept in `file`, in the form, asking first when the
+    /// Open `pick` beside the list, asking first when the form holds changes
+    /// not saved. A shipped workflow opens read-only; one of the person's
+    /// own that cannot be read opens no form, only why.
+    pub(super) fn pick(&mut self, pick: Pick, window: &mut Window, cx: &mut Context<Self>) {
+        if self.picked.as_ref() == Some(&pick) {
+            return;
+        }
+        self.unless_editing(
+            "Opening another workflow",
+            window,
+            cx,
+            move |page, window, cx| {
+                let entries = crate::workflow::templates(cx);
+                let entry = pick::repick(&entries, &pick).and_then(|at| entries.get(at).cloned());
+                page.draft = entry.and_then(|entry| {
+                    let shipped = entry.file.is_none();
+                    let template = entry.template.ok()?;
+                    Some(WorkflowDraft::load(
+                        &template, entry.file, shipped, window, cx,
+                    ))
+                });
+                page.picked = Some(pick.clone());
+                cx.notify();
+            },
+        );
+    }
+
+    /// Pick the row `by` rows from the one picked, the new workflow's row
+    /// first while it stands.
+    pub(super) fn step_pick(&mut self, by: isize, window: &mut Window, cx: &mut Context<Self>) {
+        let entries = crate::workflow::templates(cx);
+        let mut order: Vec<Pick> = pick::listed(&entries)
+            .into_iter()
+            .filter_map(|at| pick::pick_of(&entries[at]))
+            .collect();
+        if self.picked == Some(Pick::New) {
+            order.insert(0, Pick::New);
+        }
+        let at = self
+            .picked
+            .as_ref()
+            .and_then(|picked| order.iter().position(|p| p == picked));
+        if let Some(to) = pick::step_from(at, order.len(), by) {
+            self.pick(order[to].clone(), window, cx);
+        }
+    }
+
+    /// Put `template`, a new workflow, in the form, asking first when the
     /// form holds changes not saved: opening another template over them
     /// would throw them away.
     fn open_workflow_form(
@@ -201,6 +233,7 @@ impl WorkflowsPage {
 
     pub(crate) fn clear_workflow_draft(&mut self, cx: &mut Context<Self>) {
         self.draft = None;
+        self.picked = None;
         cx.notify();
     }
 
@@ -248,8 +281,9 @@ impl WorkflowsPage {
                         if let Some(draft) =
                             page.draft.as_mut().filter(|d| d.name.entity_id() == form)
                         {
-                            draft.file = Some(path);
+                            draft.file = Some(path.clone());
                             draft.original = written;
+                            page.picked = Some(Pick::Own(path));
                         }
                         crate::toast::report(
                             window,
@@ -270,14 +304,9 @@ impl WorkflowsPage {
         .detach();
     }
 
-    /// Ask, then delete the person's own template `at`.
-    pub(crate) fn confirm_delete_workflow(
-        &mut self,
-        at: usize,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(entry) = crate::workflow::templates(cx).get(at).cloned() else {
+    /// Ask, then delete the person's own workflow open, read or not.
+    pub(crate) fn confirm_delete_open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(entry) = self.picked_entry(cx) else {
             return;
         };
         let Some(file) = entry.file.clone() else {
@@ -308,13 +337,9 @@ impl WorkflowsPage {
                     .await
             };
             let _ = page.update_in(cx, |page: &mut Self, window, cx| {
-                if gone.is_ok()
-                    && page
-                        .draft
-                        .as_ref()
-                        .is_some_and(|d| d.file.as_ref() == Some(&file))
-                {
+                if gone.is_ok() && page.picked == Some(Pick::Own(file.clone())) {
                     page.draft = None;
+                    page.picked = None;
                 }
                 crate::toast::report(
                     window,

@@ -61,6 +61,8 @@ pub(super) fn form(
     let danger = crate::theme::status_ink(cx).danger;
     let muted = cx.theme().muted_foreground;
     let editing = draft.file.is_some();
+    // A shipped workflow is read, never saved: it is changed by duplicating it.
+    let shipped = draft.shipped;
     let place = draft.place;
     let places: Vec<SharedString> = Place::ALL.iter().map(|p| p.label().into()).collect();
     let place_at = Place::ALL.iter().position(|p| *p == place).unwrap_or(0);
@@ -208,7 +210,11 @@ pub(super) fn form(
                     .primary()
                     .loading(writing)
                     .label("Save")
-                    .refuses(problems.first().cloned())
+                    .refuses(
+                        shipped
+                            .then(|| "A built-in workflow is read-only".to_string())
+                            .or_else(|| problems.first().cloned()),
+                    )
                     .on_click(click(handle, |page, window, cx| {
                         page.save_workflow_draft(window, cx)
                     })),
