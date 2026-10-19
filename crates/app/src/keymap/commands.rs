@@ -238,24 +238,24 @@ pub const COMMANDS: &[Command] = &[
         "Pick the issue above",
         ["up"],
         onehand_workbench_issues::IssuesUp,
-        "IssuesPage && !Input",
-        "Issues page"
+        "Issues && !Input",
+        "Issues"
     ),
     command!(
         "issues_down",
         "Pick the issue below",
         ["down"],
         onehand_workbench_issues::IssuesDown,
-        "IssuesPage && !Input",
-        "Issues page"
+        "Issues && !Input",
+        "Issues"
     ),
     command!(
         "issues_close",
-        "Close the form, the review or the issue",
+        "Close the form, the review or the issue, or go back to the list",
         ["escape"],
         onehand_workbench_issues::IssuesClose,
-        "IssuesPage && !Dialog && !Input",
-        "Issues page"
+        "Issues && !Dialog && !Input",
+        "Issues"
     ),
     command!(
         "plugin_open",

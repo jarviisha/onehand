@@ -107,6 +107,9 @@ pub(crate) struct IssuesView {
     query: Option<Entity<InputState>>,
     /// Which half of the issues the list shows.
     showing: Showing,
+    /// Where the Workbench tab's keys land: a row picked by the pointer takes
+    /// it, so ↑ and ↓ step the list from there.
+    tab_focus: gpui::FocusHandle,
     /// The one label the list is narrowed to, if any. Dropped on a switch of
     /// project, whose issues carry labels of their own.
     label: Option<String>,
@@ -195,6 +198,7 @@ impl IssuesView {
             issue_tab: detail::IssueTab::default(),
             publishing: None,
             showing: Showing::default(),
+            tab_focus: cx.focus_handle(),
             label: None,
             ask,
             live: Vec::new(),

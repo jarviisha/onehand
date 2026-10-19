@@ -151,9 +151,12 @@ pub(super) fn actions(
         .take(SECONDARY_SHOWN)
         .collect();
     secondary.retain(|act| !shown.contains(act));
+    // The view's one primary is its creating action (*New issue*, `+`), so
+    // the issue's next action is a step under it, and the one beside it a
+    // ghost.
     let primary = next
         .primary
-        .map(|act| act_button(("issue-primary", 0), act, number, doing, cx).primary());
+        .map(|act| act_button(("issue-primary", 0), act, number, doing, cx).secondary());
     div()
         .h_flex()
         .flex_none()
@@ -169,7 +172,7 @@ pub(super) fn actions(
         )
         .children(
             shown.into_iter().enumerate().map(|(i, act)| {
-                act_button(("issue-secondary", i), act, number, doing, cx).secondary()
+                act_button(("issue-secondary", i), act, number, doing, cx).quiet(cx)
             }),
         )
         .child(more_menu(root, issue, doing, secondary, publish_to, cx))

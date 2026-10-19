@@ -99,10 +99,20 @@ height (its dragged height kept).
   would not start and a listing that failed stand as a status line under the mode.
 - Plugins: the search and filters a filter bar; a row's actions on hover and on keyboard focus, its
   switch always; what runs and what waits on a restart under the list, so neither moves it.
+- The Issues tab: one filter bar over the list and the issue both, a faint line under it: the
+  search, the label picker, while the search or a label narrows the list *Clear filters*, and `+`
+  (*New issue*, primary, secondary while the form holds that) at the end, the filters wrapping
+  under the search when narrow; a filter picked while the issue shows alone shows the list. Over
+  the rows, *Open* and *Closed* with their counts; *Showing N of M open issues* at the list's end
+  while it is narrowed, *No issues match* when nothing is left. `↑`/`↓` step the list as on the
+  Issues page (where the list shows alone, the first press opens the row picked); Esc closes the
+  form, else goes back from the issue to the list where the two show one at a time.
 - The Issues tab's issue: a trail (project › reference, linked to its forge, or *Draft*) with its
-  actions (one primary, one other, ⋯); its tags (a neutral state badge, labels); the title, large;
-  one line of facts; what it waits on (a conflict, where its work stands, the review); then two
-  chips: *Description* (the body as a document, the files it names, what the work left, *Before*)
+  actions (the next one secondary, one other a ghost, ⋯; here and on the Issues page, *New
+  issue* holds the view's primary);
+  its tags (a neutral state badge, labels); the title, large; one line of facts; what it waits on
+  (a conflict, where its work stands, the review); then two chips: *Description* (the body as a
+  document, the files it names, what the work left, *Before*)
   and *Activity N* (the history). Sections are parted by space, not rules. ⋯ ▸ *Open in Issues* and
   *Review…* open it on the Issues page, the latter with its review open.
 - Hiding a dock keeps its buffers and processes; the terminal's open state follows the project.

@@ -70,7 +70,7 @@ impl IssuesView {
                     .small()
                     .quiet_icon(false, cx)
                     .icon(IconName::Close)
-                    .tooltip_with_action("Close", &crate::IssuesClose, Some("IssuesPage"))
+                    .tooltip_with_action("Close", &crate::IssuesClose, Some("Issues"))
                     .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
                         if let Some(page) = view.page.as_mut() {
                             page.open = false;

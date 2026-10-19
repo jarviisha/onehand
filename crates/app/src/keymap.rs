@@ -477,7 +477,7 @@ mod tests {
         );
         // The Issues page steps its list with the arrows, but never while
         // the caret is in its search; Esc closes what is open over the list.
-        let page = ["Shell", "Chat", "IssuesPage"];
+        let page = ["Shell", "Chat", "Issues"];
         assert_eq!(
             action_at(&map, "up", &page),
             Some(onehand_workbench_issues::IssuesUp.name().into())
@@ -654,14 +654,14 @@ mod tests {
     fn regions() -> Vec<(&'static str, Command)> {
         vec![
             (
-                "IssuesPage",
+                "Issues",
                 command!(
                     "t_issues",
                     "Issues j",
                     ["j"],
                     crate::rail::RailUp,
-                    "IssuesPage && !Input",
-                    "Issues page"
+                    "Issues && !Input",
+                    "Issues"
                 ),
             ),
             (
@@ -718,8 +718,8 @@ mod tests {
             "Issues new",
             ["ctrl-shift-o"],
             crate::rail::RailUp,
-            "IssuesPage && !Input",
-            "Issues page"
+            "Issues && !Input",
+            "Issues"
         )]);
         assert!(check(&all, &Overrides::new()).is_err());
     }
@@ -731,8 +731,8 @@ mod tests {
             "j",
             ["j"],
             crate::rail::RailUp,
-            "IssuesPage",
-            "Issues page"
+            "Issues",
+            "Issues"
         )]);
         assert!(check(&typed, &Overrides::new()).is_err());
         let modified = with([command!(
@@ -740,8 +740,8 @@ mod tests {
             "j",
             ["alt-j"],
             crate::rail::RailUp,
-            "IssuesPage",
-            "Issues page"
+            "Issues",
+            "Issues"
         )]);
         assert_eq!(check(&modified, &Overrides::new()), Ok(()));
     }
