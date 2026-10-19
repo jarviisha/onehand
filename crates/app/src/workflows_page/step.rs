@@ -20,6 +20,13 @@ use onehand_core::workflow::{GateKind, Place};
 /// screen.
 const PROMPT_H: gpui::Rems = gpui::rems(8.);
 
+/// The slot a step's number stands in: two digits, so names do not move
+/// past the ninth step.
+const NUMBER_W: gpui::Rems = gpui::rems(1.25);
+
+/// The slot a step's kind stands in: as wide as the widest kind's badge.
+const KIND_W: gpui::Rems = gpui::rems(6.5);
+
 /// The least a step's id or label takes before the line wraps under the kind.
 const NAME_MIN: gpui::Rems = gpui::rems(10.);
 
@@ -178,10 +185,10 @@ fn step_row(
         .id(("step-row", i))
         .h_flex()
         .items_center()
-        .gap_2()
+        .gap_3()
         .min_h(crate::tokens::ROW_H)
-        .px_3()
-        .py_1()
+        .px_4()
+        .py_2()
         .cursor_pointer()
         .hover(|row| row.bg(cx.theme().list_hover))
         .on_click(click(handle, move |page, window, cx| {
@@ -190,18 +197,24 @@ fn step_row(
         .child(
             div()
                 .flex_none()
+                .w(NUMBER_W)
                 .text_color(muted)
                 .child(format!("{}", i + 1)),
         )
+        // The kind in a slot as wide as the widest, so every name starts on
+        // one line down the box.
         .child(
-            onehand_plugin_host::badge(
-                step.kind.label(),
-                onehand_plugin_host::Tint {
-                    fill: cx.theme().secondary,
-                    ink: cx.theme().secondary_foreground,
-                },
-            )
-            .flex_none(),
+            div()
+                .flex_none()
+                .w(KIND_W)
+                .h_flex()
+                .child(onehand_plugin_host::badge(
+                    step.kind.label(),
+                    onehand_plugin_host::Tint {
+                        fill: cx.theme().secondary,
+                        ink: cx.theme().secondary_foreground,
+                    },
+                )),
         )
         .child(
             div()
@@ -433,9 +446,9 @@ fn step_row(
             div()
                 .v_flex()
                 .gap_4()
-                .px_3()
+                .px_4()
                 .pt_2()
-                .pb_4()
+                .pb_6()
                 .child(names)
                 .child(body),
         )
