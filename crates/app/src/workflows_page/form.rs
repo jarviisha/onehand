@@ -57,9 +57,12 @@ pub(super) fn form(
         text_input(state, cx).tall().disabled(shipped)
     };
     let half = |element: AnyElement| div().flex_1().min_w(PAIR_MIN).child(element);
+    // A pair stands on its controls' line: one field's hint must not push its
+    // input below its neighbour's.
     let about_group = section(Some("About"), None, cx).child(
         div()
             .h_flex()
+            .items_end()
             .flex_wrap()
             .gap_4()
             .child(half(
@@ -95,6 +98,7 @@ pub(super) fn form(
         .child(
             div()
                 .h_flex()
+                .items_end()
                 .gap_4()
                 .child(div().flex_1().child(field(
                     "Misses allowed",
