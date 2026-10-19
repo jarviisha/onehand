@@ -32,3 +32,4 @@ onehand-workspace.toml
 # Cargo.lock is intentionally kept (binary crate) — do NOT ignore it.
 
 localDocs
+.superpowers/
