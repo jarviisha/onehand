@@ -25,7 +25,7 @@ pub fn strip(cx: &App) -> Div {
         .h(crate::tokens::BAR_H)
         .px_3()
         .gap_2()
-        .text_sm()
+        .text_size(crate::tokens::CHROME_TEXT)
         .text_color(cx.theme().muted_foreground)
 }
 

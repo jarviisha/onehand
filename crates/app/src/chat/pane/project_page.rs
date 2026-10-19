@@ -536,7 +536,7 @@ impl ChatPane {
                                 .gap_6()
                                 .w_full()
                                 .max_w(PAGE_WIDE)
-                                .text_sm()
+                                .text_size(crate::tokens::CHROME_TEXT)
                                 .child(head)
                                 .child(body),
                         ),

@@ -91,7 +91,7 @@ are not steps and stay allowed. A named spacing constant (`BLOCK_GAP`, `TIGHT_GA
 | Write | rem | px |
 |---|---|---|
 | `.text_xs()` | 0.75 | 12 |
-| `tokens::CODE_TEXT` | 0.8125 | 13 |
+| `tokens::CODE_TEXT`, `tokens::CHROME_TEXT` | 0.8125 | 13 |
 | `.text_sm()` | 0.875 | 14 |
 | `.text_base()` | 1 | 16 |
 | `.text_lg()` | 1.125 | 18 |
@@ -171,6 +171,7 @@ All in `onehand_plugin_host::tokens` (`crates/plugin-host/src/tokens.rs`), which
 | `ROW_H` | 1.875rem | a list row |
 | `CONTROL_H` | 1.5rem | a small control: `.short()`, and an icon-only `.small()` button |
 | `FIELD_H` | 1.875rem | the tallest control, a step over `.short()`: a page's head and form (`.tall()`); nothing stands taller |
+| `CHROME_TEXT` | 0.8125rem | chrome text: a panel's rows, boxes, forms and strips |
 | `CODE_TEXT` | 0.8125rem | machine text |
 | `LEADING` | 1.6 | reading text |
 | `LEADING_TIGHT` | 1.4 | a wrapped title |
@@ -178,7 +179,7 @@ All in `onehand_plugin_host::tokens` (`crates/plugin-host/src/tokens.rs`), which
 | `PAGE_PROSE` | 48rem | an editor, or one thing read in full |
 | `PAGE_WIDE` | 64rem | boxes side by side, a table |
 | `ROW_INSET` | 0.75rem | where a tree row's content starts from a dock's edge (Files, Markdown) |
-| `ROW_GUTTER` | 0.25rem | how far a tree row's fill stands off the dock's edges, inside `ROW_INSET` |
+| `ROW_GUTTER` | 0.25rem | how far a tree row's fill stands off the dock's edges, inside `ROW_INSET`, and off the rows beside it, inside `ROW_H` |
 | `TREE_INDENT` | 0.875rem | how far each level of a tree steps in |
 | `SCROLLBAR_W` | 16px | room held clear beside text the library's scrollbar scrolls (the transcript's boxes, the Markdown reader) |
 | `lift(cx)` | | the floating shadow |

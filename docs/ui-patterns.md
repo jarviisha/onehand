@@ -74,7 +74,7 @@ A boundary is drawn once: no line along a change of surface, no edge doubled by 
 | Form fields | `gap_4` |
 | Page sections; page outer padding | `gap_6`; `px_8` `py_6` |
 | A list page's inset | `px_6` |
-| A tree row's inset; its fill off the dock's edges; its step per level | `tokens::ROW_INSET`; `tokens::ROW_GUTTER`; `tokens::TREE_INDENT` |
+| A tree row's inset; its fill off the dock's edges and its neighbours; its step per level | `tokens::ROW_INSET`; `tokens::ROW_GUTTER`; `tokens::TREE_INDENT` |
 | A live grid (the terminal, Neovim) | `px_3` `py_2` |
 | Text beside the library's scrollbar | `tokens::SCROLLBAR_W` on the scrolling side, so the thumb never lies over words |
 
@@ -119,12 +119,12 @@ size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in ea
 - **`.tall()` is the ceiling.** No control stands taller than `FIELD_H`; a page gives a field
   room by its size, never by a larger control.
 - **One size, one measure.** The library's default letters a button at the body size beside a
-  field at the chrome size, so it is never used. `.short()` is the wrapper that gives a Button and
+  field at `.text_sm()`, so it is never used. `.short()` is the wrapper that gives a Button and
   an Input the small height with words at `.text_xs()`, so they breathe inside it, and `.tall()`
-  the one that gives both `FIELD_H` at the chrome size. A size a component gets wrong is corrected
+  the one that gives both `FIELD_H` at `.text_sm()`, the reading size. A size a component gets wrong is corrected
   in its shared wrapper, never at the call site. The library's `.small()` is an icon-only
   button's size, square at the same height as `.short()`; a worded button never takes it, as its
-  words would stand at the chrome size. A control holding a badge keeps it, being the one tall
+  words would stand at `.text_sm()`. A control holding a badge keeps it, being the one tall
   enough. `.xsmall()` is no button's or field's size: only an icon takes it.
 - **One row of actions, one height.** Every control standing in one row of actions (a button, both
   halves of a split action, a field, a picker, a choice, an icon alone) takes the same size, so
@@ -268,7 +268,11 @@ Boxes sit side by side while the measured column holds two, and stack when it do
 A single-line row is `ROW_H` tall, padded `px_2` with `gap_2`, at `radius`. Hover fills it with
 `list_hover`, the selected row with `accent`. A row standing on a region's bare surface, with no
 frame of its own around the list, keeps those fills off that region's edges: a tree in a dock by
-`tokens::ROW_GUTTER`, any other list in a dock by its own padding, a list page by its inset. Rows
+`tokens::ROW_GUTTER`, any other list in a dock by its own padding, a list page by its inset. In a
+list where a row can be selected, two fills never touch: a hovered row beside the selected one
+stays parted from it, a tree's fills by `tokens::ROW_GUTTER` inside the row's pitch, any other
+list by a gap between its rows. A list nothing in it is ever selected (Plugins) may run its hover
+fills together. Rows
 inside a box are the box's parts: their fills run to its edge, as the hairlines between them do. A row's own actions are ghost buttons at their control sizes, shown
 on hover, on the selected row, on keyboard focus and while their action runs. Every list has a named cap. Its last line, in meta
 text, says why the list is short: a list the cap cut says how many more there are (*N more*); a

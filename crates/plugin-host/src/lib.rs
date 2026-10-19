@@ -187,7 +187,11 @@ pub fn field(
             div()
                 .v_flex()
                 .gap_0p5()
-                .child(div().text_sm().child(title.into()))
+                .child(
+                    div()
+                        .text_size(crate::tokens::CHROME_TEXT)
+                        .child(title.into()),
+                )
                 .children(about.map(|about| {
                     div()
                         .text_xs()
@@ -560,7 +564,7 @@ impl Quiet for Button {
 }
 
 /// A control a step over [`Short`]: [`tokens::FIELD_H`] high, its words and
-/// its icon at the chrome size, the small size's, given that height and
+/// its icon at the small size's, the reading size, given that height and
 /// padding on the spacing steps. The library ties a control's words and icon
 /// to its size and its default size letters a button at the reading size, so
 /// this is the small size made taller rather than the default one.
@@ -681,8 +685,9 @@ pub fn fold_toggle(
 }
 
 /// A tree's row, as Files and Markdown draw theirs: a list row at
-/// [`tokens::ROW_H`], its fill [`tokens::ROW_GUTTER`] off both of the dock's
-/// edges, its content inset [`tokens::ROW_INSET`] and stepped in
+/// [`tokens::ROW_H`] a pitch, its fill [`tokens::ROW_GUTTER`] off both of the
+/// dock's edges and off the rows above and below, so a hovered fill never
+/// touches the picked one beside it; its content inset [`tokens::ROW_INSET`] and stepped in
 /// [`tokens::TREE_INDENT`] per level, the picked row on the selected fill.
 /// It stretches itself across the tree's column, less the gutter, rather than
 /// taking a width: a full width and a margin would overrun the column.
@@ -701,8 +706,10 @@ pub fn tree_row(
         .gap_2()
         .self_stretch()
         .mx(tokens::ROW_GUTTER)
-        .h(tokens::ROW_H)
-        .text_sm()
+        .my(gpui::rems(tokens::ROW_GUTTER.0 / 2.))
+        .min_h(gpui::rems(tokens::ROW_H.0 - tokens::ROW_GUTTER.0))
+        .h(gpui::rems(tokens::ROW_H.0 - tokens::ROW_GUTTER.0))
+        .text_size(crate::tokens::CHROME_TEXT)
         .pl(gpui::rems(
             tokens::ROW_INSET.0 - tokens::ROW_GUTTER.0 + depth as f32 * tokens::TREE_INDENT.0,
         ))

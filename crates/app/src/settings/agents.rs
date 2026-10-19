@@ -216,7 +216,7 @@ pub(super) fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         .when(specs.is_empty(), |list| {
             list.child(
                 div()
-                    .text_sm()
+                    .text_size(crate::tokens::CHROME_TEXT)
                     .text_color(cx.theme().muted_foreground)
                     .child("No agents yet"),
             )

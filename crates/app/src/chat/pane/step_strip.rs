@@ -220,7 +220,7 @@ pub(super) fn open_review(
                     .when(changed, |col| {
                         col.child(
                             div()
-                                .text_sm()
+                                .text_size(crate::tokens::CHROME_TEXT)
                                 .text_color(crate::theme::status_ink(cx).warning)
                                 .child(ANSWER_CHANGED),
                         )
@@ -317,7 +317,7 @@ pub(super) fn open_revise(approval: Approval, window: &mut Window, cx: &mut Cont
                     .when(changed.get(), |col| {
                         col.child(
                             div()
-                                .text_sm()
+                                .text_size(crate::tokens::CHROME_TEXT)
                                 .text_color(crate::theme::status_ink(cx).warning)
                                 .child(format!(
                                     "{ANSWER_CHANGED} Read it again with Review… first."

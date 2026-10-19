@@ -137,7 +137,7 @@ pub fn tab_chip(
         // Chrome, and said so here: neither strip that holds a tab sets a
         // size, so a tab took the panel's reading size and stood a step above
         // the buttons beside it.
-        .text_sm()
+        .text_size(crate::tokens::CHROME_TEXT)
         .rounded(theme.radius)
         .cursor_pointer()
         .text_color(match chosen {

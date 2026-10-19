@@ -135,7 +135,7 @@ impl ChatPane {
                 .gap_2()
                 .w_full()
                 .px_1p5()
-                .text_sm()
+                .text_size(crate::tokens::CHROME_TEXT)
                 .text_color(cx.theme().muted_foreground)
                 .child(Spinner::new().small())
                 .child(div().flex_1().min_w_0().truncate().child(status))
@@ -167,7 +167,7 @@ impl ChatPane {
                 .gap_2()
                 .w_full()
                 .px_1p5()
-                .text_sm()
+                .text_size(crate::tokens::CHROME_TEXT)
                 .child(
                     div()
                         .flex_none()
@@ -560,7 +560,7 @@ fn waiting_hint(what: SharedString, cx: &App) -> impl IntoElement + use<> {
                 .h_flex()
                 .items_center()
                 .gap_2()
-                .text_sm()
+                .text_size(crate::tokens::CHROME_TEXT)
                 .text_color(crate::theme::meta_ink(cx))
                 .child(Spinner::new().xsmall())
                 .child(what),

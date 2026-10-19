@@ -687,7 +687,7 @@ impl PluginsView {
                 .rounded(cx.theme().radius)
                 .border_1()
                 .border_color(cx.theme().border)
-                .text_sm()
+                .text_size(onehand_plugin_host::tokens::CHROME_TEXT)
                 .child(
                     div()
                         .flex_1()

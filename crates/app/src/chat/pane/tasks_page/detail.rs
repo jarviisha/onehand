@@ -718,7 +718,7 @@ fn way_out(
     });
     Some((
         page_card("Way out", None, None, cx)
-            .child(div().text_sm().child(said))
+            .child(div().text_size(crate::tokens::CHROME_TEXT).child(said))
             .child(div().h_flex().gap_2().children(buttons))
             .into_any_element(),
         primary,

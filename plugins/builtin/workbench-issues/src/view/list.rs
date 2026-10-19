@@ -648,7 +648,7 @@ impl IssuesView {
             .py_1p5()
             .child(
                 div()
-                    .text_sm()
+                    .text_size(onehand_plugin_host::tokens::CHROME_TEXT)
                     .line_clamp(2)
                     // A closed issue stays in the list as a record, drawn
                     // quieter than the work that is still open.

@@ -242,7 +242,7 @@ impl Render for DragGhost {
             .py_0p5()
             .rounded(cx.theme().radius)
             .bg(chosen_fill(cx))
-            .text_sm()
+            .text_size(crate::tokens::CHROME_TEXT)
             .text_color(cx.theme().sidebar_accent_foreground)
             .child(self.0.clone())
     }

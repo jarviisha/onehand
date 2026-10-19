@@ -104,7 +104,11 @@ fn details(plugin: &Plugin, cx: &App) -> AnyElement {
                         .text_color(muted)
                         .child(format!("{title} · {}", names.len())),
                 )
-                .children(names.iter().map(|name| div().text_sm().child(name.clone())))
+                .children(names.iter().map(|name| {
+                    div()
+                        .text_size(onehand_plugin_host::tokens::CHROME_TEXT)
+                        .child(name.clone())
+                }))
                 .into_any_element()
         })
     };
@@ -157,12 +161,11 @@ fn details(plugin: &Plugin, cx: &App) -> AnyElement {
         .v_flex()
         .gap_4()
         .overflow_y_scroll()
-        .children(
-            inventory
-                .description
-                .clone()
-                .map(|text| div().text_sm().child(text)),
-        )
+        .children(inventory.description.clone().map(|text| {
+            div()
+                .text_size(onehand_plugin_host::tokens::CHROME_TEXT)
+                .child(text)
+        }))
         .child(
             div()
                 .text_xs()

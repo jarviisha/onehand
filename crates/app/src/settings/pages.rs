@@ -453,7 +453,11 @@ fn slots_field(handle: &Entity<Shell>, slots: Slots, cx: &App) -> AnyElement {
         div()
             .v_flex()
             .gap_1()
-            .child(div().text_sm().child(slots.count_said()))
+            .child(
+                div()
+                    .text_size(crate::tokens::CHROME_TEXT)
+                    .child(slots.count_said()),
+            )
             .child(div().h_flex().flex_wrap().gap_2().children(holders))
             .children((left_out > 0).then(|| {
                 div()
@@ -504,7 +508,7 @@ fn workflow_labels(handle: &Entity<Shell>, cx: &App) -> impl IntoElement {
                 .h_flex()
                 .items_center()
                 .gap_2()
-                .text_sm()
+                .text_size(crate::tokens::CHROME_TEXT)
                 .child(div().flex_none().child(label))
                 .child(Icon::new(IconName::ArrowRight).small().text_color(muted))
                 .child(match named {

@@ -199,8 +199,10 @@ fn documents() -> Vec<(String, String)> {
             let name = entry.file_name();
             if path.is_dir() {
                 // Build output and version-control internals hold other
-                // people's prose in whatever language they wrote it.
-                if name == "target" || name == ".git" {
+                // people's prose in whatever language they wrote it, and
+                // `localDocs` is a contributor's own untracked notes, never
+                // part of the repository.
+                if name == "target" || name == ".git" || name == "localDocs" {
                     continue;
                 }
                 walk(&path, out);

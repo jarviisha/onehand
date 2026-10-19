@@ -213,7 +213,11 @@ pub(crate) fn list_row(
                 .gap_0p5()
                 .flex_1()
                 .min_w_0()
-                .child(div().text_sm().child(title.into()))
+                .child(
+                    div()
+                        .text_size(crate::tokens::CHROME_TEXT)
+                        .child(title.into()),
+                )
                 .children(about.map(|about| {
                     div()
                         .text_xs()
@@ -310,7 +314,7 @@ fn nav_row(page: SettingsPage, current: SettingsPage, handle: &Entity<Shell>, cx
         .px_2()
         .rounded(cx.theme().radius)
         .cursor_pointer()
-        .text_sm();
+        .text_size(crate::tokens::CHROME_TEXT);
 
     // A list row as the rail's page rows are, in their fills and inks: the
     // chosen fill in its own ink, the rest muted at rest, the mark in one slot
