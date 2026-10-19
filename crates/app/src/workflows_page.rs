@@ -316,9 +316,11 @@ impl Render for WorkflowsPage {
                         .id("step-drawer")
                         .flex_none()
                         .h(gpui::relative(DRAWER_SHARE))
-                        .border_t_1()
-                        .border_color(cx.theme().border)
-                        .bg(onehand_plugin_host::dock_surface(cx))
+                        // No fill of its own: one edge in the primary ink parts
+                        // the drawer from the form, the page's surface running on
+                        // under both.
+                        .border_t_2()
+                        .border_color(cx.theme().primary)
                         .overflow_y_scroll()
                         .child(
                             div().h_flex().justify_center().px_8().py_4().child(
