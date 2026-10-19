@@ -14,6 +14,7 @@
 mod actions;
 mod draft;
 mod form;
+mod list;
 mod pick;
 mod step;
 
@@ -28,16 +29,16 @@ gpui::actions!(
 
 use crate::controls::Quiet as _;
 use crate::controls::Short as _;
-use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, AppContext as _, ClickEvent, Context, Entity, EventEmitter, FocusHandle,
-    Focusable, InteractiveElement as _, IntoElement, ParentElement, Render, SharedString,
+    App, AppContext as _, ClickEvent, Context, Entity, EventEmitter, FocusHandle, Focusable,
+    InteractiveElement as _, IntoElement, ParentElement, Render, SharedString,
     StatefulInteractiveElement as _, Styled, Window, div,
 };
-use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme, StyledExt};
-use onehand_core::workflow as core;
-use onehand_plugin_host::Tall as _;
+use gpui_component::{ResizableState, h_resizable, resizable_panel};
+use onehand_plugin_host::{
+    ListWidths, Measured, back_link, list_detail, measure_width, unmeasured,
+};
 use std::path::PathBuf;
 
 /// What the page asks of its window.
@@ -62,8 +63,13 @@ pub(crate) struct WorkflowsPage {
     /// one write lands at a time.
     writing: bool,
     /// One focus handle per listed row, by place: each row is a tab stop, so
-    /// the keyboard reaches its actions as the pointer does.
+    /// the keyboard reaches it as the pointer does.
     rows: Vec<FocusHandle>,
+    /// The list's width as dragged beside the editor.
+    split: Entity<ResizableState>,
+    /// The page's width as last laid out, which decides whether the list and
+    /// the editor stand side by side.
+    width: Measured,
 }
 
 impl EventEmitter<WorkflowsPageEvent> for WorkflowsPage {}
@@ -84,6 +90,8 @@ impl WorkflowsPage {
             selected: None,
             writing: false,
             rows: Vec::new(),
+            split: cx.new(|_| ResizableState::default()),
+            width: unmeasured(),
         })
     }
 
@@ -128,8 +136,13 @@ impl WorkflowsPage {
     }
 }
 
+/// The list's width before anybody drags it, and the range a drag may take
+/// it through: wide enough for the head's name beside *New*, never so wide
+/// that it crowds the editor.
+const LIST: ListWidths = ListWidths::new(16., 13., 24.);
+
 impl Render for WorkflowsPage {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let handle = cx.entity();
         let listed = crate::workflow::templates(cx)
             .len()
@@ -137,17 +150,93 @@ impl Render for WorkflowsPage {
         while self.rows.len() < listed {
             self.rows.push(cx.focus_handle().tab_stop(true));
         }
-        let list = list(
-            &handle,
-            &self.run_choices(),
-            &self.rows,
-            self.picked.as_ref(),
-            cx,
+        let layout = list_detail(
+            self.split.read(cx),
+            &LIST,
+            self.width.get(),
+            window.rem_size(),
         );
-        let form = self
+        let draft_name = self
             .draft
             .as_ref()
-            .map(|draft| form::form(&handle, draft, self.writing, cx));
+            .map(|draft| draft.name.read(cx).value().to_string());
+        let list = div()
+            .id("workflows-list")
+            .size_full()
+            .overflow_y_scroll()
+            .px_4()
+            .py_6()
+            .child(list::list_column(
+                &handle,
+                self.picked.as_ref(),
+                draft_name,
+                &self.rows,
+                cx,
+            ));
+        let detail = || {
+            let body = match &self.draft {
+                Some(draft) => form::form(&handle, draft, self.writing, cx),
+                None => onehand_plugin_host::hint(
+                    "Pick a workflow to see and change it, or make a new one",
+                    cx,
+                ),
+            };
+            // Centred up to the column a form is read in, its gutters equal,
+            // so hiding the list centres it rather than stretching it.
+            div()
+                .id("workflows-detail")
+                .size_full()
+                .overflow_y_scroll()
+                .child(
+                    div()
+                        .h_flex()
+                        .justify_center()
+                        .px_8()
+                        .py_6()
+                        .min_h_full()
+                        .child(
+                            div()
+                                .v_flex()
+                                .w_full()
+                                .max_w(crate::tokens::PAGE_PROSE)
+                                .child(body),
+                        ),
+                )
+        };
+        let halves = if layout.side_by_side {
+            h_resizable("workflows-split")
+                .with_state(&self.split)
+                .child(
+                    // `flex_none`, or the list grows into the room the editor
+                    // was opened to be written in.
+                    resizable_panel()
+                        .size(layout.start)
+                        .size_range(layout.range)
+                        .flex_none()
+                        .child(
+                            div()
+                                .size_full()
+                                .border_r_1()
+                                .border_color(cx.theme().border)
+                                .child(list),
+                        ),
+                )
+                .child(resizable_panel().child(detail()))
+                .into_any_element()
+        } else if self.picked.is_some() {
+            let back = back_link("workflows-back", "Workflows", cx)
+                .on_click(click(&handle, |page, window, cx| {
+                    page.close_workflow_form(window, cx)
+                }));
+            div()
+                .size_full()
+                .v_flex()
+                .child(div().px_8().pt_4().child(back))
+                .child(div().flex_1().min_h_0().child(detail()))
+                .into_any_element()
+        } else {
+            list.into_any_element()
+        };
         // A bare page, so it tracks its own focus: a field typed in here
         // must be inside this, or the window's keys land elsewhere.
         div()
@@ -167,188 +256,13 @@ impl Render for WorkflowsPage {
                     page.step_pick(1, window, cx)
                 }),
             )
+            .relative()
             .size_full()
-            .overflow_y_scroll()
-            .child(
-                div().h_flex().justify_center().px_8().py_6().child(
-                    div()
-                        .v_flex()
-                        .gap_6()
-                        .w_full()
-                        .max_w(crate::tokens::PAGE_PROSE)
-                        .text_size(crate::tokens::CHROME_TEXT)
-                        .child(head(&handle, form.is_some(), cx))
-                        .child(list)
-                        .children(form),
-                ),
-            )
+            .text_size(crate::tokens::CHROME_TEXT)
+            .child(measure_width(self.width.clone(), cx.entity().downgrade()))
+            .child(halves)
     }
 }
-
-/// The page's head: its name over what a workflow is and how many there
-/// are, then the actions that make one at the end. *New workflow* is the
-/// page's one primary at rest; while the form is open it holds that, and this
-/// steps down under it.
-fn head(handle: &Entity<WorkflowsPage>, editing: bool, cx: &App) -> AnyElement {
-    let count = crate::workflow::templates(cx).len();
-    let about = "The workflows a run starts from, shared by every workspace. The ones \
-                 onehand ships are read-only: duplicate one to change it.";
-    let facts = match count {
-        0 => about.to_string(),
-        1 => format!("1 workflow · {about}"),
-        n => format!("{n} workflows · {about}"),
-    };
-    crate::chat::pane::page_parts::page_head(
-        "Workflows",
-        Some(facts.into_any_element()),
-        vec![
-            crate::controls::action("import-workflow")
-                .tall()
-                .quiet(cx)
-                .label("Import…")
-                .on_click(click(handle, |page, window, cx| {
-                    page.import_workflow(window, cx)
-                }))
-                .into_any_element(),
-            crate::controls::action("new-workflow")
-                .tall()
-                .when(editing, |button| button.secondary())
-                .when(!editing, |button| button.primary())
-                .label("New workflow")
-                .on_click(click(handle, |page, window, cx| {
-                    page.new_workflow(window, cx)
-                }))
-                .into_any_element(),
-        ],
-        cx,
-    )
-    .into_any_element()
-}
-
-/// Every workflow on offer, capped and saying what it left out: a row each,
-/// its name over what it does, *Built in* in a slot of its own, and *Run…*
-/// and what may be done to it while it is pointed at or the keyboard is on it.
-fn list(
-    handle: &Entity<WorkflowsPage>,
-    choices: &[(PathBuf, SharedString)],
-    focus: &[FocusHandle],
-    picked: Option<&pick::Pick>,
-    cx: &App,
-) -> AnyElement {
-    let entries = crate::workflow::templates(cx);
-    let (muted, ring) = (cx.theme().muted_foreground, cx.theme().ring);
-    let warning = crate::theme::status_ink(cx).warning;
-    let left_out = entries
-        .len()
-        .saturating_sub(crate::workflow::TEMPLATES_SHOWN);
-    let rows = entries
-        .iter()
-        .take(crate::workflow::TEMPLATES_SHOWN)
-        .zip(focus)
-        .enumerate()
-        .map(|(i, (entry, focus))| {
-            let shipped = entry.file.is_none();
-            let about = match &entry.template {
-                Ok(template) => div()
-                    .text_xs()
-                    .text_color(muted)
-                    .child(template.description.clone())
-                    .into_any_element(),
-                Err(why) => div()
-                    .text_xs()
-                    .text_color(warning)
-                    .child(format!("Cannot be read: {why}"))
-                    .into_any_element(),
-            };
-            let group = SharedString::from(format!("workflow-row-{i}"));
-            let actions = div()
-                .h_flex()
-                .items_center()
-                .gap_1()
-                .when_some(entry.template.as_ref().ok(), |row, template| {
-                    row.child(run_menu(handle, i, &template.id, choices, cx))
-                });
-            let key = pick::pick_of(entry);
-            let selected = key.is_some() && key.as_ref() == picked;
-            onehand_plugin_host::row(selected, cx)
-                .id(("workflow-row", i))
-                .when_some(key, |row, key| {
-                    row.cursor_pointer()
-                        .on_click(click(handle, move |page, window, cx| {
-                            page.pick(key.clone(), window, cx)
-                        }))
-                })
-                .group(group.clone())
-                .track_focus(focus)
-                .border_1()
-                .border_color(gpui::transparent_black())
-                .focus_visible(|row| row.border_color(ring))
-                .h_flex()
-                .items_center()
-                .gap_2()
-                .py_1p5()
-                .child(
-                    div()
-                        .v_flex()
-                        .gap_0p5()
-                        .flex_1()
-                        .min_w_0()
-                        .child(div().truncate().child(entry.name()))
-                        .child(about),
-                )
-                // A content slot, always drawn and as wide whether or not it
-                // holds the badge, so the actions after it never move.
-                .child(div().flex_none().w(BUILT_IN_W).h_flex().justify_end().when(
-                    shipped,
-                    |slot| {
-                        slot.child(
-                            onehand_plugin_host::badge(
-                                "Built in",
-                                onehand_plugin_host::Tint {
-                                    fill: cx.theme().secondary,
-                                    ink: cx.theme().secondary_foreground,
-                                },
-                            )
-                            .flex_none(),
-                        )
-                    },
-                ))
-                .child(onehand_plugin_host::hover_slot(group, false, actions).focus(focus))
-                .into_any_element()
-        })
-        .collect::<Vec<_>>();
-    let meta = |text: String| div().text_xs().text_color(muted).child(text);
-    // In a box of its own, with no title row: the page's head names it.
-    crate::chat::pane::page_parts::card_box(cx)
-        .w_full()
-        .child(crate::chat::pane::page_parts::ruled(rows, cx))
-        .when(left_out > 0, |list| {
-            list.child(
-                div()
-                    .h_flex()
-                    .flex_wrap()
-                    .gap_1()
-                    .text_xs()
-                    .text_color(muted)
-                    .child(format!(
-                        "{left_out} more workflows not shown; remove some from"
-                    ))
-                    .child(
-                        div()
-                            .font_family(cx.theme().mono_font_family.clone())
-                            .child(core::store::dir().display().to_string()),
-                    ),
-            )
-        })
-        .when(entries.is_empty(), |list| {
-            list.child(meta("Reading the workflows…".to_string()))
-        })
-        .into_any_element()
-}
-
-/// The slot *Built in* stands in on every row, held whether or not a row
-/// carries it.
-const BUILT_IN_W: gpui::Rems = gpui::rems(4.5);
 
 /// *Run…* on row `i`: which project to start workflow `workflow` on, the
 /// rail's selection first, then the launcher.
