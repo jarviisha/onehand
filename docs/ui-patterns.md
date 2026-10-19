@@ -311,7 +311,9 @@ column up to `PAGE_PROSE`, centred with equal gutters, so hiding the list widens
 leaving the freed width empty; its scroll spans the detail, the scrollbar on the detail's edge.
 A page set this way (Workflows) holds the list in a column the pane's whole height, in no box,
 parted from the detail by the split's hairline from the pane's top edge to its bottom, the pane's
-header floating over both with no fill; nothing is picked on arrival, the detail a centred `hint` saying
+header floating over both with no fill; its edges are a list page's, the list's fills inset `px_6`
+and every word on the header's line, both halves starting `pt_3` under the header, a form at the
+top of its half, level with the list's head; nothing is picked on arrival, the detail a centred `hint` saying
 what to pick; picking another item over unsaved changes asks first, *Keep* leaving the first
 picked; ↑ and ↓ step the list, opening what they reach, never while a field holds the caret.
 
