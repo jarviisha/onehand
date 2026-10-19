@@ -48,6 +48,7 @@ pub const CORNER: usize = 4;
 /// level of the tree steps in: Files and Markdown share both, so their trees
 /// stand on one axis.
 pub const ROW_INSET: Rems = rems(0.75);
+pub const TREE_INDENT: Rems = rems(0.875);
 
 /// How far a tree row's fill stands off the dock's edges, so a hovered or
 /// picked row reads as a block inside the dock rather than a band across it.
@@ -58,7 +59,6 @@ pub const ROW_GUTTER: Rems = rems(0.25);
 /// thumb never lies over the words. In pixels, as the library draws the thumb:
 /// its width and inset do not follow a panel's zoom, so neither does this.
 pub const SCROLLBAR_W: Pixels = px(16.);
-pub const TREE_INDENT: Rems = rems(0.875);
 
 /// Machine text: code, a command, a tool's output, a path.
 ///

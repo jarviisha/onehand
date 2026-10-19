@@ -24,6 +24,25 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+/// The least a document stands off the reader's sides and ends.
+const READER_INSET: Rems = rems(1.);
+
+/// The document's start and end padding in a reader `width` wide: equal
+/// gutters that hold it to [`tokens::PAGE_PROSE`], centred as an issue's
+/// column is, never under [`READER_INSET`]; and on the end, where the
+/// scrollbar lies over the view's own edge, never under the room it takes.
+/// That room is in pixels, so it is read against the rem base in force.
+fn sides(width: Rems, rem: gpui::Pixels) -> (Rems, Rems) {
+    // Unmeasured, the width is infinite: drawn at the inset until measured.
+    let spare = match width.0.is_finite() {
+        true => (width.0 - tokens::PAGE_PROSE.0) / 2.,
+        false => 0.,
+    };
+    let side = spare.max(READER_INSET.0);
+    let bar = tokens::SCROLLBAR_W / rem;
+    (rems(side), rems(side.max(bar)))
+}
+
 /// A document's headings on the type scale: `text_lg`, `text_base`, then the
 /// body's own size, so a deep heading is told apart by weight. The renderer
 /// asks a size of each level and keeps its own weights.
@@ -227,7 +246,6 @@ fn doc_row(
     // picked row, as the open file is the tree's. Indented by depth rather
     // than by nested containers, for the reason the file tree is.
     tree_row(("markdown-row", i), row.depth as usize, selected, cx)
-        .pr_2()
         .tooltip({
             let name = row.name.clone();
             move |window, cx| Tooltip::new(name.clone()).build(window, cx)
@@ -272,6 +290,7 @@ pub(crate) fn reader(
     doc: Option<&OpenDoc>,
     lead: gpui::AnyElement,
     rem: gpui::Pixels,
+    page: (Rems, gpui::AnyElement),
     on_edit: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
     cx: &App,
 ) -> gpui::AnyElement {
@@ -316,34 +335,32 @@ pub(crate) fn reader(
         .child(match doc {
             // The column at the app's reading size, a step over its chrome,
             // since a document is read the way the conversation is.
-            Some(doc) => div()
-                .flex_1()
-                .min_h_0()
-                .px_4()
-                .py_4()
-                .child(
-                    div()
-                        .h_full()
-                        // The column for one thing read in full: the
-                        // freed width a hidden list leaves is taken up to it,
-                        // and a maximized dock stops short of lines too long
-                        // to follow.
-                        .max_w(tokens::PAGE_PROSE)
-                        .text_sm()
-                        .line_height(relative(tokens::LEADING))
-                        .child(
-                            TextView::new(&doc.state)
-                                .selectable(true)
-                                // Virtualized: a long document draws the rows
-                                // on screen rather than all of it.
-                                .scrollable(true)
-                                // The scrollbar is drawn over the view's own
-                                // edge; the words stop short of it.
-                                .pr(tokens::SCROLLBAR_W)
-                                .style(doc_style(rem, cx)),
-                        ),
-                )
-                .into_any_element(),
+            // The view spans the reader, so its scrollbar stands on the dock's
+            // edge and the wheel scrolls it anywhere over the reader; what it
+            // scrolls is held to the column by the sides it is padded with.
+            Some(doc) => {
+                let (width, measure) = page;
+                let (start, end) = sides(width, rem);
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .relative()
+                    .child(measure)
+                    .child(
+                        TextView::new(&doc.state)
+                            .selectable(true)
+                            // Virtualized: a long document draws the rows on
+                            // screen rather than all of it.
+                            .scrollable(true)
+                            .pl(start)
+                            .pr(end)
+                            .py(READER_INSET)
+                            .text_sm()
+                            .line_height(relative(tokens::LEADING))
+                            .style(doc_style(rem, cx)),
+                    )
+                    .into_any_element()
+            }
             None => div()
                 .flex_1()
                 .min_h_0()
@@ -393,4 +410,28 @@ fn note(text: &'static str, cx: &App) -> gpui::AnyElement {
         .v_flex()
         .child(onehand_plugin_host::hint(text, cx))
         .into_any_element()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gpui::px;
+
+    /// Wide, the document is held to the column and centred; narrow, it keeps
+    /// the inset; unmeasured, it draws at the inset rather than at an
+    /// infinite gutter; at a small zoom, the end still clears the scrollbar.
+    #[test]
+    fn sides_centre_the_column_and_clear_the_scrollbar() {
+        let base = px(16.);
+        let wide = tokens::PAGE_PROSE.0 + 20.;
+        assert_eq!(sides(rems(wide), base), (rems(10.), rems(10.)));
+        assert_eq!(sides(rems(20.), base), (READER_INSET, READER_INSET));
+        assert_eq!(
+            sides(rems(f32::INFINITY), base),
+            (READER_INSET, READER_INSET)
+        );
+        let (start, end) = sides(rems(20.), px(8.));
+        assert_eq!(start, READER_INSET);
+        assert_eq!(end, rems(2.));
+    }
 }

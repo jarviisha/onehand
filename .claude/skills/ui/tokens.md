@@ -178,9 +178,9 @@ All in `onehand_plugin_host::tokens` (`crates/plugin-host/src/tokens.rs`), which
 | `PAGE_PROSE` | 48rem | an editor, or one thing read in full |
 | `PAGE_WIDE` | 64rem | boxes side by side, a table |
 | `ROW_INSET` | 0.75rem | where a tree row's content starts from a dock's edge (Files, Markdown) |
-| `SCROLLBAR_W` | 16px | room held clear beside text the library's scrollbar scrolls (the transcript's boxes, the Markdown reader) |
 | `ROW_GUTTER` | 0.25rem | how far a tree row's fill stands off the dock's edges, inside `ROW_INSET` |
 | `TREE_INDENT` | 0.875rem | how far each level of a tree steps in |
+| `SCROLLBAR_W` | 16px | room held clear beside text the library's scrollbar scrolls (the transcript's boxes, the Markdown reader) |
 | `lift(cx)` | | the floating shadow |
 
 Equal values kept apart on purpose, each one decision beside its one use: `CHAT_MIN`,

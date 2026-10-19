@@ -301,9 +301,9 @@ than with a fill, which would break the reading column into tiles. Their actions
 
 `list_detail` sets a list beside its detail while the measured container holds both widths; else
 it shows one at a time, the detail under a `back_link` naming the list. Picking shows the detail;
-going back keeps the list's place. A detail read as prose (a Markdown document) runs up to
-`PAGE_PROSE` from its start edge, so hiding the list widens it rather than leaving the freed width
-empty.
+going back keeps the list's place. A detail read as prose (an issue, a Markdown document) is a
+column up to `PAGE_PROSE`, centred with equal gutters, so hiding the list widens it rather than
+leaving the freed width empty; its scroll spans the detail, the scrollbar on the detail's edge.
 
 ### Forms
 
