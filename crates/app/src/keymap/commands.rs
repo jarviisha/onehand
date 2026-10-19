@@ -425,6 +425,18 @@ pub const COMMANDS: &[Command] = &[
         "WorkflowsPage && !Dialog && !Input",
         "Workflows page"
     ),
+    // `A > B` scores at `B`'s depth, so these tie with the input's own arrow
+    // and Tab bindings and win by being registered later. The composer adds
+    // `ChatComposer` only while a list is open, so otherwise the keys still
+    // move the caret.
+    command!(
+        "completion_previous",
+        "Previous suggestion",
+        ["up"],
+        CompletionPrev,
+        "ChatComposer > Input",
+        "Composer suggestions"
+    ),
     command!(
         "completion_next",
         "Next suggestion",
