@@ -193,6 +193,16 @@ impl WorkflowsPage {
         window.focus(&self.focus_handle, cx);
     }
 
+    /// Esc: the innermost thing open goes, the step drawer before the form.
+    pub(super) fn escape(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(draft) = self.draft.as_mut().filter(|d| d.open_step.is_some()) {
+            draft.open_step = None;
+            cx.notify();
+            return;
+        }
+        self.close_workflow_form(window, cx);
+    }
+
     /// Close the form, asking first when it holds changes.
     pub(crate) fn close_workflow_form(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.unless_editing("Closing the form", window, cx, |page, _, cx| {
@@ -237,7 +247,11 @@ impl WorkflowsPage {
     ) {
         // A shipped workflow is read, never changed: duplicating it is how.
         if let Some(draft) = self.draft.as_mut().filter(|d| !d.shipped) {
+            let was = draft.open_step;
             edit(draft, window, cx);
+            if draft.open_step.is_some() && draft.open_step != was {
+                self.reveal.ask();
+            }
         }
         cx.notify();
     }
@@ -251,7 +265,11 @@ impl WorkflowsPage {
         edit: impl FnOnce(&mut WorkflowDraft),
     ) {
         if let Some(draft) = self.draft.as_mut() {
+            let was = draft.open_step;
             edit(draft);
+            if draft.open_step.is_some() && draft.open_step != was {
+                self.reveal.ask();
+            }
         }
         cx.notify();
     }

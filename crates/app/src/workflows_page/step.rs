@@ -1,6 +1,7 @@
 use super::draft::{Kind, StepDraft, WorkflowDraft, split_problems, step_facts};
 use super::{WorkflowsPage, click};
 use crate::controls::Quiet as _;
+use crate::controls::Refuses as _;
 use crate::controls::text_area;
 use crate::controls::text_input;
 use crate::settings::{about, field};
@@ -40,24 +41,13 @@ pub(super) struct Earlier {
 
 /// The steps as a run, read down a rail: a numbered dot each, joined to the
 /// next, then its name, its kind and what it does on failure, read without
-/// opening it; the one open shows its fields in a box under its line.
+/// opening it; the one open is marked, its fields in the drawer under the form.
 pub(super) fn steps_box(
     handle: &Entity<WorkflowsPage>,
     draft: &WorkflowDraft,
-    place: Place,
+    reveal: &super::Reveal,
     cx: &App,
 ) -> AnyElement {
-    // Every earlier agent step by id, for what a command goes back to and an
-    // approval approves.
-    let earlier: Vec<Earlier> = draft
-        .steps
-        .iter()
-        .map(|step| Earlier {
-            id: step.id.read(cx).value().trim().to_string(),
-            agent: step.kind == Kind::Agent,
-            keeps: step.keep_answer,
-        })
-        .collect();
     let specs: Vec<_> = draft.steps.iter().map(|step| step.to_spec(cx)).collect();
     let problems = split_problems(&draft.problem_list(cx), draft.steps.len());
     let rows = draft.steps.iter().enumerate().map(|(i, step)| {
@@ -69,7 +59,7 @@ pub(super) fn steps_box(
             facts: step_facts(i, &specs),
             problem: problems[i].clone(),
         };
-        step_row(handle, &row, step, &earlier[..i], place, cx)
+        step_row(handle, &row, step, reveal, cx)
     });
     div().v_flex().w_full().children(rows).into_any_element()
 }
@@ -84,44 +74,16 @@ struct StepRow {
     problem: Option<String>,
 }
 
-/// One step: its row, and its fields under it while it is the one open.
+/// One step's line on the rail: its dot, its name, its kind and what it does
+/// on failure; the one open in the drawer marked.
 fn step_row(
     handle: &Entity<WorkflowsPage>,
     row: &StepRow,
     step: &StepDraft,
-    earlier: &[Earlier],
-    place: Place,
+    reveal: &super::Reveal,
     cx: &App,
 ) -> AnyElement {
-    let (i, last, shipped) = (row.i, row.last, row.shipped);
-    let kind_menu = {
-        let handle = handle.clone();
-        crate::controls::menu_below(
-            ("step-kind", i),
-            onehand_plugin_host::picker(
-                ("step-kind-trigger", i),
-                step.kind.label(),
-                true,
-                onehand_plugin_host::ControlSize::Tall,
-                cx,
-            ),
-            move |mut menu, _, _| {
-                for kind in Kind::ALL {
-                    let handle = handle.clone();
-                    menu = menu.item(crate::controls::menu_item(kind.label()).on_click(
-                        move |_, window: &mut Window, cx: &mut App| {
-                            handle.update(cx, |page, cx| {
-                                page.edit_workflow_draft(window, cx, |d, _, _| {
-                                    d.steps[i].kind = kind
-                                })
-                            });
-                        },
-                    ));
-                }
-                menu
-            },
-        )
-    };
+    let (i, last, shipped, open) = (row.i, row.last, row.shipped, row.open);
     // Its number and one ⋯ holding what is done to the step itself: moved
     // up or down, refusing at the ends, or removed.
     let more = {
@@ -186,10 +148,19 @@ fn step_row(
         .px_2()
         .rounded(cx.theme().radius)
         .cursor_pointer()
-        .hover(|row| row.bg(cx.theme().list_hover))
+        // The step open in the drawer below is marked as a picked row is.
+        .map(|row| match open {
+            true => row
+                .bg(cx.theme().accent)
+                .text_color(cx.theme().accent_foreground),
+            false => row.hover(|row| row.bg(cx.theme().list_hover)),
+        })
         .on_click(click(handle, move |page, window, cx| {
             page.edit_open_step(window, cx, |d| d.toggle_step(i))
         }))
+        // The open step's line reports where it landed, so the page can keep
+        // it in view above the drawer.
+        .when(open, |head| head.relative().child(reveal.watch()))
         .child(div().min_w_0().truncate().font_medium().child(name.clone()))
         .child(
             onehand_plugin_host::badge(
@@ -221,15 +192,6 @@ fn step_row(
                 .child(Icon::new(IconName::TriangleAlert).xsmall().flex_none())
                 .child(div().truncate().child(problem))
         }))
-        .child(
-            Icon::new(match row.open {
-                true => IconName::ChevronUp,
-                false => IconName::ChevronDown,
-            })
-            .small()
-            .text_color(muted)
-            .flex_none(),
-        )
         // A press on the ⋯ stays on it, or the row under it would open or
         // close the step on the same click.
         .when(!shipped, |head| {
@@ -293,9 +255,130 @@ fn step_row(
             .child(div().flex_1().min_w_0().v_flex().child(content))
             .into_any_element()
     };
-    if !row.open {
-        return step_line(head.into_any_element());
-    }
+    step_line(head.into_any_element())
+}
+
+/// The drawer the open step's fields stand in, under the form: its head
+/// names the step, steps to the one before or after, and closes it; then
+/// the step's kind, id and label, and its kind's own fields. `None` while no
+/// step is open.
+pub(super) fn step_drawer(
+    handle: &Entity<WorkflowsPage>,
+    draft: &WorkflowDraft,
+    place: Place,
+    cx: &App,
+) -> Option<AnyElement> {
+    let i = draft.open_step.filter(|i| *i < draft.steps.len())?;
+    let step = &draft.steps[i];
+    let shipped = draft.shipped;
+    let last = i + 1 == draft.steps.len();
+    // Every earlier agent step by id, for what a command goes back to and an
+    // approval approves.
+    let earlier: Vec<Earlier> = draft.steps[..i]
+        .iter()
+        .map(|step| Earlier {
+            id: step.id.read(cx).value().trim().to_string(),
+            agent: step.kind == Kind::Agent,
+            keeps: step.keep_answer,
+        })
+        .collect();
+    let earlier = &earlier[..];
+    let label = step.label.read(cx).value().trim().to_string();
+    let name = match label.is_empty() {
+        true => step.id.read(cx).value().trim().to_string(),
+        false => label,
+    };
+    let kind_menu = {
+        let handle = handle.clone();
+        crate::controls::menu_below(
+            ("step-kind", i),
+            onehand_plugin_host::picker(
+                ("step-kind-trigger", i),
+                step.kind.label(),
+                true,
+                onehand_plugin_host::ControlSize::Tall,
+                cx,
+            ),
+            move |mut menu, _, _| {
+                for kind in Kind::ALL {
+                    let handle = handle.clone();
+                    menu = menu.item(crate::controls::menu_item(kind.label()).on_click(
+                        move |_, window: &mut Window, cx: &mut App| {
+                            handle.update(cx, |page, cx| {
+                                page.edit_workflow_draft(window, cx, |d, _, _| {
+                                    d.steps[i].kind = kind
+                                })
+                            });
+                        },
+                    ));
+                }
+                menu
+            },
+        )
+    };
+    // Each sets which step is open: the one before, the one after, or none.
+    // A step past either end refuses, saying there is none.
+    let go = |id: &'static str,
+              icon: IconName,
+              tip: &'static str,
+              to: Option<usize>,
+              refused: Option<&'static str>| {
+        let handle = handle.clone();
+        crate::controls::action((id, i))
+            .small()
+            .quiet_icon(false, cx)
+            .icon(Icon::new(icon))
+            .tooltip(tip)
+            .refuses(refused.map(str::to_string))
+            .on_click(move |_, window: &mut Window, cx: &mut App| {
+                handle.update(cx, |page, cx| {
+                    page.edit_open_step(window, cx, |d| d.open_step = to)
+                })
+            })
+    };
+    let head = div()
+        .h_flex()
+        .items_center()
+        .gap_2()
+        .child(
+            div()
+                .min_w_0()
+                .truncate()
+                .font_semibold()
+                .child(format!("Step {} · {name}", i + 1)),
+        )
+        .child(
+            onehand_plugin_host::badge(
+                step.kind.label(),
+                onehand_plugin_host::Tint {
+                    fill: cx.theme().secondary,
+                    ink: cx.theme().secondary_foreground,
+                },
+            )
+            .flex_none(),
+        )
+        .child(div().flex_1())
+        .child(go(
+            "step-drawer-up",
+            IconName::ChevronUp,
+            "The step before",
+            i.checked_sub(1),
+            (i == 0).then_some("This is the first step"),
+        ))
+        .child(go(
+            "step-drawer-down",
+            IconName::ChevronDown,
+            "The step after",
+            (!last).then_some(i + 1),
+            last.then_some("This is the last step"),
+        ))
+        .child(go(
+            "step-drawer-close",
+            IconName::Close,
+            "Close the step",
+            None,
+            None,
+        ));
     // The kind picker is the first field: it decides every field after it.
     let names = div()
         .h_flex()
@@ -500,23 +583,13 @@ fn step_row(
         }
     };
 
-    step_line(
+    Some(
         div()
             .v_flex()
-            .pb_3()
+            .gap_4()
             .child(head)
-            // No box of its own: it stands inside the steps' box, and the
-            // rail beside it already says whose fields these are.
-            .child(
-                div()
-                    .v_flex()
-                    .gap_4()
-                    .px_2()
-                    .pt_2()
-                    .pb_3()
-                    .child(names)
-                    .child(body),
-            )
+            .child(names)
+            .child(body)
             .into_any_element(),
     )
 }

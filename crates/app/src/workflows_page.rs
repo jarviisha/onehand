@@ -70,6 +70,68 @@ pub(crate) struct WorkflowsPage {
     /// The page's width as last laid out, which decides whether the list and
     /// the editor stand side by side.
     width: Measured,
+    /// The editor's scroll, and the open step kept in view above the drawer.
+    reveal: Reveal,
+}
+
+/// Keeps the step open in the drawer in view: the form's scroll, and a mark
+/// set when a step opens, which the open step's line answers on the next
+/// frame by scrolling the form until the line stands clear of the drawer.
+#[derive(Clone)]
+pub(super) struct Reveal {
+    scroll: gpui::ScrollHandle,
+    pending: std::rc::Rc<std::cell::Cell<bool>>,
+    page: gpui::WeakEntity<WorkflowsPage>,
+}
+
+/// The part of the editor's height the step drawer takes: most of it, the
+/// rest left to the form above, enough for the open step's line and its
+/// neighbours.
+const DRAWER_SHARE: f32 = 0.6;
+
+/// How far the open step's line stands clear of the drawer's edge, or of
+/// the form's top, once it has been scrolled into view.
+const REVEAL_MARGIN: gpui::Rems = gpui::rems(1.5);
+
+impl Reveal {
+    /// Ask for the open step to be brought into view.
+    pub(super) fn ask(&self) {
+        self.pending.set(true);
+    }
+
+    /// What the open step's line holds to say where it landed: laid out over
+    /// the line, it scrolls the form once, when asked.
+    pub(super) fn watch(&self) -> impl IntoElement {
+        let this = self.clone();
+        gpui::canvas(
+            move |bounds, window, cx| {
+                if !this.pending.replace(false) {
+                    return;
+                }
+                let view = this.scroll.bounds();
+                let margin = window.rem_size() * REVEAL_MARGIN.0;
+                let mut offset = this.scroll.offset();
+                if bounds.bottom() + margin > view.bottom() {
+                    offset.y -= bounds.bottom() + margin - view.bottom();
+                } else if bounds.top() - margin < view.top() {
+                    offset.y += view.top() - (bounds.top() - margin);
+                }
+                offset.y = offset.y.min(gpui::px(0.)).max(-this.scroll.max_offset().y);
+                if offset != this.scroll.offset() {
+                    this.scroll.set_offset(offset);
+                    // Prepaint runs inside the page's own frame: redraw it
+                    // after, never from here.
+                    let page = this.page.clone();
+                    cx.defer(move |cx| {
+                        let _ = page.update(cx, |_, cx| cx.notify());
+                    });
+                }
+            },
+            |_, _: (), _, _| {},
+        )
+        .absolute()
+        .size_full()
+    }
 }
 
 impl EventEmitter<WorkflowsPageEvent> for WorkflowsPage {}
@@ -92,6 +154,11 @@ impl WorkflowsPage {
             rows: Vec::new(),
             split: cx.new(|_| ResizableState::default()),
             width: unmeasured(),
+            reveal: Reveal {
+                scroll: gpui::ScrollHandle::new(),
+                pending: Default::default(),
+                page: cx.entity().downgrade(),
+            },
         })
     }
 
@@ -182,7 +249,14 @@ impl Render for WorkflowsPage {
             // at its top, level with the list's head.
             let mut centred = false;
             let body = match &self.draft {
-                Some(draft) => form::form(&handle, draft, self.writing, &self.run_choices(), cx),
+                Some(draft) => form::form(
+                    &handle,
+                    draft,
+                    self.writing,
+                    &self.run_choices(),
+                    &self.reveal,
+                    cx,
+                ),
                 None => match self.picked_entry(cx) {
                     Some(crate::workflow::Entry {
                         template: Err(why),
@@ -197,12 +271,17 @@ impl Render for WorkflowsPage {
                     }
                 },
             };
+            let drawer = self
+                .draft
+                .as_ref()
+                .and_then(|draft| step::step_drawer(&handle, draft, draft.place, cx));
             // Centred up to the column a form is read in, its gutters equal,
             // so hiding the list centres it rather than stretching it.
-            div()
+            let form = div()
                 .id("workflows-detail")
                 .size_full()
                 .overflow_y_scroll()
+                .track_scroll(&self.reveal.scroll)
                 .child(
                     div()
                         .h_flex()
@@ -221,7 +300,36 @@ impl Render for WorkflowsPage {
                                 .max_w(crate::tokens::PAGE_PROSE)
                                 .child(body),
                         ),
+                );
+            // The open step's fields in a drawer docked under the form, which
+            // gives up the room it takes: the form above stays in reach, the
+            // open step's line kept in view just over the drawer's edge.
+            let Some(drawer) = drawer else {
+                return form.into_any_element();
+            };
+            div()
+                .size_full()
+                .v_flex()
+                .child(div().flex_1().min_h_0().child(form))
+                .child(
+                    div()
+                        .id("step-drawer")
+                        .flex_none()
+                        .h(gpui::relative(DRAWER_SHARE))
+                        .border_t_1()
+                        .border_color(cx.theme().border)
+                        .bg(onehand_plugin_host::dock_surface(cx))
+                        .overflow_y_scroll()
+                        .child(
+                            div().h_flex().justify_center().px_8().py_4().child(
+                                div()
+                                    .w_full()
+                                    .max_w(crate::tokens::PAGE_PROSE)
+                                    .child(drawer),
+                            ),
+                        ),
                 )
+                .into_any_element()
         };
         let halves = if layout.side_by_side {
             h_resizable("workflows-split")
@@ -265,7 +373,7 @@ impl Render for WorkflowsPage {
             .track_focus(&self.focus_handle)
             .on_action(
                 cx.listener(|page: &mut Self, _: &CloseWorkflowForm, window, cx| {
-                    page.close_workflow_form(window, cx);
+                    page.escape(window, cx);
                 }),
             )
             .on_action(cx.listener(|page: &mut Self, _: &WorkflowsUp, window, cx| {

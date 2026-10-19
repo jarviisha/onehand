@@ -306,7 +306,7 @@ the project's page beside *Run check* and kept in the workspace file (`Workspace
 **Workflows are written on a page of their own**, opened from the rail's *Workflows* row: the list
 on offer beside the editor of the one picked, the person's own first. Picking a row opens it; a
 shipped one opens read-only, changed by *Duplicate to edit*. The editor groups the workflow's
-fields as *About*, *How it runs* and *Steps*, and the steps run down a rail, a numbered dot each, one open at a time, each
+fields as *About*, *How it runs* and *Steps*, and the steps run down a rail, a numbered dot each, one open at a time in a drawer under the form, each
 saying where its failure sends the run back (*on failure ↑ 2*) and its first problem without
 being opened; its ⋯ holds *Move up* and *Move down*, refused at the ends, and *Remove*. A name
 another workflow has is said above *Save* before it is pressed (*Another workflow is already

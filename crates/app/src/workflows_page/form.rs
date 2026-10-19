@@ -30,6 +30,7 @@ pub(super) fn form(
     draft: &super::WorkflowDraft,
     writing: bool,
     choices: &[(std::path::PathBuf, SharedString)],
+    reveal: &super::Reveal,
     cx: &App,
 ) -> AnyElement {
     // What is wrong with it, said above *Save* before the press: a name
@@ -52,7 +53,7 @@ pub(super) fn form(
             });
         }
     };
-    let steps = super::step::steps_box(handle, draft, place, cx);
+    let steps = super::step::steps_box(handle, draft, reveal, cx);
     let input = |state: &Entity<gpui_component::input::InputState>| {
         text_input(state, cx).tall().disabled(shipped)
     };
