@@ -136,9 +136,9 @@ impl WorkflowsPage {
 }
 
 /// The list's width before anybody drags it, and the range a drag may take
-/// it through: wide enough for the head's name beside *New*, never so wide
-/// that it crowds the editor.
-const LIST: ListWidths = ListWidths::new(16., 13., 24.);
+/// it through: room for a long workflow name on one line beside the head's
+/// *New*, never so wide that it crowds the editor.
+const LIST: ListWidths = ListWidths::new(20., 16., 30.);
 
 impl Render for WorkflowsPage {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
