@@ -85,9 +85,8 @@ pub(super) struct Reveal {
     page: gpui::WeakEntity<WorkflowsPage>,
 }
 
-/// The part of the editor's height the step drawer takes: most of it, the
-/// rest left to the form above, enough for the open step's line and its
-/// neighbours.
+/// The most of the editor's height the step drawer takes: the rest is left
+/// to the form above, enough for the open step's line and its neighbours.
 const DRAWER_SHARE: f32 = 0.6;
 
 /// How far the open step's line stands clear of the drawer's edge, or of
@@ -228,23 +227,26 @@ impl Render for WorkflowsPage {
             .draft
             .as_ref()
             .map(|draft| draft.name.read(cx).value().to_string());
-        let list = div()
-            .id("workflows-list")
-            .size_full()
-            .overflow_y_scroll()
-            // Clear of the pane's header, which floats over the page's top.
-            .pt(crate::tokens::BAR_H)
-            // The rows' fills on this edge and their words a row's inset in,
-            // on the line the header's words stand on, as on the Issues page.
-            .px_6()
-            .pb_6()
-            .child(list::list_column(
-                &handle,
-                self.picked.as_ref(),
-                draft_name,
-                &self.rows,
-                cx,
-            ));
+        // Its scroll starts under the pane's header, which floats over the
+        // page's top: rows scrolled up go under the header's edge, never
+        // behind its controls. The split's line still runs the whole height.
+        let list = div().size_full().pt(crate::tokens::BAR_H).child(
+            div()
+                .id("workflows-list")
+                .size_full()
+                .overflow_y_scroll()
+                // The rows' fills on this edge and their words a row's inset in,
+                // on the line the header's words stand on, as on the Issues page.
+                .px_6()
+                .pb_6()
+                .child(list::list_column(
+                    &handle,
+                    self.picked.as_ref(),
+                    draft_name,
+                    &self.rows,
+                    cx,
+                )),
+        );
         let detail = |under_header: bool| {
             // Only the hint stands in the middle of the region; a form starts
             // at its top, level with the list's head.
@@ -288,7 +290,6 @@ impl Render for WorkflowsPage {
                         .h_flex()
                         .justify_center()
                         .when(!centred, |column| column.items_start())
-                        .when(under_header, |column| column.pt(crate::tokens::BAR_H))
                         .when(!under_header, |column| column.pt_6())
                         .px_8()
                         .pb_6()
@@ -305,17 +306,25 @@ impl Render for WorkflowsPage {
             // The open step's fields in a drawer docked under the form, which
             // gives up the room it takes: the form above stays in reach, the
             // open step's line kept in view just over the drawer's edge.
-            let Some(drawer) = drawer else {
-                return form.into_any_element();
-            };
-            div()
+            // Beside the list the region starts under the floating header,
+            // as the list does, so the form never scrolls behind its controls.
+            let region = div()
                 .size_full()
                 .v_flex()
+                .when(under_header, |region| region.pt(crate::tokens::BAR_H));
+            let Some(drawer) = drawer else {
+                return region
+                    .child(div().flex_1().min_h_0().child(form))
+                    .into_any_element();
+            };
+            region
                 .child(div().flex_1().min_h_0().child(form))
                 .child(
                     div()
                         .flex_none()
-                        .h(gpui::relative(DRAWER_SHARE))
+                        // As tall as the open step's fields, up to its share:
+                        // a step with few fields leaves the form the room.
+                        .max_h(gpui::relative(DRAWER_SHARE))
                         // A sheet laid over the form's foot: inset from the
                         // region's sides, its top corners rounded, lifted by a
                         // shadow cast upward, on the page's own surface, so it
@@ -331,19 +340,14 @@ impl Render for WorkflowsPage {
                         .shadow(onehand_plugin_host::tokens::lift_up(cx))
                         .overflow_hidden()
                         .child(
-                            div()
-                                .id("step-drawer")
-                                .flex_1()
-                                .min_h_0()
-                                .overflow_y_scroll()
-                                .child(
-                                    div().h_flex().justify_center().px_8().py_4().child(
-                                        div()
-                                            .w_full()
-                                            .max_w(crate::tokens::PAGE_PROSE)
-                                            .child(drawer),
-                                    ),
+                            div().id("step-drawer").min_h_0().overflow_y_scroll().child(
+                                div().h_flex().justify_center().px_8().py_4().child(
+                                    div()
+                                        .w_full()
+                                        .max_w(crate::tokens::PAGE_PROSE)
+                                        .child(drawer),
                                 ),
+                            ),
                         ),
                 )
                 .into_any_element()

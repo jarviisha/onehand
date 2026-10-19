@@ -166,7 +166,7 @@ height (its dragged height kept).
   its kind, where its failure goes back to (*on failure ↑ N*), and its first problem; one step
   opens at a time, its line marked as picked, in a drawer docked under the form: a sheet inset from the editor's sides, its top
   corners rounded and edged as a control is, lifted by a shadow cast upward, on the
-  page's own surface, that takes the lower part of its height, the form above scrolled so the open
+  page's own surface, as tall as the step's fields up to most of the editor's height, the form above scrolled so the open
   step's line stands just clear of the drawer's edge. The drawer's head names the step (*Step N ·
   its name*, its kind) and steps to the one before or after (↑ and ↓ too) or closes it (Esc closes it
   before the form); then its kind, id and label on one line, then its kind's fields (an agent step's prompt
