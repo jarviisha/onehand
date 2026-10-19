@@ -665,17 +665,16 @@ pub fn card_box(cx: &App) -> Div {
 }
 
 /// What opens a block held folded under it: its chevron first, then its
-/// words, a quiet button at a control's size, so the keyboard reaches it too.
+/// words, a button at a control's size, so the keyboard reaches it too.
 /// The caller says what a press does, and refuses it where there is nothing
 /// to open.
-pub fn fold_toggle(
-    id: impl Into<ElementId>,
-    label: impl Into<SharedString>,
-    open: bool,
-    cx: &App,
-) -> Button {
+///
+/// On the secondary fill rather than a ghost: it starts its own line at the
+/// block's edge, where a ghost's padding would set its chevron in from the
+/// text above it with nothing drawn to say where it begins.
+pub fn fold_toggle(id: impl Into<ElementId>, label: impl Into<SharedString>, open: bool) -> Button {
     action(id)
-        .quiet(cx)
+        .secondary()
         .short()
         .icon(Icon::new(match open {
             true => IconName::ChevronDown,

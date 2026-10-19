@@ -21,7 +21,8 @@ the rule, not just the question. For prose-only work, use the contract path in `
    the state the contract keeps (`SKILL.md`, *States*)?
 5. Every control at the size its role takes, and every control in one row of actions at one height (`docs/ui-patterns.md`, *Control sizes*)?
 6. Every control drawn by the builder `catalog.md` lists for it, every button's variant named by
-   its role, and at most one primary in a view (`DESIGN.md`, *Components*, *Colour and state*)?
+   its role, at most one primary in a view, and no ghost alone at the start of its line or
+   beside a sentence (`DESIGN.md`, *Components*, *Colour and state*)?
 7. A refusing button through `.refuses(why)` (`DESIGN.md`, *Components*), never `.disabled(`,
    which only a menu item or a switch takes, as `.refuses` does not reach them?
 8. `rounded_full` only on a badge, a dot or a status mark (`DESIGN.md`, *Type, space and shape*)?

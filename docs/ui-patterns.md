@@ -321,13 +321,21 @@ tooltip saying why.
 ### Dialogs
 
 A dialog is the library's `Dialog` at its own width, titled through `title_row`, its ✕ muted and
-named in its tooltip. Its fields are `field`s, `gap_4` apart; what blocks it stands above the
-footer in the danger ink. Its footer (`footer_row`) sits on the right: the dismissing button
-first, then the one primary action or the danger word, at `.short()`. A third action (*Use the
-automatic title*, *Put it somewhere else…*) stands at the footer's start, apart from the two that
-close it. It opens with focus on its first field and closes on Esc. A question without fields (a
-retry, *Answer the review*, a removal) is an alert dialog, as the confirmation below is, never a
-dialog of its own; a start that fails is said once, in an error toast.
+named in its tooltip, over a backdrop that dims the window. Its fields are `field`s, `gap_4`
+apart; what blocks it stands above the footer in the danger ink. Its footer (`footer_row`) sits
+on the right: the dismissing button first, then the one primary action or the danger word, at
+`.short()`. A third action (*Use the automatic title*, *Put it somewhere else…*) stands at the
+footer's start, apart from the two that close it, on the secondary fill, as it starts its line. It opens with focus on its first field and
+closes on Esc. A question without fields (a retry, *Answer the review*, a removal) is an alert
+dialog, as the confirmation below is, never a dialog of its own; a start that fails is said once,
+in an error toast.
+
+A dialog that starts a run (the workflow launcher, the issue picker) says what the run is before
+its fields, so it stands at `DIALOG_FORM` and parts its sections (what runs, where it works, what
+stands in the way, what the person adds) with a hairline (`sections`). The branch it cuts stands
+in a well beside its branch mark. Each thing the preflight found leads with its state's mark: a
+warning in the danger ink when it blocks the start, an information mark in meta ink when it only
+tells; an action beside one takes the secondary fill.
 
 ### Details
 

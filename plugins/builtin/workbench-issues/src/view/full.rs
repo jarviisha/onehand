@@ -333,7 +333,7 @@ pub(super) fn files_view(
         .min_w_0()
         .child(
             div().h_flex().child(
-                fold_toggle(id, count, open, cx)
+                fold_toggle(id, count, open)
                     .refuses(files.is_empty().then_some("No files changed"))
                     .on_click(
                         cx.listener(move |view, _: &ClickEvent, _, cx| view.toggle_side(side, cx)),

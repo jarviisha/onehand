@@ -178,6 +178,7 @@ All in `onehand_plugin_host::tokens` (`crates/plugin-host/src/tokens.rs`), which
 | `PAGE_NARROW` | 35rem | a one-column page |
 | `PAGE_PROSE` | 48rem | an editor, or one thing read in full |
 | `PAGE_WIDE` | 64rem | boxes side by side, a table |
+| `DIALOG_FORM` | 40rem | a dialog that starts a run, never wider than the window less its margins |
 | `ROW_INSET` | 0.75rem | where a tree row's content starts from a dock's edge (Files, Markdown) |
 | `ROW_GUTTER` | 0.25rem | how far a tree row's fill stands off the dock's edges, inside `ROW_INSET`, and off the rows beside it, inside `ROW_H` |
 | `TREE_INDENT` | 0.875rem | how far each level of a tree steps in |

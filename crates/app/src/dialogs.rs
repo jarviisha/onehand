@@ -18,7 +18,10 @@ use gpui_component::button::ButtonVariants;
 use gpui_component::dialog::{Dialog, DialogClose, DialogTitle};
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 
+mod branch;
 mod issue;
+
+pub use branch::{new_worktree, rename_branch};
 
 pub use issue::pick_issue;
 pub(crate) use issue::{PickJudged, issue_row, issue_workflow_menu, page_row};
@@ -31,6 +34,9 @@ const INSTRUCTIONS_H: gpui::Rems = gpui::rems(4.);
 /// How tall the first prompt's preview grows before it scrolls, so the form's
 /// fields stay in reach under it.
 const PREVIEW_MAX_H: gpui::Rems = gpui::rems(12.);
+/// One line of a preflight finding: the extra small text size (0.75rem) at
+/// the reading leading, so its mark sits on the first line's centre.
+const FINDING_LINE: gpui::Rems = gpui::rems(0.75 * crate::tokens::LEADING);
 
 /// A dialog's name, and the ✕ that closes it.
 ///
@@ -134,7 +140,7 @@ pub fn rename_session(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                     row.child(
                         crate::controls::action("reset-title")
                             .short()
-                            .quiet(cx)
+                            .secondary()
                             .label("Use the automatic title")
                             .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
                                 shell.reset_conversation_title(cx);
@@ -229,6 +235,7 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
     let (margin, room) = form_room(window);
 
     Dialog::new(cx)
+        .w(form_width(window))
         .margin_top(margin)
         .p_4()
         .close_button(false)
@@ -298,31 +305,65 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
                             .v_flex()
                             .gap_4()
                             .w_full()
-                            .child(field(
-                                "Workflow",
-                                Some(about.clone().into_any_element()),
-                                div().h_flex().child(picker),
+                            // What it runs, what it is asked, and what stands
+                            // in the way: each a section of its own.
+                            .child(sections(
+                                [
+                                    Some(
+                                        div()
+                                            .v_flex()
+                                            .gap_4()
+                                            .child(field(
+                                                "Workflow",
+                                                Some(about.clone().into_any_element()),
+                                                div().h_flex().child(picker),
+                                                cx,
+                                            ))
+                                            .children(shown)
+                                            .into_any_element(),
+                                    ),
+                                    Some(
+                                        div()
+                                            .v_flex()
+                                            .gap_4()
+                                            .child(field(
+                                                "Title",
+                                                None,
+                                                text_input(&title, cx).short(),
+                                                cx,
+                                            ))
+                                            .child(field(
+                                                "Details",
+                                                None,
+                                                text_area(&body, cx).h(DETAILS_H),
+                                                cx,
+                                            ))
+                                            .child(field(
+                                                "Instructions",
+                                                None,
+                                                text_area(&instructions, cx).h(INSTRUCTIONS_H),
+                                                cx,
+                                            ))
+                                            .into_any_element(),
+                                    ),
+                                    // What blocks it, above the footer's primary.
+                                    (!lines.is_empty() || error.is_some()).then(|| {
+                                        div()
+                                            .v_flex()
+                                            .gap_2()
+                                            .children(lines)
+                                            .when_some(error.clone(), |col, why| {
+                                                col.child(
+                                                    div().text_xs().text_color(danger).child(why),
+                                                )
+                                            })
+                                            .into_any_element()
+                                    }),
+                                ]
+                                .into_iter()
+                                .flatten(),
                                 cx,
                             ))
-                            .children(shown)
-                            .child(field("Title", None, text_input(&title, cx).short(), cx))
-                            .child(field(
-                                "Details",
-                                None,
-                                text_area(&body, cx).h(DETAILS_H),
-                                cx,
-                            ))
-                            .child(field(
-                                "Instructions",
-                                None,
-                                text_area(&instructions, cx).h(INSTRUCTIONS_H),
-                                cx,
-                            ))
-                            // What blocks it, above the footer's primary.
-                            .children(lines)
-                            .when_some(error.clone(), |col, why| {
-                                col.child(div().text_xs().text_color(danger).child(why))
-                            })
                             // How many of them block it, last, standing over
                             // the footer's primary.
                             .children(blocking_note(blocking, danger)),
@@ -390,6 +431,37 @@ fn form_room(window: &Window) -> (gpui::Pixels, gpui::Pixels) {
     (margin, room)
 }
 
+/// How wide a dialog that starts a run stands: [`crate::tokens::DIALOG_FORM`],
+/// or the window less its margin on each side when that is narrower, since the
+/// library centres a dialog by its width and never shrinks it.
+fn form_width(window: &Window) -> gpui::Pixels {
+    let rem = window.rem_size();
+    let frame = gpui_component::window_paddings(window);
+    let room = window.viewport_size().width - frame.left - frame.right - rem * LAUNCHER_MARGIN * 2.;
+    (rem * crate::tokens::DIALOG_FORM.0)
+        .min(room)
+        .max(gpui::px(0.))
+}
+
+/// A form's sections, a hairline between each two: what a run is, where it
+/// works and what blocks it run together as one paragraph on space alone.
+/// The line sits on a wrapper of the section's own, as a box's rows' does.
+fn sections(groups: impl IntoIterator<Item = AnyElement>, cx: &App) -> gpui::Div {
+    let rule = cx.theme().border;
+    div()
+        .v_flex()
+        .gap_4()
+        .w_full()
+        .children(groups.into_iter().enumerate().map(|(i, group)| {
+            div()
+                .w_full()
+                .when(i > 0, |section| {
+                    section.border_t_1().border_color(rule).pt_4()
+                })
+                .child(group)
+        }))
+}
+
 /// One thing the preflight found: in the danger ink when it blocks, muted
 /// when it only says, with where it is changed, and *Retry…* for an earlier
 /// task worth retrying instead, which opens its Retry dialog.
@@ -410,6 +482,10 @@ pub(crate) fn finding_line(
         None => finding.text.clone(),
     };
     let shell = handle.clone();
+    let (mark, ink) = match finding.blocks {
+        true => (IconName::TriangleAlert, danger),
+        false => (IconName::Info, muted),
+    };
     div()
         .h_flex()
         .gap_2()
@@ -419,13 +495,22 @@ pub(crate) fn finding_line(
             div()
                 .flex_1()
                 .min_w_0()
+                .h_flex()
+                .items_start()
+                .gap_2()
                 .text_xs()
-                .text_color(if finding.blocks { danger } else { muted })
-                .child(text),
+                .line_height(relative(crate::tokens::LEADING))
+                .text_color(ink)
+                // The mark says whether it blocks the start or only tells,
+                // centred on the first line's height when the text wraps.
+                .child(onehand_plugin_host::mark_slot(Icon::new(mark).xsmall()).h(FINDING_LINE))
+                .child(div().flex_1().min_w_0().child(text)),
         )
         .children(finding.task.clone().map(|task| {
+            // Filled, as every action beside a finding's sentence is: a ghost
+            // there reads as more of the text.
             crate::controls::action(("pick-retry-task", at))
-                .quiet(cx)
+                .secondary()
                 .short()
                 .label("Retry…")
                 .on_click(move |_, window: &mut Window, cx: &mut App| {
@@ -452,7 +537,7 @@ pub(crate) fn finding_line(
                     let (shell, task) = (handle.clone(), holder.task);
                     // The line above names each holder; the button opens it.
                     crate::controls::action(SharedString::from(format!("slot-holder-{at}-{i}")))
-                        .quiet(cx)
+                        .secondary()
                         .short()
                         .label(format!("Open {}", holder.named))
                         .tooltip("Open the task holding this slot")
@@ -497,8 +582,6 @@ fn blocked(blocking: usize) -> Option<String> {
 // back, nor asked for a second time.
 const STARTING: &str = "The run is starting";
 const BLOCKED: &str = "Clear what blocks the start first";
-const MAKING_WORKTREE: &str = "The worktree is being made";
-const RENAMING_BRANCH: &str = "The branch is being renamed";
 
 /// The launcher's margin above it, and the least below it, in rems.
 const LAUNCHER_MARGIN: f32 = 3.;
@@ -527,7 +610,7 @@ fn workflow_preview(
     let muted = cx.theme().muted_foreground;
     let toggle = {
         let handle = handle.clone();
-        onehand_plugin_host::fold_toggle("workflow-preview", "Preview", open, cx).on_click(
+        onehand_plugin_host::fold_toggle("workflow-preview", "Preview", open).on_click(
             move |_, _, cx: &mut App| {
                 handle.update(cx, toggle);
             },
@@ -585,202 +668,6 @@ fn workflow_preview(
                 .child(prompt),
         )
         .into_any_element()
-}
-
-/// Split a project onto a branch of its own, as a git worktree.
-///
-/// The folder is **shown, not typed**. It is derived from the branch name, so a
-/// second field holding it would be a copy of a reading -- one that either
-/// fights every keystroke in the field above it or silently stops following it.
-/// What is left for the user to decide is the part the derivation cannot know:
-/// which folder to put it under, and that is a picker rather than a path to
-/// spell out.
-pub fn new_worktree(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
-    let input = shell.worktree_branch().clone();
-    let Some(draft) = shell.worktree_draft() else {
-        return Dialog::new(cx);
-    };
-    let (label, error, busy) = (draft.label.clone(), draft.error.clone(), draft.busy);
-    let target = shell
-        .worktree_target(cx)
-        .map(|dir| SharedString::from(dir.display().to_string()));
-    let named = target.is_some();
-    let (muted, danger) = (
-        cx.theme().muted_foreground,
-        crate::theme::status_ink(cx).danger,
-    );
-
-    Dialog::new(cx)
-        .close_button(false)
-        .content(move |content, _, cx: &mut App| {
-            content.child(title_row("New worktree", cx)).child(
-                div()
-                    .v_flex()
-                    .gap_2()
-                    .w_full()
-                    .child(field(
-                        "Branch",
-                        Some(
-                            format!("A second checkout of {label}, on its own branch")
-                                .into_any_element(),
-                        ),
-                        text_input(&input, cx).short(),
-                        cx,
-                    ))
-                    // Where it lands, in full, in the face a path is set in. A
-                    // worktree is a folder that appears on disk without anyone
-                    // browsing to it, so the one thing this form owes the reader
-                    // is the path it is about to create -- before it exists, not
-                    // in a toast afterwards.
-                    .child(match target.clone() {
-                        Some(path) => div()
-                            .text_xs()
-                            .text_color(muted)
-                            .font_family(cx.theme().mono_font_family.clone())
-                            .child(path),
-                        None => div()
-                            .text_xs()
-                            .text_color(muted)
-                            .child("Name the branch to see where its folder goes"),
-                    })
-                    .when_some(error.clone(), |col, why| {
-                        col.child(div().text_xs().text_color(danger).child(why))
-                    }),
-            )
-        })
-        .footer(
-            footer_row()
-                // A third action, at the footer's start, apart from the two
-                // that close it.
-                .child(
-                    crate::controls::action("worktree-parent")
-                        .short()
-                        .quiet(cx)
-                        .label("Put it somewhere else…")
-                        .refuses(busy.then_some(MAKING_WORKTREE))
-                        .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
-                            shell.pick_worktree_parent(cx);
-                        })),
-                )
-                .child(div().flex_1())
-                .child(
-                    // Spent while git is working, for the same reason Create is
-                    // and one more: the command cannot be called back, so a
-                    // Cancel that still offered itself would be promising to
-                    // undo something already happening on disk.
-                    crate::controls::action("cancel-worktree")
-                        .short()
-                        .quiet(cx)
-                        .label("Cancel")
-                        .refuses(busy.then_some(MAKING_WORKTREE))
-                        .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
-                            shell.cancel_worktree(cx);
-                        })),
-                )
-                .child({
-                    // Spent while git is working and while there is no name to
-                    // work from: cloning a working tree takes long enough that
-                    // a button still offering itself invites the second press
-                    // that would ask for the same folder twice.
-                    let create = crate::controls::action("create-worktree")
-                        .short()
-                        .primary()
-                        .label("Create worktree")
-                        .loading(busy);
-                    let why = match (busy, named) {
-                        (true, _) => Some(MAKING_WORKTREE),
-                        (false, false) => Some("Name the branch first"),
-                        (false, true) => None,
-                    };
-                    match why {
-                        Some(why) => create.refuses(Some(why)),
-                        None => create.on_click(cx.listener(
-                            |shell: &mut Shell, _: &ClickEvent, _, cx| {
-                                shell.commit_worktree(cx);
-                            },
-                        )),
-                    }
-                }),
-        )
-        // Esc and the close button have to clear what is putting this on screen,
-        // or the dialog dismisses itself and the next frame renders it back.
-        .on_close(cx.listener(|shell: &mut Shell, _, _, cx| {
-            shell.cancel_worktree(cx);
-        }))
-}
-
-/// The rename-this-branch form.
-///
-/// One field and a sentence, where the worktree form beside it has a field, a
-/// derived folder and a picker — because this makes nothing and lands nowhere.
-/// The field opens on the name as it stands, so the part being kept does not
-/// have to be retyped to change the part that is not.
-pub fn rename_branch(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
-    let input = shell.branch_input().clone();
-    let Some(draft) = shell.branch_draft() else {
-        return Dialog::new(cx);
-    };
-    let (from, error, busy) = (draft.from.clone(), draft.error.clone(), draft.busy);
-    let danger = crate::theme::status_ink(cx).danger;
-
-    Dialog::new(cx)
-        .close_button(false)
-        .content(move |content, _, cx: &mut App| {
-            content.child(title_row("Rename branch", cx)).child(
-                div()
-                    .v_flex()
-                    .gap_2()
-                    .w_full()
-                    .child(field(
-                        "New name",
-                        Some(format!("The branch checked out here is {from}").into_any_element()),
-                        text_input(&input, cx).short(),
-                        cx,
-                    ))
-                    // git's own words where git refused, and the name rule's
-                    // where it never got that far. Shown against the name that
-                    // caused it, which is why the form is still up.
-                    .children(
-                        error
-                            .clone()
-                            .map(|why| div().text_xs().text_color(danger).child(why)),
-                    ),
-            )
-        })
-        .footer(
-            footer_row()
-                .child(div().flex_1())
-                .child(
-                    crate::controls::action("cancel-branch-rename")
-                        .short()
-                        .quiet(cx)
-                        .label("Cancel")
-                        .refuses(busy.then_some(RENAMING_BRANCH))
-                        .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
-                            shell.cancel_branch_rename(cx);
-                        })),
-                )
-                .child({
-                    let rename = crate::controls::action("commit-branch-rename")
-                        .short()
-                        .primary()
-                        .label("Rename")
-                        .loading(busy);
-                    match busy {
-                        true => rename.refuses(Some(RENAMING_BRANCH)),
-                        false => rename.on_click(cx.listener(
-                            |shell: &mut Shell, _: &ClickEvent, _, cx| {
-                                shell.commit_branch_rename(cx);
-                            },
-                        )),
-                    }
-                }),
-        )
-        // Esc and the close button have to clear what is putting this on screen,
-        // or the dialog dismisses itself and the next frame renders it back.
-        .on_close(cx.listener(|shell: &mut Shell, _, _, cx| {
-            shell.cancel_branch_rename(cx);
-        }))
 }
 
 #[cfg(test)]

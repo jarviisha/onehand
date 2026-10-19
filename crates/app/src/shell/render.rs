@@ -10,7 +10,9 @@ use gpui::{
     Context, Entity, InteractiveElement, IntoElement, ParentElement, Render, Styled, Window, div,
     px,
 };
-use gpui_component::{ResizableState, Root, StyledExt, h_resizable, resizable_panel};
+use gpui_component::{
+    ActiveTheme as _, ResizableState, Root, StyledExt, h_resizable, resizable_panel,
+};
 use onehand_core::config::PanelLayout;
 
 impl Render for Shell {
@@ -220,6 +222,14 @@ impl Render for Shell {
             .size_full()
             .relative()
             .child(frame)
+            // The backdrop under the shell's own dialogs. The library dims
+            // the window only under a dialog it opened itself, and these are
+            // mounted here instead, so without this they stand on the app's
+            // own surface and read as part of the page behind them.
+            .children(self.dialog_up().then(|| {
+                let dim = cx.theme().overlay;
+                div().absolute().inset_0().bg(dim)
+            }))
             // Above the frame, below the library's own layers: this one is
             // rendered by the shell rather than stored in `Root`, because it is
             // opened by a menu entry rather than by a control that can carry a
