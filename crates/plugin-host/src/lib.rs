@@ -810,6 +810,11 @@ pub fn choice(
 /// built-in plugin both draw one, and a plugin cannot reach into the binary
 /// hosting it.
 ///
+/// **One edged track.** Loose ghosts side by side read as two words, the
+/// unchosen one as plain text: nothing said they were one control with one
+/// choice standing. The choices sit flush in a control's edge, the chosen
+/// one filled, so the track says "one of these" before anything is pressed.
+///
 /// `size` is the role's, so a switch sits level with the buttons and inputs
 /// of that role beside it.
 pub fn switch(
@@ -825,7 +830,10 @@ pub fn switch(
     div()
         .h_flex()
         .w_full()
-        .gap_1()
+        .rounded(cx.theme().radius)
+        .border_1()
+        .border_color(cx.theme().input)
+        .overflow_hidden()
         .children(labels.iter().enumerate().map(|(i, label)| {
             let pick = pick.clone();
             choice((id, i), label.clone(), i == active, size, cx)

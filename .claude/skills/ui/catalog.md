@@ -46,7 +46,7 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | An action joined to a menu of its alternatives (*New* and its caret) | `split_action(id, main, caret, surface, anchor, build)`: both halves built by the caller through `action` at their role's size and one variant, joined with square inner corners and parted by a seam in `surface`, the fill under it, the caret's menu opened below it | `crates/plugin-host/src/menu.rs` |
 | A strip along the top of a region, and its icon control | `strip(cx)`, `strip_control(id, icon, on, cx)` | `crates/plugin-host/src/strip.rs` |
 | One of a few choices, the taken one filled (filter chips) | `choice` (a `quiet` ghost button, `selected` when taken, at the `ControlSize` its role takes) | `crates/plugin-host/src/lib.rs` |
-| A choice between a few views, every one the same width | `switch` (a `choice` per view at `flex_1`, at one `ControlSize`) | `crates/plugin-host/src/lib.rs` |
+| A choice between a few views, every one the same width | `switch` (a `choice` per view at `flex_1`, flush in one edged track, at one `ControlSize`) | `crates/plugin-host/src/lib.rs` |
 | Tabs that fit their strip, or one select | `tab_strip`, `tab_chip`, `tab_close`, `tab_select` (at a strip's size, with the picker's caret), `tab_menu_rows`, `measure_width` | `crates/plugin-host/src/tabs.rs` |
 | A list beside its detail, or one at a time | `list_detail`, `ListWidths`, `back_link` | `crates/plugin-host/src/list_detail.rs` |
 | A line filling an empty panel | `hint` | `crates/plugin-host/src/lib.rs` |
