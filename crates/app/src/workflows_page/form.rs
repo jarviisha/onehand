@@ -7,6 +7,7 @@ use super::click;
 use super::draft::Kind;
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
+use crate::controls::Short as _;
 use crate::controls::text_input;
 use crate::settings::{about, field, section};
 use gpui::prelude::FluentBuilder as _;
@@ -118,7 +119,7 @@ pub(super) fn form(
             "add-step",
             crate::controls::action("add-step-trigger")
                 .quiet(cx)
-                .tall()
+                .short()
                 .icon(Icon::new(IconName::Plus))
                 .label("Add step"),
             move |mut menu, _, _| {
@@ -138,12 +139,19 @@ pub(super) fn form(
             },
         )
     };
-    let steps_group = section(Some("Steps"), None, cx)
-        .child(variables_hint(cx))
-        .child(steps)
-        .when(!shipped, |group| {
-            group.child(div().h_flex().child(add_step))
-        });
+    // The steps decide what a run does, so they are the one group on the
+    // form standing in a box, its count and *Add step* on its title row,
+    // where the fields around it stand plain.
+    let steps_group = crate::chat::pane::page_parts::page_card(
+        "Steps",
+        Some(draft.steps.len()),
+        (!shipped).then(|| add_step.into_any_element()),
+        cx,
+    )
+    .p_4()
+    .gap_4()
+    .child(variables_hint(cx))
+    .child(steps);
     // A new form nobody has touched yet is not wrong yet: *Save* refuses
     // and says why on hover, and the list waits for the first change. One
     // opened on something (a file, a copy, an import) says at once.

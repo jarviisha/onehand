@@ -158,8 +158,9 @@ height (its dragged height kept).
   row opens it beside the list: a head (its name, how many steps and where it works under it,
   *Run…*, which refuses until it is saved, and a ⋯ with *Duplicate*, *Export…* and *Delete…*), then
   three groups under headings, *About* (name and description), *How it runs* (where it works,
-  misses allowed, timeout) and *Steps* (what a prompt may use, the steps down a rail,
-  *Add step* and its menu of kinds), then the problems (a name clash among them) above *Save*,
+  misses allowed, timeout) and *Steps*, the one group in a box, as it decides what a run
+  does (its count and *Add step* with its menu of kinds on its title row, what a prompt may use,
+  the steps down a rail), then the problems (a name clash among them) above *Save*,
   which refuses with the first and spins while it writes, and *Cancel*. A step reads as a
   numbered dot on a rail that joins it to the next (the open one's dot filled), then its name,
   its kind, where its failure goes back to (*on failure ↑ N*), and its first problem; one step

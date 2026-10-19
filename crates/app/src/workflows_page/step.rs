@@ -505,10 +505,15 @@ fn step_row(
             .v_flex()
             .pb_3()
             .child(head)
+            // No box of its own: it stands inside the steps' box, and the
+            // rail beside it already says whose fields these are.
             .child(
-                onehand_plugin_host::card_box(cx)
-                    .mt_1()
+                div()
+                    .v_flex()
                     .gap_4()
+                    .px_2()
+                    .pt_2()
+                    .pb_3()
                     .child(names)
                     .child(body),
             )
