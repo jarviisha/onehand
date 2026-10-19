@@ -168,8 +168,8 @@ height (its dragged height kept).
   corners rounded and edged as a control is, lifted by a shadow cast upward, on the
   page's own surface, that takes the lower part of its height, the form above scrolled so the open
   step's line stands just clear of the drawer's edge. The drawer's head names the step (*Step N ·
-  its name*, its kind) and steps to the one before or after or closes it (Esc closes it before the
-  form); then its kind, id and label on one line, then its kind's fields (an agent step's prompt
+  its name*, its kind) and steps to the one before or after (↑ and ↓ too) or closes it (Esc closes it
+  before the form); then its kind, id and label on one line, then its kind's fields (an agent step's prompt
   growing with what is written, *Write larger…* under it opening it in a dialog the width of a
   page, with what a prompt may use, *Cancel* and *Done*). Its line's ⋯ moves or removes it. A shipped workflow opens read-only, *Duplicate to
   edit* its primary, with no *Save*; an unreadable file of the person's own opens why, with

@@ -57,13 +57,3 @@ fn repick_gone_is_none() {
     assert_eq!(repick(&entries, &Pick::Own(PathBuf::from("x.toml"))), None);
     assert_eq!(repick(&entries, &Pick::New), None);
 }
-
-#[test]
-fn step_from_clamps_and_starts_at_an_end() {
-    assert_eq!(step_from(None, 3, 1), Some(0));
-    assert_eq!(step_from(None, 3, -1), Some(2));
-    assert_eq!(step_from(Some(2), 3, 1), Some(2));
-    assert_eq!(step_from(Some(0), 3, -1), Some(0));
-    assert_eq!(step_from(Some(1), 3, 1), Some(2));
-    assert_eq!(step_from(None, 0, 1), None);
-}

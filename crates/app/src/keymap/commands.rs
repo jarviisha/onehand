@@ -410,32 +410,20 @@ pub const COMMANDS: &[Command] = &[
         "Workflows page"
     ),
     command!(
-        "workflows_up",
-        "Pick the workflow above",
+        "workflow_step_up",
+        "Open the step before",
         ["up"],
-        crate::workflows_page::WorkflowsUp,
-        "WorkflowsList && !Dialog && !Input",
+        crate::workflows_page::WorkflowStepUp,
+        "WorkflowsPage && !Dialog && !Input",
         "Workflows page"
     ),
     command!(
-        "workflows_down",
-        "Pick the workflow below",
+        "workflow_step_down",
+        "Open the step after",
         ["down"],
-        crate::workflows_page::WorkflowsDown,
-        "WorkflowsList && !Dialog && !Input",
+        crate::workflows_page::WorkflowStepDown,
+        "WorkflowsPage && !Dialog && !Input",
         "Workflows page"
-    ),
-    // `A > B` scores at `B`'s depth, so these tie with the input's own arrow
-    // and Tab bindings and win by being registered later. The composer adds
-    // `ChatComposer` only while a list is open, so otherwise the keys still
-    // move the caret.
-    command!(
-        "completion_previous",
-        "Previous suggestion",
-        ["up"],
-        CompletionPrev,
-        "ChatComposer > Input",
-        "Composer suggestions"
     ),
     command!(
         "completion_next",

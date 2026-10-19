@@ -21,11 +21,12 @@ mod step;
 
 pub(crate) use draft::WorkflowDraft;
 
-// The Workflows page's keys: the form open on the page closed, asked first
-// when it holds changes, and the list stepped, which opens what it reaches.
+// The Workflows page's keys: the innermost thing open closed (the step
+// drawer, then the form, asked first when it holds changes), and the step
+// drawer stepped to the step before or after.
 gpui::actions!(
     workflows_page,
-    [CloseWorkflowForm, WorkflowsUp, WorkflowsDown]
+    [CloseWorkflowForm, WorkflowStepUp, WorkflowStepDown]
 );
 
 use gpui::prelude::FluentBuilder as _;
@@ -72,12 +73,6 @@ pub(crate) struct WorkflowsPage {
     width: Measured,
     /// The editor's scroll, and the open step kept in view above the drawer.
     reveal: Reveal,
-    /// The list column's own focus: ↑ and ↓ step the list only while it, or
-    /// a row in it, holds the keyboard, never from the editor beside it.
-    list_focus: FocusHandle,
-    /// Whether the list stood beside the editor when last drawn, so a pick
-    /// knows whether the list stays on screen to keep the keyboard.
-    side_by_side: std::cell::Cell<bool>,
 }
 
 /// Keeps the step open in the drawer in view: the form's scroll, and a mark
@@ -160,8 +155,6 @@ impl WorkflowsPage {
             rows: Vec::new(),
             split: cx.new(|_| ResizableState::default()),
             width: unmeasured(),
-            list_focus: cx.focus_handle(),
-            side_by_side: std::cell::Cell::new(true),
             reveal: Reveal {
                 scroll: gpui::ScrollHandle::new(),
                 pending: Default::default(),
@@ -235,11 +228,8 @@ impl Render for WorkflowsPage {
             .draft
             .as_ref()
             .map(|draft| draft.name.read(cx).value().to_string());
-        self.side_by_side.set(layout.side_by_side);
         let list = div()
             .id("workflows-list")
-            .key_context("WorkflowsList")
-            .track_focus(&self.list_focus)
             .size_full()
             .overflow_y_scroll()
             // Clear of the pane's header, which floats over the page's top.
@@ -403,12 +393,14 @@ impl Render for WorkflowsPage {
                     page.escape(window, cx);
                 }),
             )
-            .on_action(cx.listener(|page: &mut Self, _: &WorkflowsUp, window, cx| {
-                page.step_pick(-1, window, cx)
-            }))
             .on_action(
-                cx.listener(|page: &mut Self, _: &WorkflowsDown, window, cx| {
-                    page.step_pick(1, window, cx)
+                cx.listener(|page: &mut Self, _: &WorkflowStepUp, window, cx| {
+                    page.step_open(-1, window, cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|page: &mut Self, _: &WorkflowStepDown, window, cx| {
+                    page.step_open(1, window, cx)
                 }),
             )
             .relative()

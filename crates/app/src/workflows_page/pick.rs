@@ -1,4 +1,4 @@
-//! What the Workflows page has picked, and the order its list steps through.
+//! What the Workflows page has picked, and the order its list shows.
 //!
 //! **A pick is a key, never a place.** The list is read again after every
 //! save, delete and import, and a place in it would then name another
@@ -42,17 +42,6 @@ pub(super) fn repick(entries: &[Entry], pick: &Pick) -> Option<usize> {
     entries
         .iter()
         .position(|entry| pick_of(entry).as_ref() == Some(pick))
-}
-
-/// The place `by` rows from `at` in a list `len` long, held at its ends;
-/// with nothing picked, down starts at the top and up at the bottom.
-pub(super) fn step_from(at: Option<usize>, len: usize, by: isize) -> Option<usize> {
-    let last = len.checked_sub(1)?;
-    Some(match at {
-        None if by < 0 => last,
-        None => 0,
-        Some(at) => at.saturating_add_signed(by).min(last),
-    })
 }
 
 #[cfg(test)]

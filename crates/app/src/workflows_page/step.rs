@@ -321,6 +321,7 @@ pub(super) fn step_drawer(
     let go = |id: &'static str,
               icon: IconName,
               tip: &'static str,
+              key: &'static dyn gpui::Action,
               to: Option<usize>,
               refused: Option<&'static str>| {
         let handle = handle.clone();
@@ -328,7 +329,7 @@ pub(super) fn step_drawer(
             .small()
             .quiet_icon(false, cx)
             .icon(Icon::new(icon))
-            .tooltip(tip)
+            .tooltip_with_action(tip, key, Some("WorkflowsPage"))
             .refuses(refused.map(str::to_string))
             .on_click(move |_, window: &mut Window, cx: &mut App| {
                 handle.update(cx, |page, cx| {
@@ -362,6 +363,7 @@ pub(super) fn step_drawer(
             "step-drawer-up",
             IconName::ChevronUp,
             "The step before",
+            &super::WorkflowStepUp,
             i.checked_sub(1),
             (i == 0).then_some("This is the first step"),
         ))
@@ -369,6 +371,7 @@ pub(super) fn step_drawer(
             "step-drawer-down",
             IconName::ChevronDown,
             "The step after",
+            &super::WorkflowStepDown,
             (!last).then_some(i + 1),
             last.then_some("This is the last step"),
         ))
@@ -376,6 +379,7 @@ pub(super) fn step_drawer(
             "step-drawer-close",
             IconName::Close,
             "Close the step",
+            &super::CloseWorkflowForm,
             None,
             None,
         ));
