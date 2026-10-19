@@ -14,7 +14,7 @@ use gpui::{
 use gpui_component::button::ButtonVariants;
 use gpui_component::dialog::Dialog;
 use gpui_component::input::TextareaState;
-use gpui_component::{ActiveTheme, StyledExt};
+use gpui_component::{ActiveTheme, Icon, Sizable as _, StyledExt};
 use onehand_core::issues::template;
 use onehand_core::preflight::{Check, Finding};
 use onehand_core::unattended::{self as core, IssueRow, Tracker};
@@ -67,6 +67,7 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
     let (margin, room) = super::form_room(window);
     let handle = cx.entity();
     Dialog::new(cx)
+        .w(super::form_width(window))
         .margin_top(margin)
         .close_button(false)
         .content(move |content, _, cx: &mut App| {
@@ -199,14 +200,43 @@ fn start_form(
         || "no agent configured".to_string(),
         |name| format!("with {name}"),
     );
-    let place = format!(
-        "On a new branch, {}, in a worktree of its own, {agent}",
-        core::branch_for(tracker, &row.issue)
-    );
-    let base = findings
-        .iter()
-        .filter(|f| f.check == Check::Base)
-        .map(|f| div().text_xs().text_color(muted).child(f.text.clone()));
+    let place = format!("On a new branch, in a worktree of its own, {agent}");
+    // The branch on a line of its own in the mono family, so a long name
+    // neither breaks the sentence above at its slash nor wraps at all; under
+    // it, what it is cut off, as part of where the run works.
+    // The branch is machine text, so it stands in a well in the mono family,
+    // on a line of its own: a long name neither breaks the sentence above at
+    // its slash nor wraps. Under it, what it is cut off.
+    let branch = div()
+        .v_flex()
+        .gap_1()
+        .w_full()
+        .child(
+            onehand_plugin_host::well(cx)
+                .h_flex()
+                .items_center()
+                .gap_2()
+                .px_2()
+                .py_1()
+                .child(onehand_plugin_host::mark_slot(
+                    Icon::new(crate::icons::Icon::GitBranch)
+                        .small()
+                        .text_color(muted),
+                ))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .child(core::branch_for(tracker, &row.issue)),
+                ),
+        )
+        .children(
+            findings
+                .iter()
+                .filter(|f| f.check == Check::Base)
+                .map(|f| div().text_xs().text_color(muted).child(f.text.clone())),
+        );
     let said: Vec<&Finding> = findings.iter().filter(|f| f.check != Check::Base).collect();
     let lines: Vec<_> = said
         .iter()
@@ -219,47 +249,16 @@ fn start_form(
     // said, never in the way.
     let lacks = template::lacking(row.issue.body_text(), templates)
         .map(|lacks| div().text_xs().text_color(muted).child(lacks.said()));
-    // Fields, as every form's are, `gap_4` apart; what blocks the start
-    // stands above the footer's primary.
-    let column = div()
-        .v_flex()
-        .gap_4()
-        .w_full()
-        .children(lacks)
-        .child(onehand_plugin_host::field(
-            "Workflow",
-            about.map(IntoElement::into_any_element),
-            div().h_flex().child(menu),
-            cx,
-        ))
-        .child(onehand_plugin_host::field(
-            "Where it works",
-            Some(place.into_any_element()),
-            div(),
-            cx,
-        ))
-        .children(base)
-        .when(!lines.is_empty(), |col| {
-            col.child(onehand_plugin_host::field(
-                "Before it starts",
-                None,
-                div().v_flex().gap_2().children(lines),
-                cx,
-            ))
-        })
-        .child(onehand_plugin_host::field(
-            "Instructions for this run",
-            None,
-            text_area(instructions, cx).h(super::INSTRUCTIONS_H),
-            cx,
-        ));
-    let Ok(template) = template else {
-        return column.into_any_element();
-    };
-    let brief = core::brief_for(tracker, &row.issue, instructions.read(cx).value().as_ref());
+    let instructions_field = onehand_plugin_host::field(
+        "Instructions for this run",
+        None,
+        text_area(instructions, cx).h(super::INSTRUCTIONS_H),
+        cx,
+    );
     // Its limits are the preflight's to say, in *Before it starts*.
-    column
-        .child(super::workflow_preview(
+    let shown = template.as_ref().ok().map(|template| {
+        let brief = core::brief_for(tracker, &row.issue, instructions.read(cx).value().as_ref());
+        super::workflow_preview(
             template,
             &brief,
             preview,
@@ -267,8 +266,57 @@ fn start_form(
             false,
             handle,
             cx,
-        ))
-        .into_any_element()
+        )
+    });
+    // What it runs, where, what stands in the way, and what the person adds:
+    // each a section of its own, parted by a hairline.
+    super::sections(
+        [
+            Some(
+                div()
+                    .v_flex()
+                    .gap_4()
+                    .children(lacks)
+                    .child(onehand_plugin_host::field(
+                        "Workflow",
+                        about.map(IntoElement::into_any_element),
+                        div().h_flex().child(menu),
+                        cx,
+                    ))
+                    .into_any_element(),
+            ),
+            Some(
+                onehand_plugin_host::field(
+                    "Where it works",
+                    Some(place.into_any_element()),
+                    branch,
+                    cx,
+                )
+                .into_any_element(),
+            ),
+            (!lines.is_empty()).then(|| {
+                onehand_plugin_host::field(
+                    "Before it starts",
+                    None,
+                    div().v_flex().gap_2().children(lines),
+                    cx,
+                )
+                .into_any_element()
+            }),
+            Some(
+                div()
+                    .v_flex()
+                    .gap_4()
+                    .child(instructions_field)
+                    .children(shown)
+                    .into_any_element(),
+            ),
+        ]
+        .into_iter()
+        .flatten(),
+        cx,
+    )
+    .into_any_element()
 }
 
 /// A menu of the workflows an issue can be worked with, its trigger naming
@@ -304,13 +352,15 @@ where
     };
     let picked = picked.map(str::to_string);
     let on_pick = std::rc::Rc::new(on_pick);
-    // A form's picker: at a form's height, filled once it holds a choice.
+    // A form's picker: at a form's height, and filled whatever it holds. It
+    // stands alone at its field's edge, where a ghost's padding would set its
+    // words in from the text above it.
     crate::controls::menu_below(
         id,
         onehand_plugin_host::picker(
             (id, 0usize),
             name,
-            picked.is_some(),
+            true,
             onehand_plugin_host::ControlSize::Short,
             cx,
         ),

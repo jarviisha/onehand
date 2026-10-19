@@ -35,10 +35,10 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | A mark down a column (an icon, a state's mark, a dot) | `mark_slot(mark)`: one icon wide, centred, so marks share a line and labels an edge | `crates/plugin-host/src/lib.rs` |
 | A row's actions shown on hover | `hover_slot(group, shown, child)`, then `.focus(&row_handle)`: a trailing slot keeping its width, visible while the row named `group` is hovered, while the keyboard holds the row, or while `shown` (selected, or its action running). A hidden slot's controls are not tab stops, so the row itself is one | `crates/plugin-host/src/row_actions.rs` |
 | An issue's label | `label_badge(label, cx)`: a badge tinted by the label's kind | `crates/plugin-host/src/lib.rs` |
-| A block held folded | `fold_toggle(id, label, open, cx)`: the chevron first, quiet, `.short()` | `crates/plugin-host/src/lib.rs` |
+| A block held folded | `fold_toggle(id, label, open)`: the chevron first, on the secondary fill, `.short()` | `crates/plugin-host/src/lib.rs` |
 | A box on a page | `card_box(cx)`: a control's edge (`input`), no fill, `p_3`, `gap_2` | `crates/plugin-host/src/lib.rs` |
 | A radio or checkbox at a choice row's head | `choice_mark(on, single, cx)`: drawn in ink, round for one choice and square for several, so it shows on the selected step where the library's ring vanishes | `crates/plugin-host/src/choice_mark.rs` |
-| A picker's trigger | `picker(id, label, set, size, cx)`: a ghost in the muted ink naming what it picks, on the secondary fill once set, with the caret | `crates/plugin-host/src/lib.rs` |
+| A picker's trigger | `picker(id, label, set, size, cx)`: a ghost in the muted ink naming what it picks, on the secondary fill once set (in a form, whatever it holds), with the caret | `crates/plugin-host/src/lib.rs` |
 | A list or table row's surface | `row(picked, cx)`: `ROW_H`, `px_2`, the hover and picked fills with their inks; the caller lays it out. | `crates/plugin-host/src/lib.rs` |
 | A tree's row (Files, Markdown) | `tree_row(id, depth, picked, cx)`: a `row` at `ROW_H`, its fill `ROW_GUTTER` off the dock's edges, its content at `ROW_INSET` and `TREE_INDENT` per level; the caller adds the mark slot, the name and one trailing slot | `crates/plugin-host/src/lib.rs` |
 | A menu, its rows, a menu under its control | `menu_item`, `menu_row`, `menu_below`; `menu_command(label, action)` for a row that runs a keymap command and shows its key | `crates/plugin-host/src/menu.rs` |
@@ -60,6 +60,7 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | A Settings group, a Settings row | `section`, `list_row` | `crates/app/src/settings.rs` |
 | A page's head, its box and title row, a list section (a box too), rows parted by hairlines, two boxes to a row | `page_head(title, facts, actions, cx)`, `page_card`, `card_title`, `page_section`, `ruled(rows, cx)`, `pair` | `crates/app/src/chat/pane/page_parts.rs` |
 | A dialog's footer (a third action at its start) | `footer_row` | `crates/app/src/dialogs.rs` |
+| A run dialog's sections parted by hairlines; a preflight finding with its state's mark | `sections`, `finding_line` | `crates/app/src/dialogs.rs` |
 | A Settings sub-page's scope line | `page_head` | `crates/app/src/settings.rs` |
 | A sunk box of machine text | `well` (sets the code text size; callers set padding) | `crates/plugin-host/src/lib.rs` |
 | A mono well on a page | `mono_well`, built on `well` | `crates/app/src/chat/pane/tasks_page/detail.rs` |

@@ -274,11 +274,21 @@ search mark, the clear button), with no edge, sunk into the fill of the place it
 rail's on `theme::inset`, a list page's on the well's `muted`), since it heads what it searches
 rather than standing among fields. A button names its variant by role: `primary`
 the main action, `secondary` an alternative beside it, a set picker's trigger (an unset one is a ghost, through
-`picker`) and every Settings button,
+`picker`; a form's picker is set whatever it holds) and every Settings button,
 `choice` in a pick-one row, `danger` as below, and ghost (`.quiet(cx)`, whose hover
 is the control fill) the rest. **No button draws an edge** (no default variant, no `outline()`): a
 field is the one control marked by its edge, or, searching, by its sunk fill. A control that refuses says so
 and why (`.refuses(why)`, the reason its tooltip) and goes back to the arrow.
+
+**A ghost never starts a line alone.** Without a fill, a ghost's padding sets its words in from
+the edge the text above and below it starts on, and nothing drawn says where it begins. A ghost at
+the start of its line has something before it on that line; one that would stand there alone
+takes the secondary fill instead (a form's picker, a fold toggle). A ghost ending a line or
+centred on it may stand alone.
+
+**A ghost is known by where it stands**: in a strip, a toolbar, a footer, a row's action slot,
+beside other controls. Beside a sentence (a preflight finding, a notice, a status line) it reads
+as more of the text, so an action there takes the secondary fill (*Check the agent*, *Retry…*).
 
 **An action with a menu of alternatives is one control.** The action and its caret half are joined
 edge to edge, one variant and one height, the inner corners square, parted by a seam in the colour of the surface

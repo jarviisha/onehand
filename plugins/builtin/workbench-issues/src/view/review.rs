@@ -429,7 +429,7 @@ impl IssuesView {
                     .v_flex()
                     .gap_1()
                     .child(div().h_flex().child(
-                        fold_toggle("issue-review-acceptance", "Acceptance", open, cx).on_click(
+                        fold_toggle("issue-review-acceptance", "Acceptance", open).on_click(
                             cx.listener(|view, _: &ClickEvent, _, cx| {
                                 view.toggle_review(|r| r.acceptance = !r.acceptance, cx)
                             }),
