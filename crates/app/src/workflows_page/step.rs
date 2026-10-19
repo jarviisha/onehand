@@ -104,7 +104,7 @@ pub(super) fn step_box(
                         .on_click(move |_, window: &mut Window, cx: &mut App| {
                             remove.update(cx, |page, cx| {
                                 page.edit_workflow_draft(window, cx, |d, _, _| {
-                                    d.steps.remove(i);
+                                    d.remove_step(i);
                                 })
                             })
                         }),

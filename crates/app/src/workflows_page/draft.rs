@@ -17,6 +17,10 @@ pub struct WorkflowDraft {
     pub timeout: Entity<InputState>,
     pub place: Place,
     pub steps: Vec<StepDraft>,
+    /// The one step open under its row, if any.
+    pub open_step: Option<usize>,
+    /// One onehand ships, shown read-only: it is changed by duplicating it.
+    pub shipped: bool,
 }
 
 /// A step's kind as the form holds it: the kind alone, its fields kept apart
@@ -170,6 +174,7 @@ impl WorkflowDraft {
     pub fn load(
         template: &Template,
         file: Option<PathBuf>,
+        shipped: bool,
         window: &mut Window,
         cx: &mut App,
     ) -> Self {
@@ -189,6 +194,8 @@ impl WorkflowDraft {
                 .iter()
                 .map(|step| StepDraft::new(step, window, cx))
                 .collect(),
+            open_step: None,
+            shipped,
         }
     }
 
@@ -212,15 +219,27 @@ impl WorkflowDraft {
         })
     }
 
-    /// Everything that keeps the form from being saved, as sentences.
-    pub fn problems(&self, cx: &App) -> Vec<String> {
+    /// Everything that keeps the form from being saved, each with the step
+    /// it is about, if one.
+    pub fn problem_list(&self, cx: &App) -> Vec<(Option<usize>, String)> {
         match self.to_template(cx) {
             Ok(template) => core::validate(&template)
-                .iter()
-                .map(ToString::to_string)
+                .into_iter()
+                .map(|problem| (problem.step, problem.said))
                 .collect(),
-            Err(why) => vec![why],
+            Err(why) => vec![(None, why)],
         }
+    }
+
+    /// Everything that keeps the form from being saved, as sentences.
+    pub fn problems(&self, cx: &App) -> Vec<String> {
+        self.problem_list(cx)
+            .into_iter()
+            .map(|(step, said)| match step {
+                Some(at) => format!("Step {}: {said}", at + 1),
+                None => said,
+            })
+            .collect()
     }
 
     /// Whether the form holds something not yet saved.
@@ -262,6 +281,21 @@ impl WorkflowDraft {
             },
         };
         self.steps.push(StepDraft::new(&spec, window, cx));
+        self.open_step = follow_open(self.open_step, StepEdit::Added, self.steps.len());
+    }
+
+    /// Remove the step at `at`.
+    pub fn remove_step(&mut self, at: usize) {
+        if at < self.steps.len() {
+            self.steps.remove(at);
+            self.open_step = follow_open(self.open_step, StepEdit::Removed(at), self.steps.len());
+        }
+    }
+
+    /// Open the step at `at` under its row, closing the one open; or close it
+    /// when it is the one open.
+    pub fn toggle_step(&mut self, at: usize) {
+        self.open_step = (self.open_step != Some(at)).then_some(at);
     }
 
     /// Move the step at `at` one place up, or down.
@@ -272,6 +306,77 @@ impl WorkflowDraft {
         };
         if let Some(to) = to {
             self.steps.swap(at, to);
+            self.open_step = follow_open(
+                self.open_step,
+                StepEdit::Moved { from: at, to },
+                self.steps.len(),
+            );
         }
     }
 }
+
+/// What a step's row says of it beside its name, in muted words: where a
+/// failure sends the run back to, by the number of an earlier step, and that
+/// an agent step keeps its answer.
+pub(super) fn step_facts(at: usize, steps: &[StepSpec]) -> Vec<String> {
+    let step = &steps[at];
+    let earlier = |id: &str| steps[..at].iter().position(|s| s.id == id);
+    let mut facts = Vec::new();
+    match &step.kind {
+        StepKind::Command { on_fail, .. } | StepKind::StatusChecks { on_fail, .. } => {
+            if let Some(k) = earlier(on_fail) {
+                facts.push(format!("on failure ↑ {}", k + 1));
+            }
+        }
+        StepKind::Agent { keep_answer, .. } => {
+            if *keep_answer {
+                facts.push("keeps answer".to_string());
+            }
+        }
+        StepKind::Approval { .. } | StepKind::Push | StepKind::PullRequest => {}
+    }
+    facts
+}
+
+/// Per step, the first problem said of it, so its row shows it shut.
+pub(super) fn split_problems(
+    problems: &[(Option<usize>, String)],
+    steps: usize,
+) -> Vec<Option<String>> {
+    let mut first = vec![None; steps];
+    for (step, said) in problems {
+        if let Some(slot) = step.and_then(|at| first.get_mut(at)) {
+            slot.get_or_insert_with(|| said.clone());
+        }
+    }
+    first
+}
+
+/// A change to the steps' order or number, which the open one follows.
+#[derive(Clone, Copy)]
+pub(super) enum StepEdit {
+    Added,
+    Moved { from: usize, to: usize },
+    Removed(usize),
+}
+
+/// Which step is open after `edit`, `len_after` steps then standing: a step
+/// just added, the open one where it moved to, none when it was removed.
+pub(super) fn follow_open(open: Option<usize>, edit: StepEdit, len_after: usize) -> Option<usize> {
+    match edit {
+        StepEdit::Added => len_after.checked_sub(1),
+        StepEdit::Moved { from, to } => open.map(|at| match at {
+            at if at == from => to,
+            at if at == to => from,
+            at => at,
+        }),
+        StepEdit::Removed(gone) => open.and_then(|at| match at.cmp(&gone) {
+            std::cmp::Ordering::Less => Some(at),
+            std::cmp::Ordering::Equal => None,
+            std::cmp::Ordering::Greater => Some(at - 1),
+        }),
+    }
+}
+
+#[cfg(test)]
+mod tests;

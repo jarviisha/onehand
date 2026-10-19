@@ -139,7 +139,13 @@ impl WorkflowsPage {
             window,
             cx,
             move |page, window, cx| {
-                page.draft = Some(WorkflowDraft::load(&template, file.clone(), window, cx));
+                page.draft = Some(WorkflowDraft::load(
+                    &template,
+                    file.clone(),
+                    false,
+                    window,
+                    cx,
+                ));
                 cx.notify();
             },
         );
