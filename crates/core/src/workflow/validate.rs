@@ -22,6 +22,10 @@ impl std::fmt::Display for Problem {
     }
 }
 
+/// What a step that goes back on failure says while it names no step: a
+/// blank name in quotes reads as a fault in the name.
+const NO_BACK_STEP: &str = "on failure it goes back to no step yet: pick the agent step";
+
 /// Everything wrong with `template`; empty when it may be saved and run.
 pub fn validate(template: &Template) -> Vec<Problem> {
     let mut problems = Vec::new();
@@ -171,11 +175,16 @@ pub fn validate(template: &Template) -> Vec<Problem> {
                         "its command is blank; leave it out to run the project's check".to_string(),
                     );
                 }
-                if agent(on_fail).flatten().is_none() {
+                if on_fail.is_empty() {
+                    here(NO_BACK_STEP.to_string());
+                } else if agent(on_fail).flatten().is_none() {
                     here(format!(
                         "on failure it goes back to `{on_fail}`, which is no earlier agent step"
                     ));
                 }
+            }
+            StepKind::Approval { of } if of.is_empty() => {
+                here("it approves no step yet: pick the agent step it approves".to_string())
             }
             StepKind::Approval { of } => match agent(of) {
                 Some(Some(true)) => {}
@@ -205,7 +214,9 @@ pub fn validate(template: &Template) -> Vec<Problem> {
                             .to_string(),
                     );
                 }
-                if agent(on_fail).flatten().is_none() {
+                if on_fail.is_empty() {
+                    here(NO_BACK_STEP.to_string());
+                } else if agent(on_fail).flatten().is_none() {
                     here(format!(
                         "on failure it goes back to `{on_fail}`, which is no earlier agent step"
                     ));
