@@ -37,7 +37,6 @@ pub(super) fn form(
     let mut problems = draft.problems(cx);
     problems.extend(super::actions::name_clash(draft, cx));
     let danger = crate::theme::status_ink(cx).danger;
-    let muted = cx.theme().muted_foreground;
     // A shipped workflow is read, never saved: it is changed by duplicating it.
     let shipped = draft.shipped;
     let place = draft.place;
@@ -140,7 +139,7 @@ pub(super) fn form(
         )
     };
     let steps_group = section(Some("Steps"), None, cx)
-        .child(variables_hint(muted, cx))
+        .child(variables_hint(cx))
         .child(steps)
         .when(!shipped, |group| {
             group.child(div().h_flex().child(add_step))
@@ -194,7 +193,8 @@ pub(super) fn form(
 
 /// What a prompt may use, a hint in meta text with each variable in mono, so
 /// it reads as something to type.
-fn variables_hint(muted: gpui::Hsla, cx: &App) -> impl IntoElement {
+pub(super) fn variables_hint(cx: &App) -> impl IntoElement {
+    let muted = cx.theme().muted_foreground;
     let mono = cx.theme().mono_font_family.clone();
     let code = |text: &'static str| div().font_family(mono.clone()).child(text);
     div()

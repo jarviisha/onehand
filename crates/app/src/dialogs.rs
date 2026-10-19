@@ -435,12 +435,16 @@ fn form_room(window: &Window) -> (gpui::Pixels, gpui::Pixels) {
 /// or the window less its margin on each side when that is narrower, since the
 /// library centres a dialog by its width and never shrinks it.
 fn form_width(window: &Window) -> gpui::Pixels {
+    width_in(window, crate::tokens::DIALOG_FORM)
+}
+
+/// `width`, or the window less a dialog's margin on each side when that is
+/// narrower: the library centres a dialog by its width and never shrinks it.
+pub(crate) fn width_in(window: &Window, width: gpui::Rems) -> gpui::Pixels {
     let rem = window.rem_size();
     let frame = gpui_component::window_paddings(window);
     let room = window.viewport_size().width - frame.left - frame.right - rem * LAUNCHER_MARGIN * 2.;
-    (rem * crate::tokens::DIALOG_FORM.0)
-        .min(room)
-        .max(gpui::px(0.))
+    (rem * width.0).min(room).max(gpui::px(0.))
 }
 
 /// A form's sections, a hairline between each two: what a run is, where it

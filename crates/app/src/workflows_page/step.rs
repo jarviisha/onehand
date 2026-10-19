@@ -217,7 +217,7 @@ fn step_row(
                 .min_w_0()
                 .truncate()
                 .font_medium()
-                .child(name),
+                .child(name.clone()),
         )
         .when(!row.facts.is_empty(), |head| {
             head.child(
@@ -286,6 +286,30 @@ fn step_row(
 
     let body = match step.kind {
         Kind::Agent => {
+            // A prompt too long for the field is written in a dialog the
+            // size of a page, at the field's end where the eye leaves it.
+            let open_larger = {
+                let (page, prompt, name) = (handle.clone(), step.prompt.clone(), name.clone());
+                crate::controls::action(("step-prompt-larger", i))
+                    .tall()
+                    .quiet(cx)
+                    .icon(Icon::new(IconName::Maximize))
+                    .label(if shipped {
+                        "Read larger"
+                    } else {
+                        "Write larger"
+                    })
+                    .on_click(move |_, window: &mut Window, cx: &mut App| {
+                        super::prompt_dialog::open(
+                            page.clone(),
+                            name.clone(),
+                            prompt.clone(),
+                            shipped,
+                            window,
+                            cx,
+                        )
+                    })
+            };
             let gates = GateKind::ALL
                 .iter()
                 .filter(|gate| gate.fits(place) || step.gates.contains(gate))
@@ -336,10 +360,14 @@ fn step_row(
                 .child(field(
                     "Prompt",
                     None,
-                    onehand_plugin_host::contained_scroll(
-                        ("step-prompt", i),
-                        text_area(&step.prompt, cx).disabled(shipped),
-                    ),
+                    div()
+                        .v_flex()
+                        .gap_2()
+                        .child(onehand_plugin_host::contained_scroll(
+                            ("step-prompt", i),
+                            text_area(&step.prompt, cx).disabled(shipped),
+                        ))
+                        .child(div().h_flex().justify_end().child(open_larger)),
                     cx,
                 ))
                 .child(field(
