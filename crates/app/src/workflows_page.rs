@@ -313,22 +313,45 @@ impl Render for WorkflowsPage {
                 .child(div().flex_1().min_h_0().child(form))
                 .child(
                     div()
-                        .id("step-drawer")
                         .flex_none()
                         .h(gpui::relative(DRAWER_SHARE))
-                        // No fill of its own: one edge in the primary ink parts
-                        // the drawer from the form, the page's surface running on
-                        // under both.
-                        .border_t_2()
-                        .border_color(cx.theme().primary)
-                        .overflow_y_scroll()
+                        // A sheet laid over the form's foot: inset from the
+                        // region's sides, its top corners rounded, lifted by a
+                        // shadow cast upward, on the page's own surface, so it
+                        // is the lift and the edges that part it, not a second
+                        // fill. Its sides take a control's edge and its top the
+                        // primary ink, drawn as a line of its own since one
+                        // element takes one edge colour.
+                        .mx_3()
+                        .v_flex()
+                        .rounded_t(cx.theme().radius)
+                        .border_1()
+                        .border_b_0()
+                        .border_color(cx.theme().input)
+                        .bg(cx.theme().background)
+                        .shadow(onehand_plugin_host::tokens::lift_up(cx))
+                        .overflow_hidden()
                         .child(
-                            div().h_flex().justify_center().px_8().py_4().child(
-                                div()
-                                    .w_full()
-                                    .max_w(crate::tokens::PAGE_PROSE)
-                                    .child(drawer),
-                            ),
+                            div()
+                                .flex_none()
+                                .w_full()
+                                .border_t_2()
+                                .border_color(cx.theme().primary),
+                        )
+                        .child(
+                            div()
+                                .id("step-drawer")
+                                .flex_1()
+                                .min_h_0()
+                                .overflow_y_scroll()
+                                .child(
+                                    div().h_flex().justify_center().px_8().py_4().child(
+                                        div()
+                                            .w_full()
+                                            .max_w(crate::tokens::PAGE_PROSE)
+                                            .child(drawer),
+                                    ),
+                                ),
                         ),
                 )
                 .into_any_element()

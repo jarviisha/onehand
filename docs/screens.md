@@ -164,8 +164,9 @@ height (its dragged height kept).
   which refuses with the first and spins while it writes, and *Cancel*. A step reads as a
   numbered dot on a rail that joins it to the next (the open one's dot filled), then its name,
   its kind, where its failure goes back to (*on failure ↑ N*), and its first problem; one step
-  opens at a time, its line marked as picked, in a drawer docked under the form, parted from it by an edge in the primary ink and on
-  no fill of its own, across the editor's width that takes the lower part of its height, the form above scrolled so the open
+  opens at a time, its line marked as picked, in a drawer docked under the form: a sheet inset from the editor's sides, its top
+  corners rounded and its top edge in the primary ink, lifted by a shadow cast upward, on the
+  page's own surface, that takes the lower part of its height, the form above scrolled so the open
   step's line stands just clear of the drawer's edge. The drawer's head names the step (*Step N ·
   its name*, its kind) and steps to the one before or after or closes it (Esc closes it before the
   form); then its kind, id and label on one line, then its kind's fields (an agent step's prompt

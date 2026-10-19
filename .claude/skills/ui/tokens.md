@@ -121,6 +121,7 @@ set `radius` where they are built; a `Tag` takes `rounded_full` through `badge`.
 | Write | For | Lives in |
 |---|---|---|
 | `tokens::lift(cx)` | anything the app floats | `crates/plugin-host/src/tokens.rs` |
+| `tokens::lift_up(cx)` | a sheet rising from a region's foot over what stands above it (the step drawer) | `crates/plugin-host/src/tokens.rs` |
 | `composer_lift(cx)` | the composer card | `crates/app/src/theme.rs` |
 
 ## Control sizes
