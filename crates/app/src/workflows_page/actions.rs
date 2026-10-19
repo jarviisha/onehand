@@ -225,7 +225,8 @@ impl WorkflowsPage {
         cx: &mut Context<Self>,
         edit: impl FnOnce(&mut WorkflowDraft, &mut Window, &mut gpui::App),
     ) {
-        if let Some(draft) = self.draft.as_mut() {
+        // A shipped workflow is read, never changed: duplicating it is how.
+        if let Some(draft) = self.draft.as_mut().filter(|d| !d.shipped) {
             edit(draft, window, cx);
         }
         cx.notify();

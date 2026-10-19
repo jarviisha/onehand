@@ -27,8 +27,6 @@ gpui::actions!(
     [CloseWorkflowForm, WorkflowsUp, WorkflowsDown]
 );
 
-use crate::controls::Quiet as _;
-use crate::controls::Short as _;
 use gpui::{
     App, AppContext as _, ClickEvent, Context, Entity, EventEmitter, FocusHandle, Focusable,
     InteractiveElement as _, IntoElement, ParentElement, Render, SharedString,
@@ -123,7 +121,7 @@ impl WorkflowsPage {
 
     /// The projects in the order *Run…* offers them: the one selected in the
     /// rail first, then the rest as the rail has them.
-    fn run_choices(&self) -> Vec<(PathBuf, SharedString)> {
+    pub(super) fn run_choices(&self) -> Vec<(PathBuf, SharedString)> {
         let mut choices = self.projects.clone();
         if let Some(at) = choices
             .iter()
@@ -175,11 +173,17 @@ impl Render for WorkflowsPage {
             ));
         let detail = || {
             let body = match &self.draft {
-                Some(draft) => form::form(&handle, draft, self.writing, cx),
-                None => onehand_plugin_host::hint(
-                    "Pick a workflow to see and change it, or make a new one",
-                    cx,
-                ),
+                Some(draft) => form::form(&handle, draft, self.writing, &self.run_choices(), cx),
+                None => match self.picked_entry(cx) {
+                    Some(crate::workflow::Entry {
+                        template: Err(why),
+                        file: Some(file),
+                    }) => form::unreadable(&handle, &why, &file, cx),
+                    _ => onehand_plugin_host::hint(
+                        "Pick a workflow to see and change it, or make a new one",
+                        cx,
+                    ),
+                },
             };
             // Centred up to the column a form is read in, its gutters equal,
             // so hiding the list centres it rather than stretching it.
@@ -262,43 +266,6 @@ impl Render for WorkflowsPage {
             .child(measure_width(self.width.clone(), cx.entity().downgrade()))
             .child(halves)
     }
-}
-
-/// *Run…* on row `i`: which project to start workflow `workflow` on, the
-/// rail's selection first, then the launcher.
-fn run_menu(
-    handle: &Entity<WorkflowsPage>,
-    i: usize,
-    workflow: &str,
-    choices: &[(PathBuf, SharedString)],
-    cx: &App,
-) -> impl IntoElement {
-    let (handle, choices, workflow) = (handle.clone(), choices.to_vec(), workflow.to_string());
-    crate::controls::menu_below(
-        ("run-workflow", i),
-        crate::controls::action(("run-workflow-trigger", i))
-            .quiet(cx)
-            .short()
-            .label("Run…"),
-        move |mut menu, _, _| {
-            menu = menu.label("Run on");
-            for (root, label) in &choices {
-                let (handle, root, workflow) = (handle.clone(), root.clone(), workflow.clone());
-                menu = menu.item(crate::controls::menu_item(label.clone()).on_click(
-                    move |_, _: &mut Window, cx: &mut App| {
-                        let (root, workflow) = (root.clone(), workflow.clone());
-                        handle.update(cx, |_, cx| {
-                            cx.emit(WorkflowsPageEvent::Run { workflow, root })
-                        });
-                    },
-                ));
-            }
-            if choices.is_empty() {
-                menu = menu.label("Add a project first");
-            }
-            menu
-        },
-    )
 }
 
 /// A click handler that hands `act` the page.
