@@ -149,12 +149,23 @@ height (its dragged height kept).
   read lands; *Refresh* spins while it reads. *No issues yet* or *No issues match* when empty.
 - The **review block** opens below where the work stands only on *Review…*, as `docs/unattended.md`
   draws it.
-- *Workflows*: a head (*Workflows*, how many and what a workflow is under it, *Import…* and *New
-  workflow*, its primary, at the end), then the workflows in one box as rows, capped, shipped ones *Built in* (read-only) in a slot of their own, *Run…* (projects, the
-  rail's first) and the rest shown on hover. *New workflow* or *Edit* opens a form below, one box
-  per step (its kind its first field, one ⋯ to move or remove it), a margin marking where a failure
-  goes back to, problems (a name clash among them) above a *Save* that refuses with the first and
-  spins while it writes.
+- *Workflows*: a list beside its editor. The list, a column of its own, opens on a head cut down
+  to it (*Workflows*, how many under it, *New*, its primary, and a ⋯ holding *Import…*), then the
+  workflows in one box as rows, the person's own under *Yours* and the shipped under *Built in*,
+  a row its name alone (*Cannot be read* under it in the warning ink when it is so), capped, a
+  new workflow not saved yet an *Untitled* row at the top of *Yours*. Nothing is picked on
+  arrival: beside the list, *Pick a workflow to see and change it, or make a new one*. Picking a
+  row opens it beside the list: a head (its name, how many steps and where it works under it,
+  *Run…*, which refuses until it is saved, and a ⋯ with *Duplicate*, *Export…* and *Delete…*), then
+  three groups under headings, *About* (name and description), *How it runs* (where it works,
+  misses allowed, timeout) and *Steps* (what a prompt may use, the steps in one box a row each,
+  *Add step* and its menu of kinds), then the problems (a name clash among them) above *Save*,
+  which refuses with the first and spins while it writes, and *Cancel*. A step's row reads its
+  number, its kind, its name, where its failure goes back to (*on failure ↑ N*), and its first
+  problem; one step opens at a time under its row, its kind, id and label on one line, then its
+  kind's fields, its ⋯ moving or removing it. A shipped workflow opens read-only, *Duplicate to
+  edit* its primary, with no *Save*; an unreadable file of the person's own opens why, with
+  *Delete…*.
 
 ## Settings
 

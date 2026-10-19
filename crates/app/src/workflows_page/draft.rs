@@ -140,7 +140,7 @@ impl StepDraft {
         }
     }
 
-    fn to_spec(&self, cx: &App) -> StepSpec {
+    pub(super) fn to_spec(&self, cx: &App) -> StepSpec {
         let command = self.command.read(cx).value().trim().to_string();
         StepSpec {
             id: self.id.read(cx).value().trim().to_string(),

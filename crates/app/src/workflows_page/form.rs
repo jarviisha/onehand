@@ -5,7 +5,6 @@ pub(super) use head::unreadable;
 use super::WorkflowsPage;
 use super::click;
 use super::draft::Kind;
-use super::step::{Earlier, step_box};
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
 use crate::controls::text_input;
@@ -15,44 +14,13 @@ use gpui::{
     AnyElement, App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div,
 };
 use gpui_component::button::ButtonVariants;
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, StyledExt};
 use onehand_core::workflow::Place;
 use onehand_plugin_host::Tall as _;
 
 /// The least a field of a pair takes before the pair stacks: a name stays
 /// readable beside its neighbour, or goes under it.
 const PAIR_MIN: gpui::Rems = gpui::rems(14.);
-
-/// How wide the margin beside the steps runs.
-const MARGIN: gpui::Rems = gpui::rems(4.5);
-
-/// A step's margin: where its failure sends the run back to, and which later
-/// steps send theirs back to it, by step number. The arrows of a loop read
-/// down the margin without opening a step.
-fn margin(back: Option<usize>, from: &[usize], muted: gpui::Hsla) -> impl IntoElement {
-    div()
-        .flex_none()
-        .w(MARGIN)
-        .pt_3()
-        .v_flex()
-        .gap_1()
-        .text_xs()
-        .text_color(muted)
-        .children(back.map(|to| {
-            div()
-                .h_flex()
-                .gap_1()
-                .child(Icon::new(IconName::ArrowUp).xsmall())
-                .child(format!("to {}", to + 1))
-        }))
-        .children(from.iter().map(|k| {
-            div()
-                .h_flex()
-                .gap_1()
-                .child(Icon::new(IconName::ArrowLeft).xsmall())
-                .child(format!("from {}", k + 1))
-        }))
-}
 
 /// The editor: its head, then the workflow's fields in three groups (what
 /// it is, how it runs, its steps), then what is wrong with it and *Save*.
@@ -84,53 +52,7 @@ pub(super) fn form(
             });
         }
     };
-    // Every earlier agent step by id, for what a command goes back to and an
-    // approval approves.
-    let ids: Vec<Earlier> = draft
-        .steps
-        .iter()
-        .map(|step| Earlier {
-            id: step.id.read(cx).value().trim().to_string(),
-            agent: step.kind == Kind::Agent,
-            keeps: step.keep_answer,
-        })
-        .collect();
-
-    // Where each failure goes back to, by step number, for the margin.
-    let back: Vec<Option<usize>> = draft
-        .steps
-        .iter()
-        .enumerate()
-        .map(|(i, step)| {
-            matches!(step.kind, Kind::Command | Kind::StatusChecks)
-                .then(|| ids[..i].iter().position(|e| e.id == step.target))
-                .flatten()
-        })
-        .collect();
-    let steps = draft
-        .steps
-        .iter()
-        .enumerate()
-        .map(|(i, step)| {
-            let from: Vec<usize> = (0..back.len()).filter(|k| back[*k] == Some(i)).collect();
-            div()
-                .h_flex()
-                .items_start()
-                .gap_2()
-                .w_full()
-                .child(margin(back[i], &from, muted))
-                .child(div().flex_1().min_w_0().child(step_box(
-                    handle,
-                    i,
-                    i + 1 == draft.steps.len(),
-                    step,
-                    &ids[..i],
-                    place,
-                    cx,
-                )))
-        })
-        .collect::<Vec<_>>();
-
+    let steps = super::step::steps_box(handle, draft, place, cx);
     let input = |state: &Entity<gpui_component::input::InputState>| {
         text_input(state, cx).tall().disabled(shipped)
     };
@@ -215,7 +137,7 @@ pub(super) fn form(
     };
     let steps_group = section(Some("Steps"), None, cx)
         .child(variables_hint(muted, cx))
-        .children(steps)
+        .child(steps)
         .when(!shipped, |group| {
             group.child(div().h_flex().child(add_step))
         });

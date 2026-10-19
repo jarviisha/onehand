@@ -232,6 +232,20 @@ impl WorkflowsPage {
         cx.notify();
     }
 
+    /// Open or close a step of the form with `edit`: reading a step is no
+    /// change to it, so a shipped workflow's open too.
+    pub(super) fn edit_open_step(
+        &mut self,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+        edit: impl FnOnce(&mut WorkflowDraft),
+    ) {
+        if let Some(draft) = self.draft.as_mut() {
+            edit(draft);
+        }
+        cx.notify();
+    }
+
     pub(crate) fn clear_workflow_draft(&mut self, cx: &mut Context<Self>) {
         self.draft = None;
         self.picked = None;

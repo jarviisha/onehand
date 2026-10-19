@@ -304,17 +304,22 @@ A workflow with a command step that names no command needs the project's check c
 the project's page beside *Run check* and kept in the workspace file (`WorkspaceConfig::checks`).
 
 **Workflows are written on a page of their own**, opened from the rail's *Workflows* row: the list
-on offer, capped and saying what it left out, each readable one with *Run…*, then the editor, one
-box per step (its kind the first field, one ⋯ holding *Move up* and *Move down*, refused at the
-ends, and *Remove*), with where each failure sends the run back marked in the margin (*to 2*
-beside the step that fails, *from 4* beside where it goes back to). A name another workflow has
-is said above *Save* before it is pressed (*Another workflow is already called …*), and *Save*
-refuses until it is changed; one write lands at a time. *Cancel* asks, as Esc does, when the form
-holds changes (*Keep*, *Discard*). The draft is the page's entity's
-(`WorkflowsPage`), held per window, so going to another page and back finds it as it was; picking
-another workflow, or closing the window, with changes unsaved asks first in a modal. *Run…* asks
-which project, the one selected in the rail first, and opens the launcher on it with the workflow
-picked; the composer's `+` menu and the keymap still open the launcher on the project on screen.
+on offer beside the editor of the one picked, the person's own first. Picking a row opens it; a
+shipped one opens read-only, changed by *Duplicate to edit*. The editor groups the workflow's
+fields as *About*, *How it runs* and *Steps*, and the steps are rows, one open at a time, each
+saying where its failure sends the run back (*on failure ↑ 2*) and its first problem without
+being opened; its ⋯ holds *Move up* and *Move down*, refused at the ends, and *Remove*. A name
+another workflow has is said above *Save* before it is pressed (*Another workflow is already
+called …*), and *Save* refuses until it is changed; one write lands at a time, and the saved
+workflow stays picked. *Cancel* asks, as Esc does, when the form holds changes (*Keep*,
+*Discard*), and leaves nothing picked. The draft and the pick are the page's entity's
+(`WorkflowsPage`), held per window, so going to another page and back finds them as they were;
+picking another workflow, or closing the window, with changes unsaved asks first in a modal. The
+pick is kept by key (a file, or a shipped workflow's id), never by place, as the list is read again
+after every save. *Run…* in the editor's head refuses while the workflow holds changes or was never
+saved, as a run starts from what is saved; otherwise it asks which project, the one selected in the
+rail first, and opens the launcher on it with the workflow picked; the composer's `+` menu and the
+keymap still open the launcher on the project on screen.
 
 Under the workflow picker, a collapsed *Preview* opens on what the run would start with: a line
 with where it works, its timeout, its misses and its version; a line per step
@@ -504,10 +509,16 @@ change (`git checkout . && git clean -fd`).
 | A project in a folder | A merged task of a project that is a folder of its repository (`repo/app`) | The modal names the worktree's top, not its `app` folder, and *Remove* removes it |
 | Changed while asked | Open the modal on a clean worktree, then create a file in it, then press *Remove* | Nothing removed: *Not removed, as things stand now: Uncommitted or untracked files …* |
 | The Workflows page | Press *Workflows* in the rail | The header reads *Workflows*, both docks go, the row is highlighted; Settings has no Workflows page |
-| A draft kept across pages | *New workflow*, type a name, go to *Tasks* and back to *Workflows* | The form is there with the name typed |
-| Dropping a draft is asked | With that draft, *Edit* another workflow; then *Cancel*; then close the window | *Discard the workflow being edited?* in a modal, *Keep* keeps it; *Cancel* asks the same; closing asks *Discard the workflow being written?*, *Keep* keeps the window open |
-| Run from the page | Two projects, the second selected in the rail; *Run…* on *Work in checkout* | The menu lists the selected project first; picking it opens the launcher on it with *Work in checkout* picked |
-| A repair loop in the margin | Edit a workflow whose Verify goes back to Implement | Beside Verify, *to N* (Implement's number); beside Implement, *from M* |
+| Nothing picked on arrival | Press *Workflows* in the rail | Beside the list, *Pick a workflow to see and change it, or make a new one*; *New* is the one primary |
+| A draft kept across pages | *New*, type a name, go to *Tasks* and back to *Workflows* | The form is there with the name typed, and the list's *Untitled* row reads that name |
+| Dropping a draft is asked | With that draft, pick another workflow; then *Cancel*; then close the window | *Discard the workflow being edited?* in a modal, *Keep* keeps it and leaves the draft's row picked; *Cancel* asks the same; closing asks *Discard the workflow being written?*, *Keep* keeps the window open |
+| Saved stays picked | *New*, name it, *Save* | The row it becomes under *Yours* is picked and the editor stays on it |
+| Keys step the list | Click a row, then ↑ and ↓; then click into *Name* and press ↑ | Each press opens the row it reaches; in *Name* the caret moves and the list does not |
+| One at a time | Narrow the pane until the list and the editor do not fit, pick a row | The editor alone under *Workflows* (back); Esc or the link goes back to the list |
+| A shipped workflow | Pick *Work in checkout* | Its fields are disabled, no *Save*; *Duplicate to edit* opens *Work in checkout copy*, picked, as a new workflow |
+| An unreadable file | Put a `.toml` that does not parse in the workflows folder, pick its row | Its reason in the warning ink and *Delete…*, which asks and removes the file |
+| Run from the page | Two projects, the second selected in the rail; pick *Work in checkout*, *Run…* | The menu lists the selected project first; picking it opens the launcher on it with *Work in checkout* picked; on a workflow with unsaved changes *Run…* refuses, saying to save first |
+| A repair loop on the rows | Pick a workflow whose Verify goes back to Implement | Verify's row reads *on failure ↑ N* (Implement's number) without being opened |
 | The check command on the project page | Open a project with no session, type a command in *Check command* | *Run check* appears beside *New session*; the command is kept after a restart |
 | A full slot | With `at_once = 1` and an issue task running, *Run workflow…* on another issue | *Before it starts* names the issue being worked; *Run* is spent |
 | An earlier task needing attention | On an issue whose last task ended exhausted, *Run workflow…* | Muted: the last task ended and a new start makes a second task, with *Retry…*, which closes the form and opens that task's Retry dialog |

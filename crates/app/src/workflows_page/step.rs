@@ -1,23 +1,27 @@
-use super::WorkflowsPage;
-use super::draft::{Kind, StepDraft};
+use super::draft::{Kind, StepDraft, WorkflowDraft, split_problems, step_facts};
+use super::{WorkflowsPage, click};
 use crate::controls::Quiet as _;
 use crate::controls::text_area;
 use crate::controls::text_input;
 use crate::settings::{about, field};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div,
+    AnyElement, App, Entity, InteractiveElement as _, IntoElement, ParentElement, SharedString,
+    StatefulInteractiveElement as _, Styled, Window, div,
 };
 use onehand_plugin_host::Tall as _;
 
 use gpui_component::switch::Switch;
-use gpui_component::{ActiveTheme, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::workflow::{GateKind, Place};
 
 /// How tall a step's prompt stands before it scrolls: a paragraph in view, so
 /// a step reads without opening it, and a form of several steps still fits a
 /// screen.
 const PROMPT_H: gpui::Rems = gpui::rems(8.);
+
+/// The least a step's id or label takes before the line wraps under the kind.
+const NAME_MIN: gpui::Rems = gpui::rems(10.);
 
 /// What a later step's menus need to know of an earlier one.
 pub(super) struct Earlier {
@@ -26,16 +30,67 @@ pub(super) struct Earlier {
     pub(super) keeps: bool,
 }
 
-/// One step of the form, in a box of its own.
-pub(super) fn step_box(
+/// The steps, in one box, a row each: its number, its kind, its name and
+/// what it does on failure, read without opening it; the one open shows its
+/// fields under its row.
+pub(super) fn steps_box(
     handle: &Entity<WorkflowsPage>,
+    draft: &WorkflowDraft,
+    place: Place,
+    cx: &App,
+) -> AnyElement {
+    // Every earlier agent step by id, for what a command goes back to and an
+    // approval approves.
+    let earlier: Vec<Earlier> = draft
+        .steps
+        .iter()
+        .map(|step| Earlier {
+            id: step.id.read(cx).value().trim().to_string(),
+            agent: step.kind == Kind::Agent,
+            keeps: step.keep_answer,
+        })
+        .collect();
+    let specs: Vec<_> = draft.steps.iter().map(|step| step.to_spec(cx)).collect();
+    let problems = split_problems(&draft.problem_list(cx), draft.steps.len());
+    let rows = draft.steps.iter().enumerate().map(|(i, step)| {
+        let row = StepRow {
+            i,
+            last: i + 1 == draft.steps.len(),
+            open: draft.open_step == Some(i),
+            shipped: draft.shipped,
+            facts: step_facts(i, &specs),
+            problem: problems[i].clone(),
+        };
+        step_row(handle, &row, step, &earlier[..i], place, cx)
+    });
+    crate::chat::pane::page_parts::card_box(cx)
+        .w_full()
+        .gap_0()
+        .p_0()
+        .child(crate::chat::pane::page_parts::ruled(rows, cx))
+        .into_any_element()
+}
+
+/// What a step's row is drawn from besides the step itself.
+struct StepRow {
     i: usize,
     last: bool,
+    open: bool,
+    shipped: bool,
+    facts: Vec<String>,
+    problem: Option<String>,
+}
+
+/// One step: its row, and its fields under it while it is the one open.
+fn step_row(
+    handle: &Entity<WorkflowsPage>,
+    row: &StepRow,
     step: &StepDraft,
     earlier: &[Earlier],
     place: Place,
     cx: &App,
 ) -> AnyElement {
+    let (i, last, shipped) = (row.i, row.last, row.shipped);
     let kind_menu = {
         let handle = handle.clone();
         crate::controls::menu_below(
@@ -112,30 +167,104 @@ pub(super) fn step_box(
             },
         )
     };
+    let muted = crate::theme::meta_ink(cx);
+    let danger = crate::theme::status_ink(cx).danger;
+    let label = step.label.read(cx).value().trim().to_string();
+    let name = match label.is_empty() {
+        true => step.id.read(cx).value().trim().to_string(),
+        false => label,
+    };
     let head = div()
+        .id(("step-row", i))
         .h_flex()
         .items_center()
         .gap_2()
+        .min_h(crate::tokens::ROW_H)
+        .px_3()
+        .py_1()
+        .cursor_pointer()
+        .hover(|row| row.bg(cx.theme().list_hover))
+        .on_click(click(handle, move |page, window, cx| {
+            page.edit_open_step(window, cx, |d| d.toggle_step(i))
+        }))
+        .child(
+            div()
+                .flex_none()
+                .text_color(muted)
+                .child(format!("{}", i + 1)),
+        )
+        .child(
+            onehand_plugin_host::badge(
+                step.kind.label(),
+                onehand_plugin_host::Tint {
+                    fill: cx.theme().secondary,
+                    ink: cx.theme().secondary_foreground,
+                },
+            )
+            .flex_none(),
+        )
         .child(
             div()
                 .flex_1()
-                .font_semibold()
-                .child(format!("Step {}", i + 1)),
+                .min_w_0()
+                .truncate()
+                .font_medium()
+                .child(name),
         )
-        .child(more);
+        .when(!row.facts.is_empty(), |head| {
+            head.child(
+                div()
+                    .flex_none()
+                    .text_xs()
+                    .text_color(muted)
+                    .child(row.facts.join(" · ")),
+            )
+        })
+        .children(row.problem.clone().map(|problem| {
+            div()
+                .min_w_0()
+                .h_flex()
+                .gap_1()
+                .text_xs()
+                .text_color(danger)
+                .child(Icon::new(IconName::TriangleAlert).xsmall().flex_none())
+                .child(div().truncate().child(problem))
+        }))
+        .child(
+            Icon::new(match row.open {
+                true => IconName::ChevronUp,
+                false => IconName::ChevronDown,
+            })
+            .small()
+            .text_color(muted)
+            .flex_none(),
+        )
+        .when(!shipped, |head| head.child(more));
+    if !row.open {
+        return head.into_any_element();
+    }
+    // The kind picker is the first field: it decides every field after it.
     let names = div()
         .h_flex()
+        .flex_wrap()
         .gap_4()
         .child(
             div()
-                .flex_1()
-                .child(field("Id", None, text_input(&step.id, cx).tall(), cx)),
+                .flex_none()
+                .child(field("Kind", None, div().h_flex().child(kind_menu), cx)),
         )
-        .child(
-            div()
-                .flex_1()
-                .child(field("Label", None, text_input(&step.label, cx).tall(), cx)),
-        );
+        .child(div().flex_1().min_w(NAME_MIN).child(field(
+            "Id",
+            None,
+            text_input(&step.id, cx).tall().disabled(shipped),
+            cx,
+        )))
+        .child(div().flex_1().min_w(NAME_MIN).child(field(
+            "Label",
+            None,
+            text_input(&step.label, cx).tall().disabled(shipped),
+            cx,
+        )));
 
     let body = match step.kind {
         Kind::Agent => {
@@ -189,7 +318,7 @@ pub(super) fn step_box(
                 .child(field(
                     "Prompt",
                     None,
-                    text_area(&step.prompt, cx).h(PROMPT_H),
+                    text_area(&step.prompt, cx).h(PROMPT_H).disabled(shipped),
                     cx,
                 ))
                 .child(field(
@@ -270,7 +399,7 @@ pub(super) fn step_box(
                     col.child(field(
                         "Command",
                         about("Run by onehand in the work, through sh"),
-                        text_input(&step.command, cx).tall(),
+                        text_input(&step.command, cx).tall().disabled(shipped),
                         cx,
                     ))
                 })
@@ -278,7 +407,7 @@ pub(super) fn step_box(
                     col.child(field(
                         "Wait at most",
                         about("Such as 45m or 2h; passing all, the pull request leaves draft"),
-                        text_input(&step.wait, cx).tall(),
+                        text_input(&step.wait, cx).tall().disabled(shipped),
                         cx,
                     ))
                 })
@@ -287,12 +416,18 @@ pub(super) fn step_box(
         }
     };
 
-    // The kind picker is its first field: it decides every field after it.
-    onehand_plugin_host::card_box(cx)
-        .gap_4()
+    div()
+        .v_flex()
         .child(head)
-        .child(field("Kind", None, div().h_flex().child(kind_menu), cx))
-        .child(names)
-        .child(body)
+        .child(
+            div()
+                .v_flex()
+                .gap_4()
+                .px_3()
+                .pt_2()
+                .pb_4()
+                .child(names)
+                .child(body),
+        )
         .into_any_element()
 }
