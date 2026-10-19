@@ -120,8 +120,6 @@ pub(super) const BUBBLE_TAIL_GAP: Rems = rems(0.125);
 /// short for [`COMMAND_H`]: the heading that says what is asked and the
 /// buttons that answer it have to stay on screen with it.
 pub(super) const COMMAND_SHARE: f32 = 0.5;
-/// The library scrollbar's width, held clear for it beside text it scrolls.
-pub(super) const SCROLLBAR_W: gpui::Pixels = gpui::px(16.);
 /// The fade over the foot of a command box that scrolls on past it.
 pub(super) const COMMAND_FADE: Rems = rems(3.);
 /// Roughly one mono character at the well's own size — what a line number's

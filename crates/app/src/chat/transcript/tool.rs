@@ -1,7 +1,7 @@
 use super::fold_key;
 use super::metrics::{
     COMMAND_FADE, COMMAND_H, COMMAND_SHARE, LARGE_DIFF, MONO_ADVANCE, PREVIEW_DIFF, PREVIEW_OUT,
-    SCROLLBAR_W, TIGHT_GAP,
+    TIGHT_GAP,
 };
 use super::parts::{
     ActivityRow, Object, RowMark, accent, activity_row, copy_button, detail_well, line_counts,
@@ -9,6 +9,7 @@ use super::parts::{
 };
 use crate::chat::session::ChatSession;
 use crate::controls::Quiet as _;
+use crate::tokens::SCROLLBAR_W;
 use gpui::StyledImage as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{

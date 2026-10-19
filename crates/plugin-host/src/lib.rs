@@ -681,8 +681,11 @@ pub fn fold_toggle(
 }
 
 /// A tree's row, as Files and Markdown draw theirs: a list row at
-/// [`tokens::ROW_H`], its content inset [`tokens::ROW_INSET`] and stepped in
+/// [`tokens::ROW_H`], its fill [`tokens::ROW_GUTTER`] off both of the dock's
+/// edges, its content inset [`tokens::ROW_INSET`] and stepped in
 /// [`tokens::TREE_INDENT`] per level, the picked row on the selected fill.
+/// It stretches itself across the tree's column, less the gutter, rather than
+/// taking a width: a full width and a margin would overrun the column.
 /// The caller adds its mark in a [`mark_slot`], its name, and its marks in
 /// one trailing slot.
 pub fn tree_row(
@@ -696,12 +699,14 @@ pub fn tree_row(
         .h_flex()
         .items_center()
         .gap_2()
-        .w_full()
+        .self_stretch()
+        .mx(tokens::ROW_GUTTER)
         .h(tokens::ROW_H)
         .text_sm()
         .pl(gpui::rems(
-            tokens::ROW_INSET.0 + depth as f32 * tokens::TREE_INDENT.0,
+            tokens::ROW_INSET.0 - tokens::ROW_GUTTER.0 + depth as f32 * tokens::TREE_INDENT.0,
         ))
+        .pr(gpui::rems(tokens::ROW_INSET.0 - tokens::ROW_GUTTER.0))
 }
 
 /// A picker's trigger: a button naming what it is set to, then the caret that

@@ -47,6 +47,9 @@ pub(crate) struct MarkdownView {
     /// The mode's width in rems as last laid out. Infinite until measured, so
     /// the first frame draws the two side by side.
     width: onehand_plugin_host::Measured,
+    /// The reader's own width, as last laid out: the document is centred in
+    /// it, so it is measured apart from the mode's.
+    reader_width: onehand_plugin_host::Measured,
     /// Where the drag between the list and the document sits.
     ///
     /// Held here rather than left to the element, for the reason the window's
@@ -97,6 +100,7 @@ impl MarkdownView {
             list_shown: true,
             detail: false,
             width: onehand_plugin_host::unmeasured(),
+            reader_width: onehand_plugin_host::unmeasured(),
             split: cx.new(|_| gpui_component::ResizableState::default()),
             stale: false,
             _scan: None,
@@ -434,6 +438,11 @@ impl MarkdownView {
                 // headings from an absolute pixel value, which is the one thing
                 // that override cannot reach by itself.
                 rem,
+                (
+                    self.reader_width.get(),
+                    measure_width(self.reader_width.clone(), cx.entity().downgrade())
+                        .into_any_element(),
+                ),
                 move |_, window, cx: &mut App| {
                     // Handing it to the editor switches the mode, which is the
                     // honest answer: this one does not edit.

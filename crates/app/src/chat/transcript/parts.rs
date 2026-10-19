@@ -1,9 +1,10 @@
 use super::fold_key;
-use super::metrics::{CARD_PAD, DETAIL_OPEN_H, FOLD_INDENT, SCROLLBAR_W, TEXT_SM, TIGHT_GAP};
+use super::metrics::{CARD_PAD, DETAIL_OPEN_H, FOLD_INDENT, TEXT_SM, TIGHT_GAP};
 use crate::chat::session::ChatSession;
 use crate::controls::Quiet as _;
 use crate::controls::Short as _;
 use crate::tokens::LEADING;
+use crate::tokens::SCROLLBAR_W;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, Axis, ClickEvent, Entity, InteractiveElement, IntoElement, Length, ParentElement, Rems,

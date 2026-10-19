@@ -257,7 +257,6 @@ fn rows(
             // Indent by depth, not by nested containers: a 600-row tree (the
             // core cap) would otherwise be 600 nested elements.
             tree_row(("tree-row", i), row.depth as usize, picked, cx)
-                .pr_2()
                 .child(mark_slot(mark))
                 // The name in the row's own ink, changed or not: the letter at
                 // the end says how it changed.
