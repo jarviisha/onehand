@@ -820,8 +820,8 @@ pub fn choice(
 /// off its edge and parts them by a gap, a step taller than the control it
 /// holds for it.
 ///
-/// `size` is the role's, so a switch sits level with the buttons and inputs
-/// of that role beside it.
+/// `size` is the role's, so its choices stand at the height of that role's
+/// buttons and inputs; the track around them stands a step taller.
 pub fn switch(
     id: &'static str,
     labels: &[SharedString],

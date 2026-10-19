@@ -33,7 +33,7 @@ pub(super) fn open(
 ) {
     let text = prompt.read(cx).value().to_string();
     let editor = cx.new(|cx| TextareaState::new(window, cx).default_value(text));
-    editor.update(cx, |field, cx| field.focus(window, cx));
+    let field = editor.clone();
     let width = crate::dialogs::width_in(window, PROMPT_DIALOG_W);
     window.open_dialog(cx, move |dialog, _, cx| {
         let done = {
@@ -68,7 +68,13 @@ pub(super) fn open(
                 div()
                     .v_flex()
                     .gap_4()
-                    .child(crate::dialogs::title_row(format!("Prompt · {label}"), cx))
+                    .child(crate::dialogs::title_row(
+                        match label.is_empty() {
+                            true => "Prompt".to_string(),
+                            false => format!("Prompt · {label}"),
+                        },
+                        cx,
+                    ))
                     .child(super::form::variables_hint(cx))
                     .child(
                         text_area(&editor, cx)
@@ -78,4 +84,8 @@ pub(super) fn open(
             )
             .footer(footer)
     });
+    // After the dialog is up: it keeps what held the keyboard before it as
+    // where the keyboard goes back to on closing, and takes the keyboard for
+    // itself; the field then takes it from the dialog.
+    field.update(cx, |field, cx| field.focus(window, cx));
 }

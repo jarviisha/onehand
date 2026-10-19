@@ -249,15 +249,21 @@ impl WorkflowsPage {
     /// change to it, so a shipped workflow's open too.
     pub(super) fn edit_open_step(
         &mut self,
-        _: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
         edit: impl FnOnce(&mut WorkflowDraft),
     ) {
         if let Some(draft) = self.draft.as_mut() {
             let was = draft.open_step;
             edit(draft);
-            if draft.open_step.is_some() && draft.open_step != was {
-                self.reveal.ask();
+            let now = draft.open_step;
+            if now != was {
+                if now.is_some() {
+                    self.reveal.ask();
+                }
+                // A field of the step that was open may hold the keyboard,
+                // and it leaves the frame with its step.
+                self.hold_focus(window, cx);
             }
         }
         cx.notify();
