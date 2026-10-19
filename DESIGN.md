@@ -93,7 +93,7 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
 
 - **Two sides.** The user's prompt is the one filled bubble, against the right edge. Everything
   the agent produces starts on a shared left axis and runs bare. Nothing else is right-aligned.
-- **A centred reading column**, narrowed on small panels, read at the chrome's size; what is
+- **A centred reading column**, narrowed on small panels, read at the reading size; what is
   wider scrolls inside its well. A scrollbar runs on the panel's edge down to the composer.
 - **One turn, many blocks**: prose, thoughts, plans, activity clusters (tools only), commands,
   diffs, answered permissions and questions, notices and errors, the files the turn changed,
@@ -132,7 +132,7 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
 |---|---|
 | Meta, hints, counts, a small label | `.text_xs()`, in `muted_foreground` when it is meta |
 | Machine text | `CODE_TEXT`, in `mono_font_family` |
-| Chrome: a panel's rows, boxes and forms | `.text_sm()` |
+| Chrome: a panel's rows, boxes, forms and strips | `CHROME_TEXT` (13px), a step under the reading size |
 | A control's words (`.short()`) | `.text_xs()` |
 | Reading text: the transcript, the composer's field, a document | `.text_sm()`, on the reading leading; the transcript's `TEXT` |
 | The transcript's record: activity, thoughts, notices, a card's question | a step under the reading size, the transcript's `TEXT_SM` (13px) |
@@ -310,7 +310,7 @@ draws on (a radio's or a checkbox's ring on the selected step), `choice_mark` dr
 
 **A size names a role, and the role follows the room the control stands in.** The library's
 sizes disagree across components (its default button letters at the body size beside a field
-at the chrome size), so a control takes one of two heights. On a page, where there is room and
+at `.text_sm()`), so a control takes one of two heights. On a page, where there is room and
 the person reads and types what a control holds, it takes `.tall()`: a page's head and a page's
 form, its fields, pickers and buttons alike, so a field's words stand at its title's size. In
 dense chrome (the rail, a dock, a strip, a filter bar, a dialog, a row, a box's title row, the

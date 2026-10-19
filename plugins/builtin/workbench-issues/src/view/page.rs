@@ -325,7 +325,7 @@ impl IssuesView {
             .v_flex()
             // Chrome, as every page's body is: the rows and the head at the
             // chrome size, the issue's own text at its own.
-            .text_sm()
+            .text_size(onehand_plugin_host::tokens::CHROME_TEXT)
             .child(top)
             .child(
                 // The panel is placed on the list's area, under the toolbar,

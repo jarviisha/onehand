@@ -411,7 +411,7 @@ impl Composer {
                                     .flex_1()
                                     .min_w_0()
                                     .truncate()
-                                    .text_sm()
+                                    .text_size(crate::tokens::CHROME_TEXT)
                                     .when(unavailable, |label| label.text_color(danger))
                                     .child(name),
                             )

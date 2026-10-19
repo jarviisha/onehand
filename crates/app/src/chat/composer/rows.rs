@@ -53,7 +53,7 @@ pub(super) fn popup_row(id: impl Into<gpui::ElementId>, highlighted: bool, cx: &
     crate::controls::action(id)
         .quiet(cx)
         // Not for the geometry, which is set outright below and lands after the
-        // library's. This is what the row's own `text_sm` could not do: the
+        // library's. This is what the row's own text size could not do: the
         // library letters a button from its `Size`, on the box holding the
         // words and so closer to them than anything the call site sets, and
         // with no size named that is a full 1rem -- so these rows were reading
@@ -65,7 +65,7 @@ pub(super) fn popup_row(id: impl Into<gpui::ElementId>, highlighted: bool, cx: &
         .min_w_0()
         .overflow_hidden()
         .px_2()
-        .text_sm()
+        .text_size(crate::tokens::CHROME_TEXT)
         .rounded(cx.theme().radius)
         // No border and no ring, on either state. The library leaves a ghost
         // button's border transparent already, so what is turned off here is

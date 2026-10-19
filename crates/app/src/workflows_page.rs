@@ -154,7 +154,7 @@ impl Render for WorkflowsPage {
                         .gap_6()
                         .w_full()
                         .max_w(crate::tokens::PAGE_PROSE)
-                        .text_sm()
+                        .text_size(crate::tokens::CHROME_TEXT)
                         .child(head(&handle, form.is_some(), cx))
                         .child(list)
                         .children(form),

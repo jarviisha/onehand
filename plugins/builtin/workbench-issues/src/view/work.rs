@@ -69,7 +69,7 @@ pub(super) fn progress_view(
     let step = div()
         .min_w_0()
         .truncate()
-        .text_sm()
+        .text_size(onehand_plugin_host::tokens::CHROME_TEXT)
         .text_color(ink)
         // A space keeps the line's height once no step is open.
         .child(work.step.as_ref().map_or_else(

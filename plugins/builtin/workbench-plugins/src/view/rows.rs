@@ -188,7 +188,7 @@ impl PluginsView {
                             .flex_1()
                             .min_w_0()
                             .truncate()
-                            .text_sm()
+                            .text_size(onehand_plugin_host::tokens::CHROME_TEXT)
                             .child(plugin.name().to_string()),
                     )
                     .children(version)
@@ -499,7 +499,7 @@ impl PluginsView {
                             .flex_1()
                             .min_w_0()
                             .truncate()
-                            .text_sm()
+                            .text_size(onehand_plugin_host::tokens::CHROME_TEXT)
                             .child(plugin.name.clone()),
                     )
                     .child(slot),
