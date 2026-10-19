@@ -438,7 +438,9 @@ fn form_width(window: &Window) -> gpui::Pixels {
     let rem = window.rem_size();
     let frame = gpui_component::window_paddings(window);
     let room = window.viewport_size().width - frame.left - frame.right - rem * LAUNCHER_MARGIN * 2.;
-    (rem * crate::tokens::DIALOG_FORM.0).min(room)
+    (rem * crate::tokens::DIALOG_FORM.0)
+        .min(room)
+        .max(gpui::px(0.))
 }
 
 /// A form's sections, a hairline between each two: what a run is, where it

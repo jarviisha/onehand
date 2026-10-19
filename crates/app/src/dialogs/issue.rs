@@ -201,9 +201,6 @@ fn start_form(
         |name| format!("with {name}"),
     );
     let place = format!("On a new branch, in a worktree of its own, {agent}");
-    // The branch on a line of its own in the mono family, so a long name
-    // neither breaks the sentence above at its slash nor wraps at all; under
-    // it, what it is cut off, as part of where the run works.
     // The branch is machine text, so it stands in a well in the mono family,
     // on a line of its own: a long name neither breaks the sentence above at
     // its slash nor wraps. Under it, what it is cut off.
