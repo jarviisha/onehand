@@ -24,9 +24,6 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-/// The widest a document's column runs: a comfortable line of prose, so a
-/// wide dock does not stretch a paragraph into lines too long to follow.
-const DOC_MEASURE: Rems = rems(34.);
 /// A document's headings on the type scale: `text_lg`, `text_base`, then the
 /// body's own size, so a deep heading is told apart by weight. The renderer
 /// asks a size of each level and keeps its own weights.
@@ -327,7 +324,11 @@ pub(crate) fn reader(
                 .child(
                     div()
                         .h_full()
-                        .max_w(DOC_MEASURE)
+                        // The column for one thing read in full: the
+                        // freed width a hidden list leaves is taken up to it,
+                        // and a maximized dock stops short of lines too long
+                        // to follow.
+                        .max_w(tokens::PAGE_PROSE)
                         .text_sm()
                         .line_height(relative(tokens::LEADING))
                         .child(
@@ -336,6 +337,9 @@ pub(crate) fn reader(
                                 // Virtualized: a long document draws the rows
                                 // on screen rather than all of it.
                                 .scrollable(true)
+                                // The scrollbar is drawn over the view's own
+                                // edge; the words stop short of it.
+                                .pr(tokens::SCROLLBAR_W)
                                 .style(doc_style(rem, cx)),
                         ),
                 )

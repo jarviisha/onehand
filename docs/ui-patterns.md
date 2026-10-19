@@ -74,8 +74,9 @@ A boundary is drawn once: no line along a change of surface, no edge doubled by 
 | Form fields | `gap_4` |
 | Page sections; page outer padding | `gap_6`; `px_8` `py_6` |
 | A list page's inset | `px_6` |
-| A tree row's inset; its step per level | `tokens::ROW_INSET`; `tokens::TREE_INDENT` |
+| A tree row's inset; its fill off the dock's edges; its step per level | `tokens::ROW_INSET`; `tokens::ROW_GUTTER`; `tokens::TREE_INDENT` |
 | A live grid (the terminal, Neovim) | `px_3` `py_2` |
+| Text beside the library's scrollbar | `tokens::SCROLLBAR_W` on the scrolling side, so the thumb never lies over words |
 
 Smaller steps are for component internals; the largest step is for a deliberate major grouping,
 not a second page-padding convention. Use the named pattern's defaults before another legal step.
@@ -265,7 +266,10 @@ Boxes sit side by side while the measured column holds two, and stack when it do
 ### Lists
 
 A single-line row is `ROW_H` tall, padded `px_2` with `gap_2`, at `radius`. Hover fills it with
-`list_hover`, the selected row with `accent`. A row's own actions are ghost buttons at their control sizes, shown
+`list_hover`, the selected row with `accent`. A row standing on a region's bare surface, with no
+frame of its own around the list, keeps those fills off that region's edges: a tree in a dock by
+`tokens::ROW_GUTTER`, any other list in a dock by its own padding, a list page by its inset. Rows
+inside a box are the box's parts: their fills run to its edge, as the hairlines between them do. A row's own actions are ghost buttons at their control sizes, shown
 on hover, on the selected row, on keyboard focus and while their action runs. Every list has a named cap. Its last line, in meta
 text, says why the list is short: a list the cap cut says how many more there are (*N more*); a
 list a search or a filter narrows says how many it shows of how many there are (*Showing N of
@@ -297,7 +301,9 @@ than with a fill, which would break the reading column into tiles. Their actions
 
 `list_detail` sets a list beside its detail while the measured container holds both widths; else
 it shows one at a time, the detail under a `back_link` naming the list. Picking shows the detail;
-going back keeps the list's place.
+going back keeps the list's place. A detail read as prose (a Markdown document) runs up to
+`PAGE_PROSE` from its start edge, so hiding the list widens it rather than leaving the freed width
+empty.
 
 ### Forms
 

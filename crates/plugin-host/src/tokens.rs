@@ -5,7 +5,7 @@
 //! plugin, which cannot reach into the binary hosting it — and two copies of
 //! one number are two places for it to drift.
 
-use gpui::{App, BoxShadow, Rems, rems};
+use gpui::{App, BoxShadow, Pixels, Rems, px, rems};
 use gpui_component::ActiveTheme as _;
 
 /// The height every bar along the top of a region shares: the conversation's
@@ -47,7 +47,17 @@ pub const CORNER: usize = 4;
 /// Where a tree row's content starts from a dock's edge, and how far each
 /// level of the tree steps in: Files and Markdown share both, so their trees
 /// stand on one axis.
-pub const ROW_INSET: Rems = rems(0.5);
+pub const ROW_INSET: Rems = rems(0.75);
+
+/// How far a tree row's fill stands off the dock's edges, so a hovered or
+/// picked row reads as a block inside the dock rather than a band across it.
+/// Inside [`ROW_INSET`], which leaves the words a row's own inset from the fill.
+pub const ROW_GUTTER: Rems = rems(0.25);
+
+/// The room held clear beside text the library's scrollbar scrolls, so the
+/// thumb never lies over the words. In pixels, as the library draws the thumb:
+/// its width and inset do not follow a panel's zoom, so neither does this.
+pub const SCROLLBAR_W: Pixels = px(16.);
 pub const TREE_INDENT: Rems = rems(0.875);
 
 /// Machine text: code, a command, a tool's output, a path.
