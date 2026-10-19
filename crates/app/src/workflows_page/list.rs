@@ -138,8 +138,11 @@ pub(super) fn list_column(
     }
 
     // No box around it: the column is the list, the split's hairline its edge.
+    // Its rows part by a gap, so a hovered row's fill never runs into the
+    // picked one's.
     let rows = div()
         .v_flex()
+        .gap_0p5()
         .w_full()
         .when(!own.is_empty(), |list| {
             list.child(slot("Yours")).children(own)

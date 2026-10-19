@@ -26,8 +26,9 @@ const DOT: gpui::Rems = gpui::rems(1.375);
 /// Where the rail runs: through the dots' centres.
 const RAIL_X: gpui::Rems = gpui::rems(0.6875);
 
-/// Half a step's line: where the rail meets a dot's centre.
-const RAIL_JOIN: gpui::Rems = gpui::rems(1.125);
+/// Where the rail meets a dot's centre: the line's gutter above it, then
+/// half the line.
+const RAIL_JOIN: gpui::Rems = gpui::rems(1.25);
 
 /// The least a step's id or label takes before the line wraps under the kind.
 const NAME_MIN: gpui::Rems = gpui::rems(10.);
@@ -251,8 +252,11 @@ fn step_row(
             .gap_2()
             .when(i > 0, |line| line.child(half().top_0().h(RAIL_JOIN)))
             .when(!last, |line| line.child(half().top(RAIL_JOIN).bottom_0()))
-            .child(dot)
-            .child(div().flex_1().min_w_0().v_flex().child(content))
+            // A gutter above and below each line, inside the step's own
+            // height so the rail runs on through it: the open step's fill and
+            // a hovered neighbour's never touch.
+            .child(div().flex_none().py_0p5().child(dot))
+            .child(div().flex_1().min_w_0().py_0p5().v_flex().child(content))
             .into_any_element()
     };
     step_line(head.into_any_element())
