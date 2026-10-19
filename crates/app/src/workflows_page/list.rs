@@ -171,10 +171,12 @@ pub(super) fn list_column(
             list.child(slot("Reading the workflows…"))
         });
 
+    // Under the header by the gap the Issues page leaves above its toolbar.
     div()
         .v_flex()
+        .pt_3()
         .gap_6()
-        .child(head(handle, picked.is_some(), cx))
+        .child(div().px_2().child(head(handle, picked.is_some(), cx)))
         .child(rows)
         .into_any_element()
 }

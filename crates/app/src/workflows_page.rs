@@ -165,7 +165,9 @@ impl Render for WorkflowsPage {
             .overflow_y_scroll()
             // Clear of the pane's header, which floats over the page's top.
             .pt(crate::tokens::BAR_H)
-            .px_4()
+            // The rows' fills on this edge and their words a row's inset in,
+            // on the line the header's words stand on, as on the Issues page.
+            .px_6()
             .pb_6()
             .child(list::list_column(
                 &handle,
@@ -175,6 +177,9 @@ impl Render for WorkflowsPage {
                 cx,
             ));
         let detail = |under_header: bool| {
+            // Only the hint stands in the middle of the region; a form starts
+            // at its top, level with the list's head.
+            let mut centred = false;
             let body = match &self.draft {
                 Some(draft) => form::form(&handle, draft, self.writing, &self.run_choices(), cx),
                 None => match self.picked_entry(cx) {
@@ -182,10 +187,13 @@ impl Render for WorkflowsPage {
                         template: Err(why),
                         file: Some(file),
                     }) => form::unreadable(&handle, &why, &file, cx),
-                    _ => onehand_plugin_host::hint(
-                        "Pick a workflow to see and change it, or make a new one",
-                        cx,
-                    ),
+                    _ => {
+                        centred = true;
+                        onehand_plugin_host::hint(
+                            "Pick a workflow to see and change it, or make a new one",
+                            cx,
+                        )
+                    }
                 },
             };
             // Centred up to the column a form is read in, its gutters equal,
@@ -198,6 +206,7 @@ impl Render for WorkflowsPage {
                     div()
                         .h_flex()
                         .justify_center()
+                        .when(!centred, |column| column.items_start())
                         .when(under_header, |column| column.pt(crate::tokens::BAR_H))
                         .when(!under_header, |column| column.pt_6())
                         .px_8()
@@ -206,6 +215,7 @@ impl Render for WorkflowsPage {
                         .child(
                             div()
                                 .v_flex()
+                                .when(under_header, |column| column.pt_3())
                                 .w_full()
                                 .max_w(crate::tokens::PAGE_PROSE)
                                 .child(body),
