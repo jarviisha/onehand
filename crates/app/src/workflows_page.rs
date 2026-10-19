@@ -319,9 +319,7 @@ impl Render for WorkflowsPage {
                         // region's sides, its top corners rounded, lifted by a
                         // shadow cast upward, on the page's own surface, so it
                         // is the lift and the edges that part it, not a second
-                        // fill. Its sides take a control's edge and its top the
-                        // primary ink, drawn as a line of its own since one
-                        // element takes one edge colour.
+                        // fill, its edge a control's.
                         .mx_3()
                         .v_flex()
                         .rounded_t(cx.theme().radius)
@@ -331,13 +329,6 @@ impl Render for WorkflowsPage {
                         .bg(cx.theme().background)
                         .shadow(onehand_plugin_host::tokens::lift_up(cx))
                         .overflow_hidden()
-                        .child(
-                            div()
-                                .flex_none()
-                                .w_full()
-                                .border_t_2()
-                                .border_color(cx.theme().primary),
-                        )
                         .child(
                             div()
                                 .id("step-drawer")
