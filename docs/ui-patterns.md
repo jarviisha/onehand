@@ -309,8 +309,9 @@ it shows one at a time, the detail under a `back_link` naming the list. Picking 
 going back keeps the list's place. A detail read as prose (an issue, a Markdown document) is a
 column up to `PAGE_PROSE`, centred with equal gutters, so hiding the list widens it rather than
 leaving the freed width empty; its scroll spans the detail, the scrollbar on the detail's edge.
-A page set this way (Workflows) holds the list in a column the pane's height, parted from the
-detail by the split's hairline; nothing is picked on arrival, the detail a centred `hint` saying
+A page set this way (Workflows) holds the list in a column the pane's whole height, in no box,
+parted from the detail by the split's hairline from the pane's top edge to its bottom, the pane's
+header floating over both with no fill; nothing is picked on arrival, the detail a centred `hint` saying
 what to pick; picking another item over unsaved changes asks first, *Keep* leaving the first
 picked; ↑ and ↓ step the list, opening what they reach, never while a field holds the caret.
 

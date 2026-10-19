@@ -137,9 +137,10 @@ pub(super) fn list_column(
         }
     }
 
-    let rows = crate::chat::pane::page_parts::card_box(cx)
+    // No box around it: the column is the list, the split's hairline its edge.
+    let rows = div()
+        .v_flex()
         .w_full()
-        .gap_0()
         .when(!own.is_empty(), |list| {
             list.child(slot("Yours")).children(own)
         })

@@ -151,7 +151,7 @@ height (its dragged height kept).
   draws it.
 - *Workflows*: a list beside its editor. The list, a column of its own, opens on a head cut down
   to it (*Workflows*, how many under it, *New*, its primary, and a ⋯ holding *Import…*), then the
-  workflows in one box as rows, the person's own under *Yours* and the shipped under *Built in*,
+  workflows as rows in no box, the split's hairline running the pane's whole height beside them, the person's own under *Yours* and the shipped under *Built in*,
   a row its name alone (*Cannot be read* under it in the warning ink when it is so), capped, a
   new workflow not saved yet an *Untitled* row at the top of *Yours*. Nothing is picked on
   arrival: beside the list, *Pick a workflow to see and change it, or make a new one*. Picking a

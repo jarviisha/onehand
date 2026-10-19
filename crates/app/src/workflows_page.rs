@@ -27,6 +27,7 @@ gpui::actions!(
     [CloseWorkflowForm, WorkflowsUp, WorkflowsDown]
 );
 
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, AppContext as _, ClickEvent, Context, Entity, EventEmitter, FocusHandle, Focusable,
     InteractiveElement as _, IntoElement, ParentElement, Render, SharedString,
@@ -162,8 +163,10 @@ impl Render for WorkflowsPage {
             .id("workflows-list")
             .size_full()
             .overflow_y_scroll()
+            // Clear of the pane's header, which floats over the page's top.
+            .pt(crate::tokens::BAR_H)
             .px_4()
-            .py_6()
+            .pb_6()
             .child(list::list_column(
                 &handle,
                 self.picked.as_ref(),
@@ -171,7 +174,7 @@ impl Render for WorkflowsPage {
                 &self.rows,
                 cx,
             ));
-        let detail = || {
+        let detail = |under_header: bool| {
             let body = match &self.draft {
                 Some(draft) => form::form(&handle, draft, self.writing, &self.run_choices(), cx),
                 None => match self.picked_entry(cx) {
@@ -195,8 +198,10 @@ impl Render for WorkflowsPage {
                     div()
                         .h_flex()
                         .justify_center()
+                        .when(under_header, |column| column.pt(crate::tokens::BAR_H))
+                        .when(!under_header, |column| column.pt_6())
                         .px_8()
-                        .py_6()
+                        .pb_6()
                         .min_h_full()
                         .child(
                             div()
@@ -225,7 +230,7 @@ impl Render for WorkflowsPage {
                                 .child(list),
                         ),
                 )
-                .child(resizable_panel().child(detail()))
+                .child(resizable_panel().child(detail(true)))
                 .into_any_element()
         } else if self.picked.is_some() {
             let back = back_link("workflows-back", "Workflows", cx)
@@ -235,8 +240,8 @@ impl Render for WorkflowsPage {
             div()
                 .size_full()
                 .v_flex()
-                .child(div().px_8().pt_4().child(back))
-                .child(div().flex_1().min_h_0().child(detail()))
+                .child(div().px_8().pt(crate::tokens::BAR_H).child(back))
+                .child(div().flex_1().min_h_0().child(detail(false)))
                 .into_any_element()
         } else {
             list.into_any_element()
