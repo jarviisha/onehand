@@ -341,7 +341,10 @@ fn step_row(
                 .child(field(
                     "Prompt",
                     None,
-                    text_area(&step.prompt, cx).h(PROMPT_H).disabled(shipped),
+                    onehand_plugin_host::contained_scroll(
+                        ("step-prompt", i),
+                        text_area(&step.prompt, cx).h(PROMPT_H).disabled(shipped),
+                    ),
                     cx,
                 ))
                 .child(field(
