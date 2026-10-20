@@ -149,31 +149,45 @@ height (its dragged height kept).
   read lands; *Refresh* spins while it reads. *No issues yet* or *No issues match* when empty.
 - The **review block** opens below where the work stands only on *Review…*, as `docs/unattended.md`
   draws it.
-- *Workflows*: a list beside its editor. The list, a column of its own, opens on a head cut down
-  to it (*Workflows*, how many under it, *New*, its primary, and a ⋯ holding *Import…*), then the
-  workflows as rows in no box, the split's hairline running the pane's whole height beside them, the person's own under *Yours* and the shipped under *Built in*,
-  a row its name alone (*Cannot be read* under it in the warning ink when it is so), capped, a
-  new workflow not saved yet an *Untitled* row at the top of *Yours*. Nothing is picked on
-  arrival: beside the list, *Pick a workflow to see and change it, or make a new one*. Picking a
-  row opens it beside the list: a head (its name, how many steps and where it works under it,
-  *Run…*, which refuses until it is saved, and a ⋯ with *Duplicate*, *Export…* and *Delete…*), then
-  three groups under headings, *About* (name and description), *How it runs* (where it works,
-  misses allowed, timeout) and *Steps*, the one group in a box, as it decides what a run
-  does (its count and *Add step* with its menu of kinds on its title row, what a prompt may use,
-  the steps down a rail), then the problems (a name clash among them) above *Save*,
-  which refuses with the first and spins while it writes, and *Cancel*. A step reads as a
-  numbered dot on a rail that joins it to the next (the open one's dot filled), then its name,
-  its kind, where its failure goes back to (*on failure ↑ N*), and its first problem; one step
-  opens at a time, its line marked as picked, in a drawer docked under the form: a sheet inset from the editor's sides, its top
-  corners rounded and edged as a control is, lifted by a shadow cast upward, on the
-  page's own surface, as tall as the step's fields up to most of the editor's height, the form above scrolled so the open
-  step's line stands just clear of the drawer's edge. The drawer's head names the step (*Step N ·
-  its name*, its kind) and steps to the one before or after (↑ and ↓ too) or closes it (Esc closes it
-  before the form); then its kind, id and label on one line, then its kind's fields (an agent step's prompt
+- *Workflows*: a column page as wide as boxes side by side, holding the workflows as cards. Its
+  head reads *Workflows*, how many under it, *New*, its one primary, and a ⋯ holding *Import…*;
+  under it a search, matching a workflow's name and description, kept while the page is left.
+  The cards stand under *Yours* (the person's own) and *Built in* (the shipped), four to a row
+  while the page holds them and fewer as it narrows, down to one. A card is a box: the
+  workflow's name, its description cut at two lines, a short mark per step in its kind's ink (an
+  agent's turn the accent, a command muted, an approval warning, what goes to the forge success),
+  and a foot with where it works and how many steps, *Run…* and a ⋯ (*Duplicate* and *Export…*
+  on any that reads, *Delete…* on the person's own). An unreadable one names its file and says
+  *Cannot be read: …* in the warning ink, its ⋯ holding *Delete…* alone. Hover raises a card's
+  edge and never fills it; the keyboard rings it, and Enter opens it, as pressing its body does.
+  *Run…*, *Export…* and *Delete…* act from the card; *Duplicate* opens the copy. The grid is
+  capped and says so; while the search narrows it, *Showing N of M workflows*, or *No workflows
+  match*.
+
+  A card opens its workflow on a page of its own: *Workflows* (back) over its head (its name, how
+  many steps and where it works under it, *Run…*, which refuses until it is saved, a ⋯ with
+  *Duplicate*, *Export…* and *Delete…*, then *Cancel* and *Save*, the head's primary, which
+  refuses with the first problem and spins while it writes), then three columns parted by hairlines, each scrolling
+  apart. The first holds the workflow's own fields: *About* (name and description), *How it runs*
+  (where it works, a picker naming the choice over a menu of both; misses allowed; timeout), each
+  pair of fields stacking where the column cannot hold both, then what a prompt may use. The second holds *Steps*, in a box, as it decides what a run does: its count and
+  *Add step* with its menu of kinds on its title row, then the steps down a rail. A step reads
+  as a numbered dot on a rail that joins it to the next (the open one's dot filled), then its
+  name, its kind, where its failure goes back to (*on failure ↑ N*), and its first problem; its
+  line's ⋯ moves or removes it. The third holds the one step open, its line marked as picked:
+  its head names it (*Step N · its name*, its kind) and steps to the one before or after (↑ and
+  ↓ too, never while a field holds the caret) or closes it (Esc closes it before the editor);
+  then its kind, id and label on one line, then its kind's fields (an agent step's prompt
   growing with what is written, *Write larger…* under it opening it in a dialog the width of a
-  page, with what a prompt may use, *Cancel* and *Done*). Its line's ⋯ moves or removes it. A shipped workflow opens read-only, *Duplicate to
-  edit* its primary, with no *Save*; an unreadable file of the person's own opens why, with
-  *Delete…*.
+  page, with what a prompt may use, *Cancel* and *Done*). With none open it says *Pick a step to
+  change it*. Where the three do not fit, the first two stack into one column; where two do not
+  either, the steps stand alone and an open step takes their place under *Steps* (back). Going
+  back to the cards over unsaved changes asks first. Along the page's foot, the whole width,
+  stands what the editor has to tell: the problems (a name clash among them), each a line, on the
+  danger tint led by the warning mark, from the first change on; or, on a shipped workflow, *Built
+  in, read-only: duplicate it to change it* on the accent's tint led by the info mark. A shipped
+  workflow opens read-only, *Duplicate to edit* its primary, with no *Save* or *Cancel*; an unreadable file of the person's own opens
+  why, with *Delete…*.
 
 ## Settings
 

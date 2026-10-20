@@ -479,7 +479,7 @@ mod tests {
             ),
             Some(CompletionPrev.name().into())
         );
-        // The Workflows page's arrows step its step drawer, never the
+        // The Workflows page's arrows step its open step, never the
         // composer's suggestions nor a field's caret.
         assert_eq!(
             action_at(&map, "up", &["Shell", "Chat", "WorkflowsPage"]),
@@ -487,6 +487,12 @@ mod tests {
         );
         assert_eq!(
             action_at(&map, "up", &["Shell", "Chat", "WorkflowsPage", "Input"]),
+            None
+        );
+        // Enter is left to the page's focused element: a card opens on it, as
+        // a button presses on it, which a binding here would swallow.
+        assert_eq!(
+            action_at(&map, "enter", &["Shell", "Chat", "WorkflowsPage"]),
             None
         );
         assert_eq!(

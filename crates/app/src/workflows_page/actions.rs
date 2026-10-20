@@ -25,19 +25,34 @@ impl WorkflowsPage {
         self.open_workflow_form(template, None, window, cx);
     }
 
-    /// Open the form on a copy of the workflow open, to be saved as a new one.
-    pub(crate) fn duplicate_open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(mut template) = self.draft.as_ref().map(|d| d.original.clone()) else {
+    /// The entry `pick` names, as last read.
+    fn entry_of(&self, pick: &Pick, cx: &gpui::App) -> Option<crate::workflow::Entry> {
+        let entries = crate::workflow::templates(cx);
+        let at = pick::repick(&entries, pick)?;
+        entries.get(at).cloned()
+    }
+
+    /// Open the form on a copy of the workflow `pick` names, as last saved,
+    /// to be saved as a new one; the new one being written is copied as it
+    /// was opened.
+    pub(super) fn duplicate(&mut self, pick: &Pick, window: &mut Window, cx: &mut Context<Self>) {
+        let template = match pick {
+            Pick::New => self.draft.as_ref().map(|d| d.original.clone()),
+            _ => self
+                .entry_of(pick, cx)
+                .and_then(|entry| entry.template.ok()),
+        };
+        let Some(mut template) = template else {
             return;
         };
         template.name = format!("{} copy", template.name);
         self.open_workflow_form(template, None, window, cx);
     }
 
-    /// Ask where to, then write the workflow open, as saved, to a file of
-    /// the person's choosing, shipped ones included.
-    pub(crate) fn export_open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(entry) = self.picked_entry(cx) else {
+    /// Ask where to, then write the workflow `pick` names, as saved, to a
+    /// file of the person's choosing, shipped ones included.
+    pub(super) fn export(&mut self, pick: &Pick, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(entry) = self.entry_of(pick, cx) else {
             return;
         };
         let Ok(template) = entry.template else {
@@ -104,12 +119,10 @@ impl WorkflowsPage {
 
     /// The entry the page has picked, as last read.
     pub(super) fn picked_entry(&self, cx: &gpui::App) -> Option<crate::workflow::Entry> {
-        let entries = crate::workflow::templates(cx);
-        let at = pick::repick(&entries, self.picked.as_ref()?)?;
-        entries.get(at).cloned()
+        self.entry_of(self.picked.as_ref()?, cx)
     }
 
-    /// Open `pick` beside the list, asking first when the form holds changes
+    /// Open `pick` on the page, asking first when the form holds changes
     /// not saved. A shipped workflow opens read-only; one of the person's
     /// own that cannot be read opens no form, only why.
     pub(super) fn pick(&mut self, pick: Pick, window: &mut Window, cx: &mut Context<Self>) {
@@ -137,7 +150,7 @@ impl WorkflowsPage {
         );
     }
 
-    /// Open the step `by` steps from the one open in the drawer, held at the
+    /// Open the step `by` steps from the one open, held at the
     /// first and the last; nothing while no step is open.
     pub(super) fn step_open(&mut self, by: isize, window: &mut Window, cx: &mut Context<Self>) {
         self.edit_open_step(window, cx, |d| {
@@ -182,7 +195,7 @@ impl WorkflowsPage {
         window.focus(&self.focus_handle, cx);
     }
 
-    /// Esc: the innermost thing open goes, the step drawer before the form.
+    /// Esc: the innermost thing open goes, the open step before the editor.
     pub(super) fn escape(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(draft) = self.draft.as_mut().filter(|d| d.open_step.is_some()) {
             draft.open_step = None;
@@ -236,11 +249,7 @@ impl WorkflowsPage {
     ) {
         // A shipped workflow is read, never changed: duplicating it is how.
         if let Some(draft) = self.draft.as_mut().filter(|d| !d.shipped) {
-            let was = draft.open_step;
             edit(draft, window, cx);
-            if draft.open_step.is_some() && draft.open_step != was {
-                self.reveal.ask();
-            }
         }
         cx.notify();
     }
@@ -258,9 +267,6 @@ impl WorkflowsPage {
             edit(draft);
             let now = draft.open_step;
             if now != was {
-                if now.is_some() {
-                    self.reveal.ask();
-                }
                 // A field of the step that was open may hold the keyboard,
                 // and it leaves the frame with its step.
                 self.hold_focus(window, cx);
@@ -342,9 +348,14 @@ impl WorkflowsPage {
         .detach();
     }
 
-    /// Ask, then delete the person's own workflow open, read or not.
-    pub(crate) fn confirm_delete_open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(entry) = self.picked_entry(cx) else {
+    /// Ask, then delete the person's own workflow `pick` names, read or not.
+    pub(super) fn confirm_delete(
+        &mut self,
+        pick: &Pick,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(entry) = self.entry_of(pick, cx) else {
             return;
         };
         let Some(file) = entry.file.clone() else {

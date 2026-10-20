@@ -42,11 +42,10 @@ pub(super) struct Earlier {
 
 /// The steps as a run, read down a rail: a numbered dot each, joined to the
 /// next, then its name, its kind and what it does on failure, read without
-/// opening it; the one open is marked, its fields in the drawer under the form.
+/// opening it; the one open is marked, its fields in the column beside.
 pub(super) fn steps_box(
     handle: &Entity<WorkflowsPage>,
     draft: &WorkflowDraft,
-    reveal: &super::Reveal,
     cx: &App,
 ) -> AnyElement {
     let specs: Vec<_> = draft.steps.iter().map(|step| step.to_spec(cx)).collect();
@@ -60,7 +59,7 @@ pub(super) fn steps_box(
             facts: step_facts(i, &specs),
             problem: problems[i].clone(),
         };
-        step_row(handle, &row, step, reveal, cx)
+        step_row(handle, &row, step, cx)
     });
     div().v_flex().w_full().children(rows).into_any_element()
 }
@@ -76,12 +75,11 @@ struct StepRow {
 }
 
 /// One step's line on the rail: its dot, its name, its kind and what it does
-/// on failure; the one open in the drawer marked.
+/// on failure; the one open beside marked.
 fn step_row(
     handle: &Entity<WorkflowsPage>,
     row: &StepRow,
     step: &StepDraft,
-    reveal: &super::Reveal,
     cx: &App,
 ) -> AnyElement {
     let (i, last, shipped, open) = (row.i, row.last, row.shipped, row.open);
@@ -149,7 +147,7 @@ fn step_row(
         .px_2()
         .rounded(cx.theme().radius)
         .cursor_pointer()
-        // The step open in the drawer below is marked as a picked row is.
+        // The step open beside is marked as a picked row is.
         .map(|row| match open {
             true => row
                 .bg(cx.theme().accent)
@@ -159,9 +157,6 @@ fn step_row(
         .on_click(click(handle, move |page, window, cx| {
             page.edit_open_step(window, cx, |d| d.toggle_step(i))
         }))
-        // The open step's line reports where it landed, so the page can keep
-        // it in view above the drawer.
-        .when(open, |head| head.relative().child(reveal.watch()))
         .child(div().min_w_0().truncate().font_medium().child(name.clone()))
         .child(
             onehand_plugin_host::badge(
@@ -262,17 +257,19 @@ fn step_row(
     step_line(head.into_any_element())
 }
 
-/// The drawer the open step's fields stand in, under the form: its head
+/// The column the open step's fields stand in, beside the steps: its head
 /// names the step, steps to the one before or after, and closes it; then
-/// the step's kind, id and label, and its kind's own fields. `None` while no
-/// step is open.
-pub(super) fn step_drawer(
+/// the step's kind, id and label, and its kind's own fields. While no step
+/// is open it says what to pick.
+pub(super) fn step_panel(
     handle: &Entity<WorkflowsPage>,
     draft: &WorkflowDraft,
     place: Place,
     cx: &App,
-) -> Option<AnyElement> {
-    let i = draft.open_step.filter(|i| *i < draft.steps.len())?;
+) -> AnyElement {
+    let Some(i) = draft.open_step.filter(|i| *i < draft.steps.len()) else {
+        return onehand_plugin_host::hint("Pick a step to change it", cx);
+    };
     let step = &draft.steps[i];
     let shipped = draft.shipped;
     let last = i + 1 == draft.steps.len();
@@ -364,7 +361,7 @@ pub(super) fn step_drawer(
         )
         .child(div().flex_1())
         .child(go(
-            "step-drawer-up",
+            "step-panel-up",
             IconName::ChevronUp,
             "The step before",
             &super::WorkflowStepUp,
@@ -372,7 +369,7 @@ pub(super) fn step_drawer(
             (i == 0).then_some("This is the first step"),
         ))
         .child(go(
-            "step-drawer-down",
+            "step-panel-down",
             IconName::ChevronDown,
             "The step after",
             &super::WorkflowStepDown,
@@ -380,7 +377,7 @@ pub(super) fn step_drawer(
             last.then_some("This is the last step"),
         ))
         .child(go(
-            "step-drawer-close",
+            "step-panel-close",
             IconName::Close,
             "Close the step",
             &super::CloseWorkflowForm,
@@ -591,13 +588,11 @@ pub(super) fn step_drawer(
         }
     };
 
-    Some(
-        div()
-            .v_flex()
-            .gap_4()
-            .child(head)
-            .child(names)
-            .child(body)
-            .into_any_element(),
-    )
+    div()
+        .v_flex()
+        .gap_4()
+        .child(head)
+        .child(names)
+        .child(body)
+        .into_any_element()
 }

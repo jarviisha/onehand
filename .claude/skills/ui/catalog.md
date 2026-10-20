@@ -107,6 +107,7 @@ need migrating itself.
 | The facts about one thing on a page | Box | `card_box` (plugin host); `page_card`, `card_title`, `page_section` and `pair` in `crates/app/src/chat/pane/page_parts.rs` |
 | A bar along the top of a region | Strip | `strip` and `strip_control` (plugin host) |
 | Rows to pick from | List | the Files tree, `plugins/builtin/workbench-files/src/view.rs` |
+| Items opened one at a time, each with its own actions | Grid of boxes | `grid_page` in `crates/app/src/workflows_page/grid.rs` |
 | A list beside its detail | List and detail | `list_detail` in `crates/plugin-host/src/list_detail.rs`; the Markdown mode |
 | Inputs and a submit | Form | `field` in `crates/app/src/settings.rs`; the Workflows form |
 | A modal question or form | Dialog | `crates/app/src/dialogs.rs` |

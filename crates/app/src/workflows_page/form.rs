@@ -1,20 +1,15 @@
 mod head;
 
-pub(super) use head::unreadable;
+pub(super) use head::{editor_head, more_menu, run_menu, unreadable};
 
 use super::WorkflowsPage;
-use super::click;
 use super::draft::Kind;
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
 use crate::controls::Short as _;
 use crate::controls::text_input;
 use crate::settings::{about, field, section};
-use gpui::prelude::FluentBuilder as _;
-use gpui::{
-    AnyElement, App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div,
-};
-use gpui_component::button::ButtonVariants;
+use gpui::{AnyElement, App, Entity, IntoElement, ParentElement, Styled, Window, div};
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::workflow::Place;
 use onehand_plugin_host::Tall as _;
@@ -23,37 +18,51 @@ use onehand_plugin_host::Tall as _;
 /// readable beside its neighbour, or goes under it.
 const PAIR_MIN: gpui::Rems = gpui::rems(14.);
 
-/// The editor: its head, then the workflow's fields in three groups (what
-/// it is, how it runs, its steps), then what is wrong with it and *Save*.
-pub(super) fn form(
+/// The editor's workflow column: what it is and how it runs, and what a
+/// prompt may use.
+pub(super) fn workflow_column(
     handle: &Entity<WorkflowsPage>,
     draft: &super::WorkflowDraft,
-    writing: bool,
-    choices: &[(std::path::PathBuf, SharedString)],
-    reveal: &super::Reveal,
     cx: &App,
 ) -> AnyElement {
-    // What is wrong with it, said above *Save* before the press: a name
-    // another workflow has is one of them, since the launcher lists them by
-    // name.
-    let mut problems = draft.problems(cx);
-    problems.extend(super::actions::name_clash(draft, cx));
-    let danger = crate::theme::status_ink(cx).danger;
     // A shipped workflow is read, never saved: it is changed by duplicating it.
     let shipped = draft.shipped;
     let place = draft.place;
-    let places: Vec<SharedString> = Place::ALL.iter().map(|p| p.label().into()).collect();
-    let place_at = Place::ALL.iter().position(|p| *p == place).unwrap_or(0);
-    let pick_place = {
-        let handle = handle.clone();
-        move |at: &usize, window: &mut Window, cx: &mut App| {
-            let place = Place::ALL[*at];
-            handle.update(cx, |page, cx| {
-                page.edit_workflow_draft(window, cx, |d, _, _| d.place = place)
-            });
+    // Where it works, picked from a menu under a picker naming the choice:
+    // the column is too narrow for both choices side by side. A shipped
+    // workflow's refuses, as its fields are disabled.
+    let place_picker = {
+        let trigger = onehand_plugin_host::picker(
+            "workflow-place-trigger",
+            place.label(),
+            true,
+            onehand_plugin_host::ControlSize::Tall,
+            cx,
+        );
+        if shipped {
+            trigger
+                .refuses(Some("Built in: duplicate it to change it".to_string()))
+                .into_any_element()
+        } else {
+            let handle = handle.clone();
+            crate::controls::menu_below("workflow-place", trigger, move |mut menu, _, _| {
+                for choice in Place::ALL {
+                    let handle = handle.clone();
+                    menu = menu.item(
+                        crate::controls::menu_item(choice.label())
+                            .checked(choice == place)
+                            .on_click(move |_, window: &mut Window, cx: &mut App| {
+                                handle.update(cx, |page, cx| {
+                                    page.edit_workflow_draft(window, cx, |d, _, _| d.place = choice)
+                                });
+                            }),
+                    );
+                }
+                menu
+            })
+            .into_any_element()
         }
     };
-    let steps = super::step::steps_box(handle, draft, reveal, cx);
     let input = |state: &Entity<gpui_component::input::InputState>| {
         text_input(state, cx).tall().disabled(shipped)
     };
@@ -86,34 +95,55 @@ pub(super) fn form(
                 "In the checkout leaves the change uncommitted for you; a new worktree gets a \
                  branch of its own, and the work is committed there",
             ),
-            onehand_plugin_host::switch(
-                "workflow-place",
-                &places,
-                place_at,
-                onehand_plugin_host::ControlSize::Tall,
-                pick_place,
-                cx,
-            ),
+            div().h_flex().child(place_picker),
             cx,
         ))
         .child(
+            // A pair as *About*'s is: side by side where the column holds
+            // both, one under the other where it does not.
             div()
                 .h_flex()
                 .items_end()
+                .flex_wrap()
                 .gap_4()
-                .child(div().flex_1().child(field(
-                    "Misses allowed",
-                    about("Turns that fail their gates before the run stops"),
-                    input(&draft.misses),
-                    cx,
-                )))
-                .child(div().flex_1().child(field(
-                    "Timeout",
-                    about("Working time, such as 45m or 2h"),
-                    input(&draft.timeout),
-                    cx,
-                ))),
+                .child(half(
+                    field(
+                        "Misses allowed",
+                        about("Turns that fail their gates before the run stops"),
+                        input(&draft.misses),
+                        cx,
+                    )
+                    .into_any_element(),
+                ))
+                .child(half(
+                    field(
+                        "Timeout",
+                        about("Working time, such as 45m or 2h"),
+                        input(&draft.timeout),
+                        cx,
+                    )
+                    .into_any_element(),
+                )),
         );
+    div()
+        .v_flex()
+        .gap_6()
+        .w_full()
+        .child(about_group)
+        .child(runs_group)
+        .child(variables_hint(cx))
+        .into_any_element()
+}
+
+/// The editor's steps column: the *Steps* box, its count and *Add step* on
+/// its title row, the steps down their rail.
+pub(super) fn steps_column(
+    handle: &Entity<WorkflowsPage>,
+    draft: &super::WorkflowDraft,
+    cx: &App,
+) -> AnyElement {
+    let shipped = draft.shipped;
+    let steps = super::step::steps_box(handle, draft, cx);
     let add_step = {
         let handle = handle.clone();
         crate::controls::menu_below(
@@ -151,79 +181,71 @@ pub(super) fn form(
     )
     .p_4()
     .gap_4()
-    .child(variables_hint(cx))
     .child(steps);
-    // A new form nobody has touched yet is not wrong yet: *Save* refuses
-    // and says why on hover, and the list waits for the first change. One
-    // opened on something (a file, a copy, an import) says at once.
-    let untouched = draft.file.is_none() && draft.original.name.is_empty() && !draft.dirty(cx);
-    let foot = div()
-        .v_flex()
-        .gap_3()
-        .when(!untouched && !problems.is_empty(), |foot| {
-            foot.child(problems_box(&problems, danger, cx))
-        })
-        .child(
-            div()
-                .h_flex()
-                .gap_2()
-                .child(
-                    crate::controls::action("save-workflow")
-                        .tall()
-                        .primary()
-                        .loading(writing)
-                        .label("Save")
-                        .refuses(problems.first().cloned())
-                        .on_click(click(handle, |page, window, cx| {
-                            page.save_workflow_draft(window, cx)
-                        })),
-                )
-                .child(
-                    crate::controls::action("clear-workflow")
-                        .tall()
-                        .secondary()
-                        .label("Cancel")
-                        // Asks first when the form holds changes, as Esc does.
-                        .on_click(click(handle, |page, window, cx| {
-                            page.close_workflow_form(window, cx)
-                        })),
-                ),
-        );
-
-    div()
-        .v_flex()
-        .gap_6()
-        .w_full()
-        .child(head::editor_head(handle, draft, choices, cx))
-        .child(about_group)
-        .child(runs_group)
-        .child(steps_group)
-        .when(!shipped, |form| form.child(foot))
-        .into_any_element()
+    steps_group.into_any_element()
 }
 
-/// What keeps the form from being saved, on the danger tint's fill so it
-/// reads as one standing condition rather than loose words over *Save*.
-fn problems_box(problems: &[String], danger: gpui::Hsla, cx: &App) -> impl IntoElement {
-    let tint = onehand_plugin_host::tint(danger, cx);
-    div()
-        .h_flex()
-        .items_start()
-        .gap_2()
-        .px_3()
-        .py_2()
-        .rounded(cx.theme().radius)
-        .bg(tint.fill)
-        .text_xs()
-        .text_color(tint.ink)
-        .child(Icon::new(IconName::TriangleAlert).xsmall().flex_none())
-        .child(
-            div()
-                .v_flex()
-                .gap_1()
-                .min_w_0()
-                .children(problems.iter().map(|problem| div().child(problem.clone()))),
+/// What keeps `draft` from being saved: its own problems, and a name
+/// another workflow has, since the launcher lists them by name.
+pub(super) fn problems(draft: &super::WorkflowDraft, cx: &App) -> Vec<String> {
+    let mut problems = draft.problems(cx);
+    problems.extend(super::actions::name_clash(draft, cx));
+    problems
+}
+
+/// What the editor tells the person while it stands: why it cannot be
+/// saved, in the danger ink, or that a shipped workflow is only read. A new
+/// form nobody has touched yet is not wrong yet: *Save* refuses and says why
+/// on hover, and the problems wait for the first change; one opened on
+/// something (a file, a copy, an import) says them at once.
+pub(super) fn message_bar(draft: &super::WorkflowDraft, cx: &App) -> Option<AnyElement> {
+    let (icon, base, lines) = if draft.shipped {
+        (
+            IconName::Info,
+            cx.theme().primary,
+            vec!["Built in, read-only: duplicate it to change it".to_string()],
         )
+    } else {
+        let untouched = draft.file.is_none() && draft.original.name.is_empty() && !draft.dirty(cx);
+        let problems = problems(draft, cx);
+        if untouched || problems.is_empty() {
+            return None;
+        }
+        (
+            IconName::TriangleAlert,
+            crate::theme::status_ink(cx).danger,
+            problems,
+        )
+    };
+    // Across the page's foot, on its kind's tint, so it reads as one standing
+    // condition of the whole workflow rather than of the column it sits in.
+    let tint = onehand_plugin_host::tint(base, cx);
+    // One line's height, set on the bar and on the mark's slot, so the mark
+    // stands centred on the first line however many follow it.
+    let line = gpui::rems(crate::tokens::CHROME_TEXT.0 * crate::tokens::LEADING);
+    Some(
+        div()
+            .flex_none()
+            .w_full()
+            .h_flex()
+            .items_start()
+            .gap_2()
+            .px_8()
+            .py_3()
+            .text_size(crate::tokens::CHROME_TEXT)
+            .line_height(line)
+            .bg(tint.fill)
+            .text_color(tint.ink)
+            .child(onehand_plugin_host::mark_slot(Icon::new(icon).small()).h(line))
+            .child(
+                div()
+                    .v_flex()
+                    .gap_1()
+                    .min_w_0()
+                    .children(lines.into_iter().map(|line| div().child(line))),
+            )
+            .into_any_element(),
+    )
 }
 
 /// What a prompt may use, a hint in meta text with each variable in mono, so
