@@ -193,6 +193,14 @@ pub struct Chat {
     /// work the caller would have done anyway -- where a wrong *description*
     /// would leave the wrong thing on screen.
     revision: u64,
+    /// How many times a fold has been toggled, whoever holds it: an item's
+    /// own here, a group's in the front end, which reports its own through
+    /// [`Self::fold_changed`].
+    ///
+    /// Apart from [`Self::revision`] because folding changes no item, yet the
+    /// run layout reads the item folds to choose how far a run stands from
+    /// its neighbours, so it has to be built again when one moves.
+    folds: u64,
 
     // ── what is on disk ──
     /// Where this conversation is kept. `None` never persists — which is what
@@ -250,6 +258,16 @@ impl Chat {
         self.revision
     }
 
+    /// How many folds have been toggled. See the field.
+    pub fn folds(&self) -> u64 {
+        self.folds
+    }
+
+    /// Record that a fold was toggled.
+    pub fn fold_changed(&mut self) {
+        self.folds = self.folds.wrapping_add(1);
+    }
+
     /// Record that the transcript changed.
     ///
     /// Called from the few places that mutate what is rendered: [`Self::apply`]
@@ -257,7 +275,8 @@ impl Chat {
     /// for a locally-staged prompt, [`Self::load_history`] for an adopted
     /// archive, and the two that settle a blocking card. Item *fold* state is
     /// deliberately not one of them -- folding changes what a row draws, and a
-    /// row is drawn from the live item either way.
+    /// row is drawn from the live item either way; a fold moves
+    /// [`Self::folds`] instead.
     fn touch(&mut self) {
         self.revision = self.revision.wrapping_add(1);
     }

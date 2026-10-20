@@ -195,6 +195,26 @@ pub struct SelectorChoice {
 }
 
 impl Chat {
+    /// Take the project's files, as the scan for `@`-mentions found them,
+    /// with the folders they pass through, and know the scan is over.
+    pub fn set_files(&mut self, files: Vec<String>) {
+        self.folders = crate::completion::folders(&files);
+        self.files = files;
+        self.files_scanned = true;
+    }
+
+    /// The adapter's event stream is over: no turn runs and the link is
+    /// lost.
+    ///
+    /// `connect` emits `Disconnected` before its stream ends, so this changes
+    /// nothing then. It is for the one place that knows the stream is *over*:
+    /// a turn left mid-flight would otherwise show Stop for ever, and a rail
+    /// dot that waits on an event goes missing the day it is not emitted.
+    pub fn stream_ended(&mut self) {
+        self.busy = false;
+        self.link = super::Link::Lost;
+    }
+
     /// The first thing the user said, capped — what names a conversation in the
     /// picker when nobody has renamed it.
     ///

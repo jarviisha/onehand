@@ -2160,3 +2160,71 @@ fn an_older_refused_pick_leaves_a_newer_one_shown() {
         "and goes back to what the agent last confirmed"
     );
 }
+
+#[test]
+fn the_scanned_files_bring_their_folders() {
+    let mut chat = Chat::new(1, PathBuf::from("/tmp/p"), "a".into(), None);
+    assert!(!chat.files_scanned);
+    chat.set_files(vec!["src/a.rs".into(), "src/b.rs".into()]);
+    assert!(chat.files_scanned);
+    assert_eq!(chat.files.len(), 2);
+    assert_eq!(chat.folders, crate::completion::folders(&chat.files));
+}
+
+#[test]
+fn a_stream_that_ends_leaves_no_turn_running() {
+    let mut chat = Chat::new(1, PathBuf::from("/tmp/p"), "a".into(), None);
+    chat.busy = true;
+    chat.link = Link::Connected;
+    chat.stream_ended();
+    assert!(!chat.busy);
+    assert_eq!(chat.link, Link::Lost);
+    chat.stream_ended();
+    assert_eq!(chat.link, Link::Lost, "a second end changes nothing");
+}
+
+#[test]
+fn a_stream_that_ends_after_disconnected_changes_nothing() {
+    let mut chat = Chat::new(1, PathBuf::from("/tmp/p"), "a".into(), None);
+    chat.apply(AcpEvent::Disconnected("gone".into()));
+    let seen = |chat: &Chat| {
+        (
+            chat.items.len(),
+            chat.busy,
+            chat.link,
+            chat.tx.is_none(),
+            chat.revision(),
+        )
+    };
+    let before = seen(&chat);
+    chat.stream_ended();
+    assert_eq!(seen(&chat), before);
+}
+
+#[test]
+fn every_fold_moves_the_fold_counter() {
+    let mut chat = Chat::new(1, PathBuf::from("/tmp/p"), "a".into(), None);
+    chat.items.push(ChatItem::Tool(ToolItem::new(ToolCall {
+        id: "t".into(),
+        title: "Read a.rs".into(),
+        description: None,
+        kind: crate::acp::ToolKind::Read,
+        status: ToolStatus::Completed,
+        content: Vec::new(),
+    })));
+    chat.items.push(ChatItem::Thought(Thought {
+        md: Md::parse("weighing it up"),
+        started: None,
+        elapsed_secs: Some(3),
+        fold: None,
+    }));
+    let before = chat.folds();
+    chat.toggle_tool(TranscriptItemId::Live(0));
+    chat.toggle_thought(TranscriptItemId::Live(1));
+    chat.toggle_permission(TranscriptItemId::Live(0));
+    chat.toggle_ask(TranscriptItemId::Live(0));
+    assert_eq!(chat.folds(), before + 4);
+    // A tool's output well changes no run's kind, so it leaves the counter.
+    chat.toggle_tool_output(TranscriptItemId::Live(0), 0);
+    assert_eq!(chat.folds(), before + 4);
+}

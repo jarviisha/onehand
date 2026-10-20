@@ -265,6 +265,7 @@ impl Chat {
 
     /// Toggle a whole tool/plan card's fold (typed, per item).
     pub fn toggle_tool(&mut self, target: TranscriptItemId) {
+        self.fold_changed();
         match self.list_mut(target).get_mut(target.index()) {
             Some(ChatItem::Tool(t)) => t.fold = Some(!t.is_open()),
             Some(ChatItem::Plan(p)) => p.fold = !p.fold,
@@ -274,6 +275,7 @@ impl Chat {
 
     /// Open or close a permission's command block past the lines it folds at.
     pub fn toggle_permission(&mut self, target: TranscriptItemId) {
+        self.fold_changed();
         if let Some(ChatItem::Permission(p)) = self.list_mut(target).get_mut(target.index()) {
             p.expanded = !p.expanded;
         }
@@ -281,12 +283,16 @@ impl Chat {
 
     /// Open or close the settled record of one question.
     pub fn toggle_ask(&mut self, target: TranscriptItemId) {
+        self.fold_changed();
         if let Some(ChatItem::Ask(a)) = self.list_mut(target).get_mut(target.index()) {
             a.expanded = !a.expanded;
         }
     }
 
     /// Toggle one OUT section's past-threshold fold on a tool card.
+    ///
+    /// Leaves [`Self::folds`] alone: the run layout never reads an output
+    /// well, and the row it sits in is drawn from the item either way.
     pub fn toggle_tool_output(&mut self, target: TranscriptItemId, section: usize) {
         if let Some(ChatItem::Tool(t)) = self.list_mut(target).get_mut(target.index()) {
             if !t.out_open.remove(&section) {
@@ -574,6 +580,7 @@ impl Chat {
     /// Toggle a thought's expanded reasoning — in the live items or, for a
     /// resumed transcript's read-only history, in `history`.
     pub fn toggle_thought(&mut self, target: TranscriptItemId) {
+        self.fold_changed();
         if let Some(ChatItem::Thought(th)) = self.list_mut(target).get_mut(target.index()) {
             th.fold = Some(!th.is_open());
         }

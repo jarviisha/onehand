@@ -252,6 +252,8 @@ struct PlanKey {
     revision: u64,
     history: usize,
     items: usize,
+    /// Every fold toggled, an item's or a group's: one counter, since the
+    /// plan reads both.
     folds: u64,
     /// Whether a turn is in flight. It is also a cheap invalidation boundary:
     /// integrations can settle their final tool status immediately before
