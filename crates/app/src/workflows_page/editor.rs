@@ -13,9 +13,9 @@ use gpui_component::{ActiveTheme, StyledExt};
 use onehand_plugin_host::back_link;
 use std::path::PathBuf;
 
-/// The workflow column's width: room for a pair of fields stacked, a name
-/// and its hint on one line.
-const INFO_W: Rems = rems(20.);
+/// The workflow column's width: room for a field's hint to run a line or
+/// two, and a pair of fields stacked rather than squeezed.
+const INFO_W: Rems = rems(28.);
 
 /// The least the steps column takes: a step's name, its kind and its ⋯.
 const STEPS_MIN: Rems = rems(22.);
