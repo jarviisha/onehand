@@ -328,7 +328,10 @@ to the control. Fields stand `gap_4` apart. An input is built with `text_input`,
 corner and the size of the place it stands in: `.tall()` in a page's form, `.short()` in a
 dialog; its buttons, pickers and switch take the same. Problems stand above the submit button in the danger
 ink; in a page's form, in one box on the danger tint's fill led by the warning mark, each a
-sentence. A new form nobody has changed yet shows none: its submit refuses, its tooltip saying
+sentence. A page form whose submit stands in the page's head (the workflow editor, whose columns
+leave no one place above it) sets them instead in a bar along the page's foot, the page's whole
+width, on its kind's tint led by its mark: the problems on the danger tint with the warning mark,
+a standing note (read-only) on the accent's tint with the info mark. A new form nobody has changed yet shows none: its submit refuses, its tooltip saying
 the first, until the first change; one opened on something (a file, a copy, an import) says them
 at once. The submit is the form's one primary action; while the form cannot be sent it refuses, its
 tooltip saying why.

@@ -312,7 +312,7 @@ workflow's fields (*About*, *How it runs*) in a column beside *Steps*, and the s
 rail, a numbered dot each, one open at a time in the column beside them, each
 saying where its failure sends the run back (*on failure ↑ 2*) and its first problem without
 being opened; its ⋯ holds *Move up* and *Move down*, refused at the ends, and *Remove*. A name
-another workflow has is said above *Save* before it is pressed (*Another workflow is already
+another workflow has is said in the bar along the editor's foot before *Save* is pressed (*Another workflow is already
 called …*), and *Save* refuses until it is changed; one write lands at a time, and the saved
 workflow stays open. *Cancel* and *Workflows* (back) ask, as Esc does, when the form holds
 changes (*Keep*, *Discard*), and go back to the cards. The draft and the pick are the page's entity's
@@ -479,7 +479,7 @@ change (`git checkout . && git clean -fd`).
 | Retry a dismissed task | *Dismiss* an ended task, open it under *Finished*, *Retry* | It leaves *Finished*; if the run ends on something nobody chose it is under *Needs attention* again |
 | Runs from an older build | Put a run file from before tasks in `<config_dir>/onehand/pipeline-runs/` and start onehand | It is in `tasks/` under the same name, listed as interrupted, and `pipeline-runs/` is gone |
 | An unknown key | Copy a workflow file into `<config_dir>/onehand/workflows/` with `gate = "x"` added to a step, then *Import…* it too | The row reads *Cannot be read: it has a key `steps[N].gate` that onehand does not read*; the import is refused with the same reason |
-| Export, then import | *Export…* *Work in checkout*, then *Import…* that file | The form opens on it as a new workflow; above *Save*, which refuses, *Another workflow is already called Work in checkout*; once renamed it is saved under a new id at version 1 |
+| Export, then import | *Export…* *Work in checkout*, then *Import…* that file | The form opens on it as a new workflow; *Save* refuses, and the bar along the page's foot says *Another workflow is already called Work in checkout*; once renamed it is saved under a new id at version 1 |
 | Retry after a rename | Duplicate *Work in checkout* and save it, start a run with brief `miss`, then rename the workflow and save | *Retry* keeps *version 1*, saying Settings now say *version 2*; *Retry with current settings…* lists *Workflow version: version 1 → version 2* and runs the renamed workflow |
 | What Retry keeps | Let a run time out, then change `[unattended] timeout` (or the project's check command) and *Retry* | The dialog lists the agent, mode, check command, timeout and workflow version it keeps; the changed one, in the warning ink, names what Settings say now and *Retry with current settings* |
 | Retry with current settings | On a task whose run failed at its push, change the project's check command and press *Retry with current settings…* | *Check command: old → new*, *It starts at the Verify step, the first step whose command changes.*; *Retry with current settings* runs Verify on the new command before anything is pushed |

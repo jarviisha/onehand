@@ -3,7 +3,7 @@
 //! each scrolling apart. As the page narrows the first two stack into one,
 //! and then the open step stands alone in their place.
 
-use super::form::{editor_head, steps_column, workflow_column};
+use super::form::{editor_head, message_bar, steps_column, workflow_column};
 use super::{WorkflowDraft, WorkflowsPage, click};
 use gpui::{
     AnyElement, App, Entity, InteractiveElement as _, IntoElement, ParentElement, Rems,
@@ -84,7 +84,7 @@ pub(super) fn editor(
     cx: &App,
 ) -> AnyElement {
     let edge = cx.theme().border;
-    let info = || workflow_column(handle, draft, writing, cx);
+    let info = || workflow_column(handle, draft, cx);
     let steps = || steps_column(handle, draft, cx);
     let step = || super::step::step_panel(handle, draft, draft.place, cx);
     let step_column = || {
@@ -141,7 +141,7 @@ pub(super) fn editor(
         .v_flex()
         .child(head_row(
             handle,
-            Some(editor_head(handle, draft, choices, cx)),
+            Some(editor_head(handle, draft, writing, choices, cx)),
             cx,
         ))
         .child(
@@ -151,6 +151,7 @@ pub(super) fn editor(
                 .border_t_1()
                 .border_color(edge),
         )
+        .children(message_bar(draft, cx))
         .into_any_element()
 }
 

@@ -165,13 +165,12 @@ height (its dragged height kept).
   match*.
 
   A card opens its workflow on a page of its own: *Workflows* (back) over its head (its name, how
-  many steps and where it works under it, *Run…*, which refuses until it is saved, and a ⋯ with
-  *Duplicate*, *Export…* and *Delete…*), then three columns parted by hairlines, each scrolling
+  many steps and where it works under it, *Run…*, which refuses until it is saved, a ⋯ with
+  *Duplicate*, *Export…* and *Delete…*, then *Cancel* and *Save*, the head's primary, which
+  refuses with the first problem and spins while it writes), then three columns parted by hairlines, each scrolling
   apart. The first holds the workflow's own fields: *About* (name and description), *How it runs*
   (where it works, a picker naming the choice over a menu of both; misses allowed; timeout), each
-  pair of fields stacking where the column cannot hold both, what a prompt may use, then the problems (a name
-  clash among them) above *Save*, which refuses with the first and spins while it writes, and
-  *Cancel*. The second holds *Steps*, in a box, as it decides what a run does: its count and
+  pair of fields stacking where the column cannot hold both, then what a prompt may use. The second holds *Steps*, in a box, as it decides what a run does: its count and
   *Add step* with its menu of kinds on its title row, then the steps down a rail. A step reads
   as a numbered dot on a rail that joins it to the next (the open one's dot filled), then its
   name, its kind, where its failure goes back to (*on failure ↑ N*), and its first problem; its
@@ -183,8 +182,11 @@ height (its dragged height kept).
   page, with what a prompt may use, *Cancel* and *Done*). With none open it says *Pick a step to
   change it*. Where the three do not fit, the first two stack into one column; where two do not
   either, the steps stand alone and an open step takes their place under *Steps* (back). Going
-  back to the cards over unsaved changes asks first. A shipped workflow opens read-only,
-  *Duplicate to edit* its primary, with no *Save*; an unreadable file of the person's own opens
+  back to the cards over unsaved changes asks first. Along the page's foot, the whole width,
+  stands what the editor has to tell: the problems (a name clash among them), each a line, on the
+  danger tint led by the warning mark, from the first change on; or, on a shipped workflow, *Built
+  in, read-only: duplicate it to change it* on the accent's tint led by the info mark. A shipped
+  workflow opens read-only, *Duplicate to edit* its primary, with no *Save* or *Cancel*; an unreadable file of the person's own opens
   why, with *Delete…*.
 
 ## Settings

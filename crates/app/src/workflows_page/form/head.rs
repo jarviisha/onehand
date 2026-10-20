@@ -107,6 +107,7 @@ fn pick_of_draft(draft: &WorkflowDraft) -> Pick {
 pub(in crate::workflows_page) fn editor_head(
     handle: &Entity<WorkflowsPage>,
     draft: &WorkflowDraft,
+    writing: bool,
     choices: &[(PathBuf, SharedString)],
     cx: &App,
 ) -> AnyElement {
@@ -120,10 +121,7 @@ pub(in crate::workflows_page) fn editor_head(
         1 => "1 step".to_string(),
         n => format!("{n} steps"),
     };
-    let mut facts = format!("{steps} · {}", draft.place.label());
-    if draft.shipped {
-        facts.push_str(" · Built in, read-only: duplicate it to change it");
-    }
+    let facts = format!("{steps} · {}", draft.place.label());
     let refuses = (!draft.shipped && (draft.file.is_none() || draft.dirty(cx)))
         .then(|| "Save it first: a run starts from what is saved".to_string());
     let mut actions = vec![run_menu(
@@ -168,6 +166,34 @@ pub(in crate::workflows_page) fn editor_head(
             .tooltip("More"),
         cx,
     ));
+    // *Cancel*, then *Save*, the head's primary, at its end: what the
+    // editor is for, in reach whatever column the caret is in.
+    if !draft.shipped {
+        let problems = super::problems(draft, cx);
+        actions.push(
+            crate::controls::action("clear-workflow")
+                .tall()
+                .secondary()
+                .label("Cancel")
+                // Asks first when the form holds changes, as Esc does.
+                .on_click(click(handle, |page, window, cx| {
+                    page.close_workflow_form(window, cx)
+                }))
+                .into_any_element(),
+        );
+        actions.push(
+            crate::controls::action("save-workflow")
+                .tall()
+                .primary()
+                .loading(writing)
+                .label("Save")
+                .refuses(problems.first().cloned())
+                .on_click(click(handle, |page, window, cx| {
+                    page.save_workflow_draft(window, cx)
+                }))
+                .into_any_element(),
+        );
+    }
     crate::chat::pane::page_parts::page_head(title, Some(facts.into_any_element()), actions, cx)
         .into_any_element()
 }

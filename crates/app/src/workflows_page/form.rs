@@ -3,16 +3,13 @@ mod head;
 pub(super) use head::{editor_head, more_menu, run_menu, unreadable};
 
 use super::WorkflowsPage;
-use super::click;
 use super::draft::Kind;
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
 use crate::controls::Short as _;
 use crate::controls::text_input;
 use crate::settings::{about, field, section};
-use gpui::prelude::FluentBuilder as _;
 use gpui::{AnyElement, App, Entity, IntoElement, ParentElement, Styled, Window, div};
-use gpui_component::button::ButtonVariants;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::workflow::Place;
 use onehand_plugin_host::Tall as _;
@@ -21,20 +18,13 @@ use onehand_plugin_host::Tall as _;
 /// readable beside its neighbour, or goes under it.
 const PAIR_MIN: gpui::Rems = gpui::rems(14.);
 
-/// The editor's workflow column: what it is and how it runs, what a
-/// prompt may use, then what is wrong with it above *Save*.
+/// The editor's workflow column: what it is and how it runs, and what a
+/// prompt may use.
 pub(super) fn workflow_column(
     handle: &Entity<WorkflowsPage>,
     draft: &super::WorkflowDraft,
-    writing: bool,
     cx: &App,
 ) -> AnyElement {
-    // What is wrong with it, said above *Save* before the press: a name
-    // another workflow has is one of them, since the launcher lists them by
-    // name.
-    let mut problems = draft.problems(cx);
-    problems.extend(super::actions::name_clash(draft, cx));
-    let danger = crate::theme::status_ink(cx).danger;
     // A shipped workflow is read, never saved: it is changed by duplicating it.
     let shipped = draft.shipped;
     let place = draft.place;
@@ -135,43 +125,6 @@ pub(super) fn workflow_column(
                     .into_any_element(),
                 )),
         );
-    // A new form nobody has touched yet is not wrong yet: *Save* refuses
-    // and says why on hover, and the problems wait for the first change. One
-    // opened on something (a file, a copy, an import) says at once.
-    let untouched = draft.file.is_none() && draft.original.name.is_empty() && !draft.dirty(cx);
-    let foot = div()
-        .v_flex()
-        .gap_3()
-        .when(!untouched && !problems.is_empty(), |foot| {
-            foot.child(problems_box(&problems, danger, cx))
-        })
-        .child(
-            div()
-                .h_flex()
-                .gap_2()
-                .child(
-                    crate::controls::action("save-workflow")
-                        .tall()
-                        .primary()
-                        .loading(writing)
-                        .label("Save")
-                        .refuses(problems.first().cloned())
-                        .on_click(click(handle, |page, window, cx| {
-                            page.save_workflow_draft(window, cx)
-                        })),
-                )
-                .child(
-                    crate::controls::action("clear-workflow")
-                        .tall()
-                        .secondary()
-                        .label("Cancel")
-                        // Asks first when the form holds changes, as Esc does.
-                        .on_click(click(handle, |page, window, cx| {
-                            page.close_workflow_form(window, cx)
-                        })),
-                ),
-        );
-
     div()
         .v_flex()
         .gap_6()
@@ -179,7 +132,6 @@ pub(super) fn workflow_column(
         .child(about_group)
         .child(runs_group)
         .child(variables_hint(cx))
-        .when(!shipped, |form| form.child(foot))
         .into_any_element()
 }
 
@@ -233,28 +185,62 @@ pub(super) fn steps_column(
     steps_group.into_any_element()
 }
 
-/// What keeps the form from being saved, on the danger tint's fill so it
-/// reads as one standing condition rather than loose words over *Save*.
-fn problems_box(problems: &[String], danger: gpui::Hsla, cx: &App) -> impl IntoElement {
-    let tint = onehand_plugin_host::tint(danger, cx);
-    div()
-        .h_flex()
-        .items_start()
-        .gap_2()
-        .px_3()
-        .py_2()
-        .rounded(cx.theme().radius)
-        .bg(tint.fill)
-        .text_xs()
-        .text_color(tint.ink)
-        .child(Icon::new(IconName::TriangleAlert).xsmall().flex_none())
-        .child(
-            div()
-                .v_flex()
-                .gap_1()
-                .min_w_0()
-                .children(problems.iter().map(|problem| div().child(problem.clone()))),
+/// What keeps `draft` from being saved: its own problems, and a name
+/// another workflow has, since the launcher lists them by name.
+pub(super) fn problems(draft: &super::WorkflowDraft, cx: &App) -> Vec<String> {
+    let mut problems = draft.problems(cx);
+    problems.extend(super::actions::name_clash(draft, cx));
+    problems
+}
+
+/// What the editor tells the person while it stands: why it cannot be
+/// saved, in the danger ink, or that a shipped workflow is only read. A new
+/// form nobody has touched yet is not wrong yet: *Save* refuses and says why
+/// on hover, and the problems wait for the first change; one opened on
+/// something (a file, a copy, an import) says them at once.
+pub(super) fn message_bar(draft: &super::WorkflowDraft, cx: &App) -> Option<AnyElement> {
+    let (icon, base, lines) = if draft.shipped {
+        (
+            IconName::Info,
+            cx.theme().primary,
+            vec!["Built in, read-only: duplicate it to change it".to_string()],
         )
+    } else {
+        let untouched = draft.file.is_none() && draft.original.name.is_empty() && !draft.dirty(cx);
+        let problems = problems(draft, cx);
+        if untouched || problems.is_empty() {
+            return None;
+        }
+        (
+            IconName::TriangleAlert,
+            crate::theme::status_ink(cx).danger,
+            problems,
+        )
+    };
+    // Across the page's foot, on its kind's tint, so it reads as one standing
+    // condition of the whole workflow rather than of the column it sits in.
+    let tint = onehand_plugin_host::tint(base, cx);
+    Some(
+        div()
+            .flex_none()
+            .w_full()
+            .h_flex()
+            .items_start()
+            .gap_2()
+            .px_8()
+            .py_3()
+            .bg(tint.fill)
+            .text_color(tint.ink)
+            .child(Icon::new(icon).small().flex_none())
+            .child(
+                div()
+                    .v_flex()
+                    .gap_1()
+                    .min_w_0()
+                    .children(lines.into_iter().map(|line| div().child(line))),
+            )
+            .into_any_element(),
+    )
 }
 
 /// What a prompt may use, a hint in meta text with each variable in mono, so
