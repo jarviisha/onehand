@@ -2,9 +2,10 @@
 //! its issue is told once it ends.
 
 use super::{IssueSource, TrackerRef};
-use crate::connector::PrState;
+use crate::connector::{Connector, PrState};
 use crate::workflow::{Brief, Outcome, Stop};
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 /// The title and body of the pull request a run of `brief` opens, on the
 /// issue `issue` when it works one. The body closes the issue only where the
@@ -91,6 +92,28 @@ pub enum Verdict {
         draft: bool,
     },
     Commits(u64),
+}
+
+/// What a run left on `branch`: the pull request there where the project has
+/// a `forge` and one was opened, otherwise the commits in `dir` past `base`,
+/// where it was cut. `repo` is the project the forge is asked about. Blocking.
+pub fn verdict_blocking(
+    forge: Option<&'static dyn Connector>,
+    repo: &Path,
+    branch: &str,
+    dir: &Path,
+    base: &str,
+) -> Result<Verdict, String> {
+    if let Some(forge) = forge {
+        if let Some(pr) = forge.pull_request_for_blocking(repo, branch)? {
+            return Ok(Verdict::PullRequest {
+                url: pr.url,
+                state: pr.state,
+                draft: pr.draft,
+            });
+        }
+    }
+    crate::worktree::commits_since_blocking(dir, base).map(Verdict::Commits)
 }
 
 /// The comment `pending` leaves on the issue, given what looking for the
