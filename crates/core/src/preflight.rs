@@ -10,7 +10,7 @@
 
 use crate::connector::PrState;
 use crate::task::{Task, Working};
-use crate::unattended::Slots;
+use crate::unattended::{Issue, Slots, Tracker};
 use crate::workflow::{Failure, Place, StepKind, Template};
 
 /// What kind of start is checked: each has its own configuration and place.
@@ -574,6 +574,58 @@ fn earlier_ended(tasks: &[(Task, Option<Working>)]) -> Option<(String, String)> 
     }
     let said = crate::task::work::Work::of(task, None, None).said;
     Some((task.id.clone(), lower(&said)))
+}
+
+/// What a new issue run knows of the project it works in.
+pub struct ProjectFacts {
+    pub has_check: bool,
+    /// The branch checked out, `None` outside git.
+    pub checked_out: Option<String>,
+    pub forge: Option<Forge>,
+}
+
+/// A new issue run of `workflow` on `issue` in `tracker`, in `project`, over
+/// what every run shares, with those of `tasks` that worked the issue: the
+/// one assembly a window and the search both use.
+pub fn new_issue_run(
+    common: Facts,
+    workflow: Result<Template, String>,
+    tracker: &Tracker,
+    issue: &Issue,
+    project: ProjectFacts,
+    tasks: Vec<(Task, Option<Working>)>,
+) -> Facts {
+    Facts {
+        workflow,
+        has_check: project.has_check,
+        in_git: project.checked_out.is_some(),
+        checked_out: project.checked_out,
+        forge: project.forge,
+        issue: Some(on_issue(tracker, issue, tasks)),
+        ..common
+    }
+}
+
+/// `issue` in `tracker`, named, with those of `tasks` that worked it.
+fn on_issue(tracker: &Tracker, issue: &Issue, tasks: Vec<(Task, Option<Working>)>) -> IssueFacts {
+    let at = tracker.to_ref();
+    IssueFacts {
+        named: tracker.named(issue),
+        tasks: tasks
+            .into_iter()
+            .filter(|(task, _)| {
+                task.issue()
+                    .is_some_and(|i| i.tracker == at && i.number == issue.number)
+            })
+            .collect(),
+    }
+}
+
+/// The branch checked out at `root`, [`DETACHED`] when none is, or `None`
+/// outside git. Blocking: it asks git.
+pub(crate) fn checked_out_blocking(root: &std::path::Path) -> Option<String> {
+    crate::worktree::repo_top_blocking(root)?;
+    Some(crate::worktree::current_branch_blocking(root).unwrap_or_else(|_| DETACHED.to_string()))
 }
 
 /// What a new task's report says of the issue's last one, when it ended on

@@ -273,10 +273,17 @@ impl Shell {
                     .spawn(async move {
                         let forge = crate::unattended::connector_for(&path).ok();
                         let found = match only {
-                            Some(number) => {
-                                crate::unattended::pickable_one_blocking(&path, issues, number)
-                            }
-                            None => crate::unattended::pickable_blocking(&path, issues),
+                            Some(number) => onehand_core::unattended::pickable_one_blocking(
+                                crate::plugins::connectors(),
+                                &path,
+                                issues,
+                                number,
+                            ),
+                            None => onehand_core::unattended::pickable_blocking(
+                                crate::plugins::connectors(),
+                                &path,
+                                issues,
+                            ),
                         };
                         let templates = onehand_core::issues::template::for_project_blocking(&path);
                         (found, forge, templates)

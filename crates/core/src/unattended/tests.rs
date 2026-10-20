@@ -481,6 +481,27 @@ fn opened(state: PrState, draft: bool) -> Verdict {
 }
 
 #[test]
+fn the_verdict_is_the_pull_request_where_there_is_one() {
+    static OPEN: Fake = Fake {
+        pulls: &[("b", PrState::Open, "u/1")],
+        ..Fake::SERVING
+    };
+    let v = verdict_blocking(Some(&OPEN), Path::new("/"), "b", Path::new("/"), "main");
+    assert_eq!(
+        v,
+        Ok(Verdict::PullRequest {
+            url: "u/1".into(),
+            state: PrState::Open,
+            draft: false
+        })
+    );
+    // No pull request on the branch, and no forge at all, both count the
+    // commits — which a place that is no repository cannot.
+    assert!(verdict_blocking(Some(&OPEN), Path::new("/"), "c", Path::new("/"), "main").is_err());
+    assert!(verdict_blocking(None, Path::new("/"), "b", Path::new("/"), "main").is_err());
+}
+
+#[test]
 fn the_report_says_what_became_of_the_pull_request() {
     let done = ran(Outcome::Done);
     let said = |verdict| report(&done, &Ok(verdict), "b");

@@ -239,20 +239,32 @@ pub fn serving(connectors: &[&'static dyn Connector], root: &Path) -> Result<usi
 pub(crate) mod fake {
     use super::*;
 
-    /// It serves or refuses as told, lists `limit` issues, finds the issues
-    /// numbered in `labelled` under any label, and fails the test if asked
-    /// anything else.
+    /// It serves or refuses as told, answers for its `account`, lists `limit`
+    /// issues, finds the issues numbered in `labelled` under any label, has
+    /// the pull requests in `pulls` by branch, fetches nothing, and fails the
+    /// test if asked anything else.
     pub(crate) struct Fake {
         pub(crate) name: &'static str,
         pub(crate) serves: Result<(), &'static str>,
+        pub(crate) account: Result<&'static str, &'static str>,
         pub(crate) labelled: &'static [u64],
+        /// Branch, state and address of each pull request it knows of.
+        pub(crate) pulls: &'static [(&'static str, PrState, &'static str)],
+        /// Its default branch; `None` is a question it was not told to answer.
+        pub(crate) default_branch: Option<&'static str>,
+        /// Why its open issues cannot be listed, when they cannot.
+        pub(crate) lists: Result<(), &'static str>,
     }
 
     impl Fake {
         pub(crate) const SERVING: Fake = Fake {
             name: "Forge",
             serves: Ok(()),
+            account: Ok("Signed in as t"),
             labelled: &[9, 4],
+            pulls: &[],
+            default_branch: Some("main"),
+            lists: Ok(()),
         };
     }
 
@@ -261,12 +273,13 @@ pub(crate) mod fake {
             self.name
         }
         fn account_blocking(&self) -> Result<String, String> {
-            unreachable!()
+            self.account.map(str::to_string).map_err(str::to_string)
         }
         fn serves_blocking(&self, _: &Path) -> Result<(), String> {
             self.serves.map_err(str::to_string)
         }
         fn open_issues_blocking(&self, _: &Path, limit: usize) -> Result<Vec<IssueRow>, String> {
+            self.lists.map_err(str::to_string)?;
             Ok((1..=limit as u64)
                 .map(|n| IssueRow {
                     issue: Issue::new(n, "t".into(), String::new()),
@@ -301,14 +314,32 @@ pub(crate) mod fake {
             unreachable!()
         }
         fn default_branch_blocking(&self, _: &Path) -> Result<String, String> {
-            unreachable!()
+            Ok(self
+                .default_branch
+                .unwrap_or_else(|| unreachable!())
+                .to_string())
+        }
+        fn fetch_blocking(&self, _: &Path, _: &str) -> Result<(), String> {
+            Ok(())
         }
         fn pull_request_for_blocking(
             &self,
             _: &Path,
-            _: &str,
+            branch: &str,
         ) -> Result<Option<PullRequest>, String> {
-            unreachable!()
+            Ok(self
+                .pulls
+                .iter()
+                .find(|(on, _, _)| *on == branch)
+                .map(|&(_, state, url)| PullRequest {
+                    url: url.to_string(),
+                    number: 1,
+                    state,
+                    draft: false,
+                    head: String::new(),
+                    conflicting: false,
+                    checks: Vec::new(),
+                }))
         }
         fn open_pull_request_blocking(
             &self,
@@ -542,11 +573,13 @@ mod tests {
         name: "Elsewhere",
         serves: Err("its remote is on elsewhere.org"),
         labelled: &[],
+        ..Fake::SERVING
     };
     static ALSO_REFUSES: Fake = Fake {
         name: "Tracker",
         serves: Err("no board is set"),
         labelled: &[],
+        ..Fake::SERVING
     };
     static SERVES: Fake = Fake::SERVING;
 

@@ -9,7 +9,6 @@ use onehand_core::unattended::{
     self as core, IssueSource, PendingReport, Tracker, TrackerRef, Verdict,
 };
 use onehand_core::workflow::{Outcome, Run, Stop};
-use onehand_core::worktree;
 use std::path::{Path, PathBuf};
 
 /// The agent a run starts, with every build it makes pointed at one shared
@@ -289,20 +288,9 @@ impl Sending {
         landed
     }
 
-    /// What the run left: the pull request on its branch where the project
-    /// has a forge and one was opened, otherwise its commits past where it was
-    /// cut.
+    /// What the run left on its branch, as core reads it.
     fn verdict_blocking(&self) -> Result<Verdict, String> {
-        if let Some(forge) = self.forge
-            && let Some(pr) = forge.pull_request_for_blocking(&self.repo, &self.branch)?
-        {
-            return Ok(Verdict::PullRequest {
-                url: pr.url,
-                state: pr.state,
-                draft: pr.draft,
-            });
-        }
-        worktree::commits_since_blocking(&self.dir, &self.base).map(Verdict::Commits)
+        core::verdict_blocking(self.forge, &self.repo, &self.branch, &self.dir, &self.base)
     }
 }
 

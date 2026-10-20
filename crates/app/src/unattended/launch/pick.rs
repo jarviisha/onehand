@@ -2,84 +2,13 @@
 //! window starts, and is told about there.
 
 use super::super::{connector_for, lacks_check_given, opted_in_roots, tick, why_not, with};
-use super::{Unstarted, earlier, landed, prepare_blocking, taking_blocking, trackers_blocking};
+use super::{Landed, earlier, landed};
 use gpui::App;
 use onehand_core::issues::template;
-use onehand_core::unattended::{self as core, IssueRow, Tracker};
-use std::path::{Path, PathBuf};
-
-/// What a person can pick from in a project: its open issues from where each
-/// lives, the ones it keeps itself first, and whether the list was cut — plus
-/// why the forge's could not be read, when its own could.
-pub type Pickable = (Vec<(Tracker, IssueRow)>, bool, Option<String>);
-
-/// Read what a person can pick from in `root`, whose own issues are in
-/// `issues` if its workspace keeps any. Blocking.
-///
-/// A forge that cannot be read is an error only when there is nothing else to
-/// show; beside issues of the project's own it is said under the list, so one
-/// half being down does not hide the other.
-pub fn pickable_blocking(root: &Path, issues: Option<PathBuf>) -> Result<Pickable, String> {
-    let (mut rows, mut cut, mut unread) = (Vec::new(), false, None);
-    let forge = connector_for(root);
-    for tracker in trackers_blocking(issues, forge.as_ref().ok().copied()) {
-        match core::open_issues_blocking(&tracker, root) {
-            Ok((found, more)) => {
-                cut |= more;
-                rows.extend(found.into_iter().map(|row| (tracker.clone(), row)));
-            }
-            // The forge's half being down is said beside the rest; the
-            // project's own issues failing to read is the whole answer.
-            Err(why) => match tracker {
-                Tracker::Forge(_) => unread = Some(why),
-                Tracker::Local(_) | Tracker::Synced { .. } => return Err(why),
-            },
-        }
-    }
-    // A project no connector serves says why only when there is nothing else
-    // to list: beside its own issues, the forge it does not have is no news.
-    match (rows.is_empty(), unread, forge) {
-        (true, Some(why), _) | (true, None, Err(why)) => Err(why),
-        (_, unread, _) => Ok((rows, cut, unread)),
-    }
-}
-
-/// Issue `number` of the ones `root` keeps itself, in `issues`, to pick, or
-/// why it cannot be. Blocking.
-///
-/// Only the project's own issues are read, never its forge's: the Issues tab
-/// numbers the issues it keeps, and a forge's numbers are its own. So the list
-/// being cut is that list's, and an issue missing from it is said to be older
-/// than the newest it holds, or else one a run may not take.
-pub fn pickable_one_blocking(
-    root: &Path,
-    issues: Option<PathBuf>,
-    number: u64,
-) -> Result<Pickable, String> {
-    let forge = connector_for(root).ok();
-    let tracker = trackers_blocking(issues, forge)
-        .into_iter()
-        .find(|tracker| !matches!(tracker, Tracker::Forge(_)))
-        .ok_or("this workspace keeps no issues of its own")?;
-    let (found, cut) = core::open_issues_blocking(&tracker, root)?;
-    let rows: Vec<_> = found
-        .into_iter()
-        .filter(|row| row.issue.number == number)
-        .map(|row| (tracker.clone(), row))
-        .collect();
-    match (rows.is_empty(), cut) {
-        (false, _) => Ok((rows, false, None)),
-        (true, true) => Err(format!(
-            "issue {number} is not among the newest {} open issues a pick reads; close \
-             some of the newer ones to reach it",
-            core::ISSUES_SHOWN
-        )),
-        (true, false) => Err(format!(
-            "issue {number} cannot be worked by a run: it is closed, or it was brought in \
-             from a forge the project is no longer kept in step with"
-        )),
-    }
-}
+use onehand_core::unattended::{
+    self as core, IssueRow, Tracker, Unstarted, prepare_blocking, taking_blocking,
+};
+use std::path::PathBuf;
 
 /// Work `row`, picked by hand from a project's open issues, now, with the
 /// workflow `workflow`, adding `instructions` to what its brief asks.
@@ -158,22 +87,20 @@ pub fn start_picked(
                             &template::for_project_blocking(&repo),
                         )
                         .map(|lacks| lacks.note());
-                        Ok(prepare_blocking(
-                            repo,
-                            tracker,
-                            forge,
-                            row.issue,
-                            workflow,
-                            taking,
-                            Some(window),
+                        Ok(
+                            prepare_blocking(repo, tracker, forge, row.issue, workflow, taking)
+                                .map(|claimed| {
+                                    let claimed = core::Claimed {
+                                        instructions,
+                                        // The form said it, but its report is
+                                        // read later, by whoever judges why
+                                        // the run went wrong.
+                                        notes: lacks.into_iter().collect(),
+                                        ..claimed
+                                    };
+                                    Landed::new(claimed, Some(window))
+                                }),
                         )
-                        .map(|claimed| super::Claimed {
-                            instructions,
-                            // The form said it, but its report is read later,
-                            // by whoever judges why the run went wrong.
-                            notes: lacks.into_iter().collect(),
-                            ..claimed
-                        }))
                     }))
                     .unwrap_or_else(|_| {
                         Err("onehand panicked while claiming the issue".to_string())
