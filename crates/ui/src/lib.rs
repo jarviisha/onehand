@@ -290,7 +290,7 @@ pub fn status_hue(base: Hsla, foreground: Hsla) -> Hsla {
 /// library token borrowed for a meaning it does not have.
 ///
 /// Here rather than in the app for the reason [`action`] is: a feature crate sets a
-/// detail beside a name too (an issue's number beside its title, a feature crate's
+/// detail beside a name too (an issue's number beside its title, a plugin's
 /// version beside its name), and a second copy of the derivation is a second
 /// place for the step to drift.
 pub fn meta_ink(cx: &App) -> Hsla {

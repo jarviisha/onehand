@@ -70,10 +70,13 @@ fn sources() -> Vec<(String, String)> {
     sources_under(&["crates/app/src"])
 }
 
-/// Every first-party file that draws, or that hosts something drawing.
+/// Every first-party file that draws, or that hosts something drawing: the
+/// app, the Workbench modes, the UI crate, the mode contract and the shared
+/// terminal primitives — and the connector and channel crates beside them,
+/// since the field and event-enum rules that run over this set are not about
+/// drawing alone.
 ///
-/// The app, its feature crates, the UI crate and the shared terminal
-/// primitives. Moving UI code into a feature crate or a support crate must not move it
+/// Moving UI code into a feature crate or a support crate must not move it
 /// out of the app's load-bearing source guards at the same time — that is
 /// exactly what happened when the feature crates were split out, and it left
 /// a button wrapper, a status colour and a dead field in crates nothing was
@@ -87,11 +90,14 @@ fn ui_sources() -> Vec<(String, String)> {
         "crates/claude-plugins/src",
         "crates/editor/src",
         "crates/files/src",
+        "crates/github/src",
         "crates/issues/src",
         "crates/markdown/src",
         "crates/neovim/src",
+        "crates/telegram/src",
         "crates/terminal-ui/src",
         "crates/ui/src",
+        "crates/workbench/src",
     ])
 }
 

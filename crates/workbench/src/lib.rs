@@ -20,10 +20,9 @@ use gpui::{AnyView, App, Pixels, Window};
 use onehand_core::gitstat::GitStatus;
 use onehand_core::task::work::IssueWork;
 use std::collections::HashMap;
+use std::fmt;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-
-use std::fmt;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ModeId(&'static str);

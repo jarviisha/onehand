@@ -56,7 +56,7 @@ the comments beside its code, starting from each module's header; `crates/app/sr
 - Keep a rule in one owning document. Link to it from entrypoints and skills rather than
   copying it or creating a competing design system.
 
-## Skills and feature crates
+## Skills and plugins
 
 These are applicability rules, not a list of tools every contributor must install.
 Availability or installation does not authorize a skill's side effects.
