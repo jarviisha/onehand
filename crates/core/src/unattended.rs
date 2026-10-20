@@ -14,8 +14,10 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+mod claim;
 mod report;
 
+pub use claim::{taking_blocking, trackers_blocking, Choosing, Earlier, Judging, Skip, Taking};
 pub use report::{
     could_not_start, pull_request_text, report, review_closed, review_diverged, review_note,
     review_unanswerable, PendingReport, Verdict,
