@@ -77,8 +77,9 @@ pub(super) fn list_column(
     let entries = crate::workflow::templates(cx);
     let (muted, ring) = (crate::theme::meta_ink(cx), cx.theme().ring);
     let warning = crate::theme::status_ink(cx).warning;
-    let listed = pick::listed(&entries);
-    let left_out = entries.len().saturating_sub(listed.len());
+    let listed = pick::listed(&entries, "");
+    let left_out = listed.matched.saturating_sub(listed.shown.len());
+    let listed = listed.shown;
 
     let row = |i: usize, name: String, why: Option<String>, key: Option<Pick>| {
         let selected = key.is_some() && key.as_ref() == picked;
