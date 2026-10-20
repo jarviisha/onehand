@@ -489,6 +489,16 @@ mod tests {
             action_at(&map, "up", &["Shell", "Chat", "WorkflowsPage", "Input"]),
             None
         );
+        // Enter opens the card the keyboard is on, never while the caret is
+        // in the search.
+        assert_eq!(
+            action_at(&map, "enter", &["Shell", "Chat", "WorkflowsPage"]),
+            Some(crate::workflows_page::OpenWorkflowCard.name().into())
+        );
+        assert_eq!(
+            action_at(&map, "enter", &["Shell", "Chat", "WorkflowsPage", "Input"]),
+            None
+        );
         assert_eq!(
             action_at(&map, "shift-tab", &["Shell", "ChatComposerCard", "Input"]),
             Some(CycleMode.name().into())

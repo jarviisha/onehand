@@ -16,22 +16,21 @@ use std::path::{Path, PathBuf};
 
 /// *Run…*: which project to start the workflow of id `workflow` on, the
 /// rail's selection first, then the launcher. It refuses with `refuses`,
-/// since a run starts from what is saved.
-fn run_menu(
+/// since a run starts from what is saved. `trigger` is the button it opens
+/// under, and `id` the menu's.
+pub(in crate::workflows_page) fn run_menu(
     handle: &Entity<WorkflowsPage>,
     workflow: &str,
     choices: &[(PathBuf, SharedString)],
     refuses: Option<String>,
+    id: impl Into<ElementId>,
+    trigger: Button,
 ) -> AnyElement {
-    let trigger = crate::controls::action("run-workflow-trigger")
-        .tall()
-        .secondary()
-        .label("Run…");
     if let Some(why) = refuses {
         return trigger.refuses(Some(why)).into_any_element();
     }
     let (handle, choices, workflow) = (handle.clone(), choices.to_vec(), workflow.to_string());
-    crate::controls::menu_below("run-workflow", trigger, move |mut menu, _, _| {
+    crate::controls::menu_below(id, trigger, move |mut menu, _, _| {
         menu = menu.label("Run on");
         for (root, label) in &choices {
             let (handle, root, workflow) = (handle.clone(), root.clone(), workflow.clone());
@@ -125,7 +124,17 @@ pub(super) fn editor_head(
     }
     let refuses = (!draft.shipped && (draft.file.is_none() || draft.dirty(cx)))
         .then(|| "Save it first: a run starts from what is saved".to_string());
-    let mut actions = vec![run_menu(handle, &draft.original.id, choices, refuses)];
+    let mut actions = vec![run_menu(
+        handle,
+        &draft.original.id,
+        choices,
+        refuses,
+        "run-workflow",
+        crate::controls::action("run-workflow-trigger")
+            .tall()
+            .secondary()
+            .label("Run…"),
+    )];
     if draft.shipped {
         actions.push(
             crate::controls::action("duplicate-to-edit")

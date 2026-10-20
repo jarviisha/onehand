@@ -38,7 +38,6 @@ pub(super) struct CardActs {
 
 /// What a card's ⋯ offers for `entry`: a card is always a saved file, so a
 /// shipped one exports and copies as one of the person's own does.
-#[allow(dead_code, reason = "the cards a later change draws call it")]
 pub(super) fn card_acts(entry: &Entry) -> CardActs {
     CardActs {
         duplicate: entry.template.is_ok(),

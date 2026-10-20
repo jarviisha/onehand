@@ -14,7 +14,7 @@
 mod actions;
 mod draft;
 mod form;
-mod list;
+mod grid;
 mod pick;
 mod prompt_dialog;
 mod step;
@@ -22,11 +22,17 @@ mod step;
 pub(crate) use draft::WorkflowDraft;
 
 // The Workflows page's keys: the innermost thing open closed (the step
-// drawer, then the form, asked first when it holds changes), and the step
-// drawer stepped to the step before or after.
+// drawer, then the form, asked first when it holds changes), the step
+// drawer stepped to the step before or after, and the card the keyboard is
+// on opened.
 gpui::actions!(
     workflows_page,
-    [CloseWorkflowForm, WorkflowStepUp, WorkflowStepDown]
+    [
+        CloseWorkflowForm,
+        WorkflowStepUp,
+        WorkflowStepDown,
+        OpenWorkflowCard
+    ]
 );
 
 use gpui::prelude::FluentBuilder as _;
@@ -36,10 +42,8 @@ use gpui::{
     StatefulInteractiveElement as _, Styled, Window, div,
 };
 use gpui_component::{ActiveTheme, StyledExt};
-use gpui_component::{ResizableState, h_resizable, resizable_panel};
-use onehand_plugin_host::{
-    ListWidths, Measured, back_link, list_detail, measure_width, unmeasured,
-};
+use gpui_component::input::{InputEvent, InputState};
+use onehand_plugin_host::{Measured, back_link, measure_width, unmeasured};
 use std::path::PathBuf;
 
 /// What the page asks of its window.
@@ -63,13 +67,15 @@ pub(crate) struct WorkflowsPage {
     /// A save is being written: *Save* spins and takes no second press, so
     /// one write lands at a time.
     writing: bool,
-    /// One focus handle per listed row, by place: each row is a tab stop, so
-    /// the keyboard reaches it as the pointer does.
-    rows: Vec<FocusHandle>,
-    /// The list's width as dragged beside the editor.
-    split: Entity<ResizableState>,
-    /// The page's width as last laid out, which decides whether the list and
-    /// the editor stand side by side.
+    /// One focus handle per card shown, by place: each card is a tab stop,
+    /// so the keyboard reaches it as the pointer does.
+    cards: Vec<FocusHandle>,
+    /// The grid's search, made with the first frame that has a window, and
+    /// kept for as long as the page is: leaving and coming back finds it as
+    /// it was left.
+    query: Option<Entity<InputState>>,
+    /// The page's width as last laid out, which decides how many cards a
+    /// row holds.
     width: Measured,
     /// The editor's scroll, and the open step kept in view above the drawer.
     reveal: Reveal,
@@ -151,8 +157,8 @@ impl WorkflowsPage {
             projects: Vec::new(),
             selected: None,
             writing: false,
-            rows: Vec::new(),
-            split: cx.new(|_| ResizableState::default()),
+            cards: Vec::new(),
+            query: None,
             width: unmeasured(),
             reveal: Reveal {
                 scroll: gpui::ScrollHandle::new(),
@@ -203,50 +209,58 @@ impl WorkflowsPage {
     }
 }
 
-/// The list's width before anybody drags it, and the range a drag may take
-/// it through: room for a long workflow name on one line beside the head's
-/// *New*, never so wide that it crowds the editor.
-const LIST: ListWidths = ListWidths::new(20., 16., 30.);
+impl WorkflowsPage {
+    /// The grid's search, made on first use: an input needs a window.
+    fn query(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Entity<InputState> {
+        if let Some(query) = &self.query {
+            return query.clone();
+        }
+        let query = cx.new(|cx| InputState::new(window, cx).placeholder("Search workflows"));
+        cx.subscribe(&query, |_, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                cx.notify();
+            }
+        })
+        .detach();
+        self.query = Some(query.clone());
+        query
+    }
+
+    /// Enter: open the card the keyboard is on, if it is on one.
+    fn open_focused_card(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.picked.is_some() {
+            return;
+        }
+        let Some(place) = self.cards.iter().position(|card| card.is_focused(window)) else {
+            return;
+        };
+        let text = self
+            .query
+            .as_ref()
+            .map(|query| query.read(cx).value().to_string())
+            .unwrap_or_default();
+        let entries = crate::workflow::templates(cx);
+        let listed = pick::listed(&entries, &text);
+        let key = listed
+            .shown
+            .get(place)
+            .and_then(|&at| pick::pick_of(&entries[at]));
+        if let Some(key) = key {
+            self.pick(key, window, cx);
+        }
+    }
+}
 
 impl Render for WorkflowsPage {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let handle = cx.entity();
+        let query = self.query(window, cx);
         let listed = crate::workflow::templates(cx)
             .len()
             .min(crate::workflow::TEMPLATES_SHOWN);
-        while self.rows.len() < listed {
-            self.rows.push(cx.focus_handle().tab_stop(true));
+        while self.cards.len() < listed {
+            self.cards.push(cx.focus_handle().tab_stop(true));
         }
-        let layout = list_detail(
-            self.split.read(cx),
-            &LIST,
-            self.width.get(),
-            window.rem_size(),
-        );
-        let draft_name = self
-            .draft
-            .as_ref()
-            .map(|draft| draft.name.read(cx).value().to_string());
-        // Its scroll starts under the pane's header, which floats over the
-        // page's top: rows scrolled up go under the header's edge, never
-        // behind its controls. The split's line still runs the whole height.
-        let list = div().size_full().pt(crate::tokens::BAR_H).child(
-            div()
-                .id("workflows-list")
-                .size_full()
-                .overflow_y_scroll()
-                // The rows' fills on this edge and their words a row's inset in,
-                // on the line the header's words stand on, as on the Issues page.
-                .px_6()
-                .pb_6()
-                .child(list::list_column(
-                    &handle,
-                    self.picked.as_ref(),
-                    draft_name,
-                    &self.rows,
-                    cx,
-                )),
-        );
         let detail = |under_header: bool| {
             // Only the hint stands in the middle of the region; a form starts
             // at its top, level with the list's head.
@@ -352,27 +366,7 @@ impl Render for WorkflowsPage {
                 )
                 .into_any_element()
         };
-        let halves = if layout.side_by_side {
-            h_resizable("workflows-split")
-                .with_state(&self.split)
-                .child(
-                    // `flex_none`, or the list grows into the room the editor
-                    // was opened to be written in.
-                    resizable_panel()
-                        .size(layout.start)
-                        .size_range(layout.range)
-                        .flex_none()
-                        .child(
-                            div()
-                                .size_full()
-                                .border_r_1()
-                                .border_color(cx.theme().border)
-                                .child(list),
-                        ),
-                )
-                .child(resizable_panel().child(detail(true)))
-                .into_any_element()
-        } else if self.picked.is_some() {
+        let halves = if self.picked.is_some() {
             let back = back_link("workflows-back", "Workflows", cx)
                 .on_click(click(&handle, |page, window, cx| {
                     page.close_workflow_form(window, cx)
@@ -384,7 +378,38 @@ impl Render for WorkflowsPage {
                 .child(div().flex_1().min_h_0().child(detail(false)))
                 .into_any_element()
         } else {
-            list.into_any_element()
+            // A column page under the floating header: the grid as wide as
+            // boxes side by side are, centred, its scroll the page's.
+            // The page's width less its `px_8` gutters, up to the column's.
+            let grid_width =
+                gpui::rems((self.width.get().0 - 4.).min(crate::tokens::PAGE_WIDE.0));
+            div()
+                .id("workflows-grid")
+                .size_full()
+                .overflow_y_scroll()
+                .child(
+                    div()
+                        .h_flex()
+                        .justify_center()
+                        .px_8()
+                        .pt(crate::tokens::BAR_H)
+                        .pb_6()
+                        .child(
+                            div()
+                                .w_full()
+                                .max_w(crate::tokens::PAGE_WIDE)
+                                .pt_3()
+                                .child(grid::grid_page(
+                                    &handle,
+                                    &query,
+                                    &self.cards,
+                                    &self.run_choices(),
+                                    grid_width,
+                                    cx,
+                                )),
+                        ),
+                )
+                .into_any_element()
         };
         // A bare page, so it tracks its own focus: a field typed in here
         // must be inside this, or the window's keys land elsewhere.
@@ -405,6 +430,11 @@ impl Render for WorkflowsPage {
             .on_action(
                 cx.listener(|page: &mut Self, _: &WorkflowStepDown, window, cx| {
                     page.step_open(1, window, cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|page: &mut Self, _: &OpenWorkflowCard, window, cx| {
+                    page.open_focused_card(window, cx)
                 }),
             )
             .relative()

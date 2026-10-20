@@ -1,6 +1,6 @@
 mod head;
 
-pub(super) use head::unreadable;
+pub(super) use head::{more_menu, run_menu, unreadable};
 
 use super::WorkflowsPage;
 use super::click;
