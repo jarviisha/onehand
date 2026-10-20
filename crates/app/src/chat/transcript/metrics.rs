@@ -17,9 +17,11 @@ pub(in crate::chat) const TEXT_SM: Rems = rems(0.8125);
 pub(super) const HEADING_1: f32 = 1.25;
 pub(super) const HEADING_2: f32 = 1.125;
 /// How tall a fenced block in an answer stands before it is clipped, rather
-/// than pushing the rest of the answer off the screen; its Copy reaches the
-/// part that is cut.
+/// than pushing the rest of the answer off the screen; the corner of a block
+/// it clips says how many lines it holds and opens them whole.
 pub(super) const MAX_CODE_BLOCK_H: Rems = rems(22.5);
+/// The space inside a fenced block's well, round its code.
+pub(super) const CODE_BLOCK_PAD: Rems = rems(0.75);
 /// Space between the paragraphs of one answer: under the space between whole
 /// blocks, because two paragraphs are parts of one block.
 pub(super) const PARAGRAPH_GAP: Rems = PART_GAP;

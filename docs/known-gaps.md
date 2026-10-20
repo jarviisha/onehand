@@ -167,6 +167,9 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   above the code to put one in, the copy's position is written by the library, and
   `TextViewStyle::code_block` is one style for every block with nowhere to keep per-block fold
   state. The language is said in the corner box instead, since that is the only slot there is.
+  A block past its height cap says there how many lines it holds and opens them whole in a
+  dialog, because a block cannot scroll in place inside the transcript's list without taking the
+  wheel from the conversation.
 
   **Owning the block is reachable and costs selection.** `TextView::markdown_block_parser` runs
   *before* the built-in conversion and can intercept `mdast::Node::Code`, and
