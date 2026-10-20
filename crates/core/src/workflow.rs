@@ -29,7 +29,7 @@ pub use run::{
     StartWhy, Stop, Visit, WithCurrent,
 };
 pub(crate) use run::{COMMAND_FAILED, COMMAND_PASSED, FORGE_DONE};
-pub use status_checks::{judge, waited_on, with_logs, Seen};
+pub use status_checks::{judge, pull_request_step, waited_on, with_logs, Seen};
 pub use template::{GateKind, Place, StepKind, StepSpec, Template, DEFAULT_WAIT, SCHEMA_VERSION};
 pub use validate::validate;
 

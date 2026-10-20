@@ -3,8 +3,8 @@
 
 use super::{advance, read, with};
 use gpui::{App, Task};
-use onehand_core::connector::{self, CheckState, Connector, PrState, PullRequest};
-use onehand_core::workflow::{PrOpened, Seen, judge, waited_on, with_logs};
+use onehand_core::connector::{self, CheckState, Connector, PullRequest};
+use onehand_core::workflow::{PrOpened, Seen, judge, pull_request_step, waited_on, with_logs};
 use std::time::{Duration, Instant};
 
 /// How often a run waiting on its pull request's status checks looks at
@@ -78,16 +78,10 @@ pub(super) fn on_forge(uid: u64, commit: Option<String>, cx: &mut App) {
                     number: pr.number,
                     url: pr.url,
                 };
-                match connector.pull_request_for_blocking(&dir, &branch)? {
-                    Some(pr) if pr.state == PrState::Open => return Ok(Some(opened(pr))),
-                    Some(pr) if pr.state == PrState::Closed => {
-                        return Err(format!(
-                            "its pull request {} was closed without being merged, and \
-                             onehand does not open another",
-                            pr.url
-                        ));
-                    }
-                    Some(_) | None => {}
+                if let Some(pr) =
+                    pull_request_step(connector.pull_request_for_blocking(&dir, &branch)?)?
+                {
+                    return Ok(Some(opened(pr)));
                 }
                 let (title, body) = text.unwrap_or_default();
                 connector.open_pull_request_blocking(&dir, &branch, &title, &body)?;

@@ -25,6 +25,23 @@ pub enum Seen {
     Merged,
 }
 
+/// What the pull request step does with `found`, the pull request on the
+/// run's branch: an open one is taken up as the run's (`Ok(Some)`); none, or
+/// one merged, means the step opens one (`Ok(None)`); one closed without
+/// being merged is refused, since a person turned it down and a second
+/// beside it would ask again.
+pub fn pull_request_step(found: Option<PullRequest>) -> Result<Option<PullRequest>, String> {
+    match found {
+        Some(pr) if pr.state == PrState::Open => Ok(Some(pr)),
+        Some(pr) if pr.state == PrState::Closed => Err(format!(
+            "its pull request {} was closed without being merged, and onehand does not open \
+             another",
+            pr.url
+        )),
+        Some(_) | None => Ok(None),
+    }
+}
+
 /// Something that keeps the run waiting, `why`, after `waited` of at most
 /// `wait`: pending while there is time left, the run's failure after.
 pub fn waited_on(why: String, waited: Duration, wait: Duration) -> Seen {
@@ -115,4 +132,45 @@ pub fn with_logs(mut said: String, logs: &[(String, String)]) -> String {
         ));
     }
     said
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pr(state: PrState) -> PullRequest {
+        PullRequest {
+            url: "u/1".into(),
+            number: 1,
+            state,
+            draft: false,
+            head: String::new(),
+            conflicting: false,
+            checks: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn the_pull_request_step_reuses_open_refuses_closed_and_opens_otherwise() {
+        assert_eq!(
+            pull_request_step(Some(pr(PrState::Open))).map(|pr| pr.map(|pr| pr.url)),
+            Ok(Some("u/1".to_string()))
+        );
+        assert_eq!(
+            pull_request_step(Some(pr(PrState::Closed))).map(|pr| pr.map(|pr| pr.url)),
+            Err(
+                "its pull request u/1 was closed without being merged, and onehand does not \
+                 open another"
+                    .to_string()
+            )
+        );
+        assert_eq!(
+            pull_request_step(Some(pr(PrState::Merged))).map(|pr| pr.map(|pr| pr.url)),
+            Ok(None)
+        );
+        assert_eq!(
+            pull_request_step(None).map(|pr| pr.map(|pr| pr.url)),
+            Ok(None)
+        );
+    }
 }
