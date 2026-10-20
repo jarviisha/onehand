@@ -120,7 +120,7 @@ impl WorkflowsPage {
         self.entry_of(self.picked.as_ref()?, cx)
     }
 
-    /// Open `pick` beside the list, asking first when the form holds changes
+    /// Open `pick` on the page, asking first when the form holds changes
     /// not saved. A shipped workflow opens read-only; one of the person's
     /// own that cannot be read opens no form, only why.
     pub(super) fn pick(&mut self, pick: Pick, window: &mut Window, cx: &mut Context<Self>) {
@@ -148,7 +148,7 @@ impl WorkflowsPage {
         );
     }
 
-    /// Open the step `by` steps from the one open in the drawer, held at the
+    /// Open the step `by` steps from the one open, held at the
     /// first and the last; nothing while no step is open.
     pub(super) fn step_open(&mut self, by: isize, window: &mut Window, cx: &mut Context<Self>) {
         self.edit_open_step(window, cx, |d| {
@@ -193,7 +193,7 @@ impl WorkflowsPage {
         window.focus(&self.focus_handle, cx);
     }
 
-    /// Esc: the innermost thing open goes, the step drawer before the form.
+    /// Esc: the innermost thing open goes, the open step before the editor.
     pub(super) fn escape(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(draft) = self.draft.as_mut().filter(|d| d.open_step.is_some()) {
             draft.open_step = None;
@@ -247,11 +247,7 @@ impl WorkflowsPage {
     ) {
         // A shipped workflow is read, never changed: duplicating it is how.
         if let Some(draft) = self.draft.as_mut().filter(|d| !d.shipped) {
-            let was = draft.open_step;
             edit(draft, window, cx);
-            if draft.open_step.is_some() && draft.open_step != was {
-                self.reveal.ask();
-            }
         }
         cx.notify();
     }
@@ -269,9 +265,6 @@ impl WorkflowsPage {
             edit(draft);
             let now = draft.open_step;
             if now != was {
-                if now.is_some() {
-                    self.reveal.ask();
-                }
                 // A field of the step that was open may hold the keyboard,
                 // and it leaves the frame with its step.
                 self.hold_focus(window, cx);

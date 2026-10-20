@@ -102,7 +102,7 @@ fn pick_of_draft(draft: &WorkflowDraft) -> Pick {
 
 /// The editor's head: the name, a line of what it is, then *Run…* and the
 /// ⋯; a shipped workflow's leads with *Duplicate to edit*, its primary.
-pub(super) fn editor_head(
+pub(in crate::workflows_page) fn editor_head(
     handle: &Entity<WorkflowsPage>,
     draft: &WorkflowDraft,
     choices: &[(PathBuf, SharedString)],
