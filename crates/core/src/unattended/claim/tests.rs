@@ -405,3 +405,60 @@ fn the_search_passes_over_what_needs_a_check_and_takes_the_next() {
     }
     let _ = std::fs::remove_dir_all(git);
 }
+
+#[test]
+fn a_project_with_nothing_to_list_says_why() {
+    static ELSEWHERE: Fake = Fake {
+        name: "Elsewhere",
+        serves: Err("not here"),
+        ..Fake::SERVING
+    };
+    assert_eq!(
+        pickable_blocking(&[&ELSEWHERE], Path::new("/"), None).err(),
+        Some("not here".to_string())
+    );
+    assert_eq!(
+        pickable_blocking(&[], Path::new("/"), None).err(),
+        Some("no connector is built into this onehand".to_string())
+    );
+}
+
+#[test]
+fn a_forge_that_cannot_be_read_is_said_beside_the_projects_own_issues() {
+    static DOWN: Fake = Fake {
+        lists: Err("the forge is down"),
+        ..Fake::SERVING
+    };
+    let (tracker, dir) = local("beside", &[("Mine", &[])]);
+    let Tracker::Local(file) = &tracker else {
+        panic!("a local tracker")
+    };
+    let (rows, cut, unread) = pickable_blocking(&[&DOWN], &dir, Some(file.clone())).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert!(!cut);
+    assert_eq!(unread, Some("the forge is down".to_string()));
+    // With nothing of its own, the forge being down is the whole answer.
+    assert_eq!(
+        pickable_blocking(&[&DOWN], &dir, None).err(),
+        Some("the forge is down".to_string())
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn one_issue_is_picked_from_the_projects_own_only() {
+    let (tracker, dir) = local("one", &[("A", &[]), ("B", &[])]);
+    let Tracker::Local(file) = &tracker else {
+        panic!("a local tracker")
+    };
+    let (rows, _, _) = pickable_one_blocking(&[], &dir, Some(file.clone()), 2).unwrap();
+    assert_eq!(rows[0].1.issue.number, 2);
+    assert!(pickable_one_blocking(&[], &dir, Some(file.clone()), 9)
+        .err()
+        .is_some_and(|why| why.contains("cannot be worked by a run")));
+    assert_eq!(
+        pickable_one_blocking(&[], &dir, None, 1).err(),
+        Some("this workspace keeps no issues of its own".to_string())
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}

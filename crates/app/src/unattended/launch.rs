@@ -11,7 +11,7 @@ mod pick;
 
 pub use answer::{ReviewRead, read_review, start_answer};
 use pick::warn;
-pub use pick::{Pickable, look_now, pickable_blocking, pickable_one_blocking, start_picked};
+pub use pick::{look_now, start_picked};
 
 /// A claim that came back to the app: what core claimed, and the window a
 /// person picked it in, rather than the search finding it. Such a run is

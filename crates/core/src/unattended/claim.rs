@@ -598,5 +598,86 @@ pub fn prepare_blocking(
     }
 }
 
+/// What a person can pick from in a project: its open issues from where each
+/// lives, the ones it keeps itself first, and whether the list was cut — plus
+/// why the forge's could not be read, when its own could.
+pub type Pickable = (Vec<(Tracker, super::IssueRow)>, bool, Option<String>);
+
+/// Read what a person can pick from in `root`, whose own issues are in
+/// `issues` if its workspace keeps any, served by whichever of `connectors`
+/// takes it. Blocking.
+///
+/// A forge that cannot be read is an error only when there is nothing else to
+/// show; beside issues of the project's own it is said under the list, so one
+/// half being down does not hide the other.
+pub fn pickable_blocking(
+    connectors: &[&'static dyn Connector],
+    root: &Path,
+    issues: Option<PathBuf>,
+) -> Result<Pickable, String> {
+    let (mut rows, mut cut, mut unread) = (Vec::new(), false, None);
+    let forge = connector::serving(connectors, root).map(|at| connectors[at]);
+    for tracker in trackers_blocking(issues, forge.as_ref().ok().copied()) {
+        match super::open_issues_blocking(&tracker, root) {
+            Ok((found, more)) => {
+                cut |= more;
+                rows.extend(found.into_iter().map(|row| (tracker.clone(), row)));
+            }
+            // The forge's half being down is said beside the rest; the
+            // project's own issues failing to read is the whole answer.
+            Err(why) => match tracker {
+                Tracker::Forge(_) => unread = Some(why),
+                Tracker::Local(_) | Tracker::Synced { .. } => return Err(why),
+            },
+        }
+    }
+    // A project no connector serves says why only when there is nothing else
+    // to list: beside its own issues, the forge it does not have is no news.
+    match (rows.is_empty(), unread, forge) {
+        (true, Some(why), _) | (true, None, Err(why)) => Err(why),
+        (_, unread, _) => Ok((rows, cut, unread)),
+    }
+}
+
+/// Issue `number` of the ones `root` keeps itself, in `issues`, to pick, or
+/// why it cannot be. Blocking.
+///
+/// Only the project's own issues are read, never its forge's: the Issues tab
+/// numbers the issues it keeps, and a forge's numbers are its own. So the list
+/// being cut is that list's, and an issue missing from it is said to be older
+/// than the newest it holds, or else one a run may not take.
+pub fn pickable_one_blocking(
+    connectors: &[&'static dyn Connector],
+    root: &Path,
+    issues: Option<PathBuf>,
+    number: u64,
+) -> Result<Pickable, String> {
+    let forge = connector::serving(connectors, root)
+        .ok()
+        .map(|at| connectors[at]);
+    let tracker = trackers_blocking(issues, forge)
+        .into_iter()
+        .find(|tracker| !matches!(tracker, Tracker::Forge(_)))
+        .ok_or("this workspace keeps no issues of its own")?;
+    let (found, cut) = super::open_issues_blocking(&tracker, root)?;
+    let rows: Vec<_> = found
+        .into_iter()
+        .filter(|row| row.issue.number == number)
+        .map(|row| (tracker.clone(), row))
+        .collect();
+    match (rows.is_empty(), cut) {
+        (false, _) => Ok((rows, false, None)),
+        (true, true) => Err(format!(
+            "issue {number} is not among the newest {} open issues a pick reads; close \
+             some of the newer ones to reach it",
+            super::ISSUES_SHOWN
+        )),
+        (true, false) => Err(format!(
+            "issue {number} cannot be worked by a run: it is closed, or it was brought in \
+             from a forge the project is no longer kept in step with"
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests;

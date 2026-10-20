@@ -252,6 +252,8 @@ pub(crate) mod fake {
         pub(crate) pulls: &'static [(&'static str, PrState, &'static str)],
         /// Its default branch; `None` is a question it was not told to answer.
         pub(crate) default_branch: Option<&'static str>,
+        /// Why its open issues cannot be listed, when they cannot.
+        pub(crate) lists: Result<(), &'static str>,
     }
 
     impl Fake {
@@ -262,6 +264,7 @@ pub(crate) mod fake {
             labelled: &[9, 4],
             pulls: &[],
             default_branch: Some("main"),
+            lists: Ok(()),
         };
     }
 
@@ -276,6 +279,7 @@ pub(crate) mod fake {
             self.serves.map_err(str::to_string)
         }
         fn open_issues_blocking(&self, _: &Path, limit: usize) -> Result<Vec<IssueRow>, String> {
+            self.lists.map_err(str::to_string)?;
             Ok((1..=limit as u64)
                 .map(|n| IssueRow {
                     issue: Issue::new(n, "t".into(), String::new()),

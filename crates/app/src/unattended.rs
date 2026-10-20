@@ -26,11 +26,8 @@ mod facts;
 mod launch;
 mod report;
 use launch::{Landed, landed};
-pub use launch::{
-    Pickable, ReviewRead, look_now, pickable_blocking, pickable_one_blocking, read_review,
-    start_answer, start_picked,
-};
-pub use onehand_core::unattended::Project;
+pub use launch::{ReviewRead, look_now, read_review, start_answer, start_picked};
+pub use onehand_core::unattended::{Pickable, Project};
 pub(crate) use report::{
     card_question, deliver, deliver_all, ended, keep, opening, refuse_mode, spec_for, started,
 };
