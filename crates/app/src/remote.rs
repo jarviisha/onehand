@@ -24,7 +24,7 @@ use crate::state::Shared;
 use gpui::{App, BorrowAppContext as _};
 use onehand_core::config::RemoteConfig;
 use onehand_core::remote::types::{Outbound, RemoteEvent, ReqTx};
-use onehand_core::remote::{ArchiveRow, Chats, Press, RemoteCommand};
+use onehand_core::remote::{Chats, HELP, Press, RemoteCommand};
 use onehand_telegram::secret;
 use std::cell::RefCell;
 
@@ -408,15 +408,6 @@ pub fn is_away(cx: &App) -> bool {
     Shared::global(cx).away
 }
 
-/// How many saved conversations one `/archive` offers.
-///
-/// A flat handful across every project rather than a browsable index: the
-/// question somebody asks from a phone is "put back the one I was in", and a
-/// month of work would otherwise draw a column of hundreds for the sake of the
-/// two anybody came for. What the cap cut off is said on screen rather than
-/// silently dropped.
-const MAX_ARCHIVES: usize = 10;
-
 /// Every project root this process holds, deduplicated.
 ///
 /// Two windows can hold the same root — one workspace per window, and nothing
@@ -439,39 +430,6 @@ fn roots(cx: &App) -> Vec<(std::path::PathBuf, String)> {
     out
 }
 
-/// Read what is on disk for `roots`, newest first.
-///
-/// **Blocking, and called from the background executor only.** It opens the
-/// conversation store and reads a small file per conversation in it, which is
-/// hundreds of reads on a machine that has been used for a while — on the UI
-/// thread that is a visible stall, in the middle of a frame, for a message
-/// nobody is watching the screen for.
-fn scan_archives(roots: Vec<(std::path::PathBuf, String)>) -> (Vec<ArchiveRow>, usize) {
-    let store = onehand_core::chat::conversations_dir();
-    let mut found: Vec<ArchiveRow> = Vec::new();
-    for (root, project) in roots {
-        // Every agent, not one: the listing is about what was said, and which
-        // adapter said it is a detail below that.
-        for meta in onehand_core::chat::list_conversations(&store, &root, None) {
-            found.push(ArchiveRow {
-                root: root.clone(),
-                project: project.clone(),
-                dir: meta.dir,
-                agent: meta.agent,
-                title: meta.title,
-                updated: meta.updated,
-            });
-        }
-    }
-    // Newest first, which is what makes a cap of ten worth having.
-    found.sort_by_key(|pick| std::cmp::Reverse(pick.updated));
-    // The total travels with the page, because a listing that quietly stops at
-    // ten reads as a machine that has had ten conversations.
-    let total = found.len();
-    found.truncate(MAX_ARCHIVES);
-    (found, total)
-}
-
 /// Answer `/archive`, off the UI thread.
 ///
 /// Nothing is returned: the scan cannot finish inside this call, so the reply is
@@ -484,45 +442,15 @@ fn list_archive(chat: &str, cx: &mut App) {
     cx.spawn(async move |cx| {
         let (found, total) = cx
             .background_executor()
-            .spawn(async move { scan_archives(roots) })
+            .spawn(async move { onehand_core::remote::scan_archives(roots) })
             .await;
         cx.update(|cx| {
-            let text = archive_listing(&found, total);
+            let text = onehand_core::remote::archive_listing(&found, total);
             with_chats(cx, |chats| chats.remember_archive(&chat, found));
             Shared::global(cx).remote.send(Outbound::text(chat, text));
         });
     })
     .detach();
-}
-
-/// The `/archive` reply.
-fn archive_listing(found: &[ArchiveRow], total: usize) -> String {
-    if found.is_empty() {
-        return "Nothing saved yet — a conversation is written at the end of its first turn."
-            .to_string();
-    }
-    let now = onehand_core::chat::now_secs();
-    let mut out = String::from("Archive\n\n");
-    for (place, pick) in found.iter().enumerate() {
-        out.push_str(&format!(
-            "{} · {} — {}\n    {} · {}\n",
-            place + 1,
-            pick.project,
-            pick.title,
-            pick.agent,
-            crate::chat::pane::rel_time(now, pick.updated),
-        ));
-    }
-    // Said rather than silently dropped: a list that stops at ten with no word
-    // about it reads as a machine that has had ten conversations.
-    if total > found.len() {
-        out.push_str(&format!(
-            "\n{} newest of {total}. The rest are in the app.\n",
-            found.len()
-        ));
-    }
-    out.push_str("\n/open <number> puts one back.");
-    out
 }
 
 /// Answer `/open`.
@@ -728,31 +656,6 @@ fn answer(chat: &str, text: &str, cx: &mut App) -> Option<String> {
     }
 }
 /// What this chat can do, in the order somebody arriving would need it.
-const HELP: &str = "\
-/sessions — every session onehand is running, and what each is doing
-/use <number> — point this chat at one of them, and follow it
-/follow [number] — hear about a session without pointing at it
-/unfollow [number] — stop hearing about one
-/status — what reaches this chat right now
-/stop — cancel the turn running on the one this chat is pointed at
-/options — the agent's own pickers: mode, model, effort
-/archive — conversations saved on disk, newest first
-/open <number> — put one of them back and point this chat at it
-/away — you've left the machine; announce everything you follow
-/here — you're back; go quiet again while you're looking
-/help — this
-
-Anything else is sent as a prompt to the session this chat is pointed at.
-//<command> sends the agent's own slash command — //compact, //clear.
-
-Nothing reaches you here until you ask for it. A session you follow announces \
-three things on its own: a turn that finished, an agent waiting on you, an \
-agent that stopped answering — everything else stays quiet, and a session you \
-don't follow says nothing at all while still running normally. /use follows \
-what it points at, so the short way in is /sessions then /use <number>. While \
-you're at the keyboard what you could already see is held back; /away is how \
-you say you can't see it. If it seems too quiet, /status says why.";
-
 /// Send a prompt to whatever this chat is pointed at.
 fn send_prompt(chat: &str, prompt: &str, open: &[RemoteSession], cx: &mut App) -> String {
     let Some(uid) = pointed_at(chat, cx) else {
@@ -788,65 +691,5 @@ pub fn announce(origin: &Origin, what: Announcement, cx: &App) {
     let bridge = &Shared::global(cx).remote;
     for out in messages {
         bridge.send(out);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Every command word [`HELP`] offers, as the reader would type it.
-    ///
-    /// Lines beginning with a doubled slash are skipped: that entry is the
-    /// escape for the agent's own commands, and `<command>` there is a
-    /// placeholder rather than a word this build knows.
-    fn words_help_offers() -> Vec<&'static str> {
-        HELP.lines()
-            .filter(|line| line.starts_with('/') && !line.starts_with("//"))
-            .filter_map(|line| line.split_whitespace().next())
-            .collect()
-    }
-
-    /// A command named in the help and not in the parser answers "I don't know
-    /// that" while pointing at itself, which is the worst reply the bridge has.
-    /// It is the failure a rename produces and the one nobody would go looking
-    /// for, since the help is the last place anybody suspects.
-    #[test]
-    fn help_offers_nothing_the_parser_cannot_read() {
-        for word in words_help_offers() {
-            let read = onehand_core::remote::command::parse(word);
-            assert!(
-                !matches!(read, RemoteCommand::Unknown(_)),
-                "{word} is offered in the help and the parser does not know it"
-            );
-        }
-    }
-
-    /// The other direction, for the three the subscription model turns on. A
-    /// bridge that says nothing until asked is only usable if the asking is
-    /// findable, and `/status` is what a reader reaches for when it seems
-    /// broken — every one of them has to be in the first thing a new chat is
-    /// sent.
-    #[test]
-    fn subscribing_is_offered_in_the_help() {
-        let offered = words_help_offers();
-        assert!(offered.contains(&"/follow"), "{HELP}");
-        assert!(offered.contains(&"/unfollow"), "{HELP}");
-        assert!(offered.contains(&"/status"), "{HELP}");
-    }
-
-    /// Silence being the default is the one thing a new chat cannot work out by
-    /// waiting, so the help has to say it rather than only listing the commands
-    /// that change it. Pinned by the words a reader would scan for: without them
-    /// the first symptom is a bridge that looks dead.
-    #[test]
-    fn the_help_says_that_nothing_arrives_unasked() {
-        assert!(
-            HELP.contains("Nothing reaches you here until you ask for it"),
-            "{HELP}"
-        );
-        // And the short way past it, since the listing alone does not say that
-        // pointing a chat at a session is also subscribing to it.
-        assert!(HELP.contains("/use follows what it points at"), "{HELP}");
     }
 }
