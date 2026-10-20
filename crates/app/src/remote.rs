@@ -655,7 +655,7 @@ fn answer(chat: &str, text: &str, cx: &mut App) -> Option<String> {
         RemoteCommand::Prompt(prompt) => Some(send_prompt(chat, &prompt, &open, cx)),
     }
 }
-/// What this chat can do, in the order somebody arriving would need it.
+
 /// Send a prompt to whatever this chat is pointed at.
 fn send_prompt(chat: &str, prompt: &str, open: &[RemoteSession], cx: &mut App) -> String {
     let Some(uid) = pointed_at(chat, cx) else {

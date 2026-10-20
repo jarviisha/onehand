@@ -4,9 +4,10 @@
 //! second channel would otherwise grow a second parser — and two parsers of the
 //! same little language disagree at the edges long before anybody notices.
 
-/// What a chat is told it can do: the first thing a fresh chat is sent, and
-/// the answer to a word the parser does not know. Beside the parser so that
-/// a command added or renamed is a change to one file.
+/// What this chat can do, in the order somebody arriving would need it: the
+/// first thing a fresh chat is sent, and the answer to a word the parser does
+/// not know. Beside the parser so that a command added or renamed is a change
+/// to one file.
 pub const HELP: &str = "\
 /sessions — every session onehand is running, and what each is doing
 /use <number> — point this chat at one of them, and follow it

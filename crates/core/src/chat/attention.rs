@@ -134,12 +134,10 @@ pub enum SessionSignal {
 impl SessionSignal {
     /// How badly each state wants the user's eye, lowest first.
     ///
-    /// **The one place the order lives.** Three readers now — a session row
-    /// reducing its own four facts, a project row reducing its sessions'
-    /// signals, and the rail's flat session list sorting itself so the ones
-    /// wanting an answer rise to the top — and an order written out twice is an
-    /// order that will disagree with itself the first time someone edits one
-    /// copy.
+    /// **The one place the order lives.** A session reducing its own facts and
+    /// a group of sessions reducing theirs both read it, and an order written
+    /// out twice is an order that will disagree with itself the first time
+    /// someone edits one copy.
     fn rank(self) -> u8 {
         match self {
             // A dead adapter outranks a question nobody can answer any more.
@@ -162,7 +160,7 @@ impl SessionSignal {
     /// draws.
     ///
     /// One mark, not one per condition: two marks side by side on a rail row
-    /// are a code nobody learns. Which one survives is [`Self::rank`] — a
+    /// are a code nobody learns. Which one survives is `rank` — a
     /// judgement about which fact the user needs when several are true at once.
     ///
     /// Pure, and separate from the lookup, so the order is testable without a
