@@ -483,11 +483,8 @@ pub(crate) use facts::offered;
 /// first configured.
 pub(crate) fn run_agent(cx: &App) -> Option<String> {
     let shared = Shared::global(cx);
-    shared
-        .unattended
-        .as_ref()
-        .and_then(|u| u.agent.clone())
-        .or_else(|| shared.agents.first().map(|spec| spec.name.clone()))
+    let set = shared.unattended.as_ref().and_then(|u| u.agent.as_deref());
+    onehand_core::config::agent_or_first(&shared.agents, set).map(|spec| spec.name.clone())
 }
 
 /// What a new task of `task`'s kind would be given now, for a retry with
@@ -499,7 +496,8 @@ pub(crate) fn now_for(
     cx: &App,
 ) -> onehand_core::workflow::Now {
     let shared = Shared::global(cx);
-    let first = shared.agents.first().map(|spec| spec.name.clone());
+    let first =
+        onehand_core::config::agent_or_first(&shared.agents, None).map(|spec| spec.name.clone());
     let runs = shared.unattended.as_ref().map(|u| core::RunSettings {
         agent: u.agent.clone(),
         mode: u.mode.clone(),

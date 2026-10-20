@@ -2,7 +2,7 @@ use super::with;
 use crate::chat::session::{ChatSession, note};
 use crate::state::Shared;
 use gpui::{App, Entity};
-use onehand_core::config::AgentSpec;
+use onehand_core::config::{self, AgentSpec};
 use onehand_core::connector::{self, Connector};
 use onehand_core::task::Task;
 use onehand_core::unattended::{
@@ -20,11 +20,7 @@ use std::path::{Path, PathBuf};
 // ponytail: `env` is POSIX; a Windows build would need the variable threaded
 // through the ACP spawn instead.
 pub(crate) fn spec_for(agent: Option<&str>, cx: &App) -> Option<AgentSpec> {
-    let agents = &Shared::global(cx).agents;
-    let base = agent
-        .and_then(|name| agents.iter().find(|spec| spec.name == name))
-        .or_else(|| agents.first())?
-        .clone();
+    let base = config::agent_or_first(&Shared::global(cx).agents, agent)?.clone();
     Some(wrapped(base))
 }
 

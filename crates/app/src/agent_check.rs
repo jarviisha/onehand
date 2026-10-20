@@ -18,7 +18,7 @@ use gpui::{AnyElement, App, IntoElement, ParentElement, Styled, Window, div};
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme as _, StyledExt as _};
 use onehand_core::acp::AcpEvent;
-use onehand_core::config::AgentSpec;
+use onehand_core::config::{self, AgentSpec};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -51,15 +51,11 @@ impl Ask {
         mode: Option<&str>,
         cx: &App,
     ) -> Option<Self> {
-        let agents = &Shared::global(cx).agents;
-        let spec = match agent {
-            Some(name) => agents.iter().find(|spec| spec.name == name),
-            None => agents.first(),
-        }?;
+        let spec = config::agent_or_first(&Shared::global(cx).agents, agent)?;
         Some(Self {
             spec: spec.clone(),
             cwd: cwd.to_path_buf(),
-            mode: mode.filter(|m| !m.trim().is_empty()).map(str::to_string),
+            mode: mode.and_then(config::mode_set),
         })
     }
 

@@ -169,7 +169,8 @@ impl Shell {
         let (in_git, forge) = launcher.ground.unwrap_or((true, None));
         let facts = preflight::Facts {
             workflow,
-            agent: shared.agents.first().map(|spec| spec.name.clone()),
+            agent: onehand_core::config::agent_or_first(&shared.agents, None)
+                .map(|spec| spec.name.clone()),
             agent_configured: !shared.agents.is_empty(),
             mode: None,
             offered: None,

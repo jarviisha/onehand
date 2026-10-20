@@ -760,7 +760,7 @@ pub fn now_for(
     match runs.filter(|_| issue) {
         Some(runs) => Now {
             agent: runs.agent.clone().or(first_agent),
-            mode: Some(runs.mode.clone()).filter(|mode| !mode.trim().is_empty()),
+            mode: crate::config::mode_set(&runs.mode),
             check,
             timeout: Some(runs.timeout.clone()),
         },
