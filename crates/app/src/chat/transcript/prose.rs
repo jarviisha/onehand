@@ -1,8 +1,9 @@
 use super::fold_key;
 use super::metrics::{
-    FOLD_INDENT, HEADING_1, HEADING_2, MAX_CODE_BLOCK_H, PARAGRAPH_GAP, TEXT, TEXT_SM, TIGHT_GAP,
+    CODE_BLOCK_PAD, FOLD_INDENT, HEADING_1, HEADING_2, MAX_CODE_BLOCK_H, PARAGRAPH_GAP, TEXT,
+    TEXT_SM, TIGHT_GAP,
 };
-use super::parts::{accent, copy_button, copy_turn_button, fold_line};
+use super::parts::{accent, copy_button, copy_turn_button, fold_line, show_more};
 use crate::chat::session::ChatSession;
 use crate::tokens::LEADING;
 use gpui::prelude::FluentBuilder as _;
@@ -90,6 +91,15 @@ fn md_view(
                             .child(lang)
                     }))
                     .child(copy_button("copy-code", block.code(), "Copy the code", cx))
+                    // What the cap holds back, said and opened whole.
+                    .children(super::code_view::held_back(&block.code()).map(|lines| {
+                        let (code, lang) = (block.code(), block.lang());
+                        show_more("code-all", format!("All {lines} lines"), cx)
+                            .tooltip("Open the whole block")
+                            .on_click(move |_, window, cx| {
+                                super::code_view::open(code.clone(), lang.clone(), window, cx)
+                            })
+                    }))
             })
             .into_any_element(),
         None => div().child(md.source.clone()).into_any_element(),
@@ -101,14 +111,15 @@ fn md_view(
 /// The height cap on code blocks is the bounded-rendering concern arriving by
 /// a different route: `TextViewStyle::code_block` is one style for every block,
 /// so per-block fold state has nowhere to live. Capping the height keeps the
-/// answer readable; Copy on the block is how the clipped tail stays reachable.
+/// answer readable; the corner's show-more opens a capped block whole, since it
+/// cannot scroll inside the list.
 ///
 /// **The rest is the renderer's defaults being wrong for a chat.** Its headings
 /// are scaled off a base of its own choosing, and its code blocks are set from
 /// an absolute pixel size that per-panel zoom cannot reach. The heading base is
 /// taken from the *current* rem size, which is the zoomed one inside a zoomed
 /// panel, and the code block's size is written in rems.
-fn prose_style(window: &Window, cx: &App) -> TextViewStyle {
+pub(super) fn prose_style(window: &Window, cx: &App) -> TextViewStyle {
     // Two steps up and one, then weight alone: an answer's headings are
     // section marks inside one message, not the top of a document.
     let mut style = TextViewStyle::default()
@@ -133,7 +144,7 @@ fn prose_style(window: &Window, cx: &App) -> TextViewStyle {
             StyleRefinement::default()
                 .max_h(MAX_CODE_BLOCK_H)
                 .overflow_hidden()
-                .p_3()
+                .p(CODE_BLOCK_PAD)
                 .rounded(cx.theme().radius)
                 .bg(cx.theme().muted)
                 .text_size(crate::tokens::CODE_TEXT)
