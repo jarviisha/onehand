@@ -225,7 +225,7 @@ Connections shows the signed-in line for each connector and a *Check again*. A
 project is looked at when it is switched on, when its window opens, and on every
 tick — a run in progress included. A tick with nothing switched on asks GitHub
 nothing, so the feature costs nobody who has not turned it on. Another forge is
-a second implementation of `Connector`, listed in `plugins::connectors`, and is
+a second implementation of `Connector`, listed in `features::connectors`, and is
 not built yet.
 
 **A config that cannot work is said, not only printed.** An empty label, an

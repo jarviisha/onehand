@@ -1,7 +1,7 @@
 # Architecture of the proposal
 
 - Status: proposal, the shape of every piece together. Part of [the proposal](README.md).
-- The split is the one the code already has: **core decides, the app does, a plugin draws.** Every
+- The split is the one the code already has: **core decides, the app does, a feature crate draws.** Every
   new rule below is a pure function in `crates/core`; the app gathers its inputs and carries out its
   answer; the Issues plugin draws what it is told through `onehand-ui`.
 
@@ -72,7 +72,7 @@ as the panel already hands it requests; the Workbench mode and the Issues page e
 it. A sync then runs once per file whatever the number of views, and an edit in one view is seen in
 the other at once.
 
-**As built**, the shared part is the Issues plugin's own (`view/store.rs`): one entity per issues
+**As built**, the shared part is the Issues crate's own (`view/store.rs`): one entity per issues
 file for the whole process, kept in a registry of weak handles, since both views are the plugin's
 and nothing in the app reads an issue. The app holds the page itself, once per window
 (`shell/issues_page.rs`).

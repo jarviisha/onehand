@@ -10,7 +10,7 @@
 //! Every tab here is a login shell. **Neovim is not one of them** — it is a mode
 //! of the Workbench, because that is the panel about files, and a tab named
 //! `nvim` sitting between two called `zsh` says the editor is a kind of shell.
-//! PTY/grid ownership is shared with the Neovim plugin through
+//! PTY/grid ownership is shared with the Neovim crate through
 //! `onehand-terminal-ui`.
 
 use crate::controls::Short as _;

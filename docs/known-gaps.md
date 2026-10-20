@@ -188,7 +188,7 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   no other agent's, so there is no agent picker and no per-agent enabling. There is no auto-update
   switch and no roll-back, since the command line offers neither and the mode writes none of
   Claude Code's files; for the same reason a scope once set on or off cannot be set back to saying
-  nothing short of editing its `settings.json`. A plugin installed by managed settings is not
+  nothing short of editing its `settings.json`. A feature crate installed by managed settings is not
   listed, because the listing names a scope this build does not read. *Change scope* is an install
   and a removal, not one step. The pending banner counts only changes made in this mode, so one
   made from a terminal is not announced. The scope *Install* remembers lasts for the session. The

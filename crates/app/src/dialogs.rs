@@ -102,7 +102,7 @@ pub(crate) fn footer_row() -> gpui::Div {
     div().h_flex().items_center().gap_2().w_full()
 }
 
-/// One field of a dialog's form: the plugin host's, as Settings' are.
+/// One field of a dialog's form: the UI crate's, as Settings' are.
 use onehand_ui::field;
 
 /// The conversation-rename window.

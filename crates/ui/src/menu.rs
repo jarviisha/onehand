@@ -1,4 +1,4 @@
-//! Popup menus a plugin can draw as the app does: rows that answer the
+//! Popup menus a feature crate can draw as the app does: rows that answer the
 //! pointer, and a menu that opens below its trigger.
 
 use gpui::{

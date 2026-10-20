@@ -49,7 +49,7 @@ Helpers:
 Inks (roles: `DESIGN.md`, *Type, space and shape*; by place: UI patterns, *Hierarchy*). The three
 neutral ones, for text on a neutral surface:
 
-| Ink | Read as | A plugin reaches it |
+| Ink | Read as | A feature crate reaches it |
 |---|---|---|
 | Full | `cx.theme().foreground` | yes |
 | Middle | `meta_ink(cx)`; on a fill, `middle_ink(pair, muted_foreground)` | yes |
@@ -193,7 +193,7 @@ Equal values kept apart on purpose, each one decision beside its one use: `CHAT_
 - **A colour**: a key's value in both palettes of `Ramp` in `crates/app/src/theme.rs`, from the
   source `DESIGN.md` names (*Colour and state*), the key beside it and a row in that table, written
   into its slot in `paint`, its contrast asserted in that file's tests against every surface it lands on.
-  A plugin reads it through the theme slot. A step between two the ramp holds is derived from
+  A feature crate reads it through the theme slot. A step between two the ramp holds is derived from
   them with `mix_oklab`, as `meta_ink` and `tint` are, not written as a value of its own.
 - **A size one module uses**: a `const` of type `Rems` beside its use, its reason in its doc
   comment. A spacing value equals a step.

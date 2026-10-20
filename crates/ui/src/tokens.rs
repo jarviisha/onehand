@@ -1,8 +1,8 @@
-//! The sizes and the lift the app and its plugins share.
+//! The sizes and the lift the app and its feature crates share.
 //!
 //! A size used in one place is a `const` beside that use. One that two places
-//! have to agree on lives here, because the second place is often a built-in
-//! plugin, which cannot reach into the binary hosting it — and two copies of
+//! have to agree on lives here, because the second place is often a feature
+//! crate, which cannot reach into the binary hosting it — and two copies of
 //! one number are two places for it to drift.
 
 use gpui::{App, BoxShadow, Pixels, Rems, px, rems};

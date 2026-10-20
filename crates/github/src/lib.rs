@@ -373,7 +373,7 @@ impl Connector for GitHub {
 }
 
 /// One issue as `gh --json number,title,body` prints it. The wire shape is
-/// this plugin's to know; what leaves it is core's [`Issue`].
+/// this crate's to know; what leaves it is core's [`Issue`].
 #[derive(Deserialize)]
 struct GhIssue {
     number: u64,

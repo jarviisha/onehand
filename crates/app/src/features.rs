@@ -1,4 +1,5 @@
-//! Composition root for every plugin compiled into the Onehand binary.
+//! Composition root for every feature crate compiled into the Onehand binary:
+//! the Workbench modes, the connectors and the remote channels.
 //!
 //! Three explicit, ordered lists and nothing else. The order is the user-visible
 //! Workbench order, declared here rather than inherited from filesystem or
@@ -27,9 +28,9 @@ pub fn workbench_modes(
     cx: &mut App,
 ) -> Vec<Box<dyn WorkbenchMode>> {
     vec![
-        // The Editor is the file tree and the buffers together -- the Files
-        // plugin is still its own crate and still its own mode, composed inside
-        // this one rather than listed beside it.
+        // The Editor is the file tree and the buffers together -- Files is
+        // still its own crate and still its own mode, composed inside this one
+        // rather than listed beside it.
         Box::new(onehand_editor::Mode::new(ask.clone(), cx)),
         Box::new(onehand_markdown::Mode::new(ask.clone(), cx)),
         Box::new(onehand_issues::Mode::new(

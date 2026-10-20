@@ -7,8 +7,8 @@
 //! what a toast says is a reason written for other places too (a log line, an
 //! issue comment), where the sentence keeps its period.
 //!
-//! Here rather than in the app for the reason [`crate::action`] is: a built-in
-//! plugin's press can fail too, and says so the way the app's does.
+//! Here rather than in the app for the reason [`crate::action`] is: a feature
+//! crate's press can fail too, and says so the way the app's does.
 
 use gpui::{App, Window};
 use gpui_component::WindowExt as _;

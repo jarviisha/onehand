@@ -134,11 +134,12 @@ What this build does not do yet, with the reason for each, is listed in
 
 ## Layout
 
-The crates and plugins are listed in [CLAUDE.md](CLAUDE.md#repo-layout).
-`crates/core` has no dependency on any UI framework, deliberately: it is the
-half that survived one front-end rewrite. Plugins are built into the same
-binary and composed at compile time; there is no plugin process, dynamic
-loading, IPC or marketplace for onehand's own plugins.
+The crates are listed in [CLAUDE.md](CLAUDE.md#repo-layout). `crates/core`
+has no dependency on any UI framework, deliberately: it is the half that
+survived one front-end rewrite. Every feature is a crate built into the same
+binary and composed at compile time; there is no plugin system: no plugin
+process, dynamic loading, IPC or marketplace. The Plugins mode manages Claude
+Code's plugins, not onehand's.
 
 ## Documentation
 

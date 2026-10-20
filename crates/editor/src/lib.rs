@@ -20,7 +20,7 @@ pub const SPEC: WorkbenchModeSpec =
 
 /// The Editor mode: the project's file tree, and the buffers opened out of it.
 ///
-/// The tree is the Files plugin unchanged, held here as the mode it already is
+/// The tree is the Files crate unchanged, held here as the mode it already is
 /// rather than copied in: every request this one does not answer itself is put
 /// to it, and what is new is the view pairing the two. They shared the panel by
 /// taking turns on the strip before, which charged a mode switch for every file

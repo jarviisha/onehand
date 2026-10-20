@@ -37,7 +37,7 @@ a hex literal outside the ramp is a bug even when it looks right, as no theme sw
    legible contrast on their actual surfaces in both modes.
 4. **Mono for machines, sans for people.** Code, paths, terminal output and diffs use
    `mono_font_family`. Anything a person wrote uses the default family.
-5. **Same role, same treatment.** Across app and plugins, equivalent rows, headers and controls
+5. **Same role, same treatment.** Across app and feature crates, equivalent rows, headers and controls
    share size, spacing, corners and states. A valid token alone does not make a consistent view.
 6. **Say nothing twice.** If a fact is already on screen near what it describes, don't repeat it
    in a badge, a status bar or a title.
@@ -267,7 +267,7 @@ and the ramp's tests hold each at what it reaches.
 
 Reuse gpui-component before building anything: `Root`, `DockArea`, `Sidebar`, `Dialog`, `Switch`,
 `InputState`, `Editor`, `TextView`, plus gpui's own `list` for the transcript. Controls go through
-the plugin host's builders, which set the pointer cursor and the one corner (`radius`): buttons through
+the UI crate's builders, which set the pointer cursor and the one corner (`radius`): buttons through
 `action`; fields through `text_input`, `search_input` and `text_area`. A field comes in two kinds:
 an **edged field**, in a form or a dialog, on no fill of its own; and a **search field** (the
 search mark, the clear button), with no edge, sunk into the fill of the place it sits (the
@@ -338,7 +338,7 @@ menus and the attachment tray, with a pinned title and no key hints, at most six
 how many more; a menu opens just above the control that opened it).
 
 Scope: the Workbench editor is a quick editor (tree-sitter, no LSP). Neovim is a mode with a PTY of
-its own per project. Files lives inside Editor, not as a mode. Plugins are built in.
+its own per project. Files lives inside Editor, not as a mode. Every mode is built in.
 
 ## Icons
 

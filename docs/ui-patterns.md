@@ -1,6 +1,6 @@
 # UI patterns
 
-The patterns every screen repeats, in the app and its built-in plugins: how a screen is put
+The patterns every screen repeats, in the app and its feature crates: how a screen is put
 together, and how it behaves while it waits, fails, refuses or removes something. `DESIGN.md`
 owns the window's frame and the visual rules these patterns are drawn with, `docs/screens.md`
 what each region holds, and a feature's own document its screens' detail. Code never cites this
@@ -11,7 +11,7 @@ file.
 ### Choose the container
 
 Choose by the content's role before choosing its decoration. These rules apply to app pages and
-plugin views alike; the feature contract still decides what content and actions exist.
+feature crate views alike; the feature contract still decides what content and actions exist.
 
 | Content | Container | Separation |
 |---|---|---|
@@ -120,7 +120,7 @@ size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in ea
 | A badge | Tag | `.small()`, at its own height |
 | A checkbox, a switch | Checkbox, Switch | `.small()` beside chrome text, at the library's own geometry |
 | A single-line row; a row with a second line | drawn by the app | `ROW_H`; at least `ROW_H` |
-| A strip along the top of a region | `strip` (plugin host) | `BAR_H` |
+| A strip along the top of a region | `strip` (`onehand_ui`) | `BAR_H` |
 
 - **`.tall()` is the ceiling.** No control stands taller than `FIELD_H`; a page gives a field
   room by its size, never by a larger control.
@@ -436,7 +436,7 @@ box (*Nothing needs you*).
 ### Toasts
 
 Transient news goes in a toast, `window.push_notification` with a notification built by
-the plugin host's `toast`, `crate::toast` in the app (which gives a failure its form and trims
+the UI crate's `toast`, `crate::toast` in the app (which gives a failure its form and trims
 the period), its kind chosen by what it
 means:
 
@@ -451,7 +451,7 @@ A toast is one sentence without a trailing period.
 
 A removal that cannot be undone asks first: data taken off disk, a process ended, unsaved work
 thrown away. It asks through `Confirm` (`crates/ui/src/confirm.rs`), the same question
-in the app and in a plugin:
+in the app and in a feature crate:
 
 - the title asks the question naming the thing: *Remove <name> from the workspace?*;
 - the description says what goes and what stays;

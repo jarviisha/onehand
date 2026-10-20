@@ -40,5 +40,5 @@ mod workflow;
 mod workflows_page;
 mod zoom;
 
-/// The sizes and the lift the app shares with its plugins.
+/// The sizes and the lift the app shares with its feature crates.
 pub(crate) use onehand_ui::{toast, tokens};

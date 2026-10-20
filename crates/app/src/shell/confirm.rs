@@ -1,5 +1,5 @@
 //! The question the shell asks before it does something that cannot be taken
-//! back. The modal itself is the plugin host's, so a built-in plugin asks the
+//! back. The modal itself is the UI crate's, so a feature crate asks the
 //! same way.
 
 use super::Shell;

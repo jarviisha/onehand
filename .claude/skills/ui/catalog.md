@@ -20,12 +20,12 @@ The app uses the library for: `Button` (always through `action`), `Input` (alway
 
 Draw none of these by hand: a `div` that looks like a button, a label, a key cap spelled in text.
 
-## The app and its plugin host
+## The app and its UI crate (`crates/ui`)
 
 | Need | Use | Where |
 |---|---|---|
-| Any button | `action` (sets the pointer and the theme's corner) | `crates/app/src/controls.rs` (the app), `crates/ui/src/lib.rs` (a plugin) |
-| Any text field | `text_input(&state, cx)` (sets the theme's corner, on no fill of its own) | `crates/app/src/controls.rs` (the app), `crates/ui/src/lib.rs` (a plugin) |
+| Any button | `action` (sets the pointer and the theme's corner) | `crates/app/src/controls.rs` (the app), `crates/ui/src/lib.rs` (a feature crate) |
+| Any text field | `text_input(&state, cx)` (sets the theme's corner, on no fill of its own) | `crates/app/src/controls.rs` (the app), `crates/ui/src/lib.rs` (a feature crate) |
 | A search field | `search_input(&state, cx)`: a `text_input` with the search mark and the clear button; the caller sizes it and sinks it into its place's fill (`.bg(..)`, the edge in that fill) | `crates/ui/src/lib.rs`, re-exported by `crates/app/src/controls.rs` |
 | A field of several lines | `text_area(&state, cx)`: the library's `Textarea` on a field's corner and surface | `crates/ui/src/lib.rs`, re-exported by `crates/app/src/controls.rs` |
 | A box that scrolls inside a scrolling page (a field of several lines, a well) | `contained_scroll(id, inner)`: the wheel over it never moves the page, even at its first or last line | `crates/ui/src/lib.rs` |
@@ -104,8 +104,8 @@ need migrating itself.
 | One long list to scan, filter and pick from, in the agent pane | List page | the Issues page, `crates/issues/src/view/page.rs` |
 | The filters under a page's head | Filter bar | `crates/issues/src/view/page/head.rs` |
 | Related fields or a subsection | Plain section | `section` in `crates/app/src/settings.rs` |
-| The facts about one thing on a page | Box | `card_box` (plugin host); `page_card`, `card_title`, `page_section` and `pair` in `crates/app/src/chat/pane/page_parts.rs` |
-| A bar along the top of a region | Strip | `strip` and `strip_control` (plugin host) |
+| The facts about one thing on a page | Box | `card_box` (`onehand_ui`); `page_card`, `card_title`, `page_section` and `pair` in `crates/app/src/chat/pane/page_parts.rs` |
+| A bar along the top of a region | Strip | `strip` and `strip_control` (`onehand_ui`) |
 | Rows to pick from | List | the Files tree, `crates/files/src/view.rs` |
 | Items opened one at a time, each with its own actions | Grid of boxes | `grid_page` in `crates/app/src/workflows_page/grid.rs` |
 | A list beside its detail | List and detail | `list_detail` in `crates/ui/src/list_detail.rs`; the Markdown mode |

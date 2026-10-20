@@ -7,8 +7,8 @@
 //! what is about to go and has to be answered before anything else in the
 //! window can be.
 //!
-//! Here rather than in the app for the reason [`crate::action`] is: a built-in
-//! plugin removes things too, and has to ask the way the window does.
+//! Here rather than in the app for the reason [`crate::action`] is: a feature
+//! crate removes things too, and has to ask the way the window does.
 
 use crate::Quiet as _;
 use crate::Short as _;

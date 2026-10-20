@@ -8,7 +8,7 @@ use gpui::{
 };
 use gpui_component::{ActiveTheme, StyledExt};
 
-/// The hairline box every card on a page is drawn in, the plugin host's so
+/// The hairline box every card on a page is drawn in, the UI crate's so
 /// an issue's boxes are the same one.
 pub(crate) use onehand_ui::card_box;
 

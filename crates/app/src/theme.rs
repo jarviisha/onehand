@@ -31,19 +31,19 @@ use gpui_component::{ActiveTheme as _, Colorize as _, Theme, ThemeConfigColors, 
 use onehand_terminal_ui::ansi::{self, Ansi};
 use std::rc::Rc;
 
-/// Status ink is the plugin host's, because a built-in plugin needs it too and
+/// Status ink is the UI crate's, because a feature crate needs it too and
 /// cannot reach in here. Named through this module all the same: every call
 /// site in the app already says `crate::theme::status_ink`, and that is the
 /// name the guard against using a raw status fill as text points at.
 pub(crate) use onehand_ui::status_ink;
 
-/// The surface a dock draws on is the plugin host's for the same reason, and
+/// The surface a dock draws on is the UI crate's for the same reason, and
 /// named through this module for the same one: the Neovim mode hands it to a
 /// terminal grid as that grid's background, and a second copy of the answer is
 /// a panel and the shell inside it disagreeing about what colour the panel is.
 pub(crate) use onehand_ui::dock_surface;
 
-/// The middle ink is the plugin host's too, since a plugin sets a detail beside
+/// The middle ink is the UI crate's too, since a feature crate sets a detail beside
 /// a name as well, and named through this module like the two above.
 pub(crate) use onehand_ui::meta_ink;
 
@@ -248,7 +248,7 @@ fn paint(colors: &mut ThemeConfigColors, ramp: &Ramp) {
     set(&mut colors.background, ramp.background);
     set(&mut colors.foreground, ramp.foreground);
     // The docks' surface rides in the slot the library gives a dock of tiles,
-    // which the app never draws: a built-in plugin hands it to a terminal grid
+    // which the app never draws: a feature crate hands it to a terminal grid
     // and can only reach it through the theme.
     set(&mut colors.tiles, ramp.panel);
     set(&mut colors.muted, ramp.well);

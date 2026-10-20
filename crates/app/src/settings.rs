@@ -188,7 +188,7 @@ pub(crate) fn section(title: Option<&'static str>, about: Option<SharedString>, 
         })
 }
 
-/// One setting, stacked: the plugin host's, where a plugin's form reaches it
+/// One setting, stacked: the UI crate's, where a feature crate's form reaches it
 /// too.
 pub(crate) use onehand_ui::field;
 

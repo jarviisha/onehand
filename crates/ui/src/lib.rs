@@ -63,7 +63,7 @@ use std::rc::Rc;
 /// takes: the library's buttons default to it, but a size can change it, and
 /// every button passes through here and nowhere else.
 ///
-/// **It lives here rather than in the app** because a built-in plugin draws
+/// **It lives here rather than in the app** because a feature crate draws
 /// buttons too and cannot reach into the binary that hosts it. A second copy in
 /// each half is two places for the library's default to be let through, and the
 /// bypass is one line and looks exactly like ordinary code — which is why a
@@ -87,7 +87,7 @@ pub fn action(id: impl Into<ElementId>) -> Button {
 /// leaves the edge. A field drawn with no edge at rest keeps one, in the
 /// surface's own colour, so the edge still has somewhere to show.
 ///
-/// Here rather than in the app for the reason [`action`] is: a plugin draws
+/// Here rather than in the app for the reason [`action`] is: a feature crate draws
 /// fields too, and one wrapper is one place for the corner to hold.
 pub fn text_input(state: &Entity<InputState>, cx: &App) -> Input {
     Input::new(state)
@@ -124,7 +124,7 @@ fn resting(button: Button) -> Button {
 /// it is called after the control's own tooltip, which it replaces for as
 /// long as it refuses.
 ///
-/// Here rather than in the app for the reason [`action`] is: a built-in plugin
+/// Here rather than in the app for the reason [`action`] is: a feature crate
 /// draws buttons that refuse while they work.
 pub trait Refuses: Sized {
     /// Refuse presses while there is a reason to, say so in the cursor, and
@@ -167,7 +167,7 @@ pub fn well(cx: &App) -> Div {
 /// what can be typed into it, and a long description wraps above it rather
 /// than beside it.
 ///
-/// Here rather than in the app for the reason [`action`] is: a plugin's form
+/// Here rather than in the app for the reason [`action`] is: a feature crate's form
 /// asks for settings too, and a second copy is a second place for a field's
 /// rhythm to drift.
 pub fn field(
@@ -217,7 +217,7 @@ pub fn dock_surface(cx: &App) -> Hsla {
 
 /// Status colours used as ink on the app's normal surfaces.
 ///
-/// Here rather than in the app for the reason [`action`] is: a built-in plugin
+/// Here rather than in the app for the reason [`action`] is: a feature crate
 /// draws change badges and cannot reach into the binary hosting it, and a
 /// second copy of the derivation is a second place for the raw status fill to
 /// be used as ink — which is the mistake this exists to prevent.
@@ -289,8 +289,8 @@ pub fn status_hue(base: Hsla, foreground: Hsla) -> Hsla {
 /// they already hold, so there is no second ramp to keep in step by hand and no
 /// library token borrowed for a meaning it does not have.
 ///
-/// Here rather than in the app for the reason [`action`] is: a plugin sets a
-/// detail beside a name too (an issue's number beside its title, a plugin's
+/// Here rather than in the app for the reason [`action`] is: a feature crate sets a
+/// detail beside a name too (an issue's number beside its title, a feature crate's
 /// version beside its name), and a second copy of the derivation is a second
 /// place for the step to drift.
 pub fn meta_ink(cx: &App) -> Hsla {
@@ -428,7 +428,7 @@ pub fn badge_edge(tint: Tint) -> Hsla {
     tint.ink.mix_oklab(tint.fill, 0.5)
 }
 
-/// A mark the app's own icon set draws for a plugin, where the bundled set
+/// A mark the app's own icon set draws for a feature crate, where the bundled set
 /// has no drawing: an open issue's circle with a dot, and a refresh. The app
 /// serves these under its own prefix, and its registry test holds each path to
 /// the one it serves.
@@ -490,7 +490,7 @@ pub fn status_line(message: impl Into<SharedString>, ink: Hsla) -> AnyElement {
 }
 
 /// A search field: a [`text_input`] led by the search mark and ended by the
-/// library's clear button, so every search in the app and its plugins is one
+/// library's clear button, so every search in the app and its feature crates is one
 /// shape. The caller sizes it, as it would a field.
 pub fn search_input(state: &Entity<InputState>, cx: &App) -> Input {
     text_input(state, cx)
@@ -533,7 +533,7 @@ pub fn text_area(state: &Entity<TextareaState>, cx: &App) -> Textarea {
 /// lost in the surface, and read as a smaller box. So the ghost is drawn here
 /// as a custom variant on the ramp's own steps: no fill at rest, the
 /// [`control_fill`] on hover, on press and when selected, so hovered and
-/// selected are one shape. Every ghost button in the app and its plugins is this, never a bare
+/// selected are one shape. Every ghost button in the app and its feature crates is this, never a bare
 /// `ghost()`.
 pub trait Quiet {
     /// The ghost variant, hovering on the selected step.
@@ -804,7 +804,7 @@ pub fn choice(
 /// each view is a choice at `flex_1`.
 ///
 /// **Here rather than in the app** for the reason [`action`] is: the app and a
-/// built-in plugin both draw one, and a plugin cannot reach into the binary
+/// feature crate both draw one, and a feature crate cannot reach into the binary
 /// hosting it.
 ///
 /// **One edged track.** Loose ghosts side by side read as two words, the

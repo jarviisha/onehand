@@ -72,10 +72,10 @@ fn sources() -> Vec<(String, String)> {
 
 /// Every first-party file that draws, or that hosts something drawing.
 ///
-/// The app, its built-in plugins, the plugin host and the shared terminal
-/// primitives. Moving UI code into a plugin or a support crate must not move it
+/// The app, its feature crates, the UI crate and the shared terminal
+/// primitives. Moving UI code into a feature crate or a support crate must not move it
 /// out of the app's load-bearing source guards at the same time — that is
-/// exactly what happened when the built-in plugins were split out, and it left
+/// exactly what happened when the feature crates were split out, and it left
 /// a button wrapper, a status colour and a dead field in crates nothing was
 /// looking at. `vendor/` is deliberately excluded: it is upstream code carrying
 /// our patches, and holding it to the app's own drawing rules would bury those
@@ -246,7 +246,7 @@ mod tests {
     /// framework-free is what would let it survive another. It must also not
     /// dictate an async runtime or drag in a TLS stack: GPUI runs on smol, so a
     /// core that awaited tokio I/O directly would panic inside the UI process,
-    /// and the Telegram wire belongs to the plugin that speaks it.
+    /// and the Telegram wire belongs to the crate that speaks it.
     ///
     /// **Transitive, and it has to be.** The check used to read core's own
     /// manifest for lines starting with the forbidden name, which a path
@@ -284,7 +284,7 @@ mod tests {
         // The walk's own self-check. Reading core's manifest alone would pass
         // this test for as long as core has no first-party dependency at all,
         // and go on passing on the day it gains one that drags gpui back in.
-        // The plugin host depends on core by path, so following it is proof the
+        // The UI crate depends on core by path, so following it is proof the
         // walk crosses a manifest boundary.
         let through_host = super::reachable_dependencies(&root.join("crates/ui"));
         assert!(
@@ -412,7 +412,7 @@ mod tests {
                         !source.contains(&expression),
                         "{path} uses the status background `{role}` as text; use \
                          status_ink instead -- crate::theme in the app, \
-                         onehand_ui in a plugin"
+                         onehand_ui in a feature crate"
                     );
                 }
             }
@@ -632,8 +632,8 @@ mod tests {
         let bare = format!("Button{}new(", "::");
         for (path, source) in ui_sources() {
             // The one file allowed to name it: the wrapper is where the
-            // library's control is reached. It lives in the plugin host rather
-            // than the app because a built-in plugin draws buttons too and
+            // library's control is reached. It lives in the UI crate rather
+            // than the app because a feature crate draws buttons too and
             // cannot reach into the binary hosting it -- and one wrapper is the
             // whole point, so there is exactly one file to exempt.
             if path.ends_with("crates/ui/src/lib.rs") {
@@ -683,7 +683,7 @@ mod tests {
 
     /// The library's ghost hovers on a fill of its own mixing, a shade off the
     /// selected step a selected ghost shows beside it, so a hovered button
-    /// read as a smaller box than a selected one. The plugin host's `quiet`
+    /// read as a smaller box than a selected one. The UI crate's `quiet`
     /// draws the ghost on the ramp's steps, and a bare `ghost()` brings the
     /// mismatch straight back.
     #[test]
