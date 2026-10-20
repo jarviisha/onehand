@@ -76,14 +76,16 @@ background executor, one interval in the config, no cron expressions.
 
 | File | What |
 |---|---|
-| `crates/core/src/unattended.rs` | `Issue`, the claim and search over a connector, `branch_for`, `brief_for`, `claim_comment`, `IssueSource` and `TrackerRef` (what a task keeps of its issue), `room`, `Budget`, `Verdict`, `report`, `could_not_start`, `parse_every`, `target_dir` |
+| `crates/core/src/unattended.rs` | `Issue`, the claim and search over a connector, `branch_for`, `brief_for`, `claim_comment`, `IssueSource` and `TrackerRef` (what a task keeps of its issue), `room`, `Budget`, `Verdict`, `report`, `verdict_blocking`, `could_not_start`, `parse_every`, `target_dir` |
+| `crates/core/src/unattended/claim.rs` | everything a tick or a pick decides off the UI loop: the look (`look_blocking`), the search and claim (`begin_blocking`, `taking_blocking`, `trackers_blocking`), the worktree cut (`prepare_blocking`), the pick (`pickable_blocking`, `pickable_one_blocking`), `Choosing` and `Judging`, and the settings rules `cannot_start`, `fit_for_issue`, `check_missing`, `now_for` |
+| `crates/core/src/preflight.rs` | the preflight, and `new_issue_run`, which assembles what a new issue run is checked against |
 | `crates/core/src/workflow/builtin/issue.toml` | *Work an issue*, the workflow runs use by default |
 | `crates/core/src/connector.rs` | `Connector`, what a run asks of the system a project lives on, and `serving`, which picks the first one that takes a project |
 | `plugins/builtin/connector-github/src/lib.rs` | the `gh` calls, the `origin` and ssh-alias check, and the account check |
 | `crates/core/src/process.rs` | `output_within`: a command with a limit on its exit *and* its output, stopped with its whole process group |
 | `crates/core/src/task/history.rs` | `over_cap`, which never lets go of a task whose report is unsent |
-| `crates/app/src/unattended.rs` | the tick, the cap (`at_cap`, the tasks still `starting`), `waiting` |
-| `crates/app/src/unattended/launch.rs` | claiming an issue, cutting its worktree, and making it a task of its workflow; `workflow`, which refuses a checkout workflow |
+| `crates/app/src/unattended.rs` | the tick, which gathers what core decides with and hands it off the UI loop; the cap (`at_cap`, the tasks still `starting`), `waiting` |
+| `crates/app/src/unattended/launch.rs` | `Landed`, a claim paired with the window it was picked in; `start`, which keeps the task and asks for its place; `workflow` and `found`, which read the library |
 | `crates/app/src/unattended/report.rs` | `spec_for`, `refuse_mode`, `started`, `opening`, and the end: `keep`, `card_question`, `ended`, `deliver`, `deliver_all` |
 | `crates/app/src/task.rs` | `freed`, which calls `unattended::ended`; `slot_holders`, `issues_waiting`, `live_issues`, `update_issue`, `undelivered` |
 | `crates/app/src/task/driver.rs` | `came_up` (the mode, the note on the issue), the clock, the take-over |
