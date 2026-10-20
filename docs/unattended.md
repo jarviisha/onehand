@@ -92,7 +92,7 @@ background executor, one interval in the config, no cron expressions.
 | `crates/app/src/shell/workflows.rs` | `drive_task`, which brings an issue's run up off screen |
 | `crates/core/src/config.rs` | `UnattendedConfig` |
 | `crates/core/src/workspace.rs` | `ProjectRoot::transient`, left out by `to_config`, and `add_transient_root`, which adds one with its session without selecting it |
-| `crates/core/src/worktree.rs` | `branch_off_blocking`, a new branch from a named start, and `fetch_blocking`; `worktree add` and the fetch both bounded and never prompting |
+| `crates/core/src/worktree.rs` | `cut_blocking`, the one way a run gets its worktree (a free branch, its directory, `branch_off_blocking` from a named start), `subtree_or`, and `fetch_blocking`; `worktree add` and the fetch both bounded and never prompting |
 | `crates/app/src/shell/remote_runs.rs` | `run_unattended`, `end_unattended`, `adopt_unattended` |
 | `crates/app/src/shell/roots.rs` | `forget_root`, the half of `remove_root` that asks nothing and moves nothing |
 | `crates/app/src/chat/pane/sessions.rs` | `open_unshown` |
