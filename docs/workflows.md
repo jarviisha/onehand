@@ -123,7 +123,8 @@ same name. A file copied by hand keeps its id, so two may share one, and the fir
 
 ### Import and export
 
-The Workflows page has *Export…* on every readable row, shipped ones included: a native save
+The Workflows page has *Export…* in the ⋯ of every readable card and of the editor, shipped ones
+included: a native save
 dialog, then `store::export_blocking`. *Import…* beside *New workflow* picks a `.toml` file and
 reads it with `store::read_blocking`; a file that does not read is refused in a notification, and
 one that does opens in the form as a new workflow. Nothing is written until Save, which runs
@@ -303,20 +304,23 @@ project on screen. A checkout workflow starts a session there; a worktree workfl
 A workflow with a command step that names no command needs the project's check command, set on
 the project's page beside *Run check* and kept in the workspace file (`WorkspaceConfig::checks`).
 
-**Workflows are written on a page of their own**, opened from the rail's *Workflows* row: the list
-on offer beside the editor of the one picked, the person's own first. Picking a row opens it; a
-shipped one opens read-only, changed by *Duplicate to edit*. The editor groups the workflow's
-fields as *About*, *How it runs* and *Steps*, and the steps run down a rail, a numbered dot each, one open at a time in a drawer under the form, each
+**Workflows are written on a page of their own**, opened from the rail's *Workflows* row: the
+workflows on offer as cards, the person's own first, and a search over their names and
+descriptions, which the cap applies after. Pressing a card opens its workflow in the editor, a
+page of its own; a shipped one opens read-only, changed by *Duplicate to edit*. The editor sets the
+workflow's fields (*About*, *How it runs*) in a column beside *Steps*, and the steps run down a
+rail, a numbered dot each, one open at a time in the column beside them, each
 saying where its failure sends the run back (*on failure ↑ 2*) and its first problem without
 being opened; its ⋯ holds *Move up* and *Move down*, refused at the ends, and *Remove*. A name
 another workflow has is said above *Save* before it is pressed (*Another workflow is already
 called …*), and *Save* refuses until it is changed; one write lands at a time, and the saved
-workflow stays picked. *Cancel* asks, as Esc does, when the form holds changes (*Keep*,
-*Discard*), and leaves nothing picked. The draft and the pick are the page's entity's
+workflow stays open. *Cancel* and *Workflows* (back) ask, as Esc does, when the form holds
+changes (*Keep*, *Discard*), and go back to the cards. The draft and the pick are the page's entity's
 (`WorkflowsPage`), held per window, so going to another page and back finds them as they were;
-picking another workflow, or closing the window, with changes unsaved asks first in a modal. The
+going back to the cards, or closing the window, with changes unsaved asks first in a modal. The
 pick is kept by key (a file, or a shipped workflow's id), never by place, as the list is read again
-after every save. *Run…* in the editor's head refuses while the workflow holds changes or was never
+after every save. *Run…* on a card asks which project at once, a card holding only what is saved.
+*Run…* in the editor's head refuses while the workflow holds changes or was never
 saved, as a run starts from what is saved; otherwise it asks which project, the one selected in the
 rail first, and opens the launcher on it with the workflow picked; the composer's `+` menu and the
 keymap still open the launcher on the project on screen.
@@ -509,17 +513,21 @@ change (`git checkout . && git clean -fd`).
 | A project in a folder | A merged task of a project that is a folder of its repository (`repo/app`) | The modal names the worktree's top, not its `app` folder, and *Remove* removes it |
 | Changed while asked | Open the modal on a clean worktree, then create a file in it, then press *Remove* | Nothing removed: *Not removed, as things stand now: Uncommitted or untracked files …* |
 | The Workflows page | Press *Workflows* in the rail | The header reads *Workflows*, both docks go, the row is highlighted; Settings has no Workflows page |
-| Nothing picked on arrival | Press *Workflows* in the rail | Beside the list, *Pick a workflow to see and change it, or make a new one*; *New* is the one primary |
-| A draft kept across pages | *New*, type a name, go to *Tasks* and back to *Workflows* | The form is there with the name typed, and the list's *Untitled* row reads that name |
-| Dropping a draft is asked | With that draft, pick another workflow; then *Cancel*; then close the window | *Discard the workflow being edited?* in a modal, *Keep* keeps it and leaves the draft's row picked; *Cancel* asks the same; closing asks *Discard the workflow being written?*, *Keep* keeps the window open |
-| Saved stays picked | *New*, name it, *Save* | The row it becomes under *Yours* is picked and the editor stays on it |
-| Keys step the steps | Pick a workflow, open its first step, press ↓ and ↑ with no field holding the caret; then click into the prompt and press ↑; then click the drawer's head and press Esc twice | Each press opens the step after or before in the drawer, held at the ends, the list on the left not moving; in the prompt the caret moves; the first Esc closes the drawer, the second the form |
-| One at a time | Narrow the pane until the list and the editor do not fit, pick a row | The editor alone under *Workflows* (back); Esc or the link goes back to the list |
-| A shipped workflow | Pick *Work in checkout* | Its fields are disabled, no *Save*; *Duplicate to edit* opens *Work in checkout copy*, picked, as a new workflow |
-| An unreadable file | Put a `.toml` that does not parse in the workflows folder, pick its row | Its reason in the warning ink and *Delete…*, which asks and removes the file |
-| Run from the page | Two projects, the second selected in the rail; pick *Work in checkout*, *Run…* | The menu lists the selected project first; picking it opens the launcher on it with *Work in checkout* picked; on a workflow with unsaved changes *Run…* refuses, saying to save first |
+| Cards on arrival | Press *Workflows* in the rail | The cards under *Yours* and *Built in*, four to a row on a wide pane, fewer as it narrows; *New* is the one primary |
+| A draft kept across pages | *New*, type a name, go to *Tasks* and back to *Workflows* | The editor is there with the name typed |
+| Dropping a draft is asked | With that draft, press *Workflows* (back); then *Cancel*; then close the window | *Discard the workflow being edited?* in a modal, *Keep* keeps the editor open; *Cancel* asks the same; closing asks *Discard the workflow being written?*, *Keep* keeps the window open |
+| Saved stays open | *New*, name it, *Save*, then *Workflows* (back) | The editor stays on it after *Save*; back on the cards, its card is under *Yours* |
+| Keys step the steps | Open a workflow, open its first step, press ↓ and ↑ with no field holding the caret; then click into the prompt and press ↑; then click the step's head and press Esc twice | Each press opens the step after or before in the column beside the steps, held at the ends; in the prompt the caret moves; the first Esc closes the step, the second goes back to the cards |
+| Narrow editor | Open a workflow and narrow the pane, then open a step | First the workflow's fields stack over the steps, the step column beside; narrower, the steps alone, and an open step takes their place under *Steps* (back), which closes it |
+| A shipped workflow | Open *Work in checkout* | Its fields are disabled, no *Save*; *Duplicate to edit* opens *Work in checkout copy* as a new workflow |
+| An unreadable file | Put a `.toml` that does not parse in the workflows folder | Its card names the file and says *Cannot be read: …* in the warning ink; pressed, it opens its reason and *Delete…*, which asks and removes the file |
+| Run from the page | Two projects, the second selected in the rail; *Run…* on the *Work in checkout* card; then open a workflow, change it, *Run…* in its head | The menu lists the selected project first; picking it opens the launcher on it with *Work in checkout* picked, the card not opened; on a workflow with unsaved changes *Run…* refuses, saying to save first |
 | A prompt written larger | Open an agent step, *Write larger…*, type a line, *Done*; again, type, *Cancel* | The dialog holds the prompt and what it may use; *Done* puts the line in the step's prompt and the form holds a change; *Cancel* leaves it as it was. On a shipped workflow it reads *Read larger…*, the field disabled, *Close* alone |
-| A repair loop on the rows | Pick a workflow whose Verify goes back to Implement | Verify's row reads *on failure ↑ N* (Implement's number) without being opened |
+| A repair loop on the rows | Open a workflow whose Verify goes back to Implement | Verify's row reads *on failure ↑ N* (Implement's number) without being opened |
+| Search kept across pages | Type `pull` in the search, go to *Tasks* and back | The search still reads `pull`, the cards narrowed to those matching, *Showing N of M workflows* under them; `zzz` says *No workflows match* |
+| A card's own actions | *Export…* and *Delete…* from a card's ⋯ on a workflow of your own | Neither opens the card; *Delete…* asks, then the card goes and the cards stay on screen |
+| Enter opens a card | Tab to a card, press Enter; then click into the search and press Enter | The card's workflow opens in the editor; in the search nothing opens |
+| Hover never fills | Point at a card, then at its *Run…* | The card's edge turns the muted ink with no fill; over *Run…* the button takes its own hover |
 | The check command on the project page | Open a project with no session, type a command in *Check command* | *Run check* appears beside *New session*; the command is kept after a restart |
 | A full slot | With `at_once = 1` and an issue task running, *Run workflow…* on another issue | *Before it starts* names the issue being worked; *Run* is spent |
 | An earlier task needing attention | On an issue whose last task ended exhausted, *Run workflow…* | Muted: the last task ended and a new start makes a second task, with *Retry…*, which closes the form and opens that task's Retry dialog |

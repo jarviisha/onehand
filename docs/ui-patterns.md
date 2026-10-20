@@ -18,6 +18,7 @@ plugin views alike; the feature contract still decides what content and actions 
 | Related settings (Settings), a group inside a form | Plain section | Heading, shared text axis and section gap |
 | A group on a page: one thing's facts, a list, a status, what a project is set to | Box | One outer edge in a control's edge, no fill; no nested boxes for its fields |
 | Repeated items to scan or pick | List or table | Stable columns and row states; table hairlines |
+| Repeated items opened one at a time, each with actions of its own (Workflows) | Grid of boxes | A gap; a box's edge raised on hover, never a fill |
 | Code, output or a diff | Well | Quiet fill; overflow stays inside it |
 | One selected item read in full | Detail | Title, metadata, content; no extra enclosing card |
 | A temporary choice or confirmation | Menu, popover or dialog | Floating surface and lift |
@@ -183,8 +184,8 @@ a bar over the list (*List pages*). A box's heading identifies its own content. 
 what it holds, and the kind decides its width, its density and its head:
 
 - a **column page** holds fields, boxes or one thing read in full (a project's page, the
-  overview, Tasks, a task, Settings); Workflows is one beside a list of its own (*List and
-  detail*), its head at the top of that list;
+  overview, Tasks, a task, Settings, Workflows' grid of cards); a workflow opened from it takes
+  a page of three columns of its own;
 - a **list page** holds one long list to scan, filter and pick from (Issues).
 
 A page with a filter bar keeps its head, filters and a table's column names in place while its
@@ -267,7 +268,12 @@ padded `p_3`, its parts `gap_2` apart (`card_box`). Every fill under a page read
 heavy for it or swallowed the fields and lines drawn on it, and the hairline sits too near the
 page's fill in Dark Modern to group anything. Its title row (`card_title`) holds the title in semibold, a
 muted count, and at most one control at the end, at a fixed height so boxes side by side line up.
-Boxes sit side by side while the measured column holds two, and stack when it does not.
+Boxes sit side by side while the measured column holds two, and stack when it does not. A box
+that opens what it shows (a card in a grid) is pressed on its body: it takes the pointer, raises
+its edge on hover to the muted ink rather than filling, and rings on focus, Enter opening it. Its
+actions stand in its foot, since its title row holds at most one control, and a press on them
+stays theirs. Cards in a grid stand in rows of as many as the measured column holds at their
+least width, up to four, a short last row keeping the column's width.
 
 ### Lists
 
@@ -314,15 +320,6 @@ it shows one at a time, the detail under a `back_link` naming the list. Picking 
 going back keeps the list's place. A detail read as prose (an issue, a Markdown document) is a
 column up to `PAGE_PROSE`, centred with equal gutters, so hiding the list widens it rather than
 leaving the freed width empty; its scroll spans the detail, the scrollbar on the detail's edge.
-A page set this way (Workflows) holds the list in a column the pane's whole height, in no box,
-parted from the detail by the split's hairline from the pane's top edge to its bottom, the pane's
-header floating over both with no fill, each half's scroll starting under it so nothing
-scrolls behind its controls; its edges are a list page's, the list's fills inset `px_6`
-and every word on the header's line, both halves starting `pt_3` under the header, a form at the
-top of its half, level with the list's head; nothing is picked on arrival, the detail a centred `hint` saying
-what to pick; picking another item over unsaved changes asks first, *Keep* leaving the first
-picked; its list takes no arrow keys: ↑ and ↓ step the drawer of the step open in the detail to the
-step before or after, never while a field holds the caret.
 
 ### Forms
 

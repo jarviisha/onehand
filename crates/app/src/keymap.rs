@@ -479,7 +479,7 @@ mod tests {
             ),
             Some(CompletionPrev.name().into())
         );
-        // The Workflows page's arrows step its step drawer, never the
+        // The Workflows page's arrows step its open step, never the
         // composer's suggestions nor a field's caret.
         assert_eq!(
             action_at(&map, "up", &["Shell", "Chat", "WorkflowsPage"]),

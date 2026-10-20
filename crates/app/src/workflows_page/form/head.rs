@@ -7,7 +7,8 @@ use super::super::{WorkflowDraft, WorkflowsPage, WorkflowsPageEvent, click};
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
 use gpui::{
-    AnyElement, App, ElementId, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div,
+    AnyElement, App, ElementId, Entity, IntoElement, ParentElement, SharedString, Styled, Window,
+    div,
 };
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::{IconName, StyledExt};
@@ -64,12 +65,13 @@ pub(in crate::workflows_page) fn more_menu(
     let handle = handle.clone();
     let danger = crate::theme::status_ink(cx).danger;
     crate::controls::menu_below(id, trigger, move |mut menu, _, _| {
-        let act = |act: fn(&mut WorkflowsPage, &Pick, &mut Window, &mut gpui::Context<WorkflowsPage>)| {
-            let (handle, pick) = (handle.clone(), pick.clone());
-            move |_: &gpui::ClickEvent, window: &mut Window, cx: &mut App| {
-                handle.update(cx, |page, cx| act(page, &pick, window, cx))
-            }
-        };
+        let act =
+            |act: fn(&mut WorkflowsPage, &Pick, &mut Window, &mut gpui::Context<WorkflowsPage>)| {
+                let (handle, pick) = (handle.clone(), pick.clone());
+                move |_: &gpui::ClickEvent, window: &mut Window, cx: &mut App| {
+                    handle.update(cx, |page, cx| act(page, &pick, window, cx))
+                }
+            };
         if acts.duplicate {
             menu = menu.item(
                 crate::controls::menu_item("Duplicate").on_click(act(WorkflowsPage::duplicate)),

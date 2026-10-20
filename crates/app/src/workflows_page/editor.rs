@@ -58,10 +58,10 @@ fn column(id: &'static str, child: impl IntoElement) -> gpui::Stateful<gpui::Div
 /// The head across the page: the way back to the cards over the editor's
 /// head, its name, what it is, *Run…* and the ⋯.
 fn head_row(handle: &Entity<WorkflowsPage>, head: Option<AnyElement>, cx: &App) -> AnyElement {
-    let back = back_link("workflows-back", "Workflows", cx).on_click(click(
-        handle,
-        |page, window, cx| page.close_workflow_form(window, cx),
-    ));
+    let back = back_link("workflows-back", "Workflows", cx)
+        .on_click(click(handle, |page, window, cx| {
+            page.close_workflow_form(window, cx)
+        }));
     div()
         .flex_none()
         .v_flex()
@@ -123,7 +123,11 @@ pub(super) fn editor(
                     .on_click(click(handle, |page, window, cx| page.escape(window, cx)));
                 div().v_flex().child(column(
                     "workflow-step",
-                    div().v_flex().gap_4().child(div().h_flex().child(back)).child(step()),
+                    div()
+                        .v_flex()
+                        .gap_4()
+                        .child(div().h_flex().child(back))
+                        .child(step()),
                 ))
             }
             None => div().v_flex().child(column(

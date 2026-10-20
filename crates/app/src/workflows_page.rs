@@ -222,8 +222,7 @@ impl Render for WorkflowsPage {
             // A column page under the floating header: the grid as wide as
             // boxes side by side are, centred, its scroll the page's.
             // The page's width less its `px_8` gutters, up to the column's.
-            let grid_width =
-                gpui::rems((self.width.get().0 - 4.).min(crate::tokens::PAGE_WIDE.0));
+            let grid_width = gpui::rems((self.width.get().0 - 4.).min(crate::tokens::PAGE_WIDE.0));
             div()
                 .id("workflows-grid")
                 .size_full()
@@ -235,20 +234,16 @@ impl Render for WorkflowsPage {
                         .px_8()
                         .pt(crate::tokens::BAR_H)
                         .pb_6()
-                        .child(
-                            div()
-                                .w_full()
-                                .max_w(crate::tokens::PAGE_WIDE)
-                                .pt_3()
-                                .child(grid::grid_page(
-                                    &handle,
-                                    &query,
-                                    &self.cards,
-                                    &self.run_choices(),
-                                    grid_width,
-                                    cx,
-                                )),
-                        ),
+                        .child(div().w_full().max_w(crate::tokens::PAGE_WIDE).pt_3().child(
+                            grid::grid_page(
+                                &handle,
+                                &query,
+                                &self.cards,
+                                &self.run_choices(),
+                                grid_width,
+                                cx,
+                            ),
+                        )),
                 )
                 .into_any_element()
         };

@@ -187,7 +187,12 @@ fn card(
                 .v_flex()
                 .flex_1()
                 .gap_2()
-                .child(div().truncate().font_semibold().child(template.name.clone()))
+                .child(
+                    div()
+                        .truncate()
+                        .font_semibold()
+                        .child(template.name.clone()),
+                )
                 .when(!template.description.is_empty(), |body| {
                     body.child(
                         div()

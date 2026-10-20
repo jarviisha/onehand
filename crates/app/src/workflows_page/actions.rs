@@ -38,7 +38,9 @@ impl WorkflowsPage {
     pub(super) fn duplicate(&mut self, pick: &Pick, window: &mut Window, cx: &mut Context<Self>) {
         let template = match pick {
             Pick::New => self.draft.as_ref().map(|d| d.original.clone()),
-            _ => self.entry_of(pick, cx).and_then(|entry| entry.template.ok()),
+            _ => self
+                .entry_of(pick, cx)
+                .and_then(|entry| entry.template.ok()),
         };
         let Some(mut template) = template else {
             return;
