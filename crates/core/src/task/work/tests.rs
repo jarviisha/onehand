@@ -300,7 +300,10 @@ fn a_run_its_agent_or_a_restart_cut_off_resumes() {
         let next = next_of(&task, None, open());
         assert_eq!(
             acts(&next),
-            (Some(Act::Resume), vec![Act::Retry, Act::Edit])
+            (
+                Some(Act::Resume),
+                vec![Act::Retry, Act::RunWorkflow, Act::Edit]
+            )
         );
     }
 }
@@ -329,7 +332,10 @@ fn an_exhausted_or_timed_out_run_says_where_and_what_its_last_visit_ended_on() {
     );
     assert_eq!(
         acts(&next),
-        (Some(Act::Retry), vec![Act::ShowTask, Act::Edit])
+        (
+            Some(Act::Retry),
+            vec![Act::ShowTask, Act::RunWorkflow, Act::Edit]
+        )
     );
     let mut task = ended(
         at(self::task("1", forge_flow(), None), 2, 900),
@@ -344,7 +350,10 @@ fn an_exhausted_or_timed_out_run_says_where_and_what_its_last_visit_ended_on() {
     );
     assert_eq!(
         acts(&timed_out),
-        (Some(Act::Retry), vec![Act::ShowTask, Act::Edit]),
+        (
+            Some(Act::Retry),
+            vec![Act::ShowTask, Act::RunWorkflow, Act::Edit]
+        ),
         "Retry keeps the timeout"
     );
     // With the timeout on offer changed since, the second way is offered.
@@ -354,7 +363,12 @@ fn an_exhausted_or_timed_out_run_says_where_and_what_its_last_visit_ended_on() {
         acts(&next_action(Some(&work), open())),
         (
             Some(Act::Retry),
-            vec![Act::RetryCurrent, Act::ShowTask, Act::Edit]
+            vec![
+                Act::RetryCurrent,
+                Act::ShowTask,
+                Act::RunWorkflow,
+                Act::Edit
+            ]
         )
     );
 }
@@ -381,7 +395,7 @@ fn a_failed_run_says_why_and_offers_the_way_out_that_fits() {
         acts(&next),
         (
             Some(Act::RetryCurrent),
-            vec![Act::Retry, Act::ShowTask, Act::Edit]
+            vec![Act::Retry, Act::ShowTask, Act::RunWorkflow, Act::Edit]
         )
     );
     for kind in [
@@ -391,7 +405,10 @@ fn a_failed_run_says_why_and_offers_the_way_out_that_fits() {
     ] {
         assert_eq!(
             acts(&failed(kind)),
-            (Some(Act::Retry), vec![Act::ShowTask, Act::Edit]),
+            (
+                Some(Act::Retry),
+                vec![Act::ShowTask, Act::RunWorkflow, Act::Edit]
+            ),
             "{kind:?}"
         );
     }
@@ -1047,4 +1064,58 @@ fn core_leaves_a_resume_refusal_to_the_app() {
     let task = at(task("1", forge_flow(), None), 2, 900);
     let work = Work::of(&task, None, None);
     assert_eq!(work.resume_refused, None);
+}
+
+/// What an issue offers for each way its task can need attention: cut off,
+/// exhausted, timed out, and failed on its configuration or otherwise.
+fn needing_attention(around: Around<'static>) -> Vec<Next> {
+    let cut_off = at(task("1", forge_flow(), None), 2, 900);
+    let exhausted = ended(
+        at(task("1", forge_flow(), None), 3, 900),
+        Outcome::Exhausted {
+            step: "verify".into(),
+        },
+        None,
+    );
+    let timed_out = ended(
+        at(task("1", forge_flow(), None), 2, 900),
+        Outcome::Stopped(Stop::TimedOut),
+        None,
+    );
+    let failed = |kind| {
+        let mut task = ended(
+            at(task("1", forge_flow(), None), 0, 900),
+            Outcome::Failed("it broke".into()),
+            None,
+        );
+        task.runs[0].failure = kind;
+        task
+    };
+    [
+        cut_off,
+        exhausted,
+        timed_out,
+        failed(Some(crate::workflow::Failure::Configuration)),
+        failed(Some(crate::workflow::Failure::Other)),
+    ]
+    .iter()
+    .map(|task| next_of(task, None, around))
+    .collect()
+}
+
+#[test]
+fn a_task_needing_attention_still_offers_a_new_run_last() {
+    for next in needing_attention(open()) {
+        let tail: Vec<Act> = next.secondary.iter().rev().take(2).rev().copied().collect();
+        assert_eq!(
+            tail,
+            vec![Act::RunWorkflow, Act::Edit],
+            "{:?}",
+            next.secondary
+        );
+    }
+    // A closed issue still offers no new start.
+    for next in needing_attention(closed()) {
+        assert!(!next.secondary.contains(&Act::RunWorkflow));
+    }
 }
