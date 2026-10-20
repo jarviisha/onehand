@@ -15,7 +15,7 @@ use gpui::{
     StatefulInteractiveElement as _, Styled, Window, div, rems,
 };
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::text::TextView;
+use gpui_component::text::{TextView, TextViewStyle};
 use gpui_component::{ActiveTheme, StyledExt as _, WindowExt as _};
 
 /// The most lines the dialog draws; past it, it says how many it left out
@@ -62,6 +62,14 @@ fn fence(code: &str, lang: Option<&str>) -> String {
     format!("{run}{}\n{code}\n{run}", lang.unwrap_or(""))
 }
 
+/// The transcript's prose style without the height cap on a fenced block:
+/// the dialog is where the block is read whole, and its own box scrolls.
+fn uncapped(mut style: TextViewStyle) -> TextViewStyle {
+    style.code_block.max_size.height = None;
+    style.code_block.overflow = Default::default();
+    style
+}
+
 /// Put `code` up whole, in `lang`, over the window: its first
 /// [`CODE_VIEW_MAX_LINES`] lines scrolling, saying how many it left out, and
 /// Copy taking every line.
@@ -76,15 +84,16 @@ pub(super) fn open(
         let (shown, total) = capped(&code, CODE_VIEW_MAX_LINES);
         let body = TextView::markdown("code-view-body", fence(shown, lang.as_deref()))
             .selectable(true)
-            .style(super::prose::prose_style(window, cx));
+            .style(uncapped(super::prose::prose_style(window, cx)));
         let code = code.clone();
+        let title = lang
+            .clone()
+            .filter(|l| !l.trim().is_empty())
+            .unwrap_or_else(|| "Code".into());
         dialog
             .w(width)
-            .title(
-                lang.clone()
-                    .filter(|l| !l.trim().is_empty())
-                    .unwrap_or_else(|| "Code".into()),
-            )
+            .close_button(false)
+            .child(crate::dialogs::title_row(title, cx))
             .child(
                 div()
                     .v_flex()

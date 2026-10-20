@@ -64,7 +64,7 @@ const FINDING_LINE: gpui::Rems = gpui::rems(0.75 * crate::tokens::LEADING);
 /// that clear a half-finished rename or worktree still run. The fixed box around
 /// it is what contains that element's `size_full`, which would otherwise take
 /// the whole row away from the name beside it.
-pub(super) fn title_row(name: impl Into<SharedString>, cx: &App) -> impl IntoElement {
+pub(crate) fn title_row(name: impl Into<SharedString>, cx: &App) -> impl IntoElement {
     div()
         .h_flex()
         .items_center()
