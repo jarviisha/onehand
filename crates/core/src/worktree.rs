@@ -162,7 +162,7 @@ pub fn repo_top_blocking(root: &Path) -> Option<PathBuf> {
 ///
 /// Pure: whether that subtree exists on the branch being checked out is a
 /// question for whoever has just run git, not for the rule.
-pub fn subtree_in(made: &Path, top: &Path, root: &Path) -> PathBuf {
+pub(crate) fn subtree_in(made: &Path, top: &Path, root: &Path) -> PathBuf {
     match root.strip_prefix(top) {
         Ok(rel) if !rel.as_os_str().is_empty() => made.join(rel),
         _ => made.to_path_buf(),
@@ -267,7 +267,7 @@ fn worktree_add(root: &Path, dir: &Path, args: &[&std::ffi::OsStr]) -> Result<Pa
 /// the branch the user happened to be on. Always `-b`: a name that already
 /// exists is git's refusal, since reusing it would start from someone else's
 /// work.
-pub fn branch_off_blocking(
+pub(crate) fn branch_off_blocking(
     root: &Path,
     branch: &str,
     dir: &Path,
@@ -950,15 +950,14 @@ mod tests {
         assert_ne!(made, again);
         // A name taken elsewhere is stepped past too, and a forge that cannot
         // be asked is the error.
-        assert_eq!(
-            cut_blocking(&repo, "onehand/y", "HEAD", |name| Ok(name == "onehand/y")).map(|c| c.0),
-            Ok("onehand/y-2".to_string())
-        );
+        let (taken, third) =
+            cut_blocking(&repo, "onehand/y", "HEAD", |name| Ok(name == "onehand/y")).unwrap();
+        assert_eq!(taken, "onehand/y-2");
         assert_eq!(
             cut_blocking(&repo, "onehand/z", "HEAD", |_| Err("offline".into())).map(|c| c.0),
             Err("offline".to_string())
         );
-        for dir in [made, again] {
+        for dir in [made, again, third] {
             let _ = std::fs::remove_dir_all(dir);
         }
         let _ = std::fs::remove_dir_all(repo);

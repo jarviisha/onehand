@@ -514,7 +514,7 @@ fn app_state_remembers_a_workspace_by_its_name() {
 }
 
 #[test]
-fn the_first_agent_stands_in_for_none_or_a_missing_name() {
+fn the_first_agent_stands_in_for_none_but_not_for_a_gone_name() {
     let spec = |name: &str| AgentSpec {
         name: name.into(),
         command: name.into(),
@@ -529,11 +529,8 @@ fn the_first_agent_stands_in_for_none_or_a_missing_name() {
         agent_or_first(&agents, Some("two")).map(|s| &s.name[..]),
         Some("two")
     );
-    assert_eq!(
-        agent_or_first(&agents, Some("gone")).map(|s| &s.name[..]),
-        Some("one")
-    );
-    assert_eq!(agent_or_first(&[], Some("gone")), None);
+    assert_eq!(agent_or_first(&agents, Some("gone")), None);
+    assert_eq!(agent_or_first(&[], None), None);
 }
 
 #[test]

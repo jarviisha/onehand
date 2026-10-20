@@ -20,7 +20,12 @@ use std::path::{Path, PathBuf};
 // ponytail: `env` is POSIX; a Windows build would need the variable threaded
 // through the ACP spawn instead.
 pub(crate) fn spec_for(agent: Option<&str>, cx: &App) -> Option<AgentSpec> {
-    let base = config::agent_or_first(&Shared::global(cx).agents, agent)?.clone();
+    let agents = &Shared::global(cx).agents;
+    // A gone agent's run starts on the first configured: by now the preflight
+    // has had its say, and a run let through has to start on something.
+    let base = config::agent_or_first(agents, agent)
+        .or_else(|| config::agent_or_first(agents, None))?
+        .clone();
     Some(wrapped(base))
 }
 

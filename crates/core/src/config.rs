@@ -28,11 +28,14 @@ pub struct AgentSpec {
     pub args: Vec<String>,
 }
 
-/// The agent called `name` among `agents`, else the first configured: a
-/// setup naming no agent, or one whose agent is gone, starts the first.
+/// The agent called `name` among `agents`, or the first configured when none
+/// is named. A name nobody has is `None`, never the first: what names a gone
+/// agent is told so, rather than started on another.
 pub fn agent_or_first<'a>(agents: &'a [AgentSpec], name: Option<&str>) -> Option<&'a AgentSpec> {
-    name.and_then(|name| agents.iter().find(|spec| spec.name == name))
-        .or_else(|| agents.first())
+    match name {
+        Some(name) => agents.iter().find(|spec| spec.name == name),
+        None => agents.first(),
+    }
 }
 
 /// `mode` as a run takes it: a blank mode is none, and leaves the agent in
