@@ -4,7 +4,7 @@
 use super::launch;
 use crate::state::Shared;
 use gpui::App;
-use onehand_core::config::AgentSpec;
+use onehand_core::config::{self, AgentSpec};
 use onehand_core::connector::Connector;
 use onehand_core::preflight::{Facts, Forge, ProjectFacts};
 use onehand_core::task::Task;
@@ -26,7 +26,7 @@ pub(crate) fn common(cx: &App) -> Facts {
         agent_configured: spec.is_some(),
         offered: spec.and_then(|spec| offered(spec, cx)),
         agent,
-        mode: u.map(|u| u.mode.clone()).filter(|m| !m.trim().is_empty()),
+        mode: u.and_then(|u| config::mode_set(&u.mode)),
         has_check: false,
         in_git: false,
         checked_out: None,
@@ -130,11 +130,12 @@ pub(crate) fn with_setup(
     cx: &App,
 ) -> Facts {
     let shared = Shared::global(cx);
-    // A setup naming no agent starts the first one configured.
+    // A setup naming no agent starts the first one configured; one whose
+    // agent is gone is judged as naming it, which the preflight says.
     let agent = setup
         .agent
         .clone()
-        .or_else(|| shared.agents.first().map(|spec| spec.name.clone()));
+        .or_else(|| config::agent_or_first(&shared.agents, None).map(|spec| spec.name.clone()));
     let spec = agent
         .as_deref()
         .and_then(|name| shared.agents.iter().find(|spec| spec.name == name));
@@ -153,7 +154,7 @@ pub(crate) fn with_setup(
         agent_configured: spec.is_some(),
         offered: spec.and_then(|spec| offered(spec, cx)),
         agent,
-        mode: setup.mode.clone().filter(|m| !m.trim().is_empty()),
+        mode: setup.mode.as_deref().and_then(config::mode_set),
         has_check: setup.check.is_some(),
         in_git: true,
         checked_out: None,

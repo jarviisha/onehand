@@ -434,7 +434,7 @@ pub fn branch_for(tracker: &Tracker, issue: &Issue) -> String {
 /// branch is gone: a new task pushing there would meet the old one's work.
 /// When `taken` cannot tell, that is the error: a guess either way could cut
 /// the new task on a branch the old one's pull request is on.
-pub fn free_branch_blocking(
+pub(crate) fn free_branch_blocking(
     root: &Path,
     branch: &str,
     taken: impl Fn(&str) -> Result<bool, String>,

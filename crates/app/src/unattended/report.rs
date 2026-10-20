@@ -2,7 +2,7 @@ use super::with;
 use crate::chat::session::{ChatSession, note};
 use crate::state::Shared;
 use gpui::{App, Entity};
-use onehand_core::config::AgentSpec;
+use onehand_core::config::{self, AgentSpec};
 use onehand_core::connector::{self, Connector};
 use onehand_core::task::Task;
 use onehand_core::unattended::{
@@ -21,9 +21,10 @@ use std::path::{Path, PathBuf};
 // through the ACP spawn instead.
 pub(crate) fn spec_for(agent: Option<&str>, cx: &App) -> Option<AgentSpec> {
     let agents = &Shared::global(cx).agents;
-    let base = agent
-        .and_then(|name| agents.iter().find(|spec| spec.name == name))
-        .or_else(|| agents.first())?
+    // A gone agent's run starts on the first configured: by now the preflight
+    // has had its say, and a run let through has to start on something.
+    let base = config::agent_or_first(agents, agent)
+        .or_else(|| config::agent_or_first(agents, None))?
         .clone();
     Some(wrapped(base))
 }

@@ -162,7 +162,7 @@ pub fn repo_top_blocking(root: &Path) -> Option<PathBuf> {
 ///
 /// Pure: whether that subtree exists on the branch being checked out is a
 /// question for whoever has just run git, not for the rule.
-pub fn subtree_in(made: &Path, top: &Path, root: &Path) -> PathBuf {
+pub(crate) fn subtree_in(made: &Path, top: &Path, root: &Path) -> PathBuf {
     match root.strip_prefix(top) {
         Ok(rel) if !rel.as_os_str().is_empty() => made.join(rel),
         _ => made.to_path_buf(),
@@ -209,6 +209,38 @@ pub fn add_blocking(root: &Path, branch: &str, dir: &Path) -> Result<PathBuf, St
     }
 }
 
+/// Cut a worktree for a run under `top`: on `wanted`, or the first name after
+/// it that is free here and `taken` does not say is taken elsewhere, in the
+/// directory such a branch gets, branched off `start`. The branch made and the
+/// directory git made. Blocking.
+///
+/// The one way every run gets its worktree, whether an issue's claim found it
+/// or a person launched it: a branch left by an earlier run is never reused,
+/// and the directory is always where the rest of onehand looks for it.
+pub fn cut_blocking(
+    top: &Path,
+    wanted: &str,
+    start: &str,
+    taken: impl Fn(&str) -> Result<bool, String>,
+) -> Result<(String, PathBuf), String> {
+    let branch = crate::unattended::free_branch_blocking(top, wanted, taken)?;
+    let dir = worktree_dir(top, &branch);
+    let made = branch_off_blocking(top, &branch, &dir, start)?;
+    Ok((branch, made))
+}
+
+/// The folder of `made` that `root` is of `top`, when the branch checked out
+/// has that folder; else `made` itself. A root pointing at nothing is worse
+/// than a wider one.
+pub fn subtree_or(made: PathBuf, top: &Path, root: &Path) -> PathBuf {
+    let subtree = subtree_in(&made, top, root);
+    if subtree.is_dir() {
+        subtree
+    } else {
+        made
+    }
+}
+
 /// How long `git worktree add` may take. It is a local checkout, but a checkout
 /// can run hooks and fetch large files, and either can wait on a network.
 const ADD_LIMIT: Duration = Duration::from_secs(300);
@@ -235,7 +267,7 @@ fn worktree_add(root: &Path, dir: &Path, args: &[&std::ffi::OsStr]) -> Result<Pa
 /// the branch the user happened to be on. Always `-b`: a name that already
 /// exists is git's refusal, since reusing it would start from someone else's
 /// work.
-pub fn branch_off_blocking(
+pub(crate) fn branch_off_blocking(
     root: &Path,
     branch: &str,
     dir: &Path,
@@ -882,5 +914,68 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn a_cut_takes_the_next_free_name() {
+        let git = |dir: &Path, args: &[&str]| {
+            let out = std::process::Command::new("git")
+                .arg("-C")
+                .arg(dir)
+                .args(args)
+                .output()
+                .expect("git must be installed to run this test");
+            assert!(
+                out.status.success(),
+                "{}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        };
+        let repo = std::env::temp_dir().join(format!("onehand-cut-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&repo);
+        std::fs::create_dir_all(&repo).unwrap();
+        git(&repo, &["init", "-q", "-b", "main"]);
+        git(&repo, &["config", "user.email", "t@example.com"]);
+        git(&repo, &["config", "user.name", "T"]);
+        std::fs::write(repo.join("a.txt"), "x").unwrap();
+        git(&repo, &["add", "a.txt"]);
+        git(&repo, &["commit", "-qm", "one"]);
+
+        let (first, made) = cut_blocking(&repo, "onehand/x", "HEAD", |_| Ok(false)).unwrap();
+        assert_eq!(first, "onehand/x");
+        assert!(made.is_dir());
+        // The name is now a branch here, so the next cut steps past it.
+        let (second, again) = cut_blocking(&repo, "onehand/x", "HEAD", |_| Ok(false)).unwrap();
+        assert_eq!(second, "onehand/x-2");
+        assert_ne!(made, again);
+        // A name taken elsewhere is stepped past too, and a forge that cannot
+        // be asked is the error.
+        let (taken, third) =
+            cut_blocking(&repo, "onehand/y", "HEAD", |name| Ok(name == "onehand/y")).unwrap();
+        assert_eq!(taken, "onehand/y-2");
+        assert_eq!(
+            cut_blocking(&repo, "onehand/z", "HEAD", |_| Err("offline".into())).map(|c| c.0),
+            Err("offline".to_string())
+        );
+        for dir in [made, again, third] {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+        let _ = std::fs::remove_dir_all(repo);
+    }
+
+    #[test]
+    fn the_subtree_is_taken_only_where_the_branch_has_it() {
+        let made = std::env::temp_dir().join(format!("onehand-subtree-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&made);
+        std::fs::create_dir_all(made.join("apps").join("web")).unwrap();
+        let top = Path::new("/repo");
+        let web = subtree_or(made.clone(), top, &top.join("apps").join("web"));
+        assert_eq!(web, made.join("apps").join("web"));
+        // A folder the branch does not have falls back to the whole checkout.
+        let gone = subtree_or(made.clone(), top, &top.join("apps").join("gone"));
+        assert_eq!(gone, made);
+        // The root being the top is the whole checkout too.
+        assert_eq!(subtree_or(made.clone(), top, top), made);
+        let _ = std::fs::remove_dir_all(made);
     }
 }

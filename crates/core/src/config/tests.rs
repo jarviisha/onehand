@@ -512,3 +512,31 @@ fn app_state_remembers_a_workspace_by_its_name() {
         "only a remembered workspace is named"
     );
 }
+
+#[test]
+fn the_first_agent_stands_in_for_none_but_not_for_a_gone_name() {
+    let spec = |name: &str| AgentSpec {
+        name: name.into(),
+        command: name.into(),
+        args: Vec::new(),
+    };
+    let agents = [spec("one"), spec("two")];
+    assert_eq!(
+        agent_or_first(&agents, None).map(|s| &s.name[..]),
+        Some("one")
+    );
+    assert_eq!(
+        agent_or_first(&agents, Some("two")).map(|s| &s.name[..]),
+        Some("two")
+    );
+    assert_eq!(agent_or_first(&agents, Some("gone")), None);
+    assert_eq!(agent_or_first(&[], None), None);
+}
+
+#[test]
+fn a_blank_mode_is_none() {
+    assert_eq!(mode_set(""), None);
+    assert_eq!(mode_set("  "), None);
+    assert_eq!(mode_set("plan"), Some("plan".to_string()));
+    assert_eq!(mode_set(" plan "), Some(" plan ".to_string()));
+}

@@ -151,7 +151,7 @@ fn start(landed: Landed, cx: &mut App) -> Result<(), Unstarted> {
         check,
         // Left empty, the agent stays in the mode it starts in, which asks
         // more rather than less.
-        mode: Some(mode).filter(|mode| !mode.trim().is_empty()),
+        mode: onehand_core::config::mode_set(&mode),
         forge: claimed.forge.map(|forge| forge.name().to_string()),
     };
     let brief = core::brief_for(&claimed.tracker, &claimed.issue, &claimed.instructions);

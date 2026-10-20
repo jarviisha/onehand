@@ -242,7 +242,7 @@ impl Shell {
             cx.background_executor().timer(WARM_DELAY).await;
             cx.update(|cx| {
                 let shared = Shared::global(cx);
-                if let Some(spec) = shared.agents.first() {
+                if let Some(spec) = onehand_core::config::agent_or_first(&shared.agents, None) {
                     shared.acp.warm(spec, root);
                 }
             });

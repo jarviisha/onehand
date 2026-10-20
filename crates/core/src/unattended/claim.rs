@@ -571,10 +571,8 @@ pub fn prepare_blocking(
                 .map_err(|why| format!("could not ask the forge about branch {name}: {why}")),
             None => Ok(false),
         };
-        let branch =
-            super::free_branch_blocking(&top, &super::branch_for(&tracker, &issue), taken)?;
-        let dir = worktree::worktree_dir(&top, &branch);
-        let dir = worktree::branch_off_blocking(&top, &branch, &dir, &base)?;
+        let (branch, dir) =
+            worktree::cut_blocking(&top, &super::branch_for(&tracker, &issue), &base, taken)?;
         Ok::<_, String>(Work::Cut { branch, base, dir })
     }))
     .unwrap_or_else(|_| Err("onehand panicked while preparing the worktree".to_string()));
@@ -762,7 +760,7 @@ pub fn now_for(
     match runs.filter(|_| issue) {
         Some(runs) => Now {
             agent: runs.agent.clone().or(first_agent),
-            mode: Some(runs.mode.clone()).filter(|mode| !mode.trim().is_empty()),
+            mode: crate::config::mode_set(&runs.mode),
             check,
             timeout: Some(runs.timeout.clone()),
         },
