@@ -462,3 +462,102 @@ fn one_issue_is_picked_from_the_projects_own_only() {
     );
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn a_checkout_workflow_is_unfit_for_an_issue() {
+    let mut checkout = template("c", false);
+    checkout.place = Place::Checkout;
+    assert_eq!(
+        fit_for_issue(checkout.clone()).err(),
+        crate::preflight::unfit_for_issue(&checkout)
+    );
+    // One that validates and works on a worktree comes back as it was.
+    assert_eq!(
+        fit_for_issue(template("w", false)),
+        Ok(template("w", false))
+    );
+    // One that does not validate says every problem.
+    let mut broken = template("b", false);
+    broken.steps.clear();
+    assert_eq!(
+        fit_for_issue(broken).err(),
+        Some("the workflow `b` cannot run: it has no steps".to_string())
+    );
+}
+
+#[test]
+fn cannot_start_says_the_first_thing_that_stops_every_run() {
+    let ok = Ok(template("w", false));
+    assert_eq!(
+        cannot_start(Some("mode"), &ok, &[], true),
+        Some("mode".into())
+    );
+    assert_eq!(
+        cannot_start(None, &Err("gone".into()), &[], true),
+        Some("gone (unattended.workflow)".into())
+    );
+    assert_eq!(
+        cannot_start(None, &ok, &[("l".into(), Err("bad".into()))], true),
+        Some("bad (unattended.workflows, label `l`)".into())
+    );
+    assert_eq!(
+        cannot_start(None, &ok, &[], false),
+        Some("no agent is configured to run it".into())
+    );
+    assert_eq!(
+        cannot_start(None, &ok, &[("l".into(), ok.clone())], true),
+        None
+    );
+}
+
+#[test]
+fn now_for_takes_the_runs_settings_for_an_issue_only() {
+    let runs = RunSettings {
+        agent: None,
+        mode: "  ".into(),
+        timeout: "1h".into(),
+    };
+    let n = now_for(
+        true,
+        Some(&runs),
+        Some("first".into()),
+        Some("make test".into()),
+    );
+    assert_eq!(
+        (
+            n.agent.as_deref(),
+            n.mode,
+            n.timeout.as_deref(),
+            n.check.as_deref()
+        ),
+        (Some("first"), None, Some("1h"), Some("make test"))
+    );
+    let n = now_for(false, Some(&runs), Some("first".into()), None);
+    assert_eq!((n.agent.as_deref(), n.timeout), (Some("first"), None));
+    // An issue's task with runs not set up is given what a launcher's is.
+    let n = now_for(true, None, Some("first".into()), None);
+    assert_eq!(
+        (n.agent.as_deref(), n.mode, n.timeout),
+        (Some("first"), None, None)
+    );
+    let runs = RunSettings {
+        agent: Some("own".into()),
+        mode: "plan".into(),
+        timeout: "1h".into(),
+    };
+    let n = now_for(true, Some(&runs), Some("first".into()), None);
+    assert_eq!(
+        (n.agent.as_deref(), n.mode.as_deref()),
+        (Some("own"), Some("plan"))
+    );
+}
+
+#[test]
+fn check_missing_says_where_to_set_one() {
+    let t = template("cmd", true);
+    assert!(check_missing(&t, false)
+        .unwrap()
+        .ends_with("; set one on the project's page"));
+    assert_eq!(check_missing(&t, true), None);
+    assert_eq!(check_missing(&template("plain", false), false), None);
+}

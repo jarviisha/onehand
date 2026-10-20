@@ -7,7 +7,7 @@ use crate::connector::{self, Connector, PrState};
 use crate::issues::template;
 use crate::preflight::{self, Check, Facts, Forge, Kind};
 use crate::task::{Task, Working};
-use crate::workflow::Template;
+use crate::workflow::{Now, Template};
 use crate::worktree;
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -676,6 +676,102 @@ pub fn pickable_one_blocking(
             "issue {number} cannot be worked by a run: it is closed, or it was brought in \
              from a forge the project is no longer kept in step with"
         )),
+    }
+}
+
+/// `template` as an issue's run may take it, or why it cannot run.
+///
+/// **Only a workflow that works on a worktree.** An issue's run is cut a
+/// worktree of its own, and a workflow meant for a checkout run there leaves
+/// its work uncommitted where nobody looks and reports that nothing landed.
+pub fn fit_for_issue(template: Template) -> Result<Template, String> {
+    if let Some(why) = preflight::unfit_for_issue(&template) {
+        return Err(why);
+    }
+    let problems = crate::workflow::validate(&template);
+    if !problems.is_empty() {
+        let said: Vec<String> = problems.iter().map(ToString::to_string).collect();
+        return Err(format!(
+            "the workflow `{}` cannot run: {}",
+            template.name,
+            said.join("; ")
+        ));
+    }
+    Ok(template)
+}
+
+/// Why `template` cannot run on a project that `has_check` or not, and where
+/// to set one: an issue's run works the project the issue is in, whose page
+/// is where the check command lives.
+pub fn check_missing(template: &Template, has_check: bool) -> Option<String> {
+    template
+        .lacks_check(has_check)
+        .map(|why| format!("{why}; set one on the project's page"))
+}
+
+/// Why nothing at all may start, picked or found: the agent does not offer
+/// the mode runs start in (`mode_refused`), or a workflow runs may be given —
+/// `default`, or one a workflow label names in `by_label` — cannot run, or no
+/// agent is configured.
+///
+/// **A label's workflow stops every run**, not only its issues': it is the
+/// same broken config either way, and said before any claim it costs no issue
+/// a comment.
+pub fn cannot_start(
+    mode_refused: Option<&str>,
+    default: &Result<Template, String>,
+    by_label: &[(String, Result<Template, String>)],
+    agent_configured: bool,
+) -> Option<String> {
+    mode_refused
+        .map(str::to_string)
+        .or_else(|| {
+            default
+                .as_ref()
+                .err()
+                .map(|why| format!("{why} (unattended.workflow)"))
+        })
+        .or_else(|| {
+            by_label.iter().find_map(|(label, template)| {
+                let why = template.as_ref().err()?;
+                Some(format!("{why} (unattended.workflows, label `{label}`)"))
+            })
+        })
+        .or_else(|| (!agent_configured).then(|| "no agent is configured to run it".to_string()))
+}
+
+/// What runs start with, as the config has it.
+pub struct RunSettings {
+    pub agent: Option<String>,
+    pub mode: String,
+    /// Put over the workflow's own timeout.
+    pub timeout: String,
+}
+
+/// What a new task would be given now, for a retry with current settings: an
+/// `issue`'s task takes `runs` (its agent, its mode and the timeout put over
+/// the workflow's) when runs are set up; any other task the first agent
+/// configured and the workflow's own timeout. Both take the project's
+/// `check`. A blank mode leaves the agent in the mode it starts in.
+pub fn now_for(
+    issue: bool,
+    runs: Option<&RunSettings>,
+    first_agent: Option<String>,
+    check: Option<String>,
+) -> Now {
+    match runs.filter(|_| issue) {
+        Some(runs) => Now {
+            agent: runs.agent.clone().or(first_agent),
+            mode: Some(runs.mode.clone()).filter(|mode| !mode.trim().is_empty()),
+            check,
+            timeout: Some(runs.timeout.clone()),
+        },
+        None => Now {
+            agent: first_agent,
+            mode: None,
+            check,
+            timeout: None,
+        },
     }
 }
 

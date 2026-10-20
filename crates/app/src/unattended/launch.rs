@@ -4,7 +4,7 @@ use crate::state::Shared;
 use gpui::App;
 use onehand_core::task::{Source, Task};
 use onehand_core::unattended::{self as core, Claimed, IssueSource, Unstarted, Work};
-use onehand_core::workflow::{self as flow, Setup, Template};
+use onehand_core::workflow::{Setup, Template};
 
 mod answer;
 mod pick;
@@ -140,11 +140,8 @@ fn start(landed: Landed, cx: &mut App) -> Result<(), Unstarted> {
         Err(why) => return Err(Unstarted::of(claimed, &why)),
     };
     let check = shell.read(cx).check_of(&claimed.repo);
-    if let Some(why) = template.lacks_check(check.is_some()) {
-        return Err(Unstarted::of(
-            claimed,
-            &format!("{why}; set one on the project's page"),
-        ));
+    if let Some(why) = core::check_missing(&template, check.is_some()) {
+        return Err(Unstarted::of(claimed, &why));
     }
     let setup = Setup {
         repo: claimed.repo.clone(),
@@ -217,26 +214,9 @@ fn answer_review(
 }
 
 /// The workflow `id` as a run of it starts: its timeout put to the config's,
-/// and validated, or why it cannot run.
-///
-/// **Only a workflow that works on a worktree.** An issue's run is cut a
-/// worktree of its own, and a workflow meant for a checkout run there leaves
-/// its work uncommitted where nobody looks and reports that nothing landed.
+/// and fit for an issue, or why it cannot run.
 pub(super) fn workflow(id: &str, timeout: &str, cx: &App) -> Result<Template, String> {
-    let template = found(id, timeout, cx)?;
-    if let Some(why) = onehand_core::preflight::unfit_for_issue(&template) {
-        return Err(why);
-    }
-    let problems = flow::validate(&template);
-    if !problems.is_empty() {
-        let said: Vec<String> = problems.iter().map(ToString::to_string).collect();
-        return Err(format!(
-            "the workflow `{}` cannot run: {}",
-            template.name,
-            said.join("; ")
-        ));
-    }
-    Ok(template)
+    found(id, timeout, cx).and_then(core::fit_for_issue)
 }
 
 /// The workflow `id` with its timeout put to `timeout`, not yet judged, or

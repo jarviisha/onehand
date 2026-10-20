@@ -139,32 +139,22 @@ pub(crate) fn slots(cx: &App) -> Option<Slots> {
         .map(|u| slots_of(u, cx))
 }
 
-/// Why nothing at all may start, picked or found: the agent does not offer
-/// the mode runs start in, or a workflow runs may be given — the default or
-/// one a workflow label names — is missing or cannot run.
-///
-/// **A label's workflow stops every run**, not only its issues': it is the
-/// same broken config either way, and said before any claim it costs no issue
-/// a comment.
+/// Why nothing at all may start, picked or found, as core says over the
+/// workflows the config names, each as a run would take it.
 fn cannot_start(u: &Unattended, cx: &App) -> Option<String> {
-    u.mode_refused
-        .clone()
-        .or_else(|| {
-            launch::workflow(&u.workflow, &u.timeout, cx)
-                .err()
-                .map(|why| format!("{why} (unattended.workflow)"))
-        })
-        .or_else(|| {
-            u.workflows.iter().find_map(|(label, id)| {
-                let why = launch::workflow(id, &u.timeout, cx).err()?;
-                Some(format!("{why} (unattended.workflows, label `{label}`)"))
-            })
-        })
-        .or_else(|| {
-            spec_for(u.agent.as_deref(), cx)
-                .is_none()
-                .then(|| "no agent is configured to run it".to_string())
-        })
+    let default = launch::workflow(&u.workflow, &u.timeout, cx);
+    let by_label: Vec<_> = u
+        .workflows
+        .iter()
+        .map(|(label, id)| (label.clone(), launch::workflow(id, &u.timeout, cx)))
+        .collect();
+    let agent_configured = spec_for(u.agent.as_deref(), cx).is_some();
+    core::cannot_start(
+        u.mode_refused.as_deref(),
+        &default,
+        &by_label,
+        agent_configured,
+    )
 }
 
 /// Whether the project at `root` has a check command, in whichever window
@@ -211,9 +201,7 @@ fn lacks_check_given(has: bool, id: &str, cx: &App) -> Option<String> {
         Ok(template) => template,
         Err(why) => return Some(why),
     };
-    template
-        .lacks_check(has)
-        .map(|why| format!("{why}; set one on the project's page"))
+    core::check_missing(&template, has)
 }
 
 /// Start the tick, or say why it cannot run.
@@ -503,9 +491,8 @@ pub(crate) fn run_agent(cx: &App) -> Option<String> {
 }
 
 /// What a new task of `task`'s kind would be given now, for a retry with
-/// current settings: an issue's from `[unattended]` (its agent, its mode and
-/// the timeout put over the workflow's), a launcher's the first agent
-/// configured and the workflow's own timeout; both the project's `check`.
+/// current settings, as core decides it over the config's run settings and
+/// the first agent configured.
 pub(crate) fn now_for(
     task: &onehand_core::task::Task,
     check: Option<String>,
@@ -513,20 +500,12 @@ pub(crate) fn now_for(
 ) -> onehand_core::workflow::Now {
     let shared = Shared::global(cx);
     let first = shared.agents.first().map(|spec| spec.name.clone());
-    match (task.issue(), shared.unattended.as_ref()) {
-        (Some(_), Some(u)) => onehand_core::workflow::Now {
-            agent: u.agent.clone().or(first),
-            mode: Some(u.mode.clone()).filter(|mode| !mode.trim().is_empty()),
-            check,
-            timeout: Some(u.timeout.clone()),
-        },
-        (Some(_), None) | (None, _) => onehand_core::workflow::Now {
-            agent: first,
-            mode: None,
-            check,
-            timeout: None,
-        },
-    }
+    let runs = shared.unattended.as_ref().map(|u| core::RunSettings {
+        agent: u.agent.clone(),
+        mode: u.mode.clone(),
+        timeout: u.timeout.clone(),
+    });
+    core::now_for(task.issue().is_some(), runs.as_ref(), first, check)
 }
 
 /// Whether a retry of `task` with current settings would run with another
