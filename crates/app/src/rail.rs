@@ -42,7 +42,7 @@ mod session;
 mod workspace;
 pub use project::{pick_item, unattended_item};
 pub(crate) use row::page_fill;
-pub(crate) use session::{signal_mark, signal_word};
+pub(crate) use session::signal_mark;
 pub(crate) use workspace::ellipsize_front;
 
 /// How far a session row is set in under its project: one mark's slot, the

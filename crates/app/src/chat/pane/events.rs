@@ -2,98 +2,10 @@
 //! and the events by which the pane asks its owner for what it cannot do.
 
 use gpui::SharedString;
-use onehand_core::chat::Link;
 use onehand_core::task::Approval;
 use std::path::PathBuf;
 
-/// What a session is doing, when that is something the rail should say.
-///
-/// Only states that want the user's eye. A session that is connected, idle and
-/// already read carries **no** signal — that is what keeps a rail full of
-/// healthy sessions a clean list of names rather than a wall of dots.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum SessionSignal {
-    /// The adapter went away. `Ctrl+Shift+R` brings it back.
-    Lost,
-    /// The last turn ended on an error rather than an answer.
-    Failed,
-    /// A parked permission or question. The only signal that is about *the
-    /// user*: nothing moves until they answer.
-    AwaitingUser,
-    /// A turn is in flight.
-    Busy,
-    /// A turn finished while this session was not being looked at.
-    UnseenTurn,
-}
-
-impl SessionSignal {
-    /// How badly each state wants the user's eye, lowest first.
-    ///
-    /// **The one place the order lives.** Three readers now — a session row
-    /// reducing its own four facts, a project row reducing its sessions'
-    /// signals, and the rail's flat session list sorting itself so the ones
-    /// wanting an answer rise to the top — and an order written out twice is an
-    /// order that will disagree with itself the first time someone edits one
-    /// copy.
-    pub(crate) fn rank(self) -> u8 {
-        match self {
-            // A dead adapter outranks a question nobody can answer any more.
-            Self::Lost => 0,
-            // A turn that broke waits on the person as a question does, and
-            // nothing else will move it.
-            Self::Failed => 1,
-            // A parked question outranks busy: only one of them moves on its
-            // own.
-            Self::AwaitingUser => 2,
-            // What is happening now outranks what happened last turn.
-            Self::Busy => 3,
-            // The calmest, and the only one about the past rather than about
-            // now.
-            Self::UnseenTurn => 4,
-        }
-    }
-
-    /// Reduce a session's five independent facts to the one thing the rail
-    /// draws.
-    ///
-    /// One mark, not one per condition: two marks side by side on a rail row
-    /// are a code nobody learns. Which one survives is [`Self::rank`] — a
-    /// judgement about which fact the user needs when several are true at once.
-    ///
-    /// Pure, and separate from the lookup, so the order is testable without a
-    /// window: it is a rule about attention, and rules about attention are
-    /// exactly what regresses silently.
-    pub fn pick(
-        link: Link,
-        failed: bool,
-        awaiting_user: bool,
-        busy: bool,
-        unseen: bool,
-    ) -> Option<Self> {
-        Self::most_urgent(
-            [
-                (link == Link::Lost).then_some(Self::Lost),
-                failed.then_some(Self::Failed),
-                awaiting_user.then_some(Self::AwaitingUser),
-                busy.then_some(Self::Busy),
-                unseen.then_some(Self::UnseenTurn),
-            ]
-            .into_iter()
-            .flatten(),
-        )
-    }
-
-    /// The signal a *group* of sessions carries — a project row's roll-up.
-    ///
-    /// Without it a collapsed project was silent about everything inside it:
-    /// an agent could be waiting on an answer, or dead, with nothing on screen
-    /// saying so until the user thought to expand that project. The same rank
-    /// decides, so the mark on a project means exactly what the same mark means
-    /// on the session it came from.
-    pub fn most_urgent(signals: impl IntoIterator<Item = Self>) -> Option<Self> {
-        signals.into_iter().min_by_key(|signal| signal.rank())
-    }
-}
+pub use onehand_core::chat::SessionSignal;
 
 /// What [`ChatPane::restart`] did, so the shell can say so.
 pub enum Restart {

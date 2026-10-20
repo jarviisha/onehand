@@ -1,6 +1,6 @@
 use super::{ANSWER_TAIL_MAX, ChatPane, QUOTED_PROMPT_MAX, SETTLED};
 use gpui::{App, Context};
-use onehand_core::chat::{Away, Chat, ChatItem, Presence, Telling};
+use onehand_core::chat::{Away, Chat, ChatItem, Presence, SessionSignal, Telling};
 use onehand_core::remote::types::Button;
 use onehand_core::remote::{Press, press};
 
@@ -185,7 +185,7 @@ impl ChatPane {
                     // The rail's own word for the same condition, so a row on
                     // screen and a line on a phone cannot end up calling one
                     // state two things.
-                    state: self.signal(uid, cx).map(crate::rail::signal_word),
+                    state: self.signal(uid, cx).map(SessionSignal::word),
                 })
             })
             .collect()

@@ -33,19 +33,6 @@ pub(super) fn signal_hint(signal: Option<SessionSignal>) -> &'static str {
     }
 }
 
-/// What a state is called where there is room for a name but not a sentence:
-/// the rail's meta line, the overview, the remote bridge's session listing.
-/// One place, so no two readers of one state call it two things.
-pub(crate) fn signal_word(signal: SessionSignal) -> &'static str {
-    match signal {
-        SessionSignal::Lost => "Disconnected",
-        SessionSignal::Failed => "Failed",
-        SessionSignal::AwaitingUser => "Needs input",
-        SessionSignal::Busy => "Running",
-        SessionSignal::UnseenTurn => "Done",
-    }
-}
-
 /// A state's mark: a shape of its own for each, as well as an ink, so none is
 /// told by colour alone. None of them moves: a list of turning glyphs pulls
 /// the eye from what waits on the person, so running is a filled dot, the one

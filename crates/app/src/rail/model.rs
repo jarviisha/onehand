@@ -65,7 +65,7 @@ pub(super) fn needs_attention(signal: Option<SessionSignal>) -> bool {
 /// What a session's state is called on its row; a session with no signal is
 /// idle.
 pub(super) fn word(signal: Option<SessionSignal>) -> &'static str {
-    signal.map_or("Idle", super::signal_word)
+    signal.map_or("Idle", SessionSignal::word)
 }
 
 /// The age as the row says it: `now`, `4m`, `2h`, `3d`.
