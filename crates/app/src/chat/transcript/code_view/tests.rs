@@ -43,3 +43,8 @@ fn the_dialog_lifts_the_transcripts_height_cap() {
     assert_eq!(style.code_block.max_size.height, None);
     assert_eq!(style.code_block.overflow.y, None);
 }
+
+#[test]
+fn a_crlf_block_is_cut_without_its_carriage_return() {
+    assert_eq!(capped("a\r\nb\r\nc", 1), ("a", Some(3)));
+}

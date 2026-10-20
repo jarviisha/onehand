@@ -78,6 +78,7 @@ fn md_view(
             // **The language, beside the copy**, in the one corner the
             // renderer opens on a block.
             .code_block_actions(|block, _, cx| {
+                let code = block.code();
                 div()
                     .h_flex()
                     .items_center()
@@ -90,10 +91,10 @@ fn md_view(
                             .text_color(cx.theme().muted_foreground)
                             .child(lang)
                     }))
-                    .child(copy_button("copy-code", block.code(), "Copy the code", cx))
+                    .child(copy_button("copy-code", code.clone(), "Copy the code", cx))
                     // What the cap holds back, said and opened whole.
-                    .children(super::code_view::held_back(&block.code()).map(|lines| {
-                        let (code, lang) = (block.code(), block.lang());
+                    .children(super::code_view::held_back(&code).map(|lines| {
+                        let lang = block.lang();
                         show_more("code-all", format!("All {lines} lines"), cx)
                             .tooltip("Open the whole block")
                             .on_click(move |_, window, cx| {

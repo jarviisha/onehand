@@ -51,7 +51,11 @@ fn capped(code: &str, cap: usize) -> (&str, Option<usize>) {
         .match_indices('\n')
         .nth(cap - 1)
         .map_or(code.len(), |(at, _)| at);
-    (&code[..end], Some(total))
+    // A line ends on `\r\n` as `lines` reads it, so the cut does too.
+    (
+        code[..end].strip_suffix('\r').unwrap_or(&code[..end]),
+        Some(total),
+    )
 }
 
 /// `code` as one fenced block of Markdown in `lang`, fenced longer than any
@@ -80,9 +84,11 @@ pub(super) fn open(
     cx: &mut App,
 ) {
     let width = crate::dialogs::width_in(window, CODE_VIEW_W);
+    // Fenced once: the dialog is built again on every frame it shows.
+    let (shown, total) = capped(&code, CODE_VIEW_MAX_LINES);
+    let fenced = SharedString::from(fence(shown, lang.as_deref()));
     window.open_dialog(cx, move |dialog, window, cx| {
-        let (shown, total) = capped(&code, CODE_VIEW_MAX_LINES);
-        let body = TextView::markdown("code-view-body", fence(shown, lang.as_deref()))
+        let body = TextView::markdown("code-view-body", fenced.clone())
             .selectable(true)
             .style(uncapped(super::prose::prose_style(window, cx)));
         let code = code.clone();
