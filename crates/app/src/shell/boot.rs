@@ -99,10 +99,7 @@ impl Shell {
         let saved = workspace.layout;
         // The saved arrangement holds one workspace-wide answer to "was the
         // terminal open", and the live question is per root -- so it seeds the
-        // root that is about to be on screen and no other. Seeding
-        // `terminal_root` with it too is what stops the first handover from
-        // reading the restored dock as some *other* project's state and closing
-        // it on the way in.
+        // root that is about to be on screen and no other.
         let seed_root = workspace.active_root().map(|root| root.path.clone());
         dock.update(cx, |area, cx| {
             // Bare panels, not tab groups. `DockItem::tab` wraps its panel in a
@@ -539,12 +536,10 @@ impl Shell {
             rail: crate::rail::RailState::new(window, cx),
             folds: HashMap::new(),
             last_panel: FocusedPanel::Chat,
-            terminal_open: seed_root
-                .clone()
-                .map(|path| (path, saved.terminal_open))
-                .into_iter()
-                .collect(),
-            terminal_root: seed_root,
+            terminal_homes: super::dock_rules::TerminalHomes::seeded(
+                seed_root,
+                saved.terminal_open,
+            ),
             page_hid_workbench: false,
             mru: HashMap::new(),
             tab_cycle: None,
