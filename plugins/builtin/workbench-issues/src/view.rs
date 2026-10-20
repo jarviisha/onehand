@@ -6,6 +6,7 @@
 //! forge. What is here is the half that needs a window: the list, the reading,
 //! the form, and when a sync runs.
 
+use crate::{IssuesEvent, Tell};
 use gpui::{
     AnyElement, App, AppContext as _, Context, Entity, IntoElement, ParentElement, Render, Styled,
     Subscription, Task, Window, div,
@@ -116,6 +117,8 @@ pub(crate) struct IssuesView {
     /// How the mode asks the Workbench for something — a file opened in the
     /// editor.
     ask: Ask,
+    /// How the view reaches the shell with what is the app's own to do.
+    tell: Tell,
     /// The conversations with a live session in this window, by the agent's
     /// session id: an issue whose history names one of them is being worked.
     live: Vec<String>,
@@ -180,6 +183,7 @@ impl IssuesView {
     pub(crate) fn new(
         connectors: &'static [&'static dyn Connector],
         ask: Ask,
+        tell: Tell,
         page: bool,
         cx: &mut App,
     ) -> Entity<Self> {
@@ -201,6 +205,7 @@ impl IssuesView {
             tab_focus: cx.focus_handle(),
             label: None,
             ask,
+            tell,
             live: Vec::new(),
             works: Vec::new(),
             pr: Reading::default(),

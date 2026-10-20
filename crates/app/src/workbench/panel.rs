@@ -20,12 +20,11 @@
 
 use gpui::{
     App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement,
-    IntoElement, ParentElement, Render, SharedString, Styled, Window, div,
+    IntoElement, ParentElement, Pixels, Render, SharedString, Styled, Window, div,
 };
 use gpui_component::StyledExt;
 use gpui_component::dock::{Panel, PanelControl, PanelEvent};
 use onehand_core::gitstat::GitStatus;
-use onehand_core::task::Approval;
 use onehand_plugin_api::{PluginId, WorkbenchModeSpec};
 use onehand_plugin_host::{Ask, Request, WorkbenchMode};
 use std::collections::HashMap;
@@ -81,7 +80,14 @@ pub struct Workbench {
 }
 
 impl Workbench {
-    pub fn new(cx: &mut App) -> Entity<Self> {
+    /// The panel, its modes built by `build` from the way they ask the panel
+    /// for things and the font size a glyph grid starts at. The shell hands
+    /// the builder in, so what a mode needs beyond the panel — the shell's
+    /// own ear for an issue's events — is the shell's to close over.
+    pub fn new(
+        build: impl FnOnce(Ask, Pixels, &mut App) -> Vec<Box<dyn WorkbenchMode>>,
+        cx: &mut App,
+    ) -> Entity<Self> {
         cx.new(|cx| {
             // Handed to the modes as they are built rather than set afterwards,
             // so none of them is ever on screen holding nothing to ask through.
@@ -92,7 +98,7 @@ impl Workbench {
                 });
             });
             let zoom = crate::zoom::Zoom::default();
-            let modes = crate::plugins::workbench_modes(ask, crate::zoom::term_font_size(zoom), cx);
+            let modes = build(ask, crate::zoom::term_font_size(zoom), cx);
             assert!(!modes.is_empty(), "the Workbench has no built-in modes");
             Self {
                 active: 0,
@@ -132,12 +138,9 @@ impl Workbench {
                     self.focus_active(window, cx);
                 }
             }
-            other => match issue_event(other) {
-                Some(event) => cx.emit(event),
-                None => {
-                    self.broadcast(other, cx);
-                }
-            },
+            other => {
+                self.broadcast(other, cx);
+            }
         }
     }
 
@@ -401,113 +404,9 @@ pub enum WorkbenchEvent {
     /// A mode changed something the agent reads only when it starts, and the
     /// user asked for it to start again.
     RestartAgent,
-    /// Work issue `number` of project `root` in the checkout it is open on,
-    /// with `prompt` as the new session's first message.
-    WorkIssueHere {
-        root: std::path::PathBuf,
-        number: u64,
-        prompt: String,
-    },
-    /// Show the conversation the agent named `session`, live or saved.
-    OpenConversation(String),
-    /// Choose a workflow to work issue `number` of project `root` with.
-    RunIssueWorkflow {
-        root: std::path::PathBuf,
-        number: u64,
-    },
-    /// Show issue `number` of project `root` on the Issues page.
-    OpenInIssues {
-        root: std::path::PathBuf,
-        number: u64,
-    },
-    /// Show issue `number` of project `root` on the Issues page, its review
-    /// open.
-    ReviewInIssues {
-        root: std::path::PathBuf,
-        number: u64,
-    },
-    /// Approve what a run waits on, as read.
-    ApproveTask(Approval),
-    /// Send it back with `note`.
-    ReviseTask {
-        approval: Approval,
-        note: String,
-    },
-    /// Show task `id` on the Tasks page.
-    OpenTask(String),
-    /// Show the session task `id` runs in.
-    OpenTaskSession(String),
-    /// Carry task `id` on where it was.
-    ResumeTask(String),
-    /// Choose how to run task `id` again.
-    RetryTask(String),
-    /// Run task `id` again with what Settings say now, asking first.
-    RetryTaskCurrent(String),
-    /// Answer the review on issue task `id`'s open pull request.
-    AnswerReview(String),
-    RemoveWorktree(String),
-    /// Stop task `id`.
-    StopTask(String),
 }
 
 impl EventEmitter<WorkbenchEvent> for Workbench {}
-
-/// What an Issues view asks of the shell, as the event the shell answers:
-/// the same whether the Workbench's Issues mode or the Issues page raised it.
-/// `None` for a request that is not one of those.
-pub fn issue_event(request: &Request<'_>) -> Option<WorkbenchEvent> {
-    Some(match request {
-        Request::WorkIssueHere {
-            root,
-            number,
-            prompt,
-        } => WorkbenchEvent::WorkIssueHere {
-            root: root.to_path_buf(),
-            number: *number,
-            prompt: prompt.to_string(),
-        },
-        Request::OpenConversation(session) => WorkbenchEvent::OpenConversation(session.to_string()),
-        Request::RunIssueWorkflow { root, number } => WorkbenchEvent::RunIssueWorkflow {
-            root: root.to_path_buf(),
-            number: *number,
-        },
-        Request::OpenInIssues { root, number } => WorkbenchEvent::OpenInIssues {
-            root: root.to_path_buf(),
-            number: *number,
-        },
-        Request::ReviewInIssues { root, number } => WorkbenchEvent::ReviewInIssues {
-            root: root.to_path_buf(),
-            number: *number,
-        },
-        Request::ApproveTask(approval) => WorkbenchEvent::ApproveTask((*approval).clone()),
-        Request::ReviseTask { approval, note } => WorkbenchEvent::ReviseTask {
-            approval: (*approval).clone(),
-            note: note.to_string(),
-        },
-        Request::OpenTask(id) => WorkbenchEvent::OpenTask(id.to_string()),
-        Request::OpenTaskSession(id) => WorkbenchEvent::OpenTaskSession(id.to_string()),
-        Request::ResumeTask(id) => WorkbenchEvent::ResumeTask(id.to_string()),
-        Request::RetryTask(id) => WorkbenchEvent::RetryTask(id.to_string()),
-        Request::RetryTaskCurrent(id) => WorkbenchEvent::RetryTaskCurrent(id.to_string()),
-        Request::AnswerReview(id) => WorkbenchEvent::AnswerReview(id.to_string()),
-        Request::RemoveWorktree(id) => WorkbenchEvent::RemoveWorktree(id.to_string()),
-        Request::StopTask(id) => WorkbenchEvent::StopTask(id.to_string()),
-        Request::OpenFile(_)
-        | Request::Save
-        | Request::Start
-        | Request::Rescan
-        | Request::Shown
-        | Request::Reap
-        | Request::SetGit(_)
-        | Request::SetStorage(_)
-        | Request::SetFontSize(_)
-        | Request::ShowIssue(_)
-        | Request::AgentStarted(_)
-        | Request::LiveConversations(_)
-        | Request::RestartAgent
-        | Request::IssueWork { .. } => return None,
-    })
-}
 
 impl Focusable for Workbench {
     fn focus_handle(&self, _: &App) -> FocusHandle {

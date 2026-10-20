@@ -23,12 +23,21 @@ impl Shell {
         // never read.
         let dock = cx.new(|cx| DockArea::new("onehand", Some(1), window, cx));
         let chat = ChatPane::new(window, cx);
-        let workbench = Workbench::new(cx);
+        // One ear for the Issues views, the tab's and the page's: both speak
+        // to this window's shell.
+        let tell = Self::issues_tell(cx);
+        let workbench = Workbench::new(
+            {
+                let tell = tell.clone();
+                move |ask, font_size, cx| crate::plugins::workbench_modes(ask, tell, font_size, cx)
+            },
+            cx,
+        );
         workbench.update(cx, |panel, cx| {
             panel.set_storage(workspace.storage_dir.as_deref(), cx)
         });
         let terminal = TerminalPanel::new(cx);
-        let issues_page = Self::new_issues_page(cx);
+        let issues_page = Self::new_issues_page(tell, cx);
         let workflows_page = crate::workflows_page::WorkflowsPage::new(cx);
         cx.subscribe_in(
             &workflows_page,

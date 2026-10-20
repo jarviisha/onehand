@@ -11,7 +11,6 @@
 
 use gpui::{AnyView, App, Pixels, Window};
 use onehand_core::gitstat::GitStatus;
-use onehand_core::task::Approval;
 use onehand_core::task::work::IssueWork;
 use onehand_plugin_api::WorkbenchModeSpec;
 use std::collections::HashMap;
@@ -95,9 +94,10 @@ pub trait WorkbenchMode {
 ///
 /// One vocabulary in **both** directions. The panel broadcasts these down; a
 /// mode sends one back up through its [`Ask`] when a click inside it means
-/// something the panel owns — a row in the file tree is the case that exists
-/// today, since opening a file is the quick editor's business and not the
-/// tree's.
+/// something the panel owns, or another mode does — a row in the file tree
+/// opens a file, which is the quick editor's business and not the tree's. What
+/// is the app's own to answer, as an issue's work is, does not travel here: a
+/// view with such a thing to say speaks to the shell directly.
 ///
 /// This enum is what keeps the trait above from growing a method per shell
 /// feature. A mode writes an arm for what it recognises and falls through the
@@ -169,19 +169,6 @@ pub enum Request<'a> {
     /// **upward**: the shell owns sessions, and a mode asking for this has
     /// changed something an agent reads only when it starts.
     RestartAgent,
-    /// Start a session on project `root`, in the checkout it is open on, with
-    /// `prompt` as its first message, and say on issue `number` which session
-    /// took it up once the agent has named it. Only ever travels **upward**,
-    /// for the reason [`Self::RestartAgent`] does.
-    WorkIssueHere {
-        root: &'a Path,
-        number: u64,
-        prompt: &'a str,
-    },
-    /// Put the conversation the agent named `session` on screen: the live
-    /// session holding it, or the saved one reopened on the project it ran
-    /// in. Only ever travels **upward**.
-    OpenConversation(&'a str),
     /// The work on every issue a project in this window keeps itself that a
     /// task works, one summary per issue, and the projects a run may be
     /// started on (git repositories that are not a run's own worktree).
@@ -192,48 +179,6 @@ pub enum Request<'a> {
         works: &'a [IssueWork],
         offered: &'a [PathBuf],
     },
-    /// Let a person choose a workflow and work issue `number` of project
-    /// `root` with it, on a worktree of its own, as a task. Only ever travels
-    /// **upward**.
-    RunIssueWorkflow { root: &'a Path, number: u64 },
-    /// Put issue `number` of project `root` on the Issues page, where there
-    /// is room to work it, its filters left as they are. Only ever travels
-    /// **upward**.
-    OpenInIssues { root: &'a Path, number: u64 },
-    /// Put issue `number` of project `root` on the Issues page with what its
-    /// work waits for approval on open to review. Only ever travels
-    /// **upward**.
-    ReviewInIssues { root: &'a Path, number: u64 },
-    /// Approve what a run waits on, as read: refused by the run unless it
-    /// still waits where it was read. Only ever travels **upward**.
-    ApproveTask(&'a Approval),
-    /// Send what a run waits on, as read, back with `note`: refused the same
-    /// way. Only ever travels **upward**.
-    ReviseTask {
-        approval: &'a Approval,
-        note: &'a str,
-    },
-    /// Put task `id` on screen, in the Tasks page's detail. Only ever travels
-    /// **upward**.
-    OpenTask(&'a str),
-    /// Put the session task `id` runs in on screen. Only ever travels
-    /// **upward**.
-    OpenTaskSession(&'a str),
-    /// Carry task `id` on where it was. Only ever travels **upward**.
-    ResumeTask(&'a str),
-    /// Choose how to run task `id` again. Only ever travels **upward**.
-    RetryTask(&'a str),
-    /// Run task `id` again with what Settings say now, asking first. Only
-    /// ever travels **upward**.
-    RetryTaskCurrent(&'a str),
-    /// Answer the review on issue task `id`'s open pull request, as putting
-    /// the trigger label back does. Only ever travels **upward**.
-    AnswerReview(&'a str),
-    /// Remove issue task `id`'s worktree and branch after its pull request
-    /// merged, asking first. Only ever travels **upward**.
-    RemoveWorktree(&'a str),
-    /// Stop task `id`. Only ever travels **upward**.
-    StopTask(&'a str),
 }
 
 /// How a mode reaches back into the panel.
