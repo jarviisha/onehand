@@ -122,6 +122,9 @@ pub struct Work {
     /// from the one its last run ran with. Told by the app, which knows
     /// Settings; `false` until it does.
     pub timeout_moved: bool,
+    /// Why Resume cannot start it now, by the preflight of its own setup.
+    /// Told by the app, which holds the facts; `None` until it does.
+    pub resume_refused: Option<String>,
     /// What a person pressed on it that is still being done, so its button
     /// waits. Told by the app; `None` until it does.
     pub pressed: Option<Act>,
@@ -180,6 +183,7 @@ impl Work {
                 .filter(|_| matches!(stand, Stand::Approval { .. }))
                 .and_then(UnderReview::of),
             timeout_moved: false,
+            resume_refused: None,
             pressed: None,
             span: run.and_then(|run| first(run).zip(last(run))),
             base: task.runs.first().and_then(first),

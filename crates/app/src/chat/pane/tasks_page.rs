@@ -2,6 +2,7 @@ use super::page_parts::{page_card, page_head, pair, ruled};
 use super::workspace_page::{ALL_PROJECTS, PageProject};
 use super::{ChatPane, ChatPaneEvent, Page};
 use crate::controls::Quiet as _;
+use crate::controls::Refuses as _;
 use crate::controls::Short as _;
 use crate::task::Row;
 use crate::tokens::PAGE_WIDE;
@@ -395,6 +396,11 @@ impl TaskAct {
         let button = match self.tooltip() {
             Some(tip) => button.tooltip(tip),
             None => button,
+        };
+        // A Resume the preflight finds blocked refuses, saying why.
+        let button = match self == Self::Resume {
+            true => button.refuses(row.resume_refused.clone()),
+            false => button,
         };
         button.on_click(move |event, window, cx| press(event, window, cx))
     }

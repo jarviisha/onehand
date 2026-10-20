@@ -628,20 +628,15 @@ impl Shell {
     }
 
     /// Carry task `id` on where it stopped, once the preflight finds nothing
-    /// in the way of its own setup; what blocks it is said in the window.
+    /// in the way of its own setup. Its buttons refuse while something does;
+    /// a press that beat a refusal to the screen is told in the window.
     pub(crate) fn resume_task(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
-        let blocked = crate::task::task(&id, cx).and_then(|task| {
-            let template = task.runs.last()?.template.clone();
-            let facts = crate::unattended::task_facts(&task, template, cx);
-            preflight::preflight(preflight::Kind::Resume, &facts)
-                .into_iter()
-                .find(|f| f.blocks)
-        });
+        let blocked =
+            crate::task::task(&id, cx).and_then(|task| crate::task::resume_refused(&task, cx));
         match blocked {
-            Some(block) => window.push_notification(
-                crate::toast::warning(format!("Not resumed: {}", block.text)),
-                cx,
-            ),
+            Some(why) => {
+                window.push_notification(crate::toast::warning(format!("Not resumed: {why}")), cx)
+            }
             None => crate::task::request(id, window, cx),
         }
     }

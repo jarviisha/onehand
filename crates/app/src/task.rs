@@ -621,6 +621,18 @@ pub(crate) fn task(id: &str, cx: &App) -> Option<Task> {
     cx.try_global::<Tasks>()?.task(id).cloned()
 }
 
+/// Why Resume cannot carry `task` on now: the first thing the preflight of
+/// its last run's own setup finds in the way. Pure and cheap, so the buttons
+/// that offer Resume ask it as they are drawn and refuse with it.
+pub(crate) fn resume_refused(task: &Task, cx: &App) -> Option<String> {
+    let template = task.runs.last()?.template.clone();
+    let facts = crate::unattended::task_facts(task, template, cx);
+    onehand_core::preflight::preflight(onehand_core::preflight::Kind::Resume, &facts)
+        .into_iter()
+        .find(|f| f.blocks)
+        .map(|f| f.text)
+}
+
 /// The title of the task holding `place`, unless that task is `except`: a
 /// task's own next run never waits behind itself.
 pub(crate) fn holder_at(place: &std::path::Path, except: Option<&str>, cx: &App) -> Option<String> {

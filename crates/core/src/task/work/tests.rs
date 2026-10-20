@@ -1041,3 +1041,10 @@ fn an_answer_is_cut_to_its_last_lines() {
     assert!(shown.starts_with("line 11\n"));
     assert_eq!(last_lines("short", ANSWER_LINES), ("short", 0));
 }
+
+#[test]
+fn core_leaves_a_resume_refusal_to_the_app() {
+    let task = at(task("1", forge_flow(), None), 2, 900);
+    let work = Work::of(&task, None, None);
+    assert_eq!(work.resume_refused, None);
+}
