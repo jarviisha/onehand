@@ -64,25 +64,25 @@ fn healthy() -> Facts {
     }
 }
 
-fn found(kind: Kind, facts: &Facts, check: Check) -> Option<Finding> {
+fn found(kind: Kind, facts: &Facts, about: About) -> Option<Finding> {
     preflight(kind, facts)
         .into_iter()
-        .find(|f| f.check == check)
+        .find(|f| f.about == about)
 }
 
-fn blocks(kind: Kind, facts: &Facts) -> Vec<Check> {
+fn blocks(kind: Kind, facts: &Facts) -> Vec<About> {
     preflight(kind, facts)
         .into_iter()
         .filter(|f| f.blocks)
-        .map(|f| f.check)
+        .map(|f| f.about)
         .collect()
 }
 
 #[test]
 fn a_healthy_issue_run_is_not_blocked_and_says_its_base() {
     let facts = healthy();
-    assert_eq!(blocks(Kind::NewIssueRun, &facts), Vec::<Check>::new());
-    let base = found(Kind::NewIssueRun, &facts, Check::Base).unwrap();
+    assert_eq!(blocks(Kind::NewIssueRun, &facts), Vec::<About>::new());
+    let base = found(Kind::NewIssueRun, &facts, About::Base).unwrap();
     assert!(base.text.contains("origin"), "{}", base.text);
     assert!(!base.blocks);
 }
@@ -93,7 +93,7 @@ fn an_issue_run_without_a_forge_is_cut_off_the_branch_checked_out() {
         forge: None,
         ..healthy()
     };
-    let base = found(Kind::NewIssueRun, &facts, Check::Base).unwrap();
+    let base = found(Kind::NewIssueRun, &facts, About::Base).unwrap();
     assert!(base.text.contains("`main`"), "{}", base.text);
 }
 
@@ -103,14 +103,14 @@ fn an_unreadable_or_checkout_workflow_blocks_an_issue_run() {
         workflow: Err("there is no workflow `gone`".into()),
         ..healthy()
     };
-    let finding = found(Kind::NewIssueRun, &missing, Check::Workflow).unwrap();
+    let finding = found(Kind::NewIssueRun, &missing, About::Workflow).unwrap();
     assert!(finding.blocks && finding.text.contains("gone"));
     let checkout = Facts {
         workflow: Ok(builtin::all().remove(0)),
         ..healthy()
     };
     assert_eq!(checkout.workflow.as_ref().unwrap().place, Place::Checkout);
-    let finding = found(Kind::NewIssueRun, &checkout, Check::Workflow).unwrap();
+    let finding = found(Kind::NewIssueRun, &checkout, About::Workflow).unwrap();
     assert!(
         finding.blocks && finding.text.contains("checkout"),
         "{}",
@@ -131,9 +131,9 @@ fn validation_problems_are_listed_first_and_each_once() {
     let all = preflight(Kind::NewIssueRun, &facts);
     let problems = crate::workflow::validate(&broken);
     assert!(!problems.is_empty());
-    let workflow: Vec<_> = all.iter().filter(|f| f.check == Check::Workflow).collect();
+    let workflow: Vec<_> = all.iter().filter(|f| f.about == About::Workflow).collect();
     assert_eq!(workflow.len(), problems.len());
-    assert_eq!(all[0].check, Check::Workflow);
+    assert_eq!(all[0].about, About::Workflow);
     // Blocks before anything that only informs.
     let first_inform = all.iter().position(|f| !f.blocks).unwrap_or(all.len());
     assert!(all[first_inform..].iter().all(|f| !f.blocks));
@@ -145,7 +145,7 @@ fn an_agent_no_longer_configured_blocks() {
         agent_configured: false,
         ..healthy()
     };
-    let finding = found(Kind::NewIssueRun, &gone, Check::Agent).unwrap();
+    let finding = found(Kind::NewIssueRun, &gone, About::Agent).unwrap();
     assert!(finding.blocks && finding.text.contains("Claude"));
     let none = Facts {
         agent: None,
@@ -153,7 +153,7 @@ fn an_agent_no_longer_configured_blocks() {
         ..healthy()
     };
     assert!(
-        found(Kind::NewIssueRun, &none, Check::Agent)
+        found(Kind::NewIssueRun, &none, About::Agent)
             .unwrap()
             .blocks
     );
@@ -166,20 +166,20 @@ fn a_mode_known_and_not_offered_blocks_and_one_not_known_informs() {
         offered: Some(vec!["default".into(), "acceptEdits".into()]),
         ..healthy()
     };
-    let finding = found(Kind::NewIssueRun, &known, Check::Mode).unwrap();
+    let finding = found(Kind::NewIssueRun, &known, About::Mode).unwrap();
     assert!(finding.blocks);
     assert!(finding.text.contains("`plan`") && finding.text.contains("acceptEdits"));
     let unknown = Facts {
         offered: None,
         ..known.clone()
     };
-    let finding = found(Kind::NewIssueRun, &unknown, Check::Mode).unwrap();
+    let finding = found(Kind::NewIssueRun, &unknown, About::Mode).unwrap();
     assert!(!finding.blocks && finding.text.contains("not known yet"));
     let offered = Facts {
         offered: Some(vec!["plan".into()]),
         ..known
     };
-    assert_eq!(found(Kind::NewIssueRun, &offered, Check::Mode), None);
+    assert_eq!(found(Kind::NewIssueRun, &offered, About::Mode), None);
 }
 
 #[test]
@@ -194,7 +194,7 @@ fn a_check_command_missing_blocks_and_no_command_step_informs() {
         has_check: false,
         ..healthy()
     };
-    let finding = found(Kind::NewIssueRun, &missing, Check::CheckCommand).unwrap();
+    let finding = found(Kind::NewIssueRun, &missing, About::CheckCommand).unwrap();
     assert!(finding.blocks);
     let why = needs.lacks_check(false).unwrap();
     assert!(
@@ -212,7 +212,7 @@ fn a_check_command_missing_blocks_and_no_command_step_informs() {
         has_check: false,
         ..healthy()
     };
-    let finding = found(Kind::NewIssueRun, &none, Check::CheckCommand).unwrap();
+    let finding = found(Kind::NewIssueRun, &none, About::CheckCommand).unwrap();
     assert!(!finding.blocks && finding.text.contains("nothing verifies"));
 }
 
@@ -224,7 +224,7 @@ fn a_detached_head_with_no_forge_blocks_an_issue_run() {
         ..healthy()
     };
     assert!(
-        found(Kind::NewIssueRun, &facts, Check::Place)
+        found(Kind::NewIssueRun, &facts, About::Place)
             .unwrap()
             .blocks
     );
@@ -232,7 +232,7 @@ fn a_detached_head_with_no_forge_blocks_an_issue_run() {
         checked_out: Some(DETACHED.into()),
         ..healthy()
     };
-    assert_eq!(found(Kind::NewIssueRun, &with_forge, Check::Place), None);
+    assert_eq!(found(Kind::NewIssueRun, &with_forge, About::Place), None);
 }
 
 #[test]
@@ -244,7 +244,7 @@ fn a_forge_signed_out_as_last_seen_blocks_and_one_not_seen_yet_does_not() {
         }),
         ..healthy()
     };
-    let finding = found(Kind::NewIssueRun, &out, Check::Forge).unwrap();
+    let finding = found(Kind::NewIssueRun, &out, About::Forge).unwrap();
     assert!(finding.blocks && finding.text.contains("not signed in"));
     let unseen = Facts {
         forge: Some(Forge {
@@ -253,7 +253,7 @@ fn a_forge_signed_out_as_last_seen_blocks_and_one_not_seen_yet_does_not() {
         }),
         ..healthy()
     };
-    assert_eq!(found(Kind::NewIssueRun, &unseen, Check::Forge), None);
+    assert_eq!(found(Kind::NewIssueRun, &unseen, About::Forge), None);
 }
 
 fn task_on_issue(outcome: Option<Outcome>) -> Task {
@@ -266,7 +266,7 @@ fn task_on_issue(outcome: Option<Outcome>) -> Task {
 fn another_run_on_the_issue_blocks() {
     let mut facts = healthy();
     facts.issue.as_mut().unwrap().tasks = vec![(task_on_issue(None), Some(Working::Running))];
-    let finding = found(Kind::NewIssueRun, &facts, Check::Issue).unwrap();
+    let finding = found(Kind::NewIssueRun, &facts, About::Issue).unwrap();
     assert!(finding.blocks && finding.text.contains("#3"));
 }
 
@@ -277,7 +277,7 @@ fn an_earlier_task_needing_attention_informs_and_offers_it() {
         step: "implement".into(),
     }));
     facts.issue.as_mut().unwrap().tasks = vec![(ended, None)];
-    let finding = found(Kind::NewIssueRun, &facts, Check::EarlierTask).unwrap();
+    let finding = found(Kind::NewIssueRun, &facts, About::EarlierTask).unwrap();
     assert!(!finding.blocks);
     assert_eq!(finding.task.as_deref(), Some("1"));
     assert!(finding.text.contains("second task"), "{}", finding.text);
@@ -285,7 +285,7 @@ fn an_earlier_task_needing_attention_informs_and_offers_it() {
     assert!(note.contains("worktree is kept"), "{note}");
     // One done is history, not attention.
     facts.issue.as_mut().unwrap().tasks = vec![(task_on_issue(Some(Outcome::Done)), None)];
-    assert_eq!(found(Kind::NewIssueRun, &facts, Check::EarlierTask), None);
+    assert_eq!(found(Kind::NewIssueRun, &facts, About::EarlierTask), None);
 }
 
 #[test]
@@ -304,7 +304,7 @@ fn a_full_slot_blocks_naming_who_holds_it() {
         }),
         ..healthy()
     };
-    let finding = found(Kind::NewIssueRun, &facts, Check::Slot).unwrap();
+    let finding = found(Kind::NewIssueRun, &facts, About::Slot).unwrap();
     assert!(
         finding.blocks && finding.text.contains("#5"),
         "{}",
@@ -318,7 +318,7 @@ fn a_taken_place_informs_naming_the_task_ahead() {
         queued_behind: Some("Fix the parser".into()),
         ..healthy()
     };
-    let finding = found(Kind::Resume, &facts, Check::PlaceTaken).unwrap();
+    let finding = found(Kind::Resume, &facts, About::PlaceTaken).unwrap();
     assert!(!finding.blocks && finding.text.contains("Fix the parser"));
 }
 
@@ -335,22 +335,22 @@ fn plain() -> Facts {
 #[test]
 fn a_new_run_on_a_worktree_says_head_and_one_outside_git_blocks() {
     let facts = plain();
-    let base = found(Kind::NewRun, &facts, Check::Base).unwrap();
+    let base = found(Kind::NewRun, &facts, About::Base).unwrap();
     assert!(base.text.contains("`HEAD`"));
     let outside = Facts {
         in_git: false,
         checked_out: None,
         ..plain()
     };
-    assert!(found(Kind::NewRun, &outside, Check::Place).unwrap().blocks);
-    assert_eq!(found(Kind::NewRun, &outside, Check::Base), None);
+    assert!(found(Kind::NewRun, &outside, About::Place).unwrap().blocks);
+    assert_eq!(found(Kind::NewRun, &outside, About::Base), None);
     let checkout = Facts {
         workflow: Ok(builtin::all().remove(0)),
         in_git: false,
         ..plain()
     };
-    assert_eq!(blocks(Kind::NewRun, &checkout), Vec::<Check>::new());
-    assert_eq!(found(Kind::NewRun, &checkout, Check::Base), None);
+    assert_eq!(blocks(Kind::NewRun, &checkout), Vec::<About>::new());
+    assert_eq!(found(Kind::NewRun, &checkout, About::Base), None);
 }
 
 #[test]
@@ -361,11 +361,11 @@ fn a_resume_says_nothing_of_a_base_and_judges_no_workflow_anew() {
         workflow: Ok(broken),
         ..plain()
     };
-    assert_eq!(found(Kind::Resume, &facts, Check::Base), None);
-    assert_eq!(found(Kind::Resume, &facts, Check::Workflow), None);
-    assert_eq!(found(Kind::Retry, &facts, Check::Workflow), None);
+    assert_eq!(found(Kind::Resume, &facts, About::Base), None);
+    assert_eq!(found(Kind::Resume, &facts, About::Workflow), None);
+    assert_eq!(found(Kind::Retry, &facts, About::Workflow), None);
     assert!(
-        found(Kind::RetryCurrent, &facts, Check::Workflow)
+        found(Kind::RetryCurrent, &facts, About::Workflow)
             .unwrap()
             .blocks
     );
@@ -379,7 +379,7 @@ fn a_retry_whose_own_mode_is_not_offered_blocks_and_says_it_keeps_its_setup() {
         ..plain()
     };
     for kind in [Kind::Retry, Kind::Resume] {
-        let finding = found(kind, &facts, Check::Mode).unwrap();
+        let finding = found(kind, &facts, About::Mode).unwrap();
         assert!(finding.blocks);
         assert!(
             finding.text.contains("keeps its own setup"),
@@ -397,7 +397,7 @@ fn a_retry_whose_own_mode_is_not_offered_blocks_and_says_it_keeps_its_setup() {
         };
         assert_eq!(finding.change, change, "{kind:?}");
     }
-    let new = found(Kind::NewIssueRun, &facts, Check::Mode).unwrap();
+    let new = found(Kind::NewIssueRun, &facts, About::Mode).unwrap();
     assert!(!new.text.contains("keeps its own setup"));
 }
 
@@ -410,7 +410,7 @@ fn a_retry_with_current_settings_is_judged_on_what_settings_say() {
         offered: Some(vec!["default".into()]),
         ..plain()
     };
-    let mode = found(Kind::RetryCurrent, &refused, Check::Mode).unwrap();
+    let mode = found(Kind::RetryCurrent, &refused, About::Mode).unwrap();
     assert!(mode.blocks);
     assert!(!mode.text.contains("keeps its own setup"));
     let gone = Facts {
@@ -418,7 +418,7 @@ fn a_retry_with_current_settings_is_judged_on_what_settings_say() {
         ..plain()
     };
     assert!(
-        found(Kind::RetryCurrent, &gone, Check::Agent)
+        found(Kind::RetryCurrent, &gone, About::Agent)
             .unwrap()
             .blocks
     );
@@ -429,7 +429,7 @@ fn a_retry_with_current_settings_is_judged_on_what_settings_say() {
         ..plain()
     };
     assert!(
-        found(Kind::RetryCurrent, &broken, Check::Workflow)
+        found(Kind::RetryCurrent, &broken, About::Workflow)
             .unwrap()
             .blocks
     );
@@ -438,11 +438,11 @@ fn a_retry_with_current_settings_is_judged_on_what_settings_say() {
         ..plain()
     };
     assert!(
-        found(Kind::RetryCurrent, &missing, Check::Workflow)
+        found(Kind::RetryCurrent, &missing, About::Workflow)
             .unwrap()
             .blocks
     );
-    assert_eq!(found(Kind::RetryCurrent, &plain(), Check::Base), None);
+    assert_eq!(found(Kind::RetryCurrent, &plain(), About::Base), None);
 }
 
 #[test]
@@ -460,7 +460,7 @@ fn a_run_with_forge_steps_needs_its_forge_and_one_without_does_not() {
         .iter()
         .any(|s| matches!(s.kind, crate::workflow::StepKind::PullRequest));
     assert_eq!(
-        found(Kind::Retry, &with_steps, Check::Forge).is_some(),
+        found(Kind::Retry, &with_steps, About::Forge).is_some(),
         has_steps
     );
     let mut bare = worktree();
@@ -477,15 +477,15 @@ fn a_run_with_forge_steps_needs_its_forge_and_one_without_does_not() {
         forge: out,
         ..plain()
     };
-    assert_eq!(found(Kind::Retry, &without, Check::Forge), None);
+    assert_eq!(found(Kind::Retry, &without, About::Forge), None);
 }
 
 #[test]
 fn an_issue_check_applies_to_an_issue_run_only() {
     let mut facts = healthy();
     facts.issue.as_mut().unwrap().tasks = vec![(task_on_issue(None), Some(Working::Running))];
-    assert_eq!(found(Kind::Resume, &facts, Check::Issue), None);
-    assert_eq!(found(Kind::Retry, &facts, Check::EarlierTask), None);
+    assert_eq!(found(Kind::Resume, &facts, About::Issue), None);
+    assert_eq!(found(Kind::Retry, &facts, About::EarlierTask), None);
 }
 
 /// Every block of the configuration that will run, found once the run ran,
@@ -494,22 +494,22 @@ fn an_issue_check_applies_to_an_issue_run_only() {
 #[test]
 fn a_configuration_block_found_late_is_a_configuration_failure() {
     use crate::workflow::Failure;
-    for check in [
-        Check::Workflow,
-        Check::Agent,
-        Check::Mode,
-        Check::CheckCommand,
+    for about in [
+        About::Workflow,
+        About::Agent,
+        About::Mode,
+        About::CheckCommand,
     ] {
-        assert_eq!(found_late(check), Failure::Configuration, "{check:?}");
+        assert_eq!(found_late(about), Failure::Configuration, "{about:?}");
     }
-    assert_eq!(found_late(Check::Forge), Failure::Forge);
+    assert_eq!(found_late(About::Forge), Failure::Forge);
     for check in [
-        Check::Place,
-        Check::Base,
-        Check::Issue,
-        Check::EarlierTask,
-        Check::Slot,
-        Check::PlaceTaken,
+        About::Place,
+        About::Base,
+        About::Issue,
+        About::EarlierTask,
+        About::Slot,
+        About::PlaceTaken,
     ] {
         assert_eq!(found_late(check), Failure::Other, "{check:?}");
     }
@@ -531,7 +531,7 @@ fn answering_a_review_is_refused_before_the_claim() {
         ..healthy()
     };
     let refused = |facts: &Facts| {
-        found(Kind::AnswerReview, facts, Check::Issue)
+        found(Kind::AnswerReview, facts, About::Issue)
             .filter(|f| f.blocks)
             .map(|f| f.text)
     };
@@ -594,7 +594,7 @@ fn answering_a_review_is_refused_before_the_claim() {
         found(
             Kind::AnswerReview,
             &review(Ok(Some((PrState::Open, url))), true, false),
-            Check::Base
+            About::Base
         ),
         None
     );
@@ -625,10 +625,10 @@ fn with_forge_steps() -> Template {
         .unwrap()
 }
 
-fn informs(kind: Kind, facts: &Facts, check: Check) -> Option<Finding> {
+fn informs(kind: Kind, facts: &Facts, about: About) -> Option<Finding> {
     preflight(kind, facts)
         .into_iter()
-        .find(|f| f.check == check && !f.blocks)
+        .find(|f| f.about == about && !f.blocks)
 }
 
 #[test]
@@ -638,7 +638,7 @@ fn a_checkout_workflow_beside_a_persons_session_is_told_on_a_new_run() {
         shared_checkout: Some("Fix the parser".into()),
         ..healthy()
     };
-    let finding = informs(Kind::NewRun, &shared, Check::Place).unwrap();
+    let finding = informs(Kind::NewRun, &shared, About::Place).unwrap();
     assert!(finding.text.contains("Fix the parser"), "{}", finding.text);
     assert!(blocks(Kind::NewRun, &shared).is_empty());
     // Nobody else in the checkout: nothing said.
@@ -646,22 +646,22 @@ fn a_checkout_workflow_beside_a_persons_session_is_told_on_a_new_run() {
         shared_checkout: None,
         ..shared.clone()
     };
-    assert!(informs(Kind::NewRun, &alone, Check::Place).is_none());
+    assert!(informs(Kind::NewRun, &alone, About::Place).is_none());
     // A worktree workflow works apart from the session, whatever it does.
     let apart = Facts {
         workflow: Ok(worktree()),
         ..shared.clone()
     };
-    assert!(informs(Kind::NewRun, &apart, Check::Place).is_none());
+    assert!(informs(Kind::NewRun, &apart, About::Place).is_none());
     // A workflow that does not read is not known to work in the checkout.
     let unread = Facts {
         workflow: Err("gone".into()),
         ..shared.clone()
     };
-    assert!(informs(Kind::NewRun, &unread, Check::Place).is_none());
+    assert!(informs(Kind::NewRun, &unread, About::Place).is_none());
     // Every other kind runs where it ran, or on a worktree of its own.
     for kind in ALL.into_iter().filter(|k| *k != Kind::NewRun) {
-        assert!(informs(kind, &shared, Check::Place).is_none(), "{kind:?}");
+        assert!(informs(kind, &shared, About::Place).is_none(), "{kind:?}");
     }
 }
 
@@ -673,7 +673,7 @@ fn forge_steps_on_a_project_no_forge_serves_are_told() {
         ..healthy()
     };
     for kind in ALL.into_iter().filter(|k| *k != Kind::AnswerReview) {
-        let finding = informs(kind, &none, Check::Forge)
+        let finding = informs(kind, &none, About::Forge)
             .unwrap_or_else(|| panic!("{kind:?} says nothing of the forge"));
         assert!(
             finding.text.contains("pass at once") && finding.text.contains("branch"),
@@ -686,21 +686,21 @@ fn forge_steps_on_a_project_no_forge_serves_are_told() {
         forge_read: false,
         ..none.clone()
     };
-    assert!(informs(Kind::NewRun, &unread, Check::Forge).is_none());
+    assert!(informs(Kind::NewRun, &unread, About::Forge).is_none());
     // Answering a review on no forge is refused already, never told twice.
-    assert!(informs(Kind::AnswerReview, &none, Check::Forge).is_none());
+    assert!(informs(Kind::AnswerReview, &none, About::Forge).is_none());
     // A forge serving, or no forge steps: nothing said.
     let served = Facts {
         workflow: Ok(with_forge_steps()),
         ..healthy()
     };
-    assert!(informs(Kind::NewRun, &served, Check::Forge).is_none());
+    assert!(informs(Kind::NewRun, &served, About::Forge).is_none());
     let no_steps = Facts {
         workflow: Ok(checkout()),
         forge: None,
         ..healthy()
     };
-    assert!(informs(Kind::NewRun, &no_steps, Check::Forge).is_none());
+    assert!(informs(Kind::NewRun, &no_steps, About::Forge).is_none());
 }
 
 #[test]
@@ -713,7 +713,7 @@ fn every_start_says_the_limits_of_the_workflow_that_will_run() {
         ..healthy()
     };
     for kind in ALL {
-        let finding = informs(kind, &facts, Check::Limits)
+        let finding = informs(kind, &facts, About::Limits)
             .unwrap_or_else(|| panic!("{kind:?} says no limits"));
         assert!(
             finding.text.contains("20m") && finding.text.contains('4'),
@@ -725,7 +725,7 @@ fn every_start_says_the_limits_of_the_workflow_that_will_run() {
         workflow: Err("gone".into()),
         ..healthy()
     };
-    assert!(informs(Kind::Retry, &unread, Check::Limits).is_none());
+    assert!(informs(Kind::Retry, &unread, About::Limits).is_none());
 }
 
 #[test]
@@ -735,18 +735,18 @@ fn a_mode_learned_by_checking_the_agent_turns_not_known_into_a_block_or_nothing(
         offered: None,
         ..healthy()
     };
-    let finding = found(Kind::NewRun, &unknown, Check::Mode).unwrap();
+    let finding = found(Kind::NewRun, &unknown, About::Mode).unwrap();
     assert!(!finding.blocks && finding.text.contains("not known yet"));
     let refused = Facts {
         offered: Some(vec!["default".into()]),
         ..unknown.clone()
     };
-    assert!(found(Kind::NewRun, &refused, Check::Mode).unwrap().blocks);
+    assert!(found(Kind::NewRun, &refused, About::Mode).unwrap().blocks);
     let offered = Facts {
         offered: Some(vec!["plan".into()]),
         ..unknown
     };
-    assert!(found(Kind::NewRun, &offered, Check::Mode).is_none());
+    assert!(found(Kind::NewRun, &offered, About::Mode).is_none());
 }
 
 #[test]
@@ -757,13 +757,13 @@ fn a_finding_names_where_things_are_changed_now() {
         workflow: Ok(broken),
         ..healthy()
     };
-    let finding = found(Kind::NewRun, &invalid, Check::Workflow).unwrap();
+    let finding = found(Kind::NewRun, &invalid, About::Workflow).unwrap();
     assert_eq!(finding.change, Some(Change::At("the Workflows page")));
     let no_check = Facts {
         has_check: false,
         ..healthy()
     };
-    if let Some(finding) = found(Kind::NewRun, &no_check, Check::CheckCommand).filter(|f| f.blocks)
+    if let Some(finding) = found(Kind::NewRun, &no_check, About::CheckCommand).filter(|f| f.blocks)
     {
         assert_eq!(finding.change, Some(Change::At("the project's page")));
     }

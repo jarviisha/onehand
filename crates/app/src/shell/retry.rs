@@ -176,23 +176,12 @@ impl Shell {
         let (id, title) = (task.id.clone(), task.brief.title.clone());
         let shell = cx.entity();
         window.open_alert_dialog(cx, move |alert, _, cx| {
-            let (danger, muted) = (
-                crate::theme::status_ink(cx).danger,
-                cx.theme().muted_foreground,
-            );
+            let muted = cx.theme().muted_foreground;
             let lines: Vec<_> = found
                 .iter()
                 .enumerate()
                 .map(|(at, finding)| {
-                    crate::dialogs::finding_line(
-                        at,
-                        finding,
-                        danger,
-                        muted,
-                        &shell,
-                        ask.as_ref(),
-                        cx,
-                    )
+                    crate::dialogs::finding_line(at, finding, &shell, ask.as_ref(), cx)
                 })
                 .collect();
             let from = steps.get(picked.get()).map(|step| step.id.clone());
@@ -356,23 +345,11 @@ impl Shell {
         let (id, title) = (task.id.clone(), task.brief.title.clone());
         let shell = cx.entity();
         window.open_alert_dialog(cx, move |alert, _, cx| {
-            let (danger, muted) = (
-                crate::theme::status_ink(cx).danger,
-                cx.theme().muted_foreground,
-            );
             let lines: Vec<_> = found
                 .iter()
                 .enumerate()
                 .map(|(at, finding)| {
-                    crate::dialogs::finding_line(
-                        at,
-                        finding,
-                        danger,
-                        muted,
-                        &shell,
-                        ask.as_ref(),
-                        cx,
-                    )
+                    crate::dialogs::finding_line(at, finding, &shell, ask.as_ref(), cx)
                 })
                 .collect();
             let retry = {
@@ -572,23 +549,11 @@ impl Shell {
         let read = Rc::new(Cell::new(Some(read)));
         let handle = window.window_handle();
         window.open_alert_dialog(cx, move |alert, _, cx| {
-            let (danger, muted) = (
-                crate::theme::status_ink(cx).danger,
-                cx.theme().muted_foreground,
-            );
             let lines: Vec<_> = found
                 .iter()
                 .enumerate()
                 .map(|(at, finding)| {
-                    crate::dialogs::finding_line(
-                        at,
-                        finding,
-                        danger,
-                        muted,
-                        &shell,
-                        ask.as_ref(),
-                        cx,
-                    )
+                    crate::dialogs::finding_line(at, finding, &shell, ask.as_ref(), cx)
                 })
                 .collect();
             let answer = {

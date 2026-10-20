@@ -5,8 +5,8 @@
 use super::{Issue, Tracker, TrackerRef};
 use crate::connector::{self, Connector, PrState};
 use crate::issues::template;
-use crate::preflight::{self, Check, Facts, Forge, Kind};
-use crate::task::{Task, Working};
+use crate::preflight::{self, About, Facts, Forge, Kind};
+use crate::task::Tracked;
 use crate::workflow::{Now, Template};
 use crate::worktree;
 use std::collections::{BTreeMap, HashSet};
@@ -164,7 +164,7 @@ pub struct Earlier {
 pub struct Judging {
     pub common: Facts,
     pub templates: Vec<(String, Result<Template, String>)>,
-    pub tasks: Vec<(Task, Option<Working>)>,
+    pub tasks: Vec<Tracked>,
 }
 
 impl Judging {
@@ -451,8 +451,8 @@ pub fn begin_blocking(
                                     // next may still be taken.
                                     Some(f)
                                         if matches!(
-                                            f.check,
-                                            Check::Issue | Check::Workflow | Check::CheckCommand
+                                            f.about,
+                                            About::Issue | About::Workflow | About::CheckCommand
                                         ) =>
                                     {
                                         continue;

@@ -16,7 +16,7 @@ use gpui_component::dialog::Dialog;
 use gpui_component::input::TextareaState;
 use gpui_component::{ActiveTheme, Icon, Sizable as _, StyledExt};
 use onehand_core::issues::template;
-use onehand_core::preflight::{Check, Finding};
+use onehand_core::preflight::{About, Finding};
 use onehand_core::unattended::{self as core, IssueRow, Tracker};
 use onehand_core::workflow::Template;
 
@@ -183,10 +183,7 @@ fn start_form(
     cx: &App,
 ) -> AnyElement {
     let (findings, template, ask) = judged;
-    let (muted, danger) = (
-        cx.theme().muted_foreground,
-        crate::theme::status_ink(cx).danger,
-    );
+    let muted = cx.theme().muted_foreground;
     let shell = handle.clone();
     let menu = issue_workflow_menu(
         "pick-workflow",
@@ -240,16 +237,14 @@ fn start_form(
             .children(
                 findings
                     .iter()
-                    .filter(|f| f.check == Check::Base)
+                    .filter(|f| f.about == About::Base)
                     .map(|f| div().text_xs().text_color(muted).child(f.text.clone())),
             );
-    let said: Vec<&Finding> = findings.iter().filter(|f| f.check != Check::Base).collect();
+    let said: Vec<&Finding> = findings.iter().filter(|f| f.about != About::Base).collect();
     let lines: Vec<_> = said
         .iter()
         .enumerate()
-        .map(|(at, finding)| {
-            super::finding_line(at, finding, danger, muted, handle, ask.as_ref(), cx)
-        })
+        .map(|(at, finding)| super::finding_line(at, finding, handle, ask.as_ref(), cx))
         .collect();
     // What the issue's text leaves out of the template it was written from:
     // said, never in the way.

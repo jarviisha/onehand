@@ -6,7 +6,7 @@ use crate::state::Shared;
 use gpui::{AppContext as _, Context, Entity, SharedString, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::input::{InputState, TextareaState};
-use onehand_core::preflight::{self, Check, found_late};
+use onehand_core::preflight::{self, About, found_late};
 use onehand_core::task::{Source, Task};
 use onehand_core::workflow::{self as core, Brief, Failure, Place, Setup, Template};
 use onehand_core::worktree;
@@ -444,7 +444,7 @@ impl Shell {
                     run.template.name,
                     said.join("; ")
                 ),
-                found_late(Check::Workflow),
+                found_late(About::Workflow),
                 window,
                 cx,
             );
@@ -461,7 +461,7 @@ impl Shell {
                 // No agent of that name configured any more is what the
                 // preflight would have blocked.
                 if spec.is_none() {
-                    unstarted = found_late(Check::Agent);
+                    unstarted = found_late(About::Agent);
                 }
                 let started = spec.and_then(|spec| self.run_unattended(dir, spec, cx));
                 if let Some((_, session)) = &started {
