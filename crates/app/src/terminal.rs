@@ -10,7 +10,7 @@
 //! Every tab here is a login shell. **Neovim is not one of them** — it is a mode
 //! of the Workbench, because that is the panel about files, and a tab named
 //! `nvim` sitting between two called `zsh` says the editor is a kind of shell.
-//! PTY/grid ownership is shared with the Neovim plugin through
+//! PTY/grid ownership is shared with the Neovim crate through
 //! `onehand-terminal-ui`.
 
 use crate::controls::Short as _;
@@ -578,7 +578,7 @@ impl TerminalPanel {
         // shell map, and it is the one case with nothing for a strip to sit
         // over: no project means no shell to start and nowhere to start it.
         if self.root.is_none() {
-            return onehand_plugin_host::hint("No project selected", cx);
+            return onehand_ui::hint("No project selected", cx);
         }
 
         let set = self.active_set().filter(|set| !set.tabs.is_empty());
@@ -622,7 +622,7 @@ impl TerminalPanel {
                 // their own: a tab here is a flat label on the dock, the chosen
                 // one on the selected fill, and nothing else. A strip like every
                 // other, the shell below it parted from it by the space.
-                onehand_plugin_host::strip(cx)
+                onehand_ui::strip(cx)
                     .id("terminal-tabs")
                     // The tabs live in a box of their own that scrolls sideways,
                     // and that box is what gives way, so `+` and the controls at
@@ -637,14 +637,14 @@ impl TerminalPanel {
                             .min_w_0()
                             .overflow_x_scroll()
                             .children(labels.into_iter().enumerate().map(|(i, label)| {
-                                onehand_plugin_host::tab_chip(
+                                onehand_ui::tab_chip(
                                     ("terminal-tab", i),
                                     label.clone(),
                                     label,
                                     i == active,
                                     cx,
                                 )
-                                .max_w(onehand_plugin_host::TAB_MAX_W)
+                                .max_w(onehand_ui::TAB_MAX_W)
                                 .on_click(cx.listener(move |panel: &mut Self, _, _, cx| {
                                     panel.select_tab(i, cx);
                                 }))
@@ -652,7 +652,7 @@ impl TerminalPanel {
                                 // keeps the press that closes a shell from also
                                 // selecting the one it closed.
                                 .child(
-                                    onehand_plugin_host::tab_close(
+                                    onehand_ui::tab_close(
                                         ("close-shell", i),
                                         "Close this shell",
                                         cx,
@@ -674,7 +674,7 @@ impl TerminalPanel {
                     // the panel. The hover fill brings it back on the one about
                     // to be pressed.
                     .child(
-                        onehand_plugin_host::strip_control("add-shell", IconName::Plus, false, cx)
+                        onehand_ui::strip_control("add-shell", IconName::Plus, false, cx)
                             .tooltip("New shell in this project")
                             .on_click(cx.listener(|panel: &mut Self, _, window, cx| {
                                 panel.open_shell(window, cx);
@@ -685,7 +685,7 @@ impl TerminalPanel {
                     // user looking for the way back.
                     .child({
                         let full = self.maximized;
-                        onehand_plugin_host::strip_control(
+                        onehand_ui::strip_control(
                             "maximize-terminal",
                             match full {
                                 true => IconName::Minimize,
@@ -711,20 +711,15 @@ impl TerminalPanel {
                     // never `Dash`, whose stroke is written as literal black and
                     // ignores `text_color`.
                     .child(
-                        onehand_plugin_host::strip_control(
-                            "hide-terminal",
-                            IconName::Minus,
-                            false,
-                            cx,
-                        )
-                        .tooltip_with_action(
-                            "Hide the terminal",
-                            &crate::shell::ToggleTerminal,
-                            None,
-                        )
-                        .on_click(cx.listener(|_: &mut Self, _, _, cx| {
-                            cx.emit(TerminalPanelEvent::Hide);
-                        })),
+                        onehand_ui::strip_control("hide-terminal", IconName::Minus, false, cx)
+                            .tooltip_with_action(
+                                "Hide the terminal",
+                                &crate::shell::ToggleTerminal,
+                                None,
+                            )
+                            .on_click(cx.listener(|_: &mut Self, _, _, cx| {
+                                cx.emit(TerminalPanelEvent::Hide);
+                            })),
                     ),
             )
             .children(body.map(|view| {
@@ -766,7 +761,7 @@ impl TerminalPanel {
                                 })),
                         )
                         .children(self.status.clone().map(|status| {
-                            onehand_plugin_host::status_line(
+                            onehand_ui::status_line(
                                 format!("Opening a shell failed: {status}"),
                                 crate::theme::status_ink(cx).danger,
                             )

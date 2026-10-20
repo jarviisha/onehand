@@ -64,7 +64,7 @@ gets without code of its own.
 | Stop asking for permission | `Setup::mode`, set by the driver through `Chat::set_mode` when the agent first comes up |
 | An isolated checkout | `worktree::branch_off_blocking` (plus a start point, see *Base branch*), `worktree_dir`, `validate_branch` |
 | Find a window that holds a project | the walk over `Shared::windows` every remote path does |
-| Talk to GitHub | the `gh` CLI, shelled out blocking like `gitstat` and `worktree` already do, behind `onehand_core::connector::Connector` in `plugins/builtin/connector-github` |
+| Talk to GitHub | the `gh` CLI, shelled out blocking like `gitstat` and `worktree` already do, behind `onehand_core::connector::Connector` in `crates/github` |
 | Config that is off until asked for | `[remote.telegram]`, copied wholesale as a shape |
 
 Two consequences worth stating. **No new dependency**: `gh` carries the auth, the
@@ -76,18 +76,20 @@ background executor, one interval in the config, no cron expressions.
 
 | File | What |
 |---|---|
-| `crates/core/src/unattended.rs` | `Issue`, the claim and search over a connector, `branch_for`, `brief_for`, `claim_comment`, `IssueSource` and `TrackerRef` (what a task keeps of its issue), `room`, `Budget`, `Verdict`, `report`, `verdict_blocking`, `could_not_start`, `parse_every`, `target_dir` |
+| `crates/core/src/unattended.rs` | `Issue`, the claim and search over a connector, `branch_for`, `brief_for`, `claim_comment`, `IssueSource` and `TrackerRef` (what a task keeps of its issue), `Slots`, `Budget`, `parse_every`, `target_dir` |
+| `crates/core/src/unattended/report.rs` | what a run leaves and what its issue is told: `Verdict`, `verdict_blocking`, `PendingReport`, `report`, `could_not_start`, `pull_request_text`, `review_note`, `review_unanswerable`, `review_closed`, `review_diverged` |
 | `crates/core/src/unattended/claim.rs` | everything a tick or a pick decides off the UI loop: the look (`look_blocking`), the search and claim (`begin_blocking`, `taking_blocking`, `trackers_blocking`), the worktree cut (`prepare_blocking`), the pick (`pickable_blocking`, `pickable_one_blocking`), `Choosing` and `Judging`, and the settings rules `cannot_start`, `fit_for_issue`, `check_missing`, `now_for` |
 | `crates/core/src/preflight.rs` | the preflight, and `new_issue_run`, which assembles what a new issue run is checked against |
 | `crates/core/src/workflow/builtin/issue.toml` | *Work an issue*, the workflow runs use by default |
 | `crates/core/src/connector.rs` | `Connector`, what a run asks of the system a project lives on, and `serving`, which picks the first one that takes a project |
-| `plugins/builtin/connector-github/src/lib.rs` | the `gh` calls, the `origin` and ssh-alias check, and the account check |
+| `crates/github/src/lib.rs` | the `gh` calls, the `origin` and ssh-alias check, and the account check |
 | `crates/core/src/process.rs` | `output_within`: a command with a limit on its exit *and* its output, stopped with its whole process group |
 | `crates/core/src/task/history.rs` | `over_cap`, which never lets go of a task whose report is unsent |
 | `crates/app/src/unattended.rs` | the tick, which gathers what core decides with and hands it off the UI loop; the cap (`at_cap`, the tasks still `starting`), `waiting` |
 | `crates/app/src/unattended/launch.rs` | `Landed`, a claim paired with the window it was picked in; `start`, which keeps the task and asks for its place; `workflow` and `found`, which read the library |
 | `crates/app/src/unattended/report.rs` | `spec_for`, `refuse_mode`, `started`, `opening`, and the end: `keep`, `card_question`, `ended`, `deliver`, `deliver_all` |
-| `crates/app/src/task.rs` | `freed`, which calls `unattended::ended`; `slot_holders`, `issues_waiting`, `live_issues`, `update_issue`, `undelivered` |
+| `crates/app/src/task.rs` | `freed`, which calls `unattended::ended`; `update_issue`, `undelivered` |
+| `crates/app/src/task/listing.rs` | `slot_holders`, `issues_waiting`, `live_issues`, `issue_tasks` |
 | `crates/app/src/task/driver.rs` | `came_up` (the mode, the note on the issue), the clock, the take-over |
 | `crates/app/src/shell/workflows.rs` | `drive_task`, which brings an issue's run up off screen |
 | `crates/core/src/config.rs` | `UnattendedConfig` |
@@ -99,11 +101,11 @@ background executor, one interval in the config, no cron expressions.
 | `crates/app/src/dialogs/issue.rs` | `pick_issue`, the list and the start form, and `issue_workflow_menu`, the workflow menu the picker and Settings share |
 | `crates/app/src/settings/pages.rs` | the default workflow and the workflow labels in Settings |
 | `crates/core/src/task/work.rs` | where an issue's work stands and its next action (`Work`, `issue_work`, `next_action`), and the generation rule for what is read of it (`Reading`) |
-| `crates/app/src/task/listing.rs` (`issue_works`) and `plugins/builtin/workbench-issues/src/view/work.rs`, `view/reads.rs` | each issue's work, told to the Issues tab and the Issues page through `Request::IssueWork`, drawn there, and its pull request read |
+| `crates/app/src/task/listing.rs` (`issue_works`) and `crates/issues/src/view/work.rs`, `view/reads.rs` | each issue's work, told to the Issues tab and the Issues page through `Request::IssueWork`, drawn there, and its pull request read |
 | `crates/core/src/task/work/list.rs` | the Issues page's list: its filters, what each row says, and how it is held still (`list`, `PrReads`, `Held`) |
 | `crates/core/src/task/work/left.rs` | what the work left, read off git for the page: the check against the work as it is, the files of the run and of the branch, the commits past where the task started |
-| `plugins/builtin/workbench-issues/src/view/page.rs`, `view/page/prs.rs`, `view/full.rs` | the Issues page: its list, its pull request reads, one per project, and the issue in full |
-| `plugins/builtin/workbench-issues/src/view/store.rs` | one issues file shared by every view of it, with its sync |
+| `crates/issues/src/view/page.rs`, `view/page/prs.rs`, `view/full.rs` | the Issues page: its list, its pull request reads, one per project, and the issue in full |
+| `crates/issues/src/view/store.rs` | one issues file shared by every view of it, with its sync |
 | `crates/app/src/shell/issues_page.rs` | the page as a window holds it, and what it asks of the shell |
 
 The split is the one the crate boundary already forces: everything that can be
@@ -225,7 +227,7 @@ Connections shows the signed-in line for each connector and a *Check again*. A
 project is looked at when it is switched on, when its window opens, and on every
 tick — a run in progress included. A tick with nothing switched on asks GitHub
 nothing, so the feature costs nobody who has not turned it on. Another forge is
-a second implementation of `Connector`, listed in `plugins::connectors`, and is
+a second implementation of `Connector`, listed in `features::connectors`, and is
 not built yet.
 
 **A config that cannot work is said, not only printed.** An empty label, an
@@ -748,7 +750,7 @@ had by hand.
 
 ## Answering a review
 
-Before it claims an issue, `launch::taking_blocking` looks for the issue's newest
+Before it claims an issue, `onehand_core::unattended::taking_blocking` looks for the issue's newest
 task with a branch of its own. **One still working is never taken again**: the
 search passes the issue over for the next labelled one
 (`core::candidates_blocking`), and a pick is refused, so an issue is never worked

@@ -12,7 +12,7 @@ use crate::settings::{about, field, section};
 use gpui::{AnyElement, App, Entity, IntoElement, ParentElement, Styled, Window, div};
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::workflow::Place;
-use onehand_plugin_host::Tall as _;
+use onehand_ui::Tall as _;
 
 /// The least a field of a pair takes before the pair stacks: a name stays
 /// readable beside its neighbour, or goes under it.
@@ -32,11 +32,11 @@ pub(super) fn workflow_column(
     // the column is too narrow for both choices side by side. A shipped
     // workflow's refuses, as its fields are disabled.
     let place_picker = {
-        let trigger = onehand_plugin_host::picker(
+        let trigger = onehand_ui::picker(
             "workflow-place-trigger",
             place.label(),
             true,
-            onehand_plugin_host::ControlSize::Tall,
+            onehand_ui::ControlSize::Tall,
             cx,
         );
         if shipped {
@@ -219,7 +219,7 @@ pub(super) fn message_bar(draft: &super::WorkflowDraft, cx: &App) -> Option<AnyE
     };
     // Across the page's foot, on its kind's tint, so it reads as one standing
     // condition of the whole workflow rather than of the column it sits in.
-    let tint = onehand_plugin_host::tint(base, cx);
+    let tint = onehand_ui::tint(base, cx);
     // One line's height, set on the bar and on the mark's slot, so the mark
     // stands centred on the first line however many follow it.
     let line = gpui::rems(crate::tokens::CHROME_TEXT.0 * crate::tokens::LEADING);
@@ -236,7 +236,7 @@ pub(super) fn message_bar(draft: &super::WorkflowDraft, cx: &App) -> Option<AnyE
             .line_height(line)
             .bg(tint.fill)
             .text_color(tint.ink)
-            .child(onehand_plugin_host::mark_slot(Icon::new(icon).small()).h(line))
+            .child(onehand_ui::mark_slot(Icon::new(icon).small()).h(line))
             .child(
                 div()
                     .v_flex()

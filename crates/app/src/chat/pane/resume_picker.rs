@@ -122,7 +122,7 @@ fn conversation_card(
     subtitle: SharedString,
     cx: &App,
 ) -> Stateful<Div> {
-    onehand_plugin_host::row(false, cx)
+    onehand_ui::row(false, cx)
         .id(id)
         .h_flex()
         .items_center()

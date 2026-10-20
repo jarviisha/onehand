@@ -22,8 +22,8 @@ use gpui_component::button::Button;
 /// A button that answers the pointer, which is every button this app draws.
 ///
 /// The rule and its reasoning live with the definition in
-/// [`onehand_plugin_host::action`], which is where a built-in plugin can reach
-/// them too — a plugin draws buttons and cannot reach into the binary hosting
+/// [`onehand_ui::action`], which is where a feature crate can reach
+/// them too — a feature crate draws buttons and cannot reach into the binary hosting
 /// it, and two copies of this is two places for the library's default to be let
 /// through. This is the name the app's own call sites already use.
 ///
@@ -31,37 +31,37 @@ use gpui_component::button::Button;
 /// over a control that refuses is the same lie as a Send that stays lit over a
 /// prompt it will discard: it promises a press will do something.
 pub(crate) fn action(id: impl Into<ElementId>) -> Button {
-    onehand_plugin_host::action(id)
+    onehand_ui::action(id)
 }
 
 /// Menu rows that answer the pointer, and a menu that opens below its
 /// trigger. The rules and their reasoning live with the definitions in
-/// [`onehand_plugin_host`], which is where a built-in plugin can reach them too
-/// — a plugin that draws a menu cannot reach into the binary hosting it, and a
+/// [`onehand_ui`], which is where a feature crate can reach them too
+/// — a feature crate that draws a menu cannot reach into the binary hosting it, and a
 /// second copy is a second place for the arrow cursor to come back.
-pub(crate) use onehand_plugin_host::{menu_below, menu_command, menu_item, menu_row, split_action};
+pub(crate) use onehand_ui::{menu_below, menu_command, menu_item, menu_row, split_action};
 
 /// A text field at a control's corner. The rule and its reasoning live with
-/// the definition in [`onehand_plugin_host`], where a built-in plugin's fields
+/// the definition in [`onehand_ui`], where a feature crate's fields
 /// reach it too.
-pub(crate) use onehand_plugin_host::text_input;
+pub(crate) use onehand_ui::text_input;
 
 /// A search field and a field of several lines, on a field's corner and
 /// surface. The rules and their reasoning live with the definitions in
-/// [`onehand_plugin_host`], where a built-in plugin's fields reach them too.
-pub(crate) use onehand_plugin_host::{search_input, text_area};
+/// [`onehand_ui`], where a feature crate's fields reach them too.
+pub(crate) use onehand_ui::{search_input, text_area};
 
 /// A ghost button hovering on the selected step. The rule and its reasoning
-/// live with the definition in [`onehand_plugin_host`], where a built-in
-/// plugin's buttons reach it too.
-pub(crate) use onehand_plugin_host::Quiet;
+/// live with the definition in [`onehand_ui`], where a feature crate's
+/// buttons reach it too.
+pub(crate) use onehand_ui::Quiet;
 
 /// A control at a dialog's or a form's scale. The rule and its reasoning live
-/// with the definition in [`onehand_plugin_host`], where a built-in plugin's
+/// with the definition in [`onehand_ui`], where a feature crate's
 /// controls reach it too.
-pub(crate) use onehand_plugin_host::Short;
+pub(crate) use onehand_ui::Short;
 
 /// Refusing, and looking like it: the cursor half and the behaviour half in
 /// one call. The rule and its reasoning live with the definitions in
-/// [`onehand_plugin_host`], where a built-in plugin's buttons reach them too.
-pub(crate) use onehand_plugin_host::Refuses;
+/// [`onehand_ui`], where a feature crate's buttons reach them too.
+pub(crate) use onehand_ui::Refuses;

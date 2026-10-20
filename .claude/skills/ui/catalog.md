@@ -20,52 +20,52 @@ The app uses the library for: `Button` (always through `action`), `Input` (alway
 
 Draw none of these by hand: a `div` that looks like a button, a label, a key cap spelled in text.
 
-## The app and its plugin host
+## The app and its UI crate (`crates/ui`)
 
 | Need | Use | Where |
 |---|---|---|
-| Any button | `action` (sets the pointer and the theme's corner) | `crates/app/src/controls.rs` (the app), `crates/plugin-host/src/lib.rs` (a plugin) |
-| Any text field | `text_input(&state, cx)` (sets the theme's corner, on no fill of its own) | `crates/app/src/controls.rs` (the app), `crates/plugin-host/src/lib.rs` (a plugin) |
-| A search field | `search_input(&state, cx)`: a `text_input` with the search mark and the clear button; the caller sizes it and sinks it into its place's fill (`.bg(..)`, the edge in that fill) | `crates/plugin-host/src/lib.rs`, re-exported by `crates/app/src/controls.rs` |
-| A field of several lines | `text_area(&state, cx)`: the library's `Textarea` on a field's corner and surface | `crates/plugin-host/src/lib.rs`, re-exported by `crates/app/src/controls.rs` |
-| A box that scrolls inside a scrolling page (a field of several lines, a well) | `contained_scroll(id, inner)`: the wheel over it never moves the page, even at its first or last line | `crates/plugin-host/src/lib.rs` |
-| A control at a dialog's, a form's or a page filter bar's scale | `.short()` (the `Short` trait, for a button or a field; re-exported by `crates/app/src/controls.rs`) | `crates/plugin-host/src/lib.rs` |
-| A ghost button | `.quiet(cx)`; an icon with no words `.quiet_icon(on, cx)`, muted at rest and in its fill's ink when hovered or `on` (the `Quiet` trait, re-exported by `crates/app/src/controls.rs`) | `crates/plugin-host/src/lib.rs` |
-| A button that can refuse | `.refuses(why)`: refusing while `why` is `Some`, its reason the tooltip; called after the control's own tooltip (the `Refuses` trait, re-exported by `crates/app/src/controls.rs`) | `crates/plugin-host/src/lib.rs` |
-| A small label, a badge | `badge(text, tint)`: the library's `Tag` at `.small()`, `rounded_full`, its words `py_1` off its edges, edged in `badge_edge`, in a `Tint`'s fill and ink (`tint(base, cx)` for a hue) | `crates/plugin-host/src/lib.rs` |
-| A mark down a column (an icon, a state's mark, a dot) | `mark_slot(mark)`: one icon wide, centred, so marks share a line and labels an edge | `crates/plugin-host/src/lib.rs` |
-| A row's actions shown on hover | `hover_slot(group, shown, child)`, then `.focus(&row_handle)`: a trailing slot keeping its width, visible while the row named `group` is hovered, while the keyboard holds the row, or while `shown` (selected, or its action running). A hidden slot's controls are not tab stops, so the row itself is one | `crates/plugin-host/src/row_actions.rs` |
-| An issue's label | `label_badge(label, cx)`: a badge tinted by the label's kind | `crates/plugin-host/src/lib.rs` |
-| A block held folded | `fold_toggle(id, label, open)`: the chevron first, on the secondary fill, `.short()` | `crates/plugin-host/src/lib.rs` |
-| A box on a page | `card_box(cx)`: a control's edge (`input`), no fill, `p_3`, `gap_2` | `crates/plugin-host/src/lib.rs` |
-| A radio or checkbox at a choice row's head | `choice_mark(on, single, cx)`: drawn in ink, round for one choice and square for several, so it shows on the selected step where the library's ring vanishes | `crates/plugin-host/src/choice_mark.rs` |
-| A picker's trigger | `picker(id, label, set, size, cx)`: a ghost in the muted ink naming what it picks, on the secondary fill once set (in a form, whatever it holds), with the caret | `crates/plugin-host/src/lib.rs` |
-| A list or table row's surface | `row(picked, cx)`: `ROW_H`, `px_2`, the hover and picked fills with their inks; the caller lays it out. | `crates/plugin-host/src/lib.rs` |
-| A tree's row (Files, Markdown) | `tree_row(id, depth, picked, cx)`: a `row` at `ROW_H`, its fill `ROW_GUTTER` off the dock's edges, its content at `ROW_INSET` and `TREE_INDENT` per level; the caller adds the mark slot, the name and one trailing slot | `crates/plugin-host/src/lib.rs` |
-| A menu, its rows, a menu under its control | `menu_item`, `menu_row`, `menu_below`; `menu_command(label, action)` for a row that runs a keymap command and shows its key | `crates/plugin-host/src/menu.rs` |
-| An action joined to a menu of its alternatives (*New* and its caret) | `split_action(id, main, caret, surface, anchor, build)`: both halves built by the caller through `action` at their role's size and one variant, joined with square inner corners and parted by a seam in `surface`, the fill under it, the caret's menu opened below it | `crates/plugin-host/src/menu.rs` |
-| A strip along the top of a region, and its icon control | `strip(cx)`, `strip_control(id, icon, on, cx)` | `crates/plugin-host/src/strip.rs` |
-| One of a few choices, the taken one filled (filter chips) | `choice` (a `quiet` ghost button, `selected` when taken, at the `ControlSize` its role takes) | `crates/plugin-host/src/lib.rs` |
-| A choice between a few views, every one the same width | `switch` (a `choice` per view at `flex_1`, padded `p_0p5` and parted `gap_0p5` in one edged track, at one `ControlSize`) | `crates/plugin-host/src/lib.rs` |
-| Tabs that fit their strip, or one select | `tab_strip`, `tab_chip`, `tab_close`, `tab_select` (at a strip's size, with the picker's caret), `tab_menu_rows`, `measure_width` | `crates/plugin-host/src/tabs.rs` |
-| A list beside its detail, or one at a time | `list_detail`, `ListWidths`, `back_link` | `crates/plugin-host/src/list_detail.rs` |
-| A line filling an empty panel | `hint` | `crates/plugin-host/src/lib.rs` |
-| A condition standing under a view | `status_line(message, ink)`, in the ink of its state | `crates/plugin-host/src/lib.rs` |
-| Status ink, the middle ink, a dock's surface | `status_ink`, `meta_ink` (`middle_ink` on a fill), `dock_surface` | `crates/plugin-host/src/lib.rs` |
+| Any button | `action` (sets the pointer and the theme's corner) | `crates/app/src/controls.rs` (the app), `crates/ui/src/lib.rs` (a feature crate) |
+| Any text field | `text_input(&state, cx)` (sets the theme's corner, on no fill of its own) | `crates/app/src/controls.rs` (the app), `crates/ui/src/lib.rs` (a feature crate) |
+| A search field | `search_input(&state, cx)`: a `text_input` with the search mark and the clear button; the caller sizes it and sinks it into its place's fill (`.bg(..)`, the edge in that fill) | `crates/ui/src/lib.rs`, re-exported by `crates/app/src/controls.rs` |
+| A field of several lines | `text_area(&state, cx)`: the library's `Textarea` on a field's corner and surface | `crates/ui/src/lib.rs`, re-exported by `crates/app/src/controls.rs` |
+| A box that scrolls inside a scrolling page (a field of several lines, a well) | `contained_scroll(id, inner)`: the wheel over it never moves the page, even at its first or last line | `crates/ui/src/lib.rs` |
+| A control at a dialog's, a form's or a page filter bar's scale | `.short()` (the `Short` trait, for a button or a field; re-exported by `crates/app/src/controls.rs`) | `crates/ui/src/lib.rs` |
+| A ghost button | `.quiet(cx)`; an icon with no words `.quiet_icon(on, cx)`, muted at rest and in its fill's ink when hovered or `on` (the `Quiet` trait, re-exported by `crates/app/src/controls.rs`) | `crates/ui/src/lib.rs` |
+| A button that can refuse | `.refuses(why)`: refusing while `why` is `Some`, its reason the tooltip; called after the control's own tooltip (the `Refuses` trait, re-exported by `crates/app/src/controls.rs`) | `crates/ui/src/lib.rs` |
+| A small label, a badge | `badge(text, tint)`: the library's `Tag` at `.small()`, `rounded_full`, its words `py_1` off its edges, edged in `badge_edge`, in a `Tint`'s fill and ink (`tint(base, cx)` for a hue) | `crates/ui/src/lib.rs` |
+| A mark down a column (an icon, a state's mark, a dot) | `mark_slot(mark)`: one icon wide, centred, so marks share a line and labels an edge | `crates/ui/src/lib.rs` |
+| A row's actions shown on hover | `hover_slot(group, shown, child)`, then `.focus(&row_handle)`: a trailing slot keeping its width, visible while the row named `group` is hovered, while the keyboard holds the row, or while `shown` (selected, or its action running). A hidden slot's controls are not tab stops, so the row itself is one | `crates/ui/src/row_actions.rs` |
+| An issue's label | `label_badge(label, cx)`: a badge tinted by the label's kind | `crates/ui/src/lib.rs` |
+| A block held folded | `fold_toggle(id, label, open)`: the chevron first, on the secondary fill, `.short()` | `crates/ui/src/lib.rs` |
+| A box on a page | `card_box(cx)`: a control's edge (`input`), no fill, `p_3`, `gap_2` | `crates/ui/src/lib.rs` |
+| A radio or checkbox at a choice row's head | `choice_mark(on, single, cx)`: drawn in ink, round for one choice and square for several, so it shows on the selected step where the library's ring vanishes | `crates/ui/src/choice_mark.rs` |
+| A picker's trigger | `picker(id, label, set, size, cx)`: a ghost in the muted ink naming what it picks, on the secondary fill once set (in a form, whatever it holds), with the caret | `crates/ui/src/lib.rs` |
+| A list or table row's surface | `row(picked, cx)`: `ROW_H`, `px_2`, the hover and picked fills with their inks; the caller lays it out. | `crates/ui/src/lib.rs` |
+| A tree's row (Files, Markdown) | `tree_row(id, depth, picked, cx)`: a `row` at `ROW_H`, its fill `ROW_GUTTER` off the dock's edges, its content at `ROW_INSET` and `TREE_INDENT` per level; the caller adds the mark slot, the name and one trailing slot | `crates/ui/src/lib.rs` |
+| A menu, its rows, a menu under its control | `menu_item`, `menu_row`, `menu_below`; `menu_command(label, action)` for a row that runs a keymap command and shows its key | `crates/ui/src/menu.rs` |
+| An action joined to a menu of its alternatives (*New* and its caret) | `split_action(id, main, caret, surface, anchor, build)`: both halves built by the caller through `action` at their role's size and one variant, joined with square inner corners and parted by a seam in `surface`, the fill under it, the caret's menu opened below it | `crates/ui/src/menu.rs` |
+| A strip along the top of a region, and its icon control | `strip(cx)`, `strip_control(id, icon, on, cx)` | `crates/ui/src/strip.rs` |
+| One of a few choices, the taken one filled (filter chips) | `choice` (a `quiet` ghost button, `selected` when taken, at the `ControlSize` its role takes) | `crates/ui/src/lib.rs` |
+| A choice between a few views, every one the same width | `switch` (a `choice` per view at `flex_1`, padded `p_0p5` and parted `gap_0p5` in one edged track, at one `ControlSize`) | `crates/ui/src/lib.rs` |
+| Tabs that fit their strip, or one select | `tab_strip`, `tab_chip`, `tab_close`, `tab_select` (at a strip's size, with the picker's caret), `tab_menu_rows`, `measure_width` | `crates/ui/src/tabs.rs` |
+| A list beside its detail, or one at a time | `list_detail`, `ListWidths`, `back_link` | `crates/ui/src/list_detail.rs` |
+| A line filling an empty panel | `hint` | `crates/ui/src/lib.rs` |
+| A condition standing under a view | `status_line(message, ink)`, in the ink of its state | `crates/ui/src/lib.rs` |
+| Status ink, the middle ink, a dock's surface | `status_ink`, `meta_ink` (`middle_ink` on a fill), `dock_surface` | `crates/ui/src/lib.rs` |
 | Chat or Workbench in the area | `presentation` | `crates/app/src/shell/presentation.rs` |
-| A toast | `toast::failed(what, why)`, `toast::error`, `warning`, `success`, `info` | `crates/plugin-host/src/toast.rs`; the app says `crate::toast` |
-| A confirmation | `Confirm` with `confirm_on`, or `Shell::confirm` from the shell | `crates/plugin-host/src/confirm.rs`; `crates/app/src/shell/confirm.rs` |
+| A toast | `toast::failed(what, why)`, `toast::error`, `warning`, `success`, `info` | `crates/ui/src/toast.rs`; the app says `crate::toast` |
+| A confirmation | `Confirm` with `confirm_on`, or `Shell::confirm` from the shell | `crates/ui/src/confirm.rs`; `crates/app/src/shell/confirm.rs` |
 | A change shown at once and saved in the order made, a failure one toast | `OrderedWriter`, `Saving` and `Saves`, as `ChatPane::save_title` uses them; `saves::write_config` for `onehand.toml`, `Shell::save_change` for the workspace file | `crates/core/src/saving.rs`; `crates/app/src/chat/pane/sessions.rs`, `crates/app/src/saves.rs`, `crates/app/src/shell/storage.rs` |
 | A dialog's title row | `title_row` | `crates/app/src/dialogs.rs` |
-| A form field | `field` (its line about the setting in meta text) | `crates/plugin-host/src/lib.rs`, re-exported by `crates/app/src/settings.rs` |
+| A form field | `field` (its line about the setting in meta text) | `crates/ui/src/lib.rs`, re-exported by `crates/app/src/settings.rs` |
 | A Settings group, a Settings row | `section`, `list_row` | `crates/app/src/settings.rs` |
-| A page's head, its box and title row, a list section (a box too), rows parted by hairlines, two boxes to a row | `page_head(title, facts, actions, cx)`, `page_card`, `card_title`, `page_section`, `ruled(rows, cx)`, `pair` | `crates/app/src/chat/pane/page_parts.rs` |
+| A page's head, its box and title row, a list section (a box too), rows parted by hairlines, two boxes to a row | `page_head(title, facts, actions, cx)`, `page_card`, `card_title`, `ruled(rows, cx)`, `pair` | `crates/app/src/chat/pane/page_parts.rs` |
 | A dialog's footer (a third action at its start) | `footer_row` | `crates/app/src/dialogs.rs` |
 | A run dialog's sections parted by hairlines; a preflight finding with its state's mark | `sections`, `finding_line` | `crates/app/src/dialogs.rs` |
 | A Settings sub-page's scope line | `page_head` | `crates/app/src/settings.rs` |
-| A sunk box of machine text | `well` (sets the code text size; callers set padding) | `crates/plugin-host/src/lib.rs` |
+| A sunk box of machine text | `well` (sets the code text size; callers set padding) | `crates/ui/src/lib.rs` |
 | A mono well on a page | `mono_well`, built on `well` | `crates/app/src/chat/pane/tasks_page/detail.rs` |
-| Shared sizes and the floating shadow | `tokens` | `crates/plugin-host/src/tokens.rs` |
+| Shared sizes and the floating shadow | `tokens` | `crates/ui/src/tokens.rs` |
 | A transcript well, a pinned card, a row's note | `plain_box`, `floating_card`, `row_note` | `crates/app/src/chat/transcript/parts.rs` |
 | Transcript sizes | the constants | `crates/app/src/chat/transcript/metrics.rs` |
 | The composer card | `card` | `crates/app/src/chat/composer/card.rs` |
@@ -101,14 +101,14 @@ need migrating itself.
 | Building | Pattern | Example |
 |---|---|---|
 | Fields, boxes or one thing read in full, in the agent pane | Column page | `tasks_frame` in `crates/app/src/chat/pane/tasks_page.rs` |
-| One long list to scan, filter and pick from, in the agent pane | List page | the Issues page, `plugins/builtin/workbench-issues/src/view/page.rs` |
-| The filters under a page's head | Filter bar | `plugins/builtin/workbench-issues/src/view/page/head.rs` |
+| One long list to scan, filter and pick from, in the agent pane | List page | the Issues page, `crates/issues/src/view/page.rs` |
+| The filters under a page's head | Filter bar | `crates/issues/src/view/page/head.rs` |
 | Related fields or a subsection | Plain section | `section` in `crates/app/src/settings.rs` |
-| The facts about one thing on a page | Box | `card_box` (plugin host); `page_card`, `card_title`, `page_section` and `pair` in `crates/app/src/chat/pane/page_parts.rs` |
-| A bar along the top of a region | Strip | `strip` and `strip_control` (plugin host) |
-| Rows to pick from | List | the Files tree, `plugins/builtin/workbench-files/src/view.rs` |
+| The facts about one thing on a page | Box | `card_box` (`onehand_ui`); `page_card`, `card_title` and `pair` in `crates/app/src/chat/pane/page_parts.rs` |
+| A bar along the top of a region | Strip | `strip` and `strip_control` (`onehand_ui`) |
+| Rows to pick from | List | the Files tree, `crates/files/src/view.rs` |
 | Items opened one at a time, each with its own actions | Grid of boxes | `grid_page` in `crates/app/src/workflows_page/grid.rs` |
-| A list beside its detail | List and detail | `list_detail` in `crates/plugin-host/src/list_detail.rs`; the Markdown mode |
+| A list beside its detail | List and detail | `list_detail` in `crates/ui/src/list_detail.rs`; the Markdown mode |
 | Inputs and a submit | Form | `field` in `crates/app/src/settings.rs`; the Workflows form |
 | A modal question or form | Dialog | `crates/app/src/dialogs.rs` |
-| One thing read in full | Detail | the issue, `plugins/builtin/workbench-issues/src/view/detail.rs` |
+| One thing read in full | Detail | the issue, `crates/issues/src/view/detail.rs` |

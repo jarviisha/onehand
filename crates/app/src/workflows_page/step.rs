@@ -10,7 +10,7 @@ use gpui::{
     AnyElement, App, Entity, InteractiveElement as _, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement as _, Styled, Window, div,
 };
-use onehand_plugin_host::Tall as _;
+use onehand_ui::Tall as _;
 
 use gpui_component::switch::Switch;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
@@ -159,9 +159,9 @@ fn step_row(
         }))
         .child(div().min_w_0().truncate().font_medium().child(name.clone()))
         .child(
-            onehand_plugin_host::badge(
+            onehand_ui::badge(
                 step.kind.label(),
-                onehand_plugin_host::Tint {
+                onehand_ui::Tint {
                     fill: cx.theme().secondary,
                     ink: cx.theme().secondary_foreground,
                 },
@@ -268,7 +268,7 @@ pub(super) fn step_panel(
     cx: &App,
 ) -> AnyElement {
     let Some(i) = draft.open_step.filter(|i| *i < draft.steps.len()) else {
-        return onehand_plugin_host::hint("Pick a step to change it", cx);
+        return onehand_ui::hint("Pick a step to change it", cx);
     };
     let step = &draft.steps[i];
     let shipped = draft.shipped;
@@ -293,11 +293,11 @@ pub(super) fn step_panel(
         let handle = handle.clone();
         crate::controls::menu_below(
             ("step-kind", i),
-            onehand_plugin_host::picker(
+            onehand_ui::picker(
                 ("step-kind-trigger", i),
                 step.kind.label(),
                 true,
-                onehand_plugin_host::ControlSize::Tall,
+                onehand_ui::ControlSize::Tall,
                 cx,
             ),
             move |mut menu, _, _| {
@@ -350,9 +350,9 @@ pub(super) fn step_panel(
                 .child(format!("Step {} · {name}", i + 1)),
         )
         .child(
-            onehand_plugin_host::badge(
+            onehand_ui::badge(
                 step.kind.label(),
-                onehand_plugin_host::Tint {
+                onehand_ui::Tint {
                     fill: cx.theme().secondary,
                     ink: cx.theme().secondary_foreground,
                 },
@@ -486,7 +486,7 @@ pub(super) fn step_panel(
                     div()
                         .v_flex()
                         .gap_2()
-                        .child(onehand_plugin_host::contained_scroll(
+                        .child(onehand_ui::contained_scroll(
                             ("step-prompt", i),
                             text_area(&step.prompt, cx).disabled(shipped),
                         ))
@@ -530,7 +530,7 @@ pub(super) fn step_panel(
                 let handle = handle.clone();
                 crate::controls::menu_below(
                     ("step-target", i),
-                    onehand_plugin_host::picker(
+                    onehand_ui::picker(
                         ("step-target-trigger", i),
                         if current.is_empty() {
                             "Pick a step".to_string()
@@ -538,7 +538,7 @@ pub(super) fn step_panel(
                             current.clone()
                         },
                         !current.is_empty(),
-                        onehand_plugin_host::ControlSize::Tall,
+                        onehand_ui::ControlSize::Tall,
                         cx,
                     ),
                     move |mut menu, _, _| {

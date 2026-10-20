@@ -11,7 +11,7 @@ the rule, not just the question. For prose-only work, use the contract path in `
    `docs/rules-and-gotchas.md` (*Guard coverage*); the items below are what they cannot see.
 2. A same-role component or screen named and compared for height, text axis, ink, icon size and
    slot, spacing, corner and states, and a shared change checked in its callers across app and
-   plugins (`DESIGN.md`, *Principles*)?
+   feature crates (`DESIGN.md`, *Principles*)?
 3. Each page a column page or a list page by what it holds, its filters in the shared order,
    each group in the container its role takes, and each boundary the first step of the ladder
    that serves it, drawn once (`docs/ui-patterns.md`, *Pages*, *Filter bars*, *Choose the

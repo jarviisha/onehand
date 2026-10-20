@@ -112,7 +112,7 @@ impl ChatPane {
         };
         let forge =
             task.setup.forge.as_deref().and_then(|name| {
-                onehand_core::connector::named(crate::plugins::connectors(), name)
+                onehand_core::connector::named(crate::features::connectors(), name)
             });
         let (Some(forge), Some(branch)) = (forge, task.setup.branch.clone()) else {
             return;
@@ -345,7 +345,7 @@ fn trail(
     held: bool,
     cx: &mut Context<ChatPane>,
 ) -> gpui::Div {
-    let back = onehand_plugin_host::back_link("task-back", "Tasks", cx)
+    let back = onehand_ui::back_link("task-back", "Tasks", cx)
         .on_click(cx.listener(|pane: &mut ChatPane, _, _, cx| pane.open_task(None, cx)));
     let acts = task_acts(row, true);
     let mut acts = acts.into_iter();
@@ -409,7 +409,7 @@ fn trail(
             menu
         },
     );
-    onehand_plugin_host::strip(cx)
+    onehand_ui::strip(cx)
         .px_0()
         .child(back)
         .child(div().flex_1())
@@ -421,7 +421,7 @@ fn trail(
 /// A row that opens what is under it: the chevron first, in its own slot, so
 /// what it opens onto starts on the label's axis, [`FOLD_INDENT`] in.
 fn fold_row(id: SharedString, open: bool, cx: &App) -> gpui::Stateful<gpui::Div> {
-    onehand_plugin_host::row(false, cx)
+    onehand_ui::row(false, cx)
         .id(id)
         .h_flex()
         .items_center()
@@ -608,7 +608,7 @@ fn visit_body(
                     pane.toggle_file(key.clone(), dirs.clone(), cx)
                 },
             )),
-            None => onehand_plugin_host::row(false, cx)
+            None => onehand_ui::row(false, cx)
                 .id(id)
                 .h_flex()
                 .items_center()
@@ -634,7 +634,7 @@ fn visit_body(
                 let drawn = crate::chat::transcript::diff_rows(rows, &mut budget, cx);
                 let cut = rows.len().saturating_sub(DIFF_LINES);
                 out.push(
-                    onehand_plugin_host::well(cx)
+                    onehand_ui::well(cx)
                         .v_flex()
                         .children(drawn)
                         .into_any_element(),
@@ -805,7 +805,7 @@ fn review_card(
 /// `text`'s last lines in a mono well, saying how many were left out.
 fn mono_well(text: &str, cx: &App) -> Vec<gpui::AnyElement> {
     let (shown, hidden) = last_lines(text, OUTPUT_LINES);
-    let well = onehand_plugin_host::well(cx)
+    let well = onehand_ui::well(cx)
         .v_flex()
         .p_2()
         .children(shown.lines().map(|line| {

@@ -10,7 +10,7 @@
 #   core    — `onehand-core` is framework-free by design: 120 crates instead of
 #             616. Most of the test suite lives there, so this job is where a
 #             real failure usually shows up, minutes before the heavy ones land.
-#   app     — all other workspace members, including plugins and the vendored
+#   app     — all other workspace members, including the feature crates and the vendored
 #             terminal. Pays the full gpui build.
 #   clippy  — a job of its own, not a step inside `app`, because cargo records
 #             RUSTC_WRAPPER in a unit's fingerprint: clippy re-compiles the whole
@@ -120,9 +120,9 @@ jobs:
       # grid code. CI renders no frames, so it pays that cost for nothing —
       # dropping it roughly halves a cold build.
       #
-      # Run each member's own tests: compiling a plugin as an app dependency
+      # Run each member's own tests: compiling a feature crate as an app dependency
       # does not run its unit tests. Core has its own job; all other members,
-      # including future plugins and the vendored terminal, belong here.
+      # including future feature crates and the vendored terminal, belong here.
       - name: Tests
         run: |
           cargo test --locked --workspace --exclude onehand-core \

@@ -217,11 +217,11 @@ impl Shell {
                 let at = choices.get(picked.get()).cloned().unwrap_or_default();
                 crate::controls::menu_below(
                     "retry-from",
-                    onehand_plugin_host::picker(
+                    onehand_ui::picker(
                         "retry-from-trigger",
                         format!("From {at}"),
                         true,
-                        onehand_plugin_host::ControlSize::Short,
+                        onehand_ui::ControlSize::Short,
                         cx,
                     ),
                     move |mut menu, _, _| {

@@ -504,7 +504,7 @@ mod tests {
         let page = ["Shell", "Chat", "Issues"];
         assert_eq!(
             action_at(&map, "up", &page),
-            Some(onehand_workbench_issues::IssuesUp.name().into())
+            Some(onehand_issues::IssuesUp.name().into())
         );
         assert_eq!(
             action_at(&map, "up", &[&page[..], &["Input"]].concat()),
@@ -512,7 +512,7 @@ mod tests {
         );
         assert_eq!(
             action_at(&map, "escape", &page),
-            Some(onehand_workbench_issues::IssuesClose.name().into())
+            Some(onehand_issues::IssuesClose.name().into())
         );
         // The question card walks on the arrows and takes a number, but the
         // free-text box inside it keeps every key; the permission card answers
@@ -539,11 +539,11 @@ mod tests {
         let list = ["Shell", "Workbench", "PluginList"];
         assert_eq!(
             action_at(&map, "enter", &list),
-            Some(onehand_workbench_plugins::PluginOpen.name().into())
+            Some(onehand_claude_plugins::PluginOpen.name().into())
         );
         assert_eq!(
             action_at(&map, "space", &list),
-            Some(onehand_workbench_plugins::PluginFlip.name().into())
+            Some(onehand_claude_plugins::PluginFlip.name().into())
         );
         assert_eq!(
             action_at(&map, "space", &[&list[..], &["Input"]].concat()),

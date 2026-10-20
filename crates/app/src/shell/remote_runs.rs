@@ -274,13 +274,13 @@ impl Shell {
                         let forge = crate::unattended::connector_for(&path).ok();
                         let found = match only {
                             Some(number) => onehand_core::unattended::pickable_one_blocking(
-                                crate::plugins::connectors(),
+                                crate::features::connectors(),
                                 &path,
                                 issues,
                                 number,
                             ),
                             None => onehand_core::unattended::pickable_blocking(
-                                crate::plugins::connectors(),
+                                crate::features::connectors(),
                                 &path,
                                 issues,
                             ),

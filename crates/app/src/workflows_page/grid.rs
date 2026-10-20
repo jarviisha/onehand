@@ -17,7 +17,7 @@ use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::InputState;
 use gpui_component::{ActiveTheme, IconName, StyledExt};
 use onehand_core::workflow::{self as core, StepKind};
-use onehand_plugin_host::Tall as _;
+use onehand_ui::Tall as _;
 use std::path::PathBuf;
 
 /// The least a card takes before the row holds one fewer: as wide as a
@@ -242,7 +242,7 @@ fn card(
                     .when(acts.delete, |foot| foot.child(actions_slot(more))),
             ),
     };
-    onehand_plugin_host::card_box(cx)
+    onehand_ui::card_box(cx)
         .id(("workflow-card", i))
         .flex_1()
         .min_h_full()

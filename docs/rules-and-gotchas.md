@@ -108,6 +108,11 @@ Review the uncovered part when changing the relevant area:
 | Nothing animates | Finds `with_animation(`, `Animation::new(` and the library's sliding `TabBar::new(` | Motion through a library component other than a `Spinner` |
 | Nothing see-through | Finds `.opacity(`, `.fade_out(` and an `.alpha(` other than `alpha(0.)` and `alpha(1.)` outside the palette's shadows | An alpha written into a colour some other way |
 | One corner | Finds `radius_lg`, `radius_tokens().sm` and gpui's corner steps (`rounded_xs()` to `rounded_3xl()`) in UI sources | A corner written as a number in a `const`, gpui's per-side steps (`rounded_t_md()`…), `ButtonRounded` other than `Medium`, and `rounded_full` on anything but a badge, a dot or a status mark |
+| Core is GUI- and transport-free | Walks every manifest reachable from `crates/core` by path and refuses `gpui`, `gpui-component`, `gpui-terminal`, `reqwest` and `rustls`, under their real or renamed package names | A dependency reached through a registry crate rather than a path, and anything other than those names |
+| Status fills are not status ink | Finds `.text_color(cx.theme().danger)` and the like, for `danger`, `warning`, `success` and `info`, on the `cx.theme()` and `theme` receivers | The same token reached through another receiver, a variable or a helper; `border_color(` and other ink setters |
+| No flag is only ever lowered | Finds a `bool` field assigned `false` somewhere and `true` nowhere, across every first-party crate | A flag raised through a struct literal, a constructor or a method the scan does not read as an assignment |
+| An archived conversation is adopted in one place | Finds the model's loader called anywhere but `ChatSession::adopt` | A loader reached through an alias |
+| An atomic write is written in one place | Counts the files containing `fs::rename(` and insists on one, `config::write_atomic`'s | A rename spelled another way, or reached through another API |
 | Theme, bounded rendering, module size and UI contract | Dedicated tests cover individual behaviours | No general guard proves these rules or synchronizes documentation with code |
 
 Keep the checks that catch real regressions. Add a targeted check when a concrete failure

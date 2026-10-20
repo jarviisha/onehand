@@ -1,7 +1,7 @@
 //! A connector: one outside system a project's work also lives on — a forge,
 //! an issue tracker — and the calls the app makes to it.
 //!
-//! The trait is here and every implementation is a built-in plugin, the same
+//! The trait is here and every implementation is a feature crate, the same
 //! split the remote bridge keeps: what the app asks is decided in core, and how
 //! one system answers is that system's crate. So nothing in core knows which
 //! program or which API a connector drives.

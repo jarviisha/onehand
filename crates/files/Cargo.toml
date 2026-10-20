@@ -1,0 +1,16 @@
+[package]
+name = "onehand-files"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[lib]
+name = "onehand_files"
+path = "src/lib.rs"
+
+[dependencies]
+onehand-workbench = { path = "../workbench" }
+onehand-ui = { path = "../ui" }
+onehand-core = { path = "../core" }
+gpui = { git = "https://github.com/zed-industries/zed", features = ["profiler"] }
+gpui-component = { git = "https://github.com/longbridge/gpui-component", rev = "9e3a29dcbdebc318632bf68203f26c33e9f0e902" }

@@ -35,7 +35,7 @@ fn forge_of(uid: u64, cx: &App) -> Option<Result<Forge, String>> {
             .clone()
             .ok_or_else(|| "the run has no branch of its own".to_string())?;
         let name = setup.forge.as_deref().unwrap_or_default();
-        let connector = connector::named(crate::plugins::connectors(), name)
+        let connector = connector::named(crate::features::connectors(), name)
             .ok_or_else(|| format!("no connector called {name} is built into this onehand"))?;
         Ok(Forge {
             dir: setup.dir.clone(),

@@ -5,7 +5,7 @@ use gpui::prelude::FluentBuilder as _;
 use gpui::{App, ParentElement, Rems, SharedString, Styled, div, rems};
 use gpui_component::button::Button;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
-use onehand_plugin_host::{mark_slot, middle_ink};
+use onehand_ui::{mark_slot, middle_ink};
 
 /// The leading column every popup row's name stands in.
 ///

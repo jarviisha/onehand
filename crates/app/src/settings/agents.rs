@@ -72,9 +72,9 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
             // A badge, as *Built in* is on a workflow: a fact about the row.
             .when(is_default, |row| {
                 row.child(
-                    onehand_plugin_host::badge(
+                    onehand_ui::badge(
                         "Default",
-                        onehand_plugin_host::Tint {
+                        onehand_ui::Tint {
                             fill: cx.theme().secondary,
                             ink: cx.theme().secondary_foreground,
                         },

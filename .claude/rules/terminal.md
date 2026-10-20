@@ -3,8 +3,7 @@ paths:
   - "vendor/gpui-terminal/**"
   - "crates/terminal-ui/**"
   - "crates/app/src/terminal.rs"
-  - "crates/app/src/terminal/**"
-  - "plugins/builtin/workbench-neovim/**"
+  - "crates/neovim/**"
 ---
 
 # Terminal grid pitfalls

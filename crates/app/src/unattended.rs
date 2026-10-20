@@ -98,7 +98,7 @@ pub struct Unattended {
 /// Its account is not asked here: a person picking an issue by hand hears
 /// about an unusable account from the connector's own refusal, one call later.
 pub fn connector_for(root: &Path) -> Result<&'static dyn Connector, String> {
-    let all = crate::plugins::connectors();
+    let all = crate::features::connectors();
     connector::serving(all, root).map(|at| all[at])
 }
 
@@ -395,7 +395,7 @@ fn check(roots: Vec<Project>, prune: bool, cx: &mut App) {
 /// What every connector says about its account, and for each of `roots` what
 /// it can be worked with, by the connectors built into this onehand.
 fn look_blocking(roots: Vec<Project>) -> (Accounts, Vec<(PathBuf, Served)>) {
-    core::look_blocking(crate::plugins::connectors(), roots)
+    core::look_blocking(crate::features::connectors(), roots)
 }
 
 /// File what each look found, and redraw the rows that show it. A later entry

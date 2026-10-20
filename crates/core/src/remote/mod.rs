@@ -11,7 +11,7 @@
 //!   and what each has asked to hear about, and every reply that reports or
 //!   changes either.
 //!
-//! Wire implementations and their secret loading live in built-in plugins.
+//! Wire implementations and their secret loading live in feature crates.
 //!
 //! Everything except the channel itself is decided here rather than in a front
 //! end, and tested. [`chats::Chats`] is the one piece that carries state; it is

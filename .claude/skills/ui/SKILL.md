@@ -1,6 +1,6 @@
 ---
 name: ui
-description: Build, change and review onehand's UI in the app and its plugins. Use for any colour, spacing, type, corner, shadow or size; any control, field, row, badge, box, menu or dialog; any page, panel, list or form and how it splits or stacks; any waiting, empty, failing or refusing state, toast, removal, key, focus or on-screen word; before finishing a visible change; for UI audits; and when changing the UI contract or this skill.
+description: Build, change and review onehand's UI in the app and its feature crates. Use for any colour, spacing, type, corner, shadow or size; any control, field, row, badge, box, menu or dialog; any page, panel, list or form and how it splits or stacks; any waiting, empty, failing or refusing state, toast, removal, key, focus or on-screen word; before finishing a visible change; for UI audits; and when changing the UI contract or this skill.
 ---
 
 # UI
@@ -24,12 +24,12 @@ changing navigation.
 ## Building
 
 1. **Find the peer.** Search the screen's labels and catalog.md for the component and its
-   same-role peers across app and plugins. Compare height, text axis, ink, icon size, spacing,
+   same-role peers across app and feature crates. Compare height, text axis, ink, icon size, spacing,
    corner and states against the contract, not only against the code. Ask only when the intended
    behaviour stays materially ambiguous.
 2. **Reuse, in this order**: a builder in catalog.md, a gpui-component control, a builder of your
    own. When a second place needs something drawn inline, lift it into a shared builder in that
-   change (into `crates/plugin-host` when a plugin draws it too) and list it in catalog.md;
+   change (into `crates/ui` when a feature crate draws it too) and list it in catalog.md;
    never list one that is only proposed.
 3. **Pick the pattern** by what the content is, in the least decorated container that says each
    relationship, keeping the boxes a feature requires, and build from its screen. Separate by the

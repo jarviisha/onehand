@@ -69,7 +69,7 @@ pub(super) fn row_inks(chosen: bool, cx: &App) -> (Hsla, Hsla) {
     match chosen {
         true => {
             let ink = cx.theme().sidebar_accent_foreground;
-            (ink, onehand_plugin_host::middle_ink(ink, muted))
+            (ink, onehand_ui::middle_ink(ink, muted))
         }
         false => (muted, muted),
     }
@@ -168,8 +168,8 @@ pub(super) fn on_hover(
     group: &SharedString,
     shown: bool,
     child: impl IntoElement,
-) -> onehand_plugin_host::HoverSlot {
-    onehand_plugin_host::hover_slot(group.clone(), shown, child)
+) -> onehand_ui::HoverSlot {
+    onehand_ui::hover_slot(group.clone(), shown, child)
 }
 
 /// A row's own control: a fold, a new session, a `⋯`. Ghost and icon-only, at

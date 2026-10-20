@@ -25,18 +25,17 @@ use gpui::{
 use gpui_component::StyledExt;
 use gpui_component::dock::{Panel, PanelControl, PanelEvent};
 use onehand_core::gitstat::GitStatus;
-use onehand_plugin_api::{PluginId, WorkbenchModeSpec};
-use onehand_plugin_host::{Ask, Request, WorkbenchMode};
+use onehand_workbench::{Ask, ModeId, Request, WorkbenchMode, WorkbenchModeSpec};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 mod strip;
 
-pub const EDITOR_MODE: PluginId = onehand_workbench_editor::SPEC.id;
-pub const MARKDOWN_MODE: PluginId = onehand_workbench_markdown::SPEC.id;
-pub const NEOVIM_MODE: PluginId = onehand_workbench_neovim::SPEC.id;
-pub const ISSUES_MODE: PluginId = onehand_workbench_issues::SPEC.id;
+pub const EDITOR_MODE: ModeId = onehand_editor::SPEC.id;
+pub const MARKDOWN_MODE: ModeId = onehand_markdown::SPEC.id;
+pub const NEOVIM_MODE: ModeId = onehand_neovim::SPEC.id;
+pub const ISSUES_MODE: ModeId = onehand_issues::SPEC.id;
 
 pub struct Workbench {
     focus_handle: FocusHandle,
@@ -76,7 +75,7 @@ pub struct Workbench {
     /// The panel's width in rems as last laid out, which the strip reads to
     /// decide whether its modes fit side by side. Infinite until measured, so
     /// the first frame draws them side by side.
-    width: onehand_plugin_host::Measured,
+    width: onehand_ui::Measured,
 }
 
 impl Workbench {
@@ -108,13 +107,13 @@ impl Workbench {
                 zoom,
                 maximized: false,
                 fills_area: false,
-                width: onehand_plugin_host::unmeasured(),
+                width: onehand_ui::unmeasured(),
             }
         })
     }
 
     /// Answer a request a mode raised, which is the panel's half of
-    /// [`onehand_plugin_host::Ask`].
+    /// [`onehand_workbench::Ask`].
     ///
     /// The vocabulary is the same in both directions, so what arrives here is
     /// either something one mode is asking of another — opening a file is the
@@ -161,11 +160,11 @@ impl Workbench {
     }
 
     /// Where `id` sits on the strip, if it names a mode this panel holds.
-    fn place_of(&self, id: PluginId) -> Option<usize> {
+    fn place_of(&self, id: ModeId) -> Option<usize> {
         self.modes.iter().position(|item| item.spec().id == id)
     }
 
-    pub fn mode(&self) -> PluginId {
+    pub fn mode(&self) -> ModeId {
         self.showing().id
     }
 
@@ -275,7 +274,7 @@ impl Workbench {
     /// keys are three-state and pressing one on the mode in front of you is how
     /// a listing gets asked for again. Returning early here is what silently
     /// took the document walk away from a second `Ctrl+Shift+M`.
-    pub fn set_mode(&mut self, mode: PluginId, cx: &mut Context<Self>) {
+    pub fn set_mode(&mut self, mode: ModeId, cx: &mut Context<Self>) {
         let Some(place) = self.place_of(mode) else {
             return;
         };
@@ -438,7 +437,7 @@ impl Render for Workbench {
             .size_full()
             .v_flex()
             .relative()
-            .child(onehand_plugin_host::measure_width(
+            .child(onehand_ui::measure_width(
                 self.width.clone(),
                 cx.entity().downgrade(),
             ))

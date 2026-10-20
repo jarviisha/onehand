@@ -12,7 +12,7 @@ use gpui::{
 };
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::{IconName, StyledExt};
-use onehand_plugin_host::Tall as _;
+use onehand_ui::Tall as _;
 use std::path::{Path, PathBuf};
 
 /// *Run…*: which project to start the workflow of id `workflow` on, the

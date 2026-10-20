@@ -33,7 +33,7 @@ pub fn read_review(id: &str, cx: &mut App) -> gpui::Task<Result<ReviewRead, Stri
     let (Some(issue), Some(last)) = (task.issue().cloned(), task.runs.last().cloned()) else {
         return gpui::Task::ready(Err("Only an issue's task has a pull request review".into()));
     };
-    let connectors = crate::plugins::connectors();
+    let connectors = crate::features::connectors();
     let forge = task
         .setup
         .forge

@@ -49,7 +49,7 @@ use workspace_page::WorkspacePage;
 enum Page {
     Workspace(WorkspacePage),
     Tasks(TasksPage),
-    /// The Issues plugin's page, whose state is its own entity's and so
+    /// The Issues crate's page, whose state is its own entity's and so
     /// outlives this.
     Issues(gpui::AnyView),
     /// The Workflows page, an entity of the window's for the same reason.

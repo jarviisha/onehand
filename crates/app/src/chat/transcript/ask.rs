@@ -290,7 +290,7 @@ impl AskForm<'_> {
                             .items_center()
                             .gap_3()
                             .w_full()
-                            .child(onehand_plugin_host::choice_mark(on, single, cx))
+                            .child(onehand_ui::choice_mark(on, single, cx))
                             .child(words)
                             .children(ask_key_hint(o + 1)),
                     )

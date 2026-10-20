@@ -3,7 +3,8 @@
 //! One dock panel with mutually exclusive modes. Three are ways of reaching the
 //! same files — browsing the project and editing what you pick, reading the
 //! documents among them, and a real editor in a PTY, last because it is a
-//! program of its own — and two are the project's issues and the plugin list,
+//! program of its own — and two are the project's issues and the list of
+//! Claude Code's plugins,
 //! so they share a dock rather than competing for width.
 
 pub mod panel;

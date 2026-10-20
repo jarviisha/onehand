@@ -19,12 +19,12 @@ pub mod assets;
 mod chat;
 mod controls;
 mod dialogs;
+mod features;
 mod fonts;
 #[cfg(test)]
 mod guards;
 mod icons;
 mod keymap;
-mod plugins;
 mod rail;
 mod remote;
 mod saves;
@@ -40,5 +40,5 @@ mod workflow;
 mod workflows_page;
 mod zoom;
 
-/// The sizes and the lift the app shares with its plugins.
-pub(crate) use onehand_plugin_host::{toast, tokens};
+/// The sizes and the lift the app shares with its feature crates.
+pub(crate) use onehand_ui::{toast, tokens};

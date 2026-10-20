@@ -29,7 +29,7 @@ impl Shell {
         let workbench = Workbench::new(
             {
                 let tell = tell.clone();
-                move |ask, font_size, cx| crate::plugins::workbench_modes(ask, tell, font_size, cx)
+                move |ask, font_size, cx| crate::features::workbench_modes(ask, tell, font_size, cx)
             },
             cx,
         );
@@ -88,7 +88,7 @@ impl Shell {
             });
         }
         issues_page.handle(
-            &onehand_plugin_host::Request::SetStorage(workspace.storage_dir.as_deref()),
+            &onehand_workbench::Request::SetStorage(workspace.storage_dir.as_deref()),
             cx,
         );
 
@@ -316,7 +316,7 @@ impl Shell {
                 shell
                     .workbench
                     .update(cx, |panel, cx| panel.live_conversations(&live, cx));
-                shell.tell_issues_page(&onehand_plugin_host::Request::LiveConversations(&live), cx);
+                shell.tell_issues_page(&onehand_workbench::Request::LiveConversations(&live), cx);
                 shell.live_conversations = live;
             }
         })

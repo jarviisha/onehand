@@ -399,11 +399,9 @@ impl Composer {
                                 .gap_2()
                                 .w_full()
                                 .min_w_0()
-                                .child(onehand_plugin_host::mark_slot(div().children(
-                                    unavailable.then(|| {
-                                        Icon::new(IconName::Info).small().text_color(danger)
-                                    }),
-                                )))
+                                .child(onehand_ui::mark_slot(div().children(unavailable.then(
+                                    || Icon::new(IconName::Info).small().text_color(danger),
+                                ))))
                         };
                         let row = contents(div())
                             .child(

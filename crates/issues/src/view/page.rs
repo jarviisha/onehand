@@ -1,0 +1,618 @@
+//! The Issues page: the issues of every project of the workspace in one
+//! list, and the one picked floating over it, drawn in full.
+//!
+//! The list takes the pane's whole width, under the open and closed choices,
+//! the page's actions and its filters, an issue a row on one line, and a line
+//! at the foot says how many it shows over a line the pane's whole width, as
+//! the one the pane's header draws over the page. The issue picked floats
+//! over the list's right side in a panel of its own (`panel`), which never moves the list: closing it
+//! finds every row where it was. Nothing is open when the page is first
+//! shown.
+//!
+//! What the list shows, in what order and what each row says is core's
+//! (`onehand_core::task::work::list`); what is here holds the page's state —
+//! the filters, the list as it is on screen, the pull requests read — and
+//! draws what core decides. Everything lives on the view's entity, so
+//! leaving the page for a session and picking it again finds it as it was.
+
+use super::{IssuesView, full, review};
+use crate::{IssuesClose, IssuesDown, IssuesUp};
+use gpui::{
+    AnyElement, Context, FocusHandle, InteractiveElement as _, IntoElement, ParentElement,
+    ScrollHandle, SharedString, StatefulInteractiveElement as _, Styled, Window, div,
+};
+use gpui_component::{ActiveTheme, StyledExt};
+use onehand_core::issues::{self, IssueKey, LocalIssue};
+use onehand_core::task::work::IssueWork;
+use onehand_core::task::work::list::{Filters, Held, Item, PrReads, list};
+use onehand_ui::{faint_rule, hint};
+use std::collections::{BTreeSet, HashMap};
+use std::path::{Path, PathBuf};
+
+mod head;
+mod panel;
+mod prs;
+mod row;
+
+use row::issue_row;
+
+/// What the page holds beside what every Issues view does.
+#[derive(Default)]
+pub(super) struct PageState {
+    /// Every project of the workspace, in rail order, with what it is called.
+    projects: Vec<(PathBuf, SharedString)>,
+    /// The filters but the search, which is the view's own input.
+    filters: Filters,
+    /// The list as it was last drawn, kept still by core.
+    held: Held,
+    /// The rows on screen that stopped matching, which leave once another
+    /// issue is picked.
+    stopped: Vec<IssueKey>,
+    /// The issue (or the form) floats over the list. Closed, the row stays
+    /// picked, so the arrow keys and opening it again start from it.
+    open: bool,
+    /// The panel's width in rems, once dragged; kept while the app runs.
+    panel_w: Option<f32>,
+    /// The list's scroll, kept across leaving the page.
+    scroll: ScrollHandle,
+    /// The picked row is scrolled into view on the next draw: the arrow keys
+    /// moved past the list's edge, or an issue was opened from outside.
+    reveal: bool,
+    /// The rows on screen, in order, which the arrow keys step through.
+    shown: Vec<(PathBuf, u64)>,
+    /// Where the arrow keys and Esc land: the page itself, once a row is
+    /// picked.
+    focus: Option<FocusHandle>,
+    /// An issue was opened from outside the page: the page takes the
+    /// keyboard on its next draw, so Esc and the arrow keys answer at once.
+    claim_focus: bool,
+    /// Each project's pull requests, as last read.
+    pub(super) prs: HashMap<PathBuf, PrReads>,
+    /// The generation of each project's pull request read, so an answer to
+    /// an older read is dropped.
+    pub(super) pr_asked: HashMap<PathBuf, u64>,
+    /// How many projects' pull request reads are out, so *Refresh* says it
+    /// is reading.
+    pub(super) pr_reading: usize,
+    /// The page was just shown: its pull requests are read.
+    pub(super) arrived: bool,
+    /// What the issue on screen left, as read off git.
+    pub(super) full: full::FullState,
+    /// The review block, while one is open.
+    pub(super) review: review::ReviewState,
+}
+impl PageState {
+    /// The filters changed: the list is drawn afresh, the pin let go.
+    pub(super) fn refilter(&mut self) {
+        self.held = Held::default();
+    }
+
+    /// What project `root` is called on the page.
+    pub(super) fn label_of(&self, root: &Path) -> Option<SharedString> {
+        self.projects
+            .iter()
+            .find(|(r, _)| r == root)
+            .map(|(_, label)| label.clone())
+    }
+
+    /// What the full form draws from this page's state.
+    pub(super) fn full(&self) -> full::Full<'_> {
+        self.full.view()
+    }
+}
+
+impl IssuesView {
+    /// Tell the page which projects the workspace has.
+    pub(crate) fn set_projects(
+        &mut self,
+        projects: Vec<(PathBuf, SharedString)>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(page) = self.page.as_mut() else {
+            return;
+        };
+        if page.projects != projects {
+            page.projects = projects;
+            cx.notify();
+        }
+    }
+
+    /// The page was put on screen: every file it draws is read again, and so
+    /// are the pull requests.
+    pub(crate) fn page_shown(&mut self, cx: &mut Context<Self>) {
+        if let Some(page) = self.page.as_mut() {
+            page.arrived = true;
+        }
+        self.mark_stale(cx);
+    }
+
+    /// Open issue `number` of `root` on the page, from outside it. The
+    /// filters stay as they are; an issue they leave out is pinned at the top.
+    pub(crate) fn open_on_page(&mut self, root: &Path, number: u64, cx: &mut Context<Self>) {
+        let key = self.key(root, number);
+        let Some(page) = self.page.as_mut() else {
+            return;
+        };
+        if !page.review.open_on(key.as_ref()) {
+            page.review = review::ReviewState::default();
+        }
+        page.held.pinned = key;
+        page.open = true;
+        page.reveal = true;
+        page.claim_focus = true;
+        self.root = Some(root.to_path_buf());
+        if let Some(state) = self.state_for(root, cx) {
+            state.selected = Some(number);
+        }
+        cx.notify();
+    }
+
+    /// Pick issue `number` of `root` from the page's list, and open it.
+    ///
+    /// A changed draft in that project is asked about first; cancelled,
+    /// nothing in the list moves. The pin goes once another issue is picked.
+    fn pick(&mut self, root: PathBuf, number: u64, window: &mut Window, cx: &mut Context<Self>) {
+        let key = self.key(&root, number);
+        // The page takes the keyboard, so the arrow keys and Esc work from here.
+        if let Some(focus) = self.page.as_ref().and_then(|page| page.focus.clone()) {
+            window.focus(&focus, cx);
+        }
+        let arriving = self.root.as_deref() != Some(root.as_path());
+        self.root = Some(root.clone());
+        let drafting = self
+            .state_for(&root, cx)
+            .is_some_and(|state| state.form.is_some());
+        // Coming to another project that holds a draft shows the draft, which
+        // is kept across a switch of project; picking within it asks.
+        if arriving && drafting {
+            if let Some(page) = self.page.as_mut() {
+                page.open = true;
+            }
+            cx.notify();
+            return;
+        }
+        self.unless_drafting(window, cx, move |view, _, cx| {
+            if let Some(page) = view.page.as_mut() {
+                if let Some(key) = &key {
+                    let stopped = std::mem::take(&mut page.stopped);
+                    page.held.pick(key, &stopped);
+                }
+                // Picking another issue closes the review; the same keeps it.
+                if !page.review.open_on(key.as_ref()) {
+                    page.review = review::ReviewState::default();
+                }
+                page.open = true;
+            }
+            if let Some(state) = view.state_mut() {
+                state.selected = Some(number);
+                state.form = None;
+            }
+            cx.notify();
+        });
+    }
+
+    /// Start a new issue in the project the list is filtered to, else the
+    /// one the picked issue is in, else the first.
+    fn new_issue_on_page(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(page) = self.page.as_mut() else {
+            return;
+        };
+        let Some(root) = page
+            .filters
+            .project
+            .clone()
+            .or_else(|| self.root.clone())
+            .or_else(|| page.projects.first().map(|(root, _)| root.clone()))
+        else {
+            return;
+        };
+        page.open = true;
+        self.root = Some(root.clone());
+        self.state_for(&root, cx);
+        self.open_form(None, window, cx);
+    }
+
+    /// Change the filters: the list is drawn afresh, the pin let go.
+    fn filter(&mut self, change: impl FnOnce(&mut Filters), cx: &mut Context<Self>) {
+        if let Some(page) = self.page.as_mut() {
+            change(&mut page.filters);
+            page.refilter();
+            cx.notify();
+        }
+    }
+
+    /// Pick the row `step` away from the one picked, and open it; closed,
+    /// the first press opens the row picked rather than moving.
+    fn page_step(&mut self, step: isize, window: &mut Window, cx: &mut Context<Self>) {
+        let current = self.root.clone().zip(self.selected_number());
+        let Some(page) = self.page.as_mut() else {
+            return;
+        };
+        let at = current.and_then(|(root, number)| {
+            page.shown
+                .iter()
+                .position(|(r, n)| *r == root && *n == number)
+        });
+        let next = match at {
+            Some(at) if !page.open => Some(at),
+            Some(at) => at.checked_add_signed(step),
+            None => Some(0),
+        };
+        if let Some((root, number)) = next.and_then(|next| page.shown.get(next)).cloned() {
+            page.reveal = true;
+            self.pick(root, number, window, cx);
+        }
+    }
+
+    /// Close the innermost layer open over the list, and hand the keyboard
+    /// back to the page, since what held it may be gone with the layer.
+    fn page_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let form = self.state_mut().is_some_and(|state| state.form.is_some());
+        let Some(page) = self.page.as_ref() else {
+            return;
+        };
+        match innermost(page.open, form, page.review.is_open()) {
+            Some(Layer::Form) => {
+                self.unless_drafting(window, cx, |view, _, cx| view.cancel_form(cx));
+            }
+            Some(Layer::Review) => self.close_review(cx),
+            Some(Layer::Issue) => {
+                if let Some(page) = self.page.as_mut() {
+                    page.open = false;
+                }
+                cx.notify();
+            }
+            None => return,
+        }
+        if let Some(focus) = self.page.as_ref().and_then(|page| page.focus.clone()) {
+            window.focus(&focus, cx);
+        }
+    }
+
+    /// The issue number picked in the project on screen.
+    fn selected_number(&self) -> Option<u64> {
+        self.roots.get(self.root.as_deref()?)?.selected
+    }
+
+    /// The page: the toolbar over the list, and the issue picked floating
+    /// over the list while it is open.
+    pub(super) fn page_body(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        if self.storage.is_none() {
+            return hint(
+                "This workspace keeps nothing until it is bound to a storage folder in Settings",
+                cx,
+            );
+        }
+        let projects = self
+            .page
+            .as_ref()
+            .map(|p| p.projects.clone())
+            .unwrap_or_default();
+        if projects.is_empty() {
+            return hint("No projects in this workspace", cx);
+        }
+        for (root, _) in &projects {
+            if let Some(state) = self.state_for(root, cx) {
+                state.file.update(cx, |file, cx| file.load_if_stale(cx));
+            }
+        }
+        self.read_prs_if_due(cx);
+
+        let selected = self.selected_key();
+        let (focus, claim) = match self.page.as_mut() {
+            Some(page) => (
+                page.focus.get_or_insert_with(|| cx.focus_handle()).clone(),
+                std::mem::take(&mut page.claim_focus),
+            ),
+            None => return hint("No page", cx),
+        };
+        if claim {
+            window.focus(&focus, cx);
+        }
+        let (top, rows, foot) = self.page_list(&projects, selected.as_ref(), window, cx);
+        let open = self.page.as_ref().is_some_and(|page| page.open);
+        let panel = (open && self.has_page_issue()).then(|| self.page_panel(window, cx));
+        div()
+            .id("issues-page")
+            .key_context("Issues")
+            .track_focus(&focus)
+            .on_action(cx.listener(|view, _: &IssuesUp, window, cx| view.page_step(-1, window, cx)))
+            .on_action(
+                cx.listener(|view, _: &IssuesDown, window, cx| view.page_step(1, window, cx)),
+            )
+            .on_action(cx.listener(|view, _: &IssuesClose, window, cx| view.page_close(window, cx)))
+            .size_full()
+            .v_flex()
+            // Chrome, as every page's body is: the rows and the head at the
+            // chrome size, the issue's own text at its own.
+            .text_size(onehand_ui::tokens::CHROME_TEXT)
+            .child(top)
+            .child(
+                // The panel is placed on the list's area, under the toolbar,
+                // so the filters stay in reach while an issue is open.
+                div()
+                    .id("issues-page-area")
+                    .relative()
+                    .flex_1()
+                    .min_h_0()
+                    .on_drag_move(cx.listener(Self::drag_panel))
+                    .child(rows)
+                    .children(panel),
+            )
+            .children(foot)
+            .into_any_element()
+    }
+
+    /// Whether a form is open in the project on screen.
+    fn drafting(&self) -> bool {
+        self.root
+            .as_deref()
+            .and_then(|root| self.roots.get(root))
+            .is_some_and(|state| state.form.is_some())
+    }
+
+    /// Whether there is an issue or a form to float over the list.
+    fn has_page_issue(&self) -> bool {
+        self.drafting() || self.selected_key().is_some()
+    }
+
+    /// The issue the page has picked, by its file and number.
+    fn selected_key(&self) -> Option<IssueKey> {
+        let root = self.root.as_deref()?;
+        let number = self.roots.get(root)?.selected?;
+        self.key(root, number)
+    }
+
+    /// The list: the toolbar, what the reading says and the tabs, then,
+    /// apart, the rows, which the panel floats over, and the line at the foot.
+    fn page_list(
+        &mut self,
+        projects: &[(PathBuf, SharedString)],
+        selected: Option<&IssueKey>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> (AnyElement, AnyElement, Option<AnyElement>) {
+        // What the rows borrow, held for the length of this draw.
+        let owned: Vec<(PathBuf, LocalIssue)> = projects
+            .iter()
+            .flat_map(|(root, _)| {
+                self.issues_of(root, cx)
+                    .map(|kept| kept.listed().into_iter().cloned().collect::<Vec<_>>())
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|issue| (root.clone(), issue))
+            })
+            .collect();
+        let works = self.works.clone();
+        let storage = self.storage.clone().unwrap_or_default();
+        let items: Vec<Item<'_>> = owned
+            .iter()
+            .map(|(root, issue)| {
+                let key = IssueKey {
+                    file: issues::file_for(&storage, root),
+                    number: issue.number,
+                };
+                let work = works.iter().find(|work| work.key == key);
+                Item {
+                    root,
+                    key,
+                    issue,
+                    work,
+                }
+            })
+            .collect();
+        let query = self.query(window, cx);
+        let text = query.read(cx).value().to_string();
+        let columns = self.width.get().0 >= row::COLUMNS_MIN;
+        let Some(page) = self.page.as_mut() else {
+            return (hint("No page", cx), div().into_any_element(), None);
+        };
+        let mut filters = page.filters.clone();
+        filters.query = text;
+        // A project or label filter nothing carries any more is dropped: a
+        // filter nothing on screen can clear hides every issue.
+        if let Some(only) = &page.filters.project
+            && !projects.iter().any(|(root, _)| root == only)
+        {
+            page.filters.project = None;
+            filters.project = None;
+        }
+        let listed = list(&items, &filters, &page.prs, &page.held, issues::now());
+        page.held.order = listed.order();
+        page.stopped = listed.stopped_matching();
+        page.shown = listed
+            .rows
+            .iter()
+            .map(|row| (row.item.root.to_path_buf(), row.item.issue.number))
+            .collect();
+        let scroll = page.scroll.clone();
+        // The picked row into view; the handle scrolls by child, and each row
+        // is one child.
+        if std::mem::take(&mut page.reveal)
+            && let Some(at) = listed
+                .rows
+                .iter()
+                .position(|row| selected == Some(&row.item.key))
+        {
+            scroll.scroll_to_item(at);
+        }
+        let labels: Vec<String> = items
+            .iter()
+            .flat_map(|item| item.issue.labels.iter().cloned())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+
+        let reading = items.is_empty() && self.reading_issues(projects, cx);
+        let toolbar = self.page_head(&listed, &filters, projects, labels, &query, cx);
+        let notices = self.page_notices(&listed, projects, cx);
+        let muted = cx.theme().muted_foreground;
+        let empty = if reading {
+            Some("Reading the issues…")
+        } else if items.is_empty() {
+            Some("No issues yet")
+        } else if listed.rows.is_empty() {
+            Some("No issues match")
+        } else {
+            None
+        };
+        let label_of = |root: &Path| {
+            projects
+                .iter()
+                .find(|(r, _)| r == root)
+                .map(|(_, label)| label.clone())
+                .unwrap_or_default()
+        };
+        let rows: Vec<AnyElement> = listed
+            .rows
+            .iter()
+            .enumerate()
+            .map(|(i, row)| {
+                let picked = selected == Some(&row.item.key);
+                let project = label_of(row.item.root);
+                let place = row::Place { picked, columns };
+                issue_row(i, place, row, project, cx)
+            })
+            .collect();
+        // How many matching issues the list shows of how many match, which
+        // also says when its cap bites. A row kept after it stopped matching
+        // and one pinned outside the filters are on screen but not counted,
+        // so the line agrees with the count on the tab.
+        let shown = listed
+            .rows
+            .iter()
+            .filter(|row| !row.outside && row.left.is_none())
+            .count();
+        let of = if filters.closed {
+            listed.closed
+        } else {
+            listed.open
+        };
+        let rule = faint_rule(cx);
+        let foot = (!listed.rows.is_empty()).then(|| {
+            let which = if filters.closed { "closed" } else { "open" };
+            div()
+                .flex_none()
+                .px_8()
+                .py_3()
+                .border_t_1()
+                .border_color(rule)
+                .text_xs()
+                .text_color(muted)
+                .child(format!("Showing {shown} of {of} {which} issues"))
+                .into_any_element()
+        });
+        // At the rows' inset, so its words start where theirs do.
+        let line =
+            |text: String| column(div().px_2().py_2().text_xs().text_color(muted).child(text));
+
+        // A line the pane's whole width under the filters, as under the header
+        // and over the foot: the list scrolls under it.
+        let top = div()
+            .flex_none()
+            .px_6()
+            .py_3()
+            .border_b_1()
+            .border_color(rule)
+            .child(column(
+                div().v_flex().gap_2().child(toolbar).children(notices),
+            ))
+            .into_any_element();
+        let rows = div()
+            .id("issues-page-list")
+            .size_full()
+            .v_flex()
+            .overflow_y_scroll()
+            .track_scroll(&scroll)
+            .px_6()
+            .py_2()
+            .children(rows)
+            .children(empty.map(|empty| line(empty.to_string())))
+            .into_any_element();
+        (top, rows, foot)
+    }
+
+    /// Whether a project's issues have not landed yet, nor failed: until
+    /// then an empty list cannot say there are none.
+    fn reading_issues(&self, projects: &[(PathBuf, SharedString)], cx: &gpui::App) -> bool {
+        projects.iter().any(|(root, _)| {
+            self.roots.get(root).is_some_and(|state| {
+                let file = state.file.read(cx);
+                file.issues.is_none() && file.failed.is_none()
+            })
+        })
+    }
+
+    /// Every filter but the tab back to where it starts: the search, the
+    /// progress, the project and the label.
+    fn clear_narrowing(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(query) = self.query.clone() {
+            query.update(cx, |input, cx| input.set_value("", window, cx));
+        }
+        self.filter(
+            |f| {
+                *f = Filters {
+                    closed: f.closed,
+                    ..Filters::default()
+                }
+            },
+            cx,
+        );
+    }
+
+    /// Every filter back to where it starts, which a pinned row offers.
+    fn clear_filters(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(query) = self.query.clone() {
+            query.update(cx, |input, cx| input.set_value("", window, cx));
+        }
+        self.filter(|f| *f = Filters::default(), cx);
+    }
+}
+
+/// `inner` across the page's whole width: a table uses what the pane gives it.
+fn column(inner: gpui::Div) -> gpui::Div {
+    inner.w_full()
+}
+
+/// The work of every issue of `root`, by the file the page keys them with.
+pub(super) fn works_of<'a>(
+    works: &'a [IssueWork],
+    file: &'a Path,
+) -> impl Iterator<Item = &'a IssueWork> {
+    works.iter().filter(move |work| work.key.file == file)
+}
+
+/// A layer open over the list, innermost first.
+#[derive(Debug, PartialEq)]
+enum Layer {
+    /// The issue form, inside the floating issue.
+    Form,
+    /// The review block, inside the floating issue.
+    Review,
+    /// The floating issue itself.
+    Issue,
+}
+
+/// The layer Esc closes: the form or the review block inside the floating
+/// issue before the issue itself, and nothing while the issue is closed.
+fn innermost(open: bool, form: bool, review: bool) -> Option<Layer> {
+    match (open, form, review) {
+        (false, _, _) => None,
+        (true, true, _) => Some(Layer::Form),
+        (true, false, true) => Some(Layer::Review),
+        (true, false, false) => Some(Layer::Issue),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Layer, innermost};
+
+    #[test]
+    fn esc_closes_the_innermost_layer_only() {
+        assert_eq!(innermost(false, true, true), None);
+        assert_eq!(innermost(true, true, true), Some(Layer::Form));
+        assert_eq!(innermost(true, false, true), Some(Layer::Review));
+        assert_eq!(innermost(true, false, false), Some(Layer::Issue));
+    }
+}

@@ -15,7 +15,7 @@ use gpui::{
 use gpui_component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
-use onehand_plugin_host::{badge, mark_slot};
+use onehand_ui::{badge, mark_slot};
 
 /// What a project row says on hover: the whole of everything the row cuts.
 ///

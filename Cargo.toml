@@ -6,18 +6,18 @@
 [workspace]
 members = [
     "crates/app",
+    "crates/claude-plugins",
     "crates/core",
-    "crates/plugin-api",
-    "crates/plugin-host",
+    "crates/editor",
+    "crates/files",
+    "crates/github",
+    "crates/issues",
+    "crates/markdown",
+    "crates/neovim",
+    "crates/telegram",
     "crates/terminal-ui",
-    "plugins/builtin/connector-github",
-    "plugins/builtin/remote-telegram",
-    "plugins/builtin/workbench-editor",
-    "plugins/builtin/workbench-files",
-    "plugins/builtin/workbench-issues",
-    "plugins/builtin/workbench-markdown",
-    "plugins/builtin/workbench-neovim",
-    "plugins/builtin/workbench-plugins",
+    "crates/ui",
+    "crates/workbench",
     "vendor/gpui-terminal",
 ]
 resolver = "2"

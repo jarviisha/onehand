@@ -1,7 +1,7 @@
 # Screens
 
-What each region of the window holds and the order it holds it in, in the app and its built-in
-plugins. It binds at the level written here, as `DESIGN.md` does; below it, the code and its tests
+What each region of the window holds and the order it holds it in, in the app and its feature
+crates. It binds at the level written here, as `DESIGN.md` does; below it, the code and its tests
 decide. `DESIGN.md` owns the principles, the window's frame, the transcript and the visual rules
 these screens are drawn with; `docs/ui-patterns.md` the patterns they repeat; and a feature's own
 document (`docs/tasks.md`, `docs/workflows.md`, `docs/unattended.md`) its screens' detail. Code

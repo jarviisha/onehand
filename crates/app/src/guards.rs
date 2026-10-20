@@ -70,12 +70,15 @@ fn sources() -> Vec<(String, String)> {
     sources_under(&["crates/app/src"])
 }
 
-/// Every first-party file that draws, or that hosts something drawing.
+/// Every first-party file that draws, or that hosts something drawing: the
+/// app, the Workbench modes, the UI crate, the mode contract and the shared
+/// terminal primitives — and the connector and channel crates beside them,
+/// since the field and event-enum rules that run over this set are not about
+/// drawing alone.
 ///
-/// The app, its built-in plugins, the plugin host and the shared terminal
-/// primitives. Moving UI code into a plugin or a support crate must not move it
+/// Moving UI code into a feature crate or a support crate must not move it
 /// out of the app's load-bearing source guards at the same time — that is
-/// exactly what happened when the built-in plugins were split out, and it left
+/// exactly what happened when the feature crates were split out, and it left
 /// a button wrapper, a status colour and a dead field in crates nothing was
 /// looking at. `vendor/` is deliberately excluded: it is upstream code carrying
 /// our patches, and holding it to the app's own drawing rules would bury those
@@ -84,9 +87,17 @@ fn sources() -> Vec<(String, String)> {
 fn ui_sources() -> Vec<(String, String)> {
     sources_under(&[
         "crates/app/src",
-        "crates/plugin-host/src",
+        "crates/claude-plugins/src",
+        "crates/editor/src",
+        "crates/files/src",
+        "crates/github/src",
+        "crates/issues/src",
+        "crates/markdown/src",
+        "crates/neovim/src",
+        "crates/telegram/src",
         "crates/terminal-ui/src",
-        "plugins/builtin",
+        "crates/ui/src",
+        "crates/workbench/src",
     ])
 }
 
@@ -100,11 +111,18 @@ fn ui_sources() -> Vec<(String, String)> {
 fn workspace_sources() -> Vec<(String, String)> {
     sources_under(&[
         "crates/app/src",
+        "crates/claude-plugins/src",
         "crates/core/src",
-        "crates/plugin-api/src",
-        "crates/plugin-host/src",
+        "crates/editor/src",
+        "crates/files/src",
+        "crates/github/src",
+        "crates/issues/src",
+        "crates/markdown/src",
+        "crates/neovim/src",
+        "crates/telegram/src",
         "crates/terminal-ui/src",
-        "plugins/builtin",
+        "crates/ui/src",
+        "crates/workbench/src",
     ])
 }
 
@@ -234,11 +252,11 @@ mod tests {
     /// framework-free is what would let it survive another. It must also not
     /// dictate an async runtime or drag in a TLS stack: GPUI runs on smol, so a
     /// core that awaited tokio I/O directly would panic inside the UI process,
-    /// and the Telegram wire belongs to the plugin that speaks it.
+    /// and the Telegram wire belongs to the crate that speaks it.
     ///
     /// **Transitive, and it has to be.** The check used to read core's own
     /// manifest for lines starting with the forbidden name, which a path
-    /// dependency walks straight past: adding `onehand-plugin-host` to core
+    /// dependency walks straight past: adding `onehand-ui` to core
     /// pulls `gpui` and `gpui-component` back in with the guard still green.
     /// Renamed dependencies (`foo = { package = "gpui" }`) go the same way,
     /// which is why the `package` key is read as well as the table's name.
@@ -272,9 +290,9 @@ mod tests {
         // The walk's own self-check. Reading core's manifest alone would pass
         // this test for as long as core has no first-party dependency at all,
         // and go on passing on the day it gains one that drags gpui back in.
-        // The plugin host depends on core by path, so following it is proof the
+        // The UI crate depends on core by path, so following it is proof the
         // walk crosses a manifest boundary.
-        let through_host = super::reachable_dependencies(&root.join("crates/plugin-host"));
+        let through_host = super::reachable_dependencies(&root.join("crates/ui"));
         assert!(
             through_host
                 .iter()
@@ -400,7 +418,7 @@ mod tests {
                         !source.contains(&expression),
                         "{path} uses the status background `{role}` as text; use \
                          status_ink instead -- crate::theme in the app, \
-                         onehand_plugin_host in a plugin"
+                         onehand_ui in a feature crate"
                     );
                 }
             }
@@ -620,11 +638,11 @@ mod tests {
         let bare = format!("Button{}new(", "::");
         for (path, source) in ui_sources() {
             // The one file allowed to name it: the wrapper is where the
-            // library's control is reached. It lives in the plugin host rather
-            // than the app because a built-in plugin draws buttons too and
+            // library's control is reached. It lives in the UI crate rather
+            // than the app because a feature crate draws buttons too and
             // cannot reach into the binary hosting it -- and one wrapper is the
             // whole point, so there is exactly one file to exempt.
-            if path.ends_with("plugin-host/src/lib.rs") {
+            if path.ends_with("crates/ui/src/lib.rs") {
                 continue;
             }
             for (n, line) in source.lines().enumerate() {
@@ -653,7 +671,7 @@ mod tests {
             format!("Textarea{}new(", "::"),
         ];
         for (path, source) in ui_sources() {
-            if path.ends_with("plugin-host/src/lib.rs") {
+            if path.ends_with("crates/ui/src/lib.rs") {
                 continue;
             }
             for (n, line) in source.lines().enumerate() {
@@ -671,7 +689,7 @@ mod tests {
 
     /// The library's ghost hovers on a fill of its own mixing, a shade off the
     /// selected step a selected ghost shows beside it, so a hovered button
-    /// read as a smaller box than a selected one. The plugin host's `quiet`
+    /// read as a smaller box than a selected one. The UI crate's `quiet`
     /// draws the ghost on the ramp's steps, and a bare `ghost()` brings the
     /// mismatch straight back.
     #[test]
@@ -713,7 +731,7 @@ mod tests {
             l.starts_with('.') || l.starts_with("//")
         };
         for (path, source) in ui_sources() {
-            if path.ends_with("plugin-host/src/menu.rs") {
+            if path.ends_with("crates/ui/src/menu.rs") {
                 continue;
             }
             let lines: Vec<&str> = source.lines().collect();
@@ -1315,7 +1333,7 @@ mod tests {
             .into_iter()
             .filter(|(path, _)| {
                 !path.ends_with("crates/app/src/theme.rs")
-                    && !path.ends_with("crates/plugin-host/src/tokens.rs")
+                    && !path.ends_with("crates/ui/src/tokens.rs")
             })
             .collect();
         forbid(

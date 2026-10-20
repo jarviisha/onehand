@@ -1,11 +1,11 @@
 //! The question the shell asks before it does something that cannot be taken
-//! back. The modal itself is the plugin host's, so a built-in plugin asks the
+//! back. The modal itself is the UI crate's, so a feature crate asks the
 //! same way.
 
 use super::Shell;
 use gpui::{Context, Window};
 
-pub(crate) use onehand_plugin_host::{Confirm, confirm_on};
+pub(crate) use onehand_ui::{Confirm, confirm_on};
 
 impl Shell {
     /// Ask `ask`, and run `then` on the shell only when it is answered yes.

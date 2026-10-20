@@ -37,7 +37,7 @@ a hex literal outside the ramp is a bug even when it looks right, as no theme sw
    legible contrast on their actual surfaces in both modes.
 4. **Mono for machines, sans for people.** Code, paths, terminal output and diffs use
    `mono_font_family`. Anything a person wrote uses the default family.
-5. **Same role, same treatment.** Across app and plugins, equivalent rows, headers and controls
+5. **Same role, same treatment.** Across app and feature crates, equivalent rows, headers and controls
    share size, spacing, corners and states. A valid token alone does not make a consistent view.
 6. **Say nothing twice.** If a fact is already on screen near what it describes, don't repeat it
    in a badge, a status bar or a title.
@@ -165,7 +165,7 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   inset cancelling one the library draws in pixels, and a grid that zooms on its own (the
   terminal's). Fixed chrome heights stay outside the
   zoom wrapper. A size the steps lack is a named constant (shared ones in
-  `onehand_plugin_host::tokens`, others beside their use), its reason in its doc comment.
+  `onehand_ui::tokens`, others beside their use), its reason in its doc comment.
 - **Two shapes.** What a person presses or what holds content takes `radius`, 4px
   (`tokens::CORNER`): a control, a field, a row, a tab, a chip, a well, the bubble, a box, the
   composer, the terminal, a floating panel, a dialog, a toast. The theme sets `radius_lg` to the
@@ -267,7 +267,7 @@ and the ramp's tests hold each at what it reaches.
 
 Reuse gpui-component before building anything: `Root`, `DockArea`, `Sidebar`, `Dialog`, `Switch`,
 `InputState`, `Editor`, `TextView`, plus gpui's own `list` for the transcript. Controls go through
-the plugin host's builders, which set the pointer cursor and the one corner (`radius`): buttons through
+the UI crate's builders, which set the pointer cursor and the one corner (`radius`): buttons through
 `action`; fields through `text_input`, `search_input` and `text_area`. A field comes in two kinds:
 an **edged field**, in a form or a dialog, on no fill of its own; and a **search field** (the
 search mark, the clear button), with no edge, sunk into the fill of the place it sits (the
@@ -338,7 +338,7 @@ menus and the attachment tray, with a pinned title and no key hints, at most six
 how many more; a menu opens just above the control that opened it).
 
 Scope: the Workbench editor is a quick editor (tree-sitter, no LSP). Neovim is a mode with a PTY of
-its own per project. Files lives inside Editor, not as a mode. Plugins are built in.
+its own per project. Files lives inside Editor, not as a mode. Every mode is built in.
 
 ## Icons
 
