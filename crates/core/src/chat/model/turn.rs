@@ -290,8 +290,10 @@ impl Chat {
     }
 
     /// Toggle one OUT section's past-threshold fold on a tool card.
+    ///
+    /// Leaves [`Self::folds`] alone: the run layout never reads an output
+    /// well, and the row it sits in is drawn from the item either way.
     pub fn toggle_tool_output(&mut self, target: TranscriptItemId, section: usize) {
-        self.fold_changed();
         if let Some(ChatItem::Tool(t)) = self.list_mut(target).get_mut(target.index()) {
             if !t.out_open.remove(&section) {
                 t.out_open.insert(section);

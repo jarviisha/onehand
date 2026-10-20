@@ -596,7 +596,7 @@ fn unfolding_moves_no_row() {
 #[test]
 fn opening_a_settled_thought_replans_it_as_a_block() {
     use super::RunKind;
-    let mut chat = Chat::new(1, PathBuf::from("/tmp/project"), "claude".to_string(), None);
+    let mut chat = chat();
     chat.items.push(ChatItem::User(UserMsg::text("go")));
     chat.items
         .push(ChatItem::Thought(onehand_core::chat::Thought {
@@ -605,7 +605,7 @@ fn opening_a_settled_thought_replans_it_as_a_block() {
             elapsed_secs: Some(3),
             fold: None,
         }));
-    let thought = TranscriptItemId::Live(1);
+    let thought = TranscriptItemId::Live(chat.items.len() - 1);
     let kind = |viewport: &Viewport| {
         (0..)
             .map_while(|i| viewport.run(i))

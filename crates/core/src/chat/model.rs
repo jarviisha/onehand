@@ -275,7 +275,8 @@ impl Chat {
     /// for a locally-staged prompt, [`Self::load_history`] for an adopted
     /// archive, and the two that settle a blocking card. Item *fold* state is
     /// deliberately not one of them -- folding changes what a row draws, and a
-    /// row is drawn from the live item either way.
+    /// row is drawn from the live item either way; a fold moves
+    /// [`Self::folds`] instead.
     fn touch(&mut self) {
         self.revision = self.revision.wrapping_add(1);
     }

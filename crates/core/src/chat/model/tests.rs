@@ -2221,5 +2221,10 @@ fn every_fold_moves_the_fold_counter() {
     let before = chat.folds();
     chat.toggle_tool(TranscriptItemId::Live(0));
     chat.toggle_thought(TranscriptItemId::Live(1));
-    assert_eq!(chat.folds(), before + 2);
+    chat.toggle_permission(TranscriptItemId::Live(0));
+    chat.toggle_ask(TranscriptItemId::Live(0));
+    assert_eq!(chat.folds(), before + 4);
+    // A tool's output well changes no run's kind, so it leaves the counter.
+    chat.toggle_tool_output(TranscriptItemId::Live(0), 0);
+    assert_eq!(chat.folds(), before + 4);
 }
