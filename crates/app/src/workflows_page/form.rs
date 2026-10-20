@@ -220,6 +220,9 @@ pub(super) fn message_bar(draft: &super::WorkflowDraft, cx: &App) -> Option<AnyE
     // Across the page's foot, on its kind's tint, so it reads as one standing
     // condition of the whole workflow rather than of the column it sits in.
     let tint = onehand_plugin_host::tint(base, cx);
+    // One line's height, set on the bar and on the mark's slot, so the mark
+    // stands centred on the first line however many follow it.
+    let line = gpui::rems(crate::tokens::CHROME_TEXT.0 * crate::tokens::LEADING);
     Some(
         div()
             .flex_none()
@@ -229,9 +232,11 @@ pub(super) fn message_bar(draft: &super::WorkflowDraft, cx: &App) -> Option<AnyE
             .gap_2()
             .px_8()
             .py_3()
+            .text_size(crate::tokens::CHROME_TEXT)
+            .line_height(line)
             .bg(tint.fill)
             .text_color(tint.ink)
-            .child(Icon::new(icon).small().flex_none())
+            .child(onehand_plugin_host::mark_slot(Icon::new(icon).small()).h(line))
             .child(
                 div()
                     .v_flex()
