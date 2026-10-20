@@ -2,13 +2,14 @@
 //! is done to the workflow itself; and what stands in for the editor when a
 //! file of the person's own cannot be read.
 
+use super::super::pick::{CardActs, Pick};
 use super::super::{WorkflowDraft, WorkflowsPage, WorkflowsPageEvent, click};
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
 use gpui::{
-    AnyElement, App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div,
+    AnyElement, App, ElementId, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div,
 };
-use gpui_component::button::ButtonVariants as _;
+use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::{IconName, StyledExt};
 use onehand_plugin_host::Tall as _;
 use std::path::{Path, PathBuf};
@@ -51,56 +52,53 @@ fn run_menu(
     .into_any_element()
 }
 
-/// The ⋯ beside *Run…*: *Duplicate* unless that is the head's primary,
-/// *Export…* once there is something saved to export, and *Delete…* for a
-/// file of the person's own.
-fn more_menu(
+/// A workflow's ⋯ under `trigger`: *Duplicate*, *Export…* and *Delete…*
+/// on the workflow `pick` names, each where `acts` offers it.
+pub(in crate::workflows_page) fn more_menu(
     handle: &Entity<WorkflowsPage>,
-    duplicate: bool,
-    export: bool,
-    delete: bool,
+    pick: Pick,
+    acts: CardActs,
+    id: impl Into<ElementId>,
+    trigger: Button,
     cx: &App,
 ) -> AnyElement {
     let handle = handle.clone();
     let danger = crate::theme::status_ink(cx).danger;
-    crate::controls::menu_below(
-        "workflow-more",
-        crate::controls::action("workflow-more-trigger")
-            .tall()
-            .quiet_icon(false, cx)
-            .icon(IconName::Ellipsis)
-            .tooltip("More"),
-        move |mut menu, _, _| {
-            let act =
-                |act: fn(&mut WorkflowsPage, &mut Window, &mut gpui::Context<WorkflowsPage>)| {
-                    let handle = handle.clone();
-                    move |_: &gpui::ClickEvent, window: &mut Window, cx: &mut App| {
-                        handle.update(cx, |page, cx| act(page, window, cx))
-                    }
-                };
-            if duplicate {
-                menu = menu.item(
-                    crate::controls::menu_item("Duplicate")
-                        .on_click(act(WorkflowsPage::duplicate_open)),
-                );
+    crate::controls::menu_below(id, trigger, move |mut menu, _, _| {
+        let act = |act: fn(&mut WorkflowsPage, &Pick, &mut Window, &mut gpui::Context<WorkflowsPage>)| {
+            let (handle, pick) = (handle.clone(), pick.clone());
+            move |_: &gpui::ClickEvent, window: &mut Window, cx: &mut App| {
+                handle.update(cx, |page, cx| act(page, &pick, window, cx))
             }
-            if export {
-                menu = menu.item(
-                    crate::controls::menu_item("Export…").on_click(act(WorkflowsPage::export_open)),
-                );
-            }
-            if delete {
-                menu = menu.separator().item(
-                    crate::controls::menu_row(move |_, _| {
-                        div().text_color(danger).child("Delete…")
-                    })
-                    .on_click(act(WorkflowsPage::confirm_delete_open)),
-                );
-            }
-            menu
-        },
-    )
+        };
+        if acts.duplicate {
+            menu = menu.item(
+                crate::controls::menu_item("Duplicate").on_click(act(WorkflowsPage::duplicate)),
+            );
+        }
+        if acts.export {
+            menu = menu
+                .item(crate::controls::menu_item("Export…").on_click(act(WorkflowsPage::export)));
+        }
+        if acts.delete {
+            menu = menu.separator().item(
+                crate::controls::menu_row(move |_, _| div().text_color(danger).child("Delete…"))
+                    .on_click(act(WorkflowsPage::confirm_delete)),
+            );
+        }
+        menu
+    })
     .into_any_element()
+}
+
+/// The key the page opened `draft` by: its file, a shipped one's id, or the
+/// new one being written.
+fn pick_of_draft(draft: &WorkflowDraft) -> Pick {
+    match (&draft.file, draft.shipped) {
+        (Some(file), _) => Pick::Own(file.clone()),
+        (None, true) => Pick::Shipped(draft.original.id.clone()),
+        (None, false) => Pick::New,
+    }
 }
 
 /// The editor's head: the name, a line of what it is, then *Run…* and the
@@ -134,17 +132,29 @@ pub(super) fn editor_head(
                 .tall()
                 .primary()
                 .label("Duplicate to edit")
-                .on_click(click(handle, |page, window, cx| {
-                    page.duplicate_open(window, cx)
-                }))
+                .on_click({
+                    let pick = pick_of_draft(draft);
+                    click(handle, move |page, window, cx| {
+                        page.duplicate(&pick, window, cx)
+                    })
+                })
                 .into_any_element(),
         );
     }
     actions.push(more_menu(
         handle,
-        !draft.shipped && draft.file.is_some(),
-        draft.shipped || draft.file.is_some(),
-        draft.file.is_some(),
+        pick_of_draft(draft),
+        CardActs {
+            duplicate: !draft.shipped && draft.file.is_some(),
+            export: draft.shipped || draft.file.is_some(),
+            delete: draft.file.is_some(),
+        },
+        "workflow-more",
+        crate::controls::action("workflow-more-trigger")
+            .tall()
+            .quiet_icon(false, cx)
+            .icon(IconName::Ellipsis)
+            .tooltip("More"),
         cx,
     ));
     crate::chat::pane::page_parts::page_head(title, Some(facts.into_any_element()), actions, cx)
@@ -179,9 +189,12 @@ pub(in crate::workflows_page) fn unreadable(
                     .quiet(cx)
                     .text_color(crate::theme::status_ink(cx).danger)
                     .label("Delete…")
-                    .on_click(click(handle, |page, window, cx| {
-                        page.confirm_delete_open(window, cx)
-                    }))
+                    .on_click({
+                        let pick = Pick::Own(file.to_path_buf());
+                        click(handle, move |page, window, cx| {
+                            page.confirm_delete(&pick, window, cx)
+                        })
+                    })
                     .into_any_element(),
             ],
             cx,

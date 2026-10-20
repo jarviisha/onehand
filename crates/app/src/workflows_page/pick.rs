@@ -27,6 +27,26 @@ pub(super) fn pick_of(entry: &Entry) -> Option<Pick> {
     }
 }
 
+/// What may be done to a workflow from its ⋯: copying and exporting need
+/// a template that reads, deleting a file of the person's own.
+#[derive(Clone, Copy)]
+pub(super) struct CardActs {
+    pub(super) duplicate: bool,
+    pub(super) export: bool,
+    pub(super) delete: bool,
+}
+
+/// What a card's ⋯ offers for `entry`: a card is always a saved file, so a
+/// shipped one exports and copies as one of the person's own does.
+#[allow(dead_code, reason = "the cards a later change draws call it")]
+pub(super) fn card_acts(entry: &Entry) -> CardActs {
+    CardActs {
+        duplicate: entry.template.is_ok(),
+        export: entry.template.is_ok(),
+        delete: entry.file.is_some(),
+    }
+}
+
 /// Whether `entry` answers `query`: its name, or a readable one's
 /// description, holding the query's words as typed, case aside. An empty
 /// query is answered by every entry.

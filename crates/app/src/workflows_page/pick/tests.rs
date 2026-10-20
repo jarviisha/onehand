@@ -78,3 +78,17 @@ fn repick_gone_is_none() {
     assert_eq!(repick(&entries, &Pick::Own(PathBuf::from("x.toml"))), None);
     assert_eq!(repick(&entries, &Pick::New), None);
 }
+
+#[test]
+fn card_acts_by_entry() {
+    let a = card_acts(&own("a"));
+    assert!(a.duplicate && a.export && a.delete);
+    let s = card_acts(&shipped("s"));
+    assert!(s.duplicate && s.export && !s.delete);
+    let broken = Entry {
+        template: Err("bad".into()),
+        file: Some(PathBuf::from("x.toml")),
+    };
+    let b = card_acts(&broken);
+    assert!(!b.duplicate && !b.export && b.delete);
+}

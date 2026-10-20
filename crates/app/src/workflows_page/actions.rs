@@ -25,19 +25,32 @@ impl WorkflowsPage {
         self.open_workflow_form(template, None, window, cx);
     }
 
-    /// Open the form on a copy of the workflow open, to be saved as a new one.
-    pub(crate) fn duplicate_open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(mut template) = self.draft.as_ref().map(|d| d.original.clone()) else {
+    /// The entry `pick` names, as last read.
+    fn entry_of(&self, pick: &Pick, cx: &gpui::App) -> Option<crate::workflow::Entry> {
+        let entries = crate::workflow::templates(cx);
+        let at = pick::repick(&entries, pick)?;
+        entries.get(at).cloned()
+    }
+
+    /// Open the form on a copy of the workflow `pick` names, as last saved,
+    /// to be saved as a new one; the new one being written is copied as it
+    /// was opened.
+    pub(super) fn duplicate(&mut self, pick: &Pick, window: &mut Window, cx: &mut Context<Self>) {
+        let template = match pick {
+            Pick::New => self.draft.as_ref().map(|d| d.original.clone()),
+            _ => self.entry_of(pick, cx).and_then(|entry| entry.template.ok()),
+        };
+        let Some(mut template) = template else {
             return;
         };
         template.name = format!("{} copy", template.name);
         self.open_workflow_form(template, None, window, cx);
     }
 
-    /// Ask where to, then write the workflow open, as saved, to a file of
-    /// the person's choosing, shipped ones included.
-    pub(crate) fn export_open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(entry) = self.picked_entry(cx) else {
+    /// Ask where to, then write the workflow `pick` names, as saved, to a
+    /// file of the person's choosing, shipped ones included.
+    pub(super) fn export(&mut self, pick: &Pick, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(entry) = self.entry_of(pick, cx) else {
             return;
         };
         let Ok(template) = entry.template else {
@@ -104,9 +117,7 @@ impl WorkflowsPage {
 
     /// The entry the page has picked, as last read.
     pub(super) fn picked_entry(&self, cx: &gpui::App) -> Option<crate::workflow::Entry> {
-        let entries = crate::workflow::templates(cx);
-        let at = pick::repick(&entries, self.picked.as_ref()?)?;
-        entries.get(at).cloned()
+        self.entry_of(self.picked.as_ref()?, cx)
     }
 
     /// Open `pick` beside the list, asking first when the form holds changes
@@ -342,9 +353,14 @@ impl WorkflowsPage {
         .detach();
     }
 
-    /// Ask, then delete the person's own workflow open, read or not.
-    pub(crate) fn confirm_delete_open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(entry) = self.picked_entry(cx) else {
+    /// Ask, then delete the person's own workflow `pick` names, read or not.
+    pub(super) fn confirm_delete(
+        &mut self,
+        pick: &Pick,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(entry) = self.entry_of(pick, cx) else {
             return;
         };
         let Some(file) = entry.file.clone() else {
