@@ -181,8 +181,13 @@ impl Shell {
             work.work.pressed = crate::task::pressed(&work.work.task, cx);
         }
         for work in works.iter_mut().filter(|work| !work.work.active()) {
-            work.work.timeout_moved = crate::task::task(&work.work.task, cx)
-                .is_some_and(|task| crate::unattended::timeout_moved(&task, cx));
+            let task = crate::task::task(&work.work.task, cx);
+            work.work.timeout_moved = task
+                .as_ref()
+                .is_some_and(|task| crate::unattended::timeout_moved(task, cx));
+            work.work.resume_refused = task
+                .filter(onehand_core::task::Task::resumable)
+                .and_then(|task| crate::task::resume_refused(&task, cx));
         }
         let told = (works, offered);
         if told != self.issue_works {

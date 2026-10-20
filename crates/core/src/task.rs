@@ -40,6 +40,9 @@ pub struct Approval {
     pub at: ApprovalAt,
 }
 
+/// A task as kept, beside what the app says it is doing.
+pub type Tracked = (Task, Option<Working>);
+
 /// What a task is doing right now, which only the app driving it knows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Working {

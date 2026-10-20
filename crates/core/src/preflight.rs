@@ -9,7 +9,7 @@
 //! that themselves, after this.
 
 use crate::connector::PrState;
-use crate::task::{Task, Working};
+use crate::task::{Task, Tracked, Working};
 use crate::unattended::{Issue, Slots, Tracker};
 use crate::workflow::{Failure, Place, StepKind, Template};
 
@@ -117,7 +117,7 @@ impl Change {
 
 /// What a finding is about, in the order findings are listed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Check {
+pub enum About {
     Workflow,
     Agent,
     Mode,
@@ -135,7 +135,7 @@ pub enum Check {
 /// One thing the preflight found.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Finding {
-    pub check: Check,
+    pub about: About,
     /// It stops the start; otherwise it is said and the start goes on.
     pub blocks: bool,
     pub text: String,
@@ -158,7 +158,7 @@ pub struct Forge {
 #[derive(Debug, Clone)]
 pub struct IssueFacts {
     pub named: String,
-    pub tasks: Vec<(Task, Option<Working>)>,
+    pub tasks: Vec<Tracked>,
 }
 
 /// What answering a pull request review knows of it, read off the UI thread
@@ -225,15 +225,6 @@ pub struct Facts {
 /// workflow's own problems first among them, then what only informs.
 pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
     let mut found = Vec::new();
-    let mut say = |check, blocks, text: String, change| {
-        found.push(Finding {
-            check,
-            blocks,
-            text,
-            change,
-            task: None,
-        })
-    };
     let (own, keeps, own_change) = (kind.keeps_own(), kind.keeps(), kind.own_change());
     let issue_kind = kind == Kind::NewIssueRun;
 
@@ -241,38 +232,38 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
     let template = match &facts.workflow {
         Ok(template) => Some(template),
         Err(why) => {
-            say(Check::Workflow, true, capital(why), None);
+            found.push(finding(About::Workflow, true, capital(why), None));
             None
         }
     };
     if let Some(template) = template.filter(|_| kind.judges_workflow()) {
         if let Some(why) = unfit_for_issue(template).filter(|_| issue_kind) {
-            say(Check::Workflow, true, capital(&why), None);
+            found.push(finding(About::Workflow, true, capital(&why), None));
         }
         for problem in crate::workflow::validate(template) {
-            say(
-                Check::Workflow,
+            found.push(finding(
+                About::Workflow,
                 true,
                 format!("The workflow cannot run: {problem}"),
                 Some(Change::At(WORKFLOWS_PAGE)),
-            );
+            ));
         }
     }
 
     // The agent and its mode.
     match (&facts.agent, facts.agent_configured) {
-        (None, _) => say(
-            Check::Agent,
+        (None, _) => found.push(finding(
+            About::Agent,
             true,
             "No agent is configured to run it.".to_string(),
             Some(Change::At("Settings ▸ Agents")),
-        ),
-        (Some(name), false) => say(
-            Check::Agent,
+        )),
+        (Some(name), false) => found.push(finding(
+            About::Agent,
             true,
             format!("The agent `{name}` is no longer configured.{keeps}"),
             own_change.or(Some(Change::At("Settings ▸ Agents"))),
-        ),
+        )),
         (Some(_), true) => {}
     }
     if let Some(mode) = facts.mode.as_deref().filter(|m| !m.trim().is_empty()) {
@@ -283,23 +274,23 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
         match &facts.offered {
             Some(offered) => {
                 if let Some(why) = mode_refused(mode, offered) {
-                    say(
-                        Check::Mode,
+                    found.push(finding(
+                        About::Mode,
                         true,
                         format!("{}.{keeps}", capital(&why)),
                         change,
-                    );
+                    ));
                 }
             }
-            None => say(
-                Check::Mode,
+            None => found.push(finding(
+                About::Mode,
                 false,
                 format!(
                     "Mode `{mode}` is not known yet: the agent has not come up since onehand \
                      started or since it was edited, and it is checked when it does."
                 ),
                 None,
-            ),
+            )),
         }
     }
 
@@ -310,19 +301,19 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
             .iter()
             .any(|step| matches!(step.kind, StepKind::Command { .. }));
         if let Some(why) = template.lacks_check(facts.has_check) {
-            say(
-                Check::CheckCommand,
+            found.push(finding(
+                About::CheckCommand,
                 true,
                 format!("{}.{keeps}", capital(&why)),
                 own_change.or(Some(Change::At(PROJECT_PAGE))),
-            );
+            ));
         } else if !commands {
-            say(
-                Check::CheckCommand,
+            found.push(finding(
+                About::CheckCommand,
                 false,
                 "The workflow runs no command: nothing verifies the work.".to_string(),
                 None,
-            );
+            ));
         }
     }
 
@@ -330,53 +321,53 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
     let detached = facts.checked_out.as_deref() == Some(DETACHED);
     let worktree = template.is_some_and(|t| t.place == Place::Worktree);
     match kind {
-        Kind::NewRun if worktree && !facts.in_git => say(
-            Check::Place,
+        Kind::NewRun if worktree && !facts.in_git => found.push(finding(
+            About::Place,
             true,
             "The project is not in git, so no worktree can be cut for it.".to_string(),
             None,
-        ),
-        Kind::NewRun if worktree => say(
-            Check::Base,
+        )),
+        Kind::NewRun if worktree => found.push(finding(
+            About::Base,
             false,
             "The branch is cut off `HEAD`.".to_string(),
             None,
-        ),
+        )),
         // Only a workflow that reads is known to work in the checkout.
         Kind::NewRun if template.is_some() => {
             if let Some(session) = &facts.shared_checkout {
-                say(
-                    Check::Place,
+                found.push(finding(
+                    About::Place,
                     false,
                     format!(
                         "Your session “{session}” works in this checkout too: the run edits \
                          the same files, and neither sees the other's edits coming."
                     ),
                     None,
-                );
+                ));
             }
         }
         Kind::NewIssueRun => match (&facts.forge, detached, &facts.checked_out) {
-            (Some(_), _, _) => say(
-                Check::Base,
+            (Some(_), _, _) => found.push(finding(
+                About::Base,
                 false,
                 "The branch is cut off the default branch on `origin`, fetched first.".to_string(),
                 None,
-            ),
-            (None, true, _) => say(
-                Check::Place,
+            )),
+            (None, true, _) => found.push(finding(
+                About::Place,
                 true,
                 "HEAD is detached and no forge serves the project, so there is no branch to \
                  cut the worktree from."
                     .to_string(),
                 None,
-            ),
-            (None, false, Some(branch)) => say(
-                Check::Base,
+            )),
+            (None, false, Some(branch)) => found.push(finding(
+                About::Base,
                 false,
                 format!("The branch is cut off `{branch}`, the branch checked out."),
                 None,
-            ),
+            )),
             (None, false, None) => {}
         },
         Kind::NewRun | Kind::Resume | Kind::Retry | Kind::RetryCurrent | Kind::AnswerReview => {}
@@ -398,29 +389,29 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
         _ => None,
     };
     if let Some((name, why)) = refused {
-        say(
-            Check::Forge,
+        found.push(finding(
+            About::Forge,
             true,
             format!("{name} cannot be used: {why}"),
             Some(Change::At(CONNECTIONS)),
-        );
+        ));
     }
     // Answering a review on no forge is refused below, and never told twice.
     if forge_steps && facts.forge_read && facts.forge.is_none() && kind != Kind::AnswerReview {
-        say(
-            Check::Forge,
+        found.push(finding(
+            About::Forge,
             false,
             "No forge serves the project: the forge steps pass at once, and the branch is \
              the result."
                 .to_string(),
             None,
-        );
+        ));
     }
 
     // The limits the run is held to, from the snapshot that will run.
     if let Some(template) = template {
-        say(
-            Check::Limits,
+        found.push(finding(
+            About::Limits,
             false,
             format!(
                 "Limits: {} of work, waiting on a person not counted; {} failed {} in a \
@@ -434,57 +425,77 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
                 }
             ),
             None,
-        );
+        ));
     }
 
     // The pull request a review is answered on.
     if let Some(review) = facts.review.as_ref().filter(|_| kind == Kind::AnswerReview) {
         if let Some(why) = review_refused(review, facts.forge.is_some()) {
-            say(Check::Issue, true, capital(&why), None);
+            found.push(finding(About::Issue, true, capital(&why), None));
         }
     }
 
     // The issue and its earlier tasks.
     if let Some(issue) = facts.issue.as_ref().filter(|_| issue_kind) {
         if issue.tasks.iter().any(|(_, working)| working.is_some()) {
-            say(Check::Issue, true, already_working(&issue.named), None);
+            found.push(finding(
+                About::Issue,
+                true,
+                already_working(&issue.named),
+                None,
+            ));
         } else if let Some((task, said)) = earlier_ended(&issue.tasks) {
             found.push(Finding {
-                check: Check::EarlierTask,
-                blocks: false,
-                text: format!(
-                    "The issue's last task ended: {said}. Starting makes a second task \
-                     beside it; retry that one to carry its work on."
-                ),
-                change: None,
                 task: Some(task),
+                ..finding(
+                    About::EarlierTask,
+                    false,
+                    format!(
+                        "The issue's last task ended: {said}. Starting makes a second task \
+                         beside it; retry that one to carry its work on."
+                    ),
+                    None,
+                )
             });
         }
     }
 
     // The slots and the place.
-    let mut say = |check, blocks, text: String| {
-        found.push(Finding {
-            check,
-            blocks,
-            text,
-            change: None,
-            task: None,
-        })
-    };
     if let Some(why) = facts.slots.as_ref().and_then(Slots::full) {
-        say(Check::Slot, true, why);
+        found.push(finding(About::Slot, true, why, None));
     }
     if let Some(ahead) = &facts.queued_behind {
-        say(
-            Check::PlaceTaken,
+        found.push(finding(
+            About::PlaceTaken,
             false,
             format!("The place is taken: the run will queue behind {ahead}."),
-        );
+            None,
+        ));
     }
 
-    found.sort_by_key(|f| (!f.blocks, f.check));
+    found.sort_by_key(|f| (!f.blocks, f.about));
     found
+}
+
+/// One finding about `about`, offering no task instead.
+fn finding(about: About, blocks: bool, text: String, change: Option<Change>) -> Finding {
+    Finding {
+        about,
+        blocks,
+        text,
+        change,
+        task: None,
+    }
+}
+
+/// The task a start working in `place` would queue behind, `holder` holding
+/// the checkout it works in: a start on a worktree is cut a place of its own
+/// and never waits.
+pub fn queued_behind_for(place: Place, holder: Option<String>) -> Option<String> {
+    match place {
+        Place::Checkout => holder,
+        Place::Worktree => None,
+    }
 }
 
 /// Why a review is not answered, in the words the label path uses where it
@@ -535,22 +546,22 @@ pub fn already_working(named: &str) -> String {
     format!("A run is already working on issue {named}.")
 }
 
-/// What a run fails on when what `check` would have blocked is found only
+/// What a run fails on when what `about` would have blocked is found only
 /// once it runs: a configuration failure is a preflight block found late,
 /// so the way out offered is the one that changes the configuration.
-pub fn found_late(check: Check) -> Failure {
-    match check {
-        Check::Workflow | Check::Agent | Check::Mode | Check::CheckCommand => {
+pub fn found_late(about: About) -> Failure {
+    match about {
+        About::Workflow | About::Agent | About::Mode | About::CheckCommand => {
             Failure::Configuration
         }
-        Check::Forge => Failure::Forge,
-        Check::Place
-        | Check::Base
-        | Check::Issue
-        | Check::EarlierTask
-        | Check::Slot
-        | Check::PlaceTaken
-        | Check::Limits => Failure::Other,
+        About::Forge => Failure::Forge,
+        About::Place
+        | About::Base
+        | About::Issue
+        | About::EarlierTask
+        | About::Slot
+        | About::PlaceTaken
+        | About::Limits => Failure::Other,
     }
 }
 
@@ -593,7 +604,7 @@ pub fn new_issue_run(
     tracker: &Tracker,
     issue: &Issue,
     project: ProjectFacts,
-    tasks: Vec<(Task, Option<Working>)>,
+    tasks: Vec<Tracked>,
 ) -> Facts {
     Facts {
         workflow,
@@ -607,7 +618,7 @@ pub fn new_issue_run(
 }
 
 /// `issue` in `tracker`, named, with those of `tasks` that worked it.
-fn on_issue(tracker: &Tracker, issue: &Issue, tasks: Vec<(Task, Option<Working>)>) -> IssueFacts {
+fn on_issue(tracker: &Tracker, issue: &Issue, tasks: Vec<Tracked>) -> IssueFacts {
     let at = tracker.to_ref();
     IssueFacts {
         named: tracker.named(issue),

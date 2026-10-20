@@ -405,6 +405,10 @@ pub struct IssuePicker {
     /// read with the issues: what an issue's body is read against. Empty
     /// until read, when nothing is said to be lacking.
     pub templates: Vec<onehand_core::issues::template::IssueTemplate>,
+    /// The branch a cut for the issue chosen would take, by its place in the
+    /// list, as the repository answered off the UI loop: the name with the
+    /// suffix a branch already there adds.
+    pub branch: Option<(usize, String)>,
     /// The picker's body, which holds the keyboard until an issue is chosen:
     /// there is no field to hold it before then, and outside the dialog Esc
     /// would not reach it.
@@ -421,6 +425,12 @@ impl IssuePicker {
     )> {
         let (rows, _, _) = self.found.as_deref()?.as_ref().ok()?;
         rows.get(self.chosen?).cloned()
+    }
+
+    /// The branch the chosen issue's cut takes, once the repository answered.
+    pub fn chosen_branch(&self) -> Option<&str> {
+        let (at, branch) = self.branch.as_ref()?;
+        (Some(*at) == self.chosen).then_some(branch.as_str())
     }
 
     /// The workflow a run on `row` takes: the one picked, else the one its

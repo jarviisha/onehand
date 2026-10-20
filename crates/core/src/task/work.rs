@@ -122,6 +122,9 @@ pub struct Work {
     /// from the one its last run ran with. Told by the app, which knows
     /// Settings; `false` until it does.
     pub timeout_moved: bool,
+    /// Why Resume cannot start it now, by the preflight of its own setup.
+    /// Told by the app, which holds the facts; `None` until it does.
+    pub resume_refused: Option<String>,
     /// What a person pressed on it that is still being done, so its button
     /// waits. Told by the app; `None` until it does.
     pub pressed: Option<Act>,
@@ -180,6 +183,7 @@ impl Work {
                 .filter(|_| matches!(stand, Stand::Approval { .. }))
                 .and_then(UnderReview::of),
             timeout_moved: false,
+            resume_refused: None,
             pressed: None,
             span: run.and_then(|run| first(run).zip(last(run))),
             base: task.runs.first().and_then(first),
@@ -502,6 +506,9 @@ pub struct Next {
 ///
 /// **The issue's state only gates a new start.** A closed issue offers no
 /// *Run workflow…*, and never hides what an active run needs.
+///
+/// A task that needs attention still offers a new start last, after the ways
+/// to carry the old one on: the start's preflight points back at it.
 pub fn next_action(work: Option<&Work>, around: Around<'_>) -> Next {
     let Some(work) = work else {
         let here = match around.session {
@@ -595,7 +602,7 @@ fn by_stand(work: &Work, around: Around<'_>) -> Next {
         Stand::Resumable(why) => row(
             Some(format!("It can go on where it was, with its marks: {why}")),
             Some(Act::Resume),
-            &[Act::Retry],
+            &[Act::Retry, Act::RunWorkflow],
         ),
         Stand::Exhausted { said, last } => row(
             Some(match last {
@@ -603,13 +610,13 @@ fn by_stand(work: &Work, around: Around<'_>) -> Next {
                 None => said.clone(),
             }),
             Some(Act::Retry),
-            &[Act::ShowTask],
+            &[Act::ShowTask, Act::RunWorkflow],
         ),
         Stand::TimedOut(said) => {
             // Retry keeps the timeout; a changed one is the other way out.
             let others: &[Act] = match work.timeout_moved {
-                true => &[Act::RetryCurrent, Act::ShowTask],
-                false => &[Act::ShowTask],
+                true => &[Act::RetryCurrent, Act::ShowTask, Act::RunWorkflow],
+                false => &[Act::ShowTask, Act::RunWorkflow],
             };
             row(Some(said.clone()), Some(Act::Retry), others)
         }
@@ -619,12 +626,16 @@ fn by_stand(work: &Work, around: Around<'_>) -> Next {
         } => row(
             Some(why.clone()),
             Some(Act::RetryCurrent),
-            &[Act::Retry, Act::ShowTask],
+            &[Act::Retry, Act::ShowTask, Act::RunWorkflow],
         ),
         Stand::Failed {
             why,
             kind: Failure::Forge | Failure::Other,
-        } => row(Some(why.clone()), Some(Act::Retry), &[Act::ShowTask]),
+        } => row(
+            Some(why.clone()),
+            Some(Act::Retry),
+            &[Act::ShowTask, Act::RunWorkflow],
+        ),
         Stand::ByPerson => row(None, None, &[Act::RunWorkflow]),
         Stand::Done => done(work, around.pr),
     }

@@ -621,6 +621,33 @@ pub(crate) fn task(id: &str, cx: &App) -> Option<Task> {
     cx.try_global::<Tasks>()?.task(id).cloned()
 }
 
+/// Why Resume cannot carry `task` on now: the first thing the preflight of
+/// its last run's own setup finds in the way. Pure, so the buttons that offer
+/// Resume ask it as they are drawn and refuse with it.
+// ponytail: asked per resumable row per frame, and an issue task's facts walk
+// every task for its slots, so the cost is resumable rows times tasks, held
+// down by the cap on kept tasks; keep the answers beside the issue works if a
+// long Tasks page ever stutters.
+pub(crate) fn resume_refused(task: &Task, cx: &App) -> Option<String> {
+    let template = task.runs.last()?.template.clone();
+    let facts = crate::unattended::task_facts(task, template, cx);
+    onehand_core::preflight::preflight(onehand_core::preflight::Kind::Resume, &facts)
+        .into_iter()
+        .find(|f| f.blocks)
+        .map(|f| f.text)
+}
+
+/// The title of the task holding `place`, unless that task is `except`: a
+/// task's own next run never waits behind itself.
+pub(crate) fn holder_at(place: &std::path::Path, except: Option<&str>, cx: &App) -> Option<String> {
+    let t = cx.try_global::<Tasks>()?;
+    let holder = t
+        .queue
+        .holder_at(place)
+        .filter(|holder| Some(*holder) != except)?;
+    t.task(holder).map(|task| task.brief.title.clone())
+}
+
 /// A person pressed Stop on task `id`, whatever it is doing.
 pub(crate) fn stop_task(id: &str, cx: &mut App) {
     let Some(t) = cx.try_global::<Tasks>() else {

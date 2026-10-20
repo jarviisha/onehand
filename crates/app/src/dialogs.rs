@@ -199,10 +199,7 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
     let (error, busy, preview) = (launcher.error.clone(), launcher.busy, launcher.preview);
     let found = shell.launcher_preflight(cx).unwrap_or_default();
     let blocking = found.iter().filter(|f| f.blocks).count();
-    let (muted, danger) = (
-        cx.theme().muted_foreground,
-        crate::theme::status_ink(cx).danger,
-    );
+    let danger = crate::theme::status_ink(cx).danger;
     let about = match picked.as_ref().map(|entry| &entry.template) {
         Some(Ok(template)) => format!(
             "{} {}",
@@ -256,7 +253,7 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
             let lines: Vec<_> = found
                 .iter()
                 .enumerate()
-                .map(|(at, finding)| finding_line(at, finding, danger, muted, &handle, None, cx))
+                .map(|(at, finding)| finding_line(at, finding, &handle, None, cx))
                 .collect();
             let handle = handle.clone();
             let names = names.clone();
@@ -472,8 +469,6 @@ fn sections(groups: impl IntoIterator<Item = AnyElement>, cx: &App) -> gpui::Div
 pub(crate) fn finding_line(
     at: usize,
     finding: &onehand_core::preflight::Finding,
-    danger: gpui::Hsla,
-    muted: gpui::Hsla,
     handle: &Entity<Shell>,
     ask: Option<&crate::agent_check::Ask>,
     cx: &App,
@@ -486,6 +481,10 @@ pub(crate) fn finding_line(
         None => finding.text.clone(),
     };
     let shell = handle.clone();
+    let (danger, muted) = (
+        crate::theme::status_ink(cx).danger,
+        cx.theme().muted_foreground,
+    );
     let (mark, ink) = match finding.blocks {
         true => (IconName::TriangleAlert, danger),
         false => (IconName::Info, muted),
@@ -519,6 +518,8 @@ pub(crate) fn finding_line(
                 .label("Retry…")
                 .on_click(move |_, window: &mut Window, cx: &mut App| {
                     shell.update(cx, |shell, cx| {
+                        // Only an issue start yields a finding with a task,
+                        // and without a picker open this does nothing.
                         shell.cancel_pick(cx);
                         shell.begin_retry(task.clone(), window, cx);
                     });
@@ -527,7 +528,7 @@ pub(crate) fn finding_line(
         // Who holds each slot, as the slots stand now, each opening its
         // task in place of the start.
         .children(
-            (finding.check == onehand_core::preflight::Check::Slot)
+            (finding.about == onehand_core::preflight::About::Slot)
                 .then(|| crate::unattended::slots(cx))
                 .flatten()
                 // Only a full slot is refused for its holders; at the cap on
@@ -558,7 +559,7 @@ pub(crate) fn finding_line(
         // start, and only on a press.
         .children(
             ask.filter(|_| {
-                finding.check == onehand_core::preflight::Check::Mode && !finding.blocks
+                finding.about == onehand_core::preflight::About::Mode && !finding.blocks
             })
             .map(|ask| crate::agent_check::button(at, ask, cx)),
         )

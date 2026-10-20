@@ -18,11 +18,12 @@ use onehand_core::task::work::Act;
 use onehand_core::task::{Source, Task};
 use onehand_core::workflow::{Changed, Field, Run, Template, WithCurrent};
 use std::cell::Cell;
+use std::path::PathBuf;
 use std::rc::Rc;
 
 /// What happens once the work has been compared with where the last run
 /// left it.
-type Then = fn(&mut Shell, Task, Option<Against>, &mut Window, &mut Context<Shell>);
+type Then = fn(&mut Shell, Task, Option<Against>, PathBuf, &mut Window, &mut Context<Shell>);
 
 impl Shell {
     /// Ask whether to retry task `id`, saying where the new run starts, what
@@ -59,8 +60,8 @@ impl Shell {
         self.compare_work(task, Self::confirm_retry_current, window, cx);
     }
 
-    /// Compare the work with where `task`'s last run left it, off the UI
-    /// thread, then `then`.
+    /// Compare the work with where `task`'s last run left it, and find the
+    /// place it works in, off the UI thread, then `then`.
     fn compare_work(
         &mut self,
         task: Task,
@@ -73,6 +74,13 @@ impl Shell {
         };
         let (dir, end) = (last.setup.dir.clone(), last.last_mark().map(str::to_string));
         cx.spawn_in(window, async move |shell, cx| {
+            let place = cx
+                .background_executor()
+                .spawn({
+                    let dir = dir.clone();
+                    async move { onehand_core::task::queue::place_blocking(&dir) }
+                })
+                .await;
             let against = match end {
                 Some(end) => cx
                     .background_executor()
@@ -83,7 +91,7 @@ impl Shell {
                 None => None,
             };
             let _ = shell.update_in(cx, |shell: &mut Self, window, cx| {
-                then(shell, task, against, window, cx)
+                then(shell, task, against, place, window, cx)
             });
         })
         .detach();
@@ -116,6 +124,7 @@ impl Shell {
         &mut self,
         task: Task,
         against: Option<Against>,
+        place: PathBuf,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -150,7 +159,10 @@ impl Shell {
         };
         // Judged by the run's own setup, which is what a retry runs: what
         // Settings says now neither blocks it nor clears a block.
-        let facts = crate::unattended::task_facts(&task, same.clone(), cx);
+        let mut facts = crate::unattended::task_facts(&task, same.clone(), cx);
+        // A retry asks for the place its task works in, whatever its
+        // workflow says now: the run's own folder is kept.
+        facts.queued_behind = crate::task::holder_at(&place, Some(&task.id), cx);
         let found = preflight::preflight(preflight::Kind::Retry, &facts);
         let ask = crate::agent_check::Ask::of(&facts, &task.setup.dir, cx);
         let blocked = found.iter().any(|f| f.blocks);
@@ -163,23 +175,12 @@ impl Shell {
         let (id, title) = (task.id.clone(), task.brief.title.clone());
         let shell = cx.entity();
         window.open_alert_dialog(cx, move |alert, _, cx| {
-            let (danger, muted) = (
-                crate::theme::status_ink(cx).danger,
-                cx.theme().muted_foreground,
-            );
+            let muted = cx.theme().muted_foreground;
             let lines: Vec<_> = found
                 .iter()
                 .enumerate()
                 .map(|(at, finding)| {
-                    crate::dialogs::finding_line(
-                        at,
-                        finding,
-                        danger,
-                        muted,
-                        &shell,
-                        ask.as_ref(),
-                        cx,
-                    )
+                    crate::dialogs::finding_line(at, finding, &shell, ask.as_ref(), cx)
                 })
                 .collect();
             let from = steps.get(picked.get()).map(|step| step.id.clone());
@@ -287,6 +288,7 @@ impl Shell {
         &mut self,
         task: Task,
         against: Option<Against>,
+        place: PathBuf,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -310,7 +312,8 @@ impl Shell {
             .as_ref()
             .map(|plan| plan.template.clone())
             .map_err(Clone::clone);
-        let facts = crate::unattended::setup_facts(&task, &setup, workflow, cx);
+        let mut facts = crate::unattended::setup_facts(&task, &setup, workflow, cx);
+        facts.queued_behind = crate::task::holder_at(&place, Some(&task.id), cx);
         let found = preflight::preflight(preflight::Kind::RetryCurrent, &facts);
         let ask = crate::agent_check::Ask::of(&facts, &setup.dir, cx);
         let blocked = found.iter().any(|f| f.blocks);
@@ -337,23 +340,11 @@ impl Shell {
         let (id, title) = (task.id.clone(), task.brief.title.clone());
         let shell = cx.entity();
         window.open_alert_dialog(cx, move |alert, _, cx| {
-            let (danger, muted) = (
-                crate::theme::status_ink(cx).danger,
-                cx.theme().muted_foreground,
-            );
             let lines: Vec<_> = found
                 .iter()
                 .enumerate()
                 .map(|(at, finding)| {
-                    crate::dialogs::finding_line(
-                        at,
-                        finding,
-                        danger,
-                        muted,
-                        &shell,
-                        ask.as_ref(),
-                        cx,
-                    )
+                    crate::dialogs::finding_line(at, finding, &shell, ask.as_ref(), cx)
                 })
                 .collect();
             let retry = {
@@ -553,23 +544,11 @@ impl Shell {
         let read = Rc::new(Cell::new(Some(read)));
         let handle = window.window_handle();
         window.open_alert_dialog(cx, move |alert, _, cx| {
-            let (danger, muted) = (
-                crate::theme::status_ink(cx).danger,
-                cx.theme().muted_foreground,
-            );
             let lines: Vec<_> = found
                 .iter()
                 .enumerate()
                 .map(|(at, finding)| {
-                    crate::dialogs::finding_line(
-                        at,
-                        finding,
-                        danger,
-                        muted,
-                        &shell,
-                        ask.as_ref(),
-                        cx,
-                    )
+                    crate::dialogs::finding_line(at, finding, &shell, ask.as_ref(), cx)
                 })
                 .collect();
             let answer = {
@@ -609,20 +588,15 @@ impl Shell {
     }
 
     /// Carry task `id` on where it stopped, once the preflight finds nothing
-    /// in the way of its own setup; what blocks it is said in the window.
+    /// in the way of its own setup. Its buttons refuse while something does;
+    /// a press that beat a refusal to the screen is told in the window.
     pub(crate) fn resume_task(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
-        let blocked = crate::task::task(&id, cx).and_then(|task| {
-            let template = task.runs.last()?.template.clone();
-            let facts = crate::unattended::task_facts(&task, template, cx);
-            preflight::preflight(preflight::Kind::Resume, &facts)
-                .into_iter()
-                .find(|f| f.blocks)
-        });
+        let blocked =
+            crate::task::task(&id, cx).and_then(|task| crate::task::resume_refused(&task, cx));
         match blocked {
-            Some(block) => window.push_notification(
-                crate::toast::warning(format!("Not resumed: {}", block.text)),
-                cx,
-            ),
+            Some(why) => {
+                window.push_notification(crate::toast::warning(format!("Not resumed: {why}")), cx)
+            }
             None => crate::task::request(id, window, cx),
         }
     }

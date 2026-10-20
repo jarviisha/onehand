@@ -65,6 +65,11 @@ impl Queue {
         self.held.get(place).map(String::as_str)
     }
 
+    /// The task holding `place`, if one does.
+    pub fn holder_at(&self, place: &Path) -> Option<&str> {
+        self.held.get(place).map(String::as_str)
+    }
+
     /// Whether `task` holds a place.
     pub fn holds(&self, task: &str) -> bool {
         self.held.values().any(|holder| holder == task)

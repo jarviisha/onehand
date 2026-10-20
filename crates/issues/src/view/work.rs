@@ -19,6 +19,7 @@ use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::issues::LocalIssue;
 use onehand_core::task::work::{Act, Around, IssueWork, Next, PrSeen, next_action, pr_named};
 use onehand_ui::Quiet as _;
+use onehand_ui::Refuses as _;
 use onehand_ui::Short as _;
 use onehand_ui::{action, menu_below, menu_item, menu_row, status_ink};
 use std::path::Path;
@@ -233,6 +234,16 @@ fn act_button(
     let button = match tooltip(act) {
         Some(tip) => button.tooltip(tip),
         None => button,
+    };
+    // A Resume the preflight finds blocked refuses, saying why.
+    let button = match act {
+        Act::Resume => button.refuses(
+            doing
+                .work
+                .as_ref()
+                .and_then(|work| work.work.resume_refused.clone()),
+        ),
+        _ => button,
     };
     // What removes something reads as such, in the danger tint.
     let button = match act == Act::RemoveWorktree {

@@ -327,6 +327,12 @@ impl Shell {
             shell.tell_issue_works(cx);
         })
         .detach();
+        // And with Settings: whether Resume refuses is judged on the agents
+        // and modes they hold, so a refusal answered there clears at once.
+        cx.observe_global::<crate::state::Shared>(|shell: &mut Self, cx| {
+            shell.tell_issue_works(cx);
+        })
+        .detach();
 
         // The conversation header's terminal dot is a fact the docks have no
         // idea anyone outside them wants. Guarded the same way and for the same

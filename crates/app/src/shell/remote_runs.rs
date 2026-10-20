@@ -264,6 +264,7 @@ impl Shell {
             preview: false,
             forge: None,
             templates: Vec::new(),
+            branch: None,
         });
         cx.notify();
         cx.spawn(async move |shell, cx| {
@@ -303,6 +304,9 @@ impl Shell {
                         picker.found = Some(std::rc::Rc::new(found));
                         picker.forge = Some(forge);
                         picker.templates = templates;
+                        if let Some(at) = picker.chosen {
+                            shell.read_branch(at, cx);
+                        }
                         cx.notify();
                     }
                 })
@@ -417,8 +421,48 @@ impl Shell {
             picker
                 .instructions
                 .update(cx, |field, cx| field.focus(window, cx));
+            self.read_branch(index, cx);
             cx.notify();
         }
+    }
+
+    /// Ask the repository, off the UI loop, which branch a cut for the
+    /// `at`th issue in the picker would take.
+    fn read_branch(&mut self, at: usize, cx: &mut Context<Self>) {
+        let Some(picker) = self.issue_picker.as_ref() else {
+            return;
+        };
+        let Some((tracker, row)) = picker.chosen() else {
+            return;
+        };
+        let root = picker.root.clone();
+        let wanted = onehand_core::unattended::branch_for(&tracker, &row.issue);
+        cx.spawn(async move |shell, cx| {
+            let branch =
+                cx.background_executor()
+                    .spawn({
+                        let root = root.clone();
+                        async move {
+                            onehand_core::unattended::free_branch_here_blocking(&root, &wanted)
+                        }
+                    })
+                    .await;
+            shell
+                .update(cx, |shell: &mut Self, cx| {
+                    // Only the picker it was asked for, while that issue is
+                    // still the one chosen.
+                    if let Some(picker) = shell
+                        .issue_picker
+                        .as_mut()
+                        .filter(|p| p.root == root && p.chosen == Some(at))
+                    {
+                        picker.branch = Some((at, branch));
+                        cx.notify();
+                    }
+                })
+                .ok();
+        })
+        .detach();
     }
 
     pub fn toggle_pick_preview(&mut self, cx: &mut Context<Self>) {

@@ -11,7 +11,7 @@ use super::Tasks;
 use crate::chat::session::{ChatEvent, ChatSession, note};
 use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Entity, Subscription, Task, WeakEntity};
 use onehand_core::chat::Link;
-use onehand_core::preflight::{Check, found_late};
+use onehand_core::preflight::{About, found_late};
 use onehand_core::task::Approval;
 use onehand_core::task::marks;
 use onehand_core::unattended::Budget;
@@ -578,7 +578,7 @@ fn came_up(uid: u64, session: &Entity<ChatSession>, cx: &mut App) -> bool {
         .collect();
     if let Some(why) = onehand_core::preflight::mode_refused(&mode, &offered) {
         crate::unattended::refuse_mode(&why, cx);
-        advance(uid, cx, move |run| run.failed(why, found_late(Check::Mode)));
+        advance(uid, cx, move |run| run.failed(why, found_late(About::Mode)));
         return false;
     }
     session.update(cx, |session, _| session.chat.set_mode(&mode));

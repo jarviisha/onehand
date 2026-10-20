@@ -16,7 +16,7 @@ use gpui_component::dialog::Dialog;
 use gpui_component::input::TextareaState;
 use gpui_component::{ActiveTheme, Icon, Sizable as _, StyledExt};
 use onehand_core::issues::template;
-use onehand_core::preflight::{Check, Finding};
+use onehand_core::preflight::{About, Finding};
 use onehand_core::unattended::{self as core, IssueRow, Tracker};
 use onehand_core::workflow::Template;
 
@@ -53,6 +53,7 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
     let templates = picker.templates.clone();
     let picked = picker.workflow.clone();
     let chosen = picker.chosen();
+    let branch_cut = picker.chosen_branch().map(str::to_string);
     // Judged on every frame from what the app holds, so a block fixed
     // elsewhere (an agent come up, a slot let go) clears as it happens.
     let judged = shell.pick_preflight(cx);
@@ -96,6 +97,7 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
                         &templates,
                         &instructions,
                         preview,
+                        branch_cut.as_deref(),
                         &handle,
                         cx,
                     )
@@ -176,14 +178,12 @@ fn start_form(
     templates: &[template::IssueTemplate],
     instructions: &Entity<TextareaState>,
     preview: bool,
+    branch_cut: Option<&str>,
     handle: &Entity<Shell>,
     cx: &App,
 ) -> AnyElement {
     let (findings, template, ask) = judged;
-    let (muted, danger) = (
-        cx.theme().muted_foreground,
-        crate::theme::status_ink(cx).danger,
-    );
+    let muted = cx.theme().muted_foreground;
     let shell = handle.clone();
     let menu = issue_workflow_menu(
         "pick-workflow",
@@ -204,43 +204,47 @@ fn start_form(
     // The branch is machine text, so it stands in a well in the mono family,
     // on a line of its own: a long name neither breaks the sentence above at
     // its slash nor wraps. Under it, what it is cut off.
-    let branch = div()
-        .v_flex()
-        .gap_1()
-        .w_full()
-        .child(
-            onehand_ui::well(cx)
-                .h_flex()
-                .items_center()
-                .gap_2()
-                .px_2()
-                .py_1()
-                .child(onehand_ui::mark_slot(
-                    Icon::new(crate::icons::Icon::GitBranch)
-                        .small()
-                        .text_color(muted),
-                ))
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .truncate()
-                        .child(core::branch_for(tracker, &row.issue)),
-                ),
-        )
-        .children(
-            findings
-                .iter()
-                .filter(|f| f.check == Check::Base)
-                .map(|f| div().text_xs().text_color(muted).child(f.text.clone())),
-        );
-    let said: Vec<&Finding> = findings.iter().filter(|f| f.check != Check::Base).collect();
+    let branch =
+        div()
+            .v_flex()
+            .gap_1()
+            .w_full()
+            .child(
+                onehand_ui::well(cx)
+                    .h_flex()
+                    .items_center()
+                    .gap_2()
+                    .px_2()
+                    .py_1()
+                    .child(onehand_ui::mark_slot(
+                        Icon::new(crate::icons::Icon::GitBranch)
+                            .small()
+                            .text_color(muted),
+                    ))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            // The name the cut takes once the repository said,
+                            // else the one it starts from.
+                            .child(branch_cut.map_or_else(
+                                || core::branch_for(tracker, &row.issue),
+                                str::to_string,
+                            )),
+                    ),
+            )
+            .children(
+                findings
+                    .iter()
+                    .filter(|f| f.about == About::Base)
+                    .map(|f| div().text_xs().text_color(muted).child(f.text.clone())),
+            );
+    let said: Vec<&Finding> = findings.iter().filter(|f| f.about != About::Base).collect();
     let lines: Vec<_> = said
         .iter()
         .enumerate()
-        .map(|(at, finding)| {
-            super::finding_line(at, finding, danger, muted, handle, ask.as_ref(), cx)
-        })
+        .map(|(at, finding)| super::finding_line(at, finding, handle, ask.as_ref(), cx))
         .collect();
     // What the issue's text leaves out of the template it was written from:
     // said, never in the way.

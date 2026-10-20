@@ -806,3 +806,47 @@ fn what_the_start_noted_is_said_even_when_the_run_could_not_start() {
         "{said}"
     );
 }
+
+/// Run git in `dir`, on no identity of anybody's.
+fn git(dir: &Path, args: &[&str]) {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["-c", "user.email=t@example.com", "-c", "user.name=T"])
+        .args(args)
+        .output()
+        .expect("git must be installed to run this test");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// A scratch git repository on `main` with one commit.
+fn scratch_repo(name: &str) -> PathBuf {
+    let repo =
+        std::env::temp_dir().join(format!("onehand-unattended-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&repo);
+    std::fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-q", "-b", "main"]);
+    std::fs::write(repo.join("a.txt"), "x").unwrap();
+    git(&repo, &["add", "a.txt"]);
+    git(&repo, &["commit", "-qm", "one"]);
+    repo
+}
+
+#[test]
+fn the_form_names_the_branch_the_cut_will_take() {
+    let root = scratch_repo("free-branch-here");
+    assert_eq!(
+        free_branch_here_blocking(&root, "onehand/local-1-x"),
+        "onehand/local-1-x"
+    );
+    git(&root, &["branch", "onehand/local-1-x"]);
+    assert_eq!(
+        free_branch_here_blocking(&root, "onehand/local-1-x"),
+        "onehand/local-1-x-2"
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
