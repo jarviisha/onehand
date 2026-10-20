@@ -136,7 +136,7 @@ fn a_refused_retry_is_dropped_but_a_tasks_only_run_stays() {
     let again = t.runs[0].clone();
     t.runs.push(again);
     assert!(
-        t.drop_unbegun_retry() == false,
+        !t.drop_unbegun_retry(),
         "a retry that began is not a retry to drop"
     );
     let mut fresh = t.runs[0].clone();
