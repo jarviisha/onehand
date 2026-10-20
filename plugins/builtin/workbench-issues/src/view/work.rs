@@ -7,6 +7,7 @@
 
 use super::detail::Doing;
 use super::{EARLIER_SHOWN, IssuesView};
+use crate::IssuesEvent;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, IntoElement, ParentElement, SharedString, Styled,
@@ -19,7 +20,7 @@ use onehand_core::issues::LocalIssue;
 use onehand_core::task::work::{Act, Around, IssueWork, Next, PrSeen, next_action, pr_named};
 use onehand_plugin_host::Quiet as _;
 use onehand_plugin_host::Short as _;
-use onehand_plugin_host::{Request, action, menu_below, menu_item, menu_row, status_ink};
+use onehand_plugin_host::{action, menu_below, menu_item, menu_row, status_ink};
 use std::path::Path;
 
 /// How many secondary actions get a button of their own after the primary
@@ -285,13 +286,13 @@ impl Pressed {
             Act::Edit => view.open_form(Some(number), window, cx),
             Act::OpenSession | Act::AnswerInSession => {
                 if let Some(id) = task {
-                    view.ask_task(id, |id| Request::OpenTaskSession(id), window, cx);
+                    view.ask_task(id, IssuesEvent::OpenTaskSession, window, cx);
                 }
             }
             Act::Review => view.review(number, window, cx),
             Act::Stop => {
                 if let Some(id) = task {
-                    view.ask_task(id, |id| Request::StopTask(id), window, cx);
+                    view.ask_task(id, IssuesEvent::StopTask, window, cx);
                 }
             }
             Act::ShowTask => {
@@ -301,27 +302,27 @@ impl Pressed {
             }
             Act::Resume => {
                 if let Some(id) = task {
-                    view.ask_task(id, |id| Request::ResumeTask(id), window, cx);
+                    view.ask_task(id, IssuesEvent::ResumeTask, window, cx);
                 }
             }
             Act::Retry => {
                 if let Some(id) = task {
-                    view.ask_task(id, |id| Request::RetryTask(id), window, cx);
+                    view.ask_task(id, IssuesEvent::RetryTask, window, cx);
                 }
             }
             Act::RetryCurrent => {
                 if let Some(id) = task {
-                    view.ask_task(id, |id| Request::RetryTaskCurrent(id), window, cx);
+                    view.ask_task(id, IssuesEvent::RetryTaskCurrent, window, cx);
                 }
             }
             Act::AnswerReview => {
                 if let Some(id) = task {
-                    view.ask_task(id, |id| Request::AnswerReview(id), window, cx);
+                    view.ask_task(id, IssuesEvent::AnswerReview, window, cx);
                 }
             }
             Act::RemoveWorktree => {
                 if let Some(id) = task {
-                    view.ask_task(id, |id| Request::RemoveWorktree(id), window, cx);
+                    view.ask_task(id, IssuesEvent::RemoveWorktree, window, cx);
                 }
             }
             Act::OpenPullRequest => match self.pr_url {

@@ -18,7 +18,12 @@ use onehand_plugin_host::{Ask, RemoteChannelFactory, WorkbenchMode};
 /// One list per window rather than one for the process, because a mode holds
 /// entities: a view is bound to the window that renders it, and a second window
 /// showing the same one would be the same entity mounted twice.
-pub fn workbench_modes(ask: Ask, font_size: Pixels, cx: &mut App) -> Vec<Box<dyn WorkbenchMode>> {
+pub fn workbench_modes(
+    ask: Ask,
+    tell: onehand_workbench_issues::Tell,
+    font_size: Pixels,
+    cx: &mut App,
+) -> Vec<Box<dyn WorkbenchMode>> {
     vec![
         // The Editor is the file tree and the buffers together -- the Files
         // plugin is still its own crate and still its own mode, composed inside
@@ -28,6 +33,7 @@ pub fn workbench_modes(ask: Ask, font_size: Pixels, cx: &mut App) -> Vec<Box<dyn
         Box::new(onehand_workbench_issues::Mode::new(
             connectors(),
             ask.clone(),
+            tell,
             cx,
         )),
         Box::new(onehand_workbench_plugins::Mode::new(ask.clone(), cx)),

@@ -22,6 +22,22 @@ impl IssuesView {
         window.defer(cx, move |window, cx| put(&ask, &root, window, cx));
     }
 
+    /// Tell the shell something about the project on screen, once this view
+    /// is no longer being updated, for the reason [`Self::ask_later`] waits:
+    /// the shell reaches back into this view.
+    pub(super) fn tell_later(
+        &self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        put: impl FnOnce(&Path) -> IssuesEvent + 'static,
+    ) {
+        let Some(root) = self.root.clone() else {
+            return;
+        };
+        let tell = self.tell.clone();
+        window.defer(cx, move |window, cx| tell(put(&root), window, cx));
+    }
+
     /// Start a session on the project on screen, in the checkout it is open
     /// on, with issue `number` as its first message.
     pub(super) fn work_here(&mut self, number: u64, window: &mut Window, cx: &mut Context<Self>) {
@@ -33,13 +49,10 @@ impl IssuesView {
         else {
             return;
         };
-        self.ask_later(window, cx, move |ask, root, window, cx| {
-            let request = Request::WorkIssueHere {
-                root,
-                number,
-                prompt: &prompt,
-            };
-            ask(&request, window, cx)
+        self.tell_later(window, cx, move |root| IssuesEvent::WorkIssueHere {
+            root: root.to_path_buf(),
+            number,
+            prompt,
         });
     }
 
@@ -51,8 +64,9 @@ impl IssuesView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.ask_later(window, cx, move |ask, root, window, cx| {
-            ask(&Request::RunIssueWorkflow { root, number }, window, cx)
+        self.tell_later(window, cx, move |root| IssuesEvent::RunIssueWorkflow {
+            root: root.to_path_buf(),
+            number,
         });
     }
 
@@ -63,29 +77,26 @@ impl IssuesView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.ask_later(window, cx, move |ask, root, window, cx| {
-            ask(&Request::OpenInIssues { root, number }, window, cx)
+        self.tell_later(window, cx, move |root| IssuesEvent::OpenInIssues {
+            root: root.to_path_buf(),
+            number,
         });
     }
 
-    /// Ask the app about task `id`, by `request`.
+    /// Tell the shell about task `id`, by `event`.
     pub(super) fn ask_task(
         &mut self,
         id: String,
-        request: fn(&str) -> Request<'_>,
+        event: fn(String) -> IssuesEvent,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.ask_later(window, cx, move |ask, _, window, cx| {
-            ask(&request(&id), window, cx)
-        });
+        self.tell_later(window, cx, move |_| event(id));
     }
 
     /// Put task `id` on screen, on the Tasks page.
     pub(super) fn open_task(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
-        self.ask_later(window, cx, move |ask, _, window, cx| {
-            ask(&Request::OpenTask(&id), window, cx)
-        });
+        self.tell_later(window, cx, move |_| IssuesEvent::OpenTask(id));
     }
 
     /// Put the conversation the agent named `session` on screen.
@@ -95,9 +106,7 @@ impl IssuesView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.ask_later(window, cx, move |ask, _, window, cx| {
-            ask(&Request::OpenConversation(&session), window, cx)
-        });
+        self.tell_later(window, cx, move |_| IssuesEvent::OpenConversation(session));
     }
 
     /// Open `path`, relative to the project on screen, in the editor.

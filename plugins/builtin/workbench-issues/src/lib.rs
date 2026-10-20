@@ -6,11 +6,13 @@
 // a working feature.
 #![warn(unreachable_pub)]
 
-use gpui::{AnyView, App, Entity, SharedString};
+use gpui::{AnyView, App, Entity, SharedString, Window};
 use onehand_core::connector::Connector;
+use onehand_core::task::Approval;
 use onehand_plugin_api::{PluginId, WorkbenchModeSpec};
 use onehand_plugin_host::{Ask, Request, WorkbenchMode};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 mod view;
 use view::IssuesView;
@@ -25,15 +27,70 @@ gpui::actions!(issues_page, [IssuesUp, IssuesDown, IssuesClose]);
 pub const SPEC: WorkbenchModeSpec =
     WorkbenchModeSpec::element(PluginId::new("workbench.issues"), "Issues");
 
+/// What an Issues view asks of the shell, the Workbench's Issues mode and
+/// the Issues page alike: a session, a run, a task or a conversation put on
+/// screen, or a task moved on. Issues are the app's own, so these go to the
+/// shell directly rather than through what every Workbench mode may answer.
+pub enum IssuesEvent {
+    /// Work issue `number` of project `root` in the checkout it is open on,
+    /// with `prompt` as the new session's first message.
+    WorkIssueHere {
+        root: PathBuf,
+        number: u64,
+        prompt: String,
+    },
+    /// Show the conversation the agent named `session`, live or saved.
+    OpenConversation(String),
+    /// Choose a workflow to work issue `number` of project `root` with.
+    RunIssueWorkflow { root: PathBuf, number: u64 },
+    /// Show issue `number` of project `root` on the Issues page.
+    OpenInIssues { root: PathBuf, number: u64 },
+    /// Show issue `number` of project `root` on the Issues page, its review
+    /// open.
+    ReviewInIssues { root: PathBuf, number: u64 },
+    /// Approve what a run waits on, as read: refused by the run unless it
+    /// still waits where it was read.
+    ApproveTask(Approval),
+    /// Send it back with `note`, refused the same way.
+    ReviseTask { approval: Approval, note: String },
+    /// Show task `id` on the Tasks page.
+    OpenTask(String),
+    /// Show the session task `id` runs in.
+    OpenTaskSession(String),
+    /// Carry task `id` on where it was.
+    ResumeTask(String),
+    /// Choose how to run task `id` again.
+    RetryTask(String),
+    /// Run task `id` again with what Settings say now, asking first.
+    RetryTaskCurrent(String),
+    /// Answer the review on issue task `id`'s open pull request, as putting
+    /// the trigger label back does.
+    AnswerReview(String),
+    /// Remove issue task `id`'s worktree and branch after its pull request
+    /// merged, asking first.
+    RemoveWorktree(String),
+    /// Stop task `id`.
+    StopTask(String),
+}
+
+/// How an Issues view reaches the shell. Handed to the view when it is
+/// built, as its [`Ask`] is, so it is never on screen with nobody to tell.
+pub type Tell = Rc<dyn Fn(IssuesEvent, &mut Window, &mut App)>;
+
 /// The Issues mode: a view and nothing else.
 pub struct Mode {
     view: Entity<IssuesView>,
 }
 
 impl Mode {
-    pub fn new(connectors: &'static [&'static dyn Connector], ask: Ask, cx: &mut App) -> Self {
+    pub fn new(
+        connectors: &'static [&'static dyn Connector],
+        ask: Ask,
+        tell: Tell,
+        cx: &mut App,
+    ) -> Self {
         Self {
-            view: IssuesView::new(connectors, ask, false, cx),
+            view: IssuesView::new(connectors, ask, tell, false, cx),
         }
     }
 }
@@ -68,9 +125,14 @@ pub struct Page {
 }
 
 impl Page {
-    pub fn new(connectors: &'static [&'static dyn Connector], ask: Ask, cx: &mut App) -> Self {
+    pub fn new(
+        connectors: &'static [&'static dyn Connector],
+        ask: Ask,
+        tell: Tell,
+        cx: &mut App,
+    ) -> Self {
         Self {
-            view: IssuesView::new(connectors, ask, true, cx),
+            view: IssuesView::new(connectors, ask, tell, true, cx),
         }
     }
 
@@ -152,21 +214,6 @@ fn handle(view: &Entity<IssuesView>, request: &Request<'_>, cx: &mut App) -> boo
         | Request::SetGit(_)
         | Request::SetFontSize(_)
         | Request::AgentStarted(_)
-        | Request::RestartAgent
-        | Request::WorkIssueHere { .. }
-        | Request::OpenConversation(_)
-        | Request::RunIssueWorkflow { .. }
-        | Request::OpenInIssues { .. }
-        | Request::ReviewInIssues { .. }
-        | Request::ApproveTask(_)
-        | Request::ReviseTask { .. }
-        | Request::OpenTask(_)
-        | Request::OpenTaskSession(_)
-        | Request::ResumeTask(_)
-        | Request::RetryTask(_)
-        | Request::RetryTaskCurrent(_)
-        | Request::AnswerReview(_)
-        | Request::RemoveWorktree(_)
-        | Request::StopTask(_) => false,
+        | Request::RestartAgent => false,
     }
 }

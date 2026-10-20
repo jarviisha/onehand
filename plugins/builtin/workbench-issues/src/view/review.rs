@@ -11,6 +11,7 @@
 
 use super::IssuesView;
 use super::full::{Full, Side, files_view};
+use crate::IssuesEvent;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, AppContext as _, ClickEvent, Context, Entity, InteractiveElement as _, IntoElement,
@@ -30,7 +31,7 @@ use onehand_core::task::work::{
 use onehand_plugin_host::Quiet as _;
 use onehand_plugin_host::Short as _;
 use onehand_plugin_host::text_area;
-use onehand_plugin_host::{Refuses as _, Request, action, card_box, fold_toggle, status_ink};
+use onehand_plugin_host::{Refuses as _, action, card_box, fold_toggle, status_ink};
 use std::path::{Path, PathBuf};
 
 /// How many lines of what a check printed are drawn: its last ones, where a
@@ -111,8 +112,9 @@ impl IssuesView {
     /// the review is never drawn at the dock's width.
     pub(super) fn review(&mut self, number: u64, window: &mut Window, cx: &mut Context<Self>) {
         if self.page.is_none() {
-            self.ask_later(window, cx, move |ask, root, window, cx| {
-                ask(&Request::ReviewInIssues { root, number }, window, cx)
+            self.tell_later(window, cx, move |root| IssuesEvent::ReviewInIssues {
+                root: root.to_path_buf(),
+                number,
             });
             return;
         }
@@ -232,9 +234,7 @@ impl IssuesView {
         review.note = None;
         cx.notify();
         let approval = Approval { task, at: read.at };
-        self.ask_later(window, cx, move |ask, _, window, cx| {
-            ask(&Request::ApproveTask(&approval), window, cx)
-        });
+        self.tell_later(window, cx, move |_| IssuesEvent::ApproveTask(approval));
     }
 
     /// *Revise…*: the note is written in the block.
@@ -284,15 +284,9 @@ impl IssuesView {
         review.note = None;
         cx.notify();
         let approval = Approval { task, at: read.at };
-        self.ask_later(window, cx, move |ask, _, window, cx| {
-            ask(
-                &Request::ReviseTask {
-                    approval: &approval,
-                    note: &text,
-                },
-                window,
-                cx,
-            )
+        self.tell_later(window, cx, move |_| IssuesEvent::ReviseTask {
+            approval,
+            note: text,
         });
     }
 
