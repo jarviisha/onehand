@@ -1,6 +1,7 @@
-//! What the view asks of the app: a session on an issue, a workflow run, a
-//! task, a conversation or a file put on screen. Each is put once the view
-//! is no longer being updated.
+//! What the view asks of the app: a file put on screen goes to the Workbench,
+//! which knows the mode that edits files; a session on an issue, a workflow
+//! run, a task or a conversation goes to the shell, whose they are. Each is
+//! put once the view is no longer being updated.
 
 use super::*;
 

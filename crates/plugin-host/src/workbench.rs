@@ -94,9 +94,10 @@ pub trait WorkbenchMode {
 ///
 /// One vocabulary in **both** directions. The panel broadcasts these down; a
 /// mode sends one back up through its [`Ask`] when a click inside it means
-/// something the panel owns — a row in the file tree is the case that exists
-/// today, since opening a file is the quick editor's business and not the
-/// tree's.
+/// something the panel owns, or another mode does — a row in the file tree
+/// opens a file, which is the quick editor's business and not the tree's. What
+/// is the app's own to answer, as an issue's work is, does not travel here: a
+/// view with such a thing to say speaks to the shell directly.
 ///
 /// This enum is what keeps the trait above from growing a method per shell
 /// feature. A mode writes an arm for what it recognises and falls through the

@@ -1,8 +1,9 @@
 //! The Issues page as the window holds it: made once per window, so its
 //! filters, its selection and its scroll are still there whenever it is
-//! picked again; told what the Workbench's Issues mode is told; and answered
-//! the way that mode is. The answer to the Workbench's own events is here
-//! too, since the page's are the same events.
+//! picked again, and told what the Workbench's Issues mode is told. What an
+//! Issues view tells the shell, the tab's and the page's alike, is answered
+//! here; so are the Workbench's own events, since both are the shell's
+//! answers.
 
 use super::Shell;
 use crate::workbench::WorkbenchEvent;
