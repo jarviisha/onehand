@@ -234,7 +234,6 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
 - **A Vietnamese IME can swallow a typed `/`.** Keep the composer's `+` menu entries that
   insert `@` and `/` from code (`Composer::insert_trigger`).
 - **Terminal pitfalls:** before changing `vendor/gpui-terminal/**`, `crates/terminal-ui/**`,
-  `crates/app/src/terminal.rs`, `crates/app/src/terminal/**` or
-  `crates/neovim/**`, read
+  `crates/app/src/terminal.rs` or `crates/neovim/**`, read
   [.claude/rules/terminal.md](.claude/rules/terminal.md). This is required even when the host
   does not load path-scoped rules automatically.

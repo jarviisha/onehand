@@ -76,7 +76,8 @@ background executor, one interval in the config, no cron expressions.
 
 | File | What |
 |---|---|
-| `crates/core/src/unattended.rs` | `Issue`, the claim and search over a connector, `branch_for`, `brief_for`, `claim_comment`, `IssueSource` and `TrackerRef` (what a task keeps of its issue), `room`, `Budget`, `Verdict`, `report`, `verdict_blocking`, `could_not_start`, `parse_every`, `target_dir` |
+| `crates/core/src/unattended.rs` | `Issue`, the claim and search over a connector, `branch_for`, `brief_for`, `claim_comment`, `IssueSource` and `TrackerRef` (what a task keeps of its issue), `Slots`, `Budget`, `parse_every`, `target_dir` |
+| `crates/core/src/unattended/report.rs` | what a run leaves and what its issue is told: `Verdict`, `verdict_blocking`, `PendingReport`, `report`, `could_not_start`, `pull_request_text`, `review_note`, `review_unanswerable`, `review_closed`, `review_diverged` |
 | `crates/core/src/unattended/claim.rs` | everything a tick or a pick decides off the UI loop: the look (`look_blocking`), the search and claim (`begin_blocking`, `taking_blocking`, `trackers_blocking`), the worktree cut (`prepare_blocking`), the pick (`pickable_blocking`, `pickable_one_blocking`), `Choosing` and `Judging`, and the settings rules `cannot_start`, `fit_for_issue`, `check_missing`, `now_for` |
 | `crates/core/src/preflight.rs` | the preflight, and `new_issue_run`, which assembles what a new issue run is checked against |
 | `crates/core/src/workflow/builtin/issue.toml` | *Work an issue*, the workflow runs use by default |
@@ -87,7 +88,8 @@ background executor, one interval in the config, no cron expressions.
 | `crates/app/src/unattended.rs` | the tick, which gathers what core decides with and hands it off the UI loop; the cap (`at_cap`, the tasks still `starting`), `waiting` |
 | `crates/app/src/unattended/launch.rs` | `Landed`, a claim paired with the window it was picked in; `start`, which keeps the task and asks for its place; `workflow` and `found`, which read the library |
 | `crates/app/src/unattended/report.rs` | `spec_for`, `refuse_mode`, `started`, `opening`, and the end: `keep`, `card_question`, `ended`, `deliver`, `deliver_all` |
-| `crates/app/src/task.rs` | `freed`, which calls `unattended::ended`; `slot_holders`, `issues_waiting`, `live_issues`, `update_issue`, `undelivered` |
+| `crates/app/src/task.rs` | `freed`, which calls `unattended::ended`; `update_issue`, `undelivered` |
+| `crates/app/src/task/listing.rs` | `slot_holders`, `issues_waiting`, `live_issues`, `issue_tasks` |
 | `crates/app/src/task/driver.rs` | `came_up` (the mode, the note on the issue), the clock, the take-over |
 | `crates/app/src/shell/workflows.rs` | `drive_task`, which brings an issue's run up off screen |
 | `crates/core/src/config.rs` | `UnattendedConfig` |
@@ -748,7 +750,7 @@ had by hand.
 
 ## Answering a review
 
-Before it claims an issue, `launch::taking_blocking` looks for the issue's newest
+Before it claims an issue, `onehand_core::unattended::taking_blocking` looks for the issue's newest
 task with a branch of its own. **One still working is never taken again**: the
 search passes the issue over for the next labelled one
 (`core::candidates_blocking`), and a pick is refused, so an issue is never worked

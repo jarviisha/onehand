@@ -4,7 +4,7 @@
 #   make run                 # run with the current dir as the project root
 #   make run ROOT=~/code/x   # run with a specific project root
 #   make test T=changed_line # run tests matching a name substring
-#   make smoke ACP_CMD="node examples/mock_terminal_agent.js"
+#   make smoke ACP_CMD="node crates/core/examples/mock_terminal_agent.js"
 #   make dev                 # a debug build beside the app in use, on ~/onehand-dev
 #   make showcase            # the app as it is, on scratch projects and the Mock UI agent
 
