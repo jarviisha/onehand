@@ -33,10 +33,12 @@ fn the_fence_outruns_any_run_inside() {
 #[test]
 fn the_dialog_lifts_the_transcripts_height_cap() {
     use gpui::{StyleRefinement, Styled as _, rems};
-    let mut style = gpui_component::text::TextViewStyle::default();
-    style.code_block = StyleRefinement::default()
-        .max_h(rems(22.5))
-        .overflow_hidden();
+    let style = gpui_component::text::TextViewStyle {
+        code_block: StyleRefinement::default()
+            .max_h(rems(22.5))
+            .overflow_hidden(),
+        ..Default::default()
+    };
     let style = uncapped(style);
     assert_eq!(style.code_block.max_size.height, None);
     assert_eq!(style.code_block.overflow.y, None);
