@@ -11,7 +11,8 @@
 use super::transcript;
 use gpui::{App, FollowMode, ListAlignment, ListOffset, ListState, Pixels, Window, px};
 use onehand_core::chat::{
-    ActivityGroup, Chat, ChatItem, RunOutcome, TranscriptItemId, cluster_summary, run_outcome,
+    ActivityGroup, Chat, ChatItem, Cluster, RunOutcome, TranscriptItemId, cluster_summary,
+    clusters, run_outcome,
 };
 
 mod plan;
@@ -299,17 +300,17 @@ impl Viewport {
         self.planned = Some(key);
         let addressed: Vec<(TranscriptItemId, &ChatItem)> = addressed(chat).collect();
 
-        let mut plan: Vec<RunPlan> = transcript::runs(&addressed)
+        let mut plan: Vec<RunPlan> = clusters(&addressed)
             .into_iter()
             .map(|run| match run {
-                transcript::Run::Single(target) => RunPlan {
+                Cluster::Single(target) => RunPlan {
                     members: vec![target],
                     strip: None,
                     changes: None,
                     open: true,
                     kind: item(chat, target).map_or(RunKind::Block, single_kind),
                 },
-                transcript::Run::Activity { members } => {
+                Cluster::Activity { members } => {
                     let anchor = members[0];
                     let bodies: Vec<&ChatItem> = members
                         .iter()

@@ -24,6 +24,7 @@ pub use model::{
     PlanItem, QueuedPrompt, Selector, SelectorChoice, SubmitBlock, TermView, Thought, ToolItem,
     TranscriptItemId, TurnAnswer, UserAsk, UserMsg, MAX_TERM_BYTES, MODE_SELECTOR,
 };
+pub use steps::cluster::{clusters, section_summary, Cluster};
 pub use steps::{
     cluster_summary, redact, run_outcome, turn_changes, turn_file_diff, ClusterSummary, FileChange,
     FileVerdict, Outcome, RunOutcome, SummaryPart, TurnChanges,
