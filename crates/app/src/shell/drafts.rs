@@ -443,12 +443,9 @@ impl Shell {
                             // What git made is a checkout of the whole
                             // repository. What is adopted is the part of it the
                             // user actually split -- the same folder, in the new
-                            // tree. Falling back to the checkout itself when
-                            // that folder is not on this branch, because a root
-                            // pointing at nothing is worse than a wider one.
+                            // tree.
                             let Some(top) = top else { return made };
-                            let subtree = worktree::subtree_in(&made, &top, &root);
-                            if subtree.is_dir() { subtree } else { made }
+                            worktree::subtree_or(made, &top, &root)
                         })
                     })
                     .await

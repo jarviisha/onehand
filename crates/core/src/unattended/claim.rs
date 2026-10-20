@@ -571,10 +571,8 @@ pub fn prepare_blocking(
                 .map_err(|why| format!("could not ask the forge about branch {name}: {why}")),
             None => Ok(false),
         };
-        let branch =
-            super::free_branch_blocking(&top, &super::branch_for(&tracker, &issue), taken)?;
-        let dir = worktree::worktree_dir(&top, &branch);
-        let dir = worktree::branch_off_blocking(&top, &branch, &dir, &base)?;
+        let (branch, dir) =
+            worktree::cut_blocking(&top, &super::branch_for(&tracker, &issue), &base, taken)?;
         Ok::<_, String>(Work::Cut { branch, base, dir })
     }))
     .unwrap_or_else(|_| Err("onehand panicked while preparing the worktree".to_string()));

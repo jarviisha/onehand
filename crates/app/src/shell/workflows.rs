@@ -272,15 +272,13 @@ impl Shell {
                             // whose pull request is on the forge is reused.
                             // Ask the forge as an issue's claim does if that
                             // is seen.
-                            let branch = onehand_core::unattended::free_branch_blocking(
+                            let (branch, made) = worktree::cut_blocking(
                                 &top,
                                 &core::branch_for(&title),
+                                "HEAD",
                                 |_| Ok(false),
                             )?;
-                            let dir = worktree::worktree_dir(&top, &branch);
-                            let made = worktree::branch_off_blocking(&top, &branch, &dir, "HEAD")?;
-                            let subtree = worktree::subtree_in(&made, &top, &root);
-                            let dir = if subtree.is_dir() { subtree } else { made };
+                            let dir = worktree::subtree_or(made, &top, &root);
                             // The forge the branch goes to, for a step on it;
                             // none, and the branch is the result.
                             let forge = crate::unattended::connector_for(&top)
