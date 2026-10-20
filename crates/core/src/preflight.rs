@@ -623,7 +623,7 @@ fn on_issue(tracker: &Tracker, issue: &Issue, tasks: Vec<(Task, Option<Working>)
 
 /// The branch checked out at `root`, [`DETACHED`] when none is, or `None`
 /// outside git. Blocking: it asks git.
-pub fn checked_out_blocking(root: &std::path::Path) -> Option<String> {
+pub(crate) fn checked_out_blocking(root: &std::path::Path) -> Option<String> {
     crate::worktree::repo_top_blocking(root)?;
     Some(crate::worktree::current_branch_blocking(root).unwrap_or_else(|_| DETACHED.to_string()))
 }

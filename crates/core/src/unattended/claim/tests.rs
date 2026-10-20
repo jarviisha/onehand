@@ -467,10 +467,9 @@ fn one_issue_is_picked_from_the_projects_own_only() {
 fn a_checkout_workflow_is_unfit_for_an_issue() {
     let mut checkout = template("c", false);
     checkout.place = Place::Checkout;
-    assert_eq!(
-        fit_for_issue(checkout.clone()).err(),
-        crate::preflight::unfit_for_issue(&checkout)
-    );
+    let why = crate::preflight::unfit_for_issue(&checkout);
+    assert!(why.is_some());
+    assert_eq!(fit_for_issue(checkout).err(), why);
     // One that validates and works on a worktree comes back as it was.
     assert_eq!(
         fit_for_issue(template("w", false)),

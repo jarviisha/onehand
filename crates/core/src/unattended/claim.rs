@@ -208,9 +208,9 @@ impl Judging {
 /// labels, and which of the workflows those name run the project's check
 /// command.
 pub struct Choosing {
-    pub default: String,
-    pub by_label: BTreeMap<String, String>,
-    pub need_check: HashSet<String>,
+    default: String,
+    by_label: BTreeMap<String, String>,
+    need_check: HashSet<String>,
 }
 
 impl Choosing {
@@ -354,7 +354,7 @@ pub fn taking_blocking(
 /// the forge's issues are already here and searching both would find each one
 /// twice. Otherwise its own issues first, then the forge's. Blocking: it reads
 /// the issue file to learn whether the project is synced.
-pub fn trackers_blocking(
+pub(crate) fn trackers_blocking(
     issues: Option<PathBuf>,
     forge: Option<&'static dyn Connector>,
 ) -> Vec<Tracker> {
