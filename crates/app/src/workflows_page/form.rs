@@ -94,22 +94,31 @@ pub(super) fn workflow_column(
             cx,
         ))
         .child(
+            // A pair as *About*'s is: side by side where the column holds
+            // both, one under the other where it does not.
             div()
                 .h_flex()
                 .items_end()
+                .flex_wrap()
                 .gap_4()
-                .child(div().flex_1().child(field(
-                    "Misses allowed",
-                    about("Turns that fail their gates before the run stops"),
-                    input(&draft.misses),
-                    cx,
-                )))
-                .child(div().flex_1().child(field(
-                    "Timeout",
-                    about("Working time, such as 45m or 2h"),
-                    input(&draft.timeout),
-                    cx,
-                ))),
+                .child(half(
+                    field(
+                        "Misses allowed",
+                        about("Turns that fail their gates before the run stops"),
+                        input(&draft.misses),
+                        cx,
+                    )
+                    .into_any_element(),
+                ))
+                .child(half(
+                    field(
+                        "Timeout",
+                        about("Working time, such as 45m or 2h"),
+                        input(&draft.timeout),
+                        cx,
+                    )
+                    .into_any_element(),
+                )),
         );
     // A new form nobody has touched yet is not wrong yet: *Save* refuses
     // and says why on hover, and the problems wait for the first change. One
