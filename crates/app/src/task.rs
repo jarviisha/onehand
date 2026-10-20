@@ -621,6 +621,17 @@ pub(crate) fn task(id: &str, cx: &App) -> Option<Task> {
     cx.try_global::<Tasks>()?.task(id).cloned()
 }
 
+/// The title of the task holding `place`, unless that task is `except`: a
+/// task's own next run never waits behind itself.
+pub(crate) fn holder_at(place: &std::path::Path, except: Option<&str>, cx: &App) -> Option<String> {
+    let t = cx.try_global::<Tasks>()?;
+    let holder = t
+        .queue
+        .holder_at(place)
+        .filter(|holder| Some(*holder) != except)?;
+    t.task(holder).map(|task| task.brief.title.clone())
+}
+
 /// A person pressed Stop on task `id`, whatever it is doing.
 pub(crate) fn stop_task(id: &str, cx: &mut App) {
     let Some(t) = cx.try_global::<Tasks>() else {

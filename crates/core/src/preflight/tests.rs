@@ -776,3 +776,10 @@ fn a_finding_names_where_things_are_changed_now() {
         }
     }
 }
+
+#[test]
+fn only_a_checkout_start_waits_behind_a_holder() {
+    let holder = Some("Fix the build".to_string());
+    assert_eq!(queued_behind_for(Place::Checkout, holder.clone()), holder);
+    assert_eq!(queued_behind_for(Place::Worktree, holder), None);
+}

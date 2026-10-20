@@ -18,11 +18,12 @@ use onehand_core::task::work::Act;
 use onehand_core::task::{Source, Task};
 use onehand_core::workflow::{Changed, Field, Run, Template, WithCurrent};
 use std::cell::Cell;
+use std::path::PathBuf;
 use std::rc::Rc;
 
 /// What happens once the work has been compared with where the last run
 /// left it.
-type Then = fn(&mut Shell, Task, Option<Against>, &mut Window, &mut Context<Shell>);
+type Then = fn(&mut Shell, Task, Option<Against>, PathBuf, &mut Window, &mut Context<Shell>);
 
 impl Shell {
     /// Ask whether to retry task `id`, saying where the new run starts, what
@@ -59,8 +60,8 @@ impl Shell {
         self.compare_work(task, Self::confirm_retry_current, window, cx);
     }
 
-    /// Compare the work with where `task`'s last run left it, off the UI
-    /// thread, then `then`.
+    /// Compare the work with where `task`'s last run left it, and find the
+    /// place it works in, off the UI thread, then `then`.
     fn compare_work(
         &mut self,
         task: Task,
@@ -73,6 +74,13 @@ impl Shell {
         };
         let (dir, end) = (last.setup.dir.clone(), last.last_mark().map(str::to_string));
         cx.spawn_in(window, async move |shell, cx| {
+            let place = cx
+                .background_executor()
+                .spawn({
+                    let dir = dir.clone();
+                    async move { onehand_core::task::queue::place_blocking(&dir) }
+                })
+                .await;
             let against = match end {
                 Some(end) => cx
                     .background_executor()
@@ -83,7 +91,7 @@ impl Shell {
                 None => None,
             };
             let _ = shell.update_in(cx, |shell: &mut Self, window, cx| {
-                then(shell, task, against, window, cx)
+                then(shell, task, against, place, window, cx)
             });
         })
         .detach();
@@ -116,6 +124,7 @@ impl Shell {
         &mut self,
         task: Task,
         against: Option<Against>,
+        place: PathBuf,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -150,7 +159,11 @@ impl Shell {
         };
         // Judged by the run's own setup, which is what a retry runs: what
         // Settings says now neither blocks it nor clears a block.
-        let facts = crate::unattended::task_facts(&task, same.clone(), cx);
+        let mut facts = crate::unattended::task_facts(&task, same.clone(), cx);
+        facts.queued_behind = preflight::queued_behind_for(
+            same.place,
+            crate::task::holder_at(&place, Some(&task.id), cx),
+        );
         let found = preflight::preflight(preflight::Kind::Retry, &facts);
         let ask = crate::agent_check::Ask::of(&facts, &task.setup.dir, cx);
         let blocked = found.iter().any(|f| f.blocks);
@@ -287,6 +300,7 @@ impl Shell {
         &mut self,
         task: Task,
         against: Option<Against>,
+        place: PathBuf,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -310,7 +324,12 @@ impl Shell {
             .as_ref()
             .map(|plan| plan.template.clone())
             .map_err(Clone::clone);
-        let facts = crate::unattended::setup_facts(&task, &setup, workflow, cx);
+        let works_in = workflow.as_ref().map_or(last.template.place, |t| t.place);
+        let mut facts = crate::unattended::setup_facts(&task, &setup, workflow, cx);
+        facts.queued_behind = preflight::queued_behind_for(
+            works_in,
+            crate::task::holder_at(&place, Some(&task.id), cx),
+        );
         let found = preflight::preflight(preflight::Kind::RetryCurrent, &facts);
         let ask = crate::agent_check::Ask::of(&facts, &setup.dir, cx);
         let blocked = found.iter().any(|f| f.blocks);

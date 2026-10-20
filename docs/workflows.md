@@ -420,10 +420,6 @@ is written in full and on disk before its old one goes, and the folder goes once
   step that runs only sometimes, and no two steps at once; a command's failure going back to an
   earlier step is the only way back, besides a revision. One session carries every step, so a step
   cannot use a different agent from the rest.
-- **A start does not say beforehand that its place is taken.** The preflight has the row, but
-  finding the place means asking git where the checkout's top is, which no render may do; a start
-  that queues says so in a notification once it has asked. An issue's new run is cut a worktree of
-  its own and never queues.
 
 ## Checking it by hand
 
@@ -567,7 +563,7 @@ change (`git checkout . && git clean -fd`).
 | Who holds the slots | With `at_once = 1` and an issue task running at Implement, open Settings ▸ Workspace | *Slots: 1 of 1* with the holder *#N · Work an issue (Implement)* as a link; pressed, Settings closes and the task opens; *Run workflow…* on another issue says the same line in *Before it starts*, the holder a button that opens its task |
 | No slot held | With nothing running | *Slots: 0 of 1* and *0 waiting on a person, no cap* |
 | Waiting capped | `waiting = 1`, an issue task waiting at an approval, `at_once = 2`; *Look for an issue now*, then *Run workflow…* on another issue | Both refused, naming `unattended.waiting`; answer the approval and the next look takes the issue |
-| Queued behind a task | Two checkout tasks on one project, the second started while the first runs | The notification names the first task: *… is queued behind <its title>, working in <folder>* |
+| Queued behind a task | Two checkout tasks on one project, the second started while the first runs | Before it starts, the launcher says, as information, that the place is taken and names the first task; a Retry of a checkout task says the same. Started, the notification names the first task: *… is queued behind <its title>, working in <folder>* |
 | Push and pull request | On a GitHub project with CI, an issue task through Verify | `git ls-remote origin <branch>` shows the commit Verify passed on, a draft pull request is open on the branch closing the issue, and once its status checks pass it is out of draft; the issue says *onehand opened … It is ready for review.* |
 | A failing check is repaired | As above, with a check that fails on the change | The run goes back to Implement with the check's name and log in its prompt, pushes again, and waits again |
 | No checks at all | As above, on a repository with no CI | The run waits ten minutes, then the pull request leaves draft |

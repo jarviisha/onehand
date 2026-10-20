@@ -798,3 +798,12 @@ fn a_queued_task_is_told_which_task_holds_its_place() {
         "Fix b is queued behind the task working in repo"
     );
 }
+
+#[test]
+fn the_holder_of_a_place_is_named_by_it() {
+    let mut queue = Queue::default();
+    assert!(queue.ask(PathBuf::from("/p"), "a".into()));
+    assert!(!queue.ask(PathBuf::from("/p"), "b".into()));
+    assert_eq!(queue.holder_at(Path::new("/p")), Some("a"));
+    assert_eq!(queue.holder_at(Path::new("/q")), None);
+}

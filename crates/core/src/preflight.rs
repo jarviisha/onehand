@@ -487,6 +487,16 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
     found
 }
 
+/// The task a start working in `place` would queue behind, `holder` holding
+/// the checkout it works in: a start on a worktree is cut a place of its own
+/// and never waits.
+pub fn queued_behind_for(place: Place, holder: Option<String>) -> Option<String> {
+    match place {
+        Place::Checkout => holder,
+        Place::Worktree => None,
+    }
+}
+
 /// Why a review is not answered, in the words the label path uses where it
 /// has them; `None` when it can be.
 fn review_refused(review: &ReviewFacts, forge: bool) -> Option<String> {

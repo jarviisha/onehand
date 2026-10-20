@@ -28,13 +28,18 @@ pub struct WorkflowLauncher {
     pub busy: bool,
     /// The preview of what the run starts with is open.
     pub preview: bool,
-    /// Whether the project is in git and the forge serving it, `None` while
-    /// they are being found out; the cached git status cannot say, since it
-    /// is empty until its first read lands.
-    pub ground: Option<(
-        bool,
-        Option<&'static dyn onehand_core::connector::Connector>,
-    )>,
+    /// Whether the project is in git, the forge serving it and its place,
+    /// `None` while they are being found out; the cached git status cannot
+    /// say, since it is empty until its first read lands.
+    pub ground: Option<Ground>,
+}
+
+/// What the launcher learns of its project off the UI loop.
+pub struct Ground {
+    pub in_git: bool,
+    pub forge: Option<&'static dyn onehand_core::connector::Connector>,
+    /// The place a run working on the checkout would wait for.
+    pub place: std::path::PathBuf,
 }
 
 impl Shell {
@@ -107,8 +112,11 @@ impl Shell {
                 .spawn({
                     let root = root.clone();
                     async move {
-                        let in_git = worktree::repo_top_blocking(&root).is_some();
-                        (in_git, crate::unattended::connector_for(&root).ok())
+                        Ground {
+                            in_git: worktree::repo_top_blocking(&root).is_some(),
+                            forge: crate::unattended::connector_for(&root).ok(),
+                            place: onehand_core::task::queue::place_blocking(&root),
+                        }
                     }
                 })
                 .await;
@@ -166,7 +174,18 @@ impl Shell {
         let shared = Shared::global(cx);
         let git = self.window.git.get(&launcher.root);
         // Not known yet blocks nothing: the cut says so itself if it fails.
-        let (in_git, forge) = launcher.ground.unwrap_or((true, None));
+        let (in_git, forge) = launcher
+            .ground
+            .as_ref()
+            .map_or((true, None), |g| (g.in_git, g.forge));
+        // Who holds the place, said only for a workflow that works there.
+        let queued_behind = match (&workflow, &launcher.ground) {
+            (Ok(template), Some(ground)) => preflight::queued_behind_for(
+                template.place,
+                crate::task::holder_at(&ground.place, None, cx),
+            ),
+            _ => None,
+        };
         let facts = preflight::Facts {
             workflow,
             agent: onehand_core::config::agent_or_first(&shared.agents, None)
@@ -180,7 +199,7 @@ impl Shell {
             forge: forge.map(|forge| crate::unattended::forge_facts(forge, cx)),
             issue: None,
             slots: None,
-            queued_behind: None,
+            queued_behind,
             review: None,
             shared_checkout: self.own_session_in(&launcher.root, cx),
             forge_read: launcher.ground.is_some(),
