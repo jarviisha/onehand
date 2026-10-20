@@ -290,9 +290,7 @@ impl ChatSession {
                         .spawn(async move { completion::scan_files(&root, MAX_MENTION_FILES) })
                         .await;
                     let _ = session.update(cx, |session: &mut Self, cx| {
-                        session.chat.folders = completion::folders(&files);
-                        session.chat.files = files;
-                        session.chat.files_scanned = true;
+                        session.chat.set_files(files);
                         cx.notify();
                     });
                 }
@@ -355,18 +353,9 @@ impl ChatSession {
                         }
                     }
 
-                    // The stream ended: core's `connect` always emits
-                    // `Disconnected` before it does, so the model already knows.
-                    // What it cannot know is that no further event will arrive, and
-                    // a turn left mid-flight would otherwise show Stop forever.
-                    //
-                    // `link` is set here too rather than trusted from that
-                    // event: this is the one place that knows the stream is
-                    // *over*, and a rail dot that depends on an event having
-                    // been emitted is a dot that goes missing the day it is not.
+                    // The stream ended, which only this loop knows.
                     let _ = session.update(cx, |session: &mut Self, cx| {
-                        session.chat.busy = false;
-                        session.chat.link = onehand_core::chat::Link::Lost;
+                        session.chat.stream_ended();
                         cx.emit(ChatEvent::Disconnected);
                         cx.notify();
                     });

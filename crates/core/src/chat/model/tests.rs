@@ -2160,3 +2160,25 @@ fn an_older_refused_pick_leaves_a_newer_one_shown() {
         "and goes back to what the agent last confirmed"
     );
 }
+
+#[test]
+fn the_scanned_files_bring_their_folders() {
+    let mut chat = Chat::new(1, PathBuf::from("/tmp/p"), "a".into(), None);
+    assert!(!chat.files_scanned);
+    chat.set_files(vec!["src/a.rs".into(), "src/b.rs".into()]);
+    assert!(chat.files_scanned);
+    assert_eq!(chat.files.len(), 2);
+    assert_eq!(chat.folders, crate::completion::folders(&chat.files));
+}
+
+#[test]
+fn a_stream_that_ends_leaves_no_turn_running() {
+    let mut chat = Chat::new(1, PathBuf::from("/tmp/p"), "a".into(), None);
+    chat.busy = true;
+    chat.link = Link::Connected;
+    chat.stream_ended();
+    assert!(!chat.busy);
+    assert_eq!(chat.link, Link::Lost);
+    chat.stream_ended();
+    assert_eq!(chat.link, Link::Lost, "a second end changes nothing");
+}
