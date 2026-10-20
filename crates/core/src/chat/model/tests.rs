@@ -2184,6 +2184,24 @@ fn a_stream_that_ends_leaves_no_turn_running() {
 }
 
 #[test]
+fn a_stream_that_ends_after_disconnected_changes_nothing() {
+    let mut chat = Chat::new(1, PathBuf::from("/tmp/p"), "a".into(), None);
+    chat.apply(AcpEvent::Disconnected("gone".into()));
+    let seen = |chat: &Chat| {
+        (
+            chat.items.len(),
+            chat.busy,
+            chat.link,
+            chat.tx.is_none(),
+            chat.revision(),
+        )
+    };
+    let before = seen(&chat);
+    chat.stream_ended();
+    assert_eq!(seen(&chat), before);
+}
+
+#[test]
 fn every_fold_moves_the_fold_counter() {
     let mut chat = Chat::new(1, PathBuf::from("/tmp/p"), "a".into(), None);
     chat.items.push(ChatItem::Tool(ToolItem::new(ToolCall {
