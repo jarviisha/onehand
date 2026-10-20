@@ -622,8 +622,12 @@ pub(crate) fn task(id: &str, cx: &App) -> Option<Task> {
 }
 
 /// Why Resume cannot carry `task` on now: the first thing the preflight of
-/// its last run's own setup finds in the way. Pure and cheap, so the buttons
-/// that offer Resume ask it as they are drawn and refuse with it.
+/// its last run's own setup finds in the way. Pure, so the buttons that offer
+/// Resume ask it as they are drawn and refuse with it.
+// ponytail: asked per resumable row per frame, and an issue task's facts walk
+// every task for its slots, so the cost is resumable rows times tasks, held
+// down by the cap on kept tasks; keep the answers beside the issue works if a
+// long Tasks page ever stutters.
 pub(crate) fn resume_refused(task: &Task, cx: &App) -> Option<String> {
     let template = task.runs.last()?.template.clone();
     let facts = crate::unattended::task_facts(task, template, cx);
