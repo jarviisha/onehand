@@ -167,6 +167,26 @@ impl Task {
         }
     }
 
+    /// A retry refused before it began: its run is dropped and the task is as
+    /// it was. The task's first run is never dropped this way, since without
+    /// it the task was never anything. Whether a run was dropped.
+    pub fn drop_unbegun_retry(&mut self) -> bool {
+        let unbegun = self.runs.len() > 1 && self.runs.last().is_some_and(|run| !run.begun());
+        if unbegun {
+            self.runs.pop();
+        }
+        unbegun
+    }
+
+    /// The last run, taken off the task, when it never began: a task stopped
+    /// before it ran a step keeps no empty run, and is over.
+    pub fn take_unbegun(&mut self) -> Option<Run> {
+        match self.runs.last().is_some_and(|run| !run.begun()) {
+            true => self.runs.pop(),
+            false => None,
+        }
+    }
+
     /// The issue it works, if it was started from one.
     pub fn issue(&self) -> Option<&IssueSource> {
         match &self.source {
