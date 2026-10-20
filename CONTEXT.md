@@ -130,7 +130,7 @@ _Avoid_: definition of done, criteria on their own
 A form a new issue is written from: the project's own under `.github/ISSUE_TEMPLATE/`, or the ones
 onehand ships. It fills the body in and puts its labels on; its headings are what the issue's body
 is read against, as advice.
-_Avoid_: template on its own (that is a workflow), form
+_Avoid_: template on its own (that is a workflow)
 
 **Mark**:
 A point in the work a run measures from: where an agent step started (the commit and the

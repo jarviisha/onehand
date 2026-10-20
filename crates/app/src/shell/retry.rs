@@ -160,10 +160,9 @@ impl Shell {
         // Judged by the run's own setup, which is what a retry runs: what
         // Settings says now neither blocks it nor clears a block.
         let mut facts = crate::unattended::task_facts(&task, same.clone(), cx);
-        facts.queued_behind = preflight::queued_behind_for(
-            same.place,
-            crate::task::holder_at(&place, Some(&task.id), cx),
-        );
+        // A retry asks for the place its task works in, whatever its
+        // workflow says now: the run's own folder is kept.
+        facts.queued_behind = crate::task::holder_at(&place, Some(&task.id), cx);
         let found = preflight::preflight(preflight::Kind::Retry, &facts);
         let ask = crate::agent_check::Ask::of(&facts, &task.setup.dir, cx);
         let blocked = found.iter().any(|f| f.blocks);
@@ -313,12 +312,8 @@ impl Shell {
             .as_ref()
             .map(|plan| plan.template.clone())
             .map_err(Clone::clone);
-        let works_in = workflow.as_ref().map_or(last.template.place, |t| t.place);
         let mut facts = crate::unattended::setup_facts(&task, &setup, workflow, cx);
-        facts.queued_behind = preflight::queued_behind_for(
-            works_in,
-            crate::task::holder_at(&place, Some(&task.id), cx),
-        );
+        facts.queued_behind = crate::task::holder_at(&place, Some(&task.id), cx);
         let found = preflight::preflight(preflight::Kind::RetryCurrent, &facts);
         let ask = crate::agent_check::Ask::of(&facts, &setup.dir, cx);
         let blocked = found.iter().any(|f| f.blocks);
