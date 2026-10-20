@@ -1,4 +1,4 @@
-use super::{FocusedPanel, Shell, ZoomStep};
+use super::{FocusedPanel, Shell, ZoomStep, dock_rules};
 use crate::workbench::NEOVIM_MODE;
 use gpui::{App, Context, Focusable as _, Window, px};
 use gpui_component::dock::{DockItem, DockPlacement};
@@ -199,31 +199,30 @@ impl Shell {
     /// Toggle the bottom terminal regardless of focus. A shell is spawned on
     /// first open and never at boot (see [`crate::terminal`]).
     pub fn show_terminal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.page_shown(cx) {
-            return;
-        }
+        // Stepping aside touches only the Workbench's dock, so the bottom
+        // dock read here is the one the press acts on.
+        let press = dock_rules::terminal_press(
+            self.page_shown(cx),
+            self.workbench_fills_area(),
+            self.dock.read(cx).is_dock_open(DockPlacement::Bottom, cx),
+            self.terminal.read(cx).has_shell(),
+        );
+        let (step_aside, spawn) = match press {
+            dock_rules::TerminalPress::Nothing => return,
+            dock_rules::TerminalPress::Close => {
+                self.last_panel = FocusedPanel::Terminal;
+                self.set_terminal_visible(false, window, cx);
+                return;
+            }
+            dock_rules::TerminalPress::Open { step_aside, spawn } => (step_aside, spawn),
+        };
         self.last_panel = FocusedPanel::Terminal;
-        // The terminal sits under the conversation, so while the Workbench has
-        // the area, asking for it brings the conversation back first -- and
-        // the press then opens the terminal, never closes it.
-        let stepped = self.workbench_fills_area();
-        if stepped {
+        if step_aside {
             self.step_aside(window, cx);
-        }
-        let open = self.dock.read(cx).is_dock_open(DockPlacement::Bottom, cx);
-        // **An open dock with nothing in it is not a dock to close.** Closing
-        // the last tab's ✕ leaves exactly that, and the panel it leaves offers
-        // *New terminal* -- so a press here means "open one", which is what
-        // falling through does. Closed instead, the one gesture that reaches an
-        // empty terminal took it off screen, and the way back up asked for a
-        // shell the user had just been offered.
-        if open && !stepped && self.terminal.read(cx).has_shell() {
-            self.set_terminal_visible(false, window, cx);
-            return;
         }
         self.set_terminal_visible(true, window, cx);
         self.terminal.update(cx, |panel, cx| {
-            if !panel.has_shell() {
+            if spawn {
                 panel.open_shell(window, cx);
             }
             panel.focus_active(window, cx);
@@ -327,26 +326,15 @@ impl Shell {
         cx: &mut Context<Self>,
     ) {
         let live = self.dock.read(cx).is_dock_open(DockPlacement::Bottom, cx);
-        let leaving = self.terminal_root.replace(root.to_path_buf());
-        if leaving.as_deref() == Some(root) {
-            self.terminal_open.insert(root.to_path_buf(), live);
-        } else {
-            if let Some(leaving) = leaving {
-                self.terminal_open.insert(leaving, live);
-            }
-            // A project the terminal has never been opened in gets it closed.
-            // The shells that were on screen a moment ago belong to the project
-            // just left and do not come along, so an inherited open dock would
-            // greet the new one with an empty panel where they had been.
-            let wanted = self.terminal_open.get(root).copied().unwrap_or(false);
+        if let Some(wanted) = self.terminal_homes.arrive(root, live) {
             self.set_terminal_visible(wanted, window, cx);
         }
-        // Whichever branch ran, and this is the whole rule: a dock that is on
-        // screen has a shell in it. The session-switch branch is an `else` now
-        // rather than an early return precisely so this covers it too -- there
-        // the dock was already showing and was already this root's, so the one
-        // way to reach it with nothing inside is to have closed the last shell,
-        // and a panel drawn over nothing is what this exists to prevent.
+        // Handover or not, and this is the whole rule: a dock that is on
+        // screen has a shell in it. A session switch inside one project falls
+        // through to here too -- there the dock was already showing and was
+        // already this root's, so the one way to reach it with nothing inside
+        // is to have closed the last shell, and a panel drawn over nothing is
+        // what this exists to prevent.
         self.fill_open_terminal(window, cx);
     }
 

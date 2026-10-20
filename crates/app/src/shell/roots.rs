@@ -371,14 +371,8 @@ impl Shell {
             .update(cx, |panel, cx| panel.forget_root(&path, cx));
         self.window.git.remove(&path);
         self.mru.remove(&path);
-        self.terminal_open.remove(&path);
         self.folds.remove(&path);
-        // The dock on screen no longer belongs to anyone. Left naming this root,
-        // the next handover would file the live state under a project that is
-        // gone and hand a re-added one a state it never chose.
-        if self.terminal_root.as_deref() == Some(path.as_path()) {
-            self.terminal_root = None;
-        }
+        self.terminal_homes.forget(&path);
         // A cycle's frozen order can name sessions that no longer exist.
         self.tab_cycle = None;
 

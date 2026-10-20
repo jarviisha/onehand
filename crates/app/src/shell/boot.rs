@@ -99,10 +99,7 @@ impl Shell {
         let saved = workspace.layout;
         // The saved arrangement holds one workspace-wide answer to "was the
         // terminal open", and the live question is per root -- so it seeds the
-        // root that is about to be on screen and no other. Seeding
-        // `terminal_root` with it too is what stops the first handover from
-        // reading the restored dock as some *other* project's state and closing
-        // it on the way in.
+        // root that is about to be on screen and no other.
         let seed_root = workspace.active_root().map(|root| root.path.clone());
         dock.update(cx, |area, cx| {
             // Bare panels, not tab groups. `DockItem::tab` wraps its panel in a
@@ -163,20 +160,9 @@ impl Shell {
                     E::ShowRail => shell.show_rail(window, cx),
                     // The visibility button and its shortcut preserve the selected mode.
                     E::ToggleWorkbench => shell.toggle_workbench(window, cx),
-                    // The dock having a shell in it is the same condition
-                    // `show_terminal` guards its own close with, and for the
-                    // same reason: an open dock holding nothing is what closing
-                    // the last tab leaves, the panel there offers *New
-                    // terminal*, and this button's tooltip offers to open one
-                    // too. Closing on that press would answer neither.
-                    E::ToggleTerminal => {
-                        let open = shell.dock.read(cx).is_dock_open(DockPlacement::Bottom, cx);
-                        if open && shell.terminal.read(cx).has_shell() {
-                            shell.set_terminal_visible(false, window, cx);
-                        } else {
-                            shell.show_terminal(window, cx);
-                        }
-                    }
+                    // The key's rule, one owner: an open dock with a shell
+                    // closes, anything else opens.
+                    E::ToggleTerminal => shell.show_terminal(window, cx),
                     // Every one of these acts on the selected project, because
                     // the page that offers them is what shows when the selected
                     // project has nothing running in it.
@@ -545,12 +531,10 @@ impl Shell {
             rail: crate::rail::RailState::new(window, cx),
             folds: HashMap::new(),
             last_panel: FocusedPanel::Chat,
-            terminal_open: seed_root
-                .clone()
-                .map(|path| (path, saved.terminal_open))
-                .into_iter()
-                .collect(),
-            terminal_root: seed_root,
+            terminal_homes: super::dock_rules::TerminalHomes::seeded(
+                seed_root,
+                saved.terminal_open,
+            ),
             page_hid_workbench: false,
             mru: HashMap::new(),
             tab_cycle: None,

@@ -670,16 +670,14 @@ impl Shell {
 
     /// Both docks hold one project's things, and a page is about all of
     /// them. Put away, not closed: the terminal's state is filed under its
-    /// project and `terminal_root` let go, so the next arrival is a handover
+    /// project and the root on screen let go, so the next arrival is a handover
     /// that restores it, and the Workbench comes back on leaving.
     pub(super) fn docks_aside(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.page_shown(cx) {
             return;
         }
-        if let Some(root) = self.terminal_root.take() {
-            let live = self.dock.read(cx).is_dock_open(DockPlacement::Bottom, cx);
-            self.terminal_open.insert(root, live);
-        }
+        let live = self.dock.read(cx).is_dock_open(DockPlacement::Bottom, cx);
+        self.terminal_homes.put_away(live);
         self.set_terminal_visible(false, window, cx);
         self.page_hid_workbench =
             self.dock.read(cx).is_dock_open(DockPlacement::Right, cx) || self.stepped_aside;

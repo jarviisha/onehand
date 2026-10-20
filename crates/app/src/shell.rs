@@ -20,6 +20,7 @@ mod check_commands;
 mod cleanup;
 mod confirm;
 pub(crate) use confirm::{Confirm, confirm_on};
+mod dock_rules;
 mod docks;
 mod drafts;
 mod issue_work;
@@ -303,27 +304,8 @@ pub struct Shell {
     folds: HashMap<PathBuf, bool>,
     /// The panel a panel-scoped command falls back to when focus is not in one.
     last_panel: FocusedPanel,
-    /// Whether the terminal dock was open, per project root.
-    ///
-    /// **The terminal is per project all the way down, so its dock is too.**
-    /// Its tabs, its shells and its working directory are all keyed by root, and
-    /// none of them come along when the selection moves — so a dock that stayed
-    /// open across a switch was showing the new project an empty panel where the
-    /// old project's shells had been, which reads as the terminal having lost
-    /// them rather than as their having been left behind.
-    ///
-    /// A root nobody has opened it in is closed, not "however it was left in the
-    /// project before". Inheriting would reproduce the same empty panel on every
-    /// project newly arrived at, which is the thing this exists to stop.
-    terminal_open: HashMap<PathBuf, bool>,
-    /// Which root the bottom dock's current open/closed state belongs to.
-    ///
-    /// The handover has to read the dock *live* — the state is changed by a key,
-    /// by the conversation's header, by a rail menu entry and by the dock's own
-    /// chrome, and a memory updated at each of those has four places to forget.
-    /// Knowing whose state is on screen is enough to file it correctly at the one
-    /// moment it matters, which is the switch itself.
-    terminal_root: Option<PathBuf>,
+    /// The terminal dock's state per project, and whose is on screen.
+    terminal_homes: dock_rules::TerminalHomes,
     /// Whether the Workbench was open when the workspace page put it away, so
     /// leaving the page puts it back.
     page_hid_workbench: bool,
