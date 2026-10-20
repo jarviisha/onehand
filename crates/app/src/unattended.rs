@@ -15,7 +15,7 @@ use crate::state::Shared;
 use gpui::{App, BorrowAppContext as _, Task, WeakEntity};
 use onehand_core::config::UnattendedConfig;
 use onehand_core::connector::{self, Connector};
-use onehand_core::unattended::{self as core, Slots};
+use onehand_core::unattended::{self as core, Accounts, Served, Slots};
 use onehand_core::workflow::Field;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
@@ -25,11 +25,12 @@ use std::time::Duration;
 mod facts;
 mod launch;
 mod report;
+use launch::{Landed, landed};
 pub use launch::{
     Pickable, ReviewRead, look_now, pickable_blocking, pickable_one_blocking, read_review,
     start_answer, start_picked,
 };
-use launch::{begin_blocking, landed};
+pub use onehand_core::unattended::Project;
 pub(crate) use report::{
     card_question, deliver, deliver_all, ended, keep, opening, refuse_mode, spec_for, started,
 };
@@ -94,23 +95,6 @@ pub struct Unattended {
     problems: HashMap<PathBuf, String>,
     _tick: Task<()>,
 }
-
-/// Each connector beside what it said about its account: who it acts as, or
-/// why it cannot act.
-pub type Accounts = Vec<(&'static dyn Connector, Result<String, String>)>;
-
-/// A project switched on for runs: its root, and the file its own issues are
-/// kept in, if its workspace keeps any.
-#[derive(Clone)]
-pub struct Project {
-    pub root: PathBuf,
-    pub issues: Option<PathBuf>,
-}
-
-/// What a look at one project found: the forge its work goes to, or `None` for
-/// a project on no forge, whose work stays on a branch — or why it cannot be
-/// worked at all.
-type Served = Result<Option<&'static dyn Connector>, String>;
 
 /// The connector serving the project at `root`, or every reason none does.
 ///
@@ -199,28 +183,21 @@ fn has_check(root: &Path, cx: &App) -> bool {
 /// How the search chooses each issue's workflow, with the ids among them
 /// that run the project's check command, which a project with none passes
 /// over before any claim.
-fn choosing(u: &Unattended, cx: &App) -> launch::Choosing {
-    let need_check = std::iter::once(&u.workflow)
+fn choosing(u: &Unattended, cx: &App) -> core::Choosing {
+    let validated: Vec<_> = std::iter::once(&u.workflow)
         .chain(u.workflows.values())
-        .filter(|id| {
-            launch::workflow(id, &u.timeout, cx).is_ok_and(|template| template.needs_check())
-        })
-        .cloned()
+        .map(|id| (id.clone(), launch::workflow(id, &u.timeout, cx)))
         .collect();
-    launch::Choosing {
-        default: u.workflow.clone(),
-        by_label: u.workflows.clone(),
-        need_check,
-    }
+    core::Choosing::new(u.workflow.clone(), u.workflows.clone(), &validated)
 }
 
 /// What a search judges each new task by, gathered on the UI loop.
-fn judging(u: &Unattended, cx: &App) -> launch::Judging {
+fn judging(u: &Unattended, cx: &App) -> core::Judging {
     let templates = std::iter::once(&u.workflow)
         .chain(u.workflows.values())
         .map(|id| (id.clone(), launch::found(id, &u.timeout, cx)))
         .collect();
-    launch::Judging {
+    core::Judging {
         common: facts::common(cx),
         templates,
         tasks: crate::task::issue_tasks(cx, |_| true),
@@ -431,42 +408,9 @@ fn check(roots: Vec<Project>, prune: bool, cx: &mut App) {
 }
 
 /// What every connector says about its account, and for each of `roots` what
-/// it can be worked with.
-///
-/// A project is worked **with its forge** when a connector serves it and that
-/// connector's account can be used — and refused when the account cannot,
-/// since the agent would be told to push somewhere it cannot. A project **no
-/// connector serves** is still worked, on its own issues, with its work left on
-/// a branch; what refuses it is having nothing to work — no forge and a
-/// workspace that keeps no issues — or not being a repository at all. Whether a
-/// connector serves is read locally, so a project nobody serves costs no call
-/// to anything.
+/// it can be worked with, by the connectors built into this onehand.
 fn look_blocking(roots: Vec<Project>) -> (Accounts, Vec<(PathBuf, Served)>) {
-    let all = crate::plugins::connectors();
-    let accounts: Accounts = all.iter().map(|&c| (c, c.account_blocking())).collect();
-    let checked = roots
-        .into_iter()
-        .map(|project| {
-            let served = if onehand_core::worktree::repo_top_blocking(&project.root).is_none() {
-                Err("it is not a git repository".to_string())
-            } else {
-                // `accounts` was built from `all` just above, so a place in one
-                // is the same connector's place in the other.
-                match connector::serving(all, &project.root) {
-                    Ok(at) => match &accounts[at] {
-                        (c, Ok(_)) => Ok(Some(*c)),
-                        (_, Err(why)) => Err(why.clone()),
-                    },
-                    Err(_) if project.issues.is_some() => Ok(None),
-                    Err(why) => Err(format!(
-                        "{why}; and its workspace keeps no issues of its own to work instead"
-                    )),
-                }
-            };
-            (project.root, served)
-        })
-        .collect();
-    (accounts, checked)
+    core::look_blocking(crate::plugins::connectors(), roots)
 }
 
 /// File what each look found, and redraw the rows that show it. A later entry
@@ -737,7 +681,7 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
                     let (accounts, mut checked) = look_blocking(roots.clone());
                     // Only the projects that passed the look are searched, each
                     // with the forge the look found for it, if any.
-                    let workable: Vec<launch::Workable> = roots
+                    let workable: Vec<core::Workable> = roots
                         .into_iter()
                         .filter_map(|project| {
                             let (_, served) =
@@ -746,7 +690,7 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
                             let has_check = checks
                                 .iter()
                                 .any(|(root, has)| *root == project.root && *has);
-                            Some(launch::Workable {
+                            Some(core::Workable {
                                 project,
                                 forge,
                                 has_check,
@@ -754,7 +698,7 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
                         })
                         .collect();
                     let begun = search.and_then(|(label, (choosing, judging))| {
-                        begin_blocking(
+                        core::begin_blocking(
                             &workable,
                             &label,
                             &choosing,
@@ -762,6 +706,7 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
                             &judging,
                             &mut checked,
                         )
+                        .map(|begun| begun.map(|claimed| Landed::new(claimed, None)))
                     });
                     // Why nothing was started where something was looked
                     // for: the look refused the project, or what the search

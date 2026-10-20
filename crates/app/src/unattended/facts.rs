@@ -6,11 +6,10 @@ use crate::state::Shared;
 use gpui::App;
 use onehand_core::config::AgentSpec;
 use onehand_core::connector::Connector;
-use onehand_core::preflight::{DETACHED, Facts, Forge, IssueFacts};
-use onehand_core::task::{Task, Working};
-use onehand_core::unattended::{Issue, Tracker, TrackerRef};
+use onehand_core::preflight::{Facts, Forge, ProjectFacts};
+use onehand_core::task::Task;
+use onehand_core::unattended::{Issue, Tracker};
 use onehand_core::workflow::Template;
-use std::path::Path;
 
 /// What every new issue run on the configuration as it stands shares: the
 /// agent, its mode and what is known of it, and the slots. The workflow, the
@@ -63,61 +62,13 @@ pub(crate) fn issue_run(
     let tasks = crate::task::issue_tasks(cx, |of| {
         of.tracker == tracker.to_ref() && of.number == issue.number
     });
-    new_issue_run(common(cx), template(id, cx), tracker, issue, project, tasks)
-}
-
-/// What a new issue run knows of the project it works in.
-pub(crate) struct ProjectFacts {
-    pub(crate) has_check: bool,
-    /// The branch checked out, `None` outside git.
-    pub(crate) checked_out: Option<String>,
-    pub(crate) forge: Option<Forge>,
-}
-
-/// A new issue run of `workflow` on `issue` in `tracker`, in `project`, over
-/// what every run shares, with those of `tasks` that worked the issue: the
-/// one assembly a window and the search both use.
-pub(crate) fn new_issue_run(
-    common: Facts,
-    workflow: Result<Template, String>,
-    tracker: &Tracker,
-    issue: &Issue,
-    project: ProjectFacts,
-    tasks: Vec<(Task, Option<Working>)>,
-) -> Facts {
-    Facts {
-        workflow,
-        has_check: project.has_check,
-        in_git: project.checked_out.is_some(),
-        checked_out: project.checked_out,
-        forge: project.forge,
-        issue: Some(on_issue(tracker, issue, tasks)),
-        ..common
-    }
-}
-
-/// `issue` in `tracker`, named, with those of `tasks` that worked it.
-fn on_issue(tracker: &Tracker, issue: &Issue, tasks: Vec<(Task, Option<Working>)>) -> IssueFacts {
-    let at: TrackerRef = tracker.to_ref();
-    IssueFacts {
-        named: tracker.named(issue),
-        tasks: tasks
-            .into_iter()
-            .filter(|(task, _)| {
-                task.issue()
-                    .is_some_and(|i| i.tracker == at && i.number == issue.number)
-            })
-            .collect(),
-    }
-}
-
-/// The branch checked out at `root`, [`DETACHED`] when none is, or `None`
-/// outside git. Blocking: it asks git.
-pub(crate) fn checked_out_blocking(root: &Path) -> Option<String> {
-    onehand_core::worktree::repo_top_blocking(root)?;
-    Some(
-        onehand_core::worktree::current_branch_blocking(root)
-            .unwrap_or_else(|_| DETACHED.to_string()),
+    onehand_core::preflight::new_issue_run(
+        common(cx),
+        template(id, cx),
+        tracker,
+        issue,
+        project,
+        tasks,
     )
 }
 

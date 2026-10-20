@@ -250,6 +250,8 @@ pub(crate) mod fake {
         pub(crate) labelled: &'static [u64],
         /// Branch, state and address of each pull request it knows of.
         pub(crate) pulls: &'static [(&'static str, PrState, &'static str)],
+        /// Its default branch; `None` is a question it was not told to answer.
+        pub(crate) default_branch: Option<&'static str>,
     }
 
     impl Fake {
@@ -259,6 +261,7 @@ pub(crate) mod fake {
             account: Ok("Signed in as t"),
             labelled: &[9, 4],
             pulls: &[],
+            default_branch: Some("main"),
         };
     }
 
@@ -307,7 +310,10 @@ pub(crate) mod fake {
             unreachable!()
         }
         fn default_branch_blocking(&self, _: &Path) -> Result<String, String> {
-            Ok("main".to_string())
+            Ok(self
+                .default_branch
+                .unwrap_or_else(|| unreachable!())
+                .to_string())
         }
         fn fetch_blocking(&self, _: &Path, _: &str) -> Result<(), String> {
             Ok(())

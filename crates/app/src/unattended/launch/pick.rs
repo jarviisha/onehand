@@ -2,10 +2,13 @@
 //! window starts, and is told about there.
 
 use super::super::{connector_for, lacks_check_given, opted_in_roots, tick, why_not, with};
-use super::{Unstarted, earlier, landed, prepare_blocking, taking_blocking, trackers_blocking};
+use super::{Landed, earlier, landed};
 use gpui::App;
 use onehand_core::issues::template;
-use onehand_core::unattended::{self as core, IssueRow, Tracker};
+use onehand_core::unattended::{
+    self as core, IssueRow, Tracker, Unstarted, prepare_blocking, taking_blocking,
+    trackers_blocking,
+};
 use std::path::{Path, PathBuf};
 
 /// What a person can pick from in a project: its open issues from where each
@@ -158,22 +161,20 @@ pub fn start_picked(
                             &template::for_project_blocking(&repo),
                         )
                         .map(|lacks| lacks.note());
-                        Ok(prepare_blocking(
-                            repo,
-                            tracker,
-                            forge,
-                            row.issue,
-                            workflow,
-                            taking,
-                            Some(window),
+                        Ok(
+                            prepare_blocking(repo, tracker, forge, row.issue, workflow, taking)
+                                .map(|claimed| {
+                                    let claimed = core::Claimed {
+                                        instructions,
+                                        // The form said it, but its report is
+                                        // read later, by whoever judges why
+                                        // the run went wrong.
+                                        notes: lacks.into_iter().collect(),
+                                        ..claimed
+                                    };
+                                    Landed::new(claimed, Some(window))
+                                }),
                         )
-                        .map(|claimed| super::Claimed {
-                            instructions,
-                            // The form said it, but its report is read later,
-                            // by whoever judges why the run went wrong.
-                            notes: lacks.into_iter().collect(),
-                            ..claimed
-                        }))
                     }))
                     .unwrap_or_else(|_| {
                         Err("onehand panicked while claiming the issue".to_string())

@@ -2,6 +2,33 @@ use super::*;
 use crate::connector::fake::Fake;
 use crate::workflow::{Place, StepKind, StepSpec};
 
+/// A scratch git repository on `main` with one commit.
+fn repo(name: &str) -> PathBuf {
+    let git = |dir: &Path, args: &[&str]| {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .output()
+            .expect("git must be installed to run this test");
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+    let repo = std::env::temp_dir().join(format!("onehand-claim-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&repo);
+    std::fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-q", "-b", "main"]);
+    git(&repo, &["config", "user.email", "t@example.com"]);
+    git(&repo, &["config", "user.name", "T"]);
+    std::fs::write(repo.join("a.txt"), "x").unwrap();
+    git(&repo, &["add", "a.txt"]);
+    git(&repo, &["commit", "-qm", "one"]);
+    repo
+}
+
 fn earlier(number: u64, branch: &str, working: bool, answers: bool) -> Earlier {
     Earlier {
         task: format!("t{number}"),
@@ -37,27 +64,33 @@ fn local(name: &str, issues: &[(&str, &[&str])]) -> (Tracker, PathBuf) {
     (Tracker::Local(file), dir)
 }
 
-/// A worktree workflow called `id` with one step: the project's check command
-/// when `needs_check`, an agent turn otherwise.
+/// A worktree workflow called `id`: an agent turn that commits, then the
+/// project's check command when `needs_check`.
 fn template(id: &str, needs_check: bool) -> Template {
+    use crate::workflow::GateKind;
     let mut t = Template::blank(id);
     t.id = id.to_string();
     t.place = Place::Worktree;
     t.steps = vec![StepSpec {
-        id: "s".into(),
-        label: "s".into(),
-        kind: match needs_check {
-            true => StepKind::Command {
-                command: None,
-                on_fail: "s".into(),
-            },
-            false => StepKind::Agent {
-                prompt: "go".into(),
-                gates: Vec::new(),
-                keep_answer: false,
-            },
+        id: "work".into(),
+        label: "Work".into(),
+        kind: StepKind::Agent {
+            prompt: "go".into(),
+            gates: vec![GateKind::Committed],
+            keep_answer: false,
         },
     }];
+    if needs_check {
+        t.steps.push(StepSpec {
+            id: "check".into(),
+            label: "Check".into(),
+            kind: StepKind::Command {
+                command: None,
+                on_fail: "work".into(),
+            },
+        });
+    }
+    assert!(crate::workflow::validate(&t).is_empty());
     t
 }
 
@@ -168,4 +201,207 @@ fn choosing_knows_which_workflows_need_a_check() {
     // A workflow that cannot run is not one that needs a check.
     assert!(!choosing.needs_check(&["bad".into()], "auto"));
     assert_eq!(choosing.workflow_for(&["auto".into()], "auto"), "a");
+}
+
+#[test]
+fn the_look_refuses_what_cannot_be_worked() {
+    static NO_ACCOUNT: Fake = Fake {
+        account: Err("sign in first"),
+        ..Fake::SERVING
+    };
+    static ELSEWHERE: Fake = Fake {
+        name: "Elsewhere",
+        serves: Err("not here"),
+        ..Fake::SERVING
+    };
+    let all: &[&'static dyn Connector] = &[&NO_ACCOUNT, &ELSEWHERE];
+    let git = repo("look");
+    let (accounts, checked) = look_blocking(
+        all,
+        vec![
+            Project {
+                root: PathBuf::from("/nowhere-not-git"),
+                issues: None,
+            },
+            Project {
+                root: git.clone(),
+                issues: None,
+            },
+            Project {
+                root: git.clone(),
+                issues: Some(git.join("issues.json")),
+            },
+        ],
+    );
+    assert_eq!(accounts[0].1, Err("sign in first".to_string()));
+    let why = |at: usize| checked[at].1.as_ref().err().cloned();
+    assert_eq!(why(0), Some("it is not a git repository".to_string()));
+    assert_eq!(why(1), Some("sign in first".to_string()));
+    // Its own issues do not rescue a failed account.
+    assert_eq!(why(2), Some("sign in first".to_string()));
+    let _ = std::fs::remove_dir_all(git);
+}
+
+#[test]
+fn a_project_no_connector_serves_works_its_own_issues() {
+    static ELSEWHERE: Fake = Fake {
+        name: "Elsewhere",
+        serves: Err("not here"),
+        ..Fake::SERVING
+    };
+    let git = repo("own");
+    let (_, checked) = look_blocking(
+        &[&ELSEWHERE],
+        vec![
+            Project {
+                root: git.clone(),
+                issues: Some(git.join("i.json")),
+            },
+            Project {
+                root: git.clone(),
+                issues: None,
+            },
+        ],
+    );
+    assert!(matches!(checked[0].1, Ok(None)));
+    assert_eq!(
+        checked[1].1.as_ref().err().cloned(),
+        Some("not here; and its workspace keeps no issues of its own to work instead".to_string())
+    );
+    let _ = std::fs::remove_dir_all(git);
+}
+
+#[test]
+fn a_fresh_claim_without_a_forge_cuts_a_worktree_off_the_checked_out_branch() {
+    let git = repo("cut");
+    let tracker = Tracker::Local(git.join("issues.json"));
+    let claimed = prepare_blocking(
+        git.clone(),
+        tracker,
+        None,
+        Issue::new(1, "Fix it".into(), String::new()),
+        "w".into(),
+        Taking::Fresh,
+    )
+    .ok()
+    .unwrap();
+    let Work::Cut { branch, base, dir } = claimed.work else {
+        panic!("a fresh claim cuts a worktree")
+    };
+    assert_eq!(base, "main");
+    assert_eq!(branch, "onehand/local-1-fix-it");
+    assert!(dir.exists());
+    let _ = std::fs::remove_dir_all(dir);
+    let _ = std::fs::remove_dir_all(git);
+}
+
+#[test]
+fn a_refused_taking_is_unstarted_with_its_reason() {
+    let r = prepare_blocking(
+        PathBuf::from("/"),
+        Tracker::Local(PathBuf::from("/none.json")),
+        None,
+        Issue::new(1, "x".into(), String::new()),
+        "w".into(),
+        Taking::Refused("no".into()),
+    );
+    assert_eq!(
+        r.err().map(|u| (u.number, u.why)),
+        Some((1, "no".to_string()))
+    );
+}
+
+#[test]
+fn a_panic_while_preparing_becomes_unstarted() {
+    static PANICS: Fake = Fake {
+        default_branch: None,
+        ..Fake::SERVING
+    };
+    let r = prepare_blocking(
+        PathBuf::from("/"),
+        Tracker::Forge(&PANICS),
+        Some(&PANICS),
+        Issue::new(1, "x".into(), String::new()),
+        "w".into(),
+        Taking::Fresh,
+    );
+    assert_eq!(
+        r.err().map(|u| u.why),
+        Some("onehand panicked while preparing the worktree".to_string())
+    );
+}
+
+#[test]
+fn the_search_passes_over_what_needs_a_check_and_takes_the_next() {
+    let git = repo("search");
+    let file = git.join("issues.json");
+    for (title, labels) in [
+        ("Needs it", &["auto", "needs-check"][..]),
+        ("Plain", &["auto"][..]),
+    ] {
+        crate::issues::update_blocking(&file, |kept| {
+            kept.create(
+                crate::issues::Draft {
+                    title: title.to_string(),
+                    labels: labels.iter().map(|l| l.to_string()).collect(),
+                    ..Default::default()
+                },
+                1,
+            )
+        })
+        .unwrap();
+    }
+    let validated = vec![
+        ("plain".to_string(), Ok(template("plain", false))),
+        ("cmd".to_string(), Ok(template("cmd", true))),
+    ];
+    let choosing = Choosing::new(
+        "plain".into(),
+        BTreeMap::from([("needs-check".to_string(), "cmd".to_string())]),
+        &validated,
+    );
+    let judging = Judging {
+        common: Facts {
+            workflow: Err("none yet".into()),
+            agent: Some("a".into()),
+            agent_configured: true,
+            mode: None,
+            offered: None,
+            has_check: false,
+            in_git: false,
+            checked_out: None,
+            forge: None,
+            forge_read: true,
+            issue: None,
+            slots: None,
+            queued_behind: None,
+            review: None,
+            shared_checkout: None,
+        },
+        templates: validated,
+        tasks: Vec::new(),
+    };
+    let workable = Workable {
+        project: Project {
+            root: git.clone(),
+            issues: Some(file.clone()),
+        },
+        forge: None,
+        has_check: false,
+    };
+    let mut checked = Vec::new();
+    let begun = begin_blocking(&[workable], "auto", &choosing, &[], &judging, &mut checked);
+    let claimed = begun.unwrap().ok().unwrap();
+    assert_eq!(claimed.issue.number, 2);
+    assert_eq!(claimed.workflow, "plain");
+    assert!(checked.is_empty());
+    // The one taken lost its label; the one passed over keeps it.
+    let kept = crate::issues::load_blocking(&file).unwrap();
+    let labels = |n: u64| kept.get(n).unwrap().labels.clone();
+    assert!(!labels(2).contains(&"auto".to_string()));
+    assert!(labels(1).contains(&"auto".to_string()));
+    if let Work::Cut { dir, .. } = claimed.work {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+    let _ = std::fs::remove_dir_all(git);
 }
