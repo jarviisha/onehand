@@ -210,6 +210,12 @@ pub struct ChatSession {
     /// Keyed by the run's *first item*, not by the run's ordinal: a new step
     /// joining the run ahead of it renumbers every run below and would silently
     /// move the fold.
+    ///
+    /// **Here, and an item's own fold on the item in core.** The reducer opens
+    /// a step that fails at the moment its status changes, so an item's fold
+    /// has to live where the status does; a run, a section, a turn summary and
+    /// a file row group items only this side's run plan knows. Every change to
+    /// either moves one counter, the chat's `folds`.
     activity_open: HashMap<TranscriptItemId, bool>,
     /// Sections the user opened inside an opened cluster.
     ///
@@ -238,12 +244,6 @@ pub struct ChatSession {
     /// shows -- taken once when the row opens rather than on every frame it is
     /// drawn. See `toggle_file`.
     file_open: HashMap<(TranscriptItemId, String), Vec<onehand_core::diff::Row>>,
-    /// How many times a fold has been toggled.
-    ///
-    /// The run layout is built partly from these folds, so it has to be rebuilt
-    /// when one changes -- and a set of ids gives a viewport no cheap way to
-    /// ask "is this still the same set?". The counter is that answer.
-    folds_revision: u64,
     /// The event pump.
     ///
     /// Held rather than detached so the adapter's lifetime is tied to this
@@ -314,7 +314,6 @@ impl ChatSession {
                 section_open: HashSet::new(),
                 turn_open: HashMap::new(),
                 file_open: HashMap::new(),
-                folds_revision: 0,
                 _pump: cx.spawn(async move |session, cx| {
                     let mut events = events;
                     while let Some(event) = events.next().await {
@@ -374,7 +373,7 @@ impl ChatSession {
     /// it goes on to do.
     pub fn set_activity_open(&mut self, anchor: TranscriptItemId, open: bool) {
         self.activity_open.insert(anchor, open);
-        self.folds_revision = self.folds_revision.wrapping_add(1);
+        self.chat.fold_changed();
     }
 
     /// Whether the section anchored at `anchor` is showing its steps.
@@ -387,7 +386,7 @@ impl ChatSession {
         if !self.section_open.remove(&anchor) {
             self.section_open.insert(anchor);
         }
-        self.folds_revision = self.folds_revision.wrapping_add(1);
+        self.chat.fold_changed();
     }
 
     /// Whether the turn summary anchored at `anchor` is open, given what it
@@ -400,7 +399,7 @@ impl ChatSession {
     pub fn toggle_turn(&mut self, anchor: TranscriptItemId, default: bool) {
         let now = self.turn_is_open(anchor, default);
         self.turn_open.insert(anchor, !now);
-        self.folds_revision = self.folds_revision.wrapping_add(1);
+        self.chat.fold_changed();
     }
 
     /// Whether `path`'s diff is showing under the turn anchored at `anchor`.
@@ -427,7 +426,7 @@ impl ChatSession {
             });
             self.file_open.insert(key, rows);
         }
-        self.folds_revision = self.folds_revision.wrapping_add(1);
+        self.chat.fold_changed();
     }
 
     /// The diff showing under `path`'s row, if it is showing.
@@ -471,7 +470,7 @@ impl ChatSession {
             self.file_open
                 .extend(rows.into_iter().map(|(path, diff)| ((anchor, path), diff)));
         }
-        self.folds_revision = self.folds_revision.wrapping_add(1);
+        self.chat.fold_changed();
     }
 
     /// Run `f` over the transcript items `body` names.
@@ -493,11 +492,6 @@ impl ChatSession {
             })
             .collect();
         f(&items)
-    }
-
-    /// How many folds have been toggled. See the field.
-    pub fn folds_revision(&self) -> u64 {
-        self.folds_revision
     }
 
     /// A cached handle for an inline image result.
@@ -552,7 +546,7 @@ impl ChatSession {
         self.section_open.clear();
         self.turn_open.clear();
         self.file_open.clear();
-        self.folds_revision = self.folds_revision.wrapping_add(1);
+        self.chat.fold_changed();
         self.sync_md(cx);
         cx.notify();
     }

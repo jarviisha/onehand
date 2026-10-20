@@ -592,3 +592,30 @@ fn unfolding_moves_no_row() {
     assert_eq!(folded.run(1).map(|r| r.open), Some(false));
     assert_eq!(open.run(1).map(|r| r.open), Some(true));
 }
+
+#[test]
+fn opening_a_settled_thought_replans_it_as_a_block() {
+    use super::RunKind;
+    let mut chat = Chat::new(1, PathBuf::from("/tmp/project"), "claude".to_string(), None);
+    chat.items.push(ChatItem::User(UserMsg::text("go")));
+    chat.items
+        .push(ChatItem::Thought(onehand_core::chat::Thought {
+            md: Md::parse("weighing it up"),
+            started: None,
+            elapsed_secs: Some(3),
+            fold: None,
+        }));
+    let thought = TranscriptItemId::Live(1);
+    let kind = |viewport: &Viewport| {
+        (0..)
+            .map_while(|i| viewport.run(i))
+            .find(|run| run.members == vec![thought])
+            .map(|run| run.kind)
+    };
+    let mut viewport = Viewport::default();
+    viewport.replan(&chat, chat.folds(), |_, open| open, |_, d| d);
+    assert_eq!(kind(&viewport), Some(RunKind::Compact));
+    chat.toggle_thought(thought);
+    viewport.replan(&chat, chat.folds(), |_, open| open, |_, d| d);
+    assert_eq!(kind(&viewport), Some(RunKind::Block));
+}

@@ -171,7 +171,7 @@ impl ChatPane {
         let conv = self.active_conversation_mut()?;
         conv.viewport.replan(
             &session.chat,
-            session.folds_revision(),
+            session.chat.folds(),
             |anchor, default| session.activity_is_open(anchor, default),
             |anchor, default| session.turn_is_open(anchor, default),
         );

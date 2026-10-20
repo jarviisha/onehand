@@ -2182,3 +2182,26 @@ fn a_stream_that_ends_leaves_no_turn_running() {
     chat.stream_ended();
     assert_eq!(chat.link, Link::Lost, "a second end changes nothing");
 }
+
+#[test]
+fn every_fold_moves_the_fold_counter() {
+    let mut chat = Chat::new(1, PathBuf::from("/tmp/p"), "a".into(), None);
+    chat.items.push(ChatItem::Tool(ToolItem::new(ToolCall {
+        id: "t".into(),
+        title: "Read a.rs".into(),
+        description: None,
+        kind: crate::acp::ToolKind::Read,
+        status: ToolStatus::Completed,
+        content: Vec::new(),
+    })));
+    chat.items.push(ChatItem::Thought(Thought {
+        md: Md::parse("weighing it up"),
+        started: None,
+        elapsed_secs: Some(3),
+        fold: None,
+    }));
+    let before = chat.folds();
+    chat.toggle_tool(TranscriptItemId::Live(0));
+    chat.toggle_thought(TranscriptItemId::Live(1));
+    assert_eq!(chat.folds(), before + 2);
+}
