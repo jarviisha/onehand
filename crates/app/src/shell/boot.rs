@@ -160,20 +160,9 @@ impl Shell {
                     E::ShowRail => shell.show_rail(window, cx),
                     // The visibility button and its shortcut preserve the selected mode.
                     E::ToggleWorkbench => shell.toggle_workbench(window, cx),
-                    // The dock having a shell in it is the same condition
-                    // `show_terminal` guards its own close with, and for the
-                    // same reason: an open dock holding nothing is what closing
-                    // the last tab leaves, the panel there offers *New
-                    // terminal*, and this button's tooltip offers to open one
-                    // too. Closing on that press would answer neither.
-                    E::ToggleTerminal => {
-                        let open = shell.dock.read(cx).is_dock_open(DockPlacement::Bottom, cx);
-                        if open && shell.terminal.read(cx).has_shell() {
-                            shell.set_terminal_visible(false, window, cx);
-                        } else {
-                            shell.show_terminal(window, cx);
-                        }
-                    }
+                    // The key's rule, one owner: an open dock with a shell
+                    // closes, anything else opens.
+                    E::ToggleTerminal => shell.show_terminal(window, cx),
                     // Every one of these acts on the selected project, because
                     // the page that offers them is what shows when the selected
                     // project has nothing running in it.
