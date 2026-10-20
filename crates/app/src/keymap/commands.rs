@@ -410,14 +410,6 @@ pub const COMMANDS: &[Command] = &[
         "Workflows page"
     ),
     command!(
-        "workflow_open",
-        "Open the workflow",
-        ["enter"],
-        crate::workflows_page::OpenWorkflowCard,
-        "WorkflowsPage && !Dialog && !Input",
-        "Workflows page"
-    ),
-    command!(
         "workflow_step_up",
         "Open the step before",
         ["up"],

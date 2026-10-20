@@ -24,16 +24,11 @@ pub(crate) use draft::WorkflowDraft;
 
 // The Workflows page's keys: the innermost thing open closed (the step
 // open, then the editor, asked first when it holds changes), the open
-// step stepped to the step before or after, and the card the keyboard is
-// on opened.
+// step stepped to the step before or after. A card opens on Enter as any
+// pressable element does, so no binding takes the key from a button.
 gpui::actions!(
     workflows_page,
-    [
-        CloseWorkflowForm,
-        WorkflowStepUp,
-        WorkflowStepDown,
-        OpenWorkflowCard
-    ]
+    [CloseWorkflowForm, WorkflowStepUp, WorkflowStepDown]
 );
 
 use gpui::{
@@ -159,30 +154,6 @@ impl WorkflowsPage {
         self.query = Some(query.clone());
         query
     }
-
-    /// Enter: open the card the keyboard is on, if it is on one.
-    fn open_focused_card(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.picked.is_some() {
-            return;
-        }
-        let Some(place) = self.cards.iter().position(|card| card.is_focused(window)) else {
-            return;
-        };
-        let text = self
-            .query
-            .as_ref()
-            .map(|query| query.read(cx).value().to_string())
-            .unwrap_or_default();
-        let entries = crate::workflow::templates(cx);
-        let listed = pick::listed(&entries, &text);
-        let key = listed
-            .shown
-            .get(place)
-            .and_then(|&at| pick::pick_of(&entries[at]));
-        if let Some(key) = key {
-            self.pick(key, window, cx);
-        }
-    }
 }
 
 impl Render for WorkflowsPage {
@@ -266,11 +237,6 @@ impl Render for WorkflowsPage {
             .on_action(
                 cx.listener(|page: &mut Self, _: &WorkflowStepDown, window, cx| {
                     page.step_open(1, window, cx)
-                }),
-            )
-            .on_action(
-                cx.listener(|page: &mut Self, _: &OpenWorkflowCard, window, cx| {
-                    page.open_focused_card(window, cx)
                 }),
             )
             .relative()
