@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 /// chrome, and a memory updated at each of those has four places to forget.
 /// Knowing whose state is on screen is enough to file it correctly at the one
 /// moment it matters, which is the switch itself.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(super) struct TerminalHomes {
     on_screen: Option<PathBuf>,
     open: HashMap<PathBuf, bool>,

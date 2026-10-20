@@ -329,12 +329,12 @@ impl Shell {
         if let Some(wanted) = self.terminal_homes.arrive(root, live) {
             self.set_terminal_visible(wanted, window, cx);
         }
-        // Whichever branch ran, and this is the whole rule: a dock that is on
-        // screen has a shell in it. The session-switch branch is an `else` now
-        // rather than an early return precisely so this covers it too -- there
-        // the dock was already showing and was already this root's, so the one
-        // way to reach it with nothing inside is to have closed the last shell,
-        // and a panel drawn over nothing is what this exists to prevent.
+        // Handover or not, and this is the whole rule: a dock that is on
+        // screen has a shell in it. A session switch inside one project falls
+        // through to here too -- there the dock was already showing and was
+        // already this root's, so the one way to reach it with nothing inside
+        // is to have closed the last shell, and a panel drawn over nothing is
+        // what this exists to prevent.
         self.fill_open_terminal(window, cx);
     }
 
