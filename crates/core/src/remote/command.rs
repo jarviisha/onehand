@@ -4,6 +4,35 @@
 //! second channel would otherwise grow a second parser — and two parsers of the
 //! same little language disagree at the edges long before anybody notices.
 
+/// What this chat can do, in the order somebody arriving would need it: the
+/// first thing a fresh chat is sent, and the answer to a word the parser does
+/// not know. Beside the parser so that a command added or renamed is a change
+/// to one file.
+pub const HELP: &str = "\
+/sessions — every session onehand is running, and what each is doing
+/use <number> — point this chat at one of them, and follow it
+/follow [number] — hear about a session without pointing at it
+/unfollow [number] — stop hearing about one
+/status — what reaches this chat right now
+/stop — cancel the turn running on the one this chat is pointed at
+/options — the agent's own pickers: mode, model, effort
+/archive — conversations saved on disk, newest first
+/open <number> — put one of them back and point this chat at it
+/away — you've left the machine; announce everything you follow
+/here — you're back; go quiet again while you're looking
+/help — this
+
+Anything else is sent as a prompt to the session this chat is pointed at.
+//<command> sends the agent's own slash command — //compact, //clear.
+
+Nothing reaches you here until you ask for it. A session you follow announces \
+three things on its own: a turn that finished, an agent waiting on you, an \
+agent that stopped answering — everything else stays quiet, and a session you \
+don't follow says nothing at all while still running normally. /use follows \
+what it points at, so the short way in is /sessions then /use <number>. While \
+you're at the keyboard what you could already see is held back; /away is how \
+you say you can't see it. If it seems too quiet, /status says why.";
+
 /// One line, understood.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RemoteCommand {
@@ -458,5 +487,60 @@ mod tests {
     fn an_empty_line_asks_nothing() {
         assert_eq!(parse(""), RemoteCommand::Nothing);
         assert_eq!(parse("   \n\t "), RemoteCommand::Nothing);
+    }
+
+    /// Every command word [`HELP`] offers, as the reader would type it.
+    ///
+    /// Lines beginning with a doubled slash are skipped: that entry is the
+    /// escape for the agent's own commands, and `<command>` there is a
+    /// placeholder rather than a word this build knows.
+    fn words_help_offers() -> Vec<&'static str> {
+        HELP.lines()
+            .filter(|line| line.starts_with('/') && !line.starts_with("//"))
+            .filter_map(|line| line.split_whitespace().next())
+            .collect()
+    }
+
+    /// A command named in the help and not in the parser answers "I don't know
+    /// that" while pointing at itself, which is the worst reply the bridge has.
+    /// It is the failure a rename produces and the one nobody would go looking
+    /// for, since the help is the last place anybody suspects.
+    #[test]
+    fn help_offers_nothing_the_parser_cannot_read() {
+        for word in words_help_offers() {
+            let read = parse(word);
+            assert!(
+                !matches!(read, RemoteCommand::Unknown(_)),
+                "{word} is offered in the help and the parser does not know it"
+            );
+        }
+    }
+
+    /// The other direction, for the three the subscription model turns on. A
+    /// bridge that says nothing until asked is only usable if the asking is
+    /// findable, and `/status` is what a reader reaches for when it seems
+    /// broken — every one of them has to be in the first thing a new chat is
+    /// sent.
+    #[test]
+    fn subscribing_is_offered_in_the_help() {
+        let offered = words_help_offers();
+        assert!(offered.contains(&"/follow"), "{HELP}");
+        assert!(offered.contains(&"/unfollow"), "{HELP}");
+        assert!(offered.contains(&"/status"), "{HELP}");
+    }
+
+    /// Silence being the default is the one thing a new chat cannot work out by
+    /// waiting, so the help has to say it rather than only listing the commands
+    /// that change it. Pinned by the words a reader would scan for: without them
+    /// the first symptom is a bridge that looks dead.
+    #[test]
+    fn the_help_says_that_nothing_arrives_unasked() {
+        assert!(
+            HELP.contains("Nothing reaches you here until you ask for it"),
+            "{HELP}"
+        );
+        // And the short way past it, since the listing alone does not say that
+        // pointing a chat at a session is also subscribing to it.
+        assert!(HELP.contains("/use follows what it points at"), "{HELP}");
     }
 }

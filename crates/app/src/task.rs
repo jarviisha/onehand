@@ -264,8 +264,7 @@ pub(crate) fn request(id: String, window: &mut Window, cx: &mut Context<Shell>) 
             let Some(task) = t.task_mut(&id) else {
                 return;
             };
-            if task.runs.len() > 1 && task.runs.last().is_some_and(|run| !run.begun()) {
-                task.runs.pop();
+            if task.drop_unbegun_retry() {
                 t.save(&id);
             }
         });
@@ -469,10 +468,7 @@ pub(crate) fn stop_queued(id: &str, cx: &mut App) {
         }
         t.asked_in.remove(id);
         let task = t.task_mut(id)?;
-        let dropped = match task.runs.last().is_some_and(|run| !run.begun()) {
-            true => task.runs.pop(),
-            false => None,
-        };
+        let dropped = task.take_unbegun();
         t.save(id);
         dropped
     });

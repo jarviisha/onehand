@@ -51,7 +51,7 @@ pub(in crate::chat) use permission::permission;
 use plan::plan;
 use prose::{agent, thought};
 pub(in crate::chat) use strip::turn_summary;
-pub use strip::{Run, activity_group, activity_summary, cluster, runs, section_group};
+pub use strip::{activity_group, cluster, section_group};
 pub(in crate::chat) use tool::diff_rows;
 use tool::tool;
 use user::user;

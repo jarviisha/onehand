@@ -190,7 +190,7 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let dir = dir.map(|d| std::fs::canonicalize(&d).unwrap_or(d));
+        let dir = dir.map(workspace::canon_dir);
         let handle = window.window_handle();
         cx.update_global::<Shared, _>(|shared, _| {
             if let Some(entry) = shared

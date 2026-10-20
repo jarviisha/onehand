@@ -17,13 +17,14 @@ pub mod store;
 pub use activity::{
     first_line_trunc, group, presentation, ActivityGroup, ActivityKind, Presentation,
 };
-pub use attention::{Attention, Presence, Telling};
+pub use attention::{Attention, Presence, SessionSignal, Telling};
 pub use export::export_markdown;
 pub use model::{
     ApplyOutcome, AskItem, AskRow, Away, Chat, ChatItem, Link, Md, MdId, NoticeLevel, PermItem,
     PlanItem, QueuedPrompt, Selector, SelectorChoice, SubmitBlock, TermView, Thought, ToolItem,
     TranscriptItemId, TurnAnswer, UserAsk, UserMsg, MAX_TERM_BYTES, MODE_SELECTOR,
 };
+pub use steps::cluster::{clusters, section_summary, Cluster};
 pub use steps::{
     cluster_summary, redact, run_outcome, turn_changes, turn_file_diff, ClusterSummary, FileChange,
     FileVerdict, Outcome, RunOutcome, SummaryPart, TurnChanges,

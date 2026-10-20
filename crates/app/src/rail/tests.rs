@@ -4,7 +4,7 @@ use super::model::{
 };
 use super::project::{GitLine, auto_status, project_hint, run_on};
 use super::row::project_key;
-use super::session::{LABEL_SHAPE_CAP, session_label, signal_hint, signal_word};
+use super::session::{LABEL_SHAPE_CAP, session_label, signal_hint};
 use super::workspace::new_session_hint;
 use crate::chat::pane::SessionSignal;
 use gpui::SharedString;
@@ -351,7 +351,7 @@ fn each_state_names_itself_and_no_two_alike() {
         all.iter()
             .map(|s| signal_hint(Some(*s)))
             .collect::<Vec<_>>(),
-        all.iter().map(|s| signal_word(*s)).collect(),
+        all.iter().map(|s| s.word()).collect(),
     ] {
         assert!(words.iter().all(|w| !w.trim().is_empty()));
         let mut unique = words.clone();

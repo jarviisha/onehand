@@ -433,7 +433,7 @@ impl ChatPane {
                     ("workspace-session", uid as usize),
                     crate::rail::signal_mark(signal, cx),
                     title,
-                    format!("{} · {}", project.label, crate::rail::signal_word(signal)),
+                    format!("{} · {}", project.label, signal.word()),
                     cx,
                 )
                 .on_click(cx.listener(move |_: &mut Self, _, _, cx| {

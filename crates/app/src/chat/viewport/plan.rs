@@ -152,7 +152,7 @@ pub(super) fn sections(chat: &Chat, members: &[TranscriptItemId]) -> Vec<Section
                     .first()
                     .and_then(|item| transcript::section_group(item))
                     .unwrap_or(ActivityGroup::Other),
-                summary: transcript::activity_summary(&bodies),
+                summary: onehand_core::chat::section_summary(&bodies),
                 outcome: run_outcome(&bodies),
                 members,
             }

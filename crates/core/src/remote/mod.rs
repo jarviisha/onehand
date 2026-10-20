@@ -25,8 +25,10 @@ pub mod command;
 pub mod press;
 pub mod types;
 
-pub use chats::{Announcement, ArchiveRow, Chats, Origin, RemoteSession};
-pub use command::{Aim, RemoteCommand};
+pub use chats::{
+    archive_listing, scan_archives, Announcement, ArchiveRow, Chats, Origin, RemoteSession,
+};
+pub use command::{Aim, RemoteCommand, HELP};
 pub use press::Press;
 pub use types::{
     Button, ChatId, Outbound, RemoteChannel, RemoteEvent, RemoteRequest, ReqRx, ReqTx,

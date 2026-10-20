@@ -124,6 +124,44 @@ fn a_task_reads_as_its_last_run() {
     assert!(!t.resumable());
 }
 
+/// A retry refused before it began is dropped, but a task's only run is
+/// kept: dropping it would leave a task that was never anything.
+#[test]
+fn a_refused_retry_is_dropped_but_a_tasks_only_run_stays() {
+    let mut t = task("1");
+    assert!(!t.drop_unbegun_retry(), "the only run stays");
+    assert_eq!(t.runs.len(), 1);
+    t.runs[0].resume();
+    t.runs[0].stopped(Stop::LinkLost);
+    let again = t.runs[0].clone();
+    t.runs.push(again);
+    assert!(
+        !t.drop_unbegun_retry(),
+        "a retry that began is not a retry to drop"
+    );
+    let mut fresh = t.runs[0].clone();
+    fresh.history.clear();
+    t.runs.push(fresh);
+    assert!(t.drop_unbegun_retry());
+    assert_eq!(t.runs.len(), 2);
+}
+
+/// Stop on a task that never ran gives its empty run up, whatever its
+/// place; one that ran a step keeps it.
+#[test]
+fn a_stopped_task_gives_up_an_unbegun_run() {
+    let mut t = task("1");
+    assert!(
+        t.take_unbegun().is_some(),
+        "an only run that never began goes too"
+    );
+    assert!(t.runs.is_empty());
+    let mut t = task("2");
+    t.runs[0].resume();
+    assert!(t.take_unbegun().is_none());
+    assert_eq!(t.runs.len(), 1);
+}
+
 /// Writes land in the order sent, so a snapshot sent before a newer one
 /// never lands over it.
 #[test]

@@ -535,6 +535,78 @@ impl Chats {
     }
 }
 
+/// How many saved conversations one `/archive` offers.
+///
+/// A flat handful across every project rather than a browsable index: the
+/// question somebody asks from a phone is "put back the one I was in", and a
+/// month of work would otherwise draw a column of hundreds for the sake of the
+/// two anybody came for. What the cap cut off is said on screen rather than
+/// silently dropped.
+const MAX_ARCHIVES: usize = 10;
+
+/// Read what is on disk for `roots`, newest first.
+///
+/// **Blocking, and called from the background executor only.** It opens the
+/// conversation store and reads a small file per conversation in it, which is
+/// hundreds of reads on a machine that has been used for a while — on the UI
+/// thread that is a visible stall, in the middle of a frame, for a message
+/// nobody is watching the screen for.
+pub fn scan_archives(roots: Vec<(PathBuf, String)>) -> (Vec<ArchiveRow>, usize) {
+    let store = crate::chat::conversations_dir();
+    let mut found: Vec<ArchiveRow> = Vec::new();
+    for (root, project) in roots {
+        // Every agent, not one: the listing is about what was said, and which
+        // adapter said it is a detail below that.
+        for meta in crate::chat::list_conversations(&store, &root, None) {
+            found.push(ArchiveRow {
+                root: root.clone(),
+                project: project.clone(),
+                dir: meta.dir,
+                agent: meta.agent,
+                title: meta.title,
+                updated: meta.updated,
+            });
+        }
+    }
+    // Newest first, which is what makes a cap of ten worth having.
+    found.sort_by_key(|pick| std::cmp::Reverse(pick.updated));
+    // The total travels with the page, because a listing that quietly stops at
+    // ten reads as a machine that has had ten conversations.
+    let total = found.len();
+    found.truncate(MAX_ARCHIVES);
+    (found, total)
+}
+
+/// The `/archive` reply.
+pub fn archive_listing(found: &[ArchiveRow], total: usize) -> String {
+    if found.is_empty() {
+        return "Nothing saved yet — a conversation is written at the end of its first turn."
+            .to_string();
+    }
+    let now = crate::chat::now_secs();
+    let mut out = String::from("Archive\n\n");
+    for (place, pick) in found.iter().enumerate() {
+        out.push_str(&format!(
+            "{} · {} — {}\n    {} · {}\n",
+            place + 1,
+            pick.project,
+            pick.title,
+            pick.agent,
+            crate::rel_time(now, pick.updated),
+        ));
+    }
+    // Said rather than silently dropped: a list that stops at ten with no word
+    // about it reads as a machine that has had ten conversations.
+    if total > found.len() {
+        out.push_str(&format!(
+            "\n{} newest of {total}. The rest are in the app.\n",
+            found.len()
+        ));
+    }
+    out.push_str("\n/open <number> puts one back.");
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -559,6 +631,37 @@ mod tests {
         assert!(chats.allows("123"));
         assert!(chats.allows("-100456"));
         assert!(!chats.allows("124"));
+    }
+
+    fn saved(place: usize) -> ArchiveRow {
+        ArchiveRow {
+            root: PathBuf::from("/p"),
+            project: "p".into(),
+            dir: PathBuf::from("/p/c"),
+            agent: "Claude Code".into(),
+            title: format!("t{place}"),
+            updated: crate::chat::now_secs(),
+        }
+    }
+
+    /// The listing numbers what it shows, says how many it cut, and ends on
+    /// how to put one back; with nothing saved it says that instead.
+    #[test]
+    fn the_archive_listing_counts_what_it_cut() {
+        assert!(archive_listing(&[], 0).starts_with("Nothing saved yet"));
+        let text = archive_listing(&[saved(1), saved(2)], 12);
+        assert!(
+            text.contains("1 · p — t1\n    Claude Code · just now"),
+            "{text}"
+        );
+        assert!(text.contains("2 · p — t2"), "{text}");
+        assert!(
+            text.contains("\n2 newest of 12. The rest are in the app.\n"),
+            "{text}"
+        );
+        assert!(text.ends_with("/open <number> puts one back."), "{text}");
+        // Nothing was cut: nothing is said about it.
+        assert!(!archive_listing(&[saved(1)], 1).contains("newest of"));
     }
 
     /// The failure mode this exists to prevent: an enabled bridge whose list was

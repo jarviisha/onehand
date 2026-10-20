@@ -20,6 +20,8 @@ use crate::acp::ToolKind;
 use crate::chat::activity::{self, ActivityKind};
 use crate::chat::model::ChatItem;
 
+pub mod cluster;
+
 /// What stands in for a secret once it has been taken out.
 ///
 /// Round dots rather than asterisks: an asterisk is a shell glob and a wildcard
