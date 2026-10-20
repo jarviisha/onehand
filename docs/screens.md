@@ -168,7 +168,8 @@ height (its dragged height kept).
   many steps and where it works under it, *Run…*, which refuses until it is saved, and a ⋯ with
   *Duplicate*, *Export…* and *Delete…*), then three columns parted by hairlines, each scrolling
   apart. The first holds the workflow's own fields: *About* (name and description), *How it runs*
-  (where it works, misses allowed, timeout), what a prompt may use, then the problems (a name
+  (where it works, a picker naming the choice over a menu of both; misses allowed; timeout), each
+  pair of fields stacking where the column cannot hold both, what a prompt may use, then the problems (a name
   clash among them) above *Save*, which refuses with the first and spins while it writes, and
   *Cancel*. The second holds *Steps*, in a box, as it decides what a run does: its count and
   *Add step* with its menu of kinds on its title row, then the steps down a rail. A step reads

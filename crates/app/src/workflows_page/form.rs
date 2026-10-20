@@ -11,9 +11,7 @@ use crate::controls::Short as _;
 use crate::controls::text_input;
 use crate::settings::{about, field, section};
 use gpui::prelude::FluentBuilder as _;
-use gpui::{
-    AnyElement, App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div,
-};
+use gpui::{AnyElement, App, Entity, IntoElement, ParentElement, Styled, Window, div};
 use gpui_component::button::ButtonVariants;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::workflow::Place;
@@ -40,15 +38,39 @@ pub(super) fn workflow_column(
     // A shipped workflow is read, never saved: it is changed by duplicating it.
     let shipped = draft.shipped;
     let place = draft.place;
-    let places: Vec<SharedString> = Place::ALL.iter().map(|p| p.label().into()).collect();
-    let place_at = Place::ALL.iter().position(|p| *p == place).unwrap_or(0);
-    let pick_place = {
-        let handle = handle.clone();
-        move |at: &usize, window: &mut Window, cx: &mut App| {
-            let place = Place::ALL[*at];
-            handle.update(cx, |page, cx| {
-                page.edit_workflow_draft(window, cx, |d, _, _| d.place = place)
-            });
+    // Where it works, picked from a menu under a picker naming the choice:
+    // the column is too narrow for both choices side by side. A shipped
+    // workflow's refuses, as its fields are disabled.
+    let place_picker = {
+        let trigger = onehand_plugin_host::picker(
+            "workflow-place-trigger",
+            place.label(),
+            true,
+            onehand_plugin_host::ControlSize::Tall,
+            cx,
+        );
+        if shipped {
+            trigger
+                .refuses(Some("Built in: duplicate it to change it".to_string()))
+                .into_any_element()
+        } else {
+            let handle = handle.clone();
+            crate::controls::menu_below("workflow-place", trigger, move |mut menu, _, _| {
+                for choice in Place::ALL {
+                    let handle = handle.clone();
+                    menu = menu.item(
+                        crate::controls::menu_item(choice.label())
+                            .checked(choice == place)
+                            .on_click(move |_, window: &mut Window, cx: &mut App| {
+                                handle.update(cx, |page, cx| {
+                                    page.edit_workflow_draft(window, cx, |d, _, _| d.place = choice)
+                                });
+                            }),
+                    );
+                }
+                menu
+            })
+            .into_any_element()
         }
     };
     let input = |state: &Entity<gpui_component::input::InputState>| {
@@ -83,14 +105,7 @@ pub(super) fn workflow_column(
                 "In the checkout leaves the change uncommitted for you; a new worktree gets a \
                  branch of its own, and the work is committed there",
             ),
-            onehand_plugin_host::switch(
-                "workflow-place",
-                &places,
-                place_at,
-                onehand_plugin_host::ControlSize::Tall,
-                pick_place,
-                cx,
-            ),
+            div().h_flex().child(place_picker),
             cx,
         ))
         .child(
