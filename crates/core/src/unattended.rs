@@ -424,6 +424,14 @@ pub fn branch_for(tracker: &Tracker, issue: &Issue) -> String {
     }
 }
 
+/// The branch a cut from `root` would take for `branch`, as far as the
+/// repository can tell: the forge is not asked, as that is a call over the
+/// network for every pick, so a branch only its pull request still holds can
+/// step the cut one further. Blocking.
+pub fn free_branch_here_blocking(root: &Path, branch: &str) -> String {
+    free_branch_blocking(root, branch, |_| Ok(false)).unwrap_or_else(|_| branch.to_string())
+}
+
 /// `branch`, or the first of `branch-2` … `branch-9` the repository at `root`
 /// does not have yet and `taken` does not say is taken elsewhere.
 ///

@@ -53,6 +53,7 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
     let templates = picker.templates.clone();
     let picked = picker.workflow.clone();
     let chosen = picker.chosen();
+    let branch_cut = picker.chosen_branch().map(str::to_string);
     // Judged on every frame from what the app holds, so a block fixed
     // elsewhere (an agent come up, a slot let go) clears as it happens.
     let judged = shell.pick_preflight(cx);
@@ -96,6 +97,7 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
                         &templates,
                         &instructions,
                         preview,
+                        branch_cut.as_deref(),
                         &handle,
                         cx,
                     )
@@ -176,6 +178,7 @@ fn start_form(
     templates: &[template::IssueTemplate],
     instructions: &Entity<TextareaState>,
     preview: bool,
+    branch_cut: Option<&str>,
     handle: &Entity<Shell>,
     cx: &App,
 ) -> AnyElement {
@@ -204,36 +207,42 @@ fn start_form(
     // The branch is machine text, so it stands in a well in the mono family,
     // on a line of its own: a long name neither breaks the sentence above at
     // its slash nor wraps. Under it, what it is cut off.
-    let branch = div()
-        .v_flex()
-        .gap_1()
-        .w_full()
-        .child(
-            onehand_ui::well(cx)
-                .h_flex()
-                .items_center()
-                .gap_2()
-                .px_2()
-                .py_1()
-                .child(onehand_ui::mark_slot(
-                    Icon::new(crate::icons::Icon::GitBranch)
-                        .small()
-                        .text_color(muted),
-                ))
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .truncate()
-                        .child(core::branch_for(tracker, &row.issue)),
-                ),
-        )
-        .children(
-            findings
-                .iter()
-                .filter(|f| f.check == Check::Base)
-                .map(|f| div().text_xs().text_color(muted).child(f.text.clone())),
-        );
+    let branch =
+        div()
+            .v_flex()
+            .gap_1()
+            .w_full()
+            .child(
+                onehand_ui::well(cx)
+                    .h_flex()
+                    .items_center()
+                    .gap_2()
+                    .px_2()
+                    .py_1()
+                    .child(onehand_ui::mark_slot(
+                        Icon::new(crate::icons::Icon::GitBranch)
+                            .small()
+                            .text_color(muted),
+                    ))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            // The name the cut takes once the repository said,
+                            // else the one it starts from.
+                            .child(branch_cut.map_or_else(
+                                || core::branch_for(tracker, &row.issue),
+                                str::to_string,
+                            )),
+                    ),
+            )
+            .children(
+                findings
+                    .iter()
+                    .filter(|f| f.check == Check::Base)
+                    .map(|f| div().text_xs().text_color(muted).child(f.text.clone())),
+            );
     let said: Vec<&Finding> = findings.iter().filter(|f| f.check != Check::Base).collect();
     let lines: Vec<_> = said
         .iter()
