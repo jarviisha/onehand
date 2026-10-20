@@ -18,6 +18,7 @@ use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::chat::{ChatItem, NoticeLevel, TranscriptItemId};
 
 mod ask;
+mod code_view;
 mod metrics;
 mod parts;
 mod permission;
