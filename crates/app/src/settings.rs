@@ -136,9 +136,9 @@ pub(crate) fn page_head(
         .items_center()
         .gap_2()
         .child(
-            onehand_plugin_host::badge(
+            onehand_ui::badge(
                 scope,
-                onehand_plugin_host::Tint {
+                onehand_ui::Tint {
                     fill: cx.theme().secondary,
                     ink: cx.theme().secondary_foreground,
                 },
@@ -190,7 +190,7 @@ pub(crate) fn section(title: Option<&'static str>, about: Option<SharedString>, 
 
 /// One setting, stacked: the plugin host's, where a plugin's form reaches it
 /// too.
-pub(crate) use onehand_plugin_host::field;
+pub(crate) use onehand_ui::field;
 
 /// One entry in a list: what it is on the left, what can be done to it on the
 /// right. For things of which there are many -- agents, commands -- where the
@@ -321,7 +321,7 @@ fn nav_row(page: SettingsPage, current: SettingsPage, handle: &Entity<Shell>, cx
     // down the column.
     div().w_full().child(
         crate::rail::page_fill(row, page == current, cx)
-            .child(onehand_plugin_host::mark_slot(page.icon().small()))
+            .child(onehand_ui::mark_slot(page.icon().small()))
             .child(page.label())
             .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
                 handle.update(cx, |shell, cx| shell.show_settings_page(page, cx));

@@ -14,7 +14,7 @@ use gpui::{
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::chat::ConvMeta;
-use onehand_plugin_host::Tall as _;
+use onehand_ui::Tall as _;
 use std::path::{Path, PathBuf};
 
 /// How many past conversations the project page lists.
@@ -299,7 +299,7 @@ impl ChatPane {
             // what has to happen first beats an offer that cannot be taken:
             // every session belongs to a root, and there is no root to bind one
             // to.
-            return onehand_plugin_host::hint("Add a project to start a session", cx);
+            return onehand_ui::hint("Add a project to start a session", cx);
         };
         let now = onehand_core::chat::now_secs();
         let (muted, ring) = (cx.theme().muted_foreground, cx.theme().ring);
@@ -390,7 +390,7 @@ impl ChatPane {
                     // the facts it covers.
                     let keyed =
                         window.last_input_was_keyboard() && focus.contains_focused(window, cx);
-                    let row = onehand_plugin_host::row(false, cx)
+                    let row = onehand_ui::row(false, cx)
                         .id(("home", i))
                         .relative()
                         .h_flex()
@@ -455,7 +455,7 @@ impl ChatPane {
                                 .h_flex()
                                 .items_center()
                                 .child(
-                                    onehand_plugin_host::hover_slot(
+                                    onehand_ui::hover_slot(
                                         group,
                                         false,
                                         crate::controls::action(("home-delete", i))
@@ -488,7 +488,7 @@ impl ChatPane {
         let tasks = tasks_box(&project.path, cx);
         // What the project is set to: its check command, the shell's field.
         let settings = project.check_input.as_ref().map(|input| {
-            page_card("Settings", None, None, cx).child(onehand_plugin_host::field(
+            page_card("Settings", None, None, cx).child(onehand_ui::field(
                 "Check command",
                 Some("What Run check and a command step naming none run here".into_any_element()),
                 text_input(input, cx).tall(),
@@ -651,7 +651,7 @@ fn tasks_box(root: &Path, cx: &mut Context<ChatPane>) -> Div {
                 .filter(|(_, (_, n, _))| *n > 0)
                 .map(|(i, (label, n, ink))| {
                     let root = root.clone();
-                    onehand_plugin_host::row(false, cx)
+                    onehand_ui::row(false, cx)
                         .id(("project-tasks", i))
                         .h_flex()
                         .items_center()

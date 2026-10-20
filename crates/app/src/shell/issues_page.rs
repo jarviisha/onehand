@@ -9,8 +9,8 @@ use super::Shell;
 use crate::workbench::WorkbenchEvent;
 use gpui::{Context, SharedString, Window};
 use gpui_component::dock::DockPlacement;
-use onehand_plugin_host::{Ask, Request};
-use onehand_workbench_issues::{IssuesEvent, Page, Tell};
+use onehand_issues::{IssuesEvent, Page, Tell};
+use onehand_workbench::{Ask, Request};
 use std::path::Path;
 use std::rc::Rc;
 
@@ -37,7 +37,7 @@ impl Shell {
                 }
             });
         });
-        Page::new(crate::plugins::connectors(), ask, tell, cx)
+        Page::new(crate::features::connectors(), ask, tell, cx)
     }
 
     /// Answer what the Workbench asked for.

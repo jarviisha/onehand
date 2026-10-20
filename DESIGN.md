@@ -165,7 +165,7 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   inset cancelling one the library draws in pixels, and a grid that zooms on its own (the
   terminal's). Fixed chrome heights stay outside the
   zoom wrapper. A size the steps lack is a named constant (shared ones in
-  `onehand_plugin_host::tokens`, others beside their use), its reason in its doc comment.
+  `onehand_ui::tokens`, others beside their use), its reason in its doc comment.
 - **Two shapes.** What a person presses or what holds content takes `radius`, 4px
   (`tokens::CORNER`): a control, a field, a row, a tab, a chip, a well, the bubble, a box, the
   composer, the terminal, a floating panel, a dialog, a toast. The theme sets `radius_lg` to the

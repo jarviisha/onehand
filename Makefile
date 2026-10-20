@@ -38,10 +38,10 @@ LIVE_CONFIG := $(or $(XDG_CONFIG_HOME),$(HOME)/.config)/onehand/config.toml
 # that its diff against `zortax/gpui-terminal@51f0292` is exactly the patches we
 # wrote and nothing else. Its own lint warnings are
 # upstream's and stay put.
-OURS := -p onehand -p onehand-core -p onehand-plugin-api -p onehand-plugin-host \
-	-p onehand-terminal-ui -p onehand-connector-github -p onehand-remote-telegram \
-	-p onehand-workbench-editor \
-	-p onehand-workbench-files -p onehand-workbench-issues -p onehand-workbench-markdown -p onehand-workbench-neovim -p onehand-workbench-plugins
+OURS := -p onehand -p onehand-core -p onehand-workbench -p onehand-ui \
+	-p onehand-terminal-ui -p onehand-github -p onehand-telegram \
+	-p onehand-editor \
+	-p onehand-files -p onehand-issues -p onehand-markdown -p onehand-neovim -p onehand-claude-plugins
 
 .DEFAULT_GOAL := help
 

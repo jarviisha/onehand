@@ -103,7 +103,7 @@ pub(crate) fn footer_row() -> gpui::Div {
 }
 
 /// One field of a dialog's form: the plugin host's, as Settings' are.
-use onehand_plugin_host::field;
+use onehand_ui::field;
 
 /// The conversation-rename window.
 ///
@@ -262,11 +262,11 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
             let names = names.clone();
             let picker = crate::controls::menu_below(
                 "workflow-template",
-                onehand_plugin_host::picker(
+                onehand_ui::picker(
                     "workflow-template-trigger",
                     picker_name.clone(),
                     true,
-                    onehand_plugin_host::ControlSize::Short,
+                    onehand_ui::ControlSize::Short,
                     cx,
                 ),
                 move |mut menu, _, _| {
@@ -507,7 +507,7 @@ pub(crate) fn finding_line(
                 .text_color(ink)
                 // The mark says whether it blocks the start or only tells,
                 // centred on the first line's height when the text wraps.
-                .child(onehand_plugin_host::mark_slot(Icon::new(mark).xsmall()).h(FINDING_LINE))
+                .child(onehand_ui::mark_slot(Icon::new(mark).xsmall()).h(FINDING_LINE))
                 .child(div().flex_1().min_w_0().child(text)),
         )
         .children(finding.task.clone().map(|task| {
@@ -614,7 +614,7 @@ fn workflow_preview(
     let muted = cx.theme().muted_foreground;
     let toggle = {
         let handle = handle.clone();
-        onehand_plugin_host::fold_toggle("workflow-preview", "Preview", open).on_click(
+        onehand_ui::fold_toggle("workflow-preview", "Preview", open).on_click(
             move |_, _, cx: &mut App| {
                 handle.update(cx, toggle);
             },
@@ -664,7 +664,7 @@ fn workflow_preview(
         .child(div().text_xs().text_color(muted).child("The first prompt"))
         // The prompt as the agent receives it: machine text, in a well.
         .child(
-            onehand_plugin_host::well(cx)
+            onehand_ui::well(cx)
                 .id("workflow-preview-prompt")
                 .max_h(PREVIEW_MAX_H)
                 .overflow_y_scroll()

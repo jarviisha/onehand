@@ -84,9 +84,14 @@ fn sources() -> Vec<(String, String)> {
 fn ui_sources() -> Vec<(String, String)> {
     sources_under(&[
         "crates/app/src",
-        "crates/plugin-host/src",
+        "crates/claude-plugins/src",
+        "crates/editor/src",
+        "crates/files/src",
+        "crates/issues/src",
+        "crates/markdown/src",
+        "crates/neovim/src",
         "crates/terminal-ui/src",
-        "plugins/builtin",
+        "crates/ui/src",
     ])
 }
 
@@ -100,11 +105,18 @@ fn ui_sources() -> Vec<(String, String)> {
 fn workspace_sources() -> Vec<(String, String)> {
     sources_under(&[
         "crates/app/src",
+        "crates/claude-plugins/src",
         "crates/core/src",
-        "crates/plugin-api/src",
-        "crates/plugin-host/src",
+        "crates/editor/src",
+        "crates/files/src",
+        "crates/github/src",
+        "crates/issues/src",
+        "crates/markdown/src",
+        "crates/neovim/src",
+        "crates/telegram/src",
         "crates/terminal-ui/src",
-        "plugins/builtin",
+        "crates/ui/src",
+        "crates/workbench/src",
     ])
 }
 
@@ -238,7 +250,7 @@ mod tests {
     ///
     /// **Transitive, and it has to be.** The check used to read core's own
     /// manifest for lines starting with the forbidden name, which a path
-    /// dependency walks straight past: adding `onehand-plugin-host` to core
+    /// dependency walks straight past: adding `onehand-ui` to core
     /// pulls `gpui` and `gpui-component` back in with the guard still green.
     /// Renamed dependencies (`foo = { package = "gpui" }`) go the same way,
     /// which is why the `package` key is read as well as the table's name.
@@ -274,7 +286,7 @@ mod tests {
         // and go on passing on the day it gains one that drags gpui back in.
         // The plugin host depends on core by path, so following it is proof the
         // walk crosses a manifest boundary.
-        let through_host = super::reachable_dependencies(&root.join("crates/plugin-host"));
+        let through_host = super::reachable_dependencies(&root.join("crates/ui"));
         assert!(
             through_host
                 .iter()
@@ -400,7 +412,7 @@ mod tests {
                         !source.contains(&expression),
                         "{path} uses the status background `{role}` as text; use \
                          status_ink instead -- crate::theme in the app, \
-                         onehand_plugin_host in a plugin"
+                         onehand_ui in a plugin"
                     );
                 }
             }
@@ -624,7 +636,7 @@ mod tests {
             // than the app because a built-in plugin draws buttons too and
             // cannot reach into the binary hosting it -- and one wrapper is the
             // whole point, so there is exactly one file to exempt.
-            if path.ends_with("plugin-host/src/lib.rs") {
+            if path.ends_with("crates/ui/src/lib.rs") {
                 continue;
             }
             for (n, line) in source.lines().enumerate() {
@@ -653,7 +665,7 @@ mod tests {
             format!("Textarea{}new(", "::"),
         ];
         for (path, source) in ui_sources() {
-            if path.ends_with("plugin-host/src/lib.rs") {
+            if path.ends_with("crates/ui/src/lib.rs") {
                 continue;
             }
             for (n, line) in source.lines().enumerate() {
@@ -713,7 +725,7 @@ mod tests {
             l.starts_with('.') || l.starts_with("//")
         };
         for (path, source) in ui_sources() {
-            if path.ends_with("plugin-host/src/menu.rs") {
+            if path.ends_with("crates/ui/src/menu.rs") {
                 continue;
             }
             let lines: Vec<&str> = source.lines().collect();
@@ -1315,7 +1327,7 @@ mod tests {
             .into_iter()
             .filter(|(path, _)| {
                 !path.ends_with("crates/app/src/theme.rs")
-                    && !path.ends_with("crates/plugin-host/src/tokens.rs")
+                    && !path.ends_with("crates/ui/src/tokens.rs")
             })
             .collect();
         forbid(

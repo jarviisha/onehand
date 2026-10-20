@@ -372,7 +372,7 @@ pub(super) fn scrolled(open: bool, key: usize, body: gpui::Div) -> gpui::AnyElem
 /// A well of machine text: the sunk fill, no edge, mono at the code size. What a tool read, printed or changed sits in one, and so does
 /// an answer's fenced code, so the two read as the same kind of thing.
 pub(super) fn plain_box(cx: &App) -> gpui::Div {
-    onehand_plugin_host::well(cx).line_height(relative(LEADING))
+    onehand_ui::well(cx).line_height(relative(LEADING))
 }
 
 /// Lines wider than their well scroll sideways inside it, rather than
@@ -841,7 +841,7 @@ pub(super) fn tool_label(kind: ToolKind) -> &'static str {
 /// struck words already say which way.
 pub(super) fn pill(label: impl Into<SharedString>, cx: &App) -> Tag {
     let theme = cx.theme();
-    let edge = onehand_plugin_host::badge_edge(onehand_plugin_host::Tint {
+    let edge = onehand_ui::badge_edge(onehand_ui::Tint {
         fill: theme.secondary,
         ink: theme.secondary_foreground,
     });

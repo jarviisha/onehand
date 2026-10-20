@@ -4,7 +4,7 @@ use gpui::{App, Context, Entity, IntoElement, ParentElement, Rems, Styled, Windo
 use gpui_component::menu::PopupMenuItem;
 use gpui_component::{ActiveTheme, IconName, StyledExt};
 use onehand_core::chat::{Chat, ConvMeta};
-use onehand_plugin_host::strip_control;
+use onehand_ui::strip_control;
 use std::path::PathBuf;
 
 /// How little the header will settle for before it stops taking room from the
@@ -113,7 +113,7 @@ impl ChatPane {
         // the edge every other measurement in the panel is taken from -- and
         // sized by its contents it moved whenever a badge appeared or a title
         // wrapped, taking the top of the conversation with it.
-        onehand_plugin_host::strip(cx)
+        onehand_ui::strip(cx)
             // On a page, and on the project page that stands where no
             // conversation shows, the name stands as far off the pane's edge as
             // the page's body does, so the two start on one line.
@@ -123,11 +123,7 @@ impl ChatPane {
             // head is what the list scrolls under.
             .when(
                 matches!(self.page, Some(super::Page::Issues(_))),
-                |header| {
-                    header
-                        .border_b_1()
-                        .border_color(onehand_plugin_host::faint_rule(cx))
-                },
+                |header| header.border_b_1().border_color(onehand_ui::faint_rule(cx)),
             )
             // **No rule under it.** A hairline is an edge between two surfaces,
             // and there are not two here: the header and the transcript are one

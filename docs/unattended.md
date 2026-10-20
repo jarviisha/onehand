@@ -64,7 +64,7 @@ gets without code of its own.
 | Stop asking for permission | `Setup::mode`, set by the driver through `Chat::set_mode` when the agent first comes up |
 | An isolated checkout | `worktree::branch_off_blocking` (plus a start point, see *Base branch*), `worktree_dir`, `validate_branch` |
 | Find a window that holds a project | the walk over `Shared::windows` every remote path does |
-| Talk to GitHub | the `gh` CLI, shelled out blocking like `gitstat` and `worktree` already do, behind `onehand_core::connector::Connector` in `plugins/builtin/connector-github` |
+| Talk to GitHub | the `gh` CLI, shelled out blocking like `gitstat` and `worktree` already do, behind `onehand_core::connector::Connector` in `crates/github` |
 | Config that is off until asked for | `[remote.telegram]`, copied wholesale as a shape |
 
 Two consequences worth stating. **No new dependency**: `gh` carries the auth, the
@@ -81,7 +81,7 @@ background executor, one interval in the config, no cron expressions.
 | `crates/core/src/preflight.rs` | the preflight, and `new_issue_run`, which assembles what a new issue run is checked against |
 | `crates/core/src/workflow/builtin/issue.toml` | *Work an issue*, the workflow runs use by default |
 | `crates/core/src/connector.rs` | `Connector`, what a run asks of the system a project lives on, and `serving`, which picks the first one that takes a project |
-| `plugins/builtin/connector-github/src/lib.rs` | the `gh` calls, the `origin` and ssh-alias check, and the account check |
+| `crates/github/src/lib.rs` | the `gh` calls, the `origin` and ssh-alias check, and the account check |
 | `crates/core/src/process.rs` | `output_within`: a command with a limit on its exit *and* its output, stopped with its whole process group |
 | `crates/core/src/task/history.rs` | `over_cap`, which never lets go of a task whose report is unsent |
 | `crates/app/src/unattended.rs` | the tick, which gathers what core decides with and hands it off the UI loop; the cap (`at_cap`, the tasks still `starting`), `waiting` |
@@ -99,11 +99,11 @@ background executor, one interval in the config, no cron expressions.
 | `crates/app/src/dialogs/issue.rs` | `pick_issue`, the list and the start form, and `issue_workflow_menu`, the workflow menu the picker and Settings share |
 | `crates/app/src/settings/pages.rs` | the default workflow and the workflow labels in Settings |
 | `crates/core/src/task/work.rs` | where an issue's work stands and its next action (`Work`, `issue_work`, `next_action`), and the generation rule for what is read of it (`Reading`) |
-| `crates/app/src/task/listing.rs` (`issue_works`) and `plugins/builtin/workbench-issues/src/view/work.rs`, `view/reads.rs` | each issue's work, told to the Issues tab and the Issues page through `Request::IssueWork`, drawn there, and its pull request read |
+| `crates/app/src/task/listing.rs` (`issue_works`) and `crates/issues/src/view/work.rs`, `view/reads.rs` | each issue's work, told to the Issues tab and the Issues page through `Request::IssueWork`, drawn there, and its pull request read |
 | `crates/core/src/task/work/list.rs` | the Issues page's list: its filters, what each row says, and how it is held still (`list`, `PrReads`, `Held`) |
 | `crates/core/src/task/work/left.rs` | what the work left, read off git for the page: the check against the work as it is, the files of the run and of the branch, the commits past where the task started |
-| `plugins/builtin/workbench-issues/src/view/page.rs`, `view/page/prs.rs`, `view/full.rs` | the Issues page: its list, its pull request reads, one per project, and the issue in full |
-| `plugins/builtin/workbench-issues/src/view/store.rs` | one issues file shared by every view of it, with its sync |
+| `crates/issues/src/view/page.rs`, `view/page/prs.rs`, `view/full.rs` | the Issues page: its list, its pull request reads, one per project, and the issue in full |
+| `crates/issues/src/view/store.rs` | one issues file shared by every view of it, with its sync |
 | `crates/app/src/shell/issues_page.rs` | the page as a window holds it, and what it asks of the shell |
 
 The split is the one the crate boundary already forces: everything that can be

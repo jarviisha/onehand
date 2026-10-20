@@ -510,7 +510,7 @@ impl Shell {
     pub(super) fn refresh_worktree(&mut self, cx: &mut Context<Self>) {
         self.refresh_git(cx);
         self.workbench.update(cx, |panel, cx| panel.rescan(cx));
-        self.tell_issues_page(&onehand_plugin_host::Request::Rescan, cx);
+        self.tell_issues_page(&onehand_workbench::Request::Rescan, cx);
         // A run leaving a note or a sync landing changes the issue files too;
         // a no-op unless the workspace page is what is showing.
         self.chat.update(cx, |pane, cx| pane.reload_workspace(cx));

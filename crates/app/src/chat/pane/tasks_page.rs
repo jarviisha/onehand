@@ -142,11 +142,11 @@ impl ChatPane {
         let this = cx.entity();
         let filter = crate::controls::menu_below(
             "tasks-filter",
-            onehand_plugin_host::picker(
+            onehand_ui::picker(
                 "tasks-filter-trigger",
                 filter_name,
                 page.filter.is_some(),
-                onehand_plugin_host::ControlSize::Short,
+                onehand_ui::ControlSize::Short,
                 cx,
             ),
             move |mut menu, _, _| {
@@ -310,14 +310,14 @@ fn task_row(
         .on_click(
             cx.listener(move |pane: &mut ChatPane, _, _, cx| pane.open_task(Some(id.clone()), cx)),
         );
-    onehand_plugin_host::row(false, cx)
+    onehand_ui::row(false, cx)
         .group(group.clone())
         .h_flex()
         .items_center()
         .gap_2()
         .py_1p5()
         .child(text)
-        .child(onehand_plugin_host::hover_slot(
+        .child(onehand_ui::hover_slot(
             group,
             earned,
             div().h_flex().gap_1().children(actions),

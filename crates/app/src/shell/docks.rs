@@ -132,7 +132,7 @@ impl Shell {
     /// Open and focus a mode. Repeating its shortcut never hides the panel.
     pub fn show_workbench(
         &mut self,
-        mode: onehand_plugin_api::PluginId,
+        mode: onehand_workbench::ModeId,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {

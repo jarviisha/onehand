@@ -35,17 +35,17 @@ use std::rc::Rc;
 /// cannot reach in here. Named through this module all the same: every call
 /// site in the app already says `crate::theme::status_ink`, and that is the
 /// name the guard against using a raw status fill as text points at.
-pub(crate) use onehand_plugin_host::status_ink;
+pub(crate) use onehand_ui::status_ink;
 
 /// The surface a dock draws on is the plugin host's for the same reason, and
 /// named through this module for the same one: the Neovim mode hands it to a
 /// terminal grid as that grid's background, and a second copy of the answer is
 /// a panel and the shell inside it disagreeing about what colour the panel is.
-pub(crate) use onehand_plugin_host::dock_surface;
+pub(crate) use onehand_ui::dock_surface;
 
 /// The middle ink is the plugin host's too, since a plugin sets a detail beside
 /// a name as well, and named through this module like the two above.
-pub(crate) use onehand_plugin_host::meta_ink;
+pub(crate) use onehand_ui::meta_ink;
 
 /// One mode's surfaces, and the ink that has to be legible on each, each with
 /// the VS Code key it is the value of.
@@ -1076,7 +1076,7 @@ mod tests {
             ("dark", &DARK, ThemeMode::Dark),
         ] {
             let theme = resolve(ramp, mode);
-            let fill = onehand_plugin_host::control_fill_of(theme.list_hover, theme.accent);
+            let fill = onehand_ui::control_fill_of(theme.list_hover, theme.accent);
             let off = |c: Hsla| contrast(c, theme.background);
             assert!(
                 off(fill) > off(theme.list_hover) && off(fill) < off(theme.accent),
@@ -1262,7 +1262,7 @@ mod tests {
                 ("success", theme.green),
                 ("closed", theme.magenta),
             ] {
-                let ink = onehand_plugin_host::status_hue(base, theme.foreground);
+                let ink = onehand_ui::status_hue(base, theme.foreground);
                 let mut on = vec![
                     ("surface", theme.background),
                     ("well", theme.muted),
@@ -1304,7 +1304,7 @@ mod tests {
                 ("violet", theme.magenta),
                 ("cyan", theme.cyan),
             ] {
-                let tint = onehand_plugin_host::tint_over(base, theme.background, theme.foreground);
+                let tint = onehand_ui::tint_over(base, theme.background, theme.foreground);
                 let ratio = contrast(tint.ink, tint.fill);
                 assert!(
                     ratio >= HUE_INK,
@@ -1329,7 +1329,7 @@ mod tests {
         ] {
             let theme = resolve(ramp, mode);
             for (side, base) in [("added", theme.green), ("removed", theme.red)] {
-                let wash = onehand_plugin_host::tint_over(base, theme.muted, theme.foreground);
+                let wash = onehand_ui::tint_over(base, theme.muted, theme.foreground);
                 assert!(
                     contrast(wash.fill, theme.muted) > 1.0,
                     "{name}: the {side} wash is the well"
@@ -1440,8 +1440,8 @@ mod tests {
                 ("a hovered row", theme.sidebar_accent),
                 ("the chosen row", chosen),
             ];
-            let warning = onehand_plugin_host::status_hue(theme.yellow, theme.foreground);
-            let danger = onehand_plugin_host::status_hue(theme.red, theme.foreground);
+            let warning = onehand_ui::status_hue(theme.yellow, theme.foreground);
+            let danger = onehand_ui::status_hue(theme.red, theme.foreground);
 
             for (row, fill) in fills {
                 let ratio = contrast(inset, fill);
@@ -1470,10 +1470,8 @@ mod tests {
                 "{name}: the attention chip's words while on are {on_chip:.2}"
             );
 
-            let meta = onehand_plugin_host::middle_ink(
-                theme.sidebar_accent_foreground,
-                theme.muted_foreground,
-            );
+            let meta =
+                onehand_ui::middle_ink(theme.sidebar_accent_foreground, theme.muted_foreground);
             let (line, title) = (
                 contrast(meta, chosen),
                 contrast(theme.sidebar_accent_foreground, chosen),
@@ -1501,7 +1499,7 @@ mod tests {
     /// it owes the same legibility every other ink here does on each.
     #[test]
     fn the_middle_ink_reads_and_stays_between_the_two_it_divides() {
-        use onehand_plugin_host::middle_ink;
+        use onehand_ui::middle_ink;
 
         for (name, ramp, mode) in [
             ("light", &LIGHT, ThemeMode::Light),
@@ -1571,7 +1569,7 @@ mod tests {
             ("dark", &DARK, ThemeMode::Dark),
         ] {
             let theme = resolve(ramp, mode);
-            let alpha = onehand_plugin_host::tokens::lift_alpha(mode == ThemeMode::Dark);
+            let alpha = onehand_ui::tokens::lift_alpha(mode == ThemeMode::Dark);
             let ratio = contrast(under(theme.popover, alpha), theme.popover);
             assert!(
                 ratio >= SHADOW,

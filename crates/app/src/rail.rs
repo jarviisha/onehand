@@ -31,7 +31,7 @@ use gpui_component::input::{InputEvent, InputState};
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use model::{Filter, Item, Row};
-use onehand_plugin_host::{Tint, badge, mark_slot};
+use onehand_ui::{Tint, badge, mark_slot};
 use std::path::PathBuf;
 
 mod model;

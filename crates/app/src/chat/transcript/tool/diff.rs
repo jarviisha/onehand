@@ -196,8 +196,7 @@ pub(in crate::chat) fn diff_rows(
     let muted = cx.theme().muted_foreground;
     // A changed line's wash: its hue mixed into the well it lies in, one solid
     // step rather than the hue thinned over whatever is under it.
-    let wash =
-        |base| onehand_plugin_host::tint_over(base, cx.theme().muted, cx.theme().foreground).fill;
+    let wash = |base| onehand_ui::tint_over(base, cx.theme().muted, cx.theme().foreground).fill;
     let (added, removed) = (wash(cx.theme().green), wash(cx.theme().red));
     let mut out = Vec::new();
     let mut number = 1usize;

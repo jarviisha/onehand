@@ -3,14 +3,14 @@
 - Status: proposal, the shape of every piece together. Part of [the proposal](README.md).
 - The split is the one the code already has: **core decides, the app does, a plugin draws.** Every
   new rule below is a pure function in `crates/core`; the app gathers its inputs and carries out its
-  answer; the Issues plugin draws what it is told through `onehand-plugin-host`.
+  answer; the Issues plugin draws what it is told through `onehand-ui`.
 
 ## Where each part goes
 
 Existing parts are plain; what the proposal adds is marked `+`, what it changes `~`.
 
 ```
-crates/core (GUI-free, blocking)            crates/app (GPUI)                       plugins/builtin/workbench-issues
+crates/core (GUI-free, blocking)            crates/app (GPUI)                       crates/issues
 ───────────────────────────────────         ─────────────────────────────────       ────────────────────────────────
 workflow::run                               task (the Tasks global)                 view/detail.rs
   Run, Visit, Marks, Outcome (unchanged)      rows, attention, issue_runs             ~ runs_view → five regions, one order
@@ -22,7 +22,7 @@ workflow::run                               task (the Tasks global)             
   + changed_commands(old, new) → start        ~ routes actions by task id             RootIssues: data, sync
 task                                          ~ records failure kind, PR, command       (per view today; pages: below)
   Task, group, history                      unattended
-  + next_action(task, working)                ~ placed() on a lost window (fix)     crates/plugin-host (workbench.rs)
+  + next_action(task, working)                ~ placed() on a lost window (fix)     crates/ui (workbench.rs)
   + work facts: run diff vs branch diff       + slots() for who holds each            Request::IssueRuns
 + preflight                                   launch: preflight → claim → cut         + Request::IssueWork(IssueKey,
   + preflight(kind, facts) → findings           → keep task → task::request             task, run, generation)
@@ -54,7 +54,7 @@ action about an issue in this proposal carries an `IssueKey`, never `(root, numb
 ## Who owns the issues
 
 Today **the plugin owns them**: each `IssuesView` holds a `RootIssues` per project
-(`plugins/builtin/workbench-issues/src/view.rs`), with the issues, the sync state and the view's own
+(`crates/issues/src/view.rs`), with the issues, the sync state and the view's own
 selection, filter and draft. Nothing else in the app holds an issue.
 
 Piece 1's short form keeps that: it draws in that one view, and the app sends it work summaries
@@ -67,7 +67,7 @@ of its own**, done before the page and in its PR:
 |---|---|
 | the issues read from the file, writes to it, the sync with a forge and its pause, conflicts | the selected issue, filters, scroll, the new-issue or edit draft, the reads it asked for and their generations |
 
-The shared part becomes an entity in the app, handed to the plugin through `onehand-plugin-host`
+The shared part becomes an entity in the app, handed to the plugin through `onehand-ui`
 as the panel already hands it requests; the Workbench mode and the Issues page each subscribe to
 it. A sync then runs once per file whatever the number of views, and an edit in one view is seen in
 the other at once.

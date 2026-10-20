@@ -8,7 +8,7 @@ use gpui::prelude::FluentBuilder as _;
 use gpui::{App, Context, IntoElement, ParentElement, Styled, Window, div};
 use gpui_component::button::Button;
 use gpui_component::{ActiveTheme, IconName, Selectable as _, StyledExt};
-use onehand_plugin_api::{PluginId, WorkbenchModeSpec};
+use onehand_workbench::{ModeId, WorkbenchModeSpec};
 
 /// The least width, in rems, at which the modes sit side by side: under it they
 /// cannot each keep their name beside the controls at the strip's end, so they
@@ -28,17 +28,17 @@ impl Workbench {
         let compact = self.width.get().0 < MODES_MIN_W.0;
         // The shape of the conversation's header beside it, so the two bars
         // line up across the seam.
-        onehand_plugin_host::strip(cx)
+        onehand_ui::strip(cx)
             // The way back to the conversation, while this panel has taken the
             // area because the window cannot hold the two side by side. A
             // maximized panel has its own way back at the other end.
             .when(self.fills_area && !full, |strip| {
                 strip.child(
-                    onehand_plugin_host::back_link("step-aside", "Conversation", cx).on_click(
-                        cx.listener(|_: &mut Self, _, _, cx| {
+                    onehand_ui::back_link("step-aside", "Conversation", cx).on_click(cx.listener(
+                        |_: &mut Self, _, _, cx| {
                             cx.emit(WorkbenchEvent::StepAside);
-                        }),
-                    ),
+                        },
+                    )),
                 )
             })
             // The modes are the one part of the row that gives way, so the
@@ -61,7 +61,7 @@ impl Workbench {
                     }),
             )
             .child(
-                onehand_plugin_host::strip_control(
+                onehand_ui::strip_control(
                     "maximize-workbench",
                     match full {
                         true => IconName::Minimize,
@@ -90,7 +90,7 @@ impl Workbench {
             // name with `stroke` written into it as literal black -- so it
             // ignores `text_color` and comes out invisible on a dark panel.
             .child(
-                onehand_plugin_host::strip_control("hide-workbench", IconName::Minus, false, cx)
+                onehand_ui::strip_control("hide-workbench", IconName::Minus, false, cx)
                     .tooltip_with_action(
                         "Hide the Workbench",
                         &crate::shell::ToggleWorkbenchVisibility,
@@ -108,14 +108,14 @@ impl Workbench {
 /// truncating.
 fn mode_tab(
     label: &'static str,
-    which: PluginId,
-    active: PluginId,
+    which: ModeId,
+    active: ModeId,
     cx: &mut Context<Workbench>,
 ) -> Button {
     crate::controls::action(which.as_str())
         .quiet(cx)
         .short()
-        .max_w(onehand_plugin_host::TAB_MAX_W)
+        .max_w(onehand_ui::TAB_MAX_W)
         .selected(which == active)
         // The rest in muted ink, so the showing mode is the one that reads.
         .when(which != active, |tab| {
@@ -132,13 +132,13 @@ fn mode_tab(
 fn mode_select(
     specs: Vec<WorkbenchModeSpec>,
     label: &'static str,
-    showing: PluginId,
+    showing: ModeId,
     cx: &mut Context<Workbench>,
 ) -> impl IntoElement + use<> {
     let panel = cx.entity().downgrade();
     crate::controls::menu_below(
         "workbench-mode-menu",
-        onehand_plugin_host::tab_select("workbench-mode-select", label.into(), label.into(), cx),
+        onehand_ui::tab_select("workbench-mode-select", label.into(), label.into(), cx),
         move |mut menu, _, _| {
             for spec in &specs {
                 let (panel, which) = (panel.clone(), spec.id);

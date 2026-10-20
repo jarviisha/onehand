@@ -365,7 +365,7 @@ pub struct Shell {
     terminal: Entity<TerminalPanel>,
     /// The Issues page, made once so it is found as it was left whenever it
     /// is picked again.
-    issues_page: onehand_workbench_issues::Page,
+    issues_page: onehand_issues::Page,
     /// The Workflows page, made once for the same reason: a workflow being
     /// written is found as it was left.
     workflows_page: Entity<crate::workflows_page::WorkflowsPage>,

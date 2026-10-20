@@ -225,7 +225,7 @@ fn notice(
     // a solid fill and no edge, and the mark anchored to the first line so a
     // message that wraps to three lines does not carry the icon down the
     // middle of itself.
-    let tint = onehand_plugin_host::tint(cx.theme().red, cx);
+    let tint = onehand_ui::tint(cx.theme().red, cx);
     div()
         .h_flex()
         .items_start()

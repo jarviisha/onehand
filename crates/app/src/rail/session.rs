@@ -16,7 +16,7 @@ use gpui::{
 use gpui_component::menu::{ContextMenuExt as _, PopupMenu};
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
-use onehand_plugin_host::mark_slot;
+use onehand_ui::mark_slot;
 
 /// What a state says on hover: what it means, and what to do about it.
 ///

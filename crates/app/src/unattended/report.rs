@@ -210,7 +210,7 @@ pub(crate) fn deliver(id: String, cx: &mut App) {
     if !fresh {
         return;
     }
-    let Some(tracker) = issue.tracker.resolve(crate::plugins::connectors()) else {
+    let Some(tracker) = issue.tracker.resolve(crate::features::connectors()) else {
         eprintln!(
             "onehand: issue {} cannot be told how its run ended: its tracker is not available",
             issue.shown()
@@ -224,7 +224,7 @@ pub(crate) fn deliver(id: String, cx: &mut App) {
         forge: issue
             .forge
             .as_deref()
-            .and_then(|name| connector::named(crate::plugins::connectors(), name)),
+            .and_then(|name| connector::named(crate::features::connectors(), name)),
         base: issue.base.clone(),
         repo: task.setup.repo.clone(),
         dir: task.setup.dir.clone(),

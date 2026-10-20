@@ -10,7 +10,7 @@ use gpui_component::{ActiveTheme, StyledExt};
 
 /// The hairline box every card on a page is drawn in, the plugin host's so
 /// an issue's boxes are the same one.
-pub(crate) use onehand_plugin_host::card_box;
+pub(crate) use onehand_ui::card_box;
 
 /// The width a page's box starts from before it grows into its row. Two fit
 /// side by side within the page, and a narrower panel wraps them one under

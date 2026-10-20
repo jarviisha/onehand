@@ -10,7 +10,7 @@ use gpui::{
     SharedString, StatefulInteractiveElement as _, Styled, div, rems,
 };
 use gpui_component::{ActiveTheme, StyledExt};
-use onehand_plugin_host::back_link;
+use onehand_ui::back_link;
 use std::path::PathBuf;
 
 /// The workflow column's width: room for a field's hint to run a line or

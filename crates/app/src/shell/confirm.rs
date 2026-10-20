@@ -5,7 +5,7 @@
 use super::Shell;
 use gpui::{Context, Window};
 
-pub(crate) use onehand_plugin_host::{Confirm, confirm_on};
+pub(crate) use onehand_ui::{Confirm, confirm_on};
 
 impl Shell {
     /// Ask `ask`, and run `then` on the shell only when it is answered yes.

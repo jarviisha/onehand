@@ -38,7 +38,7 @@ impl Asked {
             folder,
             branch: task.setup.branch.clone(),
             forge: task.setup.forge.as_deref().and_then(|name| {
-                onehand_core::connector::named(crate::plugins::connectors(), name)
+                onehand_core::connector::named(crate::features::connectors(), name)
             }),
             users,
             processes,

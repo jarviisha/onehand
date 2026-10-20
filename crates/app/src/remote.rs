@@ -25,7 +25,7 @@ use gpui::{App, BorrowAppContext as _};
 use onehand_core::config::RemoteConfig;
 use onehand_core::remote::types::{Outbound, RemoteEvent, ReqTx};
 use onehand_core::remote::{ArchiveRow, Chats, Press, RemoteCommand};
-use onehand_remote_telegram::secret;
+use onehand_telegram::secret;
 use std::cell::RefCell;
 
 /// What the bridge remembers about each chat, and every reply that reports or
@@ -180,10 +180,10 @@ pub fn boot(cfg: &RemoteConfig, cx: &mut App) {
     // cannot start is not worth taking the window down for -- a channel missing
     // here means the composition root changed, and the app is still perfectly
     // usable without a phone attached to it.
-    let Some(factory) = crate::plugins::remote_channel(onehand_remote_telegram::CHANNEL_ID) else {
+    let Some(factory) = crate::features::remote_channel(onehand_telegram::CHANNEL_ID) else {
         eprintln!(
             "onehand: the Telegram bridge is enabled but no channel is registered under `{}`.",
-            onehand_remote_telegram::CHANNEL_ID
+            onehand_telegram::CHANNEL_ID
         );
         return;
     };

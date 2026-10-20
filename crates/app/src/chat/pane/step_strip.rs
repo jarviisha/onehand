@@ -58,7 +58,7 @@ impl ChatPane {
                 )
         });
         Some(
-            onehand_plugin_host::strip(cx)
+            onehand_ui::strip(cx)
                 .child(div().flex_none().child(shown.name))
                 .child(
                     div()

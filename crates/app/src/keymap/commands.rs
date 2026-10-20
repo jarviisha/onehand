@@ -237,7 +237,7 @@ pub const COMMANDS: &[Command] = &[
         "issues_up",
         "Pick the issue above",
         ["up"],
-        onehand_workbench_issues::IssuesUp,
+        onehand_issues::IssuesUp,
         "Issues && !Input",
         "Issues"
     ),
@@ -245,7 +245,7 @@ pub const COMMANDS: &[Command] = &[
         "issues_down",
         "Pick the issue below",
         ["down"],
-        onehand_workbench_issues::IssuesDown,
+        onehand_issues::IssuesDown,
         "Issues && !Input",
         "Issues"
     ),
@@ -253,7 +253,7 @@ pub const COMMANDS: &[Command] = &[
         "issues_close",
         "Close the form, the review or the issue, or go back to the list",
         ["escape"],
-        onehand_workbench_issues::IssuesClose,
+        onehand_issues::IssuesClose,
         "Issues && !Dialog && !Input",
         "Issues"
     ),
@@ -261,7 +261,7 @@ pub const COMMANDS: &[Command] = &[
         "plugin_open",
         "Open the plugin's details",
         ["enter"],
-        onehand_workbench_plugins::PluginOpen,
+        onehand_claude_plugins::PluginOpen,
         "PluginList && !Input",
         "Plugins list"
     ),
@@ -269,7 +269,7 @@ pub const COMMANDS: &[Command] = &[
         "plugin_flip",
         "Turn the plugin on or off here",
         ["space"],
-        onehand_workbench_plugins::PluginFlip,
+        onehand_claude_plugins::PluginFlip,
         "PluginList && !Input",
         "Plugins list"
     ),

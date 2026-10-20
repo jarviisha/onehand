@@ -126,7 +126,7 @@ mod tests {
     /// reach this registry; each has to be the path served here.
     #[test]
     fn a_plugin_names_an_app_icon_by_the_path_it_is_served_at() {
-        use onehand_plugin_host::AppIcon;
+        use onehand_ui::AppIcon;
         assert_eq!(AppIcon::CircleDot.path(), Icon::CircleDot.path());
         assert_eq!(AppIcon::Refresh.path(), Icon::RefreshCw.path());
     }

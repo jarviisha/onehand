@@ -32,14 +32,14 @@ Helpers:
 
 | Helper | Gives | Lives in |
 |---|---|---|
-| `status_ink(cx).danger`, `.warning`, `.success`, `.closed` | status text and marks; `closed` for what is over and settled (a closed issue) | `crates/plugin-host/src/lib.rs`; the app says `crate::theme::status_ink` |
-| `tint(base, cx)` | a label's `Tint { fill, ink }` by its hue | `crates/plugin-host/src/lib.rs` |
-| `dock_surface(cx)` | the Workbench's and the terminal's surface | `crates/plugin-host/src/lib.rs` |
-| `badge_edge(tint)` | a badge's edge: halfway from its `Tint`'s fill to its ink | `crates/plugin-host/src/lib.rs` |
-| `control_fill(cx)` | a ghost control's fill hovered, pressed or chosen; between `list_hover` and `accent` | `crates/plugin-host/src/lib.rs` |
-| `faint_rule(cx)` | a hairline a step fainter, halfway to the surface: the lines across the pane parting a list page's list from its header, filter bar and foot | `crates/plugin-host/src/lib.rs` |
-| `meta_ink(cx)` | the middle ink: a detail beside a name, between prose and muted | `crates/plugin-host/src/lib.rs`; the app says `crate::theme::meta_ink` |
-| `middle_ink(full, meta)` | the same step under another full ink: on a fill, under that fill's paired ink | `crates/plugin-host/src/lib.rs` |
+| `status_ink(cx).danger`, `.warning`, `.success`, `.closed` | status text and marks; `closed` for what is over and settled (a closed issue) | `crates/ui/src/lib.rs`; the app says `crate::theme::status_ink` |
+| `tint(base, cx)` | a label's `Tint { fill, ink }` by its hue | `crates/ui/src/lib.rs` |
+| `dock_surface(cx)` | the Workbench's and the terminal's surface | `crates/ui/src/lib.rs` |
+| `badge_edge(tint)` | a badge's edge: halfway from its `Tint`'s fill to its ink | `crates/ui/src/lib.rs` |
+| `control_fill(cx)` | a ghost control's fill hovered, pressed or chosen; between `list_hover` and `accent` | `crates/ui/src/lib.rs` |
+| `faint_rule(cx)` | a hairline a step fainter, halfway to the surface: the lines across the pane parting a list page's list from its header, filter bar and foot | `crates/ui/src/lib.rs` |
+| `meta_ink(cx)` | the middle ink: a detail beside a name, between prose and muted | `crates/ui/src/lib.rs`; the app says `crate::theme::meta_ink` |
+| `middle_ink(full, meta)` | the same step under another full ink: on a fill, under that fill's paired ink | `crates/ui/src/lib.rs` |
 | `hue_ink(base, cx)` | a hue tempered for ink: code inside prose | `crates/app/src/theme.rs` |
 | `raised(cx)` | the composer card's fill | `crates/app/src/theme.rs` |
 | `inset(cx)` | a field with no edge on the rail: its search; a badge in the rail | `crates/app/src/theme.rs` |
@@ -120,7 +120,7 @@ set `radius` where they are built; a `Tag` takes `rounded_full` through `badge`.
 
 | Write | For | Lives in |
 |---|---|---|
-| `tokens::lift(cx)` | anything the app floats | `crates/plugin-host/src/tokens.rs` |
+| `tokens::lift(cx)` | anything the app floats | `crates/ui/src/tokens.rs` |
 | `composer_lift(cx)` | the composer card | `crates/app/src/theme.rs` |
 
 ## Control sizes
@@ -141,7 +141,7 @@ Moving the library's rev means checking this table.
 
 An icon-only button is square at its height, and padding vertically equals its height less its
 words, halved: 4 at `.xsmall()`, 6 at `.short()`, 8 at `.tall()`. `.short()` is the extra small size given the small
-height and inset (`Short` in `crates/plugin-host/src/lib.rs`), so its words and icon are the extra
+height and inset (`Short` in `crates/ui/src/lib.rs`), so its words and icon are the extra
 small ones; a field keeps the small size and takes `.text_xs()`. `.tall()` is the small size
 given `FIELD_H` (`Tall`, beside it), so its words and icon stay the small ones. A builder that sizes the controls
 it makes (`choice`, `switch`, `picker`) takes one of them as a `ControlSize`.
@@ -162,7 +162,7 @@ Components that keep geometry of their own, centred in their row rather than siz
 
 ## Shared sizes
 
-All in `onehand_plugin_host::tokens` (`crates/plugin-host/src/tokens.rs`), which the app names
+All in `onehand_ui::tokens` (`crates/ui/src/tokens.rs`), which the app names
 `crate::tokens`.
 
 | Token | Value | What |
@@ -197,7 +197,7 @@ Equal values kept apart on purpose, each one decision beside its one use: `CHAT_
   them with `mix_oklab`, as `meta_ink` and `tint` are, not written as a value of its own.
 - **A size one module uses**: a `const` of type `Rems` beside its use, its reason in its doc
   comment. A spacing value equals a step.
-- **A size a second module needs**: move the constant into `onehand_plugin_host::tokens` in that
+- **A size a second module needs**: move the constant into `onehand_ui::tokens` in that
   change, and point both modules at it.
 - **A new step in a scale** (a type size, a corner, a spacing step, an elevation): a system change.
   Use the user's authorized scope; when it covers the system, update the owning contract and

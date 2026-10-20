@@ -189,7 +189,7 @@ impl Shell {
             self.workbench
                 .update(cx, |panel, cx| panel.issue_works(&told.0, &told.1, cx));
             self.tell_issues_page(
-                &onehand_plugin_host::Request::IssueWork {
+                &onehand_workbench::Request::IssueWork {
                     works: &told.0,
                     offered: &told.1,
                 },

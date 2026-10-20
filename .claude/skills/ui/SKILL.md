@@ -29,7 +29,7 @@ changing navigation.
    behaviour stays materially ambiguous.
 2. **Reuse, in this order**: a builder in catalog.md, a gpui-component control, a builder of your
    own. When a second place needs something drawn inline, lift it into a shared builder in that
-   change (into `crates/plugin-host` when a plugin draws it too) and list it in catalog.md;
+   change (into `crates/ui` when a plugin draws it too) and list it in catalog.md;
    never list one that is only proposed.
 3. **Pick the pattern** by what the content is, in the least decorated container that says each
    relationship, keeping the boxes a feature requires, and build from its screen. Separate by the

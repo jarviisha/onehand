@@ -650,11 +650,11 @@ impl ChatPane {
         let this = cx.entity();
         let filter = crate::controls::menu_below(
             "workspace-filter",
-            onehand_plugin_host::picker(
+            onehand_ui::picker(
                 "workspace-filter-trigger",
                 filter_name,
                 page.filter.is_some(),
-                onehand_plugin_host::ControlSize::Short,
+                onehand_ui::ControlSize::Short,
                 cx,
             ),
             move |mut menu, _, _| {

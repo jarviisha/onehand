@@ -24,18 +24,18 @@ path = "src/main.rs"
 
 [dependencies]
 onehand-core = { path = "../core" }
-onehand-plugin-api = { path = "../plugin-api" }
-onehand-plugin-host = { path = "../plugin-host" }
+onehand-workbench = { path = "../workbench" }
+onehand-ui = { path = "../ui" }
 onehand-terminal-ui = { path = "../terminal-ui" }
-onehand-connector-github = { path = "../../plugins/builtin/connector-github" }
-onehand-remote-telegram = { path = "../../plugins/builtin/remote-telegram" }
+onehand-github = { path = "../github" }
+onehand-telegram = { path = "../telegram" }
 # No `workbench-files`: the file tree is the left half of the Editor mode and
 # reaches the binary through that crate, which composes it.
-onehand-workbench-editor = { path = "../../plugins/builtin/workbench-editor" }
-onehand-workbench-issues = { path = "../../plugins/builtin/workbench-issues" }
-onehand-workbench-markdown = { path = "../../plugins/builtin/workbench-markdown" }
-onehand-workbench-neovim = { path = "../../plugins/builtin/workbench-neovim" }
-onehand-workbench-plugins = { path = "../../plugins/builtin/workbench-plugins" }
+onehand-editor = { path = "../editor" }
+onehand-issues = { path = "../issues" }
+onehand-markdown = { path = "../markdown" }
+onehand-neovim = { path = "../neovim" }
+onehand-claude-plugins = { path = "../claude-plugins" }
 
 # gpui-component IS pinned by rev; gpui carries none, so Cargo.lock pins it.
 # The `tree-sitter-*` set is deliberately a *subset*, not `tree-sitter-languages`

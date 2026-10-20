@@ -141,7 +141,7 @@ pub(crate) fn with_setup(
         .and_then(|name| shared.agents.iter().find(|spec| spec.name == name));
     let forge = setup.forge.as_deref().map(|name| Forge {
         name: name.to_string(),
-        account: onehand_core::connector::named(crate::plugins::connectors(), name)
+        account: onehand_core::connector::named(crate::features::connectors(), name)
             .and_then(|forge| account(forge, cx)),
     });
     // Held to the cap as the tick is: an issue's task not already counted.

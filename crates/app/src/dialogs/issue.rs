@@ -209,13 +209,13 @@ fn start_form(
         .gap_1()
         .w_full()
         .child(
-            onehand_plugin_host::well(cx)
+            onehand_ui::well(cx)
                 .h_flex()
                 .items_center()
                 .gap_2()
                 .px_2()
                 .py_1()
-                .child(onehand_plugin_host::mark_slot(
+                .child(onehand_ui::mark_slot(
                     Icon::new(crate::icons::Icon::GitBranch)
                         .small()
                         .text_color(muted),
@@ -246,7 +246,7 @@ fn start_form(
     // said, never in the way.
     let lacks = template::lacking(row.issue.body_text(), templates)
         .map(|lacks| div().text_xs().text_color(muted).child(lacks.said()));
-    let instructions_field = onehand_plugin_host::field(
+    let instructions_field = onehand_ui::field(
         "Instructions for this run",
         None,
         text_area(instructions, cx).h(super::INSTRUCTIONS_H),
@@ -274,7 +274,7 @@ fn start_form(
                     .v_flex()
                     .gap_4()
                     .children(lacks)
-                    .child(onehand_plugin_host::field(
+                    .child(onehand_ui::field(
                         "Workflow",
                         about.map(IntoElement::into_any_element),
                         div().h_flex().child(menu),
@@ -283,16 +283,11 @@ fn start_form(
                     .into_any_element(),
             ),
             Some(
-                onehand_plugin_host::field(
-                    "Where it works",
-                    Some(place.into_any_element()),
-                    branch,
-                    cx,
-                )
-                .into_any_element(),
+                onehand_ui::field("Where it works", Some(place.into_any_element()), branch, cx)
+                    .into_any_element(),
             ),
             (!lines.is_empty()).then(|| {
-                onehand_plugin_host::field(
+                onehand_ui::field(
                     "Before it starts",
                     None,
                     div().v_flex().gap_2().children(lines),
@@ -354,13 +349,7 @@ where
     // words in from the text above it.
     crate::controls::menu_below(
         id,
-        onehand_plugin_host::picker(
-            (id, 0usize),
-            name,
-            true,
-            onehand_plugin_host::ControlSize::Short,
-            cx,
-        ),
+        onehand_ui::picker((id, 0usize), name, true, onehand_ui::ControlSize::Short, cx),
         move |mut menu, _, _| {
             if let Some(any) = any {
                 let on_pick = on_pick.clone();
@@ -415,7 +404,7 @@ pub(crate) fn issue_row(
             labels
                 .iter()
                 .take(3)
-                .map(|label| onehand_plugin_host::label_badge(label.clone(), cx)),
+                .map(|label| onehand_ui::label_badge(label.clone(), cx)),
         )
         .child(
             div()
@@ -458,7 +447,7 @@ fn row_shell(
     title: String,
     cx: &App,
 ) -> gpui::Stateful<gpui::Div> {
-    onehand_plugin_host::row(false, cx)
+    onehand_ui::row(false, cx)
         .id(id)
         .h_flex()
         .items_center()

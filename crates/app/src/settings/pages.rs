@@ -23,7 +23,7 @@ const LABEL_FIELD_W: gpui::Rems = gpui::rems(10.);
 /// The light/dark/system picker.
 ///
 /// One value with three answers, drawn as the app draws every pick-one row: a
-/// [`choice`](onehand_plugin_host::choice) per answer, the one in force filled.
+/// [`choice`](onehand_ui::choice) per answer, the one in force filled.
 ///
 /// App-wide, unlike everything else on the page it sits in, because the theme
 /// it selects is a global: two windows cannot be drawn in two modes.
@@ -37,11 +37,11 @@ fn appearance_picker(
         .gap_1()
         .children(Appearance::ALL.into_iter().enumerate().map(|(i, choice)| {
             let shell = shell.clone();
-            onehand_plugin_host::choice(
+            onehand_ui::choice(
                 ("appearance", i),
                 choice.label(),
                 choice == current,
-                onehand_plugin_host::ControlSize::Short,
+                onehand_ui::ControlSize::Short,
                 cx,
             )
             .on_click(move |_, window: &mut Window, cx: &mut App| {
@@ -213,7 +213,7 @@ pub(super) fn connections_page(cx: &App) -> AnyElement {
         };
         crate::chat::pane::rel_time(secs(std::time::SystemTime::now()), secs(at))
     });
-    let rows = crate::plugins::connectors()
+    let rows = crate::features::connectors()
         .iter()
         .map(|connector| {
             // Each connector's own answer, or *checking* until the first look

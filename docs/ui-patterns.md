@@ -450,7 +450,7 @@ A toast is one sentence without a trailing period.
 ### Confirming a removal
 
 A removal that cannot be undone asks first: data taken off disk, a process ended, unsaved work
-thrown away. It asks through `Confirm` (`crates/plugin-host/src/confirm.rs`), the same question
+thrown away. It asks through `Confirm` (`crates/ui/src/confirm.rs`), the same question
 in the app and in a plugin:
 
 - the title asks the question naming the thing: *Remove <name> from the workspace?*;

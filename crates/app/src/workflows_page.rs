@@ -38,7 +38,7 @@ use gpui::{
 };
 use gpui_component::StyledExt;
 use gpui_component::input::{InputEvent, InputState};
-use onehand_plugin_host::{Measured, measure_width, unmeasured};
+use onehand_ui::{Measured, measure_width, unmeasured};
 use std::path::PathBuf;
 
 /// What the page asks of its window.
