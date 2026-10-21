@@ -879,6 +879,71 @@ fn the_outcome_is_kept_and_an_old_run_without_it_still_loads() {
     assert_eq!(old.resume(), Action::AwaitApproval);
 }
 
+/// What the agent came up running is kept the first time it is told; a
+/// later call does not replace it.
+#[test]
+fn the_start_is_kept_once() {
+    let mut run = at_approval();
+    let first = Settings {
+        mode: Some("plan".into()),
+        options: BTreeMap::from([("model".to_string(), "opus".to_string())]),
+    };
+    run.start_settings(first.clone());
+    assert_eq!(run.started_with, Some(first.clone()));
+    run.start_settings(Settings {
+        mode: Some("code".into()),
+        options: BTreeMap::new(),
+    });
+    assert_eq!(
+        run.started_with,
+        Some(first),
+        "the second call did not replace it"
+    );
+}
+
+/// What a visit ran with is set on the open visit, survives a round trip
+/// through its file, and with no open visit does nothing.
+#[test]
+fn a_visit_keeps_what_it_ran_with() {
+    let mut run = at_approval();
+    let settings = Settings {
+        mode: Some("plan".into()),
+        options: BTreeMap::from([("effort".to_string(), "high".to_string())]),
+    };
+    run.ran_with(settings.clone());
+    assert_eq!(run.visits.last().unwrap().ran_with, Some(settings.clone()));
+    let back: Run = serde_json::from_str(&serde_json::to_string(&run).unwrap()).unwrap();
+    assert_eq!(back.visits.last().unwrap().ran_with, Some(settings));
+
+    let mut none_open = at_approval();
+    none_open.stopped(Stop::ByPerson);
+    none_open.ran_with(Settings::default());
+    assert_eq!(none_open.visits.last().unwrap().ran_with, None);
+}
+
+/// A run from before it kept its starting settings, or a visit what it ran
+/// with, reads with both `None`.
+#[test]
+fn a_run_from_before_settings_reads() {
+    let mut run = at_approval();
+    run.start_settings(Settings {
+        mode: Some("plan".into()),
+        options: BTreeMap::new(),
+    });
+    run.ran_with(Settings {
+        mode: Some("plan".into()),
+        options: BTreeMap::new(),
+    });
+    let mut json = serde_json::to_value(&run).unwrap();
+    json.as_object_mut().unwrap().remove("started_with");
+    for visit in json["visits"].as_array_mut().unwrap() {
+        visit.as_object_mut().unwrap().remove("ran_with");
+    }
+    let back: Run = serde_json::from_value(json).unwrap();
+    assert_eq!(back.started_with, None);
+    assert!(back.visits.iter().all(|v| v.ran_with.is_none()));
+}
+
 fn temp_dir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("onehand-workflow-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -1191,6 +1256,19 @@ fn a_retry_on_the_same_template_starts_where_the_last_run_stopped() {
         text.contains("The plan."),
         "the plan it carried is filled in"
     );
+}
+
+/// A retry is a new run: it starts with no settings, even when the last
+/// run kept some, never carrying over what it started with before.
+#[test]
+fn a_retry_starts_with_no_settings() {
+    let mut prev = exhausted_at_implement();
+    prev.start_settings(Settings {
+        mode: Some("plan".into()),
+        options: BTreeMap::new(),
+    });
+    let next = Run::retry_of(&prev, "2".into(), prev.template.clone(), None);
+    assert_eq!(next.started_with, None);
 }
 
 #[test]

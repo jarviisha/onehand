@@ -111,6 +111,7 @@ pub(super) fn at(mut task: Task, at: usize, since: u64) -> Task {
         output: None,
         why: None,
         command: None,
+        ran_with: None,
     });
     run.history.push(Transition {
         at: since,
@@ -881,6 +882,7 @@ fn the_check_shown_is_the_last_passed_command() {
         output: None,
         why: Some(why.into()),
         command,
+        ran_with: None,
     };
     // A retry carries the commit the last run's check passed on, for its
     // push; no command has run in it, so its check is not recorded.
@@ -982,6 +984,7 @@ fn an_approval_says_what_is_reviewed_and_what_each_answer_starts() {
             output: None,
             why: None,
             command: Some(failed.clone()),
+            ran_with: None,
         },
     );
     let review = Work::of(&checked, Some(Working::Waiting), None)

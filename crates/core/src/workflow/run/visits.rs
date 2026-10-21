@@ -1,11 +1,28 @@
 //! A run's step visits, and the marks pinned at their boundaries.
 
 use super::{now, CommandResult, Run, Visit};
+use crate::workflow::Settings;
 
 impl Run {
     /// Every stay at a step, oldest first.
     pub fn visits(&self) -> &[Visit] {
         &self.visits
+    }
+
+    /// Keep the mode and every config option's value the agent came up
+    /// running, the first time it comes up in the run: a later call changes
+    /// nothing, so a Resume on a new session still finds the first ones.
+    pub fn start_settings(&mut self, settings: Settings) {
+        if self.started_with.is_none() {
+            self.started_with = Some(settings);
+        }
+    }
+
+    /// What was in force when the open visit's first prompt went.
+    pub fn ran_with(&mut self, settings: Settings) {
+        if let Some(visit) = self.visits.last_mut().filter(|v| v.ended_at.is_none()) {
+            visit.ran_with = Some(settings);
+        }
     }
 
     /// The last mark pinned of the work: where the run's last visit left
@@ -78,6 +95,7 @@ impl Run {
             output: None,
             why: None,
             command: None,
+            ran_with: None,
         });
     }
 
