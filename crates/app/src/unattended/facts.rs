@@ -26,7 +26,7 @@ pub(crate) fn common(cx: &App) -> Facts {
         agent_configured: spec.is_some(),
         offered: spec.and_then(|spec| offered(spec, cx)),
         agent,
-        mode: u.and_then(|u| config::mode_set(&u.mode)),
+        mode: u.and_then(|_| config::mode_set(&super::run_mode(cx))),
         has_check: false,
         in_git: false,
         checked_out: None,

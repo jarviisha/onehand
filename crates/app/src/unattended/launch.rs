@@ -99,9 +99,10 @@ pub(super) fn landed(
 fn start(landed: Landed, cx: &mut App) -> Result<(), Unstarted> {
     let picked = landed.picked_by_hand();
     let Landed { claimed, picked_in } = landed;
-    let Some((mode, timeout)) = with(cx, |u| (u.mode.clone(), u.timeout.clone())) else {
+    let Some(timeout) = with(cx, |u| u.timeout.clone()) else {
         return Err(Unstarted::of(claimed, "unattended runs are off"));
     };
+    let mode = super::run_mode(cx);
     let agent = super::run_agent(cx);
     let holding: Vec<_> = Shared::global(cx)
         .windows

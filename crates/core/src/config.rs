@@ -29,14 +29,18 @@ pub fn mode_set(mode: &str) -> Option<String> {
     (!mode.trim().is_empty()).then(|| mode.to_string())
 }
 
-/// The mode an unattended run on `agent` starts in, as a run reads it: the one
-/// configured, else the one the agent's preset runs in unattended, else none
-/// (`""`), which leaves the agent in the mode it starts in.
-pub fn run_mode(mode: Option<&str>, agent: Option<&AgentSpec>) -> String {
+/// The mode an unattended run starts in, as a run reads it when it starts:
+/// the one configured, else the one the agent runs use (`agent`, else the
+/// first) is known to need, else none (`""`), which leaves the agent in the
+/// mode it starts in.
+///
+/// Read at each start rather than once, because the agent is: making another
+/// agent the default must not leave runs in the mode the old one needed.
+pub fn run_mode(mode: Option<&str>, agents: &[AgentSpec], agent: Option<&str>) -> String {
     match mode {
         Some(mode) => mode.to_string(),
-        None => agent
-            .and_then(|agent| agent.preset)
+        None => agent_or_first(agents, agent)
+            .and_then(AgentSpec::claude_or_preset)
             .and_then(Preset::unattended_mode)
             .unwrap_or_default()
             .to_string(),

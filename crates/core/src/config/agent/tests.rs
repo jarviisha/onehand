@@ -232,18 +232,46 @@ fn the_stored_mode_is_cleared_for_a_preset_and_kept_for_a_declared_agent() {
 #[test]
 fn a_run_mode_comes_from_the_preset_when_none_is_set() {
     let claude = AgentSpec {
+        name: "Claude Code".into(),
         preset: Some(Preset::ClaudeCode),
         ..Default::default()
     };
     let codex = AgentSpec {
+        name: "Codex".into(),
         preset: Some(Preset::Codex),
         ..Default::default()
     };
-    assert_eq!(run_mode(None, Some(&claude)), "acceptEdits");
-    assert_eq!(run_mode(None, Some(&codex)), "");
-    assert_eq!(run_mode(Some(""), Some(&claude)), "");
-    assert_eq!(run_mode(Some("plan"), Some(&codex)), "plan");
-    assert_eq!(run_mode(None, None), "");
+    let both = [claude.clone(), codex.clone()];
+    assert_eq!(run_mode(None, &both, None), "acceptEdits");
+    assert_eq!(run_mode(None, &both, Some("Codex")), "");
+    assert_eq!(run_mode(Some(""), &both, None), "");
+    assert_eq!(run_mode(Some("plan"), &both, Some("Codex")), "plan");
+    assert_eq!(run_mode(None, &[], None), "");
+}
+
+/// The agent runs use is read when a run starts: making another agent the
+/// default changes the mode with it.
+#[test]
+fn a_run_mode_follows_the_agent_first_now() {
+    let claude = AgentSpec {
+        name: "Claude Code".into(),
+        preset: Some(Preset::ClaudeCode),
+        ..Default::default()
+    };
+    let codex = AgentSpec {
+        name: "Codex".into(),
+        preset: Some(Preset::Codex),
+        ..Default::default()
+    };
+    assert_eq!(run_mode(None, &[codex.clone(), claude.clone()], None), "");
+    assert_eq!(run_mode(None, &[claude, codex], None), "acceptEdits");
+}
+
+/// The old Claude default left declared, for want of `claude` on `PATH`, is
+/// still Claude, and still needs the mode it always ran in.
+#[test]
+fn the_old_default_left_declared_runs_in_accept_edits() {
+    assert_eq!(run_mode(None, &default_agents(), None), "acceptEdits");
 }
 
 #[test]

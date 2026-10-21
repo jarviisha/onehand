@@ -38,7 +38,9 @@ pub struct Unattended {
     label: String,
     /// How long a run may work, put over the workflow's own timeout.
     timeout: String,
-    mode: String,
+    /// The mode configured; absent takes the one the runs' agent needs, read
+    /// when a run starts (see [`run_mode`]).
+    mode: Option<String>,
     agent: Option<String>,
     /// The id of the workflow an issue is worked with, unless a workflow
     /// label on it names another.
@@ -240,14 +242,10 @@ pub fn boot(cfg: &UnattendedConfig, cx: &mut App) {
         }
     });
     cx.update_global::<Shared, _>(|shared, _| {
-        // Resolved once, here, as every other setting of runs is: a config
-        // naming no mode takes the one the runs' agent is known to need.
-        let runs_on = onehand_core::config::agent_or_first(&shared.agents, cfg.agent.as_deref());
-        let mode = onehand_core::config::run_mode(cfg.mode.as_deref(), runs_on);
         shared.unattended = Some(Unattended {
             label,
             timeout: timeout.unwrap_or(fallback.timeout),
-            mode,
+            mode: cfg.mode.clone(),
             agent: cfg.agent.clone(),
             workflow: cfg.workflow.clone(),
             workflows: cfg.workflows.clone(),
@@ -481,6 +479,14 @@ pub(crate) use facts::offered;
 
 /// The agent an issue's run starts, by name: the one set for runs, else the
 /// first configured.
+/// The mode a run started now starts in: the configured one, else the one
+/// the agent runs use now is known to need. Empty leaves the agent's own.
+pub(crate) fn run_mode(cx: &App) -> String {
+    let shared = Shared::global(cx);
+    let mode = shared.unattended.as_ref().and_then(|u| u.mode.as_deref());
+    onehand_core::config::run_mode(mode, &shared.agents, run_agent(cx).as_deref())
+}
+
 pub(crate) fn run_agent(cx: &App) -> Option<String> {
     let shared = Shared::global(cx);
     shared
@@ -505,7 +511,7 @@ pub(crate) fn now_for(
         onehand_core::config::agent_or_first(&shared.agents, None).map(|spec| spec.name.clone());
     let runs = shared.unattended.as_ref().map(|u| core::RunSettings {
         agent: u.agent.clone(),
-        mode: u.mode.clone(),
+        mode: run_mode(cx),
         timeout: u.timeout.clone(),
     });
     core::now_for(task.issue().is_some(), runs.as_ref(), first, check)

@@ -182,6 +182,13 @@ impl AgentSpec {
         Some(format!("{}@{version}", preset.package()))
     }
 
+    /// The preset this agent is, counting the old Claude default left
+    /// declared (for want of `claude` on `PATH`) as the Claude it still runs.
+    pub(crate) fn claude_or_preset(&self) -> Option<Preset> {
+        self.preset
+            .or_else(|| old_default_env(self).map(|_| Preset::ClaudeCode))
+    }
+
     /// Whether this preset runs an adapter other than the one this release
     /// was tried with.
     pub fn outside_pin(&self) -> bool {
