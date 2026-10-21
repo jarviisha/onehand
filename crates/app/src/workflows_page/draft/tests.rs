@@ -8,6 +8,8 @@ fn agent(id: &str, keep_answer: bool) -> StepSpec {
             prompt: String::new(),
             gates: Vec::new(),
             keep_answer,
+            mode: None,
+            options: std::collections::BTreeMap::new(),
         },
     }
 }

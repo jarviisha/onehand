@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 fn brief() -> Brief {
@@ -268,6 +269,46 @@ fn a_template_survives_a_round_trip_through_toml() {
 }
 
 #[test]
+fn an_agent_step_reads_and_writes_its_settings() {
+    let mut t = checkout();
+    let StepKind::Agent { mode, options, .. } = &mut t.steps[0].kind else {
+        panic!("the first step of checkout() is an agent step")
+    };
+    *mode = Some("plan".to_string());
+    options.insert("model".to_string(), "strong".to_string());
+    options.insert("fast".to_string(), "on".to_string());
+    let text = toml::to_string_pretty(&t).unwrap();
+    let t = store::parse(&text).unwrap();
+    let StepKind::Agent { mode, options, .. } = &t.steps[0].kind else {
+        panic!("the first step of checkout() is an agent step")
+    };
+    assert_eq!(mode.as_deref(), Some("plan"));
+    assert_eq!(options.get("model").map(String::as_str), Some("strong"));
+    assert_eq!(store::parse(&toml::to_string(&t).unwrap()).unwrap(), t);
+}
+
+#[test]
+fn an_agent_step_without_settings_writes_no_keys() {
+    let text = toml::to_string(&checkout()).unwrap();
+    assert!(!text.contains("mode") && !text.contains("options"));
+}
+
+#[test]
+fn settings_on_a_command_step_do_not_read() {
+    // `verify` is the earlier command step; `mode` reads on an agent step
+    // only, so this key is one the parser never kept.
+    let text = toml::to_string_pretty(&checkout()).unwrap();
+    let with_mode = text.replacen(
+        "on_fail = \"implement\"",
+        "on_fail = \"implement\"\nmode = \"plan\"",
+        1,
+    );
+    assert!(store::parse(&with_mode)
+        .unwrap_err()
+        .contains("a key `steps[3].mode` that onehand does not read"));
+}
+
+#[test]
 fn validate_names_each_kind_of_problem() {
     let said =
         |t: &Template| -> Vec<String> { validate(t).iter().map(|p| p.to_string()).collect() };
@@ -338,6 +379,33 @@ fn validate_names_each_kind_of_problem() {
     }
     has(&t, "cannot hold in a checkout");
     has(&t, "both changed and unchanged");
+
+    let mut t = checkout();
+    if let StepKind::Agent { mode, .. } = &mut t.steps[0].kind {
+        *mode = Some(String::new());
+    }
+    has(&t, "Step 1: its mode is empty");
+
+    let mut t = checkout();
+    if let StepKind::Agent { options, .. } = &mut t.steps[0].kind {
+        options.insert(String::new(), "x".into());
+    }
+    has(&t, "Step 1: an option has no name");
+
+    let mut t = checkout();
+    if let StepKind::Agent { options, .. } = &mut t.steps[0].kind {
+        options.insert("effort".into(), String::new());
+    }
+    has(&t, "Step 1: the option effort has no value");
+
+    let mut t = checkout();
+    if let StepKind::Agent { options, .. } = &mut t.steps[0].kind {
+        options.insert("mode".into(), "plan".into());
+    }
+    has(
+        &t,
+        "Step 1: the mode is set with mode, not among the options",
+    );
 
     let mut t = checkout();
     if let StepKind::Agent { prompt, .. } = &mut t.steps[0].kind {
@@ -1589,6 +1657,8 @@ fn packaged() -> Template {
                 prompt: "{brief}".into(),
                 gates: vec![GateKind::CodeChanged, GateKind::Committed],
                 keep_answer: false,
+                mode: None,
+                options: BTreeMap::new(),
             },
         ),
         step(

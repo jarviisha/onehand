@@ -19,6 +19,8 @@ pub(super) fn agent() -> StepKind {
         prompt: "do it".into(),
         gates: Vec::new(),
         keep_answer: true,
+        mode: None,
+        options: std::collections::BTreeMap::new(),
     }
 }
 
@@ -1015,12 +1017,16 @@ fn a_step_says_what_it_does() {
         prompt: String::new(),
         gates: vec![crate::workflow::GateKind::CodeChanged],
         keep_answer: false,
+        mode: None,
+        options: std::collections::BTreeMap::new(),
     };
     assert_eq!(changes.does(), "the agent changes the code");
     let answers = StepKind::Agent {
         prompt: String::new(),
         gates: vec![crate::workflow::GateKind::Answered],
         keep_answer: true,
+        mode: None,
+        options: std::collections::BTreeMap::new(),
     };
     assert_eq!(answers.does(), "the agent answers");
     assert_eq!(

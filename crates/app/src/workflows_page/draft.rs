@@ -1,6 +1,7 @@
 use gpui::{App, AppContext as _, Entity, Window};
 use gpui_component::input::{InputState, TextareaState};
 use onehand_core::workflow::{self as core, GateKind, Place, StepKind, StepSpec, Template};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 /// The lines a step's prompt shows when it is short.
@@ -74,6 +75,10 @@ pub struct StepDraft {
     pub prompt: Entity<TextareaState>,
     pub gates: Vec<GateKind>,
     pub keep_answer: bool,
+    /// The step's mode and options, kept as the spec reads them: no field
+    /// on this form edits them.
+    pub mode: Option<String>,
+    pub options: BTreeMap<String, String>,
     pub command: Entity<InputState>,
     /// How long status checks are waited on.
     pub wait: Entity<InputState>,
@@ -89,16 +94,20 @@ impl StepDraft {
             cx.new(|cx| InputState::new(window, cx).default_value(text))
         };
         let mut wait = core::DEFAULT_WAIT;
-        let (kind, prompt, gates, keep_answer, command, target) = match &spec.kind {
+        let (kind, prompt, gates, keep_answer, mode, options, command, target) = match &spec.kind {
             StepKind::Agent {
                 prompt,
                 gates,
                 keep_answer,
+                mode,
+                options,
             } => (
                 Kind::Agent,
                 prompt.as_str(),
                 gates.clone(),
                 *keep_answer,
+                mode.clone(),
+                options.clone(),
                 "",
                 "",
             ),
@@ -107,12 +116,41 @@ impl StepDraft {
                 "",
                 Vec::new(),
                 false,
+                None,
+                BTreeMap::new(),
                 command.as_deref().unwrap_or_default(),
                 on_fail.as_str(),
             ),
-            StepKind::Approval { of } => (Kind::Approval, "", Vec::new(), false, "", of.as_str()),
-            StepKind::Push => (Kind::Push, "", Vec::new(), false, "", ""),
-            StepKind::PullRequest => (Kind::PullRequest, "", Vec::new(), false, "", ""),
+            StepKind::Approval { of } => (
+                Kind::Approval,
+                "",
+                Vec::new(),
+                false,
+                None,
+                BTreeMap::new(),
+                "",
+                of.as_str(),
+            ),
+            StepKind::Push => (
+                Kind::Push,
+                "",
+                Vec::new(),
+                false,
+                None,
+                BTreeMap::new(),
+                "",
+                "",
+            ),
+            StepKind::PullRequest => (
+                Kind::PullRequest,
+                "",
+                Vec::new(),
+                false,
+                None,
+                BTreeMap::new(),
+                "",
+                "",
+            ),
             StepKind::StatusChecks {
                 on_fail,
                 wait: waits,
@@ -123,6 +161,8 @@ impl StepDraft {
                     "",
                     Vec::new(),
                     false,
+                    None,
+                    BTreeMap::new(),
                     "",
                     on_fail.as_str(),
                 )
@@ -144,6 +184,8 @@ impl StepDraft {
             }),
             gates,
             keep_answer,
+            mode,
+            options,
             command: cx.new(|cx| {
                 InputState::new(window, cx)
                     .placeholder("Empty: the project's check command")
@@ -164,6 +206,8 @@ impl StepDraft {
                     prompt: self.prompt.read(cx).value().to_string(),
                     gates: self.gates.clone(),
                     keep_answer: self.keep_answer,
+                    mode: self.mode.clone(),
+                    options: self.options.clone(),
                 },
                 Kind::Command => StepKind::Command {
                     command: (!command.is_empty()).then_some(command),
@@ -281,6 +325,8 @@ impl WorkflowDraft {
                     prompt: String::new(),
                     gates: Vec::new(),
                     keep_answer: false,
+                    mode: None,
+                    options: BTreeMap::new(),
                 },
                 Kind::Command => StepKind::Command {
                     command: None,

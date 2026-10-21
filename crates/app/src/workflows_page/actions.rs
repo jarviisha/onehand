@@ -20,6 +20,8 @@ impl WorkflowsPage {
                 prompt: "{brief}".to_string(),
                 gates: vec![core::GateKind::Answered],
                 keep_answer: true,
+                mode: None,
+                options: std::collections::BTreeMap::new(),
             },
         });
         self.open_workflow_form(template, None, window, cx);
