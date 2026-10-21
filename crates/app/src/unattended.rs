@@ -29,7 +29,7 @@ use launch::{Landed, landed};
 pub use launch::{ReviewRead, look_now, read_review, start_answer, start_picked};
 pub use onehand_core::unattended::{Pickable, Project};
 pub(crate) use report::{
-    card_question, deliver, deliver_all, ended, keep, opening, refuse_mode, spec_for, started,
+    card_question, deliver, deliver_all, ended, keep, opening, pause, spec_for, started,
 };
 
 /// The unattended half of the process: its settings, the claim in flight and
@@ -57,11 +57,12 @@ pub struct Unattended {
     /// agent does not offer). Every run would fail the same way on a fresh
     /// issue, so the search stops, and every switched-on row says why.
     blocked: Option<String>,
-    /// The agent does not offer the configured mode. Kept apart from
-    /// `blocked` because it stops a run picked by hand as well, where the
-    /// label and the interval do not matter — and it is only learned once an
-    /// adapter has answered, which is after a claim.
-    mode_refused: Option<String>,
+    /// A run failed on a setting: the agent does not offer the configured
+    /// mode, or a step's own settings were not offered or refused. Kept
+    /// apart from `blocked` because it stops a run picked by hand as well,
+    /// where the label and the interval do not matter — and it is only
+    /// learned once an adapter has answered, which is after a claim.
+    paused: Option<String>,
     /// Tasks whose reports are on their way to their issue, so a second
     /// delivery does not send them twice.
     delivering: HashSet<String>,
@@ -149,12 +150,7 @@ fn cannot_start(u: &Unattended, cx: &App) -> Option<String> {
         .map(|(label, id)| (label.clone(), launch::workflow(id, &u.timeout, cx)))
         .collect();
     let agent_configured = spec_for(u.agent.as_deref(), cx).is_some();
-    core::cannot_start(
-        u.mode_refused.as_deref(),
-        &default,
-        &by_label,
-        agent_configured,
-    )
+    core::cannot_start(u.paused.as_deref(), &default, &by_label, agent_configured)
 }
 
 /// Whether the project at `root` has a check command, in whichever window
@@ -255,7 +251,7 @@ pub fn boot(cfg: &UnattendedConfig, cx: &mut App) {
             waiting: cfg.waiting,
             claiming: false,
             blocked,
-            mode_refused: None,
+            paused: None,
             delivering: HashSet::new(),
             starting: HashSet::new(),
             accounts: None,

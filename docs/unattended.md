@@ -87,7 +87,7 @@ background executor, one interval in the config, no cron expressions.
 | `crates/core/src/task/history.rs` | `over_cap`, which never lets go of a task whose report is unsent |
 | `crates/app/src/unattended.rs` | the tick, which gathers what core decides with and hands it off the UI loop; the cap (`at_cap`, the tasks still `starting`), `waiting` |
 | `crates/app/src/unattended/launch.rs` | `Landed`, a claim paired with the window it was picked in; `start`, which keeps the task and asks for its place; `workflow` and `found`, which read the library |
-| `crates/app/src/unattended/report.rs` | `spec_for`, `refuse_mode`, `started`, `opening`, and the end: `keep`, `card_question`, `ended`, `deliver`, `deliver_all` |
+| `crates/app/src/unattended/report.rs` | `spec_for`, `pause`, `started`, `opening`, and the end: `keep`, `card_question`, `ended`, `deliver`, `deliver_all` |
 | `crates/app/src/task.rs` | `freed`, which calls `unattended::ended`; `update_issue`, `undelivered` |
 | `crates/app/src/task/listing.rs` | `slot_holders`, `issues_waiting`, `live_issues`, `issue_tasks` |
 | `crates/app/src/task/driver.rs` | `came_up` (the mode, the note on the issue), the clock, the take-over |
@@ -640,7 +640,7 @@ separate connect timeout: an adapter that never comes up is a run that never
 finishes, and the run's own timeout already bounds that.
 
 **A mode the agent does not offer pauses the feature**, not just the run
-(`unattended::refuse_mode`). Every later run would fail the same way on a fresh
+(`unattended::pause`). Every later run would fail the same way on a fresh
 issue, each one spending a claim to say so, so the first fails and the tick
 stops until the config is fixed and the app restarted. **That first issue is
 spent only when nothing knew the modes yet**: what the agent offers is learned
@@ -650,6 +650,15 @@ claim. The first issue is still spent by a search after a start of onehand, or
 an edit of the agent's spec, before the agent has come up anywhere. Its report names the mode and what
 was offered, and re-adding the label once the config is fixed is the way to try
 again.
+
+**So does a step's setting that fails a run of an issue**: one the step names
+that the agent does not offer once running, or any pick it refuses (an effort
+its plan does not allow, a value not known yet under the step's model when the
+run began). Every later run of the same workflow would fail at the same step on
+a fresh issue, so the tick stops, saying the workflow's step settings must be
+fixed and onehand restarted: the pause is only lifted at a start of onehand,
+the same as the mode's. A run a person starts from the launcher fails at the
+step and pauses nothing.
 
 ## The report
 

@@ -3,8 +3,10 @@
 //! put in force one pick at a time, each answered by the agent before the
 //! next is planned, since an answer can change what the agent offers. The
 //! prompt waits until they all are; a setting the step names not offered,
-//! or any pick refused, fails the run at that step. One the step only takes
-//! from the start and the agent no longer offers is left as the agent has it.
+//! or any pick refused, fails the run at that step (and, for an issue's run,
+//! pauses unattended runs, since every later one would fail the same way).
+//! One the step only takes from the start and the agent no longer offers is
+//! left as the agent has it.
 
 use super::{Driven, advance, read, send, with};
 use crate::chat::session::{ChatSession, note};
@@ -43,6 +45,23 @@ fn wanted(d: &Driven) -> (Settings, Vec<String>) {
             )
         })
         .unwrap_or_default()
+}
+
+/// Fail the run on a setting, `why`. A run of an issue pauses unattended
+/// runs too: every later one would fail the same way, each on a fresh issue.
+/// A person's run from the launcher does not.
+fn fail(uid: u64, why: String, cx: &mut App) {
+    let Some((task, workflow)) = read(uid, cx, |d| (d.task.clone(), d.run.template.id.clone()))
+    else {
+        return;
+    };
+    if crate::task::task(&task, cx).is_some_and(|task| task.issue().is_some()) {
+        let fix = format!("the step settings of workflow `{workflow}` are fixed");
+        crate::unattended::pause(&why, &fix, cx);
+    }
+    advance(uid, cx, move |run| {
+        run.failed(why, found_late(About::Settings))
+    });
 }
 
 /// The prompt `text`, given back when it may go now: the open visit's
@@ -113,9 +132,7 @@ pub(super) fn refused(uid: u64, session: &Entity<ChatSession>, why: &str, cx: &m
         Pick::Mode(mode) => format!("the agent refused mode `{mode}`: {why}"),
         Pick::Option { id, value } => format!("the agent refused `{value}` for `{id}`: {why}"),
     };
-    advance(uid, cx, move |run| {
-        run.failed(said, found_late(About::Settings))
-    });
+    fail(uid, said, cx);
 }
 
 /// Send the visit's next pick and hold the prompt, or fail the run on a
@@ -153,9 +170,7 @@ fn plan(
                 picking.sent = Some(pick);
             }
             Next::Refused(why) => {
-                advance(uid, cx, move |run| {
-                    run.failed(why, found_late(About::Settings))
-                });
+                fail(uid, why, cx);
                 return None;
             }
             Next::Done => {

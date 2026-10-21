@@ -47,16 +47,14 @@ pub(super) fn wrapped(base: AgentSpec) -> AgentSpec {
     }
 }
 
-/// The agent does not offer the mode runs start in: every later run would
-/// fail the same way, each on a fresh issue, so runs stop here until the
-/// config is fixed and onehand restarted.
-pub(crate) fn refuse_mode(why: &str, cx: &mut App) {
-    let why = format!(
-        "{why}. Unattended runs are paused until unattended.mode is fixed and onehand \
-         restarted."
-    );
+/// A run failed on a setting, `why`: the mode runs start in, or a step's
+/// own, not offered or refused. Every later run would fail the same way, each
+/// on a fresh issue, so runs stop here until what `fix` names is fixed and
+/// onehand restarted, which is the only thing that lifts the pause.
+pub(crate) fn pause(why: &str, fix: &str, cx: &mut App) {
+    let why = format!("{why}. Unattended runs are paused until {fix} and onehand restarted.");
     eprintln!("onehand: {why}");
-    with(cx, |u| u.mode_refused = Some(why));
+    with(cx, |u| u.paused = Some(why));
     cx.refresh_windows();
 }
 

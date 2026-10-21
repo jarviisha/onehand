@@ -597,7 +597,7 @@ fn came_up(uid: u64, session: &Entity<ChatSession>, cx: &mut App) -> bool {
         .map(|m| m.id.clone())
         .collect();
     if let Some(why) = onehand_core::preflight::mode_refused(&mode, &offered) {
-        crate::unattended::refuse_mode(&why, cx);
+        crate::unattended::pause(&why, "unattended.mode is fixed", cx);
         advance(uid, cx, move |run| run.failed(why, found_late(About::Mode)));
         return false;
     }
