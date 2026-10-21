@@ -252,9 +252,21 @@ impl Chat {
                 self.finalize_thought();
                 self.apply_plan(entries);
             }
-            AcpEvent::Permission(req) => {
+            AcpEvent::Permission(mut req) => {
                 self.consume_replay();
                 self.finalize_thought();
+                // One adapter puts the command in the request's own title,
+                // another a generic label such as "Run command"; the call the
+                // request names carries the command either way.
+                let named = self.items.iter().rev().find_map(|item| match item {
+                    ChatItem::Tool(t) if Some(&t.call.id) == req.tool_call_id.as_ref() => {
+                        Some(t.call.title.trim())
+                    }
+                    _ => None,
+                });
+                if let Some(title) = named.filter(|title| !title.is_empty()) {
+                    req.title = title.to_string();
+                }
                 self.items.push(ChatItem::Permission(PermItem {
                     req,
                     resolved: None,

@@ -1384,6 +1384,55 @@ fn permission(title: &str) -> PermissionRequest {
     }
 }
 
+/// A tool call announced ahead of its permission, as an adapter does.
+fn pending_call(id: &str, title: &str) -> AcpEvent {
+    AcpEvent::ToolCall(ToolCall {
+        id: id.into(),
+        title: title.into(),
+        description: None,
+        kind: crate::acp::ToolKind::Execute,
+        status: ToolStatus::Pending,
+        content: vec![],
+    })
+}
+
+/// The card shows the newest card's command, which is the permission's.
+fn parked_command(chat: &Chat) -> &str {
+    let Some(ChatItem::Permission(p)) = chat.items.last() else {
+        panic!("a permission card is last")
+    };
+    p.command()
+}
+
+/// One adapter puts the command in the request's own title and another a
+/// generic label; the call the request names carries the command either way.
+#[test]
+fn permission_takes_the_title_of_the_call_it_names() {
+    let mut chat = Chat::default();
+    chat.apply(pending_call("call-1", "curl -sI https://example.com | head -1"));
+    let mut req = permission("Run command");
+    req.tool_call_id = Some("call-1".into());
+    chat.apply(AcpEvent::Permission(req));
+    assert_eq!(parked_command(&chat), "curl -sI https://example.com | head -1");
+}
+
+#[test]
+fn permission_without_a_known_call_keeps_its_own_title() {
+    let mut chat = Chat::default();
+    let mut req = permission("Run command");
+    req.tool_call_id = Some("never-seen".into());
+    chat.apply(AcpEvent::Permission(req));
+    assert_eq!(parked_command(&chat), "Run command");
+
+    // A known call with a blank title does not blank the card.
+    let mut chat = Chat::default();
+    chat.apply(pending_call("call-2", "  "));
+    let mut req = permission("Run command");
+    req.tool_call_id = Some("call-2".into());
+    chat.apply(AcpEvent::Permission(req));
+    assert_eq!(parked_command(&chat), "Run command");
+}
+
 /// All four halves of a resume have to land. Each one that does not is a
 /// silent loss: the transcript, the user's own title, the selector state
 /// the adapter will *not* rebuild, and the date the rail shows.
