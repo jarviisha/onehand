@@ -140,7 +140,7 @@ impl AgentSpec {
     /// the system's own words, as it always has. The entry's `env` goes last
     /// either way, so it can override what a preset sets.
     pub fn launch(&self, path: Option<&std::ffi::OsStr>) -> Result<Launch, String> {
-        let own = self.env.iter().map(|(k, v)| (k.clone(), v.clone()));
+        let own = self.env.iter().map(|(k, v)| (k.clone(), home_expanded(v)));
         let Some(preset) = self.preset else {
             return Ok(Launch {
                 command: self.command.clone(),
@@ -194,6 +194,16 @@ impl AgentSpec {
     pub fn outside_pin(&self) -> bool {
         self.preset
             .is_some_and(|preset| self.version.as_deref().is_some_and(|v| v != preset.pin()))
+    }
+}
+
+/// `value` with a leading `~/` as the home directory, as a shell would have
+/// read it: no shell stands between onehand and the adapter, so the agent would
+/// otherwise be handed a directory literally named `~`.
+fn home_expanded(value: &str) -> String {
+    match (value.strip_prefix("~/"), dirs::home_dir()) {
+        (Some(rest), Some(home)) => home.join(rest).display().to_string(),
+        _ => value.to_string(),
     }
 }
 

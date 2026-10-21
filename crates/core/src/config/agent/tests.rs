@@ -294,3 +294,26 @@ fn an_absent_mode_is_not_written_and_an_empty_one_is() {
     let again = AppConfig::parse(&cfg.to_toml().unwrap()).unwrap();
     assert_eq!(again.unattended.mode.as_deref(), Some(""));
 }
+
+/// No shell stands between onehand and the adapter, so a value typed as
+/// `~/…` would reach the agent as a directory literally named `~`.
+#[test]
+fn a_leading_tilde_in_an_env_value_is_the_home_directory() {
+    let home = dirs::home_dir().expect("a home directory");
+    let spec = AgentSpec {
+        name: "Gemini".into(),
+        command: "gemini".into(),
+        env: [
+            ("CLAUDE_CONFIG_DIR".into(), "~/.claude-work".into()),
+            ("PLAIN".into(), "a~/b".into()),
+        ]
+        .into(),
+        ..Default::default()
+    };
+    let env = spec.launch(None).unwrap().env;
+    assert!(env.contains(&(
+        "CLAUDE_CONFIG_DIR".into(),
+        home.join(".claude-work").display().to_string()
+    )));
+    assert!(env.contains(&("PLAIN".into(), "a~/b".into())));
+}
