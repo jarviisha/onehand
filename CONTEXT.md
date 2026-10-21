@@ -27,6 +27,22 @@ run stops and the session becomes an ordinary one. Answering a card the run's ag
 taking over.
 _Avoid_: hijack, adopt
 
+## Agents
+
+**Built-in agent**:
+Claude Code or Codex, named in the agent list by its preset: onehand chooses and tries its adapter,
+runs the agent on the person's machine, and promises it every feature.
+_Avoid_: official agent, supported agent
+
+**Declared agent**:
+Any other agent, written out in the agent list with its command; it gets what the protocol gives.
+_Avoid_: custom agent, third-party agent
+
+**Preset**:
+What onehand knows about one built-in agent: its adapter and the version tried, the binary it
+drives, and the defaults it needs. Kept in code; the agent list names it by id.
+_Avoid_: template, profile
+
 ## Workflows
 
 **Workflow**:

@@ -131,7 +131,8 @@ over) is defined in [CONTEXT.md](../CONTEXT.md).
 label = "auto"              # the trigger label (the default); empty picks nothing
 every = "30m"               # how often to look
 timeout = "45m"             # how long a run may work, put over the workflow's own
-mode = "acceptEdits"        # the ACP session mode a run starts in; empty leaves the agent's own
+mode = "acceptEdits"        # the ACP session mode a run starts in; empty leaves the agent's own,
+                            # unset takes the preset's (acceptEdits for Claude Code, Codex's own)
 agent = "Claude Code"       # which agent spec; the default agent when unset
 workflow = "builtin:issue"  # the workflow an issue is worked with, by id
 at_once = 1                 # runs working at once, across every window
@@ -442,6 +443,12 @@ word of its own onto a moving set. It is the run's `Setup::mode`, and the driver
 puts the agent in it when the agent first comes up, before the first prompt. An
 id the agent does not offer fails the run — a run that silently fell back to the
 mode that asks questions would park on the first write.
+
+**Codex needs no mode set.** Its default, *Auto review*, edits in its sandbox and sends what the
+sandbox refuses (the network, writing `.git`) to its own reviewer rather than to a person; tried,
+it fixed a file, fetched a URL, committed and pushed without one card. *Workspace access* asks
+before each of those, so a run in it parks. What Codex may do is otherwise its own configuration
+(`~/.codex/config.toml`), not the repository's.
 
 **`acceptEdits` covers file edits and nothing else.** Under it Claude Code still
 asks before every command — `cargo test`, `git commit` — so with rule 1 below
