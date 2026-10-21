@@ -28,6 +28,9 @@ pub struct WorkflowDraft {
     pub open_step: Option<usize>,
     /// One onehand ships, shown read-only: it is changed by duplicating it.
     pub shipped: bool,
+    /// Whether what the agent runs take offers was known when the steps'
+    /// options were last sorted into picks and typed rows.
+    offer_known: bool,
 }
 
 /// A step's kind as the form holds it: the kind alone, its fields kept apart
@@ -299,7 +302,30 @@ impl WorkflowDraft {
                 .collect(),
             open_step: None,
             shipped,
+            offer_known: run_agent_offer(cx).is_some_and(|(_, offer)| offer.is_some()),
         }
+    }
+
+    /// Once what the agent runs take offers becomes known (a check came
+    /// back), a typed row naming an option it offers, with one of its
+    /// values, becomes that option's pick, so each id has one place.
+    /// Whether a row went, whose field may have held the keyboard.
+    pub fn adopt_offer(&mut self, cx: &App) -> bool {
+        let mut adopted = false;
+        let offer = run_agent_offer(cx).and_then(|(_, offer)| offer);
+        if let (Some(offer), false) = (&offer, self.offer_known) {
+            for step in &mut self.steps {
+                let rows = step.option_texts(cx);
+                for at in adoptable(&rows, &step.picked, offer).into_iter().rev() {
+                    let (id, value) = &rows[at];
+                    set_pick(&mut step.picked, id.trim(), Some(value.trim()));
+                    step.options.remove(at);
+                    adopted = true;
+                }
+            }
+        }
+        self.offer_known = offer.is_some();
+        adopted
     }
 
     /// The template this form describes, or why the allowance of misses does
@@ -505,6 +531,28 @@ pub(super) fn settings_of(
             .filter(|(id, value)| !id.is_empty() || !value.is_empty()),
     );
     ((!mode.is_empty()).then(|| mode.to_string()), options)
+}
+
+/// The typed rows, by place in order, that become picks under `offer`: an
+/// id it offers, not picked already and set by no other row, to one of its
+/// values.
+pub(super) fn adoptable(
+    rows: &[(String, String)],
+    picked: &BTreeMap<String, String>,
+    offer: &core::Offer,
+) -> Vec<usize> {
+    rows.iter()
+        .enumerate()
+        .filter(|(_, (id, value))| {
+            let id = id.trim();
+            !picked.contains_key(id)
+                && rows.iter().filter(|(other, _)| other.trim() == id).count() == 1
+                && offer.options.iter().any(|(offered, values)| {
+                    offered == id && values.iter().any(|v| v == value.trim())
+                })
+        })
+        .map(|(at, _)| at)
+        .collect()
 }
 
 /// Pick `value` for option `id`, or with `None` leave it to the run.

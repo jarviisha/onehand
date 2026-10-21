@@ -184,3 +184,29 @@ fn an_option_set_twice_is_found() {
         vec!["model".to_string()]
     );
 }
+
+#[test]
+fn typed_rows_the_agent_offers_become_picks() {
+    let offer = onehand_core::workflow::Offer {
+        modes: Vec::new(),
+        options: vec![
+            (
+                "model".to_string(),
+                vec!["strong".to_string(), "cheap".to_string()],
+            ),
+            ("effort".to_string(), vec!["low".to_string()]),
+            ("fast".to_string(), vec!["on".to_string()]),
+        ],
+    };
+    let rows = [
+        row(" model ", " cheap "), // offered, a value it offers: adopted
+        row("effort", "high"),     // a value not offered: stays typed
+        row("other", "x"),         // an id not offered: stays typed
+        row("fast", "on"),         // already picked: stays, set twice
+        row("", ""),
+    ];
+    assert_eq!(adoptable(&rows, &map(&[("fast", "on")]), &offer), vec![0]);
+    // Two rows on one id are left for the person to settle.
+    let twice = [row("model", "cheap"), row("model", "strong")];
+    assert!(adoptable(&twice, &map(&[]), &offer).is_empty());
+}

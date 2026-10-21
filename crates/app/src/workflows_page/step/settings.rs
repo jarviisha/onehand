@@ -52,7 +52,9 @@ pub(super) fn agent_settings(
     let said: SharedString = match (&agent, crate::unattended::run_agent(cx)) {
         (Some((spec, Some(_))), _) => format!("Choices {} offers", spec.name).into(),
         (Some((spec, None)), _) => format!("What {} offers is not known yet", spec.name).into(),
-        (None, Some(name)) => format!("{name}, the agent runs take, is not configured").into(),
+        (None, Some(name)) => {
+            format!("{name} is not configured; the choices come from the agent runs use").into()
+        }
         (None, None) => "No agent is configured, so there is nothing to pick from".into(),
     };
     // The agent comes up in a project the window has open, else at home.
@@ -67,13 +69,27 @@ pub(super) fn agent_settings(
         .children(check.map(|check| div().h_flex().child(check)));
     let typed = typed_options(handle, i, step, shipped, cx);
     let Some(offer) = offer else {
-        return body
-            .child(field(
-                "Mode",
+        body = body.child(field(
+            "Mode",
+            None,
+            text_input(&step.mode, cx).tall().disabled(shipped),
+            cx,
+        ));
+        // Picked while the agent's offer was known: each stays on screen,
+        // to keep or leave to the run, with nothing judged of it.
+        for (n, (id, value)) in step.picked.iter().enumerate() {
+            let row = pick_row(
+                format!("step-pick-{i}-{n}"),
+                "Run's value",
                 None,
-                text_input(&step.mode, cx).tall().disabled(shipped),
+                Some(value),
+                shipped,
+                option_pick(handle, i, id),
                 cx,
-            ))
+            );
+            body = body.child(field(id.clone(), None, row, cx));
+        }
+        return body
             .child(field(
                 "Options",
                 about("By the agent's own ids and values"),
@@ -102,7 +118,7 @@ pub(super) fn agent_settings(
         let row = pick_row(
             format!("step-mode-{i}"),
             "Run's mode",
-            &offer.modes,
+            Some(&offer.modes),
             mode.as_deref(),
             shipped,
             pick,
@@ -145,37 +161,13 @@ pub(super) fn agent_settings(
         .filter(|(id, _)| !shown.iter().any(|(shown, _)| shown == id))
         .count();
     for (n, (id, values)) in shown.into_iter().enumerate() {
-        let pick: Pick = {
-            let (handle, id) = (handle.clone(), id.to_string());
-            Rc::new(move |to, window, cx| {
-                let id = id.clone();
-                handle.update(cx, |page, cx| {
-                    let mut dropped = false;
-                    page.edit_workflow_draft(window, cx, |d, _, cx| {
-                        let step = &mut d.steps[i];
-                        set_pick(&mut step.picked, &id, to.as_deref());
-                        // A pick is the option's one value: a typed row
-                        // setting it goes.
-                        let before = step.options.len();
-                        step.options
-                            .retain(|(row, _)| row.read(cx).value().trim() != id);
-                        dropped = step.options.len() != before;
-                    });
-                    // Its fields may hold the keyboard, and they leave the
-                    // frame with the row.
-                    if dropped {
-                        page.hold_focus(window, cx);
-                    }
-                })
-            })
-        };
         let row = pick_row(
             format!("step-pick-{i}-{n}"),
             "Run's value",
-            values,
+            Some(values),
             taken(step, &typed_texts, id),
             shipped,
-            pick,
+            option_pick(handle, i, id),
             cx,
         );
         body = body.child(field(id.to_string(), None, row, cx));
@@ -199,6 +191,32 @@ pub(super) fn agent_settings(
     .into_any_element()
 }
 
+/// What picking a value of option `id` on step `i` does: the step's pick
+/// set, or cleared for `None`, and a typed row setting the id dropped, as a
+/// pick is the option's one value.
+fn option_pick(handle: &Entity<WorkflowsPage>, i: usize, id: &str) -> Pick {
+    let (handle, id) = (handle.clone(), id.to_string());
+    Rc::new(move |to, window, cx| {
+        let id = id.clone();
+        handle.update(cx, |page, cx| {
+            let mut dropped = false;
+            page.edit_workflow_draft(window, cx, |d, _, cx| {
+                let step = &mut d.steps[i];
+                set_pick(&mut step.picked, &id, to.as_deref());
+                let before = step.options.len();
+                step.options
+                    .retain(|(row, _)| row.read(cx).value().trim() != id);
+                dropped = step.options.len() != before;
+            });
+            // Its fields may hold the keyboard, and they leave the frame
+            // with the row.
+            if dropped {
+                page.hold_focus(window, cx);
+            }
+        })
+    })
+}
+
 /// The value option `id` is set to: its pick, else what a typed row says.
 fn taken<'a>(step: &'a StepDraft, typed: &'a [(String, String)], id: &str) -> Option<&'a str> {
     step.picked.get(id).map(String::as_str).or_else(|| {
@@ -212,18 +230,20 @@ fn taken<'a>(step: &'a StepDraft, typed: &'a [(String, String)], id: &str) -> Op
 
 /// A setting's row of choices: `run` (the step names none) first, then the
 /// values offered, the one taken filled; a value taken that the agent does
-/// not offer is marked in the warning ink. Wraps on a narrow panel; past
-/// [`CHOICES_SHOWN`] a line says how many more.
+/// not offer is marked in the warning ink. `offered` is `None` while what
+/// the agent offers is not known, and nothing is marked.
+/// Wraps on a narrow panel; past [`CHOICES_SHOWN`] a line says how many more.
 fn pick_row(
     id: String,
     run: &'static str,
-    offered: &[String],
+    offered: Option<&[String]>,
     current: Option<&str>,
     shipped: bool,
     pick: Pick,
     cx: &App,
 ) -> AnyElement {
-    let (shown, more) = chips(offered, current);
+    let known = offered.is_some();
+    let (shown, more) = chips(offered.unwrap_or_default(), current);
     let warning = crate::theme::status_ink(cx).warning;
     let chip = |n: usize, label: SharedString, to: Option<String>, on: bool| {
         let pick = pick.clone();
@@ -237,9 +257,9 @@ fn pick_row(
         .refuses(shipped.then_some(SHIPPED))
         .on_click(move |_, window: &mut Window, cx: &mut App| pick(to.clone(), window, cx))
     };
-    let chips = shown.into_iter().enumerate().map(|(n, (value, known))| {
+    let chips = shown.into_iter().enumerate().map(|(n, (value, offered))| {
         let on = current == Some(value.as_str());
-        match known {
+        match offered || !known {
             true => chip(n + 1, value.clone().into(), Some(value), on),
             false => chip(
                 n + 1,
@@ -248,7 +268,10 @@ fn pick_row(
                 on,
             )
             .text_color(warning)
-            .tooltip("The agent does not offer it: a run fails at this step"),
+            // A shipped workflow's refusal keeps its own tooltip.
+            .when(!shipped, |chip| {
+                chip.tooltip("The agent does not offer it: a run fails at this step")
+            }),
         }
     });
     div()

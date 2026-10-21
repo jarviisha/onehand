@@ -139,7 +139,9 @@ the file) stays on its row, chosen, in the warning ink and marked *not offered*.
 options*: rows typed by id and value, and *Add option*, for what the agent does not list. While
 what the agent offers is not known yet, *Mode* and the option rows are typed, and the line says
 so beside *Check the agent*, started in the project selected in the rail (else the first one the
-window has open, else the home folder); when it comes back the choices are drawn. With no agent
+window has open, else the home folder); a value picked while the offer was known keeps its row,
+unmarked, to keep or leave to the run. When the check comes back the choices are drawn, and a
+typed row naming an option offered, with one of its values, becomes that option's pick. With no agent
 configured both are typed, and the line says so. The editor judges nothing: the preflight does. A
 shipped workflow's choices refuse, saying it is duplicated to be changed. An option set twice on
 a step, by two rows or by a pick and a row, is a problem, and *Save* refuses.
@@ -664,7 +666,7 @@ approval.
 | A value gone under another model | Implement: `model` `cheap`, `effort` `high` | Nothing blocks the start; the run fails at Implement, a configuration failure: *the agent offers no `high` for `effort` (it offers: low, max)*, and no prompt went to Implement |
 | A pick the agent refuses | Implement: `effort` `max` | The run fails at Implement: *the agent refused `max` for `effort`: Max effort is not available on this plan* |
 | Check the agent learns the options | A duplicate of *Implement on a branch* whose Implement names `model` = `opus`, `[unattended] mode = ""`; add `"again"` to the mock's `args` (a new spec), then *Run workflow…* on an issue and pick the duplicate | *The agent's settings for this workflow's steps are not known yet …*, muted, with *Check the agent*; pressed, it turns into the block naming `opus` and what `model` offers; no session appears |
-| The editor before the agent is known | Restart onehand, open the duplicate's Implement | *What Mock workflow offers is not known yet* with *Check the agent*, *Mode* and the option rows typed; pressed, the button spins, then *Choices Mock workflow offers*, *Mode* `Run's mode · code · plan`, rows `model`, `effort`, `fast`, the value a typed `model` row holds chosen on its row; picking another drops the typed row |
+| The editor before the agent is known | Restart onehand, open the duplicate's Implement | *What Mock workflow offers is not known yet* with *Check the agent*, *Mode* and the option rows typed; pressed, the button spins, then *Choices Mock workflow offers*, *Mode* `Run's mode · code · plan`, rows `model`, `effort`, `fast`, the typed `model` row gone into the `model` row's choice |
 | No agent configured | Remove every agent in Settings ▸ Agents, open an agent step | *No agent is configured, so there is nothing to pick from*; *Mode* and options typed as before |
 | A shipped workflow | Open *Work in checkout*'s Plan with the agent known | The choices draw, each refusing with *Built in: duplicate it to change it*; no *Add option* |
 | What a visit ran with | After *A step that sets a model*, open the task on the Tasks page | Under each visit, muted: Plan *mode code · model strong · effort low · fast off*, Implement *mode code · model cheap · effort low · fast off*; Approve and Verify say nothing |
