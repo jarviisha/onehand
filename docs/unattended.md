@@ -639,7 +639,7 @@ The first prompt waits for the adapter to come up: `Chat::set_mode` and
 separate connect timeout: an adapter that never comes up is a run that never
 finishes, and the run's own timeout already bounds that.
 
-**A mode the agent does not offer pauses the feature**, not just the run
+**A mode the agent does not offer, or refuses, pauses the feature**, not just the run
 (`unattended::pause`). Every later run would fail the same way on a fresh
 issue, each one spending a claim to say so, so the first fails and the tick
 stops until the config is fixed and the app restarted. **That first issue is

@@ -754,6 +754,16 @@ async fn handle_message(
             // The agent's answer to a pick is its confirmation or its
             // refusal: what is shown follows it.
             Some(Pending::Pick { group, value }) => {
+                // A model picked may change what else is offered, and an
+                // adapter may say so only in this answer. It lands before
+                // the confirmation, so whoever plans the next pick on it
+                // plans against the offer as it stands now.
+                let cfg = parse::parse_config_options(
+                    msg.get("result").and_then(|r| r.get("configOptions")),
+                );
+                if !cfg.is_empty() {
+                    let _ = output.send(AcpEvent::ConfigOptions(cfg)).await;
+                }
                 let event = match msg.get("error") {
                     Some(err) => AcpEvent::PickRefused {
                         group,

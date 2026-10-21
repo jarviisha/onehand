@@ -848,6 +848,43 @@ fn a_step_model_not_offered_blocks() {
 }
 
 #[test]
+fn an_effort_missing_from_what_was_last_seen_does_not_block() {
+    // What was learned may have been offered under a model a person picked
+    // in the composer, not the one the run starts on.
+    let mut t = worktree();
+    if let StepKind::Agent { options, .. } = &mut t.steps[0].kind {
+        options.insert("effort".into(), "high".into());
+    } else {
+        panic!("the worktree workflow's first step is not an agent step");
+    }
+    let offer = Offer {
+        modes: vec!["default".into()],
+        options: vec![
+            ("model".into(), vec!["strong".into(), "cheap".into()]),
+            ("effort".into(), vec!["low".into()]),
+        ],
+    };
+    let facts = Facts {
+        workflow: Ok(t),
+        offered: Some(offer),
+        ..healthy()
+    };
+    let findings: Vec<_> = preflight(Kind::NewIssueRun, &facts)
+        .into_iter()
+        .filter(|f| f.about == About::Settings)
+        .collect();
+    assert_eq!(findings.len(), 1, "{findings:?}");
+    assert!(!findings[0].blocks);
+    assert!(
+        findings[0]
+            .text
+            .contains("is not known yet under the model the step runs on"),
+        "{}",
+        findings[0].text
+    );
+}
+
+#[test]
 fn an_effort_under_another_model_is_not_known_yet() {
     let mut t = worktree();
     let label = t.steps[0].label.clone();

@@ -83,6 +83,7 @@ pub(super) fn agent_settings(
                 "Run's value",
                 None,
                 Some(value),
+                false,
                 shipped,
                 option_pick(handle, i, id),
                 cx,
@@ -120,6 +121,7 @@ pub(super) fn agent_settings(
             "Run's mode",
             Some(&offer.modes),
             mode.as_deref(),
+            true,
             shipped,
             pick,
             cx,
@@ -166,6 +168,10 @@ pub(super) fn agent_settings(
             "Run's value",
             Some(values),
             taken(step, &typed_texts, id),
+            // Only the model, and an option the agent offers none of, are
+            // judged on what was learned; another's values depend on the
+            // model.
+            id == "model" || values.is_empty(),
             shipped,
             option_pick(handle, i, id),
             cx,
@@ -230,15 +236,19 @@ fn taken<'a>(step: &'a StepDraft, typed: &'a [(String, String)], id: &str) -> Op
 
 /// A setting's row of choices: `run` (the step names none) first, then the
 /// values offered, the one taken filled; a value taken that the agent does
-/// not offer is marked in the warning ink. `offered` is `None` while what
-/// the agent offers is not known, and nothing is marked.
+/// not offer is marked: in the warning ink when `strict` (what was learned
+/// decides it), muted otherwise (the run's check at the step does).
+/// `offered` is `None` while what the agent offers is not known, and nothing
+/// is marked.
 /// In one edged track that wraps on a narrow panel; past [`CHOICES_SHOWN`]
 /// a line says how many more.
+#[allow(clippy::too_many_arguments)]
 fn pick_row(
     id: String,
     run: &'static str,
     offered: Option<&[String]>,
     current: Option<&str>,
+    strict: bool,
     shipped: bool,
     pick: Pick,
     cx: &App,
@@ -263,7 +273,7 @@ fn pick_row(
         let on = current == Some(value.as_str());
         match offered || !known {
             true => chip(n + 1, value.clone().into(), Some(value), on),
-            false => chip(
+            false if strict => chip(
                 n + 1,
                 format!("{value} · not offered").into(),
                 Some(value),
@@ -274,6 +284,16 @@ fn pick_row(
             .when(!shipped, |chip| {
                 chip.tooltip("The agent does not offer it: a run fails at this step")
             }),
+            // An option's values were learned under whatever model ran
+            // then: one missing may be offered under the step's.
+            false => chip(n + 1, format!("{value} · not seen").into(), Some(value), on)
+                .text_color(crate::theme::meta_ink(cx))
+                .when(!shipped, |chip| {
+                    chip.tooltip(
+                        "Not among what the agent offered under the model it last ran; \
+                     the run checks it when the step starts",
+                    )
+                }),
         }
     });
     div()

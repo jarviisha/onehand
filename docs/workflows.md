@@ -134,17 +134,19 @@ mode offered; each option offered, in the agent's order, is a row named by its i
 first, then each value (twelve options and twelve values at most, then how many more). A row shows
 the value the step sets, picked or typed below; picking sets it, *Run's …* clears it, and either
 drops a typed row setting the same id. A value the step names that the agent does not offer (written
-for another agent, or by hand in the file) stays on its row, chosen, in the warning ink and marked
-*not offered*. Below, *Other options*: rows typed by id and value, and *Add option*, for what the
-agent does not list. While what the agent offers is not known yet, *Mode* and the option rows are
-typed, and the line says so beside *Check the agent*, started in the project selected in the rail
-(else the first one the window has open, else the home folder); a value picked while the offer was
-known keeps its row, unmarked, to keep or leave to the run. When the check comes back the choices
-are drawn, and a typed row naming an option offered, with one of its values, becomes that option's
-pick, unless it is being typed in, when it stays a typed row. With no agent configured both are
-typed, and the line says so. The editor judges nothing: the preflight does. A shipped workflow's
-choices refuse, saying it is duplicated to be changed. An option set twice on a step, by two rows or
-by a pick and a row, is a problem, and *Save* refuses.
+for another agent, or by hand in the file) stays on its row, chosen: a mode or a model in the
+warning ink, marked *not offered*; another option's value muted, marked *not seen*, since the values
+were learned under whatever model the agent last ran and the run checks them when the step starts.
+Below, *Other options*: rows typed by id and value, and *Add option*, for what the agent does not
+list. While what the agent offers is not known yet, *Mode* and the option rows are typed, and the
+line says so beside *Check the agent*, started in the project selected in the rail (else the first
+one the window has open, else the home folder); a value picked while the offer was known keeps its
+row, unmarked, to keep or leave to the run. When the check comes back the choices are drawn, and a
+typed row naming an option offered, with one of its values, becomes that option's pick, unless it is
+being typed in, when it stays a typed row. With no agent configured both are typed, and the line
+says so. The editor judges nothing: the preflight does. A shipped workflow's choices refuse, saying
+it is duplicated to be changed. An option set twice on a step, by two rows or by a pick and a row,
+is a problem, and *Save* refuses.
 
 ### Id and version
 
@@ -279,42 +281,43 @@ ends with.
 
 A prompt asked for before the adapter is up waits for the link. When the agent first comes up in a
 session, a run whose setup names a mode (`Setup::mode`, an unattended run's) has its agent put in
-that mode before the first prompt; an agent that does not offer it fails the run. Then the mode
-and every config option value it is running, among the values it offers, are kept as the run's
-starting settings (`Run::started_with`), once: they are saved with the run, so a Resume on a new
-session finds the same ones; a Retry, being a new run, takes them afresh. They are what the agent
-publishes as it comes up: an option it publishes only later is not among them, so a step that
-does not name it leaves it as the agent has it. The clock is
-`unattended::Budget`: it pauses while a card or an approval waits on a person, or the pull
-request's status checks run, and its timer looks
-again when it fires rather than being re-armed at every pause.
+that mode before the first prompt; an agent that does not offer it, or refuses it, fails the run on
+its mode (pausing unattended runs until `unattended.mode` is fixed), not on a step's settings, and
+the first prompt waits for the agent's answer. Then the mode and every config option value it is
+running, among the values it offers, are kept as the run's starting settings (`Run::started_with`),
+once: they are saved with the run, so a Resume on a new session finds the same ones; a Retry, being
+a new run, takes them afresh. They are what the agent publishes as it comes up: an option it
+publishes only later is not among them, so a step that does not name it leaves it as the agent has
+it. The clock is `unattended::Budget`: it pauses while a card or an approval waits on a person, or
+the pull request's status checks run, and its timer looks again when it fires rather than being
+re-armed at every pause.
 
 **Every visit to an agent step starts with its settings in force** (`workflow::Settings::for_step`:
 the step's own over the run's starting ones). Before the visit's first prompt, the planner
 (`workflow::next`) picks the next setting not yet in force, in order: the mode, then `model`, then
 the rest by id. Each pick is sent and the prompt held until the agent answers it, and the next one
-is planned against what the agent offers after that answer, because an agent may change which
-values an option has, or whether it has one at all, when the model changes. **A setting the step
-names that the agent does not offer**, or any pick it refuses, fails the run at that step, a
-configuration failure naming the setting and the agent's reason. One the step does not name, taken
-from the run's starting settings, is still picked when the agent offers it, and left as the agent
-has it when the agent no longer does: a step that changes only the model is not failed on an
-effort the new model lacks (`workflow::Settings::named_by` says which are the step's own). An
-adapter that publishes its new offer only after answering a pick turns a value not offered into
-a pick refused; it fails at the step all the same. A run of an issue that fails on a setting also
-pauses unattended runs, as a mode not offered does: every later run would fail the same way. A
-person's run from the launcher pauses nothing. When anything was sent, the session gets a note,
-*Settings: mode … · model … · …*, and the visit records what the agent reported when its prompt
-went (`Visit::ran_with`, from `Chat::held`), all of it, not only what the step named, and an alias
-as the agent reported it. A Resume opens a new visit, so the
-open step's settings are set again on the new session, whatever reconnecting restored. A person's
-own pick in the composer during a run holds until the next visit starts; one the agent refuses is
-the person's, not the run's. Settings come from the run's snapshot, so a Retry keeps them and
-*Retry with current settings* takes the workflow's current ones. **An alias is never taken for the
-value named**: an adapter may report a value its choices never list (`opus[1m]` against the
-offered `opus`), so such a value counts as nothing in force when planning: a step naming `opus` sends it, and an
-option the run started on an alias is not among its starting settings, so a step that names
-nothing leaves it as it is.
+is planned against what the agent offers after that answer, because an agent may change which values
+an option has, or whether it has one at all, when the model changes. **A setting the step names that
+the agent does not offer**, or any pick it refuses, fails the run at that step, a configuration
+failure naming the setting and the agent's reason. One the step does not name, taken from the run's
+starting settings, is still picked when the agent offers it, and left as the agent has it when the
+agent no longer does: a step that changes only the model is not failed on an effort the new model
+lacks (`workflow::Settings::named_by` says which are the step's own). What an answer carries of the
+agent's new offer (`configOptions` in a pick's reply) is taken before the answer itself, so the next
+pick is planned on it; an adapter that publishes its new offer only later turns a value not offered
+into a pick refused, and it fails at the step all the same. A run of an issue that fails on a
+setting also pauses unattended runs, as a mode not offered does: every later run would fail the same
+way. A person's run from the launcher pauses nothing. When anything was sent, the session gets a
+note, *Settings: mode … · model … · …*, and the visit records what the agent reported when its
+prompt went (`Visit::ran_with`, from `Chat::held`), all of it, not only what the step named, and an
+alias as the agent reported it. A Resume opens a new visit, so the open step's settings are set
+again on the new session, whatever reconnecting restored. A person's own pick in the composer during
+a run holds until the next visit starts; one the agent refuses is the person's, not the run's.
+Settings come from the run's snapshot, so a Retry keeps them and *Retry with current settings* takes
+the workflow's current ones. **An alias is never taken for the value named**: an adapter may report
+a value its choices never list (`opus[1m]` against the offered `opus`), so such a value counts as
+nothing in force when planning: a step naming `opus` sends it, and an option the run started on an
+alias is not among its starting settings, so a step that names nothing leaves it as it is.
 
 **Every run belongs to a task, and the task's file is written after every action**
 (`<config_dir>/onehand/tasks/<id>.json`), through `task::files::Writer`, one thread carrying out
@@ -430,7 +433,7 @@ current settings* as a new start is, on what Settings say now
 | Workflow | it is not there, works in the checkout, or `workflow::validate` finds problems (each listed, first) | |
 | Agent | none is configured, or the one named is no longer | |
 | Mode | the agent's current offer, learned in this process from the spec as it is now, does not hold it | the mode is not known yet, with *Check the agent* |
-| Step settings | an agent step's mode, `model` or option id is not in the agent's offer as learned, or another option's value is not, when the step names no model (eight at most, then how many more) | another option's value not known yet under the model the step names, checked when the step starts; nothing of the agent's offer known yet, once for the whole workflow, with *Check the agent* (not said when the mode's own *not known yet* is) |
+| Step settings | an agent step's mode, `model` or option id is not in the agent's offer as learned (eight at most, then how many more) | another option's value not in it: not known yet under the model the step runs on, checked when the step starts; nothing of the agent's offer known yet, once for the whole workflow, with *Check the agent* (not said when the mode's own *not known yet* is) |
 | Check command | the workflow runs the project's check command and the project has none | the workflow runs no command: nothing verifies the work |
 | Place | `HEAD` is detached and no forge serves the project | for a new run of a checkout workflow, a person's own session that has been prompted in the same checkout, by its name: both edit the same files |
 | Base | | what the branch is cut off: the default branch on `origin`, fetched first, or the branch checked out |
@@ -442,12 +445,13 @@ current settings* as a new start is, on what Settings say now
 
 **What an agent offers is learned whenever it comes up**, a person's session included: its modes,
 and each config option with its values. It is kept per agent spec (its command and arguments,
-compared whole) for the life of the process (`Shared::offers_seen`). A spec edited since is
-another spec, so what was learned of it stops counting; a restart forgets, so an upgraded adapter is never judged by an old list. Only a list
-that is current blocks; otherwise the mode is *not known yet*, and the driver's check when the
-agent comes up stays the authority. An option's values are only certain under the model the agent
-was running when they were learned, so a step that names a model is judged on its other options'
-values only where an id is missing, and the run's own check at the step decides the rest.
+compared whole) for the life of the process (`Shared::offers_seen`). A spec edited since is another
+spec, so what was learned of it stops counting; a restart forgets, so an upgraded adapter is never
+judged by an old list. Only a list that is current blocks; otherwise the mode is *not known yet*,
+and the driver's check when the agent comes up stays the authority. An option's values are only
+certain under the model the agent was running when they were learned, the step's or one a person
+picked in the composer, so a step is judged on its other options' values only where an id is
+missing, and the run's own check at the step decides the rest.
 
 **Check the agent**, beside a mode or step settings not known yet, starts that agent in the project with no
 session, reads the modes and config options its `session/new` answers with, and closes it, off

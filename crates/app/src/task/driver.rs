@@ -60,6 +60,9 @@ pub(super) struct Driven {
     settled: Option<u32>,
     /// The open visit's settings being put in force, holding its prompt.
     picking: Option<settings::Picking>,
+    /// The run's own mode, picked when the agent came up and not yet
+    /// answered: a refusal of it is the run's mode refused, not a step's.
+    mode_out: Option<String>,
     /// The step the transcript was last told of.
     noted: Option<usize>,
     /// How much of the timeout is left; it does not run while a card or an
@@ -156,6 +159,7 @@ pub(crate) fn start(
         up: false,
         settled: None,
         picking: None,
+        mode_out: None,
         noted: None,
         budget: Budget::start(limit, Instant::now()),
         card: false,
@@ -602,6 +606,7 @@ fn came_up(uid: u64, session: &Entity<ChatSession>, cx: &mut App) -> bool {
         return false;
     }
     session.update(cx, |session, _| session.chat.set_mode(&mode));
+    with(uid, cx, |d| d.mode_out = Some(mode.clone()));
     note(session, format!("Mode {mode} set"), cx);
     start_settings(uid, session, Some(mode), cx);
     true

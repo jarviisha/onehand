@@ -11,6 +11,7 @@
 use super::{Driven, advance, read, send, with};
 use crate::chat::session::{ChatSession, note};
 use gpui::{App, Entity};
+use onehand_core::chat::MODE_SELECTOR;
 use onehand_core::preflight::{About, found_late};
 use onehand_core::workflow::{Next, Pick, Settings, next};
 
@@ -89,6 +90,10 @@ pub(super) fn settle(
 /// none. Run after everything the same answer emitted, so a refusal has
 /// already failed the run and left nothing to plan.
 pub(super) fn answered(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
+    // The run's own mode answered and not refused: nothing more of it.
+    if !session.read(cx).chat.pick_waiting(MODE_SELECTOR) {
+        with(uid, cx, |d| d.mode_out = None);
+    }
     // The visit's own pick answered while another group's is still out (a
     // person's in the composer): a refusal of that one is not the run's.
     let sent = read(uid, cx, |d| {
@@ -115,12 +120,27 @@ pub(super) fn answered(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
     }
 }
 
-/// The agent refused a pick, `why`: when it is the visit's own pick in
-/// flight, now answered, the run fails on it. A refusal while the visit's
-/// pick is still out, or while the visit waits on picks it did not send (a
-/// person's in the composer, the run's mode, those restored on
-/// reconnecting), is not the run's.
+/// The agent refused a pick, `why`: when it is the run's own mode, the run
+/// fails on its mode; when it is the visit's own pick in flight, now
+/// answered, on the step's setting. A refusal while the visit's pick is
+/// still out, or of a pick the run did not send (a person's in the
+/// composer, those restored on reconnecting), is not the run's.
 pub(super) fn refused(uid: u64, session: &Entity<ChatSession>, why: &str, cx: &mut App) {
+    // The run's own mode, refused: what is to be fixed is the mode the run
+    // was given, not the workflow's steps.
+    let mode = read(uid, cx, |d| d.mode_out.clone()).flatten();
+    if let Some(mode) = mode
+        && !session.read(cx).chat.pick_waiting(MODE_SELECTOR)
+    {
+        with(uid, cx, |d| {
+            d.mode_out = None;
+            d.picking = None;
+        });
+        let why = format!("the agent refused mode `{mode}`: {why}");
+        crate::unattended::pause(&why, "unattended.mode is fixed", cx);
+        advance(uid, cx, move |run| run.failed(why, found_late(About::Mode)));
+        return;
+    }
     let Some(pick) = read(uid, cx, |d| d.picking.as_ref()?.sent.clone()).flatten() else {
         return;
     };

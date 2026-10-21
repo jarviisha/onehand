@@ -97,7 +97,6 @@ fn step_findings(
             ));
         }
     }
-    let names_model = options.contains_key("model");
     if let Some(model) = options.get("model") {
         // `model` never gets the other options' exception: no other
         // option's choices can tell us what it itself offers.
@@ -114,23 +113,28 @@ fn step_findings(
         let Some((missing_id, why)) = option_refused(id, value, offer) else {
             continue;
         };
-        found.push(match missing_id || !names_model {
+        // What was learned was offered under whatever model was in force
+        // then, the step's or one a person picked in the composer: a value
+        // missing from it may well be offered under the model this step
+        // runs on. Only the run's own check at this step can say, so it is
+        // never a place in Settings either.
+        let under = match options.get("model") {
+            Some(model) => format!("under model `{model}`"),
+            None => "under the model the step runs on".to_string(),
+        };
+        found.push(match missing_id {
             true => finding(
                 About::Settings,
                 true,
                 format!("{prefix}: {why}.{keeps}"),
                 change,
             ),
-            // The run's own check at this step is the authority, never a
-            // place in Settings: a value another model's choices happened
-            // to carry says nothing about what this step's model offers.
             false => finding(
                 About::Settings,
                 false,
                 format!(
-                    "{prefix}: `{value}` for `{id}` is not known yet under model `{}`; it is \
-                     checked when the step starts.{keeps}",
-                    options.get("model").expect("names_model holds the key"),
+                    "{prefix}: `{value}` for `{id}` is not known yet {under}; it is checked \
+                     when the step starts.{keeps}"
                 ),
                 None,
             ),
