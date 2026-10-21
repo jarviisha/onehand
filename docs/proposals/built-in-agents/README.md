@@ -185,7 +185,7 @@ then, one step at a time and in this order. Publishing one writes its number her
 
 | Step | Spec | Built |
 |---|---|---|
-| 1 | none: small enough to be specified here | |
+| 1 | none: small enough to be specified here | yes |
 | 2 | | |
 | 3 | | |
 | 4 | | |
