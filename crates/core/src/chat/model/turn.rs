@@ -788,8 +788,21 @@ impl Chat {
         if !self.busy {
             return None;
         }
-        if self.awaiting_permission() {
+        // Both cards block the turn, but only one is an approval: a question
+        // asks for an answer, and saying otherwise sends the reader looking for
+        // a button that is not there. With both parked, the approval is named.
+        let parked = |permission: bool| {
+            self.items.iter().any(|it| match it {
+                ChatItem::Permission(p) => permission && p.resolved.is_none(),
+                ChatItem::Ask(a) => !permission && a.resolved.is_none(),
+                _ => false,
+            })
+        };
+        if parked(true) {
             return Some("Waiting for your approval…".to_string());
+        }
+        if parked(false) {
+            return Some("Waiting for your answer…".to_string());
         }
         match self.items.last() {
             // A live thought already renders "Thinking…"; a running tool already

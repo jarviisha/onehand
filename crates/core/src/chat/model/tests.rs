@@ -1361,6 +1361,30 @@ fn connecting_outranks_everything_the_status_could_say() {
     );
 }
 
+/// A parked question asks for an answer, not an approval; with both parked,
+/// the approval is the one named.
+#[test]
+fn a_question_waits_for_an_answer_and_a_permission_for_approval() {
+    let mut chat = Chat::default();
+    chat.link = Link::Connected;
+    chat.busy = true;
+    chat.items.push(ChatItem::Ask(ask_item()));
+    assert_eq!(
+        chat.activity_status().as_deref(),
+        Some("Waiting for your answer…")
+    );
+
+    chat.items.push(ChatItem::Permission(PermItem {
+        req: permission("cargo test"),
+        resolved: None,
+        expanded: false,
+    }));
+    assert_eq!(
+        chat.activity_status().as_deref(),
+        Some("Waiting for your approval…")
+    );
+}
+
 use crate::acp::PermissionOption;
 
 fn permission(title: &str) -> PermissionRequest {
