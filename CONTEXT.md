@@ -93,6 +93,12 @@ approve what an earlier step answered, or to send it back with a note; a forge s
 worktree's branch to the forge.
 _Avoid_: stage, phase, task
 
+**Agent settings**:
+An agent step's mode and config options (model, effort, whatever else the agent names), by the
+agent's own ids and values. Each visit to the step runs with them; a setting the step does not
+name goes back to what the run started with.
+_Avoid_: agent config, step config
+
 **Forge step**:
 A step onehand does on the forge itself, never the agent: *push* (the commit the check passed on),
 *pull request* (a draft, or the one open on the branch) and *status checks*. With no forge serving

@@ -13,6 +13,7 @@ worktree's branch to the forge. The words are defined in [CONTEXT.md](../CONTEXT
 |---|---|
 | Workflow types and serde | [crates/core/src/workflow/template.rs](../crates/core/src/workflow/template.rs) |
 | What stops a workflow being saved or run | [crates/core/src/workflow/validate.rs](../crates/core/src/workflow/validate.rs) |
+| A step's agent settings, and the planner that picks them one at a time | [crates/core/src/workflow/settings.rs](../crates/core/src/workflow/settings.rs) |
 | Prompt variables, onehand's additions, carry-on prompts | [crates/core/src/workflow/prompt.rs](../crates/core/src/workflow/prompt.rs) |
 | The shipped workflows | [crates/core/src/workflow/builtin/](../crates/core/src/workflow/builtin/) |
 | The person's workflows on disk | [crates/core/src/workflow/store.rs](../crates/core/src/workflow/store.rs) |
@@ -24,10 +25,13 @@ worktree's branch to the forge. The words are defined in [CONTEXT.md](../CONTEXT
 | The queue: one task per place | [crates/core/src/task/queue.rs](../crates/core/src/task/queue.rs) |
 | Marks pinned as commits under `refs/onehand/` | [crates/core/src/task/marks.rs](../crates/core/src/task/marks.rs) |
 | The one driver | [crates/app/src/task/driver.rs](../crates/app/src/task/driver.rs) |
+| A visit's settings put in force before its first prompt | [crates/app/src/task/driver/settings.rs](../crates/app/src/task/driver/settings.rs) |
+| Each step's settings judged before a start | [crates/core/src/preflight/settings.rs](../crates/core/src/preflight/settings.rs) |
 | The `Tasks` global: requests, the queue, unfinished tasks | [crates/app/src/task.rs](../crates/app/src/task.rs) |
 | Workflows on offer | [crates/app/src/workflow.rs](../crates/app/src/workflow.rs) |
 | Launcher, and driving a task once its place is free | [crates/app/src/shell/workflows.rs](../crates/app/src/shell/workflows.rs) |
 | The Workflows page and its editor | [crates/app/src/workflows_page.rs](../crates/app/src/workflows_page.rs) |
+| An agent step's *Agent settings* in the editor | [crates/app/src/workflows_page/step/settings.rs](../crates/app/src/workflows_page/step/settings.rs) |
 | Each project's check command field | [crates/app/src/shell/check_commands.rs](../crates/app/src/shell/check_commands.rs) |
 
 ## Workflows
@@ -48,6 +52,8 @@ timeout = "45m"           # working time; waiting on a person does not count
 id = "plan"
 label = "Plan"
 kind = "agent"
+mode = "plan"             # agent settings, by the agent's own ids; both optional
+options = { model = "strong", effort = "high" }
 gates = ["answered", "code_unchanged"]
 keep_answer = true
 prompt = """
@@ -110,6 +116,21 @@ aimed at it is refused. Every read-check-write of a workflow goes through one lo
 `store::parse` also refuses **a key onehand does not read** (`steps[2].gate`), most likely a typo,
 which a save would otherwise drop without a word; such a file is listed as unreadable too.
 
+### Agent settings
+
+An agent step may name a `mode` and `options`, a table of config option ids to values. Both are
+the agent's own ids, as it sends them (`ConfigOption::id` and `ConfigChoice::value`), never the
+names the composer shows. A workflow is not tied to an agent, so nothing is judged when it is
+saved; a value the agent does not offer **blocks**, before the start when what it offers is known
+and at the step when it is found only once running, and never runs on something else. **A setting
+a step does not name goes back to what the run started with**, never what the step before it
+left: a *Plan* step in a planning mode must not leave *Implement* unable to edit, so a step runs
+the same whichever step ran before it. None of the shipped workflows names any: model ids differ
+between agents, and they must run on any. On the Workflows page an agent step has an *Agent
+settings* section: *Mode*, a row per option, *Add option*, and a muted line per configured agent
+of what it was seen to offer in this process (four at most, then how many more). An option set
+twice on a step is a problem, and *Save* refuses.
+
 ### Id and version
 
 `store::save_blocking` alone sets them, whatever the template it is handed carries. A new file
@@ -144,7 +165,9 @@ one no later approval sends back, since either would always be empty (a status c
 `{check_output}` back too); a worktree workflow with no agent step gated `committed`, whose branch
 could end with nothing on it; a forge step in a checkout workflow; a push with no command step before
 it, a pull request with no push before it, status checks with no pull request before them or an
-`on_fail` that is no earlier agent step, and a `wait` that is not a duration.
+`on_fail` that is no earlier agent step, and a `wait` that is not a duration; on an agent step, an
+empty mode, an option with no id or no value, and an option `mode`, which is set as the step's mode.
+`mode` or `options` on any other kind of step is a key onehand does not read there.
 
 ### Prompts
 
@@ -241,10 +264,32 @@ ends with.
 
 A prompt asked for before the adapter is up waits for the link. When the agent first comes up in a
 session, a run whose setup names a mode (`Setup::mode`, an unattended run's) has its agent put in
-that mode before the first prompt; an agent that does not offer it fails the run. The clock is
+that mode before the first prompt; an agent that does not offer it fails the run. Then the mode
+and every config option value it is running, among the values it offers, are kept as the run's
+starting settings (`Run::started_with`), once: they are saved with the run, so a Resume on a new
+session finds the same ones; a Retry, being a new run, takes them afresh. The clock is
 `unattended::Budget`: it pauses while a card or an approval waits on a person, or the pull
 request's status checks run, and its timer looks
 again when it fires rather than being re-armed at every pause.
+
+**Every visit to an agent step starts with its settings in force** (`workflow::Settings::for_step`:
+the step's own over the run's starting ones). Before the visit's first prompt, the planner
+(`workflow::next`) picks the next setting not yet in force, in order: the mode, then `model`, then
+the rest by id. Each pick is sent and the prompt held until the agent answers it, and the next one
+is planned against what the agent offers after that answer, because an agent may change which
+values an option has, or whether it has one at all, when the model changes. A setting the agent
+does not offer, or a pick it refuses, fails the run at that step, a configuration failure naming
+the setting and the agent's reason. When anything was sent, the session gets a note, *Settings:
+mode … · model … · …*, and the visit records what was in force when its prompt went
+(`Visit::ran_with`), all of it, not only what the step named. A Resume opens a new visit, so the
+open step's settings are set again on the new session, whatever reconnecting restored. A person's
+own pick in the composer during a run holds until the next visit starts; one the agent refuses is
+the person's, not the run's. Settings come from the run's snapshot, so a Retry keeps them and
+*Retry with current settings* takes the workflow's current ones. **An alias is never taken for the
+value named**: an adapter may report a value its choices never list (`opus[1m]` against the
+offered `opus`), so such a value counts as nothing in force: a step naming `opus` sends it, and an
+option the run started on an alias is not among its starting settings, so a step that names
+nothing leaves it as it is.
 
 **Every run belongs to a task, and the task's file is written after every action**
 (`<config_dir>/onehand/tasks/<id>.json`), through `task::files::Writer`, one thread carrying out
@@ -258,13 +303,14 @@ writes still queued (`Writer::flush`), so a run's last save is not lost when the
 with its last window.
 
 **A run records step visits** (`Run::visits`): each stay at a step, with its times, what it kept
-(the answer, or how a failed command's output ended), its command's result on a command step, and
-how it came out. **A failed run keeps what it failed on** (`Run::failure`, read as
-`Run::failed_on`), beside its outcome rather than in it: *configuration* when what the preflight
-would have blocked is found only once the run runs (`preflight::found_late`: the agent no longer
-configured, a mode the agent does not offer, no check command to run, a workflow that no longer
-validates), *forge* when a forge step or the forge failed, and *other* for the rest. Going back to a step is a
-new visit, and resuming closes the cut-off visit as `interrupted` and opens a new one of the same
+(the answer, or how a failed command's output ended), its command's result on a command step, the
+settings it ran with on an agent step, and how it came out. **A failed run keeps what it failed
+on** (`Run::failure`, read as `Run::failed_on`), beside its outcome rather than in it:
+*configuration* when what the preflight would have blocked is found only once the run runs
+(`preflight::found_late`: the agent no longer configured, a mode the agent does not offer, a
+step's setting it does not offer or refuses, no check command to run, a workflow that no longer
+validates), *forge* when a forge step or the forge failed, and *other* for the rest. Going back to
+a step is a new visit, and resuming closes the cut-off visit as `interrupted` and opens a new one of the same
 step. **Each visit's start and end is pinned as a commit** (`task::marks::pin_blocking`): the work
 as it stands, untracked files included and ignored ones left out, committed from a temporary
 index so the person's own index is untouched, and kept under
@@ -359,6 +405,7 @@ current settings* as a new start is, on what Settings say now
 | Workflow | it is not there, works in the checkout, or `workflow::validate` finds problems (each listed, first) | |
 | Agent | none is configured, or the one named is no longer | |
 | Mode | the agent's current offer, learned in this process from the spec as it is now, does not hold it | the mode is not known yet, with *Check the agent* |
+| Step settings | an agent step's mode, `model` or option id is not in the agent's offer as learned, or another option's value is not, when the step names no model (eight at most, then how many more) | another option's value not known yet under the model the step names, checked when the step starts; nothing of the agent's offer known yet, once for the whole workflow, with *Check the agent* (not said when the mode's own *not known yet* is) |
 | Check command | the workflow runs the project's check command and the project has none | the workflow runs no command: nothing verifies the work |
 | Place | `HEAD` is detached and no forge serves the project | for a new run of a checkout workflow, a person's own session that has been prompted in the same checkout, by its name: both edit the same files |
 | Base | | what the branch is cut off: the default branch on `origin`, fetched first, or the branch checked out |
@@ -368,18 +415,20 @@ current settings* as a new start is, on what Settings say now
 | Slot | `at_once` is reached, or `waiting` runs wait on a person; said with the slots line naming who holds each | |
 | Limits | | every kind: the timeout and the misses allowed, from the snapshot that will run (the run's own for Resume, Retry and answering a review) |
 
-**What an agent offers is learned whenever it comes up**, a person's session included, and kept
-per agent spec (its command and arguments, compared whole) for the life of the process
-(`Shared::modes_seen`). A spec edited since is another spec, so what was learned of it stops
-counting; a restart forgets, so an upgraded adapter is never judged by an old list. Only a list
+**What an agent offers is learned whenever it comes up**, a person's session included: its modes,
+and each config option with its values. It is kept per agent spec (its command and arguments,
+compared whole) for the life of the process (`Shared::offers_seen`). A spec edited since is
+another spec, so what was learned of it stops counting; a restart forgets, so an upgraded adapter is never judged by an old list. Only a list
 that is current blocks; otherwise the mode is *not known yet*, and the driver's check when the
-agent comes up stays the authority.
+agent comes up stays the authority. An option's values are only certain under the model the agent
+was running when they were learned, so a step that names a model is judged on its other options'
+values only where an id is missing, and the run's own check at the step decides the rest.
 
-**Check the agent**, beside a mode not known yet, starts that agent in the project with no
-session, reads the modes its `session/new` answers with, and closes it, off the UI thread and
-prompting nothing (`agent_check`, through `AcpRuntime::probe`, which never takes the adapter
+**Check the agent**, beside a mode or step settings not known yet, starts that agent in the project with no
+session, reads the modes and config options its `session/new` answers with, and closes it, off
+the UI thread and prompting nothing (`agent_check`, through `AcpRuntime::probe`, which never takes the adapter
 parked for the next session). It is the one check that costs an agent start, so only its press
-runs it. What it learns goes into `Shared::modes_seen` like any other sighting: the issue's start
+runs it. What it learns goes into `Shared::offers_seen` like any other sighting: the issue's start
 form, judged every frame, turns *not known yet* into a block or into nothing; a dialog judged once
 when it opened says beside the button what the agent offers. A failure to come up, or no answer
 within 90 seconds, is said there.
@@ -418,8 +467,9 @@ is written in full and on disk before its old one goes, and the folder goes once
 
 - **A run takes its steps in a straight line.** There is no branching on a step's answer, no
   step that runs only sometimes, and no two steps at once; a command's failure going back to an
-  earlier step is the only way back, besides a revision. One session carries every step, so a step
-  cannot use a different agent from the rest.
+  earlier step is the only way back, besides a revision.
+- **A step cannot use a different agent from the rest.** One session carries every step; a step
+  sets only that agent's mode and options.
 
 ## Checking it by hand
 
@@ -439,6 +489,11 @@ It reads what a step wants from the gate rules onehand appends to the prompt, no
 workflow's wording, so an edited workflow still drives it. Its orders are whole words in the
 brief's title: `miss` does nothing every turn, `fail-check` makes the session's first change fail
 the check and every later one pass, and `fast` answers at once instead of over about six seconds.
+With `--settings` after the script's path in `args` it offers modes `code` and `plan`, and the
+options `model` (`strong`, `cheap`), `effort` (`low`, `high`, `max`) and `fast` (`off`, `on`),
+starting on `code`, `strong`, `low` and `off`; under `cheap` it offers no `high` effort, and it
+always refuses `max`. Each answer then begins with what is in force,
+`[mode code · model strong · effort low · fast off]`. Without it, it offers nothing.
 It walks the cases below; it never edits during a plan or commits in a checkout, so the
 `code_unchanged` and `uncommitted` carry-ons are reached only by a person changing the work
 mid-step.
@@ -572,3 +627,19 @@ change (`git checkout . && git clean -fd`).
 | A closed pull request | Close the pull request unmerged, then put the label back | No run; the issue says the pull request was closed and onehand will not open another |
 | The label put back mid-run | Put the label back while the issue's task waits on its status checks; also *Work an issue…* on it | The tick passes it over; the pick is refused, *A run is already working on issue #…* |
 | A report that could not be sent | On a project served by GitHub, sign `gh` out (`gh auth logout`) before an issue task ends, then sign in again | The task's file keeps the report under `unsent`; the next tick, or the next start, comments it on the issue and empties `unsent` |
+
+The rows below need the mock with `--settings`, first in the list, and a duplicate of *Work in
+checkout* whose agent steps are set in its *Agent settings*; brief `go fast`, *Continue* at the
+approval.
+
+| Case | Do | Expect |
+|---|---|---|
+| A step that sets a model | Implement: option `model` = `cheap` | Plan's answer begins `[mode code · model strong · …]`, with no *Settings* note; Implement's session note reads *Settings: mode code · model cheap · effort low · fast off*, and its answer begins `[mode code · model cheap · effort low · fast off]` |
+| Going back restores it | The same, brief `fail-check fast`; while Verify's `sleep 5` runs, pick *strong* in the composer | Verify fails and Implement's second visit notes *Settings: … model cheap …* again, its answer beginning `[… model cheap …]` |
+| A step naming nothing goes back to the start | Plan: *Mode* `plan`, option `model` = `cheap`; Implement names nothing | Plan notes *Settings: mode plan · model cheap · effort low · fast off*; Implement notes *Settings: mode code · model strong · effort low · fast off* |
+| A value not offered blocks | With a session of the mock opened since onehand started, Implement: option `model` = `opus`; *Run…* on its card, then the project | In the danger ink: *Step 3 (Implement): the agent offers no `opus` for `model` (it offers: strong, cheap).*, with where it is changed; *Run* is spent |
+| A value gone under another model | Implement: `model` = `cheap`, `effort` = `high` | Nothing blocks the start; the run fails at Implement, a configuration failure: *the agent offers no `high` for `effort` (it offers: low, max)*, and no prompt went to Implement |
+| A pick the agent refuses | Implement: `effort` = `max` | The run fails at Implement: *the agent refused `max` for `effort`: Max effort is not available on this plan* |
+| Check the agent learns the options | A duplicate of *Implement on a branch* whose Implement names `model` = `opus`, `[unattended] mode = ""`; add `"again"` to the mock's `args` (a new spec), then *Run workflow…* on an issue and pick the duplicate | *The agent's settings for this workflow's steps are not known yet …*, muted, with *Check the agent*; pressed, it turns into the block naming `opus` and what `model` offers; no session appears |
+| What a visit ran with | After *A step that sets a model*, open the task on the Tasks page | Under each visit, muted: Plan *mode code · model strong · effort low · fast off*, Implement *mode code · model cheap · effort low · fast off*; Approve and Verify say nothing |
+| An option set twice | On an agent step, *Add option* twice, both `model` | The step's problem reads *the option model is set twice*, on its row too; *Save* refuses |
