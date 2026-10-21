@@ -337,7 +337,7 @@ impl ChatSession {
                             }
                             // What the agent offers is kept for every start
                             // that asks before it brings an agent up.
-                            if outcome.modes_offered {
+                            if outcome.offer_changed {
                                 let modes =
                                     session.chat.modes.iter().map(|m| m.id.clone()).collect();
                                 let spec = seen.clone();

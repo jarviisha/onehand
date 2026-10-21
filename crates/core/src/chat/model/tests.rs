@@ -7,6 +7,7 @@ use crate::acp::{
 };
 use crate::attachment::StagedAttachment;
 use crate::chat::store::{ConfigPick, ConversationSnapshot, Prefs};
+use crate::workflow::Pick;
 use std::path::PathBuf;
 
 #[test]
@@ -1872,7 +1873,7 @@ fn a_turn_that_said_nothing_answers_nothing_rather_than_the_turn_before() {
 #[test]
 fn the_modes_an_agent_offers_are_reported_when_it_says_them() {
     let (mut chat, _rx) = chat_with_tx();
-    assert!(!chat.apply(AcpEvent::AgentChunk("hi".into())).modes_offered);
+    assert!(!chat.apply(AcpEvent::AgentChunk("hi".into())).offer_changed);
     let offered = chat.apply(AcpEvent::Modes {
         current: Some("default".into()),
         available: vec![crate::acp::Mode {
@@ -1880,8 +1881,26 @@ fn the_modes_an_agent_offers_are_reported_when_it_says_them() {
             name: "Default".into(),
         }],
     });
-    assert!(offered.modes_offered);
+    assert!(offered.offer_changed);
     assert_eq!(chat.modes[0].id, "default");
+}
+
+/// Config options are the other half of what an agent offers: a planner
+/// waiting on `offer_changed` must see it for them too, not only for modes.
+#[test]
+fn config_options_change_the_offer() {
+    let (mut chat, _rx) = chat_with_tx();
+    let outcome = chat.apply(AcpEvent::ConfigOptions(vec![ConfigOption {
+        id: "effort".into(),
+        name: "Effort".into(),
+        current: Some("default".into()),
+        choices: vec![ConfigChoice {
+            value: "default".into(),
+            name: "Default".into(),
+            description: None,
+        }],
+    }]));
+    assert!(outcome.offer_changed);
 }
 
 /// A prompt answered with an error leaves the session failed until the next
@@ -2159,6 +2178,58 @@ fn an_older_refused_pick_leaves_a_newer_one_shown() {
         Some("plan"),
         "and goes back to what the agent last confirmed"
     );
+}
+
+/// `in_force` reads the mode and each config option straight off what the
+/// session is holding now.
+#[test]
+fn in_force_reads_the_mode_and_each_option() {
+    let (chat, _rx) = chat_with_tx();
+    let in_force = chat.in_force();
+    assert_eq!(in_force.mode.as_deref(), Some("default"));
+    assert_eq!(
+        in_force.options.get("effort").map(String::as_str),
+        Some("default")
+    );
+}
+
+/// A config option's `current` can be an alias the choices never listed
+/// (`chat_with_tx`'s model is `opus[1m]` against the single choice `opus`):
+/// left out rather than reported as a value nothing offers.
+#[test]
+fn in_force_skips_values_not_among_choices() {
+    let (chat, _rx) = chat_with_tx();
+    assert_eq!(chat.config_options[1].id, "model");
+    assert_eq!(chat.config_options[1].current.as_deref(), Some("opus[1m]"));
+    let in_force = chat.in_force();
+    assert!(!in_force.options.contains_key("model"));
+}
+
+/// Whether a pick is still unanswered: true once sent, false once the agent
+/// confirms or refuses it.
+#[test]
+fn picks_waiting_until_the_agent_answers() {
+    let (mut chat, _rx) = chat_with_tx();
+    assert!(!chat.picks_waiting());
+
+    chat.pick(&Pick::Mode("plan".into()));
+    assert!(chat.picks_waiting());
+    chat.apply(AcpEvent::PickConfirmed {
+        group: MODE_SELECTOR.into(),
+        value: "plan".into(),
+    });
+    assert!(!chat.picks_waiting());
+
+    chat.pick(&Pick::Option {
+        id: "effort".into(),
+        value: "high".into(),
+    });
+    assert!(chat.picks_waiting());
+    chat.apply(AcpEvent::PickRefused {
+        group: "effort".into(),
+        why: "no".into(),
+    });
+    assert!(!chat.picks_waiting());
 }
 
 #[test]

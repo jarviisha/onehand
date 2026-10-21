@@ -30,9 +30,10 @@ pub struct ApplyOutcome {
     /// notification needs is the *moment* it started waiting, and only the event
     /// knows that.
     pub asked_user: Option<UserAsk>,
-    /// The agent said which modes it offers, now in [`Chat::modes`]: what a
-    /// start reads before it brings the agent up again.
-    pub modes_offered: bool,
+    /// The agent's offer changed -- modes or config options -- now in
+    /// [`Chat::modes`] / [`Chat::config_options`]: what a start reads before
+    /// it brings the agent up again.
+    pub offer_changed: bool,
     /// The agent refused a pick, put back to what it last confirmed: why,
     /// to be said once.
     pub pick_refused: Option<String>,
@@ -149,7 +150,7 @@ impl Chat {
         // would answer the same on every chunk that arrives while the card is
         // up. An elicitation that cannot be drawn never reaches here -- the
         // client declines those where they arrive rather than parking them.
-        let modes_offered = matches!(event, AcpEvent::Modes { .. });
+        let offer_changed = matches!(event, AcpEvent::Modes { .. } | AcpEvent::ConfigOptions(_));
         let mut pick_refused = None;
         let asked_user = match event {
             AcpEvent::Permission(_) => Some(UserAsk::Permission),
@@ -374,7 +375,7 @@ impl Chat {
             transcript_changed: self.revision != before,
             turn_ended,
             asked_user,
-            modes_offered,
+            offer_changed,
             pick_refused,
         }
     }
