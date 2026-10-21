@@ -297,7 +297,9 @@ impl WorkflowsPage {
         let Ok(template) = draft.to_template(cx) else {
             return;
         };
-        if !core::validate(&template).is_empty() {
+        // The form's own problems, an option set twice on a step among
+        // them, which the template alone no longer shows.
+        if !draft.problem_list(cx).is_empty() {
             return;
         }
         // The form says a clash above *Save*, which refuses while it stands.

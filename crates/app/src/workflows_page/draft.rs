@@ -212,10 +212,9 @@ impl StepDraft {
         self.options.push(row);
     }
 
-    pub(super) fn to_spec(&self, cx: &App) -> StepSpec {
-        let command = self.command.read(cx).value().trim().to_string();
-        let rows: Vec<(String, String)> = self
-            .options
+    /// The option rows' texts, as typed.
+    fn option_texts(&self, cx: &App) -> Vec<(String, String)> {
+        self.options
             .iter()
             .map(|(id, value)| {
                 (
@@ -223,8 +222,12 @@ impl StepDraft {
                     value.read(cx).value().to_string(),
                 )
             })
-            .collect();
-        let (mode, options) = settings_of(&self.mode.read(cx).value(), &rows);
+            .collect()
+    }
+
+    pub(super) fn to_spec(&self, cx: &App) -> StepSpec {
+        let command = self.command.read(cx).value().trim().to_string();
+        let (mode, options) = settings_of(&self.mode.read(cx).value(), &self.option_texts(cx));
         StepSpec {
             id: self.id.read(cx).value().trim().to_string(),
             label: self.label.read(cx).value().trim().to_string(),
@@ -307,13 +310,25 @@ impl WorkflowDraft {
     /// Everything that keeps the form from being saved, each with the step
     /// it is about, if one.
     pub fn problem_list(&self, cx: &App) -> Vec<(Option<usize>, String)> {
-        match self.to_template(cx) {
+        let mut problems: Vec<(Option<usize>, String)> = match self.to_template(cx) {
             Ok(template) => core::validate(&template)
                 .into_iter()
                 .map(|problem| (problem.step, problem.said))
                 .collect(),
             Err(why) => vec![(None, why)],
+        };
+        // The spec holds an option once, so a second row with its id would
+        // be lost on save without a word: said here, before that.
+        for (at, step) in self.steps.iter().enumerate() {
+            if step.kind == Kind::Agent {
+                problems.extend(
+                    options_set_twice(&step.option_texts(cx))
+                        .into_iter()
+                        .map(|id| (Some(at), format!("the option {id} is set twice"))),
+                );
+            }
         }
+        problems
     }
 
     /// Everything that keeps the form from being saved, as sentences.
@@ -453,6 +468,19 @@ pub(super) fn settings_of(
         .filter(|(id, value)| !id.is_empty() || !value.is_empty())
         .collect();
     ((!mode.is_empty()).then(|| mode.to_string()), options)
+}
+
+/// The option ids, trimmed, that more than one row sets, each once.
+pub(super) fn options_set_twice(rows: &[(String, String)]) -> Vec<String> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut twice = Vec::new();
+    for (id, _) in rows {
+        let id = id.trim();
+        if !id.is_empty() && !seen.insert(id) && !twice.iter().any(|t| t == id) {
+            twice.push(id.to_string());
+        }
+    }
+    twice
 }
 
 /// `said` with its first letter raised, as a sentence standing alone starts.

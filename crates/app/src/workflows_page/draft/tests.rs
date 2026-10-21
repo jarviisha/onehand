@@ -141,3 +141,18 @@ fn blank_option_rows_are_dropped() {
         ])
     );
 }
+
+#[test]
+fn an_option_set_twice_is_found() {
+    let row = |id: &str, value: &str| (id.to_string(), value.to_string());
+    let rows = [
+        row("model", "opus"),
+        row(" model ", "haiku"),
+        row("effort", "high"),
+        row("model", "sonnet"),
+        row("", "x"),
+        row(" ", "y"),
+    ];
+    assert_eq!(options_set_twice(&rows), vec!["model".to_string()]);
+    assert!(options_set_twice(&[row("model", "a"), row("fast", "on")]).is_empty());
+}
