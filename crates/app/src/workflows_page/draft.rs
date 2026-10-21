@@ -1,4 +1,4 @@
-use gpui::{App, AppContext as _, Entity, Window};
+use gpui::{App, AppContext as _, Entity, Focusable as _, Window};
 use gpui_component::input::{InputState, TextareaState};
 use onehand_core::workflow::{self as core, GateKind, Place, StepKind, StepSpec, Template};
 use std::collections::BTreeMap;
@@ -75,10 +75,10 @@ pub struct StepDraft {
     pub prompt: Entity<TextareaState>,
     pub gates: Vec<GateKind>,
     pub keep_answer: bool,
-    /// The step's mode and options, kept as the spec reads them: no field
-    /// on this form edits them.
-    pub mode: Option<String>,
-    pub options: BTreeMap<String, String>,
+    /// The mode an agent step's visits run in; empty, the run's own.
+    pub mode: Entity<InputState>,
+    /// An agent step's options, a row each: the option's id, its value.
+    pub options: Vec<(Entity<InputState>, Entity<InputState>)>,
     pub command: Entity<InputState>,
     /// How long status checks are waited on.
     pub wait: Entity<InputState>,
@@ -169,6 +169,7 @@ impl StepDraft {
             }
         };
         let prompt = prompt.to_string();
+        let (mode, options) = settings_texts(&mode, &options);
         Self {
             id: input(&spec.id, window, cx),
             label: input(&spec.label, window, cx),
@@ -184,8 +185,15 @@ impl StepDraft {
             }),
             gates,
             keep_answer,
-            mode,
-            options,
+            mode: cx.new(|cx| {
+                InputState::new(window, cx)
+                    .placeholder("Empty: the run's mode")
+                    .default_value(mode)
+            }),
+            options: options
+                .into_iter()
+                .map(|(id, value)| option_row(&id, &value, window, cx))
+                .collect(),
             command: cx.new(|cx| {
                 InputState::new(window, cx)
                     .placeholder("Empty: the project's check command")
@@ -196,8 +204,27 @@ impl StepDraft {
         }
     }
 
+    /// Add an empty option row at the end, the keyboard on its id.
+    pub(super) fn add_option(&mut self, window: &mut Window, cx: &mut App) {
+        let row = option_row("", "", window, cx);
+        let focus = row.0.read(cx).focus_handle(cx);
+        window.focus(&focus, cx);
+        self.options.push(row);
+    }
+
     pub(super) fn to_spec(&self, cx: &App) -> StepSpec {
         let command = self.command.read(cx).value().trim().to_string();
+        let rows: Vec<(String, String)> = self
+            .options
+            .iter()
+            .map(|(id, value)| {
+                (
+                    id.read(cx).value().to_string(),
+                    value.read(cx).value().to_string(),
+                )
+            })
+            .collect();
+        let (mode, options) = settings_of(&self.mode.read(cx).value(), &rows);
         StepSpec {
             id: self.id.read(cx).value().trim().to_string(),
             label: self.label.read(cx).value().trim().to_string(),
@@ -206,8 +233,8 @@ impl StepDraft {
                     prompt: self.prompt.read(cx).value().to_string(),
                     gates: self.gates.clone(),
                     keep_answer: self.keep_answer,
-                    mode: self.mode.clone(),
-                    options: self.options.clone(),
+                    mode,
+                    options,
                 },
                 Kind::Command => StepKind::Command {
                     command: (!command.is_empty()).then_some(command),
@@ -374,6 +401,58 @@ impl WorkflowDraft {
             );
         }
     }
+}
+
+/// One option row's two fields, holding `id` and `value`.
+fn option_row(
+    id: &str,
+    value: &str,
+    window: &mut Window,
+    cx: &mut App,
+) -> (Entity<InputState>, Entity<InputState>) {
+    let input = |placeholder: &'static str, text: &str, window: &mut Window, cx: &mut App| {
+        let text = text.to_string();
+        cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(placeholder)
+                .default_value(text)
+        })
+    };
+    (
+        input("Option", id, window, cx),
+        input("Value", value, window, cx),
+    )
+}
+
+/// A step's mode and options as the form's fields hold them: the mode's
+/// text, and a row of id and value per option.
+pub(super) fn settings_texts(
+    mode: &Option<String>,
+    options: &BTreeMap<String, String>,
+) -> (String, Vec<(String, String)>) {
+    (
+        mode.clone().unwrap_or_default(),
+        options
+            .iter()
+            .map(|(id, value)| (id.clone(), value.clone()))
+            .collect(),
+    )
+}
+
+/// The mode and options the form's fields say, trimmed: a blank mode is
+/// none, a row blank on both sides is dropped, and a row blank on one side
+/// is kept so validation names it.
+pub(super) fn settings_of(
+    mode: &str,
+    rows: &[(String, String)],
+) -> (Option<String>, BTreeMap<String, String>) {
+    let mode = mode.trim();
+    let options = rows
+        .iter()
+        .map(|(id, value)| (id.trim().to_string(), value.trim().to_string()))
+        .filter(|(id, value)| !id.is_empty() || !value.is_empty())
+        .collect();
+    ((!mode.is_empty()).then(|| mode.to_string()), options)
 }
 
 /// `said` with its first letter raised, as a sentence standing alone starts.

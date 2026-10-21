@@ -111,3 +111,33 @@ fn sentence_raises_the_first_letter() {
     assert_eq!(sentence("it has no name"), "It has no name");
     assert_eq!(sentence(""), "");
 }
+
+#[test]
+fn a_drafts_settings_round_trip() {
+    let mode = Some("plan".to_string());
+    let options = std::collections::BTreeMap::from([
+        ("effort".to_string(), "high".to_string()),
+        ("model".to_string(), "opus".to_string()),
+    ]);
+    let (text, rows) = settings_texts(&mode, &options);
+    assert_eq!(settings_of(&text, &rows), (mode, options));
+}
+
+#[test]
+fn blank_option_rows_are_dropped() {
+    let rows = [
+        (" model ".to_string(), " opus ".to_string()),
+        ("  ".to_string(), String::new()),
+        ("effort".to_string(), String::new()),
+    ];
+    let (mode, options) = settings_of("  ", &rows);
+    assert_eq!(mode, None);
+    // A row with one side blank stays, for validation to name it.
+    assert_eq!(
+        options,
+        std::collections::BTreeMap::from([
+            ("effort".to_string(), String::new()),
+            ("model".to_string(), "opus".to_string()),
+        ])
+    );
+}

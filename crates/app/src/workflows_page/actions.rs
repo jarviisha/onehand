@@ -193,7 +193,7 @@ impl WorkflowsPage {
     /// Put the keyboard on the page itself: the row that took the click
     /// leaves the frame when the editor shows alone, and a focus left on a
     /// handle no longer drawn takes the page's keys with it.
-    fn hold_focus(&self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn hold_focus(&self, window: &mut Window, cx: &mut Context<Self>) {
         window.focus(&self.focus_handle, cx);
     }
 

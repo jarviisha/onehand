@@ -16,6 +16,8 @@ use gpui_component::switch::Switch;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::workflow::{GateKind, Place};
 
+mod settings;
+
 /// How tall a step's line stands, its dot centred on it: the line the rail
 /// runs through from one step to the next.
 const STEP_LINE_H: gpui::Rems = gpui::rems(2.25);
@@ -500,6 +502,7 @@ pub(super) fn step_panel(
                     cx,
                 ))
                 .child(div().h_flex().child(keep))
+                .child(settings::agent_settings(handle, i, step, shipped, cx))
                 .into_any_element()
         }
         Kind::Push => div()
