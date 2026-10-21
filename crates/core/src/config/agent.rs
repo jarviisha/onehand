@@ -183,6 +183,72 @@ impl AgentSpec {
     }
 }
 
+/// Turn every entry that is the old Claude default into the preset, keeping
+/// its name and moving any `env VAR=value` in front of it into `env`.
+pub(super) fn migrate(agents: &mut [AgentSpec]) {
+    for spec in agents.iter_mut() {
+        if let Some(env) = old_default_env(spec) {
+            *spec = AgentSpec {
+                name: std::mem::take(&mut spec.name),
+                preset: Some(Preset::ClaudeCode),
+                env,
+                ..Default::default()
+            };
+        }
+    }
+}
+
+/// The environment of `spec` when it is the old default, written either as
+/// `npx <the default arguments>` or as `env VAR=value… npx <the same>`.
+/// An entry edited in any other way is the person's own, and is `None`.
+fn old_default_env(spec: &AgentSpec) -> Option<BTreeMap<String, String>> {
+    if spec.preset.is_some() {
+        return None;
+    }
+    let mut env = spec.env.clone();
+    let rest = match spec.command.as_str() {
+        "npx" => spec.args.as_slice(),
+        "env" => {
+            let pairs = spec
+                .args
+                .iter()
+                .map_while(|arg| arg.split_once('=').filter(|(key, _)| !key.is_empty()))
+                .collect::<Vec<_>>();
+            env.extend(pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())));
+            match spec.args.get(pairs.len()).map(String::as_str) {
+                Some("npx") => &spec.args[pairs.len() + 1..],
+                _ => return None,
+            }
+        }
+        _ => return None,
+    };
+    (rest == default_adapter_args().as_slice()).then_some(env)
+}
+
+/// Give a nameless preset its own name, and number every name already taken
+/// earlier in the list, skipping numbers some other entry already has.
+pub(super) fn name_uniquely(agents: &mut [AgentSpec]) {
+    for spec in agents.iter_mut() {
+        if let (Some(preset), true) = (spec.preset, spec.name.trim().is_empty()) {
+            spec.name = preset.shown_name().to_string();
+        }
+    }
+    let mut all: std::collections::HashSet<String> =
+        agents.iter().map(|spec| spec.name.clone()).collect();
+    let mut seen = std::collections::HashSet::new();
+    for spec in agents.iter_mut() {
+        if !seen.insert(spec.name.clone()) {
+            let name = (2..)
+                .map(|n| format!("{} ({n})", spec.name))
+                .find(|name| !all.contains(name))
+                .expect("an unbounded range finds a free number");
+            all.insert(name.clone());
+            seen.insert(name.clone());
+            spec.name = name;
+        }
+    }
+}
+
 /// Render an argument list as one shell-ish line, quoting what needs it.
 ///
 /// Not a general shell quoter: it exists so a round trip through the agent

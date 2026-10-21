@@ -128,3 +128,139 @@ fn a_declared_agent_launches_as_written() {
     assert_eq!(launch.env, [("A".to_string(), "1".to_string())]);
     assert!(!spec.outside_pin());
 }
+
+use crate::config::{default_adapter_args, default_agents, run_mode};
+
+#[test]
+fn the_old_default_becomes_the_preset_where_claude_is_installed() {
+    let dir = bin_dir("settle-migrates", Some("claude"));
+    let mut cfg = AppConfig::default();
+    cfg.settle(Some(dir.as_os_str()));
+    assert_eq!(cfg.agents[0].preset, Some(Preset::ClaudeCode));
+    assert_eq!(cfg.agents[0].name, "Claude Code");
+    assert!(cfg.agents[0].command.is_empty() && cfg.agents[0].args.is_empty());
+}
+
+#[test]
+fn the_old_default_stays_declared_without_claude() {
+    let empty = bin_dir("settle-no-claude", None);
+    let mut cfg = AppConfig::default();
+    cfg.settle(Some(empty.as_os_str()));
+    assert_eq!(cfg.agents, default_agents());
+}
+
+#[test]
+fn the_env_form_keeps_values_whole() {
+    let dir = bin_dir("settle-env-form", Some("claude"));
+    let mut cfg = AppConfig::default();
+    let mut args = vec![
+        "CLAUDE_CONFIG_DIR=/home/me/.claude acc2".to_string(),
+        "X=a=b".into(),
+        "npx".into(),
+    ];
+    args.extend(default_adapter_args());
+    cfg.agents = vec![AgentSpec {
+        name: "Claude Code (acc2)".into(),
+        command: "env".into(),
+        args,
+        ..Default::default()
+    }];
+    cfg.settle(Some(dir.as_os_str()));
+    let spec = &cfg.agents[0];
+    assert_eq!(spec.preset, Some(Preset::ClaudeCode));
+    assert_eq!(spec.name, "Claude Code (acc2)");
+    assert!(spec.command.is_empty() && spec.args.is_empty());
+    assert_eq!(
+        spec.env.get("CLAUDE_CONFIG_DIR").map(String::as_str),
+        Some("/home/me/.claude acc2")
+    );
+    assert_eq!(spec.env.get("X").map(String::as_str), Some("a=b"));
+}
+
+#[test]
+fn an_edited_entry_is_left_as_written() {
+    let dir = bin_dir("settle-edited", Some("claude"));
+    let mut cfg = AppConfig::default();
+    cfg.agents[0].args.push("--verbose".into());
+    let before = cfg.agents.clone();
+    cfg.settle(Some(dir.as_os_str()));
+    assert_eq!(cfg.agents, before);
+}
+
+#[test]
+fn duplicate_names_are_numbered_not_dropped() {
+    let mut cfg = AppConfig::default();
+    let one = |name: &str| AgentSpec {
+        name: name.into(),
+        command: "x".into(),
+        ..Default::default()
+    };
+    cfg.agents = vec![one("A"), one("A"), one("A (2)"), one("A")];
+    cfg.settle(None);
+    let names: Vec<_> = cfg.agents.iter().map(|a| a.name.as_str()).collect();
+    assert_eq!(names, ["A", "A (3)", "A (2)", "A (4)"]);
+}
+
+#[test]
+fn a_nameless_preset_takes_its_shown_name() {
+    let mut cfg = AppConfig::default();
+    cfg.agents = vec![AgentSpec {
+        preset: Some(Preset::Codex),
+        ..Default::default()
+    }];
+    cfg.settle(None);
+    assert_eq!(cfg.agents[0].name, "Codex");
+}
+
+#[test]
+fn the_stored_mode_is_cleared_for_a_preset_and_kept_for_a_declared_agent() {
+    let dir = bin_dir("settle-mode-preset", Some("claude"));
+    let mut cfg = AppConfig::default();
+    cfg.unattended.mode = Some("acceptEdits".into());
+    cfg.settle(Some(dir.as_os_str()));
+    assert_eq!(cfg.unattended.mode, None);
+
+    let empty = bin_dir("settle-mode-declared", None);
+    let mut cfg = AppConfig::default();
+    cfg.unattended.mode = Some("acceptEdits".into());
+    cfg.settle(Some(empty.as_os_str()));
+    assert_eq!(cfg.unattended.mode.as_deref(), Some("acceptEdits"));
+}
+
+#[test]
+fn a_run_mode_comes_from_the_preset_when_none_is_set() {
+    let claude = AgentSpec {
+        preset: Some(Preset::ClaudeCode),
+        ..Default::default()
+    };
+    let codex = AgentSpec {
+        preset: Some(Preset::Codex),
+        ..Default::default()
+    };
+    assert_eq!(run_mode(None, Some(&claude)), "acceptEdits");
+    assert_eq!(run_mode(None, Some(&codex)), "");
+    assert_eq!(run_mode(Some(""), Some(&claude)), "");
+    assert_eq!(run_mode(Some("plan"), Some(&codex)), "plan");
+    assert_eq!(run_mode(None, None), "");
+}
+
+#[test]
+fn settling_twice_changes_nothing_more() {
+    let dir = bin_dir("settle-twice", Some("claude"));
+    let mut cfg = AppConfig::default();
+    cfg.unattended.mode = Some("acceptEdits".into());
+    cfg.settle(Some(dir.as_os_str()));
+    let once = cfg.clone();
+    cfg.settle(Some(dir.as_os_str()));
+    assert_eq!(cfg, once);
+}
+
+#[test]
+fn an_absent_mode_is_not_written_and_an_empty_one_is() {
+    let mut cfg = AppConfig::default();
+    cfg.unattended.mode = None;
+    assert!(!cfg.to_toml().unwrap().contains("mode ="));
+    cfg.unattended.mode = Some(String::new());
+    let again = AppConfig::parse(&cfg.to_toml().unwrap()).unwrap();
+    assert_eq!(again.unattended.mode.as_deref(), Some(""));
+}

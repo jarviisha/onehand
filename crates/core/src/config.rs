@@ -31,6 +31,20 @@ pub fn mode_set(mode: &str) -> Option<String> {
     (!mode.trim().is_empty()).then(|| mode.to_string())
 }
 
+/// The mode an unattended run on `agent` starts in, as a run reads it: the one
+/// configured, else the one the agent's preset runs in unattended, else none
+/// (`""`), which leaves the agent in the mode it starts in.
+pub fn run_mode(mode: Option<&str>, agent: Option<&AgentSpec>) -> String {
+    match mode {
+        Some(mode) => mode.to_string(),
+        None => agent
+            .and_then(|agent| agent.preset)
+            .and_then(Preset::unattended_mode)
+            .unwrap_or_default()
+            .to_string(),
+    }
+}
+
 /// `[font]` — the monospace family to prefer, if the machine has one by that
 /// name.
 ///
@@ -232,8 +246,10 @@ pub struct UnattendedConfig {
     /// How long a run may go before it is cancelled, in the same form.
     pub timeout: String,
     /// The ACP session mode a run starts in — the adapter's own id for it.
-    /// Empty leaves the agent in the mode it starts in.
-    pub mode: String,
+    /// Empty leaves the agent in the mode it starts in; absent takes the mode
+    /// its preset runs in unattended, if it has one (see [`run_mode`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
     /// Which configured agent runs it; the default agent when unset.
     pub agent: Option<String>,
     /// The id of the workflow an issue is worked with, unless one of its
@@ -259,7 +275,7 @@ impl Default for UnattendedConfig {
             label: "auto".to_string(),
             every: "30m".to_string(),
             timeout: "45m".to_string(),
-            mode: "acceptEdits".to_string(),
+            mode: None,
             agent: None,
             workflow: "builtin:issue".to_string(),
             workflows: BTreeMap::new(),
@@ -311,6 +327,31 @@ impl AppConfig {
         toml::from_str(text)
     }
 
+    /// Bring a config read from disk up to what this build writes. Idempotent,
+    /// and run on every read, so the list in memory is the list a save writes.
+    ///
+    /// - The old Claude default, written out in full by earlier builds (alone
+    ///   or behind `env VAR=value`), becomes the preset — **only when `claude`
+    ///   is on `path`**: that entry ran the agent bundled in its adapter, and
+    ///   the preset runs the machine's, so without one it would stop working.
+    /// - A preset with no name takes its own; a name already taken gets a
+    ///   number, so every entry stays and a name finds one agent.
+    /// - The old default run mode, `acceptEdits`, written into every file, is
+    ///   dropped where runs use a preset, which knows its own; a declared
+    ///   agent keeps it.
+    pub(crate) fn settle(&mut self, path: Option<&std::ffi::OsStr>) {
+        if find_command(Preset::ClaudeCode.binary(), path, None).is_some() {
+            agent::migrate(&mut self.agents);
+        }
+        agent::name_uniquely(&mut self.agents);
+        let runs_on = agent_or_first(&self.agents, self.unattended.agent.as_deref());
+        if self.unattended.mode.as_deref() == Some("acceptEdits")
+            && runs_on.is_some_and(|agent| agent.preset.is_some())
+        {
+            self.unattended.mode = None;
+        }
+    }
+
     /// Serialize back to TOML (round-trips all sections for `persist_agents`).
     pub(crate) fn to_toml(&self) -> Result<String, toml::ser::Error> {
         toml::to_string_pretty(self)
@@ -325,7 +366,10 @@ impl AppConfig {
         for path in [local, global.clone()] {
             if let Ok(text) = std::fs::read_to_string(&path) {
                 match Self::parse(&text) {
-                    Ok(cfg) => return (cfg, path),
+                    Ok(mut cfg) => {
+                        cfg.settle(std::env::var_os("PATH").as_deref());
+                        return (cfg, path);
+                    }
                     Err(e) => eprintln!("onehand: bad config {}: {e}", path.display()),
                 }
             }
@@ -349,6 +393,7 @@ impl AppConfig {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Self::default(),
             Err(e) => return Err(format!("{} could not be read: {e}", path.display())),
         };
+        cfg.settle(std::env::var_os("PATH").as_deref());
         edit(&mut cfg);
         cfg.save_to(path).map_err(|e| e.to_string())
     }

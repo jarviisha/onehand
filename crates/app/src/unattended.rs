@@ -240,10 +240,14 @@ pub fn boot(cfg: &UnattendedConfig, cx: &mut App) {
         }
     });
     cx.update_global::<Shared, _>(|shared, _| {
+        // Resolved once, here, as every other setting of runs is: a config
+        // naming no mode takes the one the runs' agent is known to need.
+        let runs_on = onehand_core::config::agent_or_first(&shared.agents, cfg.agent.as_deref());
+        let mode = onehand_core::config::run_mode(cfg.mode.as_deref(), runs_on);
         shared.unattended = Some(Unattended {
             label,
             timeout: timeout.unwrap_or(fallback.timeout),
-            mode: cfg.mode.clone(),
+            mode,
             agent: cfg.agent.clone(),
             workflow: cfg.workflow.clone(),
             workflows: cfg.workflows.clone(),

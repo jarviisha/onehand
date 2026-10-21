@@ -15,7 +15,10 @@ fn keymap_round_trips_and_other_settings_survive_edits() {
     let saved = AppConfig::parse(&std::fs::read_to_string(&path).unwrap()).unwrap();
     assert_eq!(saved.keymap, original.keymap);
     assert_eq!(saved.font, original.font);
-    assert_eq!(saved.agents, original.agents);
+    // A save settles what it read, against this machine's `PATH`.
+    let mut settled = original.clone();
+    settled.settle(std::env::var_os("PATH").as_deref());
+    assert_eq!(saved.agents, settled.agents);
     assert_eq!(saved.appearance, Appearance::Dark);
     assert!(AppConfig::parse("").unwrap().keymap.is_empty());
     std::fs::remove_dir_all(dir).unwrap();
