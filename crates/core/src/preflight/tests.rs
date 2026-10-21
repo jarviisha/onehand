@@ -498,6 +498,7 @@ fn a_configuration_block_found_late_is_a_configuration_failure() {
         About::Workflow,
         About::Agent,
         About::Mode,
+        About::Settings,
         About::CheckCommand,
     ] {
         assert_eq!(found_late(about), Failure::Configuration, "{about:?}");

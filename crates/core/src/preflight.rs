@@ -121,6 +121,7 @@ pub enum About {
     Workflow,
     Agent,
     Mode,
+    Settings,
     CheckCommand,
     Place,
     Base,
@@ -551,7 +552,7 @@ pub fn already_working(named: &str) -> String {
 /// so the way out offered is the one that changes the configuration.
 pub fn found_late(about: About) -> Failure {
     match about {
-        About::Workflow | About::Agent | About::Mode | About::CheckCommand => {
+        About::Workflow | About::Agent | About::Mode | About::Settings | About::CheckCommand => {
             Failure::Configuration
         }
         About::Forge => Failure::Forge,
