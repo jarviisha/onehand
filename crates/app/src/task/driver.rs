@@ -308,7 +308,10 @@ fn on_event(uid: u64, session: &Entity<ChatSession>, event: &ChatEvent, cx: &mut
             if session.read(cx).chat.prompted_beyond(sent) {
                 end(uid, Stop::TakenOver, cx);
             } else if picking {
-                settings::answered(uid, session, cx);
+                // After the rest of what the same answer emitted, so a
+                // refusal is judged before the next pick is planned.
+                let session = session.clone();
+                cx.defer(move |cx| settings::answered(uid, &session, cx));
             }
         }
         // A Stop pressed in the composer, or from the remote bridge: the

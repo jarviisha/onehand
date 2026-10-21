@@ -393,6 +393,11 @@ impl Chat {
         !self.picks_out.is_empty()
     }
 
+    /// Whether a pick sent for `group` is still unanswered.
+    pub fn pick_waiting(&self, group: &str) -> bool {
+        self.picks_out.contains_key(group)
+    }
+
     /// Send one setting pick to the agent.
     pub fn pick(&mut self, pick: &Pick) {
         match pick {

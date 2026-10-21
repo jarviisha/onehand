@@ -16,7 +16,7 @@ pub(super) struct Picking {
     text: String,
     /// The groups picked this visit, answered or in flight.
     picked: Vec<String>,
-    /// The last pick sent, to name it when the agent refuses it.
+    /// The pick in flight, to name it when the agent refuses it.
     sent: Option<Pick>,
 }
 
@@ -37,14 +37,6 @@ fn wanted(d: &Driven) -> Settings {
         .current()
         .map(|step| Settings::for_step(&step.kind, &start))
         .unwrap_or_default()
-}
-
-/// Whether `pick` is what `in_force` holds for its group.
-fn holds(in_force: &Settings, pick: &Pick) -> bool {
-    match pick {
-        Pick::Mode(mode) => in_force.mode.as_deref() == Some(mode.as_str()),
-        Pick::Option { id, value } => in_force.options.get(id) == Some(value),
-    }
 }
 
 /// The prompt `text`, given back when it may go now: the open visit's
@@ -68,19 +60,11 @@ pub(super) fn settle(
 }
 
 /// The session answered something while picks are under way: once every
-/// pick is answered and the last one sent holds, plan the next, and send
-/// the held prompt when there is none. A refused pick holds no more; its
-/// refusal follows and fails the run.
+/// pick is answered, plan the next, and send the held prompt when there is
+/// none. Run after everything the same answer emitted, so a refusal has
+/// already failed the run and left nothing to plan.
 pub(super) fn answered(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
-    let chat = &session.read(cx).chat;
-    let in_force = chat.in_force();
-    let waiting = chat.picks_waiting()
-        || read(uid, cx, |d| {
-            let sent = d.picking.as_ref().and_then(|p| p.sent.as_ref());
-            sent.is_some_and(|pick| !holds(&in_force, pick))
-        })
-        .unwrap_or(false);
-    if waiting {
+    if session.read(cx).chat.picks_waiting() {
         return;
     }
     let Some(picking) = with(uid, cx, |d| d.picking.take()).flatten() else {
@@ -92,13 +76,15 @@ pub(super) fn answered(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
 }
 
 /// The agent refused a pick, `why`: when it is the visit's own pick in
-/// flight, the run fails on it. One the visit did not send (a person's in
-/// the composer, or one put in before the visit began) is not the run's.
+/// flight, now answered, the run fails on it. A refusal while the visit's
+/// pick is still out, or while the visit waits on picks it did not send (a
+/// person's in the composer, the run's mode, those restored on
+/// reconnecting), is not the run's.
 pub(super) fn refused(uid: u64, session: &Entity<ChatSession>, why: &str, cx: &mut App) {
     let Some(pick) = read(uid, cx, |d| d.picking.as_ref()?.sent.clone()).flatten() else {
         return;
     };
-    if holds(&session.read(cx).chat.in_force(), &pick) {
+    if session.read(cx).chat.pick_waiting(pick.group()) {
         return;
     }
     with(uid, cx, |d| d.picking = None);
@@ -121,6 +107,8 @@ fn plan(
     cx: &mut App,
 ) -> Option<String> {
     let want = read(uid, cx, wanted)?;
+    // Whatever was sent before has been answered.
+    picking.sent = None;
     loop {
         let chat = &session.read(cx).chat;
         // A pick put in before this one (the run's mode, or one restored on
