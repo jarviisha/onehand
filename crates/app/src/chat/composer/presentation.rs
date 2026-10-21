@@ -249,9 +249,7 @@ fn lit(current: Option<&onehand_core::acp::ConfigChoice>) -> bool {
 /// The choices behind it.
 pub(super) fn fast_rows(session: &Entity<ChatSession>, cx: &App) -> Vec<Row> {
     let options = &session.read(cx).chat.config_options;
-    fast_group(options)
-        .map(rows_of)
-        .unwrap_or_default()
+    fast_group(options).map(rows_of).unwrap_or_default()
 }
 
 /// The choice a group is currently set to, if the agent named one this list
@@ -528,8 +526,8 @@ fn config_rank(option: &onehand_core::acp::ConfigOption, index: usize) -> (u8, u
 #[cfg(test)]
 mod tests {
     use super::{
-        EFFORT_GROUPS, FAST_GROUPS, config_rank, has_own_chip, in_force, listed, lit, names, names_any,
-        toggle_of,
+        EFFORT_GROUPS, FAST_GROUPS, config_rank, has_own_chip, in_force, listed, lit, names,
+        names_any, toggle_of,
     };
     use onehand_core::acp::{ConfigChoice, ConfigOption};
 
@@ -558,7 +556,10 @@ mod tests {
         ));
         assert!(names(&effort("x-9", "Effort", &[], None), EFFORT_GROUPS[0]));
         assert!(names(&effort("x-9", "EFFORT", &[], None), EFFORT_GROUPS[0]));
-        assert!(!names(&effort("model", "Model", &[], None), EFFORT_GROUPS[0]));
+        assert!(!names(
+            &effort("model", "Model", &[], None),
+            EFFORT_GROUPS[0]
+        ));
     }
 
     #[test]

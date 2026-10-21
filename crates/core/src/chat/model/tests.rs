@@ -1433,11 +1433,17 @@ fn parked_command(chat: &Chat) -> &str {
 #[test]
 fn permission_takes_the_title_of_the_call_it_names() {
     let mut chat = Chat::default();
-    chat.apply(pending_call("call-1", "curl -sI https://example.com | head -1"));
+    chat.apply(pending_call(
+        "call-1",
+        "curl -sI https://example.com | head -1",
+    ));
     let mut req = permission("Run command");
     req.tool_call_id = Some("call-1".into());
     chat.apply(AcpEvent::Permission(req));
-    assert_eq!(parked_command(&chat), "curl -sI https://example.com | head -1");
+    assert_eq!(
+        parked_command(&chat),
+        "curl -sI https://example.com | head -1"
+    );
 }
 
 #[test]
