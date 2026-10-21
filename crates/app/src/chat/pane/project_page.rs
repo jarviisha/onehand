@@ -5,7 +5,7 @@ use crate::chat::conversation::Conversation;
 use crate::controls::Quiet as _;
 use crate::controls::Short as _;
 use crate::controls::text_input;
-use crate::tokens::PAGE_WIDE;
+use crate::tokens::PAGE_PROSE;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, Context, Div, FocusHandle, InteractiveElement, IntoElement, ParentElement, Rems,
@@ -25,13 +25,6 @@ use std::path::{Path, PathBuf};
 /// the cap cut off is said on screen rather than silently dropped. The list
 /// scrolls as well, because this many rows already outgrows a short window.
 const HOME_ROWS: usize = 8;
-
-/// The width the history starts from before it grows into its row; the side
-/// column wraps under it where both do not fit.
-const HOME_MAIN: Rems = rems(26.);
-
-/// The width the side column starts from beside the history.
-const HOME_SIDE: Rems = rems(16.);
 
 /// The slot a conversation's age stands in, the overview row's, so every
 /// title starts on one edge.
@@ -285,8 +278,8 @@ impl ChatPane {
     ///
     /// **Three layers.** The page's own surface carries its head: the
     /// project's name, where it is and what git says, and what it can start.
-    /// Each group under it stands on a surface a step up, the history as the
-    /// main column and what the project needs and is set to beside it, so
+    /// Each group under it stands on a surface a step up, one under another:
+    /// the history, then what the project needs and is set to, so
     /// what belongs together reads as one object rather than as text loose on
     /// the page.
     pub(super) fn project_home(
@@ -496,26 +489,16 @@ impl ChatPane {
             ))
         });
 
-        // The history leads and what stands beside it follows. Wrapped rather
-        // than measured: the side column drops under the history wherever the
-        // two bases do not fit the column the pane gives them.
+        // One column at every width: the history leads, and what the project
+        // needs and is set to follows under it, so the page reads top to
+        // bottom however wide the pane is.
         let body = div()
-            .h_flex()
-            .flex_wrap()
-            .items_start()
+            .v_flex()
             .gap_4()
             .w_full()
-            .child(history.flex_grow_1().flex_basis(HOME_MAIN).min_w_0())
-            .child(
-                div()
-                    .v_flex()
-                    .gap_4()
-                    .flex_grow_1()
-                    .flex_basis(HOME_SIDE)
-                    .min_w_0()
-                    .child(tasks)
-                    .children(settings),
-            );
+            .child(history)
+            .child(tasks)
+            .children(settings);
 
         div()
             .size_full()
@@ -535,7 +518,7 @@ impl ChatPane {
                                 .v_flex()
                                 .gap_6()
                                 .w_full()
-                                .max_w(PAGE_WIDE)
+                                .max_w(PAGE_PROSE)
                                 .text_size(crate::tokens::CHROME_TEXT)
                                 .child(head)
                                 .child(body),

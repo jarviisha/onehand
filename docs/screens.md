@@ -11,7 +11,7 @@ never cites this file.
 
 App chrome outside the dock, so a layout restore cannot lose it. Top to bottom: the workspace bar
 (letter tile, name, switcher, *Hide the rail*); the search over session titles and project names
-(`Ctrl+K` outside a terminal, showing a hidden rail) beside *New*, which starts in the keyboard's
+(`Ctrl+K` outside a terminal, showing a hidden rail) beside *New* (secondary, the rail's only filled button), which starts in the keyboard's
 project, else the one on screen, its caret picking *Start in* or *With agent*; *Overview*, *Tasks*
 (a pill counting tasks that need attention, none at zero), *Issues* and *Workflows*, each filled
 while its page shows; *Sessions* with a warning-ink *N need attention* chip (shown above zero or
@@ -121,13 +121,12 @@ height (its dragged height kept).
 
 - A project with no session shows, from the top: a head (the project's name, its path and git line
   under it, *Run check* (spinning while a check runs) and *New session* (primary, with a caret
-  picking another agent while more than one is configured) at the end); then the box *Past
+  picking another agent while more than one is configured) at the end); then, in one column at every width, the box *Past
   conversations* with its count, its rows the overview's (age, title, then items and agent at the
-  edge, *Delete…* laid over them on hover), capped, its wait and empty lines inside it, and beside
-  it a column of the box *Tasks* (how many need attention, run or wait, each opening the Tasks page
-  narrowed to the project; *Nothing running here* at zero) over the box *Settings* (its *Check
-  command* field). The column wraps under the history where both do not fit. The page scrolls as
-  one.
+  edge, *Delete…* laid over them on hover), capped, its wait and empty lines inside it; under
+  it the box *Tasks* (how many need attention, run or wait, each opening the Tasks page
+  narrowed to the project; *Nothing running here* at zero); then the box *Settings* (its *Check
+  command* field). The page scrolls as one.
 - *Workspace overview* shows, under its head (*Overview*), across all projects, the boxes *Waiting
   on you* (runs waiting for an answer or an approval, and sessions waiting, failed, finished or
   lost) and *Working*, then *Projects* as a grid of tiles (not drawn without projects), then the

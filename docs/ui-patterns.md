@@ -197,9 +197,8 @@ The body scrolls as one column centred in the pane, padded `px_8` at its sides a
 ends, its sections `gap_6` apart, as wide as one of these:
 
 - `PAGE_NARROW`: one column of fields or rows;
-- `PAGE_PROSE`: an editor, or one thing read in full (a workflow, an issue, a task);
-- `PAGE_WIDE`: boxes side by side (the overview, Tasks, a project's page, its history beside a
-  column of what it needs and is set to, the column wrapping under it where both do not fit).
+- `PAGE_PROSE`: an editor, or one thing read in full (a workflow, an issue, a task, a project);
+- `PAGE_WIDE`: boxes side by side (the overview, Tasks).
 
 The pane header is inset `px_8`, as the body is. A page holding sections of its own (Settings)
 puts their nav column at its start. Its head's actions are `.tall()`, at one height; its creating action
