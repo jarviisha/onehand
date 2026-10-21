@@ -674,3 +674,49 @@ async fn a_refused_resume_is_said_in_the_agents_words() {
     assert_eq!(detail.as_deref(), Some("expired"));
     assert_eq!(agent.heard().await["method"], "session/new");
 }
+
+/// A refused session start reads as the agent's own sentence, not the
+/// JSON-RPC object it arrived in.
+#[tokio::test]
+async fn a_refused_session_is_said_in_the_agents_words() {
+    let (mut agent, mut events) = client();
+    let hello = agent.heard().await;
+    agent
+        .say(json!({
+            "jsonrpc": "2.0",
+            "id": hello["id"],
+            "result": { "protocolVersion": 1, "agentCapabilities": {} }
+        }))
+        .await;
+    let new = agent.heard().await;
+    agent
+        .say(json!({
+            "jsonrpc": "2.0",
+            "id": new["id"],
+            "error": { "code": -32000, "message": "Authentication required" }
+        }))
+        .await;
+    let text = loop {
+        match events.recv().await.expect("an event") {
+            AcpEvent::Disconnected(text) => break text,
+            _ => continue,
+        }
+    };
+    // The scripted transport has no child, so no stderr tail follows.
+    assert_eq!(text, "Could not start a session: Authentication required");
+}
+
+/// npm narrating its own start is never the reason an adapter died, and each
+/// notice kept is a slot a reason needed.
+#[test]
+fn npm_notice_lines_are_not_kept() {
+    let mut words = LastWords::default();
+    for line in [
+        "npm notice run npx · @agentclientprotocol/codex-acp@2.2.2",
+        "npm error code ETARGET",
+        "NPM NOTICE something",
+    ] {
+        words.remember(line);
+    }
+    assert_eq!(words.say().as_deref(), Some("npm error code ETARGET"));
+}
