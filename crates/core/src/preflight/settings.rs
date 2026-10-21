@@ -1,0 +1,201 @@
+//! Each agent step's own mode and options, checked before a run starts.
+//!
+//! What was learned of what the agent offers is only ever certain for a
+//! mode, `model`, and any other option id the agent never offered: another
+//! option's choices may depend on the model in force, so a value missing
+//! from what was learned under a different model is left for the run's own
+//! check at that step, the same authority it already is at runtime.
+
+use super::{finding, mode_refused, About, Change, Finding};
+use crate::workflow::{Offer, StepKind, Template};
+use std::collections::BTreeMap;
+
+/// At most this many step-setting findings are listed before the rest are
+/// only counted.
+const SETTINGS_SHOWN: usize = 8;
+
+/// What the agent offers is not known for any of this workflow's steps,
+/// said once for the whole workflow rather than once per step and setting.
+const NOT_KNOWN_YET: &str = "The agent's settings for this workflow's steps are not known yet: \
+the agent has not come up since onehand started or since it was edited, and they are checked \
+when each step starts.";
+
+/// Whether `kind` names a mode or an option of its own.
+fn names_settings(kind: &StepKind) -> bool {
+    matches!(
+        kind,
+        StepKind::Agent { mode, options, .. } if mode.is_some() || !options.is_empty()
+    )
+}
+
+/// Findings for what each agent step's own mode and options the agent does
+/// not offer, against `offered`; one finding for the whole workflow when
+/// nothing of what it offers is known yet. `keeps` and `change` are the
+/// mode check's own, for the kind judged.
+pub(super) fn step_settings(
+    template: &Template,
+    offered: Option<&Offer>,
+    keeps: &str,
+    change: Option<Change>,
+) -> Vec<Finding> {
+    let Some(offer) = offered else {
+        let names_any = template.steps.iter().any(|step| names_settings(&step.kind));
+        return match names_any {
+            true => vec![finding(
+                About::Settings,
+                false,
+                NOT_KNOWN_YET.to_string(),
+                None,
+            )],
+            false => Vec::new(),
+        };
+    };
+    let found = template
+        .steps
+        .iter()
+        .enumerate()
+        .filter_map(|(i, step)| match &step.kind {
+            StepKind::Agent { mode, options, .. } => {
+                Some((i + 1, step.label.as_str(), mode.as_deref(), options))
+            }
+            StepKind::Command { .. }
+            | StepKind::Approval { .. }
+            | StepKind::Push
+            | StepKind::PullRequest
+            | StepKind::StatusChecks { .. } => None,
+        })
+        .flat_map(|(n, label, mode, options)| {
+            step_findings(n, label, mode, options, offer, keeps, change)
+        })
+        .collect();
+    cap(found)
+}
+
+/// One step's own mode and options the agent does not offer, each finding
+/// named `Step {n} ({label})`.
+fn step_findings(
+    n: usize,
+    label: &str,
+    mode: Option<&str>,
+    options: &BTreeMap<String, String>,
+    offer: &Offer,
+    keeps: &str,
+    change: Option<Change>,
+) -> Vec<Finding> {
+    let prefix = format!("Step {n} ({label})");
+    let mut found = Vec::new();
+    if let Some(mode) = mode {
+        if let Some(why) = mode_refused(mode, &offer.modes) {
+            found.push(finding(
+                About::Settings,
+                true,
+                format!("{prefix}: {why}.{keeps}"),
+                change,
+            ));
+        }
+    }
+    let names_model = options.contains_key("model");
+    if let Some(model) = options.get("model") {
+        // `model` never gets the other options' exception: no other
+        // option's choices can tell us what it itself offers.
+        if let Some((_, why)) = option_refused("model", model, offer) {
+            found.push(finding(
+                About::Settings,
+                true,
+                format!("{prefix}: {why}.{keeps}"),
+                change,
+            ));
+        }
+    }
+    for (id, value) in options.iter().filter(|(id, _)| id.as_str() != "model") {
+        let Some((missing_id, why)) = option_refused(id, value, offer) else {
+            continue;
+        };
+        found.push(match missing_id || !names_model {
+            true => finding(
+                About::Settings,
+                true,
+                format!("{prefix}: {why}.{keeps}"),
+                change,
+            ),
+            false => finding(
+                About::Settings,
+                false,
+                format!(
+                    "{prefix}: `{value}` for `{id}` is not known yet under model `{}`; it is \
+                     checked when the step starts.{keeps}",
+                    options.get("model").expect("names_model holds the key"),
+                ),
+                change,
+            ),
+        });
+    }
+    found
+}
+
+/// The values `id` offers, if it offers any.
+fn offered_values<'a>(offer: &'a Offer, id: &str) -> Option<&'a [String]> {
+    offer
+        .options
+        .iter()
+        .find(|(offered, _)| offered == id)
+        .map(|(_, values)| values.as_slice())
+}
+
+/// Why the agent does not offer `value` for option `id`, if it does not: it
+/// offers no such id at all (`true`), or it offers the id but not that
+/// value among what it offers for it (`false`).
+fn option_refused(id: &str, value: &str, offer: &Offer) -> Option<(bool, String)> {
+    match offered_values(offer, id) {
+        None => {
+            let ids: Vec<String> = offer
+                .options
+                .iter()
+                .map(|(offered, _)| offered.clone())
+                .collect();
+            Some((
+                true,
+                format!(
+                    "the agent offers no option `{id}` (it offers: {})",
+                    joined(&ids)
+                ),
+            ))
+        }
+        Some(values) if !values.iter().any(|offered| offered == value) => Some((
+            false,
+            format!(
+                "the agent offers no `{value}` for `{id}` (it offers: {})",
+                joined(values)
+            ),
+        )),
+        Some(_) => None,
+    }
+}
+
+/// Values joined by `, `, or `none` when there are none.
+fn joined(values: &[String]) -> String {
+    match values.is_empty() {
+        true => "none".to_string(),
+        false => values.join(", "),
+    }
+}
+
+/// At most [`SETTINGS_SHOWN`] of `found`, then one more counting the rest,
+/// blocking when any of the rest does.
+fn cap(mut found: Vec<Finding>) -> Vec<Finding> {
+    if found.len() <= SETTINGS_SHOWN {
+        return found;
+    }
+    let hidden = found.split_off(SETTINGS_SHOWN);
+    let blocks = hidden.iter().any(|f| f.blocks);
+    found.push(finding(
+        About::Settings,
+        blocks,
+        format!(
+            "… and {} more settings the agent does not offer.",
+            hidden.len()
+        ),
+        None,
+    ));
+    found
+}

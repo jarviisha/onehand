@@ -338,10 +338,9 @@ impl ChatSession {
                             // What the agent offers is kept for every start
                             // that asks before it brings an agent up.
                             if outcome.offer_changed {
-                                let modes =
-                                    session.chat.modes.iter().map(|m| m.id.clone()).collect();
+                                let offer = session.chat.offer();
                                 let spec = seen.clone();
-                                cx.update_global::<Shared, _>(|s, _| s.saw_modes(spec, modes));
+                                cx.update_global::<Shared, _>(|s, _| s.saw_offer(spec, offer));
                             }
                             cx.notify();
                         });

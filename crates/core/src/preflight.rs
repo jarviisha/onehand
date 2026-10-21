@@ -11,7 +11,7 @@
 use crate::connector::PrState;
 use crate::task::{Task, Tracked, Working};
 use crate::unattended::{Issue, Slots, Tracker};
-use crate::workflow::{Failure, Place, StepKind, Template};
+use crate::workflow::{Failure, Offer, Place, StepKind, Template};
 
 /// What kind of start is checked: each has its own configuration and place.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -195,9 +195,9 @@ pub struct Facts {
     pub agent_configured: bool,
     /// The mode the run starts in, if one is set.
     pub mode: Option<String>,
-    /// The modes the agent offers, when learned in this process from the
-    /// spec it is configured with now; `None` when not known yet.
-    pub offered: Option<Vec<String>>,
+    /// What the agent offers, when learned in this process from the spec it
+    /// is configured with now; `None` when not known yet.
+    pub offered: Option<Offer>,
     /// The run has a check command to run.
     pub has_check: bool,
     /// The project is in git.
@@ -274,7 +274,7 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
         };
         match &facts.offered {
             Some(offered) => {
-                if let Some(why) = mode_refused(mode, offered) {
+                if let Some(why) = mode_refused(mode, &offered.modes) {
                     found.push(finding(
                         About::Mode,
                         true,
@@ -293,6 +293,21 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
                 None,
             )),
         }
+    }
+
+    // Each agent step's own mode and options, for every kind: a Resume or a
+    // Retry judges its run's own snapshot, the same as its starting mode.
+    if let Some(template) = template {
+        let change = match own {
+            true => own_change,
+            false => Some(Change::At(WORKFLOWS_PAGE)),
+        };
+        found.extend(settings::step_settings(
+            template,
+            facts.offered.as_ref(),
+            keeps,
+            change,
+        ));
     }
 
     // The check command.
@@ -662,6 +677,8 @@ fn lower(text: &str) -> String {
         first.to_lowercase().chain(chars).collect()
     })
 }
+
+mod settings;
 
 #[cfg(test)]
 mod tests;

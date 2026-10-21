@@ -186,13 +186,13 @@ impl Shell {
             ),
             _ => None,
         };
+        let agent = onehand_core::config::agent_or_first(&shared.agents, None);
         let facts = preflight::Facts {
             workflow,
-            agent: onehand_core::config::agent_or_first(&shared.agents, None)
-                .map(|spec| spec.name.clone()),
+            agent: agent.map(|spec| spec.name.clone()),
             agent_configured: !shared.agents.is_empty(),
             mode: None,
-            offered: None,
+            offered: agent.and_then(|spec| crate::unattended::offered(spec, cx)),
             has_check: self.check_of(&launcher.root).is_some(),
             in_git,
             checked_out: git.map(|git| git.branch.clone()),

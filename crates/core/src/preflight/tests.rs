@@ -1,6 +1,7 @@
 use super::*;
 use crate::task::{Task, Working};
-use crate::workflow::{builtin, Brief, Outcome, Place, Setup, Template};
+use crate::workflow::{builtin, Brief, Offer, Outcome, Place, Setup, StepSpec, Template};
+use std::collections::BTreeMap;
 
 fn brief() -> Brief {
     Brief {
@@ -61,6 +62,14 @@ fn healthy() -> Facts {
         review: None,
         shared_checkout: None,
         forge_read: true,
+    }
+}
+
+/// What an agent offers when only its modes are known, no option.
+fn modes(values: &[&str]) -> Offer {
+    Offer {
+        modes: values.iter().map(|v| v.to_string()).collect(),
+        options: Vec::new(),
     }
 }
 
@@ -163,7 +172,7 @@ fn an_agent_no_longer_configured_blocks() {
 fn a_mode_known_and_not_offered_blocks_and_one_not_known_informs() {
     let known = Facts {
         mode: Some("plan".into()),
-        offered: Some(vec!["default".into(), "acceptEdits".into()]),
+        offered: Some(modes(&["default", "acceptEdits"])),
         ..healthy()
     };
     let finding = found(Kind::NewIssueRun, &known, About::Mode).unwrap();
@@ -176,7 +185,7 @@ fn a_mode_known_and_not_offered_blocks_and_one_not_known_informs() {
     let finding = found(Kind::NewIssueRun, &unknown, About::Mode).unwrap();
     assert!(!finding.blocks && finding.text.contains("not known yet"));
     let offered = Facts {
-        offered: Some(vec!["plan".into()]),
+        offered: Some(modes(&["plan"])),
         ..known
     };
     assert_eq!(found(Kind::NewIssueRun, &offered, About::Mode), None);
@@ -375,7 +384,7 @@ fn a_resume_says_nothing_of_a_base_and_judges_no_workflow_anew() {
 fn a_retry_whose_own_mode_is_not_offered_blocks_and_says_it_keeps_its_setup() {
     let facts = Facts {
         mode: Some("plan".into()),
-        offered: Some(vec!["default".into()]),
+        offered: Some(modes(&["default"])),
         ..plain()
     };
     for kind in [Kind::Retry, Kind::Resume] {
@@ -407,7 +416,7 @@ fn a_retry_whose_own_mode_is_not_offered_blocks_and_says_it_keeps_its_setup() {
 fn a_retry_with_current_settings_is_judged_on_what_settings_say() {
     let refused = Facts {
         mode: Some("plan".into()),
-        offered: Some(vec!["default".into()]),
+        offered: Some(modes(&["default"])),
         ..plain()
     };
     let mode = found(Kind::RetryCurrent, &refused, About::Mode).unwrap();
@@ -739,12 +748,12 @@ fn a_mode_learned_by_checking_the_agent_turns_not_known_into_a_block_or_nothing(
     let finding = found(Kind::NewRun, &unknown, About::Mode).unwrap();
     assert!(!finding.blocks && finding.text.contains("not known yet"));
     let refused = Facts {
-        offered: Some(vec!["default".into()]),
+        offered: Some(modes(&["default"])),
         ..unknown.clone()
     };
     assert!(found(Kind::NewRun, &refused, About::Mode).unwrap().blocks);
     let offered = Facts {
-        offered: Some(vec!["plan".into()]),
+        offered: Some(modes(&["plan"])),
         ..unknown
     };
     assert!(found(Kind::NewRun, &offered, About::Mode).is_none());
@@ -783,4 +792,165 @@ fn only_a_checkout_start_waits_behind_a_holder() {
     let holder = Some("Fix the build".to_string());
     assert_eq!(queued_behind_for(Place::Checkout, holder.clone()), holder);
     assert_eq!(queued_behind_for(Place::Worktree, holder), None);
+}
+
+#[test]
+fn a_step_mode_not_offered_blocks() {
+    let mut t = worktree();
+    let label = t.steps[0].label.clone();
+    if let StepKind::Agent { mode, .. } = &mut t.steps[0].kind {
+        *mode = Some("plan".into());
+    } else {
+        panic!("the worktree workflow's first step is not an agent step");
+    }
+    let facts = Facts {
+        workflow: Ok(t),
+        offered: Some(modes(&["default"])),
+        ..healthy()
+    };
+    let finding = found(Kind::NewIssueRun, &facts, About::Settings).unwrap();
+    assert!(finding.blocks);
+    assert!(
+        finding.text.starts_with(&format!(
+            "Step 1 ({label}): the agent offers no mode `plan`"
+        )),
+        "{}",
+        finding.text
+    );
+}
+
+#[test]
+fn a_step_model_not_offered_blocks() {
+    let mut t = worktree();
+    let label = t.steps[0].label.clone();
+    if let StepKind::Agent { options, .. } = &mut t.steps[0].kind {
+        options.insert("model".into(), "opus".into());
+    } else {
+        panic!("the worktree workflow's first step is not an agent step");
+    }
+    let facts = Facts {
+        workflow: Ok(t),
+        offered: Some(modes(&["default"])),
+        ..healthy()
+    };
+    let finding = found(Kind::NewIssueRun, &facts, About::Settings).unwrap();
+    assert!(finding.blocks);
+    assert!(
+        finding.text.starts_with(&format!(
+            "Step 1 ({label}): the agent offers no option `model`"
+        )),
+        "{}",
+        finding.text
+    );
+}
+
+#[test]
+fn an_effort_under_another_model_is_not_known_yet() {
+    let mut t = worktree();
+    let label = t.steps[0].label.clone();
+    if let StepKind::Agent { options, .. } = &mut t.steps[0].kind {
+        options.insert("model".into(), "opus".into());
+        options.insert("effort".into(), "high".into());
+    } else {
+        panic!("the worktree workflow's first step is not an agent step");
+    }
+    let offer = Offer {
+        modes: vec!["default".into()],
+        options: vec![
+            ("model".into(), vec!["opus".into()]),
+            ("effort".into(), vec!["low".into()]),
+        ],
+    };
+    let facts = Facts {
+        workflow: Ok(t),
+        offered: Some(offer),
+        ..healthy()
+    };
+    let findings: Vec<_> = preflight(Kind::NewIssueRun, &facts)
+        .into_iter()
+        .filter(|f| f.about == About::Settings)
+        .collect();
+    assert_eq!(findings.len(), 1, "{findings:?}");
+    let effort = &findings[0];
+    assert!(!effort.blocks);
+    assert!(
+        effort.text.starts_with(&format!(
+            "Step 1 ({label}): `high` for `effort` is not known yet under model `opus`"
+        )),
+        "{}",
+        effort.text
+    );
+}
+
+#[test]
+fn settings_with_no_offer_known_are_not_known_yet() {
+    let mut t = worktree();
+    if let StepKind::Agent { mode, .. } = &mut t.steps[0].kind {
+        *mode = Some("plan".into());
+    } else {
+        panic!("the worktree workflow's first step is not an agent step");
+    }
+    let facts = Facts {
+        workflow: Ok(t),
+        offered: None,
+        ..healthy()
+    };
+    let findings: Vec<_> = preflight(Kind::NewIssueRun, &facts)
+        .into_iter()
+        .filter(|f| f.about == About::Settings)
+        .collect();
+    assert_eq!(findings.len(), 1, "{findings:?}");
+    assert!(!findings[0].blocks);
+    assert!(
+        findings[0].text.contains("not known yet"),
+        "{}",
+        findings[0].text
+    );
+}
+
+#[test]
+fn a_workflow_without_settings_finds_nothing() {
+    let t = worktree();
+    for offered in [None, Some(modes(&["default"]))] {
+        let facts = Facts {
+            workflow: Ok(t.clone()),
+            offered,
+            ..healthy()
+        };
+        assert_eq!(found(Kind::NewIssueRun, &facts, About::Settings), None);
+    }
+}
+
+#[test]
+fn step_settings_findings_are_capped() {
+    let mut t = Template::blank("many");
+    t.place = Place::Worktree;
+    t.steps = (0..10)
+        .map(|i| StepSpec {
+            id: format!("s{i}"),
+            label: format!("Step {i}"),
+            kind: StepKind::Agent {
+                prompt: "go".into(),
+                gates: Vec::new(),
+                keep_answer: false,
+                mode: Some("plan".into()),
+                options: BTreeMap::new(),
+            },
+        })
+        .collect();
+    // A Resume judges the run's own snapshot, so the workflow itself is
+    // never validated here, only its steps' settings.
+    let facts = Facts {
+        workflow: Ok(t),
+        offered: Some(modes(&["default"])),
+        ..plain()
+    };
+    let findings: Vec<_> = preflight(Kind::Resume, &facts)
+        .into_iter()
+        .filter(|f| f.about == About::Settings)
+        .collect();
+    assert_eq!(findings.len(), 9, "{findings:?}");
+    let last = findings.last().unwrap();
+    assert!(last.blocks);
+    assert!(last.text.contains("2 more"), "{}", last.text);
 }
