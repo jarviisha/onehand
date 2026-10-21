@@ -121,7 +121,7 @@ which a save would otherwise drop without a word; such a file is listed as unrea
 An agent step may name a `mode` and `options`, a table of config option ids to values. Both are
 the agent's own ids, as it sends them (`ConfigOption::id` and `ConfigChoice::value`), never the
 names the composer shows. A workflow is not tied to an agent, so nothing is judged when it is
-saved; a value the agent does not offer **blocks**, before the start when what it offers is known
+saved; a value a step names that the agent does not offer **blocks**, before the start when what it offers is known
 and at the step when it is found only once running, and never runs on something else. **A setting
 a step does not name goes back to what the run started with**, never what the step before it
 left: a *Plan* step in a planning mode must not leave *Implement* unable to edit, so a step runs
@@ -267,7 +267,9 @@ session, a run whose setup names a mode (`Setup::mode`, an unattended run's) has
 that mode before the first prompt; an agent that does not offer it fails the run. Then the mode
 and every config option value it is running, among the values it offers, are kept as the run's
 starting settings (`Run::started_with`), once: they are saved with the run, so a Resume on a new
-session finds the same ones; a Retry, being a new run, takes them afresh. The clock is
+session finds the same ones; a Retry, being a new run, takes them afresh. They are what the agent
+publishes as it comes up: an option it publishes only later is not among them, so a step that
+does not name it leaves it as the agent has it. The clock is
 `unattended::Budget`: it pauses while a card or an approval waits on a person, or the pull
 request's status checks run, and its timer looks
 again when it fires rather than being re-armed at every pause.
@@ -277,17 +279,25 @@ the step's own over the run's starting ones). Before the visit's first prompt, t
 (`workflow::next`) picks the next setting not yet in force, in order: the mode, then `model`, then
 the rest by id. Each pick is sent and the prompt held until the agent answers it, and the next one
 is planned against what the agent offers after that answer, because an agent may change which
-values an option has, or whether it has one at all, when the model changes. A setting the agent
-does not offer, or a pick it refuses, fails the run at that step, a configuration failure naming
-the setting and the agent's reason. When anything was sent, the session gets a note, *Settings:
-mode … · model … · …*, and the visit records what was in force when its prompt went
-(`Visit::ran_with`), all of it, not only what the step named. A Resume opens a new visit, so the
+values an option has, or whether it has one at all, when the model changes. **A setting the step
+names that the agent does not offer**, or any pick it refuses, fails the run at that step, a
+configuration failure naming the setting and the agent's reason. One the step does not name, taken
+from the run's starting settings, is still picked when the agent offers it, and left as the agent
+has it when the agent no longer does: a step that changes only the model is not failed on an
+effort the new model lacks (`workflow::Settings::named_by` says which are the step's own). An
+adapter that publishes its new offer only after answering a pick turns a value not offered into
+a pick refused; it fails at the step all the same. A run of an issue that fails on a setting also
+pauses unattended runs, as a mode not offered does: every later run would fail the same way. A
+person's run from the launcher pauses nothing. When anything was sent, the session gets a note,
+*Settings: mode … · model … · …*, and the visit records what the agent reported when its prompt
+went (`Visit::ran_with`, from `Chat::held`), all of it, not only what the step named, and an alias
+as the agent reported it. A Resume opens a new visit, so the
 open step's settings are set again on the new session, whatever reconnecting restored. A person's
 own pick in the composer during a run holds until the next visit starts; one the agent refuses is
 the person's, not the run's. Settings come from the run's snapshot, so a Retry keeps them and
 *Retry with current settings* takes the workflow's current ones. **An alias is never taken for the
 value named**: an adapter may report a value its choices never list (`opus[1m]` against the
-offered `opus`), so such a value counts as nothing in force: a step naming `opus` sends it, and an
+offered `opus`), so such a value counts as nothing in force when planning: a step naming `opus` sends it, and an
 option the run started on an alias is not among its starting settings, so a step that names
 nothing leaves it as it is.
 
