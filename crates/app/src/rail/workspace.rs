@@ -8,6 +8,7 @@ use gpui::{
     Anchor, App, ClickEvent, Context, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, WeakEntity, Window, div,
 };
+use gpui_component::button::ButtonVariants as _;
 use gpui_component::menu::{DropdownMenu as _, PopupMenu, PopupMenuItem};
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
@@ -214,7 +215,9 @@ pub(super) fn new_session_hint(root: Option<&str>, agent: Option<&str>) -> Share
 /// another project or agent. With no project only *Add project…* helps, and
 /// the hint says so.
 ///
-/// Ghost, like the rail's other controls: no edge, a fill under the pointer.
+/// Filled, unlike the rail's ghost controls: starting a session is what the
+/// rail is most often opened for, so it reads as a button at rest, yet stays
+/// quieter than the page's one primary.
 pub(super) fn new_button(
     shell: &Shell,
     window_state: &WorkspaceWindow,
@@ -256,9 +259,9 @@ pub(super) fn new_button(
         );
     crate::controls::split_action(
         "new-session-menu",
-        new.quiet(cx).short(),
+        new.secondary().short(),
         crate::controls::action("new-session-target")
-            .quiet(cx)
+            .secondary()
             .small()
             .tooltip("Start a session in another project, or with another agent"),
         cx.theme().sidebar,

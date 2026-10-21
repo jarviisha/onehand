@@ -79,13 +79,13 @@ pub const LEADING: f32 = 1.6;
 /// and enough that a clipped line keeps its descenders.
 pub const LEADING_TIGHT: f32 = 1.4;
 
-/// The column a one-column page keeps to: the project page, the resume
-/// picker and the workspace page's list. One figure, so moving between them
+/// The column a one-column page keeps to: the resume picker and the
+/// workspace page's list. One figure, so moving between them
 /// does not move the column.
 pub const PAGE_NARROW: Rems = rems(35.);
 
 /// The column for one thing read or written in full: a workflow's editor, an
-/// issue. Wider than [`PAGE_NARROW`], since what is in it reads as prose, and
+/// issue, a project's page. Wider than [`PAGE_NARROW`], since what is in it reads as prose, and
 /// no wider, or a line runs too long to find the start of the next.
 pub const PAGE_PROSE: Rems = rems(48.);
 

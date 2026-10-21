@@ -274,7 +274,8 @@ search mark, the clear button), with no edge, sunk into the fill of the place it
 rail's on `theme::inset`, a list page's on the well's `muted`), since it heads what it searches
 rather than standing among fields. A button names its variant by role: `primary`
 the main action, `secondary` an alternative beside it, a set picker's trigger (an unset one is a ghost, through
-`picker`; a form's picker is set whatever it holds) and every Settings button,
+`picker`; a form's picker is set whatever it holds), every Settings button and the rail's *New*
+(the one filled control in that chrome, as starting a session is what the rail is opened for),
 `choice` in a pick-one row, `danger` as below, and ghost (`.quiet(cx)`, whose hover
 is the control fill) the rest. **No button draws an edge** (no default variant, no `outline()`): a
 field is the one control marked by its edge, or, searching, by its sunk fill. A control that refuses says so
