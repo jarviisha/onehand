@@ -85,6 +85,14 @@ impl AgentDraft {
     /// sentence Save refuses with.
     pub fn to_spec(&self, cx: &App) -> Result<AgentSpec, &'static str> {
         let value = |field: &Entity<InputState>| field.read(cx).value().to_string();
+        // Every other entry's name: the one being edited may keep its own.
+        let taken = crate::state::Shared::global(cx)
+            .agents
+            .iter()
+            .enumerate()
+            .filter(|(at, _)| Some(*at) != self.editing)
+            .map(|(_, spec)| spec.name.as_str())
+            .collect::<Vec<_>>();
         draft_spec(
             self.kind,
             &value(&self.name),
@@ -92,6 +100,7 @@ impl AgentDraft {
             &value(&self.args),
             &value(&self.env),
             self.version.clone(),
+            &taken,
         )
     }
 }
@@ -99,7 +108,8 @@ impl AgentDraft {
 /// The agent a form's fields describe, or the sentence Save refuses with.
 ///
 /// A built-in agent needs a name; one written out in full needs its command
-/// too. The environment is one line of `NAME=value` words through core's
+/// too. The name must be none of `taken`, since sessions, runs and archives
+/// find an agent by its name. The environment is one line of `NAME=value` words through core's
 /// argument parser, paired with `join_args` on the way in, so a value holding
 /// a space survives being edited; each word splits at its first `=`.
 fn draft_spec(
@@ -109,8 +119,12 @@ fn draft_spec(
     args: &str,
     env: &str,
     version: Option<String>,
+    taken: &[&str],
 ) -> Result<AgentSpec, &'static str> {
     let (name, command) = (name.trim().to_string(), command.trim().to_string());
+    if taken.contains(&name.as_str()) {
+        return Err("Another agent has that name");
+    }
     if name.is_empty() && kind.is_some() {
         return Err("Name it first");
     }

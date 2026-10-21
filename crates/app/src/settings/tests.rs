@@ -53,15 +53,15 @@ fn deleting_an_agent_moves_the_form_off_the_hole() {
 /// A built-in agent is its preset and a name: no command to give.
 #[test]
 fn a_preset_draft_needs_only_a_name() {
-    let spec = draft_spec(Some(Preset::Codex), "Codex", "", "", "", None).unwrap();
+    let spec = draft_spec(Some(Preset::Codex), "Codex", "", "", "", None, &[]).unwrap();
     assert_eq!(spec.preset, Some(Preset::Codex));
     assert!(spec.command.is_empty() && spec.args.is_empty());
     assert_eq!(
-        draft_spec(Some(Preset::Codex), " ", "", "", "", None).unwrap_err(),
+        draft_spec(Some(Preset::Codex), " ", "", "", "", None, &[]).unwrap_err(),
         "Name it first"
     );
     assert_eq!(
-        draft_spec(None, "Gemini", "", "", "", None).unwrap_err(),
+        draft_spec(None, "Gemini", "", "", "", None, &[]).unwrap_err(),
         "Name it and give its command first"
     );
 }
@@ -76,7 +76,8 @@ fn an_env_word_without_equals_refuses_save() {
             "",
             "",
             "CLAUDE_CONFIG_DIR",
-            None
+            None,
+            &[]
         )
         .unwrap_err(),
         "Write each variable as NAME=value"
@@ -88,6 +89,7 @@ fn an_env_word_without_equals_refuses_save() {
         "",
         "CLAUDE_CONFIG_DIR='/x y' A=b=c",
         None,
+        &[],
     )
     .unwrap();
     assert_eq!(
@@ -108,6 +110,7 @@ fn editing_a_preset_keeps_its_version() {
         "",
         "",
         Some("latest".into()),
+        &[],
     )
     .unwrap();
     assert_eq!(spec.version.as_deref(), Some("latest"));
@@ -117,9 +120,39 @@ fn editing_a_preset_keeps_its_version() {
 /// environment line.
 #[test]
 fn a_declared_draft_takes_its_command_args_and_env() {
-    let spec = draft_spec(None, "Gemini", "gemini", "--experimental-acp", "A=1", None).unwrap();
+    let spec = draft_spec(
+        None,
+        "Gemini",
+        "gemini",
+        "--experimental-acp",
+        "A=1",
+        None,
+        &[],
+    )
+    .unwrap();
     assert_eq!(spec.preset, None);
     assert_eq!(spec.command, "gemini");
     assert_eq!(spec.args, ["--experimental-acp"]);
     assert_eq!(spec.env.get("A").map(String::as_str), Some("1"));
+}
+
+/// A name finds one agent, so the form refuses one another entry has.
+#[test]
+fn a_name_another_agent_has_is_refused() {
+    assert_eq!(
+        draft_spec(Some(Preset::Codex), " Codex ", "", "", "", None, &["Codex"]).unwrap_err(),
+        "Another agent has that name"
+    );
+    assert!(
+        draft_spec(
+            Some(Preset::Codex),
+            "Codex (2)",
+            "",
+            "",
+            "",
+            None,
+            &["Codex"]
+        )
+        .is_ok()
+    );
 }
