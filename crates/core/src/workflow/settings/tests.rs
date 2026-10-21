@@ -148,3 +148,20 @@ fn nothing_named_and_nothing_offered_is_done() {
 
     assert_eq!(next(&want, &offer, &in_force, &[]), Next::Done);
 }
+
+#[test]
+fn said_is_empty_for_empty_settings() {
+    assert_eq!(Settings::default().said(), "");
+}
+
+#[test]
+fn said_puts_the_mode_first_then_the_model_then_the_rest_by_id() {
+    let want = settings(Some("plan"), &[("model", "strong"), ("effort", "high")]);
+    assert_eq!(want.said(), "mode plan · model strong · effort high");
+}
+
+#[test]
+fn said_skips_what_is_not_set() {
+    assert_eq!(settings(Some("plan"), &[]).said(), "mode plan");
+    assert_eq!(settings(None, &[("effort", "high")]).said(), "effort high");
+}

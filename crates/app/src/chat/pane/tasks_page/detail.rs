@@ -25,7 +25,7 @@ use onehand_core::task::marks::{self, Change};
 use onehand_core::task::work::{
     ANSWER_LINES, Act, Around, PrSeen, UnderReview, Work, last_lines, next_action,
 };
-use onehand_core::workflow::{Run, Visit};
+use onehand_core::workflow::{Run, Settings, Visit};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -524,6 +524,21 @@ fn timeline(
             .child(slot(when, cx))
             .into_any_element(),
         );
+        let said = visit
+            .ran_with
+            .as_ref()
+            .map(Settings::said)
+            .unwrap_or_default();
+        if !said.is_empty() {
+            out.push(
+                div()
+                    .pl(FOLD_INDENT)
+                    .text_xs()
+                    .text_color(muted)
+                    .child(said)
+                    .into_any_element(),
+            );
+        }
         if open {
             out.push(
                 div()

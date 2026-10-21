@@ -56,6 +56,20 @@ impl Settings {
             | StepKind::StatusChecks { .. } => start.clone(),
         }
     }
+
+    /// What a visit says it ran with: `mode plan · model strong · effort
+    /// high`, in [`ordered_picks`]' order, empty when there is nothing to
+    /// say.
+    pub fn said(&self) -> String {
+        ordered_picks(self)
+            .into_iter()
+            .map(|pick| match pick {
+                Pick::Mode(mode) => format!("mode {mode}"),
+                Pick::Option { id, value } => format!("{id} {value}"),
+            })
+            .collect::<Vec<_>>()
+            .join(" · ")
+    }
 }
 
 impl Pick {
@@ -148,22 +162,38 @@ fn option_pick(
     }))
 }
 
+/// `want`'s picks, in the order a visit sends them: its mode, then `model`,
+/// then the rest by id.
+fn ordered_picks(want: &Settings) -> Vec<Pick> {
+    let mut picks = Vec::new();
+    if let Some(mode) = &want.mode {
+        picks.push(Pick::Mode(mode.clone()));
+    }
+    if let Some(value) = want.options.get("model") {
+        picks.push(Pick::Option {
+            id: "model".to_string(),
+            value: value.clone(),
+        });
+    }
+    for (id, value) in want.options.iter().filter(|(id, _)| id.as_str() != "model") {
+        picks.push(Pick::Option {
+            id: id.clone(),
+            value: value.clone(),
+        });
+    }
+    picks
+}
+
 /// The next pick a visit wanting `want` sends, given what the session offers
 /// and has in force now (`in_force`), skipping groups in `picked` (already
 /// answered this visit).
 pub fn next(want: &Settings, offer: &Offer, in_force: &Settings, picked: &[String]) -> Next {
-    if let Some(mode) = &want.mode {
-        if let Some(outcome) = mode_pick(mode, offer, in_force, picked) {
-            return outcome;
-        }
-    }
-    if let Some(value) = want.options.get("model") {
-        if let Some(outcome) = option_pick("model", value, offer, in_force, picked) {
-            return outcome;
-        }
-    }
-    for (id, value) in want.options.iter().filter(|(id, _)| id.as_str() != "model") {
-        if let Some(outcome) = option_pick(id, value, offer, in_force, picked) {
+    for pick in ordered_picks(want) {
+        let outcome = match &pick {
+            Pick::Mode(mode) => mode_pick(mode, offer, in_force, picked),
+            Pick::Option { id, value } => option_pick(id, value, offer, in_force, picked),
+        };
+        if let Some(outcome) = outcome {
             return outcome;
         }
     }
