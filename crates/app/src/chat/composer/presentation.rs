@@ -145,11 +145,11 @@ pub(super) fn mode_action(session: &Entity<ChatSession>, cx: &App) -> Option<Sha
 /// The one agent-advertised group this app gives a chip and a menu of its own,
 /// beside the model's: what the model runs at, read as a qualifier of it.
 ///
-/// The cost is stated plainly: an agent that names this group something else
-/// gets rows in the model's list, silently. That is the right way round -- rows
-/// are correct for anything, and the chip is an improvement this app is
-/// guessing at.
-const EFFORT_GROUP: &str = "effort";
+/// Claude's adapter calls it `effort` and Codex's `reasoning_effort`. The cost
+/// is stated plainly: an agent that names this group anything else gets rows in
+/// the model's list, silently. That is the right way round -- rows are correct
+/// for anything, and the chip is an improvement this app is guessing at.
+const EFFORT_GROUPS: [&str; 2] = ["effort", "reasoning_effort"];
 
 /// The group the trigger promises, and so the group that leads the list.
 ///
@@ -170,10 +170,15 @@ fn names(option: &onehand_core::acp::ConfigOption, wanted: &str) -> bool {
     option.id.eq_ignore_ascii_case(wanted) || option.name.eq_ignore_ascii_case(wanted)
 }
 
+/// [`names`], for a group that goes by more than one name.
+fn names_any(option: &onehand_core::acp::ConfigOption, wanted: &[&str]) -> bool {
+    wanted.iter().any(|wanted| names(option, wanted))
+}
+
 /// Whether the effort group gets its chip: two choices at least, since a
 /// group with one is a value and not a choice, and goes back to being a row.
 fn has_own_chip(option: &onehand_core::acp::ConfigOption) -> bool {
-    names(option, EFFORT_GROUP) && option.choices.len() >= 2
+    names_any(option, &EFFORT_GROUPS) && option.choices.len() >= 2
 }
 
 /// The effort menu's rows, where the group has a chip of its own.
@@ -195,19 +200,19 @@ pub(super) fn effort_rows(session: &Entity<ChatSession>, cx: &App) -> Vec<Row> {
 /// between one prompt and the next and it has few enough values to be read off
 /// a chip, so it earns a control the way the permission mode does: the value on
 /// screen, the choices one press away. Nothing in the data says which group
-/// that is -- every group is a name and a list of values -- so the name is
-/// written here, and an agent that calls it something else simply leaves it in
-/// the list, which is correct for anything.
-const CHIP_GROUP: &str = "fast";
+/// that is -- every group is a name and a list of values -- so the names are
+/// written here (Claude's `fast`, Codex's `fast-mode`), and an agent that calls
+/// it something else simply leaves it in the list, which is correct for
+/// anything.
+const FAST_GROUPS: [&str; 2] = ["fast", "fast-mode"];
 
 /// The group behind that chip, where the agent advertises one.
-fn chip_group<'a>(
-    options: &'a [onehand_core::acp::ConfigOption],
-    name: &str,
-) -> Option<&'a onehand_core::acp::ConfigOption> {
+fn fast_group(
+    options: &[onehand_core::acp::ConfigOption],
+) -> Option<&onehand_core::acp::ConfigOption> {
     options
         .iter()
-        .find(|option| names(option, name))
+        .find(|option| names_any(option, &FAST_GROUPS))
         // A group with nothing to pick is a chip that opens an empty list.
         .filter(|option| !option.choices.is_empty())
 }
@@ -223,7 +228,7 @@ pub(super) struct FastPick {
 /// setting's own name until one is; lit once a value in force is not one of
 /// the words that name a fast group's off side.
 pub(super) fn fast_action(session: &Entity<ChatSession>, cx: &App) -> Option<FastPick> {
-    let option = chip_group(&session.read(cx).chat.config_options, CHIP_GROUP)?;
+    let option = fast_group(&session.read(cx).chat.config_options)?;
     let current = in_force(option);
     Some(FastPick {
         lit: lit(current),
@@ -244,7 +249,7 @@ fn lit(current: Option<&onehand_core::acp::ConfigChoice>) -> bool {
 /// The choices behind it.
 pub(super) fn fast_rows(session: &Entity<ChatSession>, cx: &App) -> Vec<Row> {
     let options = &session.read(cx).chat.config_options;
-    chip_group(options, CHIP_GROUP)
+    fast_group(options)
         .map(rows_of)
         .unwrap_or_default()
 }
@@ -372,7 +377,7 @@ fn toggle_of(option: &onehand_core::acp::ConfigOption) -> Option<FastToggle> {
 
 /// The fast group as a switch, where the agent offers one that reads as one.
 pub(super) fn fast_toggle(session: &Entity<ChatSession>, cx: &App) -> Option<FastToggle> {
-    chip_group(&session.read(cx).chat.config_options, CHIP_GROUP).and_then(toggle_of)
+    fast_group(&session.read(cx).chat.config_options).and_then(toggle_of)
 }
 
 /// The `+` menu's rows.
@@ -482,7 +487,7 @@ pub(super) fn mode_rows(session: &Entity<ChatSession>, cx: &App) -> Vec<Row> {
 /// to come back here or it is reachable from nowhere.
 fn listed(option: &&onehand_core::acp::ConfigOption) -> bool {
     let promoted =
-        has_own_chip(option) || (names(option, CHIP_GROUP) && !option.choices.is_empty());
+        has_own_chip(option) || (names_any(option, &FAST_GROUPS) && !option.choices.is_empty());
     !promoted
 }
 
@@ -512,7 +517,7 @@ pub(super) fn options_rows(session: &Entity<ChatSession>, cx: &App) -> Vec<Row> 
 fn config_rank(option: &onehand_core::acp::ConfigOption, index: usize) -> (u8, usize) {
     let rank = if names(option, LEAD_GROUP) {
         0
-    } else if names(option, EFFORT_GROUP) {
+    } else if names_any(option, &EFFORT_GROUPS) {
         1
     } else {
         2
@@ -523,7 +528,7 @@ fn config_rank(option: &onehand_core::acp::ConfigOption, index: usize) -> (u8, u
 #[cfg(test)]
 mod tests {
     use super::{
-        CHIP_GROUP, EFFORT_GROUP, config_rank, has_own_chip, in_force, listed, lit, names,
+        EFFORT_GROUPS, FAST_GROUPS, config_rank, has_own_chip, in_force, listed, lit, names, names_any,
         toggle_of,
     };
     use onehand_core::acp::{ConfigChoice, ConfigOption};
@@ -549,11 +554,33 @@ mod tests {
     fn a_group_is_found_by_id_or_by_label() {
         assert!(names(
             &effort("effort", "Reasoning", &[], None),
-            EFFORT_GROUP
+            EFFORT_GROUPS[0]
         ));
-        assert!(names(&effort("x-9", "Effort", &[], None), EFFORT_GROUP));
-        assert!(names(&effort("x-9", "EFFORT", &[], None), EFFORT_GROUP));
-        assert!(!names(&effort("model", "Model", &[], None), EFFORT_GROUP));
+        assert!(names(&effort("x-9", "Effort", &[], None), EFFORT_GROUPS[0]));
+        assert!(names(&effort("x-9", "EFFORT", &[], None), EFFORT_GROUPS[0]));
+        assert!(!names(&effort("model", "Model", &[], None), EFFORT_GROUPS[0]));
+    }
+
+    #[test]
+    fn codex_names_its_effort_and_fast_groups_differently() {
+        assert!(has_own_chip(&effort(
+            "reasoning_effort",
+            "Reasoning effort",
+            &["low", "high"],
+            Some("low")
+        )));
+        assert!(names_any(
+            &effort("fast-mode", "Fast mode", &["off", "on"], Some("off")),
+            &FAST_GROUPS
+        ));
+        assert!(names_any(
+            &effort("effort", "Effort", &[], None),
+            &EFFORT_GROUPS
+        ));
+        assert!(!names_any(
+            &effort("model", "Model", &[], None),
+            &EFFORT_GROUPS
+        ));
     }
 
     #[test]
@@ -574,7 +601,7 @@ mod tests {
     #[test]
     fn a_promoted_group_that_cannot_be_drawn_stays_in_the_list() {
         let chip = effort("fast", "Fast mode", &["on", "off"], Some("on"));
-        assert!(names(&chip, CHIP_GROUP));
+        assert!(names_any(&chip, &FAST_GROUPS));
         assert!(!listed(&&chip), "the chip has it, so the list must not");
         assert!(
             listed(&&effort("fast", "Fast mode", &[], None)),
