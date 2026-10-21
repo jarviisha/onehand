@@ -72,6 +72,16 @@ impl Shell {
         cx.notify();
     }
 
+    /// Make the form describe a built-in agent, or one written out in full.
+    pub fn set_agent_kind(
+        &mut self,
+        kind: Option<onehand_core::config::Preset>,
+        cx: &mut Context<Self>,
+    ) {
+        self.agent_draft.kind = kind;
+        cx.notify();
+    }
+
     /// Ask, then remove agent `idx`.
     pub(crate) fn confirm_delete_agent(
         &mut self,
@@ -207,7 +217,7 @@ impl Shell {
 
     /// Commit the form. Adds or replaces depending on `editing`.
     pub fn save_agent_draft(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(spec) = self.agent_draft.to_spec(cx) else {
+        let Ok(spec) = self.agent_draft.to_spec(cx) else {
             return;
         };
         let editing = self.agent_draft.editing;

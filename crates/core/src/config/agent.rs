@@ -155,7 +155,6 @@ impl AgentSpec {
                 self.name
             ));
         };
-        let version = self.version.as_deref().unwrap_or(preset.pin());
         let mut env = vec![
             ("npm_config_omit".to_string(), "optional".to_string()),
             (
@@ -169,10 +168,18 @@ impl AgentSpec {
             args: vec![
                 "--prefer-offline".into(),
                 "-y".into(),
-                format!("{}@{version}", preset.package()),
+                self.adapter().expect("a preset has an adapter"),
             ],
             env,
         })
+    }
+
+    /// The adapter package a preset runs, at the version it runs:
+    /// `@agentclientprotocol/codex-acp@2.2.2`. `None` for a declared agent.
+    pub fn adapter(&self) -> Option<String> {
+        let preset = self.preset?;
+        let version = self.version.as_deref().unwrap_or(preset.pin());
+        Some(format!("{}@{version}", preset.package()))
     }
 
     /// Whether this preset runs an adapter other than the one this release
@@ -253,7 +260,7 @@ pub(super) fn name_uniquely(agents: &mut [AgentSpec]) {
 ///
 /// Not a general shell quoter: it exists so a round trip through the agent
 /// form is lossless, and its only contract is `split_args(join_args(a)) == a`.
-pub(crate) fn join_args(args: &[String]) -> String {
+pub fn join_args(args: &[String]) -> String {
     args.iter()
         .map(|arg| {
             if arg.is_empty() {

@@ -1,5 +1,5 @@
-use super::{DraftShift, check_key, draft_after_promote, draft_shift};
-use onehand_core::config::AgentSpec;
+use super::{DraftShift, check_key, draft_after_promote, draft_shift, draft_spec};
+use onehand_core::config::{AgentSpec, Preset};
 
 /// Two agents on one launcher are two agents: a result filed for one must
 /// not be shown under the other.
@@ -48,4 +48,78 @@ fn deleting_an_agent_moves_the_form_off_the_hole() {
     assert_eq!(draft_shift(Some(1), 0), DraftShift::MoveTo(0));
     // The agent being edited is the one that went.
     assert_eq!(draft_shift(Some(1), 1), DraftShift::Clear);
+}
+
+/// A built-in agent is its preset and a name: no command to give.
+#[test]
+fn a_preset_draft_needs_only_a_name() {
+    let spec = draft_spec(Some(Preset::Codex), "Codex", "", "", "", None).unwrap();
+    assert_eq!(spec.preset, Some(Preset::Codex));
+    assert!(spec.command.is_empty() && spec.args.is_empty());
+    assert_eq!(
+        draft_spec(Some(Preset::Codex), " ", "", "", "", None).unwrap_err(),
+        "Name it first"
+    );
+    assert_eq!(
+        draft_spec(None, "Gemini", "", "", "", None).unwrap_err(),
+        "Name it and give its command first"
+    );
+}
+
+/// The environment is one line of `NAME=value` words, each kept whole.
+#[test]
+fn an_env_word_without_equals_refuses_save() {
+    assert_eq!(
+        draft_spec(
+            Some(Preset::ClaudeCode),
+            "Claude Code (acc2)",
+            "",
+            "",
+            "CLAUDE_CONFIG_DIR",
+            None
+        )
+        .unwrap_err(),
+        "Write each variable as NAME=value"
+    );
+    let spec = draft_spec(
+        Some(Preset::ClaudeCode),
+        "Claude Code (acc2)",
+        "",
+        "",
+        "CLAUDE_CONFIG_DIR='/x y' A=b=c",
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        spec.env.get("CLAUDE_CONFIG_DIR").map(String::as_str),
+        Some("/x y")
+    );
+    assert_eq!(spec.env.get("A").map(String::as_str), Some("b=c"));
+}
+
+/// The form has no field for an adapter version, so saving keeps the one the
+/// entry had.
+#[test]
+fn editing_a_preset_keeps_its_version() {
+    let spec = draft_spec(
+        Some(Preset::Codex),
+        "Codex",
+        "",
+        "",
+        "",
+        Some("latest".into()),
+    )
+    .unwrap();
+    assert_eq!(spec.version.as_deref(), Some("latest"));
+}
+
+/// A declared agent keeps its command and arguments, and gains the same
+/// environment line.
+#[test]
+fn a_declared_draft_takes_its_command_args_and_env() {
+    let spec = draft_spec(None, "Gemini", "gemini", "--experimental-acp", "A=1", None).unwrap();
+    assert_eq!(spec.preset, None);
+    assert_eq!(spec.command, "gemini");
+    assert_eq!(spec.args, ["--experimental-acp"]);
+    assert_eq!(spec.env.get("A").map(String::as_str), Some("1"));
 }

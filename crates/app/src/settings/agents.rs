@@ -10,14 +10,39 @@ use gpui::{
 };
 use gpui_component::button::ButtonVariants;
 use gpui_component::{ActiveTheme, Icon, Sizable as _, StyledExt};
-use onehand_core::config::AgentSpec;
+use onehand_core::config::{AgentSpec, Preset};
 
-/// One row in the agent list: name + command, with edit and delete actions.
+/// What a row's code line says an agent runs: a built-in agent's adapter, or
+/// a declared agent's command line, with the variables it sets in front, as a
+/// shell would read them.
+fn runs_line(spec: &AgentSpec) -> String {
+    let env = spec
+        .env
+        .iter()
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect::<Vec<_>>();
+    let env = onehand_core::config::join_args(&env);
+    match spec.adapter() {
+        Some(adapter) if env.is_empty() => format!("Built in · {adapter}"),
+        Some(adapter) => format!("Built in · {adapter} · {env}"),
+        None => [env, spec.command.clone(), spec.args_line()]
+            .into_iter()
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join(" "),
+    }
+}
+
+/// One row in the agent list: name + what it runs, with edit and delete actions.
 fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> impl IntoElement {
-    let line = SharedString::from(if spec.args.is_empty() {
-        spec.command.clone()
-    } else {
-        format!("{} {}", spec.command, spec.args.join(" "))
+    let line = SharedString::from(runs_line(spec));
+    // A version the person chose over the one this release was tried with is
+    // theirs to keep, and said once under the line rather than refused.
+    let outside = spec.outside_pin().then(|| {
+        format!(
+            "Runs adapter {}, outside the version this release was tried with",
+            spec.version.as_deref().unwrap_or_default()
+        )
     });
     let ink = crate::theme::status_ink(cx);
     let muted = cx.theme().muted_foreground;
@@ -62,6 +87,12 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
                 .text_xs()
                 .child(line),
         )
+        .children(outside.map(|line| {
+            div()
+                .text_xs()
+                .text_color(crate::theme::status_ink(cx).warning)
+                .child(line)
+        }))
         .children(check.map(|(line, ink)| div().text_xs().text_color(ink).child(line)))
         .into_any_element();
     // The first agent is the one *New session* starts, so being first is what
@@ -204,13 +235,15 @@ pub(super) fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     let shell = handle.read(cx);
     let specs = shell.agents(cx).to_vec();
     let draft = shell.agent_draft();
-    let (name, command, args) = (
+    let (name, command, args, env) = (
         draft.name.clone(),
         draft.command.clone(),
         draft.args.clone(),
+        draft.env.clone(),
     );
-    let saveable = draft.to_spec(cx).is_some();
+    let refusal = draft.to_spec(cx).err();
     let editing = draft.editing.is_some();
+    let kind = draft.kind;
 
     let more = specs.len().saturating_sub(super::pages::LIST_SHOWN);
     let rows = specs
@@ -250,24 +283,72 @@ pub(super) fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         cx,
     )
     .child(field(
+        "Kind",
+        about(match kind {
+            Some(Preset::ClaudeCode) => {
+                "Runs the claude on this machine through the adapter onehand was tried with"
+            }
+            Some(Preset::Codex) => {
+                "Runs the codex on this machine through the adapter onehand was tried with"
+            }
+            None => "Any other agent that speaks the Agent Client Protocol",
+        }),
+        onehand_ui::choice_track(
+            [
+                (Some(Preset::ClaudeCode), "Claude Code"),
+                (Some(Preset::Codex), "Codex"),
+                (None, "Another agent"),
+            ]
+            .into_iter()
+            .enumerate()
+            .map(|(n, (choice, label))| {
+                let shell = handle.clone();
+                onehand_ui::choice(
+                    ("agent-kind", n),
+                    label,
+                    kind == choice,
+                    // At the height of the form's fields beside it.
+                    onehand_ui::ControlSize::Short,
+                    cx,
+                )
+                .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                    shell.update(cx, |shell, cx| shell.set_agent_kind(choice, cx));
+                })
+            }),
+            cx,
+        ),
+        cx,
+    ))
+    .child(field(
         "Name",
         about("What the New session menu calls it"),
         text_input(&name, cx).short(),
         cx,
     ))
+    .when(kind.is_none(), |form| {
+        form.child(field(
+            "Command",
+            about(
+                "The program to run; it has to speak the Agent Client Protocol over standard \
+                 input and output",
+            ),
+            text_input(&command, cx).short(),
+            cx,
+        ))
+        .child(field(
+            "Arguments",
+            about("Separated by spaces; quote one that holds a space"),
+            text_input(&args, cx).short(),
+            cx,
+        ))
+    })
     .child(field(
-        "Command",
+        "Environment",
         about(
-            "The program to run; it has to speak the Agent Client Protocol over standard \
-             input and output",
+            "Variables set for this agent, as NAME=value; a second account sets its config \
+             directory here",
         ),
-        text_input(&command, cx).short(),
-        cx,
-    ))
-    .child(field(
-        "Arguments",
-        about("Separated by spaces; quote one that holds a space"),
-        text_input(&args, cx).short(),
+        text_input(&env, cx).short(),
         cx,
     ))
     .child(
@@ -278,9 +359,8 @@ pub(super) fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                 crate::controls::action("save-agent")
                     .short()
                     .secondary()
-                    // Refused until name and command are both non-blank: an
-                    // agent missing either cannot be launched.
-                    .refuses((!saveable).then_some("Name it and give its command first"))
+                    // Refused, saying why, until the agent could be started.
+                    .refuses(refusal)
                     .label(if editing { "Save" } else { "Add" })
                     .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
                         save.update(cx, |shell, cx| shell.save_agent_draft(window, cx));

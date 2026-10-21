@@ -203,11 +203,13 @@ fn duplicate_names_are_numbered_not_dropped() {
 
 #[test]
 fn a_nameless_preset_takes_its_shown_name() {
-    let mut cfg = AppConfig::default();
-    cfg.agents = vec![AgentSpec {
-        preset: Some(Preset::Codex),
+    let mut cfg = AppConfig {
+        agents: vec![AgentSpec {
+            preset: Some(Preset::Codex),
+            ..Default::default()
+        }],
         ..Default::default()
-    }];
+    };
     cfg.settle(None);
     assert_eq!(cfg.agents[0].name, "Codex");
 }

@@ -12,7 +12,7 @@ use gpui::{
 };
 use gpui_component::input::InputState;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
-use onehand_core::config::AgentSpec;
+use onehand_core::config::{AgentSpec, Preset};
 
 mod agents;
 mod pages;
@@ -25,61 +25,123 @@ use pages::{appearance_page, connections_page, workspace_page};
 /// both without a second "mode" flag to keep in step with it.
 pub struct AgentDraft {
     pub editing: Option<usize>,
+    /// The built-in agent this is, or `None` for one written out in full.
+    pub kind: Option<Preset>,
     pub name: Entity<InputState>,
     pub command: Entity<InputState>,
     pub args: Entity<InputState>,
+    pub env: Entity<InputState>,
+    /// The adapter version of the entry being edited, which the form has no
+    /// field for and so must not drop.
+    version: Option<String>,
 }
 
 impl AgentDraft {
     pub fn new(window: &mut Window, cx: &mut App) -> Self {
         Self {
             editing: None,
+            kind: Some(Preset::ClaudeCode),
             name: cx.new(|cx| InputState::new(window, cx).placeholder("Claude Code")),
-            command: cx.new(|cx| InputState::new(window, cx).placeholder("npx")),
-            args: cx.new(|cx| {
-                InputState::new(window, cx).placeholder("-y @agentclientprotocol/claude-agent-acp")
+            command: cx.new(|cx| InputState::new(window, cx).placeholder("gemini")),
+            args: cx.new(|cx| InputState::new(window, cx).placeholder("--experimental-acp")),
+            env: cx.new(|cx| {
+                InputState::new(window, cx).placeholder("CLAUDE_CONFIG_DIR=~/.claude-work")
             }),
+            version: None,
         }
     }
 
     /// Load an existing agent into the form for editing.
     pub fn load(&mut self, idx: usize, spec: &AgentSpec, window: &mut Window, cx: &mut App) {
         self.editing = Some(idx);
-        self.name
-            .update(cx, |s, cx| s.set_value(&spec.name, window, cx));
-        self.command
-            .update(cx, |s, cx| s.set_value(&spec.command, window, cx));
-        self.args
-            .update(cx, |s, cx| s.set_value(spec.args_line(), window, cx));
+        self.kind = spec.preset;
+        self.version = spec.version.clone();
+        let env = spec
+            .env
+            .iter()
+            .map(|(key, value)| format!("{key}={value}"))
+            .collect::<Vec<_>>();
+        for (field, value) in [
+            (&self.name, spec.name.clone()),
+            (&self.command, spec.command.clone()),
+            (&self.args, spec.args_line()),
+            (&self.env, onehand_core::config::join_args(&env)),
+        ] {
+            field.update(cx, |s, cx| s.set_value(value, window, cx));
+        }
     }
 
     /// Clear the form back to "adding a new agent".
     pub fn clear(&mut self, window: &mut Window, cx: &mut App) {
         self.editing = None;
-        for field in [&self.name, &self.command, &self.args] {
+        self.kind = Some(Preset::ClaudeCode);
+        self.version = None;
+        for field in [&self.name, &self.command, &self.args, &self.env] {
             field.update(cx, |s, cx| s.set_value("", window, cx));
         }
     }
 
-    /// The spec this form describes, or `None` while it is not saveable.
-    ///
-    /// Name and command must both be non-blank -- that is the rule Save is
-    /// greyed out by. Args split on whitespace.
-    pub fn to_spec(&self, cx: &App) -> Option<AgentSpec> {
-        let name = self.name.read(cx).value().trim().to_string();
-        let command = self.command.read(cx).value().trim().to_string();
-        if name.is_empty() || command.is_empty() {
-            return None;
-        }
-        Some(AgentSpec {
+    /// The spec this form describes, or why it cannot be saved yet: the
+    /// sentence Save refuses with.
+    pub fn to_spec(&self, cx: &App) -> Result<AgentSpec, &'static str> {
+        let value = |field: &Entity<InputState>| field.read(cx).value().to_string();
+        draft_spec(
+            self.kind,
+            &value(&self.name),
+            &value(&self.command),
+            &value(&self.args),
+            &value(&self.env),
+            self.version.clone(),
+        )
+    }
+}
+
+/// The agent a form's fields describe, or the sentence Save refuses with.
+///
+/// A built-in agent needs a name; one written out in full needs its command
+/// too. The environment is one line of `NAME=value` words through core's
+/// argument parser, paired with `join_args` on the way in, so a value holding
+/// a space survives being edited; each word splits at its first `=`.
+fn draft_spec(
+    kind: Option<Preset>,
+    name: &str,
+    command: &str,
+    args: &str,
+    env: &str,
+    version: Option<String>,
+) -> Result<AgentSpec, &'static str> {
+    let (name, command) = (name.trim().to_string(), command.trim().to_string());
+    if name.is_empty() && kind.is_some() {
+        return Err("Name it first");
+    }
+    if name.is_empty() || (command.is_empty() && kind.is_none()) {
+        return Err("Name it and give its command first");
+    }
+    let env = onehand_core::config::split_args(env)
+        .into_iter()
+        .map(|word| {
+            word.split_once('=')
+                .filter(|(key, _)| !key.is_empty())
+                .map(|(key, value)| (key.to_string(), value.to_string()))
+                .ok_or("Write each variable as NAME=value")
+        })
+        .collect::<Result<_, _>>()?;
+    Ok(match kind {
+        Some(preset) => AgentSpec {
+            name,
+            preset: Some(preset),
+            version,
+            env,
+            ..Default::default()
+        },
+        None => AgentSpec {
             name,
             command,
-            // Core's parser, paired with `args_line` on the way in, so an
-            // argument containing a space survives being edited.
-            args: onehand_core::config::split_args(&self.args.read(cx).value()),
+            args: onehand_core::config::split_args(args),
+            env,
             ..Default::default()
-        })
-    }
+        },
+    })
 }
 
 /// What deleting an agent does to a form left open on one.
