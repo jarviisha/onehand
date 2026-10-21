@@ -14,11 +14,8 @@ use std::path::{Path, PathBuf};
 /// The agent a run starts, with every build it makes pointed at one shared
 /// directory.
 ///
-/// Through `env` rather than a new field threaded down to the process spawn,
-/// because the adapter is the one process a run gets to set anything on and
-/// everything the agent runs inherits from it.
-// ponytail: `env` is POSIX; a Windows build would need the variable threaded
-// through the ACP spawn instead.
+/// Set on the adapter, because it is the one process a run gets to set
+/// anything on and everything the agent runs inherits from it.
 pub(crate) fn spec_for(agent: Option<&str>, cx: &App) -> Option<AgentSpec> {
     let agents = &Shared::global(cx).agents;
     // A gone agent's run starts on the first configured: by now the preflight
@@ -31,21 +28,12 @@ pub(crate) fn spec_for(agent: Option<&str>, cx: &App) -> Option<AgentSpec> {
 
 /// `base` as a run starts it: with the shared build directory in its
 /// environment, where there is one.
-pub(super) fn wrapped(base: AgentSpec) -> AgentSpec {
-    let Some(target) = core::target_dir() else {
-        return base;
-    };
-    let mut args = vec![
-        format!("CARGO_TARGET_DIR={}", target.display()),
-        base.command,
-    ];
-    args.extend(base.args);
-    AgentSpec {
-        name: base.name,
-        command: "env".to_string(),
-        args,
-        ..Default::default()
+pub(super) fn wrapped(mut base: AgentSpec) -> AgentSpec {
+    if let Some(target) = core::target_dir() {
+        base.env
+            .insert("CARGO_TARGET_DIR".into(), target.display().to_string());
     }
+    base
 }
 
 /// A run failed on a setting, `why`: the mode runs start in, or a step's
@@ -299,5 +287,31 @@ impl Sending {
 pub(super) fn tell_issue(tracker: &Tracker, repo: &Path, number: u64, body: &str) {
     if let Err(why) = tracker.comment_blocking(repo, number, body) {
         eprintln!("onehand: could not comment on issue #{number}: {why}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::wrapped;
+    use onehand_core::config::{AgentSpec, Preset};
+
+    /// A run's build directory reaches the agent through its environment, so a
+    /// preset keeps launching as a preset.
+    #[test]
+    fn a_run_puts_the_build_directory_in_the_agents_environment() {
+        let base = AgentSpec {
+            name: "Codex".into(),
+            preset: Some(Preset::Codex),
+            ..Default::default()
+        };
+        let run = wrapped(base.clone());
+        assert_eq!(run.preset, base.preset);
+        assert!(run.command.is_empty(), "{:?}", run.command);
+        if let Some(dir) = onehand_core::unattended::target_dir() {
+            assert_eq!(
+                run.env.get("CARGO_TARGET_DIR"),
+                Some(&dir.display().to_string())
+            );
+        }
     }
 }

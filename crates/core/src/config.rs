@@ -21,7 +21,8 @@ pub(crate) use agent::default_agents;
 #[cfg(test)]
 use agent::join_args;
 pub use agent::{
-    AgentSpec, DEFAULT_ACP_ADAPTER, Launch, Preset, agent_or_first, default_adapter_args, find_command, split_args,
+    agent_or_first, default_adapter_args, find_command, split_args, AgentSpec, Launch, Preset,
+    DEFAULT_ACP_ADAPTER,
 };
 
 /// `mode` as a run takes it: a blank mode is none, and leaves the agent in

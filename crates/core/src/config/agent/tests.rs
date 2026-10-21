@@ -49,15 +49,18 @@ fn a_preset_launches_the_pinned_adapter_on_the_machines_binary() {
     assert_eq!(launch.command, "npx");
     assert_eq!(
         launch.args,
-        ["--prefer-offline", "-y", "@agentclientprotocol/codex-acp@2.2.2"]
+        [
+            "--prefer-offline",
+            "-y",
+            "@agentclientprotocol/codex-acp@2.2.2"
+        ]
     );
     assert!(launch
         .env
         .contains(&("npm_config_omit".into(), "optional".into())));
-    assert!(launch.env.contains(&(
-        "CODEX_PATH".into(),
-        dir.join("codex").display().to_string()
-    )));
+    assert!(launch
+        .env
+        .contains(&("CODEX_PATH".into(), dir.join("codex").display().to_string())));
 }
 
 #[test]
@@ -75,7 +78,10 @@ fn an_entrys_env_and_version_win() {
         ..Default::default()
     };
     let launch = spec.launch(Some(dir.as_os_str())).unwrap();
-    assert_eq!(launch.args[2], "@agentclientprotocol/claude-agent-acp@latest");
+    assert_eq!(
+        launch.args[2],
+        "@agentclientprotocol/claude-agent-acp@latest"
+    );
     // Applied after the preset's own, so the entry's value is the last one set.
     assert_eq!(
         launch

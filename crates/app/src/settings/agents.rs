@@ -31,12 +31,23 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
         .map(|check| match check {
             AgentCheck::Running => ("Checking…".to_string(), muted),
             // Found is the state at rest: muted, as a fact is.
-            AgentCheck::Found(at) => (format!("{} found at {}", spec.command, at.display()), muted),
+            AgentCheck::Found(at, version) => {
+                let what = match (spec.preset, version) {
+                    (Some(_), Some(version)) => version.clone(),
+                    (Some(preset), None) => preset.binary().to_string(),
+                    (None, _) => spec.command.clone(),
+                };
+                (format!("{what} found at {}", at.display()), muted)
+            }
+            // A built-in agent is missing in the words a start would use.
             AgentCheck::Missing => (
-                format!(
-                    "{} was not found — check the command, or give its full path",
-                    spec.command
-                ),
+                match spec.launch(Some(std::ffi::OsStr::new(""))) {
+                    Err(why) if spec.preset.is_some() => why,
+                    _ => format!(
+                        "{} was not found — check the command, or give its full path",
+                        spec.command
+                    ),
+                },
                 ink.warning,
             ),
         });
@@ -151,18 +162,26 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
     )
 }
 
-/// What a *Test* result is filed under: the whole command line, so two agents
-/// that share a launcher and differ in their arguments are two entries, and an
-/// edit to either half drops the answer about the old one.
+/// What a *Test* result is filed under: everything that decides what starts,
+/// so two agents that share a launcher and differ in their arguments are two
+/// entries, and an edit to any of it drops the answer about the old one.
 pub fn check_key(spec: &AgentSpec) -> String {
-    format!("{}\0{}", spec.command, spec.args_line())
+    format!(
+        "{:?}\0{:?}\0{}\0{}\0{:?}",
+        spec.preset,
+        spec.version,
+        spec.command,
+        spec.args_line(),
+        spec.env
+    )
 }
 
 /// What the last *Test* of an agent's command found.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AgentCheck {
     Running,
-    Found(std::path::PathBuf),
+    /// Where it was found, and the version a built-in agent's binary gave.
+    Found(std::path::PathBuf, Option<String>),
     Missing,
 }
 
