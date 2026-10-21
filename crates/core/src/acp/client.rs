@@ -56,19 +56,21 @@ const EVENT_BUFFER: usize = 64;
 /// adapter stuck.
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(90);
 
-/// Connect to an agent adapter and stream its events. The returned stream owns
+/// Connect to an agent adapter, with `env` set on it over what it inherits,
+/// and stream its events. The returned stream owns
 /// the child process; dropping it (subscription removed) kills the adapter
 /// (`kill_on_drop`).
 pub fn connect(
     command: String,
     args: Vec<String>,
+    env: Vec<(String, String)>,
     cwd: PathBuf,
     resume: Option<String>,
 ) -> impl Stream<Item = AcpEvent> {
     // Spawning is deferred into the stream rather than done here, so a command
     // that does not exist surfaces as `Disconnected` on the stream the caller is
     // already reading instead of as a second failure mode at the call site.
-    let spawned = Transport::spawn(command, args, cwd.clone());
+    let spawned = Transport::spawn(command, args, env, cwd.clone());
     connect_over_result(spawned, cwd, resume)
 }
 
@@ -244,9 +246,15 @@ fn explain(what: String, tail: &StderrTail) -> String {
 
 impl Transport {
     /// Run `command` as a child process and talk to it over its stdio.
-    fn spawn(command: String, args: Vec<String>, cwd: PathBuf) -> Result<Self, String> {
+    fn spawn(
+        command: String,
+        args: Vec<String>,
+        env: Vec<(String, String)>,
+        cwd: PathBuf,
+    ) -> Result<Self, String> {
         let mut child = Command::new(&command)
             .args(&args)
+            .envs(env)
             .current_dir(&cwd)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

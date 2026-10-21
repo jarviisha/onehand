@@ -529,6 +529,7 @@ async fn a_child_that_dies_before_speaking_carries_its_stderr_into_the_failure()
                 // and failed on a loaded one.
                 "exec 1>&-; sleep 0.1; echo 'npm error code ETARGET' >&2; exit 1".into(),
             ],
+            Vec::new(),
             std::env::temp_dir(),
             None,
         ));
@@ -557,6 +558,7 @@ async fn a_line_that_is_not_utf8_does_not_stop_the_drain() {
             "-c".into(),
             r"printf '\377\376 garbage\n' >&2; echo 'npm error code ETARGET' >&2; exit 1".into(),
         ],
+        Vec::new(),
         std::env::temp_dir(),
         None,
     ));
@@ -719,4 +721,26 @@ fn npm_notice_lines_are_not_kept() {
         words.remember(line);
     }
     assert_eq!(words.say().as_deref(), Some("npm error code ETARGET"));
+}
+
+/// What an agent sets in its environment reaches the process it starts.
+#[tokio::test]
+async fn the_adapter_is_started_with_its_environment() {
+    let stream = super::connect(
+        "sh".into(),
+        vec!["-c".into(), "echo seen-$ONEHAND_PROBE >&2".into()],
+        vec![("ONEHAND_PROBE".into(), "42".into())],
+        std::env::temp_dir(),
+        None,
+    );
+    futures::pin_mut!(stream);
+    let mut said = None;
+    while let Some(event) = stream.next().await {
+        if let AcpEvent::Disconnected(why) = event {
+            said = Some(why);
+            break;
+        }
+    }
+    let said = said.expect("the adapter dies");
+    assert!(said.contains("seen-42"), "{said}");
 }

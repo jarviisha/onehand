@@ -179,7 +179,7 @@ impl AcpRuntime {
         let (command, args) = (spec.command.clone(), spec.args.clone());
 
         self.rt.spawn(async move {
-            let stream = acp::connect(command, args, cwd, resume);
+            let stream = acp::connect(command, args, Vec::new(), cwd, resume);
             futures::pin_mut!(stream);
             while let Some(event) = stream.next().await {
                 if tx.send(event).await.is_err() {
