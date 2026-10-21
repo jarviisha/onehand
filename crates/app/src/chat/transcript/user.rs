@@ -7,7 +7,7 @@ use super::parts::copy_button;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, InteractiveElement, IntoElement, ParentElement, RenderOnce, SharedString,
-    StatefulInteractiveElement, Styled, Window, div, relative,
+    StatefulInteractiveElement, Styled, StyledImage as _, Window, div, relative,
 };
 use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::chat::UserMsg;
@@ -63,7 +63,14 @@ pub(super) fn user(u: &UserMsg, uid: usize, room: Room, cx: &App) -> impl IntoEl
                     u.attachments
                         .iter()
                         .take(MAX_ATTACHMENT_ROWS)
-                        .map(|a| attachment(a, cx)),
+                        .enumerate()
+                        .map(|(i, a)| {
+                            let id = gpui::ElementId::NamedInteger(
+                                format!("plate-{uid}").into(),
+                                i as u64,
+                            );
+                            attachment(a, id, cx)
+                        }),
                 )
                 .when(over > 0, |list| {
                     list.child(
@@ -224,20 +231,54 @@ fn code_spans(text: &str) -> Vec<std::ops::Range<usize>> {
 /// The archive keeps paths and not bytes, so this is also the only form the
 /// picture still exists in once the conversation is reopened — and a file that
 /// has since moved simply leaves the row as its name.
-fn attachment(a: &onehand_core::attachment::AttachmentSnapshot, cx: &App) -> impl IntoElement {
+fn attachment(
+    a: &onehand_core::attachment::AttachmentSnapshot,
+    id: gpui::ElementId,
+    cx: &App,
+) -> impl IntoElement {
     use onehand_core::attachment::{AttachmentDelivery, AttachmentKind};
     let unavailable = a.delivery == AttachmentDelivery::Unavailable;
     // Nothing to show for a file that was never sent: the thumbnail would say
     // the agent saw this picture.
     let thumbnail = (a.kind == AttachmentKind::Image && !unavailable).then(|| a.path.clone());
+    let name = SharedString::from(a.name.clone());
+    // An attachment the agent never received is the one thing about this plate
+    // that changes the answer, so it is spelled out.
+    let shown = plate(
+        id,
+        thumbnail.clone(),
+        name.clone(),
+        unavailable.then_some("not sent"),
+        cx,
+    );
+    match thumbnail {
+        Some(path) => opens(shown, "Show this image".into(), cx, move |window, cx| {
+            super::image_view::open(path.clone(), name.clone(), window, cx);
+        }),
+        None => shown,
+    }
+}
 
+/// One attached file as a plate, in the transcript and in the tray of staged
+/// files alike, so a picture reads the same before it is sent as after.
+///
+/// **One plate whatever is on it.** A picture fills it and a file leaves it
+/// bare, so a prompt that handed over both is a strip of one kind of thing
+/// rather than a picture beside a chip of some other height. The name sits at
+/// the foot of the plate: a preview is read as the thing itself, and the name
+/// is its caption rather than its label. `note` is a word in the danger ink
+/// after the name, where the file did not or cannot go, and the plate's edge
+/// takes the same ink.
+pub(in crate::chat) fn plate(
+    id: impl Into<gpui::ElementId>,
+    picture: Option<std::path::PathBuf>,
+    name: SharedString,
+    note: Option<&'static str>,
+    cx: &App,
+) -> gpui::Stateful<gpui::Div> {
+    let danger = crate::theme::status_ink(cx).danger;
     div()
-        // **One plate whatever is on it.** A picture fills it and a file
-        // leaves it bare, so a prompt that handed over
-        // both is a strip of one kind of thing rather than a picture beside a
-        // chip of some other height. The name sits at the foot of the plate: a
-        // preview is read as the thing itself, and the name is its caption
-        // rather than its label.
+        .id(id)
         .relative()
         .flex_none()
         .w(THUMB_W)
@@ -245,10 +286,33 @@ fn attachment(a: &onehand_core::attachment::AttachmentSnapshot, cx: &App) -> imp
         .overflow_hidden()
         .rounded(cx.theme().radius)
         .border_1()
-        .border_color(cx.theme().border)
-        // A file other than a picture is its name alone: a generic mark over
-        // it says nothing the name does not.
-        .children(thumbnail.map(|path| gpui::img(path).size_full()))
+        .border_color(match note {
+            Some(_) => danger,
+            None => cx.theme().border,
+        })
+        // A fill of its own, so a bare plate reads as a thing and not a hole
+        // in whatever surface it rests on.
+        .bg(cx.theme().secondary)
+        .child(match picture {
+            // Cropped to fill the plate rather than fitted inside it: fitted,
+            // a wide screenshot was a sliver in a box of mostly nothing.
+            Some(path) => gpui::img(path)
+                .size_full()
+                .object_fit(gpui::ObjectFit::Cover)
+                .into_any_element(),
+            // A file other than a picture takes the file mark over its name,
+            // so the plate is not read as a preview still loading.
+            None => div()
+                .size_full()
+                .h_flex()
+                .items_center()
+                .justify_center()
+                .child(
+                    gpui_component::Icon::new(gpui_component::IconName::File)
+                        .text_color(cx.theme().muted_foreground),
+                )
+                .into_any_element(),
+        })
         .child(
             div()
                 // Over the foot of the plate rather than under it: the plate is
@@ -263,20 +327,32 @@ fn attachment(a: &onehand_core::attachment::AttachmentSnapshot, cx: &App) -> imp
                 .items_center()
                 .gap(TIGHT_GAP)
                 .px(TIGHT_GAP)
+                // The page's own fill under the name, so it reads over a
+                // picture of any colour, and the name in full ink.
                 .py(HAIR_GAP)
-                .bg(cx.theme().secondary)
-                .text_xs()
-                .text_color(cx.theme().muted_foreground)
-                .child(div().min_w_0().truncate().child(a.name.clone()))
-                // An attachment the agent never received is the one thing about
-                // this plate that changes the answer, so it is spelled out.
-                .when(unavailable, |row| {
-                    row.child(
-                        div()
-                            .flex_none()
-                            .text_color(crate::theme::status_ink(cx).danger)
-                            .child("not sent"),
-                    )
-                }),
+                .bg(cx.theme().background)
+                // Scaled to the plate, not to the chrome around it.
+                .text_size(crate::tokens::MICRO_TEXT)
+                .text_color(cx.theme().foreground)
+                .child(div().min_w_0().truncate().child(name))
+                .children(note.map(|note| div().flex_none().text_color(danger).child(note))),
         )
+}
+
+/// A plate that does something when pressed: the pointer, an edge that steps
+/// up under it, since a fill would be lost behind a picture, and `tip`.
+pub(in crate::chat) fn opens(
+    plate: gpui::Stateful<gpui::Div>,
+    tip: SharedString,
+    cx: &App,
+    on_press: impl Fn(&mut Window, &mut App) + 'static,
+) -> gpui::Stateful<gpui::Div> {
+    let edge = cx.theme().muted_foreground;
+    plate
+        .cursor_pointer()
+        .hover(move |plate| plate.border_color(edge))
+        .tooltip(move |window, cx| {
+            gpui_component::tooltip::Tooltip::new(tip.clone()).build(window, cx)
+        })
+        .on_click(move |_, window, cx| on_press(window, cx))
 }

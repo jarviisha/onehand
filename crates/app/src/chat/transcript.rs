@@ -19,6 +19,7 @@ use onehand_core::chat::{ChatItem, NoticeLevel, TranscriptItemId};
 
 mod ask;
 mod code_view;
+mod image_view;
 mod metrics;
 mod parts;
 mod permission;
@@ -27,7 +28,8 @@ mod prose;
 mod strip;
 mod tool;
 mod user;
-pub(in crate::chat) use ask::ask;
+pub(in crate::chat) use ask::{advance_pinned, ask, pick_pinned, skip_pinned};
+pub(in crate::chat) use permission::answer_pinned;
 
 // The blocking cards' keys, which the keymap binds in the cards' own contexts:
 // a question's choices walked, taken, numbered or skipped, and a permission
@@ -37,6 +39,60 @@ gpui::actions!(
     [QuestionUp, QuestionDown, QuestionTake, QuestionSkip]
 );
 gpui::actions!(permission_card, [PermissionAllow, PermissionDeny]);
+// The pinned card's answers with a modifier, which the keymap binds over the
+// whole conversation so they reach the card from the composer: a permission
+// allowed once or always or denied, a question moved on or skipped.
+gpui::actions!(
+    pinned_card,
+    [
+        PinnedAllow,
+        PinnedAlways,
+        PinnedDeny,
+        PinnedNext,
+        PinnedSkip
+    ]
+);
+
+/// The one card pinned over the composer: the oldest of the parked
+/// permissions and questions, whichever kind it is, by its live index.
+pub(in crate::chat) enum Pinned {
+    Permission(usize),
+    Question(usize),
+}
+
+pub(in crate::chat) fn pinned(chat: &onehand_core::chat::Chat) -> Option<Pinned> {
+    let perm = chat.pending_permissions().first().map(|(idx, _)| *idx);
+    let ask = chat.pending_asks().first().map(|(idx, _)| *idx);
+    match (perm, ask) {
+        (Some(perm), Some(ask)) if ask < perm => Some(Pinned::Question(ask)),
+        (Some(perm), _) => Some(Pinned::Permission(perm)),
+        (None, ask) => ask.map(Pinned::Question),
+    }
+}
+
+/// The key bound to `action` as it stands, overrides included: the binding
+/// added last, which is the one that wins. Where a command has a bare key on
+/// its card and an Alt one anywhere, the Alt one is registered after it.
+fn bound_key(action: &dyn gpui::Action, cx: &App) -> Option<gpui::Keystroke> {
+    let keymap = cx.key_bindings();
+    let keymap = keymap.borrow();
+    let binding = keymap.bindings_for_action(action).last()?;
+    let stroke = binding.keystrokes().first()?;
+    Some(gpui::AsKeystroke::as_keystroke(stroke).clone())
+}
+
+/// The key bound to `action` as it stands, overrides included, drawn as plain
+/// words in the ink of the control it sits in: on a button, beside its label,
+/// so the key is in sight without hovering for it.
+fn key_label(action: &dyn gpui::Action, cx: &App) -> Option<gpui::AnyElement> {
+    let stroke = bound_key(action, cx)?;
+    Some(
+        div()
+            .flex_none()
+            .child(gpui_component::kbd::Kbd::new(stroke).appearance(false))
+            .into_any_element(),
+    )
+}
 
 /// Take the question card's row numbered `index + 1`, the free-text box
 /// included; a number nobody offered does nothing.
@@ -45,6 +101,7 @@ gpui::actions!(permission_card, [PermissionAllow, PermissionDeny]);
 pub struct QuestionPick {
     pub index: usize,
 }
+pub(in crate::chat) use image_view::open as show_image;
 use metrics::LINE_H;
 pub(in crate::chat) use metrics::{BLOCK_GAP, CONTENT_COLUMN, TEXT, TEXT_SM, TIGHT_GAP, TURN_GAP};
 pub(in crate::chat) use parts::{accent, line_counts};
@@ -56,6 +113,7 @@ pub use strip::{activity_group, cluster, section_group};
 pub(in crate::chat) use tool::diff_rows;
 use tool::tool;
 use user::user;
+pub(in crate::chat) use user::{opens, plate};
 
 /// Render one transcript item.
 ///

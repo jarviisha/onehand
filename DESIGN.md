@@ -33,7 +33,9 @@ a hex literal outside the ramp is a bug even when it looks right, as no theme sw
    palette the selected item's fill. Attention is earned: the signals that call for the person
    (a state's hue, a count or badge of what waits, a dot, weight past what the role takes) mark
    only what needs them or has just changed, so a view at rest is calm. Hierarchy and identity are not attention: a heading keeps
-   its weight, a list its muted count, a label its kind's hue. All colours are theme tokens with
+   its weight, a list its muted count, a label its kind's hue. Nor is a mode switched on: the
+   control that switches it may carry a state's hue on its own mark while the mode is on, and
+   nowhere else. All colours are theme tokens with
    legible contrast on their actual surfaces in both modes.
 4. **Mono for machines, sans for people.** Code, paths, terminal output and diffs use
    `mono_font_family`. Anything a person wrote uses the default family.
@@ -120,10 +122,14 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   error that failed no turn (one answering a *Stop*, a resume that fell back) is past at once.
 - **The pinned cards** (a permission, a question) share one shell: a head, the body, the
   answers at the end at `.short()` (a hairline under the head and over the answers, padded as a box
-  whose body scrolls), the dismissing one a quiet ghost. A choice is a row on a well
+  whose body scrolls, its cut end fading out while more lies below), the dismissing one a quiet
+  ghost. A choice is a row on a well
   of its own at rest and on the selected step when taken, a radio or checkbox drawn in ink at
-  its head (the library's rings vanish on the selected step) and its number as a `Kbd`, at least
-  a field's height; a typed answer is a plain field (`.short()`), ringed while the keys are on it. Their keys are named in tooltips, never in a label.
+  its head (the library's rings vanish on the selected step) and its number with Alt as a `Kbd`, at least
+  a field's height; a typed answer sits under the hairline, with the answers and no line between them, on the
+  choices' well with its `Kbd`: an edgeless field two lines tall at rest that grows as it is
+  written (Shift+Enter a newline), ringed while the keys are on it. Each answer in a pinned card's footer shows its key beside its words, always in
+  sight, as that key reaches the card from anywhere in the conversation.
   The card holds the one primary while it shows.
 
 ## Type, space and shape
@@ -131,6 +137,7 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
 | Role | Size |
 |---|---|
 | Meta, hints, counts, a small label | `.text_xs()`, in `muted_foreground` when it is meta |
+| A caption inside a small object (an attachment's plate) | `MICRO_TEXT` (11px), a step under the meta size |
 | Machine text | `CODE_TEXT`, in `mono_font_family` |
 | Chrome: a panel's rows, boxes, forms and strips | `CHROME_TEXT` (13px), a step under the reading size |
 | A control's words (`.short()`) | `.text_xs()` |
@@ -305,8 +312,8 @@ danger ink.
 **The composer is the input surface**, a role of its own rather than a box or a field: a card
 with no edge, standing off the page on its own fill (`theme::raised`) and lift (`composer_lift`),
 showing focus by the caret alone. Its pickers (the model, the effort, the mode, *Fast*, the
-branch) are `.short()` ghosts with a caret whatever they hold (*Fast* as a toggle opens no menu
-and carries none), where a picker elsewhere takes
+branch) are `.short()` ghosts with a caret whatever they hold (*Fast* is its bolt alone, lit in
+the warning ink while fast, as a mode switched on is, and as a toggle opens no menu and carries none), where a picker elsewhere takes
 the secondary fill once set: each always holds a choice, and a fill on every chip would crowd
 the field they sit under.
 
@@ -327,15 +334,18 @@ form, its fields, pickers and buttons alike, so a field's words stand at its tit
 dense chrome (the rail, a dock, a strip, a filter bar, a dialog, a row, a box's title row, the
 composer) it takes `.short()`, so it never outweighs what it acts on. An icon alone is square at
 its row's height: `.small()` beside `.short()` peers, `.tall()` beside tall ones. `.tall()`
-(`FIELD_H`) is the ceiling: no control stands taller. Never the library's default, and never
-`.xsmall()`, whose words run to its edges and whose box is under a pointer's comfortable reach.
+(`FIELD_H`) is the ceiling: no control stands taller. Never the library's default.
+**What a small object holds scales with the object.** Inside a fixed object smaller than a row of
+controls (an attachment's plate, a thumbnail), an icon-only control takes `.xsmall()` and a caption
+`MICRO_TEXT`, so neither crowds what it sits on; anywhere else `.short()`, `.small()` and the meta
+size are the floor, and a worded control never takes `.xsmall()`, whose words run to its edges.
 Every control in one row of actions stands at one height. A correction a component needs lives
 in its shared wrapper (`Short`, `Tall`), never at a call site. `docs/ui-patterns.md` (*Control
 sizes*) maps each role to its component and size.
 
 The app owns only its own: the transcript renderers, the icon registry, the terminal panel,
 per-panel zoom, and the composer popup (one shell for `@`, `/`, the pickers, the `+` and branch
-menus and the attachment tray, with a pinned title and no key hints, at most six rows, grouped, then
+menus and the attachment tray, with a pinned title and no key hints, at most ten rows, grouped, then
 how many more; a menu opens just above the control that opened it).
 
 Scope: the Workbench editor is a quick editor (tree-sitter, no LSP). Neovim is a mode with a PTY of

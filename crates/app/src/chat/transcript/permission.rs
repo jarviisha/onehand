@@ -233,13 +233,7 @@ fn permission_keys(
     let Some(focus) = session.read(cx).perm_focus(idx).cloned() else {
         return card.into_any_element();
     };
-    let pick = |weight: PermissionWeight| {
-        p.req
-            .options
-            .iter()
-            .find(|option| option.weight() == weight)
-            .map(|option| option.id.clone())
-    };
+    let pick = |weight: PermissionWeight| p.req.keyed(weight).map(|option| option.id.clone());
     let (allow, deny) = (
         pick(PermissionWeight::AllowOnce),
         pick(PermissionWeight::Deny),
@@ -298,6 +292,12 @@ fn permission_footer(
     card_foot(cx).children(options.into_iter().map(|(i, option)| {
         let (id, session) = (option.id.clone(), session.clone());
         let name = option.name.clone();
+        // **A key on the one button it answers with**: two refusals share a
+        // weight, and only the narrower carries the refusing keys.
+        let keyed = p
+            .req
+            .keyed(option.weight())
+            .is_some_and(|k| k.id == option.id);
         grows(crate::controls::action(("perm", i)))
             // One primary per card, and it is the grant that expires with this
             // call. "Always allow" is the same word with a far longer reach:
@@ -305,24 +305,57 @@ fn permission_footer(
             // one that cannot be taken back from the card. It stays reachable
             // on the neutral secondary fill -- a decision, not a reflex. The
             // answer that dismisses is a quiet ghost, as Skip is.
-            .map(|b| match option.weight() {
-                PermissionWeight::AllowOnce => b.primary().tooltip_with_action(
+            .map(|b| match (option.weight(), keyed) {
+                (PermissionWeight::AllowOnce, true) => b.primary().tooltip_with_action(
                     name.clone(),
                     &super::PermissionAllow,
                     Some("PermissionCard"),
                 ),
-                PermissionWeight::AllowAlways => b.secondary(),
-                PermissionWeight::Deny => b.quiet(cx).tooltip_with_action(
+                (PermissionWeight::AllowOnce, false) => b.primary(),
+                (PermissionWeight::AllowAlways, _) => b.secondary(),
+                (PermissionWeight::Deny, true) => b.quiet(cx).tooltip_with_action(
                     name.clone(),
                     &super::PermissionDeny,
                     Some("PermissionCard"),
                 ),
+                (PermissionWeight::Deny, false) => b.quiet(cx),
             })
-            .label(name)
+            // Its key beside its words, always in sight.
+            .child(super::ask::labelled_owned(
+                name.into(),
+                keyed.then_some(match option.weight() {
+                    PermissionWeight::AllowOnce => &super::PinnedAllow as &dyn gpui::Action,
+                    PermissionWeight::AllowAlways => &super::PinnedAlways,
+                    PermissionWeight::Deny => &super::PinnedDeny,
+                }),
+                cx,
+            ))
             .on_click(move |_, _, cx: &mut App| {
                 answer_permission(&session, idx, &id, cx);
             })
     }))
+}
+
+/// Answer the pinned card, where it is a permission, with its option of
+/// `weight`, from anywhere in the conversation; a weight the card does not
+/// offer is no answer.
+pub(in crate::chat) fn answer_pinned(
+    session: &Entity<ChatSession>,
+    weight: PermissionWeight,
+    cx: &mut App,
+) {
+    let chat = &session.read(cx).chat;
+    let Some(super::Pinned::Permission(idx)) = super::pinned(chat) else {
+        return;
+    };
+    let option = chat
+        .pending_permissions()
+        .into_iter()
+        .find(|(at, _)| *at == idx)
+        .and_then(|(_, p)| p.req.keyed(weight).map(|option| option.id.clone()));
+    if let Some(option) = option {
+        answer_permission(session, idx, &option, cx);
+    }
 }
 
 /// Settle the card at `idx` on `option`.

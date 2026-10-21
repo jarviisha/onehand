@@ -117,3 +117,8 @@ circle = "lucide:circle"
 archive = "lucide:archive"
 square = "lucide:square"
 list-filter = "lucide:list-filter"
+# The composer's *Fast* control, drawn as its mark alone and lit while fast mode
+# is on. The bundled set draws no bolt, zap or flash of any kind: its nearest
+# shapes are `loader-circle`, which already means running, and `star`, which
+# reads as a favourite.
+zap = "lucide:zap"

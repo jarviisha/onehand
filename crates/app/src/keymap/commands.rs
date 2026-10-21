@@ -378,6 +378,118 @@ pub const COMMANDS: &[Command] = &[
         "Question card"
     ),
     command!(
+        "question_alt_1",
+        "Choice 1, from anywhere in the conversation",
+        ["alt-1"],
+        crate::chat::transcript::QuestionPick { index: 0 },
+        "Chat && !Dialog",
+        "Question card"
+    ),
+    command!(
+        "question_alt_2",
+        "Choice 2, from anywhere in the conversation",
+        ["alt-2"],
+        crate::chat::transcript::QuestionPick { index: 1 },
+        "Chat && !Dialog",
+        "Question card"
+    ),
+    command!(
+        "question_alt_3",
+        "Choice 3, from anywhere in the conversation",
+        ["alt-3"],
+        crate::chat::transcript::QuestionPick { index: 2 },
+        "Chat && !Dialog",
+        "Question card"
+    ),
+    command!(
+        "question_alt_4",
+        "Choice 4, from anywhere in the conversation",
+        ["alt-4"],
+        crate::chat::transcript::QuestionPick { index: 3 },
+        "Chat && !Dialog",
+        "Question card"
+    ),
+    command!(
+        "question_alt_5",
+        "Choice 5, from anywhere in the conversation",
+        ["alt-5"],
+        crate::chat::transcript::QuestionPick { index: 4 },
+        "Chat && !Dialog",
+        "Question card"
+    ),
+    command!(
+        "question_alt_6",
+        "Choice 6, from anywhere in the conversation",
+        ["alt-6"],
+        crate::chat::transcript::QuestionPick { index: 5 },
+        "Chat && !Dialog",
+        "Question card"
+    ),
+    command!(
+        "question_alt_7",
+        "Choice 7, from anywhere in the conversation",
+        ["alt-7"],
+        crate::chat::transcript::QuestionPick { index: 6 },
+        "Chat && !Dialog",
+        "Question card"
+    ),
+    command!(
+        "question_alt_8",
+        "Choice 8, from anywhere in the conversation",
+        ["alt-8"],
+        crate::chat::transcript::QuestionPick { index: 7 },
+        "Chat && !Dialog",
+        "Question card"
+    ),
+    command!(
+        "question_alt_9",
+        "Choice 9, from anywhere in the conversation",
+        ["alt-9"],
+        crate::chat::transcript::QuestionPick { index: 8 },
+        "Chat && !Dialog",
+        "Question card"
+    ),
+    command!(
+        "pinned_allow",
+        "Allow the permission once, from anywhere in the conversation",
+        ["alt-y"],
+        crate::chat::transcript::PinnedAllow,
+        "Chat && !Dialog",
+        "Permission card"
+    ),
+    command!(
+        "pinned_always",
+        "Always allow the permission, from anywhere in the conversation",
+        ["alt-a"],
+        crate::chat::transcript::PinnedAlways,
+        "Chat && !Dialog",
+        "Permission card"
+    ),
+    command!(
+        "pinned_deny",
+        "Deny the permission, from anywhere in the conversation",
+        ["alt-n"],
+        crate::chat::transcript::PinnedDeny,
+        "Chat && !Dialog",
+        "Permission card"
+    ),
+    command!(
+        "pinned_next",
+        "Next question, or submit the answers, from anywhere in the conversation",
+        ["alt-enter"],
+        crate::chat::transcript::PinnedNext,
+        "Chat && !Dialog",
+        "Question card"
+    ),
+    command!(
+        "pinned_skip",
+        "Skip the question, from anywhere in the conversation",
+        ["alt-s"],
+        crate::chat::transcript::PinnedSkip,
+        "Chat && !Dialog",
+        "Question card"
+    ),
+    command!(
         "permission_allow",
         "Allow once",
         ["enter"],

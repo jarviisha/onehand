@@ -60,9 +60,20 @@ pub const ROW_GUTTER: Rems = rems(0.25);
 /// its width and inset do not follow a panel's zoom, so neither does this.
 pub const SCROLLBAR_W: Pixels = px(16.);
 
+/// The scrollbar's thumb at rest, and under the pointer or dragged. A step
+/// thinner than the library's own, which drew a bar heavier than the text it
+/// scrolls; in pixels, as [`SCROLLBAR_W`] is, since the library draws it so.
+pub const SCROLLBAR_THUMB: Pixels = px(4.);
+pub const SCROLLBAR_THUMB_ACTIVE: Pixels = px(6.);
+
 /// Chrome text: a panel's rows, boxes, forms and strips. A step under the
 /// reading size, so dense chrome holds more and reading text stands apart.
 pub const CHROME_TEXT: Rems = rems(0.8125);
+
+/// Text inside a small object, a step under the meta size: a plate's caption.
+/// The floor of chrome is the meta size, but what a small object holds scales
+/// with the object rather than stopping at that floor.
+pub const MICRO_TEXT: Rems = rems(0.6875);
 
 /// Machine text: code, a command, a tool's output, a path.
 ///

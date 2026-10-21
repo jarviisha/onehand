@@ -3,9 +3,14 @@
 
 use super::{AskBox, AskInput, ChatSession};
 use gpui::{App, AppContext, Context, Entity, Window};
-use gpui_component::input::{InputEvent, InputState};
+use gpui_component::input::{InputEvent, TextareaState};
 use onehand_core::acp::ElicitKind;
 use std::collections::HashSet;
+
+/// The rows the typed answer to a question holds at rest, and the most it
+/// grows to before it scrolls.
+const ASK_MIN_ROWS: usize = 2;
+const ASK_MAX_ROWS: usize = 6;
 
 impl ChatSession {
     /// Make sure every parked question showing a free-text box has one, and
@@ -57,9 +62,11 @@ impl ChatSession {
         // Handles only: which card takes the caret is settled once both
         // kinds are known, in [`Self::sync_perm_focus`].
         for &idx in &live {
-            self.ask_focus
-                .entry(idx)
-                .or_insert_with(|| cx.focus_handle());
+            if self.ask_focus.contains_key(&idx) {
+                continue;
+            }
+            let handle = cx.focus_handle();
+            self.ask_focus.insert(idx, handle);
         }
 
         for (idx, field, hint, typed) in wanted {
@@ -67,7 +74,14 @@ impl ChatSession {
                 continue;
             }
             let state = cx.new(|cx| {
-                InputState::new(window, cx)
+                // Two lines at rest, so the typed answer stands as tall as a
+                // choice with its description beside it, growing with what is
+                // written up to a bound and scrolling past it.
+                TextareaState::new(window, cx)
+                    .auto_grow(ASK_MIN_ROWS, ASK_MAX_ROWS)
+                    // Enter answers, as it did on one line; Shift+Enter is the
+                    // newline.
+                    .submit_on_enter(true)
                     .placeholder(hint)
                     .default_value(typed)
             });
@@ -80,13 +94,12 @@ impl ChatSession {
                         }
                         cx.notify();
                     }
-                    // A one-line field means Enter, and here it is the only key
-                    // that finishes the card: the choices above it answer on a
+                    // Enter is the only key that finishes the card: the choices above it answer on a
                     // click, so somebody who writes their own answer instead
                     // would otherwise have to leave the box to send it. Nothing
                     // typed and nothing picked sends nothing -- an empty accept
                     // is an answer the agent cannot read.
-                    InputEvent::PressEnter { .. } => {
+                    InputEvent::PressEnter { shift: false, .. } => {
                         if s.chat.ask_at_mut(idx).is_some_and(|a| a.has_answer()) {
                             s.chat.answer_ask(idx, false);
                         }
@@ -107,7 +120,7 @@ impl ChatSession {
 
     /// The free-text box for `field` of the question at live index `idx`, once
     /// [`Self::sync_ask_inputs`] has built one.
-    pub fn ask_input(&self, idx: usize, field: usize) -> Option<&Entity<InputState>> {
+    pub fn ask_input(&self, idx: usize, field: usize) -> Option<&Entity<TextareaState>> {
         self.ask_inputs.get(&(idx, field)).map(|i| &i.state)
     }
 
@@ -122,7 +135,15 @@ impl ChatSession {
     /// Alongside [`Self::sync_ask_inputs`] rather than inside it: a permission
     /// has no boxes to build, and the two lists are what the agent parked on
     /// rather than one list with a flag.
-    pub fn sync_perm_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    ///
+    /// `composer_idle`: the caret is in the composer and nothing is written
+    /// there, so a card that has just been pinned may take it.
+    pub fn sync_perm_focus(
+        &mut self,
+        composer_idle: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let live: HashSet<usize> = self
             .chat
             .pending_permissions()
@@ -136,24 +157,44 @@ impl ChatSession {
                 .or_insert_with(|| cx.focus_handle());
         }
         // Only the oldest card is pinned, whichever kind it is, so only it may
-        // take the caret, and it takes it again once the one before it is
-        // answered and gone. The card and never a button on it, so Enter lands
-        // on the card's own listener rather than on whichever grant happened to
-        // be focused -- and **only where the keyboard is nowhere**, because a
-        // card parks when the agent chose to, not when the user asked, and
-        // taking the caret out of a half-typed prompt is worse than a card that
-        // has to be clicked before its keys work.
+        // take the caret. The card and never a button on it, so Enter lands on
+        // the card's own listener rather than on whichever grant happened to
+        // be focused.
+        //
+        // **Offered once, as it is pinned**, and taken only where it costs
+        // nothing: the keyboard is nowhere, the composer is empty, or the card
+        // before it held the keys as it was answered, so answering one card
+        // after another stays on the cards rather than falling back to the
+        // composer between them. A card parks when the agent chose to, so the
+        // caret is never taken out of a half-typed prompt: from there the
+        // choices answer to their number with Alt. Offered every frame, the
+        // card would take back a caret the user had just clicked away.
         let oldest = self
             .perm_focus
             .iter()
             .chain(&self.ask_focus)
             .min_by_key(|(idx, _)| **idx)
-            .map(|(_, handle)| handle.clone());
-        if let Some(handle) = oldest
-            && window.focused(cx).is_none()
-        {
-            window.focus(&handle, cx);
-        }
+            .map(|(idx, handle)| (*idx, handle.clone()));
+        let (seen, held) = self.pinned_keys;
+        self.pinned_keys = match oldest {
+            Some((idx, handle)) => {
+                if takes_keys(
+                    window.focused(cx).is_none(),
+                    seen != Some(idx),
+                    composer_idle,
+                    held,
+                ) {
+                    window.focus(&handle, cx);
+                    // Held from this frame on, though the frame the card is
+                    // first drawn in is one gpui cannot yet say so about: it
+                    // answers from the frame before, which had no card in it.
+                    (Some(idx), true)
+                } else {
+                    (Some(idx), handle.contains_focused(window, cx))
+                }
+            }
+            None => (None, false),
+        };
     }
 
     /// The card of the permission at live index `idx`, for Enter and Esc.
@@ -178,5 +219,41 @@ impl ChatSession {
         if let Some(state) = state {
             state.update(cx, |state, cx| state.set_value("", window, cx));
         }
+    }
+}
+
+/// Whether the pinned card takes the keyboard this frame: always where the
+/// keyboard is nowhere, else only the frame it is pinned, and then only from an
+/// empty composer or from the card answered before it.
+fn takes_keys(nothing_focused: bool, fresh: bool, composer_idle: bool, held: bool) -> bool {
+    nothing_focused || (fresh && (composer_idle || held))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::takes_keys;
+
+    #[test]
+    fn a_card_takes_the_keys_once_and_never_from_a_written_prompt() {
+        assert!(
+            takes_keys(true, false, false, false),
+            "nowhere is always taken"
+        );
+        assert!(
+            takes_keys(false, true, true, false),
+            "a new card, an empty composer"
+        );
+        assert!(
+            takes_keys(false, true, false, true),
+            "the card before held them"
+        );
+        assert!(
+            !takes_keys(false, true, false, false),
+            "a half-typed prompt keeps them"
+        );
+        assert!(
+            !takes_keys(false, false, true, false),
+            "a card already offered them does not take back a caret clicked away"
+        );
     }
 }

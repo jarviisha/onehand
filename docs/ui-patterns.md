@@ -131,7 +131,8 @@ size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in ea
   in its shared wrapper, never at the call site. The library's `.small()` is an icon-only
   button's size, square at the same height as `.short()`; a worded button never takes it, as its
   words would stand at `.text_sm()`. A control holding a badge keeps it, being the one tall
-  enough. `.xsmall()` is no button's or field's size: only an icon takes it.
+  enough. `.xsmall()` is no field's or worded button's size: an icon takes it, and an icon-only
+  button inside a small object (an attachment's plate), which scales with the object it sits on.
 - **One row of actions, one height.** Every control standing in one row of actions (a button, both
   halves of a split action, a field, a picker, a choice, an icon alone) takes the same size, so
   their tops and bottoms meet on one line. The row takes the size its leading role takes, and
@@ -466,7 +467,8 @@ danger tint.
 - **Every key that does something is a command** in the keymap (`crates/app/src/keymap.rs`), so
   it can be rebound; `on_key_down` is for typing only.
 - **A control bound to a command shows its key** in its tooltip (a `Kbd`); a field shows it as a
-  `Kbd` at its end. A label's text never spells a key.
+  `Kbd` at its end. A label's text never spells a key; a pinned card's answers carry theirs beside
+  their words, in the button's own ink, since those keys reach the card from the composer.
 - **Keyboard focus shows the ring**, only when the keyboard moved it there. A field shows focus by
   its edge alone, turned the `ring` ink; a search field, edgeless at rest, gains one while focused.
 - A dialog, a popup or a floating panel opens with focus on its first field, or on its primary
@@ -475,7 +477,14 @@ danger tint.
   changes. On closing, focus goes back to what opened it, or to the conversation when that is gone.
 - Esc closes the innermost layer only. A page is a place, not a layer: Esc leaves it where it is.
 - A key with no modifier that a region handles never fires while a field inside it holds the
-  caret.
+  caret. A field inside a region hands the keys back to that region on Esc.
+- **A card pinned over the composer** (a permission, a question) takes the keyboard once, as it is
+  pinned, and only from nowhere, an empty composer (no words, no staged files) or the card answered
+  before it; never from a prompt being put together. A question's choices answer to their number on the card and to Alt with the
+  number anywhere in the conversation, and each row's `Kbd` names the Alt one, which works
+  wherever the caret is. The footer's answers answer to Alt anywhere in the conversation too: a permission's
+  Alt+Y once, Alt+A always, Alt+N deny (refusing once where the agent offers both refusals,
+  and only that button carries the key); a question's Alt+Enter on, Alt+S skip.
 
 ### Words
 

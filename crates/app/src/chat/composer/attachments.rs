@@ -2,20 +2,18 @@ use super::popup::{edge_scrolled, more_text, popup_header, popup_surface};
 use super::{Composer, ComposerEvent, Overlay};
 use crate::controls::Quiet as _;
 use crate::controls::Short as _;
-use crate::tokens::{CONTROL_H, ROW_H};
+use crate::tokens::ROW_H;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, Context, InteractiveElement, IntoElement, ParentElement, Rems, StatefulInteractiveElement,
-    Styled, Window, div, rems,
+    App, Context, InteractiveElement, IntoElement, ParentElement, Rems, SharedString,
+    StatefulInteractiveElement, Styled, Window, div, rems,
 };
-use gpui_component::button::Button;
+use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, Sizable as _, StyledExt};
 use onehand_core::attachment::{
     AttachmentDelivery, AttachmentKind, AttachmentSource, StagedAttachment,
 };
 
-/// How much of an attachment's name is shown before it truncates.
-const ATTACHMENT_MAX_W: Rems = rems(10.);
 /// How far the cut end of the tray fades out over the chips it hides.
 const TRAY_FADE: Rems = rems(3.);
 /// Attachment chips drawn before the tray starts counting instead.
@@ -23,7 +21,7 @@ const MAX_TRAY_CHIPS: usize = 12;
 /// Rows the attachment manager lists, as many as any list of the composer's
 /// popup. Removing a visible row reveals the next one, so every item remains
 /// manageable, and the line under the list says how many wait.
-const MAX_ATTACHMENT_MANAGER_ROWS: usize = 6;
+const MAX_ATTACHMENT_MANAGER_ROWS: usize = super::popup::POPUP_MAX_ROWS as usize;
 
 impl Composer {
     /// Stage paths that arrived from somewhere other than the picker.
@@ -159,31 +157,24 @@ impl Composer {
         cx.notify();
     }
 
-    /// The staged files, as one row of chips.
+    /// The staged files, as one row of plates.
     ///
     /// Bounded like everything else that grows with what the user did: a folder
     /// dropped on the card is however many files it held, and a tray of two
-    /// hundred chips is two hundred elements laid out on every keystroke. What
+    /// hundred plates is two hundred elements laid out on every keystroke. What
     /// is over the bound is counted rather than dropped silently.
     ///
-    /// **A chip names a staged file; it does not show it**, an image no more
-    /// than a file. The picture is previewed once the prompt is sent, in the
-    /// transcript. The tray rests above the composer card, not in it, so
-    /// staging a file never moves the field being typed in.
+    /// **A staged picture is shown, not only named**, on the plate the
+    /// transcript draws it on once sent, so the wrong screenshot is caught
+    /// before it goes rather than after. The tray rests above the composer
+    /// card, not in it, so staging a file never moves the field being typed in.
     pub(in crate::chat) fn tray(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         if self.attachments.is_empty() {
             return None;
         }
-        let (border, muted, danger_text, radius) = (
-            cx.theme().border,
-            cx.theme().muted_foreground,
-            crate::theme::status_ink(cx).danger,
-            cx.theme().radius,
-        );
-        // An unreadable file's edge in the state's ink, as its name is.
-        let danger_border = danger_text;
-        let hover = cx.theme().list_hover;
-        let page = cx.theme().background;
+        // The fade ends on the surface the tray rests on, which is the
+        // composer's own fill.
+        let surface = crate::theme::raised(cx);
         // **One row, never two.** Past the composer's width the row is cut,
         // the cut fades out, and *Show all* opens the list of every staged
         // file. Whether it was cut is last frame's measurement, a frame nobody
@@ -226,79 +217,89 @@ impl Composer {
                         // to look wrong here rather than fail silently at
                         // the moment the user hits Enter.
                         let unavailable = a.delivery == AttachmentDelivery::Unavailable;
-                        let parts = [
-                            Icon::new(match a.kind {
-                                AttachmentKind::Image => IconName::Frame,
-                                AttachmentKind::File => IconName::File,
-                            })
-                            .xsmall()
-                            .text_color(muted)
-                            .into_any_element(),
-                            div()
-                                .max_w(ATTACHMENT_MAX_W)
-                                .truncate()
-                                .text_color(cx.theme().foreground)
-                                .when(unavailable, |el| el.text_color(danger_text))
-                                .child(a.name.clone())
-                                .into_any_element(),
-                        ];
+                        let picture = (a.kind == AttachmentKind::Image && !unavailable)
+                            .then(|| a.path.clone());
+                        let name = SharedString::from(a.name.clone());
                         // The size, because two screenshots taken a minute
                         // apart have interchangeable names, and because it
                         // is the only warning that a large image will go as
-                        // a link instead of inline.
-                        let size = a.bytes.map(|bytes| {
-                            div()
-                                .flex_none()
-                                .text_color(crate::theme::meta_ink(cx))
-                                .child(onehand_core::attachment::size_label(bytes))
-                                .into_any_element()
-                        });
+                        // a link instead of inline. On the tooltip, since the
+                        // plate's foot holds the name alone.
+                        let size = a
+                            .bytes
+                            .map(|bytes| {
+                                format!(" · {}", onehand_core::attachment::size_label(bytes))
+                            })
+                            .unwrap_or_default();
                         // A real button, not a bare glyph: this one is
                         // small, sits beside the name it destroys, and
                         // needs the hover and the focus ring that say which
-                        // of the two the pointer is on.
+                        // of the two the pointer is on. On the secondary
+                        // fill, because over a picture a ghost has nothing
+                        // to stand on.
                         //
                         // It is one clickable inside another wherever the
-                        // chip itself opens, which is what the stop is for:
+                        // plate itself opens, which is what the stop is for:
                         // without it the press that unstages a file also
-                        // asks the Workbench to open the file just removed.
+                        // opens the file just removed.
+                        // At the plate's scale rather than the row's: at the
+                        // row's it covered a third of the picture.
                         let unstage = crate::controls::action(("unstage", i))
-                            .quiet_icon(false, cx)
-                            .small()
+                            .secondary()
+                            .xsmall()
                             .icon(Icon::new(IconName::Close))
                             .tooltip("Remove this attachment")
                             .on_click(cx.listener(move |composer: &mut Self, _, _, cx| {
                                 cx.stop_propagation();
                                 composer.unstage(id, cx);
-                            }))
-                            .into_any_element();
-
-                        // **One chip for a file and an image alike**, the
-                        // same element either way: only a file that opens
-                        // adds the pointer, a hover and a press.
-                        let open = openable(a);
-                        attachment_shape(
-                            div().id(("attachment", i)),
-                            unavailable,
-                            (border, danger_border),
-                            radius,
+                            }));
+                        let plate = crate::chat::transcript::plate(
+                            ("attachment", i),
+                            picture.clone(),
+                            name.clone(),
+                            unavailable.then_some("unreadable"),
+                            cx,
                         )
-                        .children(parts)
-                        .children(size)
-                        .child(unstage)
-                        .when_some(open, |chip, path| {
-                            chip.cursor_pointer()
-                                .hover(move |chip| chip.bg(hover))
-                                .tooltip(|window, cx| {
-                                    gpui_component::tooltip::Tooltip::new(
-                                        "Open this file in the Workbench",
-                                    )
-                                    .build(window, cx)
-                                })
-                                .on_click(cx.listener(move |_: &mut Self, _, _, cx| {
-                                    cx.emit(ComposerEvent::OpenFile(path.clone()));
-                                }))
-                        })
+                        .child(div().absolute().top_0().right_0().p_0p5().child(unstage));
+                        // A picture opens whole; a text file opens in the
+                        // Workbench; anything else only names itself.
+                        match (picture, openable(a)) {
+                            (Some(path), _) => crate::chat::transcript::opens(
+                                plate,
+                                format!("Show this image{size}").into(),
+                                cx,
+                                move |window, cx| {
+                                    crate::chat::transcript::show_image(
+                                        path.clone(),
+                                        name.clone(),
+                                        window,
+                                        cx,
+                                    );
+                                },
+                            ),
+                            (None, Some(path)) => {
+                                let composer = cx.entity().downgrade();
+                                crate::chat::transcript::opens(
+                                    plate,
+                                    format!("Open this file in the Workbench{size}").into(),
+                                    cx,
+                                    move |_, cx| {
+                                        composer
+                                            .update(cx, |_, cx| {
+                                                cx.emit(ComposerEvent::OpenFile(path.clone()));
+                                            })
+                                            .ok();
+                                    },
+                                )
+                            }
+                            (None, None) => plate.tooltip(move |window, cx| {
+                                let tip = match unavailable {
+                                    true => format!("{name} could not be read — remove it"),
+                                    false => format!("{name}{size}"),
+                                };
+                                gpui_component::tooltip::Tooltip::new(tip).build(window, cx)
+                            }),
+                        }
                         .into_any_element()
                     }),
             );
@@ -325,8 +326,8 @@ impl Composer {
                                     .w(TRAY_FADE)
                                     .bg(gpui::linear_gradient(
                                         90.,
-                                        gpui::linear_color_stop(page.alpha(0.), 0.),
-                                        gpui::linear_color_stop(page, 1.),
+                                        gpui::linear_color_stop(surface.alpha(0.), 0.),
+                                        gpui::linear_color_stop(surface, 1.),
                                     )),
                             )
                         }),
@@ -464,35 +465,6 @@ fn openable(attachment: &StagedAttachment) -> Option<std::path::PathBuf> {
     let openable = attachment.kind == AttachmentKind::File
         && attachment.delivery != AttachmentDelivery::Unavailable;
     openable.then(|| attachment.path.clone())
-}
-
-/// The chip an attachment is drawn as, applied to whichever container carries
-/// it.
-///
-/// Two containers, because only some of these do something when pressed. The
-/// shape is shared rather than written twice so that being pressable stays the
-/// *only* difference between them: the two things this tray has to say — the
-/// file's name, and whether it can be read — are said the same way whether or
-/// not there is anywhere to go, and a chip that changed size or inset on
-/// becoming clickable would be saying a third thing nobody meant.
-fn attachment_shape<E: Styled>(
-    el: E,
-    unavailable: bool,
-    (border, danger): (gpui::Hsla, gpui::Hsla),
-    radius: gpui::Pixels,
-) -> E {
-    el.h_flex()
-        .items_center()
-        .gap_2()
-        .flex_none()
-        .h(CONTROL_H)
-        .pl_2()
-        .pr_1()
-        .rounded(radius)
-        // An edge and no fill: a boundary is drawn once.
-        .border_1()
-        .border_color(if unavailable { danger } else { border })
-        .text_xs()
 }
 
 /// The shell every control in the composer's row is built from.

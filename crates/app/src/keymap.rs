@@ -530,6 +530,44 @@ mod tests {
             action_at(&map, "2", &[&card[..], &["Input"]].concat()),
             None
         );
+        // The pinned card's answers reach it from the composer's field too.
+        let composer = ["Shell", "Chat", "ChatComposerCard", "Input"];
+        for (key, action) in [
+            ("alt-y", crate::chat::transcript::PinnedAllow.name()),
+            ("alt-a", crate::chat::transcript::PinnedAlways.name()),
+            ("alt-n", crate::chat::transcript::PinnedDeny.name()),
+            ("alt-enter", crate::chat::transcript::PinnedNext.name()),
+            ("alt-s", crate::chat::transcript::PinnedSkip.name()),
+        ] {
+            assert_eq!(
+                action_at(&map, key, &composer),
+                Some(action.into()),
+                "{key}"
+            );
+        }
+        // The key a choice's row names is the binding added last, and that is
+        // the Alt one, which works wherever the caret is.
+        let named = map
+            .bindings_for_action(&crate::chat::transcript::QuestionPick { index: 0 })
+            .last()
+            .and_then(|binding| binding.keystrokes().first())
+            .map(|stroke| gpui::AsKeystroke::as_keystroke(stroke).clone());
+        assert_eq!(named, Some(Keystroke::parse("alt-1").unwrap()));
+        // With Alt, a number reaches the pinned card from anywhere in the
+        // conversation: the composer's field and the card's typed answer.
+        for at in [
+            &["Shell", "Chat", "ChatComposerCard", "Input"][..],
+            &[&card[..], &["Input"]].concat(),
+        ] {
+            assert_eq!(
+                action_at(&map, "alt-2", at),
+                Some(
+                    crate::chat::transcript::QuestionPick { index: 1 }
+                        .name()
+                        .into()
+                )
+            );
+        }
         assert_eq!(
             action_at(&map, "escape", &["Shell", "Chat", "PermissionCard"]),
             Some(crate::chat::transcript::PermissionDeny.name().into())

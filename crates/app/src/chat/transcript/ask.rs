@@ -8,7 +8,7 @@ use crate::chat::session::ChatSession;
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
 use crate::controls::Short as _;
-use crate::controls::text_input;
+use crate::controls::text_area;
 use crate::tokens::{CONTROL_H, LEADING_TIGHT};
 use gpui::Focusable as _;
 use gpui::prelude::FluentBuilder as _;
@@ -85,11 +85,17 @@ const ASK_KEY_ROWS: usize = 9;
 /// jump has to be to something the user can already see a name for. `None`
 /// past the ninth row, which is a row with no key rather than a row with an
 /// unusable one.
-fn ask_key_hint(n: usize) -> Option<Kbd> {
+///
+/// **The number with Alt, always**, since that is the key that works wherever
+/// the caret is, the card itself included; the bare number is the card's own
+/// shortcut on top of it. One label that never changes with the focus, rather
+/// than one that swapped under the reader as the caret moved; read off the
+/// keymap, so a rebound key is the one named.
+fn ask_key_hint(n: usize, cx: &App) -> Option<Kbd> {
     if n > ASK_KEY_ROWS {
         return None;
     }
-    gpui::Keystroke::parse(&n.to_string()).ok().map(Kbd::new)
+    super::bound_key(&super::QuestionPick { index: n - 1 }, cx).map(Kbd::new)
 }
 
 /// The live form.
@@ -261,10 +267,9 @@ impl AskForm<'_> {
                     // taken row the library lays the caller's fill over its
                     // selected step.
                     .when(!on, |row| row.bg(crate::theme::floating_well(cx)))
-                    // **As tall as the typed answer at one line**, a form's
-                    // field height as the floor: the field is the list's last
-                    // row, written in rather than picked. A longer label or a
-                    // description grows the row past it.
+                    // **A form's field height as the floor.** A longer label
+                    // or a description grows the row past it, to about the
+                    // two lines the typed answer under the list stands at.
                     .px_3()
                     .py_1()
                     .w_full()
@@ -292,7 +297,7 @@ impl AskForm<'_> {
                             .w_full()
                             .child(onehand_ui::choice_mark(on, single, cx))
                             .child(words)
-                            .children(ask_key_hint(o + 1)),
+                            .children(ask_key_hint(o + 1, cx)),
                     )
                     .on_click(move |_, window: &mut Window, cx: &mut App| {
                         ask_take(
@@ -344,17 +349,36 @@ impl AskForm<'_> {
                     .cloned()
             })
             .flatten()?;
-        let key = ask_key_hint(self.a.row_count(self.active));
+        let key = ask_key_hint(self.a.row_count(self.active), cx);
         // The keyboard's position on the list, marked with the edge a focused
         // field draws: the arrows reach this row without handing it the
         // caret, and a row they reach shows it as the choices above do.
         let cursor = self.a.cursor_row(self.active) == Some(onehand_core::chat::AskRow::Custom);
         Some(
-            // A form's field, at the height a one-line choice stands at.
-            text_input(&state, cx)
-                .short()
-                .when(cursor, |field| field.border_color(cx.theme().ring))
-                .when_some(key, |field, key| field.suffix(key)),
+            // **The list's last row, written in rather than picked**, so it
+            // stands as the choices do: on their well, at their inset and
+            // their words' size, with its key on the right. Its own height is
+            // the textarea's, two lines at rest and growing as it is written.
+            div()
+                .h_flex()
+                .items_center()
+                .gap_2()
+                .w_full()
+                .pr_3()
+                .rounded(cx.theme().radius)
+                .bg(crate::theme::floating_well(cx))
+                .border_1()
+                .border_color(match cursor {
+                    true => cx.theme().ring,
+                    false => cx.theme().transparent,
+                })
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .child(text_area(&state, cx).appearance(false)),
+                )
+                .children(key),
         )
     }
 
@@ -373,7 +397,7 @@ impl AskForm<'_> {
                 crate::controls::action(("ask-skip", idx))
                     .quiet(cx)
                     .short()
-                    .label("Skip")
+                    .child(labelled("Skip", &super::PinnedSkip, cx))
                     .tooltip_with_action(
                         "Skip this question",
                         &super::QuestionSkip,
@@ -393,17 +417,23 @@ impl AskForm<'_> {
                     // Nothing is picked yet: refusing, and the pointer would
                     // promise otherwise.
                     .refuses((!can_advance).then_some("Pick or type an answer first"))
-                    .map(|button| match last {
-                        true => button.label("Submit"),
-                        false => button.child(
-                            div()
-                                .h_flex()
-                                .items_center()
-                                .gap_1()
-                                .child("Next")
-                                .child(Icon::new(IconName::ArrowRight).xsmall()),
-                        ),
-                    })
+                    .child(
+                        div()
+                            .h_flex()
+                            .items_center()
+                            .gap_1()
+                            .child(match last {
+                                true => "Submit",
+                                false => "Next",
+                            })
+                            .when(!last, |label| {
+                                label.child(Icon::new(IconName::ArrowRight).xsmall())
+                            })
+                            .children(
+                                super::key_label(&super::PinnedNext, cx)
+                                    .map(|key| div().pl_1().child(key)),
+                            ),
+                    )
                     .on_click({
                         let session = session.clone();
                         move |_, _, cx: &mut App| {
@@ -462,6 +492,15 @@ impl AskForm<'_> {
                     }
                 }
             })
+            // **Esc in the typed answer hands the keys back to the card**, its
+            // cursor still on that row: the box keeps every other key, so
+            // without this the arrows and the numbers could not be reached
+            // again once the caret was in it. What the box has no use for an
+            // escape for travels out to here; an escape it uses, it keeps.
+            .on_action({
+                let card = card.clone();
+                move |_: &gpui_component::input::Escape, window, cx| window.focus(&card, cx)
+            })
             // Esc passes on this question rather than refusing the whole form:
             // the card is walked one question at a time, and the key that means
             // "not this one" has to mean it at the same scale the Skip button
@@ -487,6 +526,68 @@ impl AskForm<'_> {
                     ask_take(&session, idx, active, row, quick, window, cx);
                 }
             })
+    }
+}
+
+/// Take row `index` of the question pinned over the composer, from wherever
+/// the keyboard is in the conversation.
+///
+/// **The card need not hold the keys.** A card parks when the agent chooses,
+/// usually while the caret is in the composer, and moving the caret out of a
+/// half-written prompt to answer it is worse than a key that reaches the card
+/// from where the caret already is. Only the pinned card answers, the oldest
+/// of the parked permissions and questions, since it is the only one on
+/// screen; a permission in front of it leaves the key doing nothing.
+pub(in crate::chat) fn pick_pinned(
+    session: &Entity<ChatSession>,
+    index: usize,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    let Some((idx, item)) = pinned_question(session, cx) else {
+        return;
+    };
+    let (active, quick) = (item.active_field(), item.is_quick());
+    let Some(row) = item.row(active, index) else {
+        return;
+    };
+    ask_take(session, idx, active, row, quick, window, cx);
+}
+
+/// The pinned card where it is a question: its live index and the question.
+fn pinned_question<'a>(session: &Entity<ChatSession>, cx: &'a App) -> Option<(usize, &'a AskItem)> {
+    let chat = &session.read(cx).chat;
+    match super::pinned(chat)? {
+        super::Pinned::Question(idx) => chat.ask_at(idx).map(|item| (idx, item)),
+        super::Pinned::Permission(_) => None,
+    }
+}
+
+/// The pinned question's forward button, from anywhere in the conversation:
+/// refused, as the button is, while the question on screen has no answer.
+pub(in crate::chat) fn advance_pinned(session: &Entity<ChatSession>, cx: &mut App) {
+    let Some((idx, item)) = pinned_question(session, cx) else {
+        return;
+    };
+    let active = item.active_field();
+    if item.field_answered(active) {
+        ask_advance(session, idx, active, cx);
+    }
+}
+
+/// The pinned question's Skip, from anywhere in the conversation; a quick
+/// card carries no Skip, so the key does nothing there either.
+pub(in crate::chat) fn skip_pinned(
+    session: &Entity<ChatSession>,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    let Some((idx, item)) = pinned_question(session, cx) else {
+        return;
+    };
+    let (active, quick) = (item.active_field(), item.is_quick());
+    if !quick {
+        ask_skip(session, idx, active, window, cx);
     }
 }
 
@@ -523,6 +624,8 @@ fn ask_form(
         .get(form.active)
         .is_some_and(|c| !c.trim().is_empty());
 
+    let custom = form.custom_row(cx);
+    let has_custom = custom.is_some();
     let body = card
         .child(
             card_body()
@@ -544,10 +647,25 @@ fn ask_form(
                     target,
                     children: rows,
                     inset: CARD_PAD,
-                }))
-                .children(form.custom_row(cx)),
+                })),
         )
-        .when(!form.quick || typed, |card| card.child(form.footer(cx)));
+        // **Under a hairline, apart from the list.** On the choices' well it
+        // read as one more choice, and the row the scroll had cut in half just
+        // above it read as part of it. Below the line it is with the answers
+        // that close the card, which take no line of their own after it.
+        .children(custom.map(|row| {
+            div()
+                .w_full()
+                .px(CARD_PAD)
+                .pt_3()
+                .pb_2()
+                .border_t_1()
+                .border_color(cx.theme().border)
+                .child(row)
+        }))
+        .when(!form.quick || typed, |card| {
+            card.child(form.footer(cx).when(has_custom, |foot| foot.border_t_0()))
+        });
 
     // No handle means no card on screen to hold the keys -- the boxes and the
     // handle are built in the same pass, so this is only ever the frame a
@@ -556,4 +674,25 @@ fn ask_form(
         Some(focus) => form.keys(body, focus).into_any_element(),
         None => body.into_any_element(),
     }
+}
+
+/// A footer button's words with its key beside them, always in sight: the
+/// key reaches the card from anywhere in the conversation, so it is worth
+/// knowing before the pointer finds the button.
+pub(super) fn labelled(words: &'static str, action: &dyn gpui::Action, cx: &App) -> gpui::Div {
+    labelled_owned(words.into(), Some(action), cx)
+}
+
+/// [`labelled`], for words the agent sent.
+pub(super) fn labelled_owned(
+    words: SharedString,
+    action: Option<&dyn gpui::Action>,
+    cx: &App,
+) -> gpui::Div {
+    div()
+        .h_flex()
+        .items_center()
+        .gap_2()
+        .child(words)
+        .children(action.and_then(|action| super::key_label(action, cx)))
 }

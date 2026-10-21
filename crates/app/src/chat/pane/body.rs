@@ -7,12 +7,12 @@ use crate::chat::transcript::{self};
 use crate::chat::viewport::{self};
 use crate::controls::Quiet as _;
 use crate::controls::Short as _;
+use gpui::Focusable as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, Context, Entity, IntoElement, ListState, ParentElement, SharedString, Styled, Window, div,
     list, px,
 };
-use gpui_component::scroll::Scrollbar;
 use gpui_component::spinner::Spinner;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::chat::{Link, TranscriptItemId};
@@ -41,9 +41,18 @@ impl ChatPane {
         // A question's free-text box needs a window to be built and the session
         // never has one, so the card's own way to the screen is where it is
         // made. Before the cards are read, since the box is one of them.
+        // Idle means nothing is being put together there: no words and no
+        // staged files, since a prompt of a pasted screenshot alone is one
+        // whose Enter must still send it rather than answer a card.
+        let composer_idle = {
+            let composer = self.composer.read(cx);
+            composer.state.focus_handle(cx).is_focused(window)
+                && composer.text(cx).is_empty()
+                && composer.attachments.is_empty()
+        };
         session.update(cx, |s, cx| {
             s.sync_ask_inputs(window, cx);
-            s.sync_perm_focus(window, cx);
+            s.sync_perm_focus(composer_idle, window, cx);
         });
         let Some(chat) = self.active_chat(cx) else {
             return Vec::new();
@@ -94,12 +103,30 @@ impl ChatPane {
         // Under the blocking cards and directly over the composer, because that
         // is where the prompt it holds was written and where it will reappear
         // if the queue is cancelled.
-        pinned.extend(self.connecting_strip(cx).map(IntoElement::into_any_element));
-        pinned.extend(self.queued_strip(cx).map(IntoElement::into_any_element));
+        let mut lines: Vec<gpui::AnyElement> = Vec::new();
+        lines.extend(self.connecting_strip(cx).map(IntoElement::into_any_element));
+        lines.extend(self.queued_strip(cx).map(IntoElement::into_any_element));
         // Last, so it rests on the composer it belongs to: what is staged
         // waits above the card rather than inside it, where every file added
         // or taken off moved the field being typed in.
-        pinned.extend(self.composer.update(cx, |composer, cx| composer.tray(cx)));
+        lines.extend(self.composer.update(cx, |composer, cx| composer.tray(cx)));
+        // **One surface for all of it, on the card's own fill and lift.** Bare,
+        // these lines floated over the transcript, and a conversation scrolled
+        // behind them ran its words straight through theirs.
+        pinned.extend((!lines.is_empty()).then(|| {
+            div()
+                .v_flex()
+                .gap_2()
+                .w_full()
+                // The card's inset, so the words here start on the edge the
+                // field's do.
+                .p_1p5()
+                .bg(crate::theme::raised(cx))
+                .shadow(crate::theme::composer_lift(cx))
+                .rounded(cx.theme().radius)
+                .children(lines)
+                .into_any_element()
+        }));
         pinned
     }
 
@@ -126,15 +153,14 @@ impl ChatPane {
             return None;
         }
         let status = SharedString::from(chat.activity_status()?);
-        // A strip and not a card: no edge and no fill, its words on the
-        // composer's own text edge, so it reads as a line of the stack.
+        // A line and not a card: no edge and no fill of its own, on the
+        // surface the queue and the staged files share.
         Some(
             div()
                 .h_flex()
                 .items_center()
                 .gap_2()
                 .w_full()
-                .px_1p5()
                 .text_size(crate::tokens::CHROME_TEXT)
                 .text_color(cx.theme().muted_foreground)
                 .child(Spinner::new().small())
@@ -166,7 +192,6 @@ impl ChatPane {
                 .items_center()
                 .gap_2()
                 .w_full()
-                .px_1p5()
                 .text_size(crate::tokens::CHROME_TEXT)
                 .child(
                     div()
@@ -446,7 +471,7 @@ impl ChatPane {
                             // On the panel's edge, over the clipped list, so
                             // it ends where the conversation does and never
                             // runs down behind the composer.
-                            .child(Scrollbar::vertical(&list_state)),
+                            .child(onehand_ui::scrollbar(&list_state)),
                     )
                     // The transcript dissolving into the surface it is drawn
                     // on, right down to the clip. Between the list and every

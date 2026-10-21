@@ -90,6 +90,7 @@ are not steps and stay allowed. A named spacing constant (`BLOCK_GAP`, `TIGHT_GA
 
 | Write | rem | px |
 |---|---|---|
+| `tokens::MICRO_TEXT` | 0.6875 | 11 |
 | `.text_xs()` | 0.75 | 12 |
 | `tokens::CODE_TEXT`, `tokens::CHROME_TEXT` | 0.8125 | 13 |
 | `.text_sm()` | 0.875 | 14 |
@@ -133,7 +134,7 @@ Moving the library's rev means checking this table.
 
 | Size | Button: height / words / icon / icon–label gap / inset | Input: height / words / inset | Icon alone |
 |---|---|---|---|
-| `.xsmall()`: no button's or field's size | 20 / 12 / 12 / 4 / 4 | 20 / 12 / 4 **px** | 12 |
+| `.xsmall()`: an icon-only button inside a small object only | 20 / 12 / 12 / 4 / 4 | 20 / 12 / 4 **px** | 12 |
 | `.short()` (`CONTROL_H`) | 24 / 12 / 12 / 4 / 8 | 24 / 12 / 8 **px** | 12 |
 | `.tall()` (`FIELD_H`) | 30 / 14 / 14 / 4 / 12 | 30 / 14 / 8 **px** | 14 |
 | `.small()`: an icon-only button | 24 / 14 / 14 / 4 / 8: never with words | 24 / 14 / 8 **px** | 14 |
@@ -171,7 +172,9 @@ All in `onehand_ui::tokens` (`crates/ui/src/tokens.rs`), which the app names
 | `ROW_H` | 1.875rem | a list row |
 | `CONTROL_H` | 1.5rem | a small control: `.short()`, and an icon-only `.small()` button |
 | `FIELD_H` | 1.875rem | the tallest control, a step over `.short()`: a page's head and form (`.tall()`); nothing stands taller |
+| `SCROLLBAR_THUMB`, `SCROLLBAR_THUMB_ACTIVE` | 4px, 6px | a scrollbar's thumb at rest, and hovered or dragged |
 | `CHROME_TEXT` | 0.8125rem | chrome text: a panel's rows, boxes, forms and strips |
+| `MICRO_TEXT` | 0.6875rem | a caption inside a small object: an attachment's plate |
 | `CODE_TEXT` | 0.8125rem | machine text |
 | `LEADING` | 1.6 | reading text |
 | `LEADING_TIGHT` | 1.4 | a wrapped title |

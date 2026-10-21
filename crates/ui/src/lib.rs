@@ -525,6 +525,19 @@ pub fn text_area(state: &Entity<TextareaState>, cx: &App) -> Textarea {
         .overflow_hidden()
 }
 
+/// A vertical scrollbar at the app's weight: every scrolling region draws its
+/// thumb through this, so none of them is heavier than the next.
+pub fn scrollbar<H: gpui_component::scroll::ScrollbarHandle + Clone>(
+    handle: &H,
+) -> gpui_component::scroll::Scrollbar {
+    gpui_component::scroll::Scrollbar::vertical(handle).styles(|styles| {
+        styles
+            .thumb(|thumb| thumb.width(tokens::SCROLLBAR_THUMB))
+            .thumb_hover(|thumb| thumb.width(tokens::SCROLLBAR_THUMB_ACTIVE))
+            .thumb_active(|thumb| thumb.width(tokens::SCROLLBAR_THUMB_ACTIVE))
+    })
+}
+
 /// A ghost button whose hover is the fill a selected one shows.
 ///
 /// The library's ghost hovers on a fill it mixes from the bubble's grey at

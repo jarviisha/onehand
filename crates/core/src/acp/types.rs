@@ -291,6 +291,27 @@ impl PermissionOption {
     }
 }
 
+impl PermissionRequest {
+    /// The one option a key of `weight` answers with.
+    ///
+    /// **A refusal key refuses as narrowly as it can**: `reject_once` where
+    /// the agent offers it, else the first refusal. Two options share the
+    /// refusing weight, and the one the agent happened to list first could
+    /// be the one that refuses for ever, under a key pressed beside a button
+    /// that said "once".
+    pub fn keyed(&self, weight: PermissionWeight) -> Option<&PermissionOption> {
+        let mut of_weight = self.options.iter().filter(|o| o.weight() == weight);
+        match weight {
+            PermissionWeight::Deny => self
+                .options
+                .iter()
+                .find(|o| o.kind == "reject_once")
+                .or_else(|| of_weight.next()),
+            _ => of_weight.next(),
+        }
+    }
+}
+
 /// A parked permission request awaiting a user choice. `rpc_id` is the raw
 /// JSON-RPC id the worker must echo back in its response.
 #[derive(Debug, Clone)]
@@ -543,6 +564,40 @@ mod tests {
         // classify; the safe reading of an unreadable option is "no".
         assert_eq!(option("allow_on_tuesdays").weight(), PermissionWeight::Deny);
         assert_eq!(option("").weight(), PermissionWeight::Deny);
+    }
+
+    #[test]
+    fn the_refusal_key_refuses_once_whatever_order_the_agent_lists_them_in() {
+        let request = |kinds: &[&str]| PermissionRequest {
+            rpc_id: Value::Null,
+            tool_call_id: None,
+            kind: ToolKind::Other,
+            title: String::new(),
+            options: kinds
+                .iter()
+                .map(|kind| PermissionOption {
+                    id: kind.to_string(),
+                    name: kind.to_string(),
+                    kind: kind.to_string(),
+                })
+                .collect(),
+        };
+        let keyed =
+            |kinds: &[&str], weight| request(kinds).keyed(weight).map(|option| option.id.clone());
+        let deny = PermissionWeight::Deny;
+        assert_eq!(
+            keyed(&["reject_always", "reject_once"], deny).as_deref(),
+            Some("reject_once")
+        );
+        assert_eq!(
+            keyed(&["reject_always"], deny).as_deref(),
+            Some("reject_always")
+        );
+        assert_eq!(
+            keyed(&["allow_always", "allow_once"], PermissionWeight::AllowOnce).as_deref(),
+            Some("allow_once")
+        );
+        assert_eq!(keyed(&["allow_once"], PermissionWeight::AllowAlways), None);
     }
 
     #[test]

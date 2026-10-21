@@ -1,10 +1,9 @@
 use super::attachments::chip;
-use super::presentation::{
-    effort_action, fast_action, fast_label, fast_toggle, mode_action, options_action,
-};
+use super::presentation::{effort_action, fast_action, fast_toggle, mode_action, options_action};
 use super::rows::OPTION_MAX_W;
 use super::{Composer, ComposerEvent, Overlay};
 use crate::chat::session::ChatSession;
+use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
 use crate::controls::Short as _;
 use crate::controls::text_area;
@@ -217,8 +216,10 @@ impl Composer {
             )
     }
 
-    /// Fast mode on the card's row: a switch where the agent's two values say
-    /// which is on, a picker otherwise, nothing where the agent offers none.
+    /// Fast mode on the card's row, drawn as its bolt alone: a switch where the
+    /// agent's two values say which is on, a picker otherwise, nothing where
+    /// the agent offers none. Lit in the warning ink while fast, the one state
+    /// the mark carries; the tooltip names what the bolt does not.
     fn fast_control(
         &self,
         session: &Entity<ChatSession>,
@@ -227,11 +228,12 @@ impl Composer {
         if let Some(toggle) = fast_toggle(session, cx) {
             let session = session.clone();
             return Some(
-                chip("fast-toggle", false, cx)
-                    // Named on the chip, not only in its tooltip: a bare "Off"
-                    // beside a mark says nothing about what is off. No caret,
-                    // since a click flips it and no menu opens.
-                    .child(chip_text(fast_label(if toggle.on { "On" } else { "Off" })))
+                // An icon alone, square at the row's height, and no caret,
+                // since a click flips it and no menu opens.
+                crate::controls::action("fast-toggle")
+                    .quiet_icon(false, cx)
+                    .small()
+                    .icon(bolt(toggle.on, cx))
                     .tooltip(match toggle.on {
                         true => "Fast mode is on",
                         false => "Fast mode is off",
@@ -243,8 +245,18 @@ impl Composer {
             );
         }
         let open = self.overlay == Some(Overlay::Fast);
-        fast_action(session, cx)
-            .map(|label| status_action(Overlay::Fast, label, open, session, cx).into_any_element())
+        let pick = fast_action(session, cx)?;
+        let session = session.clone();
+        Some(
+            chip("fast-selector", open, cx)
+                .child(bolt(pick.lit, cx))
+                .dropdown_caret(true)
+                .when(!open, |chip| chip.tooltip(pick.label))
+                .on_click(cx.listener(move |composer: &mut Self, _, window, cx| {
+                    composer.toggle_picker(Overlay::Fast, &session, window, cx);
+                }))
+                .into_any_element(),
+        )
     }
 
     /// The bare strip under the card: the branch at the left, the permission
@@ -266,7 +278,7 @@ impl Composer {
     ) -> Option<impl IntoElement + use<>> {
         let mode_open = self.overlay == Some(Overlay::Mode);
         let mode = mode_action(session, cx).map(|label| {
-            let chip = status_action(Overlay::Mode, label, mode_open, session, cx);
+            let chip = mode_action_chip(label, mode_open, session, cx);
             self.opens_menu(Overlay::Mode, chip)
         });
         let branch_open = self.overlay == Some(Overlay::Branch);
@@ -312,41 +324,43 @@ fn chip_text(text: impl Into<SharedString>) -> gpui::Div {
     div().min_w_0().truncate().child(text.into())
 }
 
-/// A picker for a setting a turn is run under: the setting's mark and the
-/// value in force, then the caret every picker here carries.
-fn status_action(
-    target: Overlay,
+/// The permission mode's picker: its mark and the value in force, then the
+/// caret every picker here carries.
+fn mode_action_chip(
     label: SharedString,
     open: bool,
     session: &Entity<ChatSession>,
     cx: &mut Context<Composer>,
 ) -> impl IntoElement + use<> {
-    // Fast is named by its words, as the model and effort chips beside it
-    // are; the mode, under the card, keeps the mark it is known by.
-    let (id, icon, hint) = match target {
-        Overlay::Fast => ("fast-selector", None, "Choose how fast the agent answers"),
-        _ => (
-            "mode-selector",
-            Some(crate::icons::Icon::Shield),
-            "Choose what the agent may do without asking",
-        ),
-    };
     let session = session.clone();
-    chip(id, open, cx)
+    chip("mode-selector", open, cx)
         .max_w(OPTION_MAX_W)
         .flex_shrink_1()
         .min_w_0()
-        .children(icon.map(|icon| Icon::new(icon).small()))
+        .child(Icon::new(crate::icons::Icon::Shield).small())
         .child(chip_text(label))
         .dropdown_caret(true)
-        .when(!open, |chip| match target {
-            // The mode has a key that steps through it, which its tooltip says.
-            Overlay::Mode => chip.tooltip_with_action(hint, &crate::shell::CycleMode, None),
-            _ => chip.tooltip(hint),
+        // The mode has a key that steps through it, which its tooltip says.
+        .when(!open, |chip| {
+            chip.tooltip_with_action(
+                "Choose what the agent may do without asking",
+                &crate::shell::CycleMode,
+                None,
+            )
         })
         .on_click(cx.listener(move |composer: &mut Composer, _, window, cx| {
-            composer.toggle_picker(target.clone(), &session, window, cx);
+            composer.toggle_picker(Overlay::Mode, &session, window, cx);
         }))
+}
+
+/// Fast mode's mark: the muted ink at rest, the warning ink while fast.
+fn bolt(lit: bool, cx: &App) -> Icon {
+    Icon::new(crate::icons::Icon::Zap)
+        .small()
+        .text_color(match lit {
+            true => crate::theme::status_ink(cx).warning,
+            false => cx.theme().muted_foreground,
+        })
 }
 
 /// The card's own picker: the model in force, then the caret.
