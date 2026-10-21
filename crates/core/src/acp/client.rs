@@ -181,9 +181,15 @@ impl LastWords {
     /// Blank lines are skipped because tools pad their error blocks with them,
     /// and a kept blank is one of the few slots not spent on a reason. A
     /// skipped blank is not a drop: nothing was lost to report.
+    ///
+    /// So is an `npm notice` line: npm narrating its own start, never the
+    /// reason an adapter died, and each one kept costs a slot a reason needs.
     fn remember(&mut self, line: &str) {
         let line = line.trim();
-        if line.is_empty() {
+        let notice = line
+            .get(..10)
+            .is_some_and(|head| head.eq_ignore_ascii_case("npm notice"));
+        if line.is_empty() || notice {
             return;
         }
         if self.kept.len() == STDERR_TAIL_LINES {
@@ -679,7 +685,9 @@ async fn handle_message(
             }
             Some(Pending::NewSession) => {
                 if let Some(err) = msg.get("error") {
-                    return Err(format!("session/new failed: {err}"));
+                    // The whole object, code and all, for whoever reads the log.
+                    eprintln!("[acp] session/new failed: {err}");
+                    return Err(format!("Could not start a session: {}", in_words(err).0));
                 }
                 let result = msg.get("result");
                 let sid = result
