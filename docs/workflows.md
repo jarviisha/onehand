@@ -118,34 +118,33 @@ which a save would otherwise drop without a word; such a file is listed as unrea
 
 ### Agent settings
 
-An agent step may name a `mode` and `options`, a table of config option ids to values. Both are
-the agent's own ids, as it sends them (`ConfigOption::id` and `ConfigChoice::value`), never the
-names the composer shows. A workflow is not tied to an agent, so nothing is judged when it is
-saved; a value a step names that the agent does not offer **blocks**, before the start when what it offers is known
-and at the step when it is found only once running, and never runs on something else. **A setting
-a step does not name goes back to what the run started with**, never what the step before it
-left: a *Plan* step in a planning mode must not leave *Implement* unable to edit, so a step runs
-the same whichever step ran before it. None of the shipped workflows names any: model ids differ
-between agents, and they must run on any. On the Workflows page an agent step has an *Agent
-settings* section offering the choices of the agent runs take by default (`[unattended] agent`,
-else the first configured), as it was seen to offer them in this process; a muted line under the
-heading names it (*Choices … offers*). *Mode* is a row of choices in one edged track, *Run's mode*
-first, then each mode offered; each option offered, in the agent's order, is a row named by its id, *Run's value*
-first, then each value (twelve options and twelve values at most, then how many more). A row
-shows the value the step sets, picked or typed below; picking sets it, *Run's …* clears it, and
-either drops a typed row setting the same id.
-A value the step names that the agent does not offer (written for another agent, or by hand in
-the file) stays on its row, chosen, in the warning ink and marked *not offered*. Below, *Other
-options*: rows typed by id and value, and *Add option*, for what the agent does not list. While
-what the agent offers is not known yet, *Mode* and the option rows are typed, and the line says
-so beside *Check the agent*, started in the project selected in the rail (else the first one the
-window has open, else the home folder); a value picked while the offer was known keeps its row,
-unmarked, to keep or leave to the run. When the check comes back the choices are drawn, and a
-typed row naming an option offered, with one of its values, becomes that option's pick, unless
-it is being typed in, when it stays a typed row. With no agent
-configured both are typed, and the line says so. The editor judges nothing: the preflight does. A
-shipped workflow's choices refuse, saying it is duplicated to be changed. An option set twice on
-a step, by two rows or by a pick and a row, is a problem, and *Save* refuses.
+An agent step may name a `mode` and `options`, a table of config option ids to values. Both are the
+agent's own ids, as it sends them (`ConfigOption::id` and `ConfigChoice::value`), never the names
+the composer shows. A workflow is not tied to an agent, so nothing is judged when it is saved; a
+value a step names that the agent does not offer **blocks**, before the start when what it offers is
+known and at the step when it is found only once running, and never runs on something else. **A
+setting a step does not name goes back to what the run started with**, never what the step before it
+left: a *Plan* step in a planning mode must not leave *Implement* unable to edit, so a step runs the
+same whichever step ran before it. None of the shipped workflows names any: model ids differ between
+agents, and they must run on any. On the Workflows page an agent step has an *Agent settings*
+section offering the choices of the agent runs take by default (`[unattended] agent`, else the first
+configured), as it was seen to offer them in this process; a muted line under the heading names it
+(*Choices … offers*). *Mode* is a row of choices in one edged track, *Run's mode* first, then each
+mode offered; each option offered, in the agent's order, is a row named by its id, *Run's value*
+first, then each value (twelve options and twelve values at most, then how many more). A row shows
+the value the step sets, picked or typed below; picking sets it, *Run's …* clears it, and either
+drops a typed row setting the same id. A value the step names that the agent does not offer (written
+for another agent, or by hand in the file) stays on its row, chosen, in the warning ink and marked
+*not offered*. Below, *Other options*: rows typed by id and value, and *Add option*, for what the
+agent does not list. While what the agent offers is not known yet, *Mode* and the option rows are
+typed, and the line says so beside *Check the agent*, started in the project selected in the rail
+(else the first one the window has open, else the home folder); a value picked while the offer was
+known keeps its row, unmarked, to keep or leave to the run. When the check comes back the choices
+are drawn, and a typed row naming an option offered, with one of its values, becomes that option's
+pick, unless it is being typed in, when it stays a typed row. With no agent configured both are
+typed, and the line says so. The editor judges nothing: the preflight does. A shipped workflow's
+choices refuse, saying it is duplicated to be changed. An option set twice on a step, by two rows or
+by a pick and a row, is a problem, and *Save* refuses.
 
 ### Id and version
 
