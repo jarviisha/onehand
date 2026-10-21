@@ -232,7 +232,8 @@ fn taken<'a>(step: &'a StepDraft, typed: &'a [(String, String)], id: &str) -> Op
 /// values offered, the one taken filled; a value taken that the agent does
 /// not offer is marked in the warning ink. `offered` is `None` while what
 /// the agent offers is not known, and nothing is marked.
-/// Wraps on a narrow panel; past [`CHOICES_SHOWN`] a line says how many more.
+/// In one edged track that wraps on a narrow panel; past [`CHOICES_SHOWN`]
+/// a line says how many more.
 fn pick_row(
     id: String,
     run: &'static str,
@@ -251,7 +252,8 @@ fn pick_row(
             SharedString::from(format!("{id}-{n}")),
             label,
             on,
-            onehand_ui::ControlSize::Short,
+            // A page form's pickers stand at its inputs' height.
+            onehand_ui::ControlSize::Tall,
             cx,
         )
         .refuses(shipped.then_some(SHIPPED))
@@ -277,14 +279,10 @@ fn pick_row(
     div()
         .v_flex()
         .gap_1()
-        .child(
-            div()
-                .h_flex()
-                .flex_wrap()
-                .gap_1()
-                .child(chip(0, run.into(), None, current.is_none()))
-                .children(chips),
-        )
+        .child(onehand_ui::choice_track(
+            std::iter::once(chip(0, run.into(), None, current.is_none())).chain(chips),
+            cx,
+        ))
         .when(more > 0, |col| {
             col.child(
                 div()

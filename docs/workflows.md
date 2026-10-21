@@ -129,7 +129,7 @@ the same whichever step ran before it. None of the shipped workflows names any: 
 between agents, and they must run on any. On the Workflows page an agent step has an *Agent
 settings* section offering the choices of the agent runs take by default (`[unattended] agent`,
 else the first configured), as it was seen to offer them in this process; a muted line under the
-heading names it (*Choices … offers*). *Mode* is a row of choices, *Run's mode* first, then each
+heading names it (*Choices … offers*). *Mode* is a row of choices in one edged track, *Run's mode* first, then each
 mode offered; each option offered, in the agent's order, is a row named by its id, *Run's value*
 first, then each value (twelve options and twelve values at most, then how many more). A row
 shows the value the step sets, picked or typed below; picking sets it, *Run's …* clears it, and
