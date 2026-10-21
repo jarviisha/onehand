@@ -77,6 +77,7 @@ impl AgentDraft {
             // Core's parser, paired with `args_line` on the way in, so an
             // argument containing a space survives being edited.
             args: onehand_core::config::split_args(&self.args.read(cx).value()),
+            ..Default::default()
         })
     }
 }

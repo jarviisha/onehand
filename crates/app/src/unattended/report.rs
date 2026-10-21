@@ -44,6 +44,7 @@ pub(super) fn wrapped(base: AgentSpec) -> AgentSpec {
         name: base.name,
         command: "env".to_string(),
         args,
+        ..Default::default()
     }
 }
 
