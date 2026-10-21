@@ -846,3 +846,21 @@ pub fn switch(
         }))
         .into_any_element()
 }
+
+/// One of more choices than a [`switch`] holds, each at its own width: the
+/// same edged track, padded and parted as a switch's, its [`choice`]s
+/// wrapping onto further lines in a narrow container. The edge is what
+/// makes a row of loose words read as one setting; stacked settings stand
+/// apart as boxes rather than running into one paragraph.
+pub fn choice_track(choices: impl IntoIterator<Item = impl IntoElement>, cx: &App) -> Div {
+    div()
+        .h_flex()
+        .flex_wrap()
+        .w_full()
+        .rounded(cx.theme().radius)
+        .border_1()
+        .border_color(cx.theme().input)
+        .p_0p5()
+        .gap_0p5()
+        .children(choices)
+}

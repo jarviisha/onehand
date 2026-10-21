@@ -2,6 +2,7 @@
 //! and what onehand checks before it moves on. Kept as TOML, one file each.
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 /// The newest template layout this build reads and writes. A file carrying a
 /// higher number was written by a newer onehand, and is refused rather than
@@ -215,6 +216,14 @@ pub enum StepKind {
         gates: Vec<GateKind>,
         #[serde(default)]
         keep_answer: bool,
+        /// The adapter's mode id to set before the step's first prompt, or
+        /// `None` to leave the run's starting mode as it is.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        mode: Option<String>,
+        /// Config option id to the choice value to set before the step's
+        /// first prompt, exactly as the agent sends them.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        options: BTreeMap<String, String>,
     },
     /// Run a command in the work, onehand itself; `None` runs the project's
     /// check command. A failure goes back to the step `on_fail`, carrying

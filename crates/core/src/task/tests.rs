@@ -777,6 +777,7 @@ fn a_task_knows_it_opened_a_pull_request() {
         output: None,
         why: Some("done on the forge".into()),
         command: None,
+        ran_with: None,
     });
     assert!(t.opened_pull_request(), "from before runs kept it");
     t.runs[0].visits.clear();

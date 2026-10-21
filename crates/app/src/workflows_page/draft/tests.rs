@@ -8,6 +8,8 @@ fn agent(id: &str, keep_answer: bool) -> StepSpec {
             prompt: String::new(),
             gates: Vec::new(),
             keep_answer,
+            mode: None,
+            options: std::collections::BTreeMap::new(),
         },
     }
 }
@@ -108,4 +110,103 @@ fn follow_open_removed_after() {
 fn sentence_raises_the_first_letter() {
     assert_eq!(sentence("it has no name"), "It has no name");
     assert_eq!(sentence(""), "");
+}
+
+fn row(id: &str, value: &str) -> (String, String) {
+    (id.to_string(), value.to_string())
+}
+
+fn map(pairs: &[(&str, &str)]) -> std::collections::BTreeMap<String, String> {
+    pairs
+        .iter()
+        .map(|(id, value)| (id.to_string(), value.to_string()))
+        .collect()
+}
+
+#[test]
+fn a_drafts_settings_round_trip() {
+    let mode = Some("plan".to_string());
+    let options = map(&[("effort", "high"), ("model", "opus"), ("fast", "on")]);
+    // Nothing known of the agent: every option is a row.
+    let (text, picked, rows) = settings_texts(&mode, &options, &[]);
+    assert!(picked.is_empty());
+    assert_eq!(
+        settings_of(&text, &picked, &rows),
+        (mode.clone(), options.clone())
+    );
+    // The agent offers model and effort: those are picks, fast a row.
+    let offered = ["model".to_string(), "effort".to_string()];
+    let (text, picked, rows) = settings_texts(&mode, &options, &offered);
+    assert_eq!(picked, map(&[("effort", "high"), ("model", "opus")]));
+    assert_eq!(rows, vec![row("fast", "on")]);
+    assert_eq!(settings_of(&text, &picked, &rows), (mode, options));
+}
+
+#[test]
+fn blank_option_rows_are_dropped() {
+    let rows = [row(" model ", " opus "), row("  ", ""), row("effort", "")];
+    let (mode, options) = settings_of("  ", &map(&[("fast", "on")]), &rows);
+    assert_eq!(mode, None);
+    // A row with one side blank stays, for validation to name it.
+    assert_eq!(
+        options,
+        map(&[("effort", ""), ("fast", "on"), ("model", "opus")])
+    );
+}
+
+#[test]
+fn clearing_a_pick_leaves_it_to_the_run() {
+    let mut picked = map(&[("model", "opus")]);
+    set_pick(&mut picked, "effort", Some("high"));
+    set_pick(&mut picked, "model", Some("haiku"));
+    assert_eq!(picked, map(&[("effort", "high"), ("model", "haiku")]));
+    set_pick(&mut picked, "model", None);
+    assert_eq!(settings_of("", &picked, &[]).1, map(&[("effort", "high")]));
+}
+
+#[test]
+fn an_option_set_twice_is_found() {
+    let none = std::collections::BTreeMap::new();
+    let rows = [
+        row("model", "opus"),
+        row(" model ", "haiku"),
+        row("effort", "high"),
+        row("model", "sonnet"),
+        row("", "x"),
+        row(" ", "y"),
+    ];
+    assert_eq!(options_set_twice(&none, &rows), vec!["model".to_string()]);
+    assert!(options_set_twice(&none, &[row("model", "a"), row("fast", "on")]).is_empty());
+    // A pick and a row on one id is set twice too.
+    let picked = map(&[("model", "opus"), ("effort", "high")]);
+    assert_eq!(
+        options_set_twice(&picked, &[row(" model ", "haiku"), row("fast", "on")]),
+        vec!["model".to_string()]
+    );
+}
+
+#[test]
+fn typed_rows_the_agent_offers_become_picks() {
+    let offer = onehand_core::workflow::Offer {
+        modes: Vec::new(),
+        options: vec![
+            (
+                "model".to_string(),
+                vec!["strong".to_string(), "cheap".to_string()],
+            ),
+            ("effort".to_string(), vec!["low".to_string()]),
+            ("fast".to_string(), vec!["on".to_string()]),
+        ],
+    };
+    let rows = [
+        row(" model ", " cheap "), // offered, a value it offers: adopted
+        row("effort", "high"),     // a value not offered: stays typed
+        row("other", "x"),         // an id not offered: stays typed
+        row("fast", "on"),         // already picked: stays, set twice
+        row("", ""),
+    ];
+    assert_eq!(adoptable(&rows, &map(&[("fast", "on")]), &offer), vec![0]);
+    // Two rows on one id are left for the person to settle.
+    let twice = [row("model", "cheap"), row("model", "strong")];
+    assert!(adoptable(&twice, &map(&[]), &offer).is_empty());
 }

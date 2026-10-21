@@ -111,9 +111,27 @@ pub fn validate(template: &Template) -> Vec<Problem> {
             );
         }
         match &step.kind {
-            StepKind::Agent { prompt, gates, .. } => {
+            StepKind::Agent {
+                prompt,
+                gates,
+                mode,
+                options,
+                ..
+            } => {
                 if prompt.trim().is_empty() {
                     here("its prompt is empty".to_string());
+                }
+                if mode.as_ref().is_some_and(|mode| mode.trim().is_empty()) {
+                    here("its mode is empty".to_string());
+                }
+                for (id, value) in options {
+                    if id.trim().is_empty() {
+                        here("an option has no name".to_string());
+                    } else if id == "mode" {
+                        here("the mode is set with mode, not among the options".to_string());
+                    } else if value.trim().is_empty() {
+                        here(format!("the option {id} has no value"));
+                    }
                 }
                 for name in prompt::refs(prompt) {
                     // A variable only a later step sending this one back

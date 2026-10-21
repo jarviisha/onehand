@@ -30,6 +30,15 @@
 //     what leaves room to press Stop or quit mid-step.
 //
 // Cancelling ends the turn where it is, with `cancelled`.
+//
+// **With `--settings` after the script's path it offers settings**, so a
+// step's mode and options can be walked: modes `code` and `plan`, and the
+// options `model` (`strong`, `cheap`), `effort` (`low`, `high`, `max`) and
+// `fast` (`off`, `on`). Under `cheap` there is no `high` effort: the model
+// changing publishes `effort` again, without it, so a step asking for both
+// fails at its step. It always refuses `max` effort, so a pick the agent
+// refuses can be seen too. Each answer then begins with the settings in
+// force. Without the argument it offers nothing.
 const readline = require('readline');
 const fs = require('fs');
 const path = require('path');
@@ -37,15 +46,10 @@ const { execFileSync } = require('child_process');
 
 const rl = readline.createInterface({ input: process.stdin });
 const send = (o) => process.stdout.write(JSON.stringify(o) + '\n');
+const update = (session, u) =>
+  send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: session.id, update: u } });
 const say = (session, text) =>
-  send({
-    jsonrpc: '2.0',
-    method: 'session/update',
-    params: {
-      sessionId: session.id,
-      update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } },
-    },
-  });
+  update(session, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } });
 
 // **Every session has an id and a state of its own**: one id shared by every
 // session would file their transcripts under one name.
@@ -53,7 +57,22 @@ const say = (session, text) =>
 // A session's state: where it works, its turn under way, how many changes it
 // has made, and the brief's orders, kept for the carry-on prompts that do not
 // repeat the brief.
-const sessions = new Map(); // id → { id, cwd, turn: { id, timers } | null, changes, orders: Set }
+const sessions = new Map(); // id → { id, cwd, turn: { id, timers } | null, changes, orders: Set, settings }
+
+const SETTINGS = process.argv.includes('--settings');
+const MODES = ['code', 'plan'];
+const CHOICES = { model: ['strong', 'cheap'], effort: ['low', 'high', 'max'], fast: ['off', 'on'] };
+// The values `id` offers under the session's model.
+const offered = (settings, id) =>
+  id === 'effort' && settings.model === 'cheap' ? CHOICES.effort.filter((v) => v !== 'high') : CHOICES[id];
+const configOptions = (settings) =>
+  Object.keys(CHOICES).map((id) => ({
+    id,
+    name: id[0].toUpperCase() + id.slice(1),
+    type: 'select',
+    currentValue: settings[id],
+    options: offered(settings, id).map((value) => ({ value, name: value })),
+  }));
 
 // What the prompt asks of this turn, and what the turn does about it.
 function play(session, prompt) {
@@ -119,8 +138,46 @@ rl.on('line', (line) => {
       return send({ jsonrpc: '2.0', id: m.id, result: { protocolVersion: 1, agentCapabilities: {} } });
     case 'session/new': {
       const id = `mock-workflow-${process.pid}-${Date.now()}-${sessions.size}`;
-      sessions.set(id, { id, cwd: m.params?.cwd ?? process.cwd(), turn: null, changes: 0, orders: new Set() });
-      return send({ jsonrpc: '2.0', id: m.id, result: { sessionId: id } });
+      const settings = { mode: 'code', model: 'strong', effort: 'low', fast: 'off' };
+      sessions.set(id, { id, cwd: m.params?.cwd ?? process.cwd(), turn: null, changes: 0, orders: new Set(), settings });
+      const offers = SETTINGS
+        ? {
+            modes: { currentModeId: settings.mode, availableModes: MODES.map((id) => ({ id, name: id })) },
+            configOptions: configOptions(settings),
+          }
+        : {};
+      return send({ jsonrpc: '2.0', id: m.id, result: { sessionId: id, ...offers } });
+    }
+    case 'session/set_mode': {
+      const session = sessions.get(m.params?.sessionId);
+      const mode = m.params?.modeId;
+      if (!SETTINGS || !session || !MODES.includes(mode)) {
+        return send({ jsonrpc: '2.0', id: m.id, error: { code: -32602, message: `no mode ${mode}` } });
+      }
+      session.settings.mode = mode;
+      update(session, { sessionUpdate: 'current_mode_update', currentModeId: mode });
+      return send({ jsonrpc: '2.0', id: m.id, result: {} });
+    }
+    case 'session/set_config_option': {
+      const session = sessions.get(m.params?.sessionId);
+      const { configId: id, value } = m.params ?? {};
+      if (id === 'effort' && value === 'max') {
+        return send({
+          jsonrpc: '2.0',
+          id: m.id,
+          error: { code: -32602, message: 'Max effort is not available on this plan' },
+        });
+      }
+      if (!SETTINGS || !session || !(id in CHOICES) || !offered(session.settings, id).includes(value)) {
+        return send({ jsonrpc: '2.0', id: m.id, error: { code: -32602, message: `no ${value} for ${id}` } });
+      }
+      const { settings } = session;
+      settings[id] = value;
+      if (!offered(settings, 'effort').includes(settings.effort)) settings.effort = 'low';
+      // Published before the answer, so what is offered under the new model
+      // is in place by the time the pick is confirmed.
+      update(session, { sessionUpdate: 'config_option_update', configOptions: configOptions(settings) });
+      return send({ jsonrpc: '2.0', id: m.id, result: {} });
     }
     case 'session/cancel':
       return end(sessions.get(m.params?.sessionId), 'cancelled');
@@ -132,6 +189,10 @@ rl.on('line', (line) => {
       end(session, 'cancelled');
       const prompt = (m.params?.prompt ?? []).map((b) => b?.text ?? '').join('\n');
       const { lines, act } = play(session, prompt);
+      if (SETTINGS) {
+        const { mode, model, effort, fast } = session.settings;
+        lines.unshift(`[mode ${mode} · model ${model} · effort ${effort} · fast ${fast}] `);
+      }
       const pace = session.orders.has('fast') ? 0 : 6000 / (lines.length + 1);
       const turn = (session.turn = { id: m.id, timers: [] });
       lines.forEach((text, i) => turn.timers.push(setTimeout(() => say(session, text), pace * i)));

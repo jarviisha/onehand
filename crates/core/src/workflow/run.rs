@@ -10,58 +10,19 @@
 
 use super::facts::{self, CommandResult, Facts, Mark};
 use super::prompt::{self, Fill};
+use super::settings::Settings;
 use super::status_checks::Seen;
 use super::template::{Place, StepKind, StepSpec, Template};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 
 mod retry;
+mod setup;
 mod visits;
 
 pub use retry::{Changed, Field, Now, StartWhy, WithCurrent};
-
-/// What a run is asked to do: a title, a body, and what the person starting
-/// it asked of every step.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Brief {
-    pub title: String,
-    pub body: String,
-    pub instructions: Option<String>,
-}
-
-/// Where a run works and with what, as chosen when it started.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Setup {
-    /// The project it was started from.
-    pub repo: PathBuf,
-    /// Where its work is: the project itself, or the worktree made for it.
-    pub dir: PathBuf,
-    /// The branch made for it, on a worktree.
-    pub branch: Option<String>,
-    /// The configured agent it runs, by name; the default one when unset.
-    pub agent: Option<String>,
-    /// The project's check command, for a command step that names none.
-    pub check: Option<String>,
-    /// The session mode the agent is put in before the first prompt, by the
-    /// adapter's own id; left as the agent starts when unset.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mode: Option<String>,
-    /// The connector the branch goes to, by name; `None` where no forge
-    /// serves the project, and then a step on the forge passes at once, the
-    /// branch being the result.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub forge: Option<String>,
-}
-
-/// The points in the work a run measures from.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Marks {
-    /// Where the current agent step's work is measured from.
-    pub step_from: Option<Mark>,
-    /// The commit a command last passed on.
-    pub verified_at: Option<String>,
-}
+use setup::Marks;
+pub use setup::{Brief, Setup};
 
 /// One move of a run, for its history.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -241,6 +202,10 @@ pub struct Visit {
     /// How its command came out, on a command step's visit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command: Option<CommandResult>,
+    /// What was in force when its first prompt went: the mode and every
+    /// config option's value, not only those the step named.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ran_with: Option<Settings>,
 }
 
 /// What a person's approval or revision was drawn from: the run, and the
@@ -276,6 +241,11 @@ pub struct Run {
     pub template: Template,
     pub brief: Brief,
     pub setup: Setup,
+    /// The mode and every config option's value the agent came up running
+    /// when it first came up in the run: kept once, so a Resume on a new
+    /// session finds the same ones.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub started_with: Option<Settings>,
     /// The step the run is at.
     pub step: usize,
     /// Turns that failed a gate, and commands that failed, since the run
@@ -323,6 +293,7 @@ impl Run {
             template,
             brief,
             setup,
+            started_with: None,
             step: 0,
             misses: 0,
             furthest: 0,

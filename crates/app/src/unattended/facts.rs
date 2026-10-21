@@ -99,18 +99,18 @@ fn account(forge: &'static dyn Connector, cx: &App) -> Option<Result<String, Str
         .map(|(_, said)| said)
 }
 
-/// The modes the agent `spec` offered when it last came up in this process,
+/// What the agent `spec` offered when it last came up in this process,
 /// started as it is configured now; `None` when it has not.
 ///
 /// A run's agent is started through the spec runs wrap it in, so what it
 /// offered counts as the configured spec's too.
-pub(crate) fn offered(spec: &AgentSpec, cx: &App) -> Option<Vec<String>> {
+pub(crate) fn offered(spec: &AgentSpec, cx: &App) -> Option<onehand_core::workflow::Offer> {
     let wrapped = super::report::wrapped(spec.clone());
     Shared::global(cx)
-        .modes_seen
+        .offers_seen
         .iter()
         .find(|(seen, _)| seen == spec || *seen == wrapped)
-        .map(|(_, modes)| modes.clone())
+        .map(|(_, offer)| offer.clone())
 }
 
 /// A Resume or a Retry of `task` on `template`: judged by its last run's own

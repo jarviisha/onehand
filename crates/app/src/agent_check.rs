@@ -1,13 +1,14 @@
-//! *Check the agent*: start an agent with no session, read the modes it
-//! offers, and close it, so a start whose mode is not known yet can be judged
+//! *Check the agent*: start an agent with no session, read what it offers,
+//! and close it, so a start whose settings are not known yet can be judged
 //! before it is made.
 //!
 //! **Never run unasked.** It is the one check that costs an agent start, so
 //! nothing but a press of its button starts one; opening a form never does.
 //! Nothing is prompted: the adapter is brought up as far as `session/new`,
-//! whose answer carries the modes, and dropped at once, which kills it. What
-//! it learns goes where any sighting of the agent's modes goes
-//! (`Shared::saw_modes`), so every later start in this process reads it.
+//! whose answer carries the modes and config options, and dropped at once,
+//! which kills it. What it learns goes where any sighting of the agent's
+//! offer goes (`Shared::saw_offer`), so every later start in this process
+//! reads it.
 
 use crate::controls::Short as _;
 use crate::state::Shared;
@@ -19,6 +20,7 @@ use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme as _, StyledExt as _};
 use onehand_core::acp::AcpEvent;
 use onehand_core::config::{self, AgentSpec};
+use onehand_core::workflow::Offer;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -76,13 +78,19 @@ fn check(ask: &Ask, cx: &mut App) {
     let timer = cx.background_executor().timer(CHECK_WAIT);
     cx.spawn(async move |cx| {
         let read = async move {
-            let mut modes = Vec::new();
+            let mut offer = Offer::default();
             while let Some(event) = events.next().await {
                 match event {
                     AcpEvent::Modes { available, .. } => {
-                        modes = available.into_iter().map(|m| m.id).collect();
+                        offer.modes = available.into_iter().map(|m| m.id).collect();
                     }
-                    AcpEvent::Connected { .. } => return Ok(modes),
+                    AcpEvent::ConfigOptions(opts) => {
+                        offer.options = opts
+                            .into_iter()
+                            .map(|opt| (opt.id, opt.choices.into_iter().map(|c| c.value).collect()))
+                            .collect();
+                    }
+                    AcpEvent::Connected { .. } => return Ok(offer),
                     AcpEvent::Error { text: why, .. } | AcpEvent::Disconnected(why) => {
                         return Err(why);
                     }
@@ -101,7 +109,6 @@ fn check(ask: &Ask, cx: &mut App) {
                     | AcpEvent::ModeChanged(_)
                     | AcpEvent::PickConfirmed { .. }
                     | AcpEvent::PickRefused { .. }
-                    | AcpEvent::ConfigOptions(_)
                     | AcpEvent::TerminalOutput { .. }
                     | AcpEvent::TerminalExit { .. }
                     | AcpEvent::TurnEnded { .. } => {}
@@ -120,9 +127,9 @@ fn check(ask: &Ask, cx: &mut App) {
         };
         cx.update(|cx| {
             match found {
-                Ok(modes) => {
+                Ok(offer) => {
                     set(&spec, None, cx);
-                    cx.update_global::<Shared, _>(|s, _| s.saw_modes(spec, modes));
+                    cx.update_global::<Shared, _>(|s, _| s.saw_offer(spec, offer));
                 }
                 Err(why) => set(&spec, Some(Checking::Failed(why)), cx),
             }
@@ -162,7 +169,7 @@ pub(crate) fn button(id: usize, ask: &Ask, cx: &App) -> AnyElement {
             Some(format!("{} could not be checked: {why}", ask.spec.name))
         }
         Some(Checking::Running) | None => learned.zip(ask.mode.as_ref()).map(|(offered, mode)| {
-            onehand_core::preflight::mode_refused(mode, &offered)
+            onehand_core::preflight::mode_refused(mode, &offered.modes)
                 .unwrap_or_else(|| format!("{} offers `{mode}`.", ask.spec.name))
         }),
     };

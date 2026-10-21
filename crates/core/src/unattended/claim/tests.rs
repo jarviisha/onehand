@@ -78,6 +78,8 @@ fn template(id: &str, needs_check: bool) -> Template {
             prompt: "go".into(),
             gates: vec![GateKind::Committed],
             keep_answer: false,
+            mode: None,
+            options: std::collections::BTreeMap::new(),
         },
     }];
     if needs_check {

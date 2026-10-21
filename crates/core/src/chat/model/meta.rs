@@ -2,6 +2,7 @@ use super::items::ChatItem;
 use super::Chat;
 use crate::acp::AcpRequest;
 use crate::chat::store::{ConfigPick, Prefs};
+use crate::workflow::{Offer, Pick, Settings};
 
 /// Session titles are compact task labels, not first-message previews.
 ///
@@ -338,6 +339,85 @@ impl Chat {
                 }
             }))
             .collect()
+    }
+
+    /// What the agent offers right now: its modes, and each config option's
+    /// choice values, by id.
+    ///
+    /// For a workflow step planning its next pick against what the session
+    /// actually advertises -- the protocol-shaped [`Chat::modes`] /
+    /// [`Chat::config_options`] are no use to a caller outside the chat that
+    /// just wants the ids.
+    pub fn offer(&self) -> Offer {
+        Offer {
+            modes: self.modes.iter().map(|m| m.id.clone()).collect(),
+            options: self
+                .config_options
+                .iter()
+                .map(|o| {
+                    (
+                        o.id.clone(),
+                        o.choices.iter().map(|c| c.value.clone()).collect(),
+                    )
+                })
+                .collect(),
+        }
+    }
+
+    /// The mode and config option values actually in force now.
+    ///
+    /// An option's `current` can be an alias the choices never listed (an
+    /// adapter-side default like `opus[1m]` against the offered `opus`), and
+    /// that is left out rather than reported as a value nothing offers --
+    /// a caller diffing this against what it wants must not see a value it
+    /// could never have asked for.
+    pub fn in_force(&self) -> Settings {
+        Settings {
+            mode: self.current_mode.clone(),
+            options: self
+                .config_options
+                .iter()
+                .filter_map(|o| {
+                    let current = o.current.clone()?;
+                    o.choices
+                        .iter()
+                        .any(|c| c.value == current)
+                        .then(|| (o.id.clone(), current))
+                })
+                .collect(),
+        }
+    }
+
+    /// The mode and every config option's value as the agent reports it,
+    /// aliases its choices never listed included: what a record of a turn's
+    /// settings keeps, unlike [`Chat::in_force`], which plans against it.
+    pub fn held(&self) -> Settings {
+        Settings {
+            mode: self.current_mode.clone(),
+            options: self
+                .config_options
+                .iter()
+                .filter_map(|o| Some((o.id.clone(), o.current.clone()?)))
+                .collect(),
+        }
+    }
+
+    /// Whether any pick sent to the agent is still unanswered.
+    pub fn picks_waiting(&self) -> bool {
+        !self.picks_out.is_empty()
+    }
+
+    /// Whether a pick sent for `group` is still unanswered.
+    pub fn pick_waiting(&self, group: &str) -> bool {
+        self.picks_out.contains_key(group)
+    }
+
+    /// Send one setting pick to the agent.
+    pub fn pick(&mut self, pick: &Pick) {
+        match pick {
+            Pick::Mode(id) => self.set_mode(id),
+            Pick::Option { id, value } => self.set_config_option(id, value),
+        }
     }
 
     /// Pick the `choice`-th value of the picker `group`, and say what was set.

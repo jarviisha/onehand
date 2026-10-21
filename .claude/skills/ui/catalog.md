@@ -47,6 +47,7 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | A strip along the top of a region, and its icon control | `strip(cx)`, `strip_control(id, icon, on, cx)` | `crates/ui/src/strip.rs` |
 | One of a few choices, the taken one filled (filter chips) | `choice` (a `quiet` ghost button, `selected` when taken, at the `ControlSize` its role takes) | `crates/ui/src/lib.rs` |
 | A choice between a few views, every one the same width | `switch` (a `choice` per view at `flex_1`, padded `p_0p5` and parted `gap_0p5` in one edged track, at one `ControlSize`) | `crates/ui/src/lib.rs` |
+| One of more choices than a switch holds, each at its own width (a setting's values) | `choice_track` (`choice`s in the switch's edged track, padded `p_0p5` and parted `gap_0p5`, wrapping) | `crates/ui/src/lib.rs` |
 | Tabs that fit their strip, or one select | `tab_strip`, `tab_chip`, `tab_close`, `tab_select` (at a strip's size, with the picker's caret), `tab_menu_rows`, `measure_width` | `crates/ui/src/tabs.rs` |
 | A list beside its detail, or one at a time | `list_detail`, `ListWidths`, `back_link` | `crates/ui/src/list_detail.rs` |
 | A line filling an empty panel | `hint` | `crates/ui/src/lib.rs` |

@@ -707,8 +707,8 @@ pub fn check_missing(template: &Template, has_check: bool) -> Option<String> {
         .map(|why| format!("{why}; set one on the project's page"))
 }
 
-/// Why nothing at all may start, picked or found: the agent does not offer
-/// the mode runs start in (`mode_refused`), or a workflow runs may be given —
+/// Why nothing at all may start, picked or found: a run failed on a setting
+/// every later one would fail on too (`paused`), or a workflow runs may be given —
 /// `default`, or one a workflow label names in `by_label` — cannot run, or no
 /// agent is configured.
 ///
@@ -716,12 +716,12 @@ pub fn check_missing(template: &Template, has_check: bool) -> Option<String> {
 /// same broken config either way, and said before any claim it costs no issue
 /// a comment.
 pub fn cannot_start(
-    mode_refused: Option<&str>,
+    paused: Option<&str>,
     default: &Result<Template, String>,
     by_label: &[(String, Result<Template, String>)],
     agent_configured: bool,
 ) -> Option<String> {
-    mode_refused
+    paused
         .map(str::to_string)
         .or_else(|| {
             default

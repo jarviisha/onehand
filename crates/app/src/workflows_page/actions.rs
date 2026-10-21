@@ -20,6 +20,8 @@ impl WorkflowsPage {
                 prompt: "{brief}".to_string(),
                 gates: vec![core::GateKind::Answered],
                 keep_answer: true,
+                mode: None,
+                options: std::collections::BTreeMap::new(),
             },
         });
         self.open_workflow_form(template, None, window, cx);
@@ -191,7 +193,7 @@ impl WorkflowsPage {
     /// Put the keyboard on the page itself: the row that took the click
     /// leaves the frame when the editor shows alone, and a focus left on a
     /// handle no longer drawn takes the page's keys with it.
-    fn hold_focus(&self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn hold_focus(&self, window: &mut Window, cx: &mut Context<Self>) {
         window.focus(&self.focus_handle, cx);
     }
 
@@ -295,7 +297,9 @@ impl WorkflowsPage {
         let Ok(template) = draft.to_template(cx) else {
             return;
         };
-        if !core::validate(&template).is_empty() {
+        // The form's own problems, an option set twice on a step among
+        // them, which the template alone no longer shows.
+        if !draft.problem_list(cx).is_empty() {
             return;
         }
         // The form says a clash above *Save*, which refuses while it stands.

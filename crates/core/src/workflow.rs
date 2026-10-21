@@ -15,6 +15,7 @@ pub mod builtin;
 mod facts;
 mod prompt;
 mod run;
+mod settings;
 mod status_checks;
 pub mod store;
 mod template;
@@ -29,6 +30,8 @@ pub use run::{
     StartWhy, Stop, Visit, WithCurrent,
 };
 pub(crate) use run::{COMMAND_FAILED, COMMAND_PASSED, FORGE_DONE};
+pub(crate) use settings::option_refused;
+pub use settings::{next, Next, Offer, Pick, Settings};
 pub use status_checks::{judge, pull_request_step, waited_on, with_logs, Seen};
 pub use template::{GateKind, Place, StepKind, StepSpec, Template, DEFAULT_WAIT, SCHEMA_VERSION};
 pub use validate::validate;

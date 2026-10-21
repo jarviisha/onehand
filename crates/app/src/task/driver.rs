@@ -23,6 +23,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 mod forge;
+mod settings;
 
 /// A call held until a mark is pinned, and whether it ends the run.
 type Later = (bool, Box<dyn FnOnce(&mut App)>);
@@ -55,6 +56,13 @@ pub(super) struct Driven {
     pending: Option<String>,
     /// The agent has been seen up in this session, and the run's mode set.
     up: bool,
+    /// The visit whose settings were last put in force.
+    settled: Option<u32>,
+    /// The open visit's settings being put in force, holding its prompt.
+    picking: Option<settings::Picking>,
+    /// The run's own mode, picked when the agent came up and not yet
+    /// answered: a refusal of it is the run's mode refused, not a step's.
+    mode_out: Option<String>,
     /// The step the transcript was last told of.
     noted: Option<usize>,
     /// How much of the timeout is left; it does not run while a card or an
@@ -149,6 +157,9 @@ pub(crate) fn start(
         answer_from: 0,
         pending: None,
         up: false,
+        settled: None,
+        picking: None,
+        mode_out: None,
         noted: None,
         budget: Budget::start(limit, Instant::now()),
         card: false,
@@ -280,10 +291,11 @@ fn advance(uid: u64, cx: &mut App, report: impl FnOnce(&mut Run) -> Action) {
 
 fn on_event(uid: u64, session: &Entity<ChatSession>, event: &ChatEvent, cx: &mut App) {
     // A turn ending while a mark is pinned is not the turn the run will send.
-    let Some((sent, pending, judge_turn)) = read(uid, cx, |d| {
+    let Some((sent, pending, picking, judge_turn)) = read(uid, cx, |d| {
         (
             d.sent,
             d.pending.is_some(),
+            d.picking.is_some(),
             d.run.awaiting_turn() && d.held.is_none(),
         )
     }) else {
@@ -299,6 +311,11 @@ fn on_event(uid: u64, session: &Entity<ChatSession>, event: &ChatEvent, cx: &mut
         ChatEvent::Appended => {
             if session.read(cx).chat.prompted_beyond(sent) {
                 end(uid, Stop::TakenOver, cx);
+            } else if picking {
+                // After the rest of what the same answer emitted, so a
+                // refusal is judged before the next pick is planned.
+                let session = session.clone();
+                cx.defer(move |cx| settings::answered(uid, &session, cx));
             }
         }
         // A Stop pressed in the composer, or from the remote bridge: the
@@ -318,7 +335,10 @@ fn on_event(uid: u64, session: &Entity<ChatSession>, event: &ChatEvent, cx: &mut
             }
         }
         ChatEvent::Disconnected => end(uid, Stop::LinkLost, cx),
-        ChatEvent::OpenFile(_) | ChatEvent::PickRefused(_) => {}
+        ChatEvent::PickRefused(why) if picking => settings::refused(uid, session, why, cx),
+        // Not the run's: a person's own pick in the composer.
+        ChatEvent::PickRefused(_) => {}
+        ChatEvent::OpenFile(_) => {}
     }
 }
 
@@ -536,6 +556,9 @@ fn send(uid: u64, session: &Entity<ChatSession>, text: String, cx: &mut App) {
     if !came_up(uid, session, cx) {
         return;
     }
+    let Some(text) = settings::settle(uid, session, text, cx) else {
+        return;
+    };
     let answer_from = session.read(cx).chat.items.len();
     with(uid, cx, |d| {
         d.sent += 1;
@@ -567,6 +590,7 @@ fn came_up(uid: u64, session: &Entity<ChatSession>, cx: &mut App) -> bool {
         crate::unattended::started(&task, session, cx);
     }
     let Some(mode) = mode else {
+        start_settings(uid, session, None, cx);
         return true;
     };
     let offered: Vec<String> = session
@@ -577,13 +601,25 @@ fn came_up(uid: u64, session: &Entity<ChatSession>, cx: &mut App) -> bool {
         .map(|m| m.id.clone())
         .collect();
     if let Some(why) = onehand_core::preflight::mode_refused(&mode, &offered) {
-        crate::unattended::refuse_mode(&why, cx);
+        crate::unattended::pause(&why, "unattended.mode is fixed", cx);
         advance(uid, cx, move |run| run.failed(why, found_late(About::Mode)));
         return false;
     }
     session.update(cx, |session, _| session.chat.set_mode(&mode));
+    with(uid, cx, |d| d.mode_out = Some(mode.clone()));
     note(session, format!("Mode {mode} set"), cx);
+    start_settings(uid, session, Some(mode), cx);
     true
+}
+
+/// Keep what the agent came up running as the run's starting settings, in
+/// the run's `mode` when it has one.
+fn start_settings(uid: u64, session: &Entity<ChatSession>, mode: Option<String>, cx: &mut App) {
+    let mut start = session.read(cx).chat.in_force();
+    if mode.is_some() {
+        start.mode = mode;
+    }
+    with(uid, cx, |d| d.run.start_settings(start));
 }
 
 /// A turn the run sent ended: read the work, then let the engine judge it.

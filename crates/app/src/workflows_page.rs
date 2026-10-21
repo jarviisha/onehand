@@ -178,6 +178,9 @@ impl Render for WorkflowsPage {
             ) => Some(form::unreadable(&handle, &why, &file, cx)),
             _ => None,
         };
+        if let Some(draft) = &mut self.draft {
+            draft.adopt_offer(window, cx);
+        }
         let halves = if let Some(draft) = &self.draft {
             editor::editor(
                 &handle,

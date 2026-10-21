@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 fn brief() -> Brief {
@@ -268,6 +269,46 @@ fn a_template_survives_a_round_trip_through_toml() {
 }
 
 #[test]
+fn an_agent_step_reads_and_writes_its_settings() {
+    let mut t = checkout();
+    let StepKind::Agent { mode, options, .. } = &mut t.steps[0].kind else {
+        panic!("the first step of checkout() is an agent step")
+    };
+    *mode = Some("plan".to_string());
+    options.insert("model".to_string(), "strong".to_string());
+    options.insert("fast".to_string(), "on".to_string());
+    let text = toml::to_string_pretty(&t).unwrap();
+    let t = store::parse(&text).unwrap();
+    let StepKind::Agent { mode, options, .. } = &t.steps[0].kind else {
+        panic!("the first step of checkout() is an agent step")
+    };
+    assert_eq!(mode.as_deref(), Some("plan"));
+    assert_eq!(options.get("model").map(String::as_str), Some("strong"));
+    assert_eq!(store::parse(&toml::to_string(&t).unwrap()).unwrap(), t);
+}
+
+#[test]
+fn an_agent_step_without_settings_writes_no_keys() {
+    let text = toml::to_string(&checkout()).unwrap();
+    assert!(!text.contains("mode") && !text.contains("options"));
+}
+
+#[test]
+fn settings_on_a_command_step_do_not_read() {
+    // `verify` is the earlier command step; `mode` reads on an agent step
+    // only, so this key is one the parser never kept.
+    let text = toml::to_string_pretty(&checkout()).unwrap();
+    let with_mode = text.replacen(
+        "on_fail = \"implement\"",
+        "on_fail = \"implement\"\nmode = \"plan\"",
+        1,
+    );
+    assert!(store::parse(&with_mode)
+        .unwrap_err()
+        .contains("a key `steps[3].mode` that onehand does not read"));
+}
+
+#[test]
 fn validate_names_each_kind_of_problem() {
     let said =
         |t: &Template| -> Vec<String> { validate(t).iter().map(|p| p.to_string()).collect() };
@@ -338,6 +379,33 @@ fn validate_names_each_kind_of_problem() {
     }
     has(&t, "cannot hold in a checkout");
     has(&t, "both changed and unchanged");
+
+    let mut t = checkout();
+    if let StepKind::Agent { mode, .. } = &mut t.steps[0].kind {
+        *mode = Some(String::new());
+    }
+    has(&t, "Step 1: its mode is empty");
+
+    let mut t = checkout();
+    if let StepKind::Agent { options, .. } = &mut t.steps[0].kind {
+        options.insert(String::new(), "x".into());
+    }
+    has(&t, "Step 1: an option has no name");
+
+    let mut t = checkout();
+    if let StepKind::Agent { options, .. } = &mut t.steps[0].kind {
+        options.insert("effort".into(), String::new());
+    }
+    has(&t, "Step 1: the option effort has no value");
+
+    let mut t = checkout();
+    if let StepKind::Agent { options, .. } = &mut t.steps[0].kind {
+        options.insert("mode".into(), "plan".into());
+    }
+    has(
+        &t,
+        "Step 1: the mode is set with mode, not among the options",
+    );
 
     let mut t = checkout();
     if let StepKind::Agent { prompt, .. } = &mut t.steps[0].kind {
@@ -811,6 +879,71 @@ fn the_outcome_is_kept_and_an_old_run_without_it_still_loads() {
     assert_eq!(old.resume(), Action::AwaitApproval);
 }
 
+/// What the agent came up running is kept the first time it is told; a
+/// later call does not replace it.
+#[test]
+fn the_start_is_kept_once() {
+    let mut run = at_approval();
+    let first = Settings {
+        mode: Some("plan".into()),
+        options: BTreeMap::from([("model".to_string(), "opus".to_string())]),
+    };
+    run.start_settings(first.clone());
+    assert_eq!(run.started_with, Some(first.clone()));
+    run.start_settings(Settings {
+        mode: Some("code".into()),
+        options: BTreeMap::new(),
+    });
+    assert_eq!(
+        run.started_with,
+        Some(first),
+        "the second call did not replace it"
+    );
+}
+
+/// What a visit ran with is set on the open visit, survives a round trip
+/// through its file, and with no open visit does nothing.
+#[test]
+fn a_visit_keeps_what_it_ran_with() {
+    let mut run = at_approval();
+    let settings = Settings {
+        mode: Some("plan".into()),
+        options: BTreeMap::from([("effort".to_string(), "high".to_string())]),
+    };
+    run.ran_with(settings.clone());
+    assert_eq!(run.visits.last().unwrap().ran_with, Some(settings.clone()));
+    let back: Run = serde_json::from_str(&serde_json::to_string(&run).unwrap()).unwrap();
+    assert_eq!(back.visits.last().unwrap().ran_with, Some(settings));
+
+    let mut none_open = at_approval();
+    none_open.stopped(Stop::ByPerson);
+    none_open.ran_with(Settings::default());
+    assert_eq!(none_open.visits.last().unwrap().ran_with, None);
+}
+
+/// A run from before it kept its starting settings, or a visit what it ran
+/// with, reads with both `None`.
+#[test]
+fn a_run_from_before_settings_reads() {
+    let mut run = at_approval();
+    run.start_settings(Settings {
+        mode: Some("plan".into()),
+        options: BTreeMap::new(),
+    });
+    run.ran_with(Settings {
+        mode: Some("plan".into()),
+        options: BTreeMap::new(),
+    });
+    let mut json = serde_json::to_value(&run).unwrap();
+    json.as_object_mut().unwrap().remove("started_with");
+    for visit in json["visits"].as_array_mut().unwrap() {
+        visit.as_object_mut().unwrap().remove("ran_with");
+    }
+    let back: Run = serde_json::from_value(json).unwrap();
+    assert_eq!(back.started_with, None);
+    assert!(back.visits.iter().all(|v| v.ran_with.is_none()));
+}
+
 fn temp_dir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("onehand-workflow-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -1123,6 +1256,19 @@ fn a_retry_on_the_same_template_starts_where_the_last_run_stopped() {
         text.contains("The plan."),
         "the plan it carried is filled in"
     );
+}
+
+/// A retry is a new run: it starts with no settings, even when the last
+/// run kept some, never carrying over what it started with before.
+#[test]
+fn a_retry_starts_with_no_settings() {
+    let mut prev = exhausted_at_implement();
+    prev.start_settings(Settings {
+        mode: Some("plan".into()),
+        options: BTreeMap::new(),
+    });
+    let next = Run::retry_of(&prev, "2".into(), prev.template.clone(), None);
+    assert_eq!(next.started_with, None);
 }
 
 #[test]
@@ -1589,6 +1735,8 @@ fn packaged() -> Template {
                 prompt: "{brief}".into(),
                 gates: vec![GateKind::CodeChanged, GateKind::Committed],
                 keep_answer: false,
+                mode: None,
+                options: BTreeMap::new(),
             },
         ),
         step(
