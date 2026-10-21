@@ -70,6 +70,21 @@ pub(super) fn settle(
 /// none. Run after everything the same answer emitted, so a refusal has
 /// already failed the run and left nothing to plan.
 pub(super) fn answered(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
+    // The visit's own pick answered while another group's is still out (a
+    // person's in the composer): a refusal of that one is not the run's.
+    let sent = read(uid, cx, |d| {
+        Some(d.picking.as_ref()?.sent.as_ref()?.group().to_string())
+    })
+    .flatten();
+    if let Some(group) = sent
+        && !session.read(cx).chat.pick_waiting(&group)
+    {
+        with(uid, cx, |d| {
+            if let Some(picking) = d.picking.as_mut() {
+                picking.sent = None;
+            }
+        });
+    }
     if session.read(cx).chat.picks_waiting() {
         return;
     }
