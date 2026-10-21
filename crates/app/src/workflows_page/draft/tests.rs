@@ -112,39 +112,61 @@ fn sentence_raises_the_first_letter() {
     assert_eq!(sentence(""), "");
 }
 
+fn row(id: &str, value: &str) -> (String, String) {
+    (id.to_string(), value.to_string())
+}
+
+fn map(pairs: &[(&str, &str)]) -> std::collections::BTreeMap<String, String> {
+    pairs
+        .iter()
+        .map(|(id, value)| (id.to_string(), value.to_string()))
+        .collect()
+}
+
 #[test]
 fn a_drafts_settings_round_trip() {
     let mode = Some("plan".to_string());
-    let options = std::collections::BTreeMap::from([
-        ("effort".to_string(), "high".to_string()),
-        ("model".to_string(), "opus".to_string()),
-    ]);
-    let (text, rows) = settings_texts(&mode, &options);
-    assert_eq!(settings_of(&text, &rows), (mode, options));
+    let options = map(&[("effort", "high"), ("model", "opus"), ("fast", "on")]);
+    // Nothing known of the agent: every option is a row.
+    let (text, picked, rows) = settings_texts(&mode, &options, &[]);
+    assert!(picked.is_empty());
+    assert_eq!(
+        settings_of(&text, &picked, &rows),
+        (mode.clone(), options.clone())
+    );
+    // The agent offers model and effort: those are picks, fast a row.
+    let offered = ["model".to_string(), "effort".to_string()];
+    let (text, picked, rows) = settings_texts(&mode, &options, &offered);
+    assert_eq!(picked, map(&[("effort", "high"), ("model", "opus")]));
+    assert_eq!(rows, vec![row("fast", "on")]);
+    assert_eq!(settings_of(&text, &picked, &rows), (mode, options));
 }
 
 #[test]
 fn blank_option_rows_are_dropped() {
-    let rows = [
-        (" model ".to_string(), " opus ".to_string()),
-        ("  ".to_string(), String::new()),
-        ("effort".to_string(), String::new()),
-    ];
-    let (mode, options) = settings_of("  ", &rows);
+    let rows = [row(" model ", " opus "), row("  ", ""), row("effort", "")];
+    let (mode, options) = settings_of("  ", &map(&[("fast", "on")]), &rows);
     assert_eq!(mode, None);
     // A row with one side blank stays, for validation to name it.
     assert_eq!(
         options,
-        std::collections::BTreeMap::from([
-            ("effort".to_string(), String::new()),
-            ("model".to_string(), "opus".to_string()),
-        ])
+        map(&[("effort", ""), ("fast", "on"), ("model", "opus")])
     );
 }
 
 #[test]
+fn clearing_a_pick_leaves_it_to_the_run() {
+    let mut picked = map(&[("model", "opus")]);
+    set_pick(&mut picked, "effort", Some("high"));
+    set_pick(&mut picked, "model", Some("haiku"));
+    assert_eq!(picked, map(&[("effort", "high"), ("model", "haiku")]));
+    set_pick(&mut picked, "model", None);
+    assert_eq!(settings_of("", &picked, &[]).1, map(&[("effort", "high")]));
+}
+
+#[test]
 fn an_option_set_twice_is_found() {
-    let row = |id: &str, value: &str| (id.to_string(), value.to_string());
+    let none = std::collections::BTreeMap::new();
     let rows = [
         row("model", "opus"),
         row(" model ", "haiku"),
@@ -153,6 +175,12 @@ fn an_option_set_twice_is_found() {
         row("", "x"),
         row(" ", "y"),
     ];
-    assert_eq!(options_set_twice(&rows), vec!["model".to_string()]);
-    assert!(options_set_twice(&[row("model", "a"), row("fast", "on")]).is_empty());
+    assert_eq!(options_set_twice(&none, &rows), vec!["model".to_string()]);
+    assert!(options_set_twice(&none, &[row("model", "a"), row("fast", "on")]).is_empty());
+    // A pick and a row on one id is set twice too.
+    let picked = map(&[("model", "opus"), ("effort", "high")]);
+    assert_eq!(
+        options_set_twice(&picked, &[row(" model ", "haiku"), row("fast", "on")]),
+        vec!["model".to_string()]
+    );
 }

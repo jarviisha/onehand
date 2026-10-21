@@ -75,9 +75,13 @@ pub struct StepDraft {
     pub prompt: Entity<TextareaState>,
     pub gates: Vec<GateKind>,
     pub keep_answer: bool,
-    /// The mode an agent step's visits run in; empty, the run's own.
+    /// The mode an agent step's visits run in; empty, the run's own. Typed,
+    /// or set by picking one the agent offers.
     pub mode: Entity<InputState>,
-    /// An agent step's options, a row each: the option's id, its value.
+    /// An agent step's options picked from what the agent offers, by id.
+    pub picked: BTreeMap<String, String>,
+    /// An agent step's other options, typed, a row each: the option's id,
+    /// its value.
     pub options: Vec<(Entity<InputState>, Entity<InputState>)>,
     pub command: Entity<InputState>,
     /// How long status checks are waited on.
@@ -169,7 +173,13 @@ impl StepDraft {
             }
         };
         let prompt = prompt.to_string();
-        let (mode, options) = settings_texts(&mode, &options);
+        // An option the agent runs take is known to offer opens as a pick;
+        // the rest, or all while nothing is known, as rows to type in.
+        let offered: Vec<String> = run_agent_offer(cx)
+            .and_then(|(_, offer)| offer)
+            .map(|offer| offer.options.into_iter().map(|(id, _)| id).collect())
+            .unwrap_or_default();
+        let (mode, picked, options) = settings_texts(&mode, &options, &offered);
         Self {
             id: input(&spec.id, window, cx),
             label: input(&spec.label, window, cx),
@@ -190,6 +200,7 @@ impl StepDraft {
                     .placeholder("Empty: the run's mode")
                     .default_value(mode)
             }),
+            picked,
             options: options
                 .into_iter()
                 .map(|(id, value)| option_row(&id, &value, window, cx))
@@ -213,7 +224,7 @@ impl StepDraft {
     }
 
     /// The option rows' texts, as typed.
-    fn option_texts(&self, cx: &App) -> Vec<(String, String)> {
+    pub(super) fn option_texts(&self, cx: &App) -> Vec<(String, String)> {
         self.options
             .iter()
             .map(|(id, value)| {
@@ -227,7 +238,11 @@ impl StepDraft {
 
     pub(super) fn to_spec(&self, cx: &App) -> StepSpec {
         let command = self.command.read(cx).value().trim().to_string();
-        let (mode, options) = settings_of(&self.mode.read(cx).value(), &self.option_texts(cx));
+        let (mode, options) = settings_of(
+            &self.mode.read(cx).value(),
+            &self.picked,
+            &self.option_texts(cx),
+        );
         StepSpec {
             id: self.id.read(cx).value().trim().to_string(),
             label: self.label.read(cx).value().trim().to_string(),
@@ -322,7 +337,7 @@ impl WorkflowDraft {
         for (at, step) in self.steps.iter().enumerate() {
             if step.kind == Kind::Agent {
                 problems.extend(
-                    options_set_twice(&step.option_texts(cx))
+                    options_set_twice(&step.picked, &step.option_texts(cx))
                         .into_iter()
                         .map(|id| (Some(at), format!("the option {id} is set twice"))),
                 );
@@ -439,40 +454,74 @@ fn option_row(
     )
 }
 
+/// The agent runs take by default (`[unattended] agent`, else the first
+/// configured) and what it was seen to offer, if anything yet; `None` when
+/// no such agent is configured.
+pub(super) fn run_agent_offer(
+    cx: &App,
+) -> Option<(onehand_core::config::AgentSpec, Option<core::Offer>)> {
+    let name = crate::unattended::run_agent(cx)?;
+    let spec = onehand_core::config::agent_or_first(
+        &crate::state::Shared::global(cx).agents,
+        Some(&name),
+    )?
+    .clone();
+    let offer = crate::unattended::offered(&spec, cx);
+    Some((spec, offer))
+}
+
 /// A step's mode and options as the form's fields hold them: the mode's
-/// text, and a row of id and value per option.
+/// text, the options whose ids are in `offered` as picks, and a row of id
+/// and value per other option.
 pub(super) fn settings_texts(
     mode: &Option<String>,
     options: &BTreeMap<String, String>,
-) -> (String, Vec<(String, String)>) {
+    offered: &[String],
+) -> (String, BTreeMap<String, String>, Vec<(String, String)>) {
+    let (picked, rows): (Vec<_>, Vec<_>) = options
+        .iter()
+        .map(|(id, value)| (id.clone(), value.clone()))
+        .partition(|(id, _)| offered.contains(id));
     (
         mode.clone().unwrap_or_default(),
-        options
-            .iter()
-            .map(|(id, value)| (id.clone(), value.clone()))
-            .collect(),
+        picked.into_iter().collect(),
+        rows,
     )
 }
 
 /// The mode and options the form's fields say, trimmed: a blank mode is
-/// none, a row blank on both sides is dropped, and a row blank on one side
-/// is kept so validation names it.
+/// none, the picks as they are, a row blank on both sides is dropped, and a
+/// row blank on one side is kept so validation names it.
 pub(super) fn settings_of(
     mode: &str,
+    picked: &BTreeMap<String, String>,
     rows: &[(String, String)],
 ) -> (Option<String>, BTreeMap<String, String>) {
     let mode = mode.trim();
-    let options = rows
-        .iter()
-        .map(|(id, value)| (id.trim().to_string(), value.trim().to_string()))
-        .filter(|(id, value)| !id.is_empty() || !value.is_empty())
-        .collect();
+    let mut options = picked.clone();
+    options.extend(
+        rows.iter()
+            .map(|(id, value)| (id.trim().to_string(), value.trim().to_string()))
+            .filter(|(id, value)| !id.is_empty() || !value.is_empty()),
+    );
     ((!mode.is_empty()).then(|| mode.to_string()), options)
 }
 
-/// The option ids, trimmed, that more than one row sets, each once.
-pub(super) fn options_set_twice(rows: &[(String, String)]) -> Vec<String> {
-    let mut seen = std::collections::BTreeSet::new();
+/// Pick `value` for option `id`, or with `None` leave it to the run.
+pub(super) fn set_pick(picked: &mut BTreeMap<String, String>, id: &str, value: Option<&str>) {
+    match value {
+        Some(value) => picked.insert(id.to_string(), value.to_string()),
+        None => picked.remove(id),
+    };
+}
+
+/// The option ids, trimmed, set more than once, by a pick and a row or by
+/// two rows, each once.
+pub(super) fn options_set_twice(
+    picked: &BTreeMap<String, String>,
+    rows: &[(String, String)],
+) -> Vec<String> {
+    let mut seen: std::collections::BTreeSet<&str> = picked.keys().map(String::as_str).collect();
     let mut twice = Vec::new();
     for (id, _) in rows {
         let id = id.trim();

@@ -127,9 +127,22 @@ a step does not name goes back to what the run started with**, never what the st
 left: a *Plan* step in a planning mode must not leave *Implement* unable to edit, so a step runs
 the same whichever step ran before it. None of the shipped workflows names any: model ids differ
 between agents, and they must run on any. On the Workflows page an agent step has an *Agent
-settings* section: *Mode*, a row per option, *Add option*, and a muted line per configured agent
-of what it was seen to offer in this process (four at most, then how many more). An option set
-twice on a step is a problem, and *Save* refuses.
+settings* section offering the choices of the agent runs take by default (`[unattended] agent`,
+else the first configured), as it was seen to offer them in this process; a muted line under the
+heading names it (*Choices … offers*). *Mode* is a row of choices, *Run's mode* first, then each
+mode offered; each option offered, in the agent's order, is a row named by its id, *Run's value*
+first, then each value (twelve options and twelve values at most, then how many more). A row
+shows the value the step sets, picked or typed below; picking sets it, *Run's …* clears it, and
+either drops a typed row setting the same id.
+A value the step names that the agent does not offer (written for another agent, or by hand in
+the file) stays on its row, chosen, in the warning ink and marked *not offered*. Below, *Other
+options*: rows typed by id and value, and *Add option*, for what the agent does not list. While
+what the agent offers is not known yet, *Mode* and the option rows are typed, and the line says
+so beside *Check the agent*, started in the project selected in the rail (else the first one the
+window has open, else the home folder); when it comes back the choices are drawn. With no agent
+configured both are typed, and the line says so. The editor judges nothing: the preflight does. A
+shipped workflow's choices refuse, saying it is duplicated to be changed. An option set twice on
+a step, by two rows or by a pick and a row, is a problem, and *Save* refuses.
 
 ### Id and version
 
@@ -644,12 +657,15 @@ approval.
 
 | Case | Do | Expect |
 |---|---|---|
-| A step that sets a model | Implement: option `model` = `cheap` | Plan's answer begins `[mode code · model strong · …]`, with no *Settings* note; Implement's session note reads *Settings: mode code · model cheap · effort low · fast off*, and its answer begins `[mode code · model cheap · effort low · fast off]` |
+| A step that sets a model | Implement: under `model`, pick `cheap` | Plan's answer begins `[mode code · model strong · …]`, with no *Settings* note; Implement's session note reads *Settings: mode code · model cheap · effort low · fast off*, and its answer begins `[mode code · model cheap · effort low · fast off]` |
 | Going back restores it | The same, brief `fail-check fast`; while Verify's `sleep 5` runs, pick *strong* in the composer | Verify fails and Implement's second visit notes *Settings: … model cheap …* again, its answer beginning `[… model cheap …]` |
-| A step naming nothing goes back to the start | Plan: *Mode* `plan`, option `model` = `cheap`; Implement names nothing | Plan notes *Settings: mode plan · model cheap · effort low · fast off*; Implement notes *Settings: mode code · model strong · effort low · fast off* |
-| A value not offered blocks | With a session of the mock opened since onehand started, Implement: option `model` = `opus`; *Run…* on its card, then the project | In the danger ink: *Step 3 (Implement): the agent offers no `opus` for `model` (it offers: strong, cheap).*, with where it is changed; *Run* is spent |
-| A value gone under another model | Implement: `model` = `cheap`, `effort` = `high` | Nothing blocks the start; the run fails at Implement, a configuration failure: *the agent offers no `high` for `effort` (it offers: low, max)*, and no prompt went to Implement |
-| A pick the agent refuses | Implement: `effort` = `max` | The run fails at Implement: *the agent refused `max` for `effort`: Max effort is not available on this plan* |
+| A step naming nothing goes back to the start | Plan: *Mode* `plan`, `model` `cheap`; Implement names nothing | Plan notes *Settings: mode plan · model cheap · effort low · fast off*; Implement notes *Settings: mode code · model strong · effort low · fast off* |
+| A value not offered blocks | With a session of the mock opened since onehand started, Implement: *Add option* `model` = `opus` (its row above shows `opus · not offered`, chosen, in the warning ink); *Run…* on its card, then the project | In the danger ink: *Step 3 (Implement): the agent offers no `opus` for `model` (it offers: strong, cheap).*, with where it is changed; *Run* is spent |
+| A value gone under another model | Implement: `model` `cheap`, `effort` `high` | Nothing blocks the start; the run fails at Implement, a configuration failure: *the agent offers no `high` for `effort` (it offers: low, max)*, and no prompt went to Implement |
+| A pick the agent refuses | Implement: `effort` `max` | The run fails at Implement: *the agent refused `max` for `effort`: Max effort is not available on this plan* |
 | Check the agent learns the options | A duplicate of *Implement on a branch* whose Implement names `model` = `opus`, `[unattended] mode = ""`; add `"again"` to the mock's `args` (a new spec), then *Run workflow…* on an issue and pick the duplicate | *The agent's settings for this workflow's steps are not known yet …*, muted, with *Check the agent*; pressed, it turns into the block naming `opus` and what `model` offers; no session appears |
+| The editor before the agent is known | Restart onehand, open the duplicate's Implement | *What Mock workflow offers is not known yet* with *Check the agent*, *Mode* and the option rows typed; pressed, the button spins, then *Choices Mock workflow offers*, *Mode* `Run's mode · code · plan`, rows `model`, `effort`, `fast`, the value a typed `model` row holds chosen on its row; picking another drops the typed row |
+| No agent configured | Remove every agent in Settings ▸ Agents, open an agent step | *No agent is configured, so there is nothing to pick from*; *Mode* and options typed as before |
+| A shipped workflow | Open *Work in checkout*'s Plan with the agent known | The choices draw, each refusing with *Built in: duplicate it to change it*; no *Add option* |
 | What a visit ran with | After *A step that sets a model*, open the task on the Tasks page | Under each visit, muted: Plan *mode code · model strong · effort low · fast off*, Implement *mode code · model cheap · effort low · fast off*; Approve and Verify say nothing |
 | An option set twice | On an agent step, *Add option* twice, both `model` | The step's problem reads *the option model is set twice*, on its row too; *Save* refuses |

@@ -267,6 +267,7 @@ pub(super) fn step_panel(
     handle: &Entity<WorkflowsPage>,
     draft: &WorkflowDraft,
     place: Place,
+    cwd: Option<&std::path::Path>,
     cx: &App,
 ) -> AnyElement {
     let Some(i) = draft.open_step.filter(|i| *i < draft.steps.len()) else {
@@ -502,7 +503,7 @@ pub(super) fn step_panel(
                     cx,
                 ))
                 .child(div().h_flex().child(keep))
-                .child(settings::agent_settings(handle, i, step, shipped, cx))
+                .child(settings::agent_settings(handle, i, step, shipped, cwd, cx))
                 .into_any_element()
         }
         Kind::Push => div()

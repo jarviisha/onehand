@@ -86,7 +86,10 @@ pub(super) fn editor(
     let edge = cx.theme().border;
     let info = || workflow_column(handle, draft, cx);
     let steps = || steps_column(handle, draft, cx);
-    let step = || super::step::step_panel(handle, draft, draft.place, cx);
+    // A project the window has open, the one selected first, is where
+    // *Check the agent* starts the agent.
+    let cwd = choices.first().map(|(root, _)| root.as_path());
+    let step = || super::step::step_panel(handle, draft, draft.place, cwd, cx);
     let step_column = || {
         column("workflow-step", step())
             .flex_none()
