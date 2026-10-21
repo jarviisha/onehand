@@ -82,7 +82,9 @@ A config is settled every time it is read, and a save writes the settled list
 - A preset with no name takes its shown name; a name already taken earlier in the list gets ` (2)`,
   ` (3)`…, so no entry is dropped.
 - `unattended.mode = "acceptEdits"`, the old default written into every file, is dropped when runs
-  use a built-in agent, which knows its own mode; for a declared agent it is kept.
+  use a built-in agent, which knows its own mode; for a declared agent it is kept. The old default
+  left declared still counts as Claude Code for that mode, and the mode is read when each run starts,
+  so making another agent the default changes it.
 
 ## Known differences
 
