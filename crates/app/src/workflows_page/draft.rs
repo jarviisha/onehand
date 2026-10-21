@@ -28,9 +28,9 @@ pub struct WorkflowDraft {
     pub open_step: Option<usize>,
     /// One onehand ships, shown read-only: it is changed by duplicating it.
     pub shipped: bool,
-    /// Whether what the agent runs take offers was known when the steps'
-    /// options were last sorted into picks and typed rows.
-    offer_known: bool,
+    /// The agent whose offer the steps' options were last sorted into picks
+    /// and typed rows by, while one was known.
+    sorted_by: Option<onehand_core::config::AgentSpec>,
 }
 
 /// A step's kind as the form holds it: the kind alone, its fields kept apart
@@ -302,30 +302,41 @@ impl WorkflowDraft {
                 .collect(),
             open_step: None,
             shipped,
-            offer_known: run_agent_offer(cx).is_some_and(|(_, offer)| offer.is_some()),
+            sorted_by: run_agent_offer(cx)
+                .filter(|(_, offer)| offer.is_some())
+                .map(|(spec, _)| spec),
         }
     }
 
     /// Once what the agent runs take offers becomes known (a check came
-    /// back), a typed row naming an option it offers, with one of its
-    /// values, becomes that option's pick, so each id has one place.
-    /// Whether a row went, whose field may have held the keyboard.
-    pub fn adopt_offer(&mut self, cx: &App) -> bool {
-        let mut adopted = false;
-        let offer = run_agent_offer(cx).and_then(|(_, offer)| offer);
-        if let (Some(offer), false) = (&offer, self.offer_known) {
-            for step in &mut self.steps {
-                let rows = step.option_texts(cx);
-                for at in adoptable(&rows, &step.picked, offer).into_iter().rev() {
-                    let (id, value) = &rows[at];
-                    set_pick(&mut step.picked, id.trim(), Some(value.trim()));
-                    step.options.remove(at);
-                    adopted = true;
+    /// back, or that agent changed), a typed row naming an option it
+    /// offers, with one of its values, becomes that option's pick, so each
+    /// id has one place. A row being typed in is left as it is: moving it
+    /// would take the keyboard from under the person.
+    pub fn adopt_offer(&mut self, window: &Window, cx: &App) {
+        let known = run_agent_offer(cx).and_then(|(spec, offer)| Some((spec, offer?)));
+        let Some((spec, offer)) = known else {
+            self.sorted_by = None;
+            return;
+        };
+        if self.sorted_by.as_ref() == Some(&spec) {
+            return;
+        }
+        for step in &mut self.steps {
+            let rows = step.option_texts(cx);
+            for at in adoptable(&rows, &step.picked, &offer).into_iter().rev() {
+                let (id_field, value_field) = &step.options[at];
+                if id_field.read(cx).focus_handle(cx).is_focused(window)
+                    || value_field.read(cx).focus_handle(cx).is_focused(window)
+                {
+                    continue;
                 }
+                let (id, value) = &rows[at];
+                set_pick(&mut step.picked, id.trim(), Some(value.trim()));
+                step.options.remove(at);
             }
         }
-        self.offer_known = offer.is_some();
-        adopted
+        self.sorted_by = Some(spec);
     }
 
     /// The template this form describes, or why the allowance of misses does

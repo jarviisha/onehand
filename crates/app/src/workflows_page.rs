@@ -178,10 +178,8 @@ impl Render for WorkflowsPage {
             ) => Some(form::unreadable(&handle, &why, &file, cx)),
             _ => None,
         };
-        // A row that became a pick leaves the frame, and its field may have
-        // held the keyboard.
-        if self.draft.as_mut().is_some_and(|d| d.adopt_offer(cx)) {
-            window.focus(&self.focus_handle, cx);
+        if let Some(draft) = &mut self.draft {
+            draft.adopt_offer(window, cx);
         }
         let halves = if let Some(draft) = &self.draft {
             editor::editor(

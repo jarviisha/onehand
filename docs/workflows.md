@@ -141,7 +141,8 @@ what the agent offers is not known yet, *Mode* and the option rows are typed, an
 so beside *Check the agent*, started in the project selected in the rail (else the first one the
 window has open, else the home folder); a value picked while the offer was known keeps its row,
 unmarked, to keep or leave to the run. When the check comes back the choices are drawn, and a
-typed row naming an option offered, with one of its values, becomes that option's pick. With no agent
+typed row naming an option offered, with one of its values, becomes that option's pick, unless
+it is being typed in, when it stays a typed row. With no agent
 configured both are typed, and the line says so. The editor judges nothing: the preflight does. A
 shipped workflow's choices refuse, saying it is duplicated to be changed. An option set twice on
 a step, by two rows or by a pick and a row, is a problem, and *Save* refuses.
