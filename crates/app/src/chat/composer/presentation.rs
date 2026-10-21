@@ -212,21 +212,33 @@ fn chip_group<'a>(
         .filter(|option| !option.choices.is_empty())
 }
 
-/// The Fast chip's words for a value: the setting named, then the value, since
-/// the value alone ("Off") says nothing about what it is.
-pub(super) fn fast_label(value: &str) -> String {
-    format!("Fast: {value}")
+/// Fast mode as a picker draws it: whether its bolt is lit, and the words its
+/// tooltip names the value in force by, since the bolt alone names none.
+pub(super) struct FastPick {
+    pub(super) lit: bool,
+    pub(super) label: SharedString,
 }
 
-/// What that chip says: the value in force after the setting's name, or the
-/// setting's own name until one is.
-pub(super) fn fast_action(session: &Entity<ChatSession>, cx: &App) -> Option<SharedString> {
+/// What that picker shows: the value in force after the setting's name, or the
+/// setting's own name until one is; lit once a value in force is not one of
+/// the words that name a fast group's off side.
+pub(super) fn fast_action(session: &Entity<ChatSession>, cx: &App) -> Option<FastPick> {
     let option = chip_group(&session.read(cx).chat.config_options, CHIP_GROUP)?;
-    Some(SharedString::from(
-        in_force(option)
-            .map(|choice| fast_label(&choice.name))
-            .unwrap_or_else(|| option.name.clone()),
-    ))
+    let current = in_force(option);
+    Some(FastPick {
+        lit: lit(current),
+        label: SharedString::from(
+            current
+                .map(|choice| format!("Fast mode: {}", choice.name))
+                .unwrap_or_else(|| option.name.clone()),
+        ),
+    })
+}
+
+/// Whether a picker's value in force reads as fast: there is one, and it is
+/// not named as the off side.
+fn lit(current: Option<&onehand_core::acp::ConfigChoice>) -> bool {
+    current.is_some_and(|choice| !says(choice, &OFF_WORDS))
 }
 
 /// The choices behind it.
@@ -322,6 +334,13 @@ const OFF_WORDS: [&str; 7] = [
     "off", "false", "disabled", "no", "normal", "standard", "default",
 ];
 
+/// Whether a choice is named by one of `words`, by its value or its label.
+fn says(choice: &onehand_core::acp::ConfigChoice, words: &[&str]) -> bool {
+    [&choice.value, &choice.name]
+        .iter()
+        .any(|word| words.contains(&word.trim().to_lowercase().as_str()))
+}
+
 /// The fast group as a switch, where it is unmistakably one.
 ///
 /// **Exactly two choices, and one of them named as on or off** by its value or
@@ -331,11 +350,6 @@ const OFF_WORDS: [&str; 7] = [
 fn toggle_of(option: &onehand_core::acp::ConfigOption) -> Option<FastToggle> {
     let [a, b] = option.choices.as_slice() else {
         return None;
-    };
-    let says = |choice: &onehand_core::acp::ConfigChoice, words: &[&str]| {
-        [&choice.value, &choice.name]
-            .iter()
-            .any(|word| words.contains(&word.trim().to_lowercase().as_str()))
     };
     let (on, off) = match (
         says(a, &ON_WORDS) || says(b, &OFF_WORDS),
@@ -509,7 +523,8 @@ fn config_rank(option: &onehand_core::acp::ConfigOption, index: usize) -> (u8, u
 #[cfg(test)]
 mod tests {
     use super::{
-        CHIP_GROUP, EFFORT_GROUP, config_rank, has_own_chip, in_force, listed, names, toggle_of,
+        CHIP_GROUP, EFFORT_GROUP, config_rank, has_own_chip, in_force, listed, lit, names,
+        toggle_of,
     };
     use onehand_core::acp::{ConfigChoice, ConfigOption};
 
@@ -621,6 +636,18 @@ mod tests {
             toggle_of(&effort("fast", "Fast", &["on", "yes"], Some("on"))).is_none(),
             "two values both saying on is no switch"
         );
+    }
+
+    #[test]
+    fn a_fast_picker_is_lit_unless_its_value_reads_as_off() {
+        let at = |current| {
+            let option = effort("fast", "Fast", &["turbo", "normal", "eco"], current);
+            lit(in_force(&option))
+        };
+        assert!(at(Some("turbo")), "a value with no off word is fast");
+        assert!(at(Some("eco")), "nothing says eco is the off side");
+        assert!(!at(Some("normal")), "an off word is dark");
+        assert!(!at(None), "nothing in force is dark");
     }
 
     #[test]

@@ -152,7 +152,7 @@ impl RenderOnce for CommandBlock {
             })
             // Over the fade: the one thing that says how far the command runs.
             .when(overflows, |block| {
-                block.child(Scrollbar::vertical(&scroll).mode(ScrollbarMode::Always))
+                block.child(onehand_ui::scrollbar(&scroll).mode(ScrollbarMode::Always))
             })
     }
 }

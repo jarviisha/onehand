@@ -466,6 +466,13 @@ impl ChatPane {
         &mut self.zoom
     }
 
+    /// Answer the pinned permission with its option of `weight`.
+    fn answer_pinned(&self, weight: onehand_core::acp::PermissionWeight, cx: &mut Context<Self>) {
+        if let Some(session) = self.session() {
+            transcript::answer_pinned(&session, weight, cx);
+        }
+    }
+
     /// Put the caret in the composer.
     pub fn focus_composer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.composer
@@ -679,6 +686,46 @@ impl Render for ChatPane {
             .size_full()
             .track_focus(&self.focus_handle)
             .key_context("Chat")
+            // The pinned card's answers with the modifier, wherever the
+            // keyboard is in the conversation.
+            .on_action(
+                cx.listener(|pane: &mut Self, _: &transcript::PinnedAllow, _, cx| {
+                    pane.answer_pinned(onehand_core::acp::PermissionWeight::AllowOnce, cx);
+                }),
+            )
+            .on_action(
+                cx.listener(|pane: &mut Self, _: &transcript::PinnedAlways, _, cx| {
+                    pane.answer_pinned(onehand_core::acp::PermissionWeight::AllowAlways, cx);
+                }),
+            )
+            .on_action(
+                cx.listener(|pane: &mut Self, _: &transcript::PinnedDeny, _, cx| {
+                    pane.answer_pinned(onehand_core::acp::PermissionWeight::Deny, cx);
+                }),
+            )
+            .on_action(
+                cx.listener(|pane: &mut Self, _: &transcript::PinnedNext, _, cx| {
+                    if let Some(session) = pane.session() {
+                        transcript::advance_pinned(&session, cx);
+                    }
+                }),
+            )
+            .on_action(
+                cx.listener(|pane: &mut Self, _: &transcript::PinnedSkip, window, cx| {
+                    if let Some(session) = pane.session() {
+                        transcript::skip_pinned(&session, window, cx);
+                    }
+                }),
+            )
+            // A choice's number with the modifier, wherever the keyboard is in
+            // the conversation; a card holding the keys answers its own first.
+            .on_action(cx.listener(
+                |pane: &mut Self, pick: &crate::chat::transcript::QuestionPick, window, cx| {
+                    if let Some(session) = pane.session() {
+                        crate::chat::transcript::pick_pinned(&session, pick.index, window, cx);
+                    }
+                },
+            ))
             // Esc dismisses whichever list the composer has open.
             //
             // Handled here, on the action, rather than bound to the key: the

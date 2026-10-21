@@ -10,7 +10,7 @@ use gpui::{
     App, Context, Entity, InteractiveElement, ParentElement, Rems, SharedString,
     StatefulInteractiveElement, Styled, div, rems,
 };
-use gpui_component::scroll::{Scrollbar, ScrollbarMode};
+use gpui_component::scroll::ScrollbarMode;
 use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::completion::TriggerKind;
 
@@ -28,10 +28,11 @@ const POPUP_HEADROOM: Rems = rems(1.);
 /// How many rows a list shows at once; the rest scroll, and a line under the
 /// list says how many there are.
 ///
-/// **A glance and not a search.** Past about this many a list stops being taken
-/// in at once and becomes something searched, and the query in the field is the
-/// better tool for that than the eye is.
-pub(super) const POPUP_MAX_ROWS: f32 = 6.;
+/// **Enough to scan a long list of files or commands without scrolling at every
+/// step**, and still short of a list that is searched rather than read, where
+/// the query in the field is the better tool. Six read as a keyhole on a
+/// project's files. The panel's own height bounds it before this does.
+pub(super) const POPUP_MAX_ROWS: f32 = 10.;
 /// How much of the card underneath a popup is left showing.
 ///
 /// A popup drawn over a parked card has nearly its width and its surface, so
@@ -103,7 +104,11 @@ pub(super) fn edge_scrolled(
             true => THUMB_LANE,
             false => POPUP_INSET,
         }))
-        .child(Scrollbar::vertical(scroll).mode(ScrollbarMode::Always))
+        // Only over a list that runs past its box: on one that fits, the
+        // thumb filled the whole track and said nothing but "a bar".
+        .when(scrolls, |list| {
+            list.child(onehand_ui::scrollbar(scroll).mode(ScrollbarMode::Always))
+        })
 }
 
 /// How far a scrolling list's rows stand off the popup's edge: the thumb and
@@ -353,8 +358,16 @@ impl Composer {
         // Measured once, on the frame the popup opens, against an empty query,
         // and held until it closes: the list never moves under the hand aiming
         // at it because typing narrowed it.
+        //
+        // **Only a completion is held so.** A menu is its rows and nothing
+        // narrows it, and the shape is read off the `@` or `/` list: asked
+        // for a menu while a trigger was still remembered, it held a
+        // three-row menu open at the height of every slash command.
         if self.opened_rows.is_none() && !pending {
-            self.opened_rows = Some(self.shape(session, cx));
+            self.opened_rows = Some(match completion {
+                true => self.shape(session, cx),
+                false => (0, 0),
+            });
         }
         let (opened, label_floor) = self.opened_rows.unwrap_or_default();
         let floor = opened.min(POPUP_MAX_ROWS as usize);

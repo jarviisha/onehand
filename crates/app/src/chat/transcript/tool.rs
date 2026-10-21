@@ -16,7 +16,7 @@ use gpui::{
     App, Axis, ClickEvent, Entity, InteractiveElement, IntoElement, ParentElement, RenderOnce,
     ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Window, div, rems,
 };
-use gpui_component::scroll::{ScrollableMask, Scrollbar, ScrollbarMode};
+use gpui_component::scroll::{ScrollableMask, ScrollbarMode};
 use gpui_component::{ActiveTheme, IconName, IconNamed as _, StyledExt};
 use onehand_core::acp::{ToolContent, ToolKind, ToolStatus};
 use onehand_core::chat::activity;

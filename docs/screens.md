@@ -72,12 +72,15 @@ unread.
 
 A card with no edge, set off by its raised fill and lift; the caret alone shows focus, and no line
 is ever added to it (a refusal is Send's tooltip, a failure a toast). The field, then the `+` menu,
-*Fast* (*Fast: On* or *Off*, a toggle with no caret, when its choices read as on and off; else
-*Fast:* and the value in force), the model and effort chips, then *Send*, or *Stop* (solid danger,
+*Fast* (its bolt alone, in the warning ink while fast: a toggle with no caret when its choices
+read as on and off; else a picker with a caret, the value in force on its tooltip), the model and
+effort chips, then *Send*, or *Stop* (solid danger,
 worded) and *Queue* over a draft. Under it the branch and the mode, stacked when narrow. Each chip's
 menu opens just above it, without its tooltip. Above the card: one pinned permission or question,
-the oldest, with how many more wait; then the queue and a reconnect as plain lines; then the staged
-files as one row of chips, faded where cut beside *Show all N*. *Run a workflow…* (the `+` menu, the
+the oldest, with how many more wait; then one surface on the card's fill and lift holding a
+reconnect and the queue as lines, then the staged files as one row of plates (a picture's preview,
+pressed to open it whole in a dialog; a text file opening in the Workbench), faded where cut beside
+*Show all N*. A picture attached to a sent prompt opens the same way. *Run a workflow…* (the `+` menu, the
 keymap, the Workflows page's *Run…*) opens the launcher, and an issue's *Run workflow…* its start
 form; both are drawn as `docs/workflows.md` describes.
 

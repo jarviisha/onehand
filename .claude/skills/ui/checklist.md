@@ -31,8 +31,8 @@ the rule, not just the question. For prose-only work, use the contract path in `
 10. Every split or stack reading the measured container, never the window (`docs/ui-patterns.md`,
     *List and detail*, *Boxes*)?
 11. Attention signals (a state's hue, a count or badge of what waits, a dot, weight past the
-    role's) only where something needs the person or has just changed (`DESIGN.md`,
-    *Principles*)?
+    role's) only where something needs the person or has just changed, or on the mark of the
+    control that switched a mode on (`DESIGN.md`, *Principles*)?
 12. A change the person can take back shown at once, and every failure of something a person
     started said once: a toast of the kind its meaning takes or a line, never both and never a
     log alone (`docs/ui-patterns.md`, *Immediate feedback*, *Failing and refusing*, *Toasts*)?

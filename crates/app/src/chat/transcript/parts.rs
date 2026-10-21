@@ -12,7 +12,7 @@ use gpui::{
     relative, rems,
 };
 use gpui_component::button::Button;
-use gpui_component::scroll::{ScrollableMask, Scrollbar, ScrollbarMode};
+use gpui_component::scroll::{ScrollableMask, ScrollbarMode};
 use gpui_component::spinner::Spinner;
 use gpui_component::tag::Tag;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
@@ -53,9 +53,10 @@ const MAX_BLOCKING_BODY_H: Rems = rems(16.);
 /// thumb reads as a row drawn wrong rather than as one that scrolls. So the
 /// frame reaches back through `inset` -- which must be the card's own right
 /// padding -- and the rows are held off by the same amount, which leaves them
-/// ending where the free-text box below the list does. That box is the last
-/// row of the options and sits outside the scroll because it is a control,
-/// so two edges here would read as one list cut in two.
+/// ending where the free-text box under the list does.
+/// How far the cut end of a pinned card's scrolling body fades out.
+const BODY_FADE: Rems = rems(2.);
+
 #[derive(IntoElement)]
 pub(super) struct BlockingBody {
     pub(super) target: TranscriptItemId,
@@ -72,6 +73,29 @@ impl RenderOnce for BlockingBody {
             })
             .read(cx)
             .clone();
+        // **What is cut off below fades out**, so a list that goes on past the
+        // frame says so where it is cut rather than only in the thumb at its
+        // edge. Last frame's measurement, as the composer's tray reads its own;
+        // the canvas asks for one more frame only when a scroll changed it.
+        let below =
+            |scroll: &ScrollHandle| scroll.max_offset().y + scroll.offset().y > gpui::px(0.);
+        let more = below(&scroll);
+        let remeasure = {
+            let scroll = scroll.clone();
+            gpui::canvas(
+                move |_, window, cx| {
+                    if below(&scroll) != more {
+                        // After this frame: a refresh asked for mid-draw is
+                        // dropped.
+                        window.defer(cx, |window, _| window.refresh());
+                    }
+                },
+                |_, _, _, _| {},
+            )
+            .absolute()
+            .size_0()
+        };
+        let surface = cx.theme().popover.alpha(1.);
 
         div()
             .id(("blocking-body-frame", key))
@@ -96,8 +120,25 @@ impl RenderOnce for BlockingBody {
             // The mask takes vertical wheel input in the capture phase. A bubble
             // listener runs too late inside `gpui::list`: the transcript has
             // already spent the same delta scrolling itself by then.
+            .child(remeasure)
+            .when(more, |frame| {
+                frame.child(
+                    div()
+                        .absolute()
+                        .bottom_0()
+                        .left_0()
+                        // Short of the thumb, which runs in the inset.
+                        .right(self.inset)
+                        .h(BODY_FADE)
+                        .bg(gpui::linear_gradient(
+                            180.,
+                            gpui::linear_color_stop(surface.alpha(0.), 0.),
+                            gpui::linear_color_stop(surface, 1.),
+                        )),
+                )
+            })
             .child(ScrollableMask::new(Axis::Vertical, &scroll).id(("blocking-body-mask", key)))
-            .child(Scrollbar::vertical(&scroll).mode(ScrollbarMode::Always))
+            .child(onehand_ui::scrollbar(&scroll).mode(ScrollbarMode::Always))
     }
 }
 
@@ -275,7 +316,7 @@ impl RenderOnce for ScrollBody {
                     .children(self.children),
             )
             .child(contain_wheel(scroll.clone()))
-            .child(Scrollbar::vertical(&scroll).mode(ScrollbarMode::Always))
+            .child(onehand_ui::scrollbar(&scroll).mode(ScrollbarMode::Always))
     }
 }
 

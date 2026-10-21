@@ -115,6 +115,7 @@ icons! {
     Square => "square",
     SquarePen => "square-pen",
     SquareSlash => "square-slash",
+    Zap => "zap",
 }
 
 #[cfg(test)]

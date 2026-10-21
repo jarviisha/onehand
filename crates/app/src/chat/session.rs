@@ -10,7 +10,7 @@ use futures::StreamExt as _;
 use gpui::{
     App, AppContext, BorrowAppContext as _, Context, Entity, EventEmitter, Subscription, Task,
 };
-use gpui_component::input::InputState;
+use gpui_component::input::TextareaState;
 use gpui_component::text::TextViewState;
 use onehand_core::chat::{Chat, ChatItem, Md, MdId, TranscriptItemId};
 use onehand_core::completion;
@@ -135,7 +135,7 @@ pub enum ChatEvent {
 /// The subscription is held rather than detached for the reason the pump is:
 /// it writes into this session, so it has no business outliving it.
 struct AskInput {
-    state: Entity<InputState>,
+    state: Entity<TextareaState>,
     _typing: Subscription,
 }
 
@@ -194,6 +194,10 @@ pub struct ChatSession {
     /// pressing in the composer an inch below, so the card answers them only
     /// while it holds the caret.
     perm_focus: HashMap<usize, gpui::FocusHandle>,
+    /// The pinned card the keyboard was last offered to, and whether it held
+    /// the keys last frame: a card is offered them once, as it is pinned, and
+    /// the next one is when this one held them as it was answered.
+    pinned_keys: (Option<usize>, bool),
     /// Activity runs the user opened, keyed by the run's first item.
     ///
     /// **On the session, because a [`TranscriptItemId`] only means anything
@@ -310,6 +314,7 @@ impl ChatSession {
                 ask_inputs: HashMap::new(),
                 ask_focus: HashMap::new(),
                 perm_focus: HashMap::new(),
+                pinned_keys: (None, false),
                 activity_open: HashMap::new(),
                 section_open: HashSet::new(),
                 turn_open: HashMap::new(),

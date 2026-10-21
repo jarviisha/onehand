@@ -64,12 +64,14 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | A dialog's footer (a third action at its start) | `footer_row` | `crates/app/src/dialogs.rs` |
 | A run dialog's sections parted by hairlines; a preflight finding with its state's mark | `sections`, `finding_line` | `crates/app/src/dialogs.rs` |
 | A Settings sub-page's scope line | `page_head` | `crates/app/src/settings.rs` |
+| A scrollbar on a region the app scrolls itself | `scrollbar` (its thumb at `SCROLLBAR_THUMB`) | `crates/ui/src/lib.rs` |
 | A sunk box of machine text | `well` (sets the code text size; callers set padding) | `crates/ui/src/lib.rs` |
 | A mono well on a page | `mono_well`, built on `well` | `crates/app/src/chat/pane/tasks_page/detail.rs` |
 | Shared sizes and the floating shadow | `tokens` | `crates/ui/src/tokens.rs` |
 | A transcript well, a pinned card, a row's note | `plain_box`, `floating_card`, `row_note` | `crates/app/src/chat/transcript/parts.rs` |
 | Transcript sizes | the constants | `crates/app/src/chat/transcript/metrics.rs` |
 | The composer card | `card` | `crates/app/src/chat/composer/card.rs` |
+| An attached file's plate (a picture's preview), pressable; a picture whole in a dialog | `plate`, `opens`; `show_image` | `crates/app/src/chat/transcript/user.rs`, `image_view.rs` |
 | The composer popup and its parts | `popup_surface`, `popup_header`, `popup_title`, `candidate_row`, `choice_row` | `crates/app/src/chat/composer/popup.rs`, `rows.rs` |
 | A rail row's fills, inks and controls | `row_surfaces`, `row_inks`, `hover_fill`, `chosen_fill`, `key_ring`, `row_control`, `meta_control`, `menu_button` | `crates/app/src/rail/row.rs` |
 | A page row (the rail's foot, Settings' nav) | `page_fill(row, on, cx)` | `crates/app/src/rail/row.rs` |
