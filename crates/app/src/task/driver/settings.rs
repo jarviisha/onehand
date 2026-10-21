@@ -2,8 +2,9 @@
 //! and options (each one it does not name taken from the run's start) are
 //! put in force one pick at a time, each answered by the agent before the
 //! next is planned, since an answer can change what the agent offers. The
-//! prompt waits until they all are; a setting not offered or refused fails
-//! the run at that step.
+//! prompt waits until they all are; a setting the step names not offered,
+//! or any pick refused, fails the run at that step. One the step only takes
+//! from the start and the agent no longer offers is left as the agent has it.
 
 use super::{Driven, advance, read, send, with};
 use crate::chat::session::{ChatSession, note};
@@ -30,12 +31,17 @@ fn open_visit(d: &Driven) -> Option<u32> {
 }
 
 /// What the open visit runs with: its step's own settings over the run's
-/// starting ones.
-fn wanted(d: &Driven) -> Settings {
+/// starting ones, and the groups the step names itself.
+fn wanted(d: &Driven) -> (Settings, Vec<String>) {
     let start = d.run.started_with.clone().unwrap_or_default();
     d.run
         .current()
-        .map(|step| Settings::for_step(&step.kind, &start))
+        .map(|step| {
+            (
+                Settings::for_step(&step.kind, &start),
+                Settings::named_by(&step.kind),
+            )
+        })
         .unwrap_or_default()
 }
 
@@ -106,7 +112,7 @@ fn plan(
     mut picking: Picking,
     cx: &mut App,
 ) -> Option<String> {
-    let want = read(uid, cx, wanted)?;
+    let (want, named) = read(uid, cx, wanted)?;
     // Whatever was sent before has been answered.
     picking.sent = None;
     loop {
@@ -116,7 +122,13 @@ fn plan(
         if chat.picks_waiting() {
             break;
         }
-        match next(&want, &chat.offer(), &chat.in_force(), &picking.picked) {
+        match next(
+            &want,
+            &named,
+            &chat.offer(),
+            &chat.in_force(),
+            &picking.picked,
+        ) {
             Next::Pick(pick) => {
                 session.update(cx, |session, cx| {
                     session.chat.pick(&pick);
