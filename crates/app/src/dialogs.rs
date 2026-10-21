@@ -555,16 +555,12 @@ pub(crate) fn finding_line(
                         })
                 }),
         )
-        // A mode or a step's settings not known yet can be learned now, at
-        // the cost of an agent start, and only on a press.
+        // What is not known only because the agent itself has not come up
+        // can be learned now, at the cost of an agent start, and only on a
+        // press.
         .children(
-            ask.filter(|_| {
-                matches!(
-                    finding.about,
-                    onehand_core::preflight::About::Mode | onehand_core::preflight::About::Settings
-                ) && !finding.blocks
-            })
-            .map(|ask| crate::agent_check::button(at, ask, cx)),
+            ask.filter(|_| finding.checkable)
+                .map(|ask| crate::agent_check::button(at, ask, cx)),
         )
 }
 

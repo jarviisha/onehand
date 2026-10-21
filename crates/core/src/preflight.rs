@@ -144,6 +144,10 @@ pub struct Finding {
     pub change: Option<Change>,
     /// The task it offers instead, for an earlier task worth retrying.
     pub task: Option<String>,
+    /// *Check the agent* now might clear it: it says what is not known only
+    /// because the agent itself has not come up, never what a particular
+    /// step would still need its own check for.
+    pub checkable: bool,
 }
 
 /// The forge serving the project, and what its account said when last seen:
@@ -267,6 +271,9 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
         )),
         (Some(_), true) => {}
     }
+    // Whether the mode's own "not known yet" below already said the agent
+    // has not come up: the step settings below then say nothing more of it.
+    let mut mode_unknown = false;
     if let Some(mode) = facts.mode.as_deref().filter(|m| !m.trim().is_empty()) {
         let change = match own {
             true => own_change,
@@ -283,15 +290,16 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
                     ));
                 }
             }
-            None => found.push(finding(
-                About::Mode,
-                false,
-                format!(
-                    "Mode `{mode}` is not known yet: the agent has not come up since onehand \
-                     started or since it was edited, and it is checked when it does."
-                ),
-                None,
-            )),
+            None => {
+                mode_unknown = true;
+                found.push(checkable_finding(
+                    About::Mode,
+                    format!(
+                        "Mode `{mode}` is not known yet: the agent has not come up since \
+                         onehand started or since it was edited, and it is checked when it does."
+                    ),
+                ));
+            }
         }
     }
 
@@ -307,6 +315,7 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
             facts.offered.as_ref(),
             keeps,
             change,
+            mode_unknown,
         ));
     }
 
@@ -493,7 +502,8 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
     found
 }
 
-/// One finding about `about`, offering no task instead.
+/// One finding about `about`, offering no task instead, not resolved by
+/// *Check the agent*.
 fn finding(about: About, blocks: bool, text: String, change: Option<Change>) -> Finding {
     Finding {
         about,
@@ -501,6 +511,16 @@ fn finding(about: About, blocks: bool, text: String, change: Option<Change>) -> 
         text,
         change,
         task: None,
+        checkable: false,
+    }
+}
+
+/// `finding`, but resolved by pressing *Check the agent* now: what it says
+/// is not known only because the agent itself has not come up.
+fn checkable_finding(about: About, text: String) -> Finding {
+    Finding {
+        checkable: true,
+        ..finding(about, false, text, None)
     }
 }
 

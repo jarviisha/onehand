@@ -6,8 +6,8 @@
 //! from what was learned under a different model is left for the run's own
 //! check at that step, the same authority it already is at runtime.
 
-use super::{finding, mode_refused, About, Change, Finding};
-use crate::workflow::{Offer, StepKind, Template};
+use super::{checkable_finding, finding, mode_refused, About, Change, Finding};
+use crate::workflow::{option_refused, Offer, StepKind, Template};
 use std::collections::BTreeMap;
 
 /// At most this many step-setting findings are listed before the rest are
@@ -30,22 +30,25 @@ fn names_settings(kind: &StepKind) -> bool {
 
 /// Findings for what each agent step's own mode and options the agent does
 /// not offer, against `offered`; one finding for the whole workflow when
-/// nothing of what it offers is known yet. `keeps` and `change` are the
-/// mode check's own, for the kind judged.
+/// nothing of what it offers is known yet, unless `mode_unknown_said` already
+/// said as much for the run's own starting mode. `keeps` and `change` are
+/// the mode check's own, for the kind judged.
 pub(super) fn step_settings(
     template: &Template,
     offered: Option<&Offer>,
     keeps: &str,
     change: Option<Change>,
+    mode_unknown_said: bool,
 ) -> Vec<Finding> {
     let Some(offer) = offered else {
+        if mode_unknown_said {
+            return Vec::new();
+        }
         let names_any = template.steps.iter().any(|step| names_settings(&step.kind));
         return match names_any {
-            true => vec![finding(
+            true => vec![checkable_finding(
                 About::Settings,
-                false,
                 NOT_KNOWN_YET.to_string(),
-                None,
             )],
             false => Vec::new(),
         };
@@ -118,6 +121,9 @@ fn step_findings(
                 format!("{prefix}: {why}.{keeps}"),
                 change,
             ),
+            // The run's own check at this step is the authority, never a
+            // place in Settings: a value another model's choices happened
+            // to carry says nothing about what this step's model offers.
             false => finding(
                 About::Settings,
                 false,
@@ -126,58 +132,11 @@ fn step_findings(
                      checked when the step starts.{keeps}",
                     options.get("model").expect("names_model holds the key"),
                 ),
-                change,
+                None,
             ),
         });
     }
     found
-}
-
-/// The values `id` offers, if it offers any.
-fn offered_values<'a>(offer: &'a Offer, id: &str) -> Option<&'a [String]> {
-    offer
-        .options
-        .iter()
-        .find(|(offered, _)| offered == id)
-        .map(|(_, values)| values.as_slice())
-}
-
-/// Why the agent does not offer `value` for option `id`, if it does not: it
-/// offers no such id at all (`true`), or it offers the id but not that
-/// value among what it offers for it (`false`).
-fn option_refused(id: &str, value: &str, offer: &Offer) -> Option<(bool, String)> {
-    match offered_values(offer, id) {
-        None => {
-            let ids: Vec<String> = offer
-                .options
-                .iter()
-                .map(|(offered, _)| offered.clone())
-                .collect();
-            Some((
-                true,
-                format!(
-                    "the agent offers no option `{id}` (it offers: {})",
-                    joined(&ids)
-                ),
-            ))
-        }
-        Some(values) if !values.iter().any(|offered| offered == value) => Some((
-            false,
-            format!(
-                "the agent offers no `{value}` for `{id}` (it offers: {})",
-                joined(values)
-            ),
-        )),
-        Some(_) => None,
-    }
-}
-
-/// Values joined by `, `, or `none` when there are none.
-fn joined(values: &[String]) -> String {
-    match values.is_empty() {
-        true => "none".to_string(),
-        false => values.join(", "),
-    }
 }
 
 /// At most [`SETTINGS_SHOWN`] of `found`, then one more counting the rest,

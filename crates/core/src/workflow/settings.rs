@@ -95,6 +95,35 @@ fn mode_pick(mode: &str, offer: &Offer, in_force: &Settings, picked: &[String]) 
     Some(Next::Pick(Pick::Mode(mode.to_string())))
 }
 
+/// Why the agent does not offer `value` for option `id`, if it does not: it
+/// offers no such id at all (`true`), or it offers the id but not that
+/// value among what it offers for it (`false`).
+pub(crate) fn option_refused(id: &str, value: &str, offer: &Offer) -> Option<(bool, String)> {
+    let Some((_, values)) = offer.options.iter().find(|(offered, _)| offered == id) else {
+        let ids: Vec<String> = offer
+            .options
+            .iter()
+            .map(|(offered, _)| offered.clone())
+            .collect();
+        return Some((
+            true,
+            format!(
+                "the agent offers no option `{id}` (it offers: {})",
+                joined_or_none(&ids)
+            ),
+        ));
+    };
+    (!values.iter().any(|offered| offered == value)).then(|| {
+        (
+            false,
+            format!(
+                "the agent offers no `{value}` for `{id}` (it offers: {})",
+                joined_or_none(values)
+            ),
+        )
+    })
+}
+
 /// What a visit wanting `value` for option `id` does next, skipping it when
 /// `picked` already holds `id`.
 fn option_pick(
@@ -107,22 +136,8 @@ fn option_pick(
     if picked.iter().any(|group| group == id) {
         return None;
     }
-    let Some((_, values)) = offer.options.iter().find(|(offered, _)| offered == id) else {
-        let ids: Vec<String> = offer
-            .options
-            .iter()
-            .map(|(offered, _)| offered.clone())
-            .collect();
-        return Some(Next::Refused(format!(
-            "the agent offers no option `{id}` (it offers: {})",
-            joined_or_none(&ids)
-        )));
-    };
-    if !values.iter().any(|offered| offered == value) {
-        return Some(Next::Refused(format!(
-            "the agent offers no `{value}` for `{id}` (it offers: {})",
-            joined_or_none(values)
-        )));
+    if let Some((_, why)) = option_refused(id, value, offer) {
+        return Some(Next::Refused(why));
     }
     if in_force.options.get(id).map(String::as_str) == Some(value) {
         return None;

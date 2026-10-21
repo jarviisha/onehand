@@ -184,6 +184,9 @@ fn a_mode_known_and_not_offered_blocks_and_one_not_known_informs() {
     };
     let finding = found(Kind::NewIssueRun, &unknown, About::Mode).unwrap();
     assert!(!finding.blocks && finding.text.contains("not known yet"));
+    // Checking the agent now might resolve it: pressing it can only ever
+    // learn whether this mode is one it offers.
+    assert!(finding.checkable);
     let offered = Facts {
         offered: Some(modes(&["plan"])),
         ..known
@@ -880,6 +883,10 @@ fn an_effort_under_another_model_is_not_known_yet() {
         "{}",
         effort.text
     );
+    // The agent is known to come up; a probe never selects a model, so
+    // pressing *Check the agent* again could never settle this one.
+    assert!(!effort.checkable);
+    assert_eq!(effort.change, None);
 }
 
 #[test]
@@ -905,6 +912,35 @@ fn settings_with_no_offer_known_are_not_known_yet() {
         findings[0].text.contains("not known yet"),
         "{}",
         findings[0].text
+    );
+    assert!(findings[0].checkable);
+}
+
+#[test]
+fn a_mode_not_known_yet_does_not_also_say_settings_are_unknown() {
+    let mut t = worktree();
+    if let StepKind::Agent { options, .. } = &mut t.steps[0].kind {
+        options.insert("model".into(), "opus".into());
+    } else {
+        panic!("the worktree workflow's first step is not an agent step");
+    }
+    let facts = Facts {
+        workflow: Ok(t),
+        mode: Some("plan".into()),
+        offered: None,
+        ..healthy()
+    };
+    let findings = preflight(Kind::NewIssueRun, &facts);
+    let mode = findings
+        .iter()
+        .find(|f| f.about == About::Mode)
+        .expect("the run's own mode is named, so it says it is not known yet");
+    assert!(!mode.blocks && mode.text.contains("not known yet"));
+    // One sentence, one button: the step's settings say nothing more of an
+    // agent already said not to have come up.
+    assert!(
+        findings.iter().all(|f| f.about != About::Settings),
+        "{findings:?}"
     );
 }
 
