@@ -2205,6 +2205,23 @@ fn in_force_skips_values_not_among_choices() {
     assert!(!in_force.options.contains_key("model"));
 }
 
+/// `held` keeps every option's value as the agent reports it, the alias
+/// `in_force` leaves out included.
+#[test]
+fn held_keeps_aliases_in_force_leaves_out() {
+    let (chat, _rx) = chat_with_tx();
+    let held = chat.held();
+    assert_eq!(held.mode.as_deref(), Some("default"));
+    assert_eq!(
+        held.options.get("model").map(String::as_str),
+        Some("opus[1m]")
+    );
+    assert_eq!(
+        held.options.get("effort").map(String::as_str),
+        Some("default")
+    );
+}
+
 /// Whether a pick is still unanswered: true once sent, false once the agent
 /// confirms or refuses it.
 #[test]

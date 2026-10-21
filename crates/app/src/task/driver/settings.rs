@@ -144,10 +144,10 @@ fn plan(
                 return None;
             }
             Next::Done => {
-                let in_force = chat.in_force();
-                let said = said(&want, &in_force);
+                let held = chat.held();
+                let said = said(&want, &held);
                 with(uid, cx, |d| {
-                    d.run.ran_with(in_force);
+                    d.run.ran_with(held);
                     d.settled = open_visit(d);
                 });
                 if !picking.picked.is_empty() {
@@ -161,20 +161,16 @@ fn plan(
     None
 }
 
-/// What the visit runs with, as its note says it: the mode, then the model,
-/// then the rest by id, each as the session holds it.
-fn said(want: &Settings, in_force: &Settings) -> String {
-    let mode = want
-        .mode
-        .as_ref()
-        .and(in_force.mode.as_ref())
-        .map(|mode| format!("mode {mode}"));
-    let ids = want.options.keys();
-    let ordered = ids
-        .clone()
-        .filter(|id| *id == "model")
-        .chain(ids.filter(|id| *id != "model"));
-    let options = ordered.filter_map(|id| Some(format!("{id} {}", in_force.options.get(id)?)));
-    let parts: Vec<String> = mode.into_iter().chain(options).collect();
-    format!("Settings: {}", parts.join(" · "))
+/// What the visit runs with, as its note says it: what the session holds
+/// of each setting the visit wanted.
+fn said(want: &Settings, held: &Settings) -> String {
+    let ran = Settings {
+        mode: want.mode.as_ref().and(held.mode.clone()),
+        options: want
+            .options
+            .keys()
+            .filter_map(|id| Some((id.clone(), held.options.get(id)?.clone())))
+            .collect(),
+    };
+    format!("Settings: {}", ran.said())
 }

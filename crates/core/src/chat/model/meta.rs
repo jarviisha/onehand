@@ -388,6 +388,20 @@ impl Chat {
         }
     }
 
+    /// The mode and every config option's value as the agent reports it,
+    /// aliases its choices never listed included: what a record of a turn's
+    /// settings keeps, unlike [`Chat::in_force`], which plans against it.
+    pub fn held(&self) -> Settings {
+        Settings {
+            mode: self.current_mode.clone(),
+            options: self
+                .config_options
+                .iter()
+                .filter_map(|o| Some((o.id.clone(), o.current.clone()?)))
+                .collect(),
+        }
+    }
+
     /// Whether any pick sent to the agent is still unanswered.
     pub fn picks_waiting(&self) -> bool {
         !self.picks_out.is_empty()
