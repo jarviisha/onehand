@@ -264,6 +264,7 @@ session and maps its events onto the engine:
 |---|---|
 | A turn the run sent ends | facts read in the background, then `turn_ended` |
 | A turn ends cancelled (`Chat::cancelled`) | `stopped(ByPerson)` |
+| A turn the run sent ends failed (`Chat::failed`: an error, a refusal, a limit the agent reached) | `failed`, in the failure's words |
 | A prompt the run did not send (`prompts_sent` above what it sent, or one queued) | `stopped(TakenOver)` |
 | The adapter goes | `stopped(LinkLost)` |
 | The session is released | `stopped(Closed)` |

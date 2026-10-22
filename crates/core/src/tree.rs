@@ -28,6 +28,8 @@ pub struct TreeEntry {
 pub struct FileTree {
     pub expanded: HashSet<PathBuf>,
     pub listings: HashMap<PathBuf, Vec<TreeEntry>>,
+    /// How many entries each listing's cap left out of it.
+    pub cut: HashMap<PathBuf, usize>,
 }
 
 /// A renderable row: the entry plus its indent depth.
@@ -59,6 +61,7 @@ impl FileTree {
         let Some(list) = self.listings.get(dir) else {
             return;
         };
+        *left_out += self.cut.get(dir).copied().unwrap_or(0);
         for entry in list {
             match rows.len() >= MAX_VISIBLE_ROWS {
                 true => *left_out += 1,
@@ -72,9 +75,9 @@ impl FileTree {
 }
 
 /// Read one directory, sorted directories-first then case-insensitive by
-/// name; `.git` is skipped; bounded at [`MAX_DIR_ENTRIES`]. Sync — run it on a
-/// blocking pool, never the UI loop.
-pub fn read_dir_sorted(dir: &Path) -> Vec<TreeEntry> {
+/// name; `.git` is skipped; bounded at [`MAX_DIR_ENTRIES`], with how many the
+/// bound left out. Sync — run it on a blocking pool, never the UI loop.
+pub fn read_dir_sorted(dir: &Path) -> (Vec<TreeEntry>, usize) {
     let mut out = Vec::new();
     if let Ok(rd) = std::fs::read_dir(dir) {
         for e in rd.flatten() {
@@ -104,8 +107,9 @@ pub fn read_dir_sorted(dir: &Path) -> Vec<TreeEntry> {
     // silently drop an arbitrary subset while the survivors still look like
     // a complete alphabetical listing.
     sort_entries(&mut out);
+    let cut = out.len().saturating_sub(MAX_DIR_ENTRIES);
     out.truncate(MAX_DIR_ENTRIES);
-    out
+    (out, cut)
 }
 
 /// Directories before files, then case-insensitive name.
@@ -127,6 +131,29 @@ mod tests {
             name: name.into(),
             is_dir,
         }
+    }
+
+    /// **A folder cut at its cap says so**, through the same count the row
+    /// cap uses: its listing survived the cut looking alphabetical and whole,
+    /// and the files past it were simply not there.
+    #[test]
+    fn a_folder_cut_at_its_cap_counts_what_it_left_out() {
+        let dir = std::env::temp_dir().join(format!("onehand-tree-cap-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        for i in 0..MAX_DIR_ENTRIES + 5 {
+            std::fs::write(dir.join(format!("f{i:04}")), "").unwrap();
+        }
+
+        let (listing, cut) = read_dir_sorted(&dir);
+        assert_eq!((listing.len(), cut), (MAX_DIR_ENTRIES, 5));
+
+        let mut tree = FileTree::default();
+        tree.listings.insert(dir.clone(), listing);
+        tree.cut.insert(dir.clone(), cut);
+        let (rows, left_out) = tree.visible_rows(&dir);
+        assert_eq!((rows.len(), left_out), (MAX_DIR_ENTRIES, 5));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

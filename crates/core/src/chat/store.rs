@@ -585,12 +585,19 @@ fn restore_line(dir: &Path, line: &Line) -> ChatItem {
             secs,
             exit,
         } => {
+            // A step saved while it ran (a session closed mid-turn) is not
+            // running now: nothing will ever settle it, so it comes back
+            // stopped rather than starting a clock of its own.
+            let status = match ToolStatus::parse(status) {
+                ToolStatus::Pending | ToolStatus::InProgress => ToolStatus::Failed,
+                settled => settled,
+            };
             let mut item = ToolItem::new(ToolCall {
                 id: id.clone(),
                 title: title.clone(),
                 description: description.clone(),
                 kind: ToolKind::parse(kind),
-                status: ToolStatus::parse(status),
+                status,
                 content: content.iter().map(|c| restore_content(dir, c)).collect(),
             });
             item.elapsed_secs = *secs;

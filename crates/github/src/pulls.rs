@@ -42,10 +42,14 @@ pub(super) fn pull_request(json: &str) -> Result<Option<PullRequest>, String> {
         mergeable: String,
         #[serde(default)]
         status_check_rollup: Vec<Entry>,
+        #[serde(default)]
+        is_cross_repository: bool,
     }
     let rows: Vec<Row> = serde_json::from_str(json)
         .map_err(|err| format!("gh printed something unreadable: {err}"))?;
-    let Some(row) = rows.into_iter().next() else {
+    // A fork's pull request on a branch of the same name is somebody else's:
+    // the name is predictable from the issue, so anyone could open one.
+    let Some(row) = rows.into_iter().find(|row| !row.is_cross_repository) else {
         return Ok(None);
     };
     let checks = row
@@ -84,7 +88,8 @@ pub(super) fn pull_request(json: &str) -> Result<Option<PullRequest>, String> {
 
 /// What [`pull_requests`] asks `gh pr list` for: no checks, which are read
 /// per branch when a run needs them.
-pub(super) const LIST_FIELDS: &str = "url,number,state,isDraft,headRefOid,headRefName,mergeable";
+pub(super) const LIST_FIELDS: &str =
+    "url,number,state,isDraft,headRefOid,headRefName,mergeable,isCrossRepository";
 
 /// `gh pr list --json` with [`LIST_FIELDS`] as a repository's pull requests,
 /// at most `limit` asked for: a list that long reached its cap.
@@ -100,12 +105,16 @@ pub(super) fn pull_requests(json: &str, limit: usize) -> Result<PullRequests, St
         head_ref_name: String,
         #[serde(default)]
         mergeable: String,
+        #[serde(default)]
+        is_cross_repository: bool,
     }
     let rows: Vec<Row> = serde_json::from_str(json)
         .map_err(|err| format!("gh printed something unreadable: {err}"))?;
     let capped = rows.len() >= limit;
     let by_branch = rows
         .into_iter()
+        // Read by branch name, and a fork's branch can share one with ours.
+        .filter(|row| !row.is_cross_repository)
         .map(|row| {
             let pr = PullRequest {
                 url: row.url,

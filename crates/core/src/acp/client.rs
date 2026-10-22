@@ -244,6 +244,19 @@ fn explain(what: String, tail: &StderrTail) -> String {
     }
 }
 
+/// The adapter's process group, killed when this is dropped: with the
+/// transport, whichever way the stream ends.
+struct Group(Option<u32>);
+
+impl Drop for Group {
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        if let Some(leader) = self.0 {
+            crate::process::kill_group(leader);
+        }
+    }
+}
+
 impl Transport {
     /// Run `command` as a child process and talk to it over its stdio.
     fn spawn(
@@ -252,16 +265,20 @@ impl Transport {
         env: Vec<(String, String)>,
         cwd: PathBuf,
     ) -> Result<Self, String> {
-        let mut child = Command::new(&command)
-            .args(&args)
+        let mut cmd = Command::new(&command);
+        cmd.args(&args)
             .envs(env)
             .current_dir(&cwd)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .map_err(|e| format!("spawn {command}: {e}"))?;
+            .kill_on_drop(true);
+        // A group of its own, so the adapter can be ended with everything it
+        // started: the child is often `npx`, with the agent and its tools under it.
+        #[cfg(unix)]
+        cmd.process_group(0);
+        let mut child = cmd.spawn().map_err(|e| format!("spawn {command}: {e}"))?;
+        let group = Group(child.id());
 
         let stdin = child.stdin.take().ok_or("no stdin")?;
         let stdout = child.stdout.take().ok_or("no stdout")?;
@@ -307,6 +324,7 @@ impl Transport {
             // the transport with the stream, and the stream with the caller's
             // interest in the agent.
             ended: Box::pin(async move {
+                let _group = group;
                 match child.wait().await {
                     Ok(status) => format!("adapter exited ({status})"),
                     Err(e) => format!("adapter wait failed: {e}"),

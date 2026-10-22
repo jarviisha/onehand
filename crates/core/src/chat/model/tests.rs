@@ -1828,6 +1828,46 @@ fn a_turn_ending_settles_what_it_left_running() {
     );
 }
 
+/// **A lost adapter settles what it left running**, as a turn's end does:
+/// nothing more will arrive for those calls, and a card left spinning was saved
+/// that way and read as live for the rest of the conversation. A terminal it
+/// was streaming died with it and is folded into its card.
+#[test]
+fn a_lost_adapter_settles_what_it_left_running() {
+    for lost in [true, false] {
+        let mut chat = Chat::new(1, std::path::PathBuf::from("/tmp/p"), "a".into(), None);
+        chat.busy = true;
+        chat.items.push(ChatItem::Tool(ToolItem::new(ToolCall {
+            id: "slow".into(),
+            title: "cargo build".into(),
+            description: None,
+            kind: crate::acp::ToolKind::Execute,
+            status: ToolStatus::InProgress,
+            content: vec![ToolContent::Terminal("term-1".into())],
+        })));
+        chat.apply(AcpEvent::TerminalOutput {
+            terminal_id: "term-1".into(),
+            chunk: "Compiling".into(),
+        });
+
+        if lost {
+            chat.apply(AcpEvent::Disconnected("adapter exited".into()));
+        } else {
+            chat.stream_ended();
+        }
+
+        let ChatItem::Tool(tool) = &chat.items[0] else {
+            panic!("the step is still there");
+        };
+        assert_eq!(tool.call.status, ToolStatus::Failed, "lost: {lost}");
+        assert!(chat.terminals.is_empty(), "lost: {lost}");
+        assert!(
+            matches!(&tool.call.content[0], ToolContent::Text(t) if t.starts_with("Compiling")),
+            "lost: {lost}"
+        );
+    }
+}
+
 /// A prompt beyond the ones a run sent, or one waiting behind the turn, is
 /// somebody else driving the session.
 #[test]
@@ -2009,6 +2049,31 @@ fn a_turn_that_ends_on_an_error_marks_the_chat_failed() {
         "nothing to resend while nothing failed"
     );
     assert!(!chat.failed(), "a new turn clears it");
+}
+
+/// **A turn the agent cut short is a failed turn**, said in words: a refusal
+/// or a limit reached ended it without the work, and read as a normal end a
+/// run went on to judge work that was never done.
+#[test]
+fn a_turn_cut_short_by_the_agent_is_failed() {
+    for stop in ["refusal", "max_tokens", "max_turn_requests"] {
+        let (mut chat, _rx) = chat_with_tx();
+        assert!(chat.submit("go", &[]));
+        chat.apply(AcpEvent::TurnEnded {
+            stop_reason: stop.into(),
+        });
+        assert!(chat.failed(), "{stop}");
+        assert!(
+            chat.failure().is_some_and(|text| !text.contains(stop)),
+            "{stop}"
+        );
+    }
+    let (mut chat, _rx) = chat_with_tx();
+    assert!(chat.submit("go", &[]));
+    chat.apply(AcpEvent::TurnEnded {
+        stop_reason: "end_turn".into(),
+    });
+    assert!(!chat.failed());
 }
 
 /// A failed turn is the transcript's to say, not a flag the chat happens to

@@ -131,6 +131,8 @@ impl Connector for GitHub {
         // `--state all`, because a PR merged or closed before the run is
         // settled is still the answer to "did it open one". The checks come in
         // the same call, so they are always the checks on the head it reports.
+        // More than one, because a fork's pull requests on a branch of the same
+        // name come back too, and are passed over.
         let json = gh(
             root,
             &[
@@ -141,9 +143,9 @@ impl Connector for GitHub {
                 "--state",
                 "all",
                 "--limit",
-                "1",
+                "20",
                 "--json",
-                "url,number,state,isDraft,headRefOid,mergeable,statusCheckRollup",
+                "url,number,state,isDraft,headRefOid,mergeable,statusCheckRollup,isCrossRepository",
             ],
         )?;
         pull_request(&json)
@@ -780,6 +782,26 @@ mod tests {
         );
         assert_eq!(pr.checks[3].link, None, "an empty link is no link");
         assert_eq!(pull_request("[]").unwrap(), None);
+    }
+
+    /// **A pull request from a fork is never the run's own.** Its branch name
+    /// is predictable from the issue, so anyone could open one on it: taken as
+    /// the run's, it was reported on the issue and its checks read to the agent.
+    #[test]
+    fn a_pull_request_from_a_fork_is_not_the_branchs_own() {
+        let json = r#"[
+            {"url":"fork","number":9,"state":"OPEN","isDraft":false,"headRefOid":"x",
+             "headRefName":"onehand/github-3-fix","isCrossRepository":true,"statusCheckRollup":[]},
+            {"url":"ours","number":8,"state":"OPEN","isDraft":false,"headRefOid":"y",
+             "headRefName":"onehand/github-3-fix","isCrossRepository":false,"statusCheckRollup":[]}
+        ]"#;
+        assert_eq!(pull_request(json).unwrap().unwrap().url, "ours");
+        let read = pull_requests(json, 10).unwrap();
+        assert_eq!(read.by_branch.len(), 1);
+        assert_eq!(read.by_branch[0].1.url, "ours");
+        let only_fork = r#"[{"url":"fork","number":9,"state":"OPEN","isDraft":false,
+            "headRefOid":"x","isCrossRepository":true,"statusCheckRollup":[]}]"#;
+        assert_eq!(pull_request(only_fork).unwrap(), None);
     }
 
     #[test]

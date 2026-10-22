@@ -321,6 +321,17 @@ fn on_event(uid: u64, session: &Entity<ChatSession>, event: &ChatEvent, cx: &mut
         // A Stop pressed in the composer, or from the remote bridge: the
         // person's word that this is not to go on.
         ChatEvent::TurnEnded if session.read(cx).chat.cancelled => end(uid, Stop::ByPerson, cx),
+        // A turn that failed (an error, a refusal, a limit reached) did not do
+        // the work, so there is nothing to judge: the run fails on its words.
+        ChatEvent::TurnEnded if judge_turn && session.read(cx).chat.failed() => {
+            let why = session
+                .read(cx)
+                .chat
+                .failure()
+                .unwrap_or_default()
+                .to_string();
+            advance(uid, cx, move |run| run.failed(why, Failure::Other));
+        }
         ChatEvent::TurnEnded if judge_turn => after_turn(uid, session, cx),
         ChatEvent::TurnEnded => {}
         // A person answers the card; the clock waits for them.

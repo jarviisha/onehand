@@ -198,9 +198,11 @@ pub(crate) fn rebase_to_root(status: GitStatus, prefix: &str) -> GitStatus {
 /// `spawn_blocking`. Either way it must never run on a UI loop.
 pub fn read_blocking(root: &Path) -> Option<GitStatus> {
     let git = |args: &[&str]| {
-        std::process::Command::new("git")
-            .arg("-C")
-            .arg(root)
+        crate::worktree::git(root)
+            // A look, so it takes no lock: refreshing the index would write it
+            // back under `index.lock`, and an agent's commit at that moment
+            // fails on the lock it finds.
+            .env("GIT_OPTIONAL_LOCKS", "0")
             .args(args)
             .output()
             .ok()
@@ -228,6 +230,52 @@ pub async fn read(root: PathBuf) -> Option<GitStatus> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **Reading the status writes nothing.** A plain `git status` refreshes
+    /// the index and writes it back under `index.lock`, and an agent's
+    /// `git commit` landing at that moment fails on the lock it finds.
+    #[test]
+    fn reading_the_status_leaves_the_index_alone() {
+        let dir = std::env::temp_dir().join(format!("onehand-gitstat-lock-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let git = |args: &[&str]| {
+            let ok = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&dir)
+                .args(["-c", "user.email=t@t", "-c", "user.name=t"])
+                .args(args)
+                .output()
+                .unwrap()
+                .status
+                .success();
+            assert!(ok, "git {args:?}");
+        };
+        git(&["init", "-q"]);
+        std::fs::write(dir.join("f"), "a").unwrap();
+        git(&["add", "f"]);
+        git(&["commit", "-qm", "a"]);
+        // Stat data the index no longer matches, which a refresh would record.
+        let later = std::time::SystemTime::now() + std::time::Duration::from_secs(60);
+        std::fs::File::options()
+            .write(true)
+            .open(dir.join("f"))
+            .unwrap()
+            .set_modified(later)
+            .unwrap();
+        let index = || {
+            std::fs::metadata(dir.join(".git/index"))
+                .unwrap()
+                .modified()
+                .unwrap()
+        };
+        let before = index();
+
+        assert!(read_blocking(&dir).is_some());
+
+        assert_eq!(index(), before);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     // `-z` output: NUL-terminated records; a rename's origPath is its own
     // following record (no `\t`, no quoting).

@@ -118,7 +118,7 @@ impl FilesView {
             return;
         };
         cx.spawn(async move |view, cx| {
-            let listing = cx
+            let (listing, cut) = cx
                 .background_executor()
                 .spawn({
                     let dir = dir.clone();
@@ -127,6 +127,7 @@ impl FilesView {
                 .await;
             let _ = view.update(cx, |view: &mut Self, cx| {
                 if let Some(tree) = view.trees.get_mut(&root) {
+                    tree.cut.insert(dir.clone(), cut);
                     tree.listings.insert(dir, listing);
                 }
                 cx.notify();

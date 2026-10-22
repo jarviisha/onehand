@@ -135,9 +135,7 @@ pub fn worktree_dir_in(parent: &Path, root: &Path, branch: &str) -> PathBuf {
 ///
 /// Blocking, and runtime-agnostic like every other process call in this crate.
 pub fn repo_top_blocking(root: &Path) -> Option<PathBuf> {
-    let out = std::process::Command::new("git")
-        .arg("-C")
-        .arg(root)
+    let out = git(root)
         .args(["rev-parse", "--show-toplevel"])
         .output()
         .ok()?;
@@ -173,9 +171,7 @@ pub(crate) fn subtree_in(made: &Path, top: &Path, root: &Path) -> PathBuf {
 ///
 /// Blocking, and runtime-agnostic like every other process call in this crate.
 pub(crate) fn branch_exists_blocking(root: &Path, branch: &str) -> bool {
-    std::process::Command::new("git")
-        .arg("-C")
-        .arg(root)
+    git(root)
         .args(["rev-parse", "--verify", "--quiet"])
         .arg(format!("refs/heads/{branch}"))
         .output()
@@ -494,9 +490,7 @@ pub(crate) fn git(root: &Path) -> std::process::Command {
 /// them better.
 pub fn rename_branch_blocking(root: &Path, name: &str) -> Result<(), String> {
     validate_branch(name).map_err(str::to_string)?;
-    let out = std::process::Command::new("git")
-        .arg("-C")
-        .arg(root)
+    let out = git(root)
         .args(["branch", "-m", name])
         .output()
         .map_err(|err| format!("git could not be run: {err}"))?;

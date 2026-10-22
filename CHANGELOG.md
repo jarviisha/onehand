@@ -72,6 +72,13 @@ minor bump may break any of them.
 - A run's report says it could not start only when it never worked, not when it failed after a
   resume.
 - Close or Restart pressed mid-turn and cancelled works again on the next press.
+- A lost adapter settles the steps it left running, and a step saved running comes back stopped.
+- A turn the agent ended on a refusal or a limit is a failed turn, and a run fails on any failed
+  turn instead of judging work that was never done.
+- A fork's pull request on the run's branch name is never taken for the run's own.
+- An adapter runs in a process group of its own and goes with everything it started.
+- Reading the git status takes no lock, so an agent's commit does not trip over it.
+- A folder cut at the file tree's cap is counted in its "more not shown".
 
 ### Project
 
