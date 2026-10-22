@@ -2051,6 +2051,31 @@ fn a_turn_that_ends_on_an_error_marks_the_chat_failed() {
     assert!(!chat.failed(), "a new turn clears it");
 }
 
+/// **A turn the agent cut short is a failed turn**, said in words: a refusal
+/// or a limit reached ended it without the work, and read as a normal end a
+/// run went on to judge work that was never done.
+#[test]
+fn a_turn_cut_short_by_the_agent_is_failed() {
+    for stop in ["refusal", "max_tokens", "max_turn_requests"] {
+        let (mut chat, _rx) = chat_with_tx();
+        assert!(chat.submit("go", &[]));
+        chat.apply(AcpEvent::TurnEnded {
+            stop_reason: stop.into(),
+        });
+        assert!(chat.failed(), "{stop}");
+        assert!(
+            chat.failure().is_some_and(|text| !text.contains(stop)),
+            "{stop}"
+        );
+    }
+    let (mut chat, _rx) = chat_with_tx();
+    assert!(chat.submit("go", &[]));
+    chat.apply(AcpEvent::TurnEnded {
+        stop_reason: "end_turn".into(),
+    });
+    assert!(!chat.failed());
+}
+
 /// A failed turn is the transcript's to say, not a flag the chat happens to
 /// hold: a restart and a relaunch rebuild the chat from what was written, and
 /// the session is still failed there, until a prompt goes out again. Only

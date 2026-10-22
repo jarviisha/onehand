@@ -344,6 +344,15 @@ impl Chat {
                 // Or'd with the cancel asked for: an adapter that answers a
                 // cancel with an error ends the turn as `end_turn`.
                 self.cancelled |= stop_reason == "cancelled";
+                // Ended by the agent without the work: a failed turn, said so,
+                // or whatever drives the session reads it as a normal end.
+                if let Some(text) = cut_short(&stop_reason) {
+                    self.items.push(ChatItem::failure(
+                        text.to_string(),
+                        NoticeLevel::Failed,
+                        None,
+                    ));
+                }
                 self.finish_active_turn(event_at.unwrap_or_else(store::now_secs));
                 self.busy = false;
                 self.finalize_thought();
@@ -611,4 +620,17 @@ impl Chat {
 fn is_interruption(chunk: &str) -> bool {
     let chunk = chunk.trim();
     chunk.starts_with("[Request interrupted by user") && chunk.ends_with(']')
+}
+
+/// What a turn the agent ended for `stop_reason` failed on, when it ended
+/// without finishing the work.
+fn cut_short(stop_reason: &str) -> Option<&'static str> {
+    match stop_reason {
+        "refusal" => Some("The agent refused to go on with this turn."),
+        "max_tokens" => Some("The turn stopped: the agent reached its output limit."),
+        "max_turn_requests" => {
+            Some("The turn stopped: the agent reached its limit of requests for one turn.")
+        }
+        _ => None,
+    }
 }

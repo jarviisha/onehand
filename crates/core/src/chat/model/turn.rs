@@ -613,11 +613,20 @@ impl Chat {
     /// a chat rebuilt by a restart or a relaunch says the same, and only a
     /// prompt going out answers it.
     pub fn failed(&self) -> bool {
+        self.failure().is_some()
+    }
+
+    /// What the failure [`Self::failed`] reads says, in its own words.
+    pub fn failure(&self) -> Option<&str> {
         // Mid-replay the whole transcript is the stash; what is in `items` is a
         // re-delivery of it that may stop anywhere.
-        match &self.replay {
-            Replay::Partial(stash) => standing_failure(stash.iter().rev()).is_some(),
-            Replay::Settled | Replay::Armed => standing_failure(self.transcript_back()).is_some(),
+        let item = match &self.replay {
+            Replay::Partial(stash) => standing_failure(stash.iter().rev()),
+            Replay::Settled | Replay::Armed => standing_failure(self.transcript_back()),
+        };
+        match item? {
+            ChatItem::Notice { text, .. } => Some(text),
+            _ => None,
         }
     }
 
