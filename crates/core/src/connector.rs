@@ -395,6 +395,8 @@ pub(crate) mod memory {
         pub(crate) issues: Mutex<Vec<RemoteIssue>>,
         pub(crate) updates: Mutex<usize>,
         pub(crate) refuse_updates: bool,
+        /// Whether a comment fails, as one does when the forge is unreachable.
+        pub(crate) refuse_comments: bool,
         /// The keys of the issues the signed-in account wrote.
         pub(crate) mine: Vec<String>,
         /// Every comment left, as (key, body).
@@ -479,6 +481,9 @@ pub(crate) mod memory {
             Ok(())
         }
         fn comment_blocking(&self, _: &Path, number: u64, body: &str) -> Result<(), String> {
+            if self.refuse_comments {
+                return Err("the forge did not answer".into());
+            }
             self.comments
                 .lock()
                 .unwrap()

@@ -259,23 +259,23 @@ fn receive(event: RemoteEvent, cx: &mut App) {
             });
             cx.refresh_windows();
         }
-        RemoteEvent::Message { chat, text } => {
+        RemoteEvent::Message { chat, from, text } => {
             // The one gate, and it comes before everything: a chat that is not
             // on the list is answered with nothing at all. Not a refusal --
             // a refusal confirms that the bot is real, that it is running right
             // now and that there is a list to get onto, which is three facts
             // more than silence gives away.
-            if !allowed(&chat, cx) {
+            if !allowed(&chat, &from, cx) {
                 return;
             }
             if let Some(reply) = answer(&chat, &text, cx) {
                 Shared::global(cx).remote.send(Outbound::text(chat, reply));
             }
         }
-        RemoteEvent::Unreadable { chat } => {
+        RemoteEvent::Unreadable { chat, from } => {
             // The gate first, as everywhere: a stranger sending a photo learns
             // nothing, including that this went unread.
-            if !allowed(&chat, cx) {
+            if !allowed(&chat, &from, cx) {
                 return;
             }
             // Somebody allowed is owed an answer even when the answer is no.
@@ -290,6 +290,7 @@ fn receive(event: RemoteEvent, cx: &mut App) {
         }
         RemoteEvent::Pressed {
             chat,
+            from,
             press_id,
             data,
         } => {
@@ -297,7 +298,7 @@ fn receive(event: RemoteEvent, cx: &mut App) {
             // from a chat that is not on the list is not even acknowledged: the
             // spinner the client shows is the far side's business, and stopping
             // it would say that something here read the press.
-            if !allowed(&chat, cx) {
+            if !allowed(&chat, &from, cx) {
                 return;
             }
             let said = match Press::decode(&data) {
@@ -344,9 +345,9 @@ fn with_chats<R>(cx: &App, act: impl FnOnce(&mut Chats) -> R) -> Option<R> {
     Some(act(&mut chats))
 }
 
-/// Whether this chat may reach the app at all.
-fn allowed(chat: &str, cx: &App) -> bool {
-    with_chats(cx, |chats| chats.allows(chat)).unwrap_or(false)
+/// Whether this chat, and `from` in it, may reach the app at all.
+fn allowed(chat: &str, from: &str, cx: &App) -> bool {
+    with_chats(cx, |chats| chats.allows(chat, from)).unwrap_or(false)
 }
 
 /// The session `chat` has pointed itself at, if it has.

@@ -335,7 +335,7 @@ impl ChatPane {
         cx.spawn(async move |pane, cx| {
             let written = cx
                 .background_executor()
-                .spawn(async move { onehand_core::chat::commit(&pending) })
+                .spawn(async move { (onehand_core::chat::commit(&pending), pending) })
                 .await;
             let _ = pane.update(cx, |pane: &mut Self, cx| {
                 // A session closed while its own write was in flight has
@@ -344,8 +344,13 @@ impl ChatPane {
                     return;
                 };
                 match written {
-                    Ok(()) => conv.archive_failed = false,
-                    Err(e) => {
+                    (Ok(()), _) => conv.archive_failed = false,
+                    (Err(e), pending) => {
+                        // The mark moved when the save was built; handed back,
+                        // the next save carries what this one could not.
+                        if let Some(session) = conv.session() {
+                            session.update(cx, |session, _| session.chat.unflush(&pending));
+                        }
                         // Only the edge. A directory that has gone read-only
                         // fails at the end of every turn, and one message per
                         // turn is how the first one gets lost.

@@ -1919,3 +1919,23 @@ fn a_retry_keeps_the_pull_request_its_task_opened() {
     let again = Run::retry_of(&run, "2".into(), run.template.clone(), None);
     assert_eq!(again.pull_request, Some(opened));
 }
+
+/// **Whether a run did any work is the run's to say, not the session's.** A
+/// run resumed at a later step and failing there sent nothing in the session
+/// it failed in, and its issue was told it could not start, beside the commits
+/// it had already made.
+#[test]
+fn a_run_that_worked_says_so_whatever_session_it_ends_in() {
+    let (mut fresh, _) = begin("1".into(), checkout(), brief(), setup(Some("make check")));
+    fresh.failed("the agent did not come up".into(), Failure::Other);
+    assert!(
+        !fresh.worked(),
+        "a run that never asked anything did not work"
+    );
+
+    let mut resumed = at_approval();
+    resumed.ran_with(Settings::default());
+    let mut back: Run = serde_json::from_str(&serde_json::to_string(&resumed).unwrap()).unwrap();
+    back.failed("the push was refused".into(), Failure::Other);
+    assert!(back.worked());
+}

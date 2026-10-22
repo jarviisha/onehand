@@ -530,3 +530,67 @@ fn an_old_turn_error_reads_as_failed() {
     assert_eq!(levels, [NoticeLevel::Failed, NoticeLevel::Error]);
     let _ = std::fs::remove_dir_all(&store);
 }
+
+/// **The save after a torn line starts on a line of its own.** Appended
+/// straight onto the fragment, its first item became part of a line that does
+/// not parse, and was lost with it.
+#[test]
+fn the_save_after_a_torn_line_keeps_its_first_item() {
+    let store = scratch("torn-then-saved");
+    let mut chat = chat_in(&store, "s1");
+    chat.push_user("one".into(), Vec::new());
+    save(&mut chat);
+
+    let items = conv_dir(&store, "s1").join("items.jsonl");
+    let mut text = std::fs::read_to_string(&items).unwrap();
+    text.push_str("{\"t\":\"user\",\"tex");
+    std::fs::write(&items, text).unwrap();
+
+    chat.push_user("two".into(), Vec::new());
+    save(&mut chat);
+
+    let back = load(&conv_dir(&store, "s1")).unwrap();
+    assert_eq!(back.items.len(), 2);
+    let _ = std::fs::remove_dir_all(&store);
+}
+
+/// **A line this build cannot read is not a reason to throw it away.** A newer
+/// build's item kind, or a torn line, is skipped on screen; a conversation read
+/// with one skipped must not be taken as the whole file, or the one rewrite
+/// there is would delete it from disk.
+#[test]
+fn a_load_that_skipped_a_line_is_not_whole() {
+    let store = scratch("skipped");
+    let mut chat = chat_in(&store, "s1");
+    chat.push_user("one".into(), Vec::new());
+    save(&mut chat);
+
+    let items = conv_dir(&store, "s1").join("items.jsonl");
+    let mut text = std::fs::read_to_string(&items).unwrap();
+    text.push_str("{\"t\":\"from-a-newer-build\"}\n");
+    std::fs::write(&items, text).unwrap();
+
+    let back = load(&conv_dir(&store, "s1")).unwrap();
+    assert!(!back.complete);
+    assert_eq!(back.items.len(), 1, "and no notice about older messages");
+    let _ = std::fs::remove_dir_all(&store);
+}
+
+/// **A save that failed is tried again by the next one.** The mark moves when
+/// a save is built, so without handing it back a turn that never reached the
+/// disk was counted as written, and nothing would ever send it.
+#[test]
+fn a_failed_save_is_carried_by_the_next() {
+    let store = scratch("failed-save");
+    let mut chat = chat_in(&store, "s1");
+    chat.push_user("lost".into(), Vec::new());
+    let failed = chat.flush().unwrap();
+    chat.unflush(&failed);
+
+    chat.push_user("next".into(), Vec::new());
+    save(&mut chat);
+
+    let back = load(&conv_dir(&store, "s1")).unwrap();
+    assert_eq!(back.items.len(), 2);
+    let _ = std::fs::remove_dir_all(&store);
+}

@@ -845,7 +845,10 @@ pub fn workflow_label_refused(
 /// Take `number`: remove the trigger label, then say a run started.
 ///
 /// The label goes first because it is the whole of a run's state — once it is
-/// off, nothing picks the issue again, whatever happens after.
+/// off, nothing picks the issue again, whatever happens after. So the claim
+/// holds once it is off: a comment that fails is not a reason to drop the run,
+/// which would leave an issue nothing picks and nobody works. The run's own
+/// report still reaches the issue when it ends.
 pub fn claim_blocking(
     tracker: &Tracker,
     root: &Path,
@@ -854,7 +857,10 @@ pub fn claim_blocking(
     answering: Option<&str>,
 ) -> Result<(), String> {
     tracker.remove_label_blocking(root, number, label)?;
-    tracker.comment_blocking(root, number, &claim_comment(label, answering))
+    if let Err(why) = tracker.comment_blocking(root, number, &claim_comment(label, answering)) {
+        eprintln!("onehand: claimed issue #{number} without saying so: {why}");
+    }
+    Ok(())
 }
 
 #[cfg(test)]

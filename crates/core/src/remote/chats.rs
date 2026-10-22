@@ -226,9 +226,17 @@ impl Chats {
     /// negation. A rule with no call site cannot enforce anything; it only makes
     /// the rule look guarded. So the word is here instead, on the function the
     /// callers do reach, holding the list they would have to ignore.
-    pub fn allows(&self, chat: &str) -> bool {
-        let chat = chat.trim();
-        !chat.is_empty() && self.allowed.iter().any(|allowed| allowed.trim() == chat)
+    ///
+    /// **The sender has to be allowed as well as the chat.** In a chat of one
+    /// the two are the same id; in a listed group they are not, and every
+    /// member of it — including anyone added later — would otherwise drive the
+    /// machine. A message with no sender (`from` empty) is refused there.
+    pub fn allows(&self, chat: &str, from: &str) -> bool {
+        let listed = |id: &str| {
+            let id = id.trim();
+            !id.is_empty() && self.allowed.iter().any(|allowed| allowed.trim() == id)
+        };
+        listed(chat) && (from.trim() == chat.trim() || listed(from))
     }
 
     /// The session `chat` has pointed itself at, if it has.
@@ -628,9 +636,21 @@ mod tests {
     #[test]
     fn a_listed_chat_is_allowed() {
         let chats = allowing(&["123", "-100456"]);
-        assert!(chats.allows("123"));
-        assert!(chats.allows("-100456"));
-        assert!(!chats.allows("124"));
+        assert!(chats.allows("123", "123"));
+        assert!(chats.allows("-100456", "-100456"));
+        assert!(!chats.allows("124", "124"));
+    }
+
+    /// **In a group, being in the group is not being allowed.** Every member
+    /// of a listed group — and anyone added to it later — could prompt a
+    /// session and press Allow on its permission cards; the sender has to be
+    /// on the list too.
+    #[test]
+    fn a_listed_group_admits_only_listed_senders() {
+        let chats = Chats::new(vec!["-100456".into(), "123".into()]);
+        assert!(chats.allows("-100456", "123"));
+        assert!(!chats.allows("-100456", "999"));
+        assert!(!chats.allows("-100456", ""));
     }
 
     fn saved(place: usize) -> ArchiveRow {
@@ -668,15 +688,15 @@ mod tests {
     /// never filled in must be reachable by nobody, not by everybody.
     #[test]
     fn an_empty_list_allows_nobody() {
-        assert!(!allowing(&[]).allows("123"));
+        assert!(!allowing(&[]).allows("123", "123"));
     }
 
     /// A hand-typed list has spaces in it, and a chat id that only differs by
     /// one is the same chat.
     #[test]
     fn surrounding_space_is_not_part_of_an_id() {
-        assert!(allowing(&[" 123 "]).allows("123"));
-        assert!(allowing(&["123"]).allows(" 123"));
+        assert!(allowing(&[" 123 "]).allows("123", "123"));
+        assert!(allowing(&["123"]).allows(" 123", " 123"));
     }
 
     /// An id that is nothing at all matches nothing, including a list entry that
@@ -684,8 +704,8 @@ mod tests {
     /// wildcard.
     #[test]
     fn an_empty_id_matches_nothing() {
-        assert!(!allowing(&["", "123"]).allows(""));
-        assert!(!allowing(&["   "]).allows("  "));
+        assert!(!allowing(&["", "123"]).allows("", ""));
+        assert!(!allowing(&["   "]).allows("  ", "  "));
     }
 
     /// Pointing at a session is also subscribing to it, and that is the half of

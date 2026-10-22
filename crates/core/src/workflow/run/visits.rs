@@ -18,6 +18,15 @@ impl Run {
         }
     }
 
+    /// Whether the run did any work: some visit sent a prompt, ran a command or
+    /// kept an answer. Read off the run, not the session it ends in, so a run
+    /// resumed at a later step still counts what it did before.
+    pub fn worked(&self) -> bool {
+        self.visits
+            .iter()
+            .any(|v| v.ran_with.is_some() || v.command.is_some() || v.output.is_some())
+    }
+
     /// What was in force when the open visit's first prompt went.
     pub fn ran_with(&mut self, settings: Settings) {
         if let Some(visit) = self.visits.last_mut().filter(|v| v.ended_at.is_none()) {

@@ -456,10 +456,6 @@ async fn run(
         tokio::select! {
             biased;
 
-            why = &mut ended => {
-                return Err(why);
-            }
-
             _ = &mut deadline, if !ready => {
                 return Err("handshake timed out".into());
             }
@@ -499,6 +495,13 @@ async fn run(
                     &mut ready, &mut session_id, &req_tx, output, &mut registry, &resp_tx,
                 )
                 .await?;
+            }
+
+            // After stdout, so lines an adapter wrote before it exited are read
+            // first: one that answers a turn with an error and then dies has
+            // both ready at once, and the answer is the part worth saying.
+            why = &mut ended => {
+                return Err(why);
             }
 
             // Live terminal output → forward to the UI.
@@ -843,7 +846,7 @@ async fn handle_reverse(method: &str, params: &Value, _cwd: &PathBuf) -> Result<
             let content = params
                 .get("content")
                 .and_then(Value::as_str)
-                .unwrap_or_default();
+                .ok_or("missing content")?;
             tokio::fs::write(path, content)
                 .await
                 .map(|_| Value::Null)

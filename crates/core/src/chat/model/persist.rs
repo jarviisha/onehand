@@ -52,11 +52,25 @@ impl Chat {
         write.meta.updated = (!lines.is_empty()).then(store::now_secs);
         write.lines = lines;
         write.blobs = blobs;
+        write.from = from;
         write.rewrite = self.rewrite;
 
         self.persisted = total;
         self.rewrite = false;
         Some(write)
+    }
+
+    /// Hand back the mark a save that did not land took.
+    ///
+    /// The next save then carries what this one did not. A rewrite that failed
+    /// leaves the file as it was, so the next save has to be the rewrite.
+    ///
+    /// ponytail: a save built after this one and already landed is sent again,
+    /// so a turn can appear twice; that takes two saves in flight across a disk
+    /// failure, and a duplicate is the recoverable half of that trade.
+    pub fn unflush(&mut self, write: &PendingWrite) {
+        self.persisted = self.persisted.min(write.from);
+        self.rewrite |= write.rewrite;
     }
 
     /// The metadata alone — a rename, a reset, a change of selector.
@@ -84,6 +98,7 @@ impl Chat {
             dir: store::conv_dir(store, &session_id),
             lines: Vec::new(),
             blobs: Vec::new(),
+            from: self.persisted,
             rewrite: false,
             meta: MetaWrite {
                 session_id,

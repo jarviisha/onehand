@@ -67,6 +67,10 @@ struct Term {
     buffer: Arc<Mutex<Buffer>>,
     exit: Arc<Mutex<ExitState>>,
     killer: Box<dyn ChildKiller + Send + Sync>,
+    /// The child's pid, which is also its process group: a PTY child leads a
+    /// session of its own, so everything it started without leaving that
+    /// session is in the group.
+    pid: Option<u32>,
     /// Kept alive so the PTY (and our reader) stays open.
     _master: Box<dyn MasterPty + Send>,
 }
@@ -147,6 +151,7 @@ impl TerminalRegistry {
         let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
         drop(pair.slave); // close the slave so the reader EOFs when the child exits
         let killer = child.clone_killer();
+        let pid = child.process_id();
         let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
 
         self.next += 1;
@@ -228,6 +233,7 @@ impl TerminalRegistry {
                 buffer,
                 exit,
                 killer,
+                pid,
                 _master: pair.master,
             },
         );
@@ -265,16 +271,31 @@ impl TerminalRegistry {
     /// so the agent can still read the final output).
     pub(crate) fn kill(&mut self, id: &str) -> Result<Value, String> {
         let term = self.terms.get_mut(id).ok_or("unknown terminal")?;
-        let _ = term.killer.kill();
+        term.stop();
         Ok(Value::Null)
     }
 
     /// `terminal/release`: kill and drop the terminal entirely.
     pub(crate) fn release(&mut self, id: &str) -> Result<Value, String> {
         if let Some(mut term) = self.terms.remove(id) {
-            let _ = term.killer.kill();
+            term.stop();
         }
         Ok(Value::Null)
+    }
+}
+
+impl Term {
+    /// Stop the command and everything it started.
+    ///
+    /// The library's own kill is a hangup and nothing more, which a command
+    /// is free to ignore; the group is killed outright so the background
+    /// children of a command that has already exited go too.
+    fn stop(&mut self) {
+        let _ = self.killer.kill();
+        #[cfg(unix)]
+        if let Some(pid) = self.pid {
+            crate::process::kill_group(pid);
+        }
     }
 }
 
@@ -285,7 +306,7 @@ impl TerminalRegistry {
 impl Drop for TerminalRegistry {
     fn drop(&mut self) {
         for term in self.terms.values_mut() {
-            let _ = term.killer.kill();
+            term.stop();
         }
     }
 }
@@ -326,6 +347,48 @@ pub(crate) fn wait_result(exit: &ExitState) -> Value {
 #[cfg(test)]
 mod tests {
     use super::utf8_complete_prefix_len;
+
+    /// **A released terminal takes everything it started with it.** A hangup
+    /// alone is a request: a command that ignores it (`nohup`, a server, a
+    /// `trap`) and whatever it put in the background outlived the session that
+    /// asked for them, writing into the project with no card left to show it.
+    #[cfg(unix)]
+    #[test]
+    fn a_released_terminal_stops_a_command_that_ignores_the_hangup() {
+        let marker = std::env::temp_dir().join(format!("onehand-term-kill-{}", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+        let (tx, _rx) = tokio::sync::mpsc::channel(256);
+        let mut registry = super::TerminalRegistry::new(tx);
+        let script = format!(
+            "trap '' HUP; (sleep 1; touch {}) & sleep 30",
+            marker.display()
+        );
+        let made = registry
+            .create(
+                &serde_json::json!({ "command": "sh", "args": ["-c", script] }),
+                &std::env::temp_dir(),
+            )
+            .unwrap();
+        let id = made["terminalId"].as_str().unwrap().to_string();
+        let exit = registry.waiter(&id).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(200));
+
+        registry.release(&id).unwrap();
+
+        let started = std::time::Instant::now();
+        while !exit.lock().unwrap().exited {
+            assert!(
+                started.elapsed() < std::time::Duration::from_secs(3),
+                "the command outlived its release"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        assert!(
+            !marker.exists(),
+            "a child of the released command still ran"
+        );
+    }
 
     #[test]
     fn complete_ascii_and_utf8_pass_whole() {

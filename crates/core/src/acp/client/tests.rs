@@ -1,6 +1,6 @@
 use super::{
-    base64_encode, connect_over, elicit_result, explain, file_uri, parse_elicitation, LastWords,
-    Transport, STDERR_LINE_CAP, STDERR_TAIL_LINES,
+    base64_encode, connect_over, elicit_result, explain, file_uri, handle_reverse,
+    parse_elicitation, LastWords, Transport, STDERR_LINE_CAP, STDERR_TAIL_LINES,
 };
 use crate::acp::{AcpEvent, AcpRequest, ElicitKind, ElicitOutcome, ElicitValue};
 use futures::StreamExt as _;
@@ -874,4 +874,72 @@ async fn a_login_required_turn_is_read_as_such_ahead_of_its_failure() {
         }
     }
     assert_eq!(order, ["login", "error", "ended"]);
+}
+
+/// **A write that names no content is refused, not taken as "empty".** A
+/// malformed request would otherwise truncate a real file to nothing, and the
+/// agent would be told the write had worked.
+#[tokio::test]
+async fn a_write_without_content_leaves_the_file_alone() {
+    let dir = std::env::temp_dir().join(format!("onehand-acp-write-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("kept.txt");
+    std::fs::write(&path, "the user's work").unwrap();
+
+    let params = json!({ "path": path.to_str().unwrap() });
+    let answer = handle_reverse("fs/write_text_file", &params, &PathBuf::from("/tmp")).await;
+
+    assert!(answer.is_err(), "{answer:?}");
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "the user's work");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// **What an adapter said before it exited reaches the caller.** An adapter
+/// that answers a turn with an error and then dies leaves both facts ready at
+/// once: the answer in its stdout pipe and the exit. Taking the exit first threw
+/// the answer away, so the reader saw "adapter exited" instead of why the turn
+/// failed.
+#[tokio::test]
+async fn the_last_answer_before_an_exit_is_not_lost() {
+    let (mut transport, agent) = Transport::scripted();
+    let (exit, exited) = tokio::sync::oneshot::channel::<()>();
+    transport.ended = Box::pin(async move {
+        let _ = exited.await;
+        "adapter exited (code 1)".to_string()
+    });
+    let (read, out) = tokio::io::split(agent);
+    let mut agent = Agent {
+        lines: BufReader::new(read).lines(),
+        out,
+    };
+    let (tx, mut events) = tokio::sync::mpsc::unbounded_channel();
+    tokio::spawn(async move {
+        let stream = connect_over(transport, PathBuf::from("/tmp"), None);
+        futures::pin_mut!(stream);
+        while let Some(event) = stream.next().await {
+            if tx.send(event).is_err() {
+                break;
+            }
+        }
+    });
+
+    agent.handshake().await;
+    let req = connected(&mut events).await;
+    req.send(AcpRequest::Prompt {
+        text: "go".into(),
+        attachments: Vec::new(),
+    })
+    .expect("the client is still serving");
+    let prompt = agent.heard().await;
+    agent
+        .say(json!({
+            "jsonrpc": "2.0",
+            "id": prompt["id"],
+            "error": { "code": -32000, "message": "out of credit" }
+        }))
+        .await;
+    exit.send(()).unwrap();
+
+    let (text, _) = failure(&mut events).await;
+    assert_eq!(text, "The turn failed: out of credit");
 }

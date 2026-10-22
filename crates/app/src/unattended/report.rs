@@ -113,13 +113,13 @@ pub(crate) fn opening(task: &Task, session: &Entity<ChatSession>, cx: &mut App) 
 
 /// Keep how `run` of task `id` ended, if the task works an issue, in its
 /// file before anything else happens to it: nothing here waits on the
-/// network, so a quit right after cannot lose it. `started` says whether the
-/// run asked its agent anything, and `asked` what a card still waiting asked.
-pub(crate) fn keep(id: &str, run: &Run, started: bool, asked: Option<String>, cx: &mut App) {
+/// network, so a quit right after cannot lose it. `asked` is what a card still
+/// waiting asked.
+pub(crate) fn keep(id: &str, run: &Run, asked: Option<String>, cx: &mut App) {
     let pending = PendingReport {
         run: run.id.clone(),
         outcome: run.outcome.clone(),
-        started,
+        started: run.worked(),
         ended_on: run.visits().last().and_then(|visit| visit.output.clone()),
         asked,
         notes: Vec::new(),

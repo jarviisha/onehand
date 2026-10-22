@@ -16,6 +16,8 @@ minor bump may break any of them.
   an older build does not read what it leaves.
 - Only one onehand runs on a config directory. A second instance says so and exits; more windows
   still open in the one process.
+- In a Telegram group on `remote.telegram.allowed_chats`, only members whose own ids are listed
+  too reach the app. Before, every member of a listed group could prompt and answer permissions.
 
 ### Workflows and tasks
 
@@ -57,6 +59,19 @@ minor bump may break any of them.
 - Terminal tabs size to their names and scroll; the terminal caches rows and coalesces redraws.
 - The interface font is Be Vietnam Pro, shipped inside the binary in place of Inter.
 - The palette is VS Code's Dark Modern and Light Modern, the rail on its side bar's grey.
+
+### Fixed
+
+- An agent's file write that names no content is refused instead of emptying the file.
+- An adapter that answers a turn with an error and exits says why, instead of only that it exited.
+- Releasing an agent's terminal stops a command that ignores the hangup, and what it started.
+- A transcript line torn by a crash no longer swallows the next save's first message; a save that
+  fails is carried by the next one; a line this build cannot read is never rewritten away.
+- A save keeps the config's permissions and writes through a symlink.
+- An unattended claim whose comment fails still runs, instead of leaving the issue taken and idle.
+- A run's report says it could not start only when it never worked, not when it failed after a
+  resume.
+- Close or Restart pressed mid-turn and cancelled works again on the next press.
 
 ### Project
 
