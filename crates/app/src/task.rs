@@ -115,9 +115,7 @@ impl Tasks {
     /// Stop was pressed on task `id` and it has not given its place up
     /// yet: its step's command, or its check, is still being stopped.
     fn stopping(&self, id: &str) -> bool {
-        self.live
-            .values()
-            .any(|d| d.task == id && d.stopping.is_some())
+        self.live.values().any(|d| d.task() == id && d.stopping())
             || self
                 .checks
                 .get(id)
@@ -135,7 +133,7 @@ impl Tasks {
         match self.working(id) {
             Some(Working::Running) => self
                 .driven(id)
-                .is_none_or(|d| !d.run.awaiting_status_checks()),
+                .is_none_or(|d| !d.run().awaiting_status_checks()),
             Some(Working::Queued) => true,
             Some(Working::Waiting) | None => false,
         }
@@ -143,14 +141,14 @@ impl Tasks {
 
     /// The driver running task `id`'s run, if one is.
     fn driven(&self, id: &str) -> Option<&driver::Driven> {
-        self.live.values().find(|d| d.task == id)
+        self.live.values().find(|d| d.task() == id)
     }
 
     /// The session task `id`'s run is driven on, if one is.
     fn live_uid(&self, id: &str) -> Option<u64> {
         self.live
             .iter()
-            .find(|(_, d)| d.task == id)
+            .find(|(_, d)| d.task() == id)
             .map(|(uid, _)| *uid)
     }
 
@@ -580,15 +578,15 @@ pub(crate) struct Shown {
 
 /// What task `id`'s run, under way, waits for approval on now.
 pub(crate) fn review_of(id: &str, cx: &App) -> Option<UnderReview> {
-    UnderReview::of(&cx.try_global::<Tasks>()?.driven(id)?.run)
+    UnderReview::of(cx.try_global::<Tasks>()?.driven(id)?.run())
 }
 
 /// Where the run on session `uid` stands, if one drives it.
 pub(crate) fn shown(uid: u64, cx: &App) -> Option<Shown> {
     let driven = cx.try_global::<Tasks>()?.live.get(&uid)?;
-    let run = &driven.run;
+    let run = driven.run();
     Some(Shown {
-        task: driven.task.clone().into(),
+        task: driven.task().to_string().into(),
         name: run.template.name.clone().into(),
         steps: run
             .template
@@ -598,7 +596,7 @@ pub(crate) fn shown(uid: u64, cx: &App) -> Option<Shown> {
             .collect(),
         at: run.step,
         review: UnderReview::of(run),
-        stopping: driven.stopping.is_some(),
+        stopping: driven.stopping(),
     })
 }
 

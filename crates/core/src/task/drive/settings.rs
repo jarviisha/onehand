@@ -192,7 +192,7 @@ fn plan(
         ) {
             Next::Pick(pick) => {
                 chat.pick(&pick);
-                fx.push(Effect::Refresh);
+                fx.push(Effect::SessionChanged);
                 picking.picked.push(pick.group().to_string());
                 picking.sent = Some(pick);
             }

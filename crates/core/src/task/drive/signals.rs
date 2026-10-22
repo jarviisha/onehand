@@ -98,6 +98,8 @@ pub enum Effect {
     Pause { why: String, fix: String },
     /// What a run shows changed: draw it again.
     Refresh,
+    /// The session was changed here (a pick sent): tell whatever watches it.
+    SessionChanged,
     /// The run is over, as `outcome`: keep it and let its place go.
     Finish { outcome: Outcome },
 }

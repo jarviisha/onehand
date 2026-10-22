@@ -24,8 +24,9 @@ worktree's branch to the forge. The words are defined in [CONTEXT.md](../CONTEXT
 | Task files, their ordered writer, the move of `pipeline-runs/` | [crates/core/src/task/files.rs](../crates/core/src/task/files.rs) |
 | The queue: one task per place | [crates/core/src/task/queue.rs](../crates/core/src/task/queue.rs) |
 | Marks pinned as commits under `refs/onehand/` | [crates/core/src/task/marks.rs](../crates/core/src/task/marks.rs) |
-| The one driver | [crates/app/src/task/driver.rs](../crates/app/src/task/driver.rs) |
-| A visit's settings put in force before its first prompt | [crates/app/src/task/driver/settings.rs](../crates/app/src/task/driver/settings.rs) |
+| The one driver: what it decides | [crates/core/src/task/drive.rs](../crates/core/src/task/drive.rs) |
+| A visit's settings put in force before its first prompt | [crates/core/src/task/drive/settings.rs](../crates/core/src/task/drive/settings.rs) |
+| The one driver: what the app carries out for it | [crates/app/src/task/driver.rs](../crates/app/src/task/driver.rs) |
 | Each step's settings judged before a start | [crates/core/src/preflight/settings.rs](../crates/core/src/preflight/settings.rs) |
 | The `Tasks` global: requests, the queue, unfinished tasks | [crates/app/src/task.rs](../crates/app/src/task.rs) |
 | Workflows on offer | [crates/app/src/workflow.rs](../crates/app/src/workflow.rs) |
@@ -255,6 +256,15 @@ the run's history, capped at 200.
   still counts in that step.
 
 ## The driver
+
+The driver decides in core and acts in the app. `onehand_core::task::drive::Drive` is told what
+happened (an `Input`) with the run's session as it stands, and answers with what to do (`Effect`s):
+pin, measure, read the work, send a prompt, run a command, call the forge, watch the status checks,
+arm the clock, say something, save, finish. It has no timer or I/O of its own, so every rule below
+is tested in core. The app's driver (`crate::task::driver`) maps the session's events onto inputs,
+carries out the effects and brings their results back. The mode and the settings picks are made on
+the session's `Chat` by the drive itself, since the next pick is planned against what is still
+waiting.
 
 The `Tasks` global (`crate::task::Tasks`) holds every run under way by its session's uid;
 `crate::workflow::Workflows` keeps only the workflows on offer. The driver subscribes to the
