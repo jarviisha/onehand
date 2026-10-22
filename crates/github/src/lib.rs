@@ -82,6 +82,10 @@ impl Connector for GitHub {
                 "@me",
                 "--label",
                 label,
+                // Oldest first, as they are taken: the list is cut at its
+                // limit, and newest first left the oldest past it, never seen.
+                "--search",
+                "sort:created-asc",
                 "--limit",
                 "50",
                 "--json",
