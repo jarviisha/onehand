@@ -594,3 +594,30 @@ fn a_failed_save_is_carried_by_the_next() {
     assert_eq!(back.items.len(), 2);
     let _ = std::fs::remove_dir_all(&store);
 }
+
+/// **A step saved while it ran comes back stopped, not running.** A session
+/// closed mid-turn writes its cards as they stand; restored as running, each
+/// started a clock of its own and read as live work forever after.
+#[test]
+fn a_step_saved_running_comes_back_stopped() {
+    let store = scratch("running-step");
+    let mut chat = chat_in(&store, "s1");
+    chat.push_user("build it".into(), Vec::new());
+    chat.items.push(ChatItem::Tool(ToolItem::new(ToolCall {
+        id: "t1".into(),
+        title: "cargo build".into(),
+        description: None,
+        kind: ToolKind::Execute,
+        status: ToolStatus::InProgress,
+        content: Vec::new(),
+    })));
+    save(&mut chat);
+
+    let back = load(&conv_dir(&store, "s1")).unwrap();
+    let ChatItem::Tool(tool) = &back.items[1] else {
+        panic!("the step came back");
+    };
+    assert_eq!(tool.call.status, ToolStatus::Failed);
+    assert!(!tool.is_open(), "and it is not drawn as running");
+    let _ = std::fs::remove_dir_all(&store);
+}

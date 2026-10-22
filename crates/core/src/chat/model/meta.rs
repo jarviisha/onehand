@@ -214,6 +214,7 @@ impl Chat {
     pub fn stream_ended(&mut self) {
         self.busy = false;
         self.link = super::Link::Lost;
+        self.settle_lost_link();
     }
 
     /// The first thing the user said, capped — what names a conversation in the

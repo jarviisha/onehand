@@ -391,6 +391,7 @@ impl Chat {
                 // No live adapter to answer — but the cards must not keep
                 // offering buttons whose rpc ids died with the connection.
                 self.cancel_pending_permissions();
+                self.settle_lost_link();
                 // No key in the words: the front end names the one its keymap
                 // binds, which the person may have changed.
                 let text = self
@@ -519,6 +520,16 @@ impl Chat {
     /// (replacing the live `Terminal(id)` with the captured output + an exit
     /// footer) and drop it from the live `terminals` map. Called at turn end so
     /// the map stays bounded to terminals that are actually still running.
+    /// The adapter is gone: nothing more arrives for a call it left running,
+    /// and every terminal it was streaming died with it.
+    pub(super) fn settle_lost_link(&mut self) {
+        for view in self.terminals.values_mut() {
+            view.exited = true;
+        }
+        self.settle_running_steps();
+        self.flatten_exited_terminals();
+    }
+
     fn flatten_exited_terminals(&mut self) {
         let exited: Vec<String> = self
             .terminals
