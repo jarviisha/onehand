@@ -1042,3 +1042,38 @@ async fn a_picture_goes_inline_only_to_an_agent_that_reads_them() {
     }
     let _ = std::fs::remove_file(&shot);
 }
+
+/// **A read of part of a file gets that part.** `line` (from 1) and `limit`
+/// were ignored, so an agent asking for twenty lines of a long file got all of
+/// it, at offsets it did not ask for.
+#[tokio::test]
+async fn a_read_asked_for_a_range_gets_that_range() {
+    let dir = std::env::temp_dir().join(format!("onehand-acp-range-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("long.txt");
+    std::fs::write(&path, "one\ntwo\nthree\nfour\nfive\n").unwrap();
+    let path = path.to_str().unwrap();
+    let read = |params: Value| async move {
+        handle_reverse("fs/read_text_file", &params, &PathBuf::from("/tmp"))
+            .await
+            .unwrap()["content"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+
+    assert_eq!(
+        read(json!({ "path": path, "line": 2, "limit": 2 })).await,
+        "two\nthree\n"
+    );
+    assert_eq!(
+        read(json!({ "path": path, "line": 4 })).await,
+        "four\nfive\n"
+    );
+    assert_eq!(read(json!({ "path": path, "limit": 1 })).await, "one\n");
+    assert_eq!(
+        read(json!({ "path": path })).await,
+        "one\ntwo\nthree\nfour\nfive\n"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}

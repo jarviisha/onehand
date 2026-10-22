@@ -873,10 +873,12 @@ async fn handle_reverse(method: &str, params: &Value, _cwd: &PathBuf) -> Result<
                 .get("path")
                 .and_then(Value::as_str)
                 .ok_or("missing path")?;
-            tokio::fs::read_to_string(path)
+            let content = tokio::fs::read_to_string(path)
                 .await
-                .map(|content| json!({ "content": content }))
-                .map_err(|e| e.to_string())
+                .map_err(|e| e.to_string())?;
+            let line = params.get("line").and_then(Value::as_u64);
+            let limit = params.get("limit").and_then(Value::as_u64);
+            Ok(json!({ "content": lines_of(&content, line, limit) }))
         }
         "fs/write_text_file" => {
             let path = params
@@ -1333,6 +1335,21 @@ async fn build_prompt_blocks(text: &str, attachments: &[Attachment], images: boo
         }));
     }
     Value::Array(blocks)
+}
+
+/// The part of `content` a read asked for: from `line` (counted from 1), at
+/// most `limit` lines, each kept with its own line ending.
+fn lines_of(content: &str, line: Option<u64>, limit: Option<u64>) -> String {
+    if line.is_none() && limit.is_none() {
+        return content.to_string();
+    }
+    let skip = line.unwrap_or(1).saturating_sub(1) as usize;
+    let take = limit.map_or(usize::MAX, |n| n as usize);
+    content
+        .split_inclusive('\n')
+        .skip(skip)
+        .take(take)
+        .collect()
 }
 
 /// A `file://` URI with the path percent-encoded (RFC 3986): unreserved chars
