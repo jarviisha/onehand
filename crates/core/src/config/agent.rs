@@ -46,6 +46,9 @@ pub enum Preset {
 }
 
 impl Preset {
+    /// Every built-in agent, in the order a first launch lists them.
+    pub const ALL: [Preset; 2] = [Preset::ClaudeCode, Preset::Codex];
+
     pub fn shown_name(self) -> &'static str {
         match self {
             Self::ClaudeCode => "Claude Code",
@@ -195,6 +198,19 @@ impl AgentSpec {
         self.preset
             .is_some_and(|preset| self.version.as_deref().is_some_and(|v| v != preset.pin()))
     }
+}
+
+/// The built-in agents whose binary is on `path`, as entries of their own.
+pub(crate) fn found_agents(path: Option<&std::ffi::OsStr>) -> Vec<AgentSpec> {
+    Preset::ALL
+        .into_iter()
+        .filter(|preset| find_command(preset.binary(), path, None).is_some())
+        .map(|preset| AgentSpec {
+            name: preset.shown_name().to_string(),
+            preset: Some(preset),
+            ..Default::default()
+        })
+        .collect()
 }
 
 /// `value` with a leading `~/` as the home directory, as a shell would have
