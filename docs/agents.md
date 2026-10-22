@@ -71,8 +71,10 @@ env = { SOME_VAR = "x" }
 - **`version`** on a preset runs that adapter version instead of the pin.
 - The first entry is the default agent everywhere (`config::agent_or_first`).
 - **A `preset` this build does not know** (written by a newer one) keeps its entry: Settings shows
-  it as *Not supported by this build of onehand* with only *Delete…*, it refuses to start, and a
-  save writes it back as it was. With no `name` it is called by its id.
+  it as *Not supported by this build of onehand* with only *Delete…*, and it refuses to start. A
+  save keeps its id as written, with the fields this build knows (`name`, `version`, `env`…); a key
+  only the newer build knows is lost when the agent list is saved. With no `name` it is called,
+  and saved, by its id.
 
 ## First launch
 

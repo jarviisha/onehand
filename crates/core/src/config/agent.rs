@@ -111,7 +111,7 @@ static CODEX: PresetInfo = PresetInfo {
 
 /// The `preset` an entry names: one this build knows, or one it does not.
 ///
-/// **An id this build does not know is kept, verbatim.** A newer build may
+/// **An id this build does not know is kept as written.** A newer build may
 /// write one, and reading it as an error lost the whole file to defaults,
 /// while reading it as a known one, or dropping it, would change what the
 /// entry starts or lose it at the next save.
