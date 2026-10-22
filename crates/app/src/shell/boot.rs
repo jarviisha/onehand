@@ -143,6 +143,15 @@ impl Shell {
                 use crate::chat::pane::ChatPaneEvent as E;
                 match event {
                     E::OpenFile(path) => {
+                        // Another panel maximized would hide the Workbench the
+                        // file opens in: it is put back first, so the file is
+                        // seen where it was asked for.
+                        if shell
+                            .app_maximized
+                            .is_some_and(|p| p != FocusedPanel::Workbench)
+                        {
+                            shell.toggle_maximize_panel(FocusedPanel::Workbench, window, cx);
+                        }
                         shell
                             .workbench
                             .update(cx, |panel, cx| panel.open_file(path, window, cx));

@@ -372,6 +372,9 @@ impl Shell {
         self.window.git.remove(&path);
         self.mru.remove(&path);
         self.folds.remove(&path);
+        // Its field goes with it: kept, the same folder added back found the
+        // old command in a field its project no longer had.
+        self.check_inputs.remove(&path);
         self.terminal_homes.forget(&path);
         // A cycle's frozen order can name sessions that no longer exist.
         self.tab_cycle = None;
