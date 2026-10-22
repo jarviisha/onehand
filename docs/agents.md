@@ -128,7 +128,9 @@ of the failure that follows (`AgentSpec::login_hint`):
   account: `CLAUDE_CONFIG_DIR=/home/me/.claude-work claude auth login`, the directory in single
   quotes when it holds a space or anything else a shell would read. The line is drawn as text, so
   the command carries no backticks;
-- a declared agent: *Gemini needs you to log in*.
+- a declared agent: the agent's own words when it describes a way to log in at the handshake
+  (`authMethods`, backticks dropped): *OpenCode is not logged in. Run opencode auth login in the
+  terminal*; else *Gemini needs you to log in*.
 
 Logging in inside onehand (ACP `authenticate`) is not built.
 

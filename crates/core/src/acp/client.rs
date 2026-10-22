@@ -30,23 +30,26 @@
 
 use super::parse;
 use super::terminal::{self, TermStream, TerminalRegistry};
-use super::types::{
-    AcpEvent, AcpRequest, Attachment, ElicitChoice, ElicitField, ElicitKind, ElicitOutcome,
-    ElicitValue, Elicitation, Mode, PermissionOption, PermissionRequest, ToolKind,
-};
-use crate::attachment::{inline_image_mime, MAX_INLINE_IMAGE_BYTES};
+use super::types::{AcpEvent, AcpRequest};
+use crate::config::Launch;
 use futures::channel::mpsc::Sender as EventTx;
 use futures::stream::{self, Stream, StreamExt};
 use futures::SinkExt;
 use serde_json::{json, Value};
-use std::collections::{HashMap, VecDeque};
-use std::path::{Path, PathBuf};
-use std::pin::Pin;
-use std::process::Stdio;
+use std::collections::HashMap;
+use std::path::PathBuf;
 use std::time::Duration;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::Command;
+use tokio::io::AsyncBufReadExt;
 use tokio::sync::mpsc;
+
+mod forms;
+mod transport;
+mod wire;
+
+use forms::*;
+use transport::*;
+pub use wire::base64_encode;
+use wire::*;
 
 /// ACP protocol version this client speaks.
 const PROTOCOL_VERSION: i64 = 1;
@@ -56,318 +59,24 @@ const EVENT_BUFFER: usize = 64;
 /// adapter stuck.
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(90);
 
-/// Connect to an agent adapter, with `env` set on it over what it inherits,
-/// and stream its events. The returned stream owns
-/// the child process; dropping it (subscription removed) kills the adapter
-/// (`kill_on_drop`).
-pub fn connect(
-    command: String,
-    args: Vec<String>,
-    env: Vec<(String, String)>,
-    cwd: PathBuf,
-    resume: Option<String>,
-) -> impl Stream<Item = AcpEvent> {
+/// What a session is opened with, beside the agent that serves it.
+pub struct SessionOpts {
+    /// The directory the agent works in, and the session's `cwd`.
+    pub cwd: PathBuf,
+    /// The session to load rather than start, when there is one to resume.
+    pub resume: Option<String>,
+}
+
+/// Start the agent `launch` describes, with its variables set over what it
+/// inherits, open a session on it with `opts`, and stream its events. The
+/// returned stream owns the child process; dropping it (subscription removed)
+/// kills the adapter (`kill_on_drop`).
+pub fn connect(launch: Launch, opts: SessionOpts) -> impl Stream<Item = AcpEvent> {
     // Spawning is deferred into the stream rather than done here, so a command
     // that does not exist surfaces as `Disconnected` on the stream the caller is
     // already reading instead of as a second failure mode at the call site.
-    let spawned = Transport::spawn(command, args, env, cwd.clone());
-    connect_over_result(spawned, cwd, resume)
-}
-
-/// Anything the serve loop needs from the far end: the two pipes, and the news
-/// that it will not be answering again.
-///
-/// **The seam is the byte stream, not the process.** A child is one thing that
-/// satisfies it and the only one in production; what the split buys is that the
-/// loop above it can be driven by a test at all. Boxed rather than generic so
-/// the functions that write into it keep their signatures free of a type
-/// parameter that says nothing about what they do.
-struct Transport {
-    /// Lines the far end sends.
-    incoming: Pin<Box<dyn tokio::io::AsyncBufRead + Send>>,
-    /// Where messages to the far end go.
-    outgoing: Outgoing,
-    /// Resolves, with a sentence, once the far end can no longer answer.
-    ///
-    /// **Owns whatever it is waiting on**, which for a child process is the
-    /// child itself — so dropping this future is what kills the adapter, and the
-    /// stream owning it is what ties the agent's life to the subscription.
-    ended: Pin<Box<dyn std::future::Future<Output = String> + Send>>,
-    /// The last lines the adapter wrote to stderr.
-    ///
-    /// **An adapter that dies explains itself on stderr and nowhere else.**
-    /// What reaches the protocol is silence — stdout closes without a further
-    /// message — so every distinct failure arrives at the reader as the same
-    /// sentence: the adapter stopped. The reason was printed a moment earlier
-    /// and, without this, went only to *our* stderr, which nobody reads when the
-    /// app was started from a desktop icon.
-    ///
-    /// **Kept for any death, not only a failure to start.** A start that never
-    /// happens is the case this was built for, but the tail costs the same at
-    /// every other one, and the alternative is deciding — at the moment
-    /// something has already gone wrong — that the reader may not see what was
-    /// said.
-    ///
-    /// Shared with the draining task rather than read off the pipe at failure
-    /// time, because by then the pipe is closed and the process is gone.
-    stderr: StderrTail,
-    /// The task filling [`Self::stderr`], so a failure can let it catch up.
-    ///
-    /// **Nothing else orders the two.** The serve loop gives up the moment
-    /// stdout ends, while the reason is carried by a separate task that may not
-    /// have been polled yet — and a child is free to close stdout *before* it
-    /// writes why, which puts the reason strictly after the event that ends the
-    /// loop. Read without waiting, the tail is then empty exactly when it
-    /// matters, and intermittently, by thread scheduling.
-    drain: Option<tokio::task::JoinHandle<()>>,
-}
-
-/// The adapter's own last words, kept for whoever has to explain its death.
-type StderrTail = std::sync::Arc<std::sync::Mutex<LastWords>>;
-
-/// A bounded tail of adapter stderr, and how much of it fell off the front.
-///
-/// **The count is the half that keeps the bound honest.** Twenty lines is
-/// plenty for one tool's error block and nothing at all for its output, so a
-/// chatty adapter silently reduces to its least interesting lines. Saying how
-/// many were dropped is what stops the survivors from reading as everything
-/// that was said — the same reason the terminal extension reports a capped
-/// buffer rather than quietly shortening it.
-#[derive(Default)]
-struct LastWords {
-    kept: VecDeque<String>,
-    dropped: usize,
-}
-
-/// How many lines of adapter stderr are kept, and how wide each may be.
-///
-/// **Room for the block plus whatever it arrived behind.** The failures this
-/// exists for announce themselves in a handful of lines — `npx` naming a version
-/// it cannot resolve, a runtime naming a module it cannot find — but the line
-/// that names the fault class comes *first* in such a block, so a tail sized to
-/// the block exactly loses that line to any warning printed after it. The npm
-/// error this was written for is five lines on its own; at five, one
-/// `npm warn exec` ahead of it is enough to evict the reason.
-///
-/// The width is set by paths: a module or package a runtime cannot find is
-/// named with its full path, and cutting mid-path leaves the half that is the
-/// same for every adapter.
-///
-/// Twenty lines at two hundred characters is four kilobytes per session, which
-/// is the whole cost of leaving this on. What it does *not* bound is one
-/// enormous line: the reader assembles a line before this ever sees it, so an
-/// adapter that writes a megabyte without a newline still spends it.
-const STDERR_TAIL_LINES: usize = 20;
-const STDERR_LINE_CAP: usize = 200;
-
-/// How long a failed adapter is given to finish saying why.
-///
-/// **Bounded because the pipe can outlive the process we spawned.** Waiting for
-/// the drain to reach end-of-file is the exact wait wanted — it is how the tail
-/// is known to be complete — but the write end belongs to whoever holds it, and
-/// the adapter is a chain (`npx` runs `node` runs the agent) whose middle can
-/// die while a grandchild keeps stderr open. Unbounded, that is a hang on the
-/// one path where the app is already trying to report a failure.
-///
-/// Paid only on the way to a `Disconnected`, where nothing is watching for a
-/// quarter second.
-const STDERR_GRACE: Duration = Duration::from_millis(250);
-
-/// The write half of a [`Transport`], as every message-writing function takes
-/// it.
-type Outgoing = Pin<Box<dyn tokio::io::AsyncWrite + Send>>;
-
-impl LastWords {
-    /// Keep one stderr line, dropping the oldest once the tail is full.
-    ///
-    /// Blank lines are skipped because tools pad their error blocks with them,
-    /// and a kept blank is one of the few slots not spent on a reason. A
-    /// skipped blank is not a drop: nothing was lost to report.
-    ///
-    /// So is an `npm notice` line: npm narrating its own start, never the
-    /// reason an adapter died, and each one kept costs a slot a reason needs.
-    fn remember(&mut self, line: &str) {
-        let line = line.trim();
-        let notice = line
-            .get(..10)
-            .is_some_and(|head| head.eq_ignore_ascii_case("npm notice"));
-        if line.is_empty() || notice {
-            return;
-        }
-        if self.kept.len() == STDERR_TAIL_LINES {
-            self.kept.pop_front();
-            self.dropped += 1;
-        }
-        // Cut on a character boundary — an adapter is free to print a path, and
-        // slicing a multi-byte character in half panics rather than shortens.
-        let end = line
-            .char_indices()
-            .nth(STDERR_LINE_CAP)
-            .map_or(line.len(), |(at, _)| at);
-        self.kept.push_back(line[..end].to_string());
-    }
-
-    /// What the adapter said, as one line, or nothing if it said nothing.
-    ///
-    /// Joined rather than kept as separate lines because the caller folds this
-    /// into a single error string, and what draws that string decides for
-    /// itself where to wrap.
-    fn say(&self) -> Option<String> {
-        if self.kept.is_empty() {
-            return None;
-        }
-        let mut said = self.kept.iter().cloned().collect::<Vec<_>>();
-        if self.dropped > 0 {
-            said.insert(0, format!("(+{} earlier lines)", self.dropped));
-        }
-        Some(said.join(" · "))
-    }
-}
-
-/// Put the adapter's last words behind the sentence describing its death.
-///
-/// The protocol-level sentence stays in front because it is what happened —
-/// the tail is evidence, and evidence that pushed the finding off the start of
-/// the line would be worse than none.
-fn explain(what: String, tail: &StderrTail) -> String {
-    // A poisoned lock means the drain task panicked mid-write, which leaves the
-    // tail readable and every line before the panic still in it. Taking it
-    // anyway is what stops one panic from costing the reader the reason; the
-    // alternative degrades to silence exactly when there is most to say.
-    let said = tail
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .say();
-    match said {
-        Some(said) => format!("{what}: {said}"),
-        None => what,
-    }
-}
-
-/// How long an adapter's group is given to leave on its own before what is
-/// left of it is killed.
-const ADAPTER_GRACE: Duration = Duration::from_secs(2);
-
-/// The adapter's process group, killed a grace after this is dropped: with
-/// the transport, whichever way the stream ends.
-///
-/// **Not at once.** The child itself goes on drop, but the agent under it
-/// learns the session is over from its stdin closing, and may still have its
-/// own session to write down for a resume; a group killed on the spot cut that
-/// short. What is left after the grace is what would otherwise outlive it.
-struct Group(Option<u32>);
-
-impl Drop for Group {
-    fn drop(&mut self) {
-        #[cfg(unix)]
-        if let Some(leader) = self.0 {
-            // ponytail: a thread per ended adapter, asleep for the grace; a
-            // reaper shared by every adapter if these ever come in numbers.
-            std::thread::spawn(move || {
-                std::thread::sleep(ADAPTER_GRACE);
-                crate::process::kill_group(leader);
-            });
-        }
-    }
-}
-
-impl Transport {
-    /// Run `command` as a child process and talk to it over its stdio.
-    fn spawn(
-        command: String,
-        args: Vec<String>,
-        env: Vec<(String, String)>,
-        cwd: PathBuf,
-    ) -> Result<Self, String> {
-        let mut cmd = Command::new(&command);
-        cmd.args(&args)
-            .envs(env)
-            .current_dir(&cwd)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
-        // A group of its own, so the adapter can be ended with everything it
-        // started: the child is often `npx`, with the agent and its tools under it.
-        #[cfg(unix)]
-        cmd.process_group(0);
-        let mut child = cmd.spawn().map_err(|e| format!("spawn {command}: {e}"))?;
-        let group = Group(child.id());
-
-        let stdin = child.stdin.take().ok_or("no stdin")?;
-        let stdout = child.stdout.take().ok_or("no stdout")?;
-        let stderr = child.stderr.take().ok_or("no stderr")?;
-
-        // Drain stderr so the adapter never blocks on a full pipe; echo for
-        // debug, and keep the tail so a death can be explained afterwards.
-        let tail: StderrTail = Default::default();
-        let sink = tail.clone();
-        let drain = tokio::spawn(async move {
-            // Bytes, decoded lossily, rather than lines of text: reading as
-            // text makes the first line that is not UTF-8 an error, the loop
-            // stops on it, and nothing empties the pipe after that — the reason
-            // written next is lost, and an adapter that keeps writing blocks
-            // once the pipe is full. Only a closed or broken pipe ends this.
-            let mut reader = BufReader::new(stderr);
-            let mut raw = Vec::new();
-            loop {
-                raw.clear();
-                match reader.read_until(b'\n', &mut raw).await {
-                    Ok(0) | Err(_) => break,
-                    Ok(_) => {}
-                }
-                let text = String::from_utf8_lossy(&raw);
-                let line = text.trim_end_matches(['\n', '\r']);
-                eprintln!("[acp:stderr] {line}");
-                // Taken through a poison rather than around it: a tail that
-                // stopped recording at the first panic would be empty at the
-                // one moment it is read.
-                sink.lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .remember(line);
-            }
-        });
-
-        Ok(Self {
-            stderr: tail,
-            drain: Some(drain),
-            incoming: Box::pin(BufReader::new(stdout)),
-            outgoing: Box::pin(stdin),
-            // The child moves in here, which is what keeps `kill_on_drop`
-            // meaning what it says: this future is dropped with the transport,
-            // the transport with the stream, and the stream with the caller's
-            // interest in the agent.
-            ended: Box::pin(async move {
-                let _group = group;
-                match child.wait().await {
-                    Ok(status) => format!("adapter exited ({status})"),
-                    Err(e) => format!("adapter wait failed: {e}"),
-                }
-            }),
-        })
-    }
-
-    /// A transport with a test on the other end of it.
-    ///
-    /// Bidirectional like a socket pair: what the client writes is what the
-    /// returned half reads, and the other way round. Nothing ends it, so a test
-    /// that wants a dead adapter closes its half.
-    #[cfg(test)]
-    fn scripted() -> (Self, tokio::io::DuplexStream) {
-        let (ours, theirs) = tokio::io::duplex(64 * 1024);
-        let (read, write) = tokio::io::split(ours);
-        (
-            Self {
-                incoming: Box::pin(BufReader::new(read)),
-                outgoing: Box::pin(write),
-                ended: Box::pin(std::future::pending()),
-                // No child, so nothing ever writes to it and nothing drains it.
-                stderr: Default::default(),
-                drain: None,
-            },
-            theirs,
-        )
-    }
+    let spawned = Transport::spawn(launch.command, launch.args, launch.env, opts.cwd.clone());
+    connect_over_result(spawned, opts)
 }
 
 /// Serve an already-connected transport, as a stream of its events.
@@ -376,19 +85,14 @@ impl Transport {
 /// a child process, so [`connect`] opens one and there is nothing else to hand
 /// this.
 #[cfg(test)]
-fn connect_over(
-    transport: Transport,
-    cwd: PathBuf,
-    resume: Option<String>,
-) -> impl Stream<Item = AcpEvent> {
-    connect_over_result(Ok(transport), cwd, resume)
+fn connect_over(transport: Transport, opts: SessionOpts) -> impl Stream<Item = AcpEvent> {
+    connect_over_result(Ok(transport), opts)
 }
 
 /// The body of [`connect`], for a transport that may have failed to open.
 fn connect_over_result(
     transport: Result<Transport, String>,
-    cwd: PathBuf,
-    resume: Option<String>,
+    opts: SessionOpts,
 ) -> impl Stream<Item = AcpEvent> {
     let (sender, receiver) = futures::channel::mpsc::channel(EVENT_BUFFER);
 
@@ -406,7 +110,7 @@ fn connect_over_result(
                 // are still reachable once that loop has given up on it.
                 let stderr = transport.stderr.clone();
                 let drain = transport.drain.take();
-                match run(transport, &cwd, resume, &mut output).await {
+                match run(transport, opts, output.clone()).await {
                     Ok(()) => Ok(()),
                     Err(why) => {
                         if let Some(drain) = drain {
@@ -444,29 +148,20 @@ enum Pending {
 
 async fn run(
     transport: Transport,
-    cwd: &PathBuf,
-    resume: Option<String>,
-    output: &mut EventTx<AcpEvent>,
+    opts: SessionOpts,
+    output: EventTx<AcpEvent>,
 ) -> Result<(), String> {
     let Transport {
         incoming,
-        mut outgoing,
+        outgoing,
         ended,
         // Both read by the caller, which is where a failure becomes a sentence.
         stderr: _,
         drain: _,
     } = transport;
-    let stdin = &mut outgoing;
     let mut reader = incoming.lines();
     tokio::pin!(ended);
     let (req_tx, mut req_rx) = mpsc::unbounded_channel::<AcpRequest>();
-
-    let mut next_id: u64 = 1;
-    let mut pending: HashMap<u64, Pending> = HashMap::new();
-    let mut ready = false;
-    let mut session_id: Option<String> = None;
-    // Whether the agent said it reads image blocks; until it says so, it does not.
-    let mut images = false;
 
     // The terminal extension: a registry of live PTYs, a channel its reader
     // threads stream output over, and a channel async waiters use to post their
@@ -476,12 +171,24 @@ async fn run(
     // (the UI drains at frame rate). 256 × 4 KiB chunks ≈ 1 MiB in flight max.
     let (term_tx, mut term_rx) = mpsc::channel::<TermStream>(256);
     let (resp_tx, mut resp_rx) = mpsc::unbounded_channel::<(Value, Value)>();
-    let mut registry = TerminalRegistry::new(term_tx);
+    let mut conn = Conn {
+        stdin: outgoing,
+        pending: HashMap::new(),
+        next_id: 1,
+        ready: false,
+        session_id: None,
+        images: false,
+        auth_advice: None,
+        opts,
+        req_tx,
+        output,
+        registry: TerminalRegistry::new(term_tx),
+        resp_tx,
+    };
 
     // Kick off the handshake.
-    let init_id = alloc(&mut next_id);
-    pending.insert(init_id, Pending::Init);
-    write_msg(stdin, &request(init_id, "initialize", init_params())).await?;
+    conn.send("initialize", init_params(), Pending::Init)
+        .await?;
 
     let deadline = tokio::time::sleep(HANDSHAKE_TIMEOUT);
     tokio::pin!(deadline);
@@ -490,15 +197,14 @@ async fn run(
         tokio::select! {
             biased;
 
-            _ = &mut deadline, if !ready => {
+            _ = &mut deadline, if !conn.ready => {
                 return Err("handshake timed out".into());
             }
 
             // A parked terminal/wait_for_exit settled → write its response.
             Some((rpc_id, result)) = resp_rx.recv() => {
-                write_msg(stdin, &response_ok(rpc_id, result)).await?;
+                write_msg(&mut conn.stdin, &response_ok(rpc_id, result)).await?;
             }
-
             // Adapter stdout comes BEFORE the terminal stream: this select is
             // `biased`, so a command flooding terminal output must not starve
             // session/updates and permission requests (nor the adapter, which
@@ -524,12 +230,7 @@ async fn run(
                 let Ok(msg) = serde_json::from_str::<Value>(&line) else {
                     continue; // ignore non-JSON noise
                 };
-                handle_message(
-                    msg, stdin, &mut pending, &mut next_id, cwd, resume.as_deref(),
-                    &mut ready, &mut session_id, &mut images, &req_tx, output, &mut registry,
-                    &resp_tx,
-                )
-                .await?;
+                conn.handle_message(msg).await?;
             }
 
             // After stdout, so lines an adapter wrote before it exited are read
@@ -551,332 +252,464 @@ async fn run(
                         exit_code: code,
                     },
                 };
-                let _ = output.send(out).await;
+                let _ = conn.output.send(out).await;
             }
 
-            req = req_rx.recv(), if ready => {
-                match req {
-                    Some(AcpRequest::Prompt { text, attachments }) => {
-                        let id = alloc(&mut next_id);
-                        pending.insert(id, Pending::PromptTurn);
-                        let sid = session_id.clone().unwrap_or_default();
-                        let blocks = build_prompt_blocks(&text, &attachments, images).await;
-                        let params = json!({ "sessionId": sid, "prompt": blocks });
-                        write_msg(stdin, &request(id, "session/prompt", params)).await?;
-                    }
-                    Some(AcpRequest::SetMode(mode_id)) => {
-                        if let Some(sid) = &session_id {
-                            let id = alloc(&mut next_id);
-                            pending.insert(id, Pending::Pick {
-                                group: crate::chat::MODE_SELECTOR.to_string(),
-                                value: mode_id.clone(),
-                            });
-                            let params = json!({ "sessionId": sid, "modeId": mode_id });
-                            write_msg(stdin, &request(id, "session/set_mode", params)).await?;
-                        }
-                    }
-                    Some(AcpRequest::SetConfigOption { config_id, value }) => {
-                        if let Some(sid) = &session_id {
-                            let id = alloc(&mut next_id);
-                            pending.insert(id, Pending::Pick {
-                                group: config_id.clone(),
-                                value: value.clone(),
-                            });
-                            let params =
-                                json!({ "sessionId": sid, "configId": config_id, "value": value });
-                            write_msg(stdin, &request(id, "session/set_config_option", params))
-                                .await?;
-                        }
-                    }
-                    Some(AcpRequest::Cancel) => {
-                        if let Some(sid) = &session_id {
-                            let params = json!({ "sessionId": sid });
-                            write_msg(stdin, &notification("session/cancel", params)).await?;
-                        }
-                    }
-                    Some(AcpRequest::PermissionResponse { rpc_id, option_id }) => {
-                        // Answer the parked permission with the user's choice.
-                        let outcome = match option_id {
-                            Some(id) => json!({ "outcome": { "outcome": "selected", "optionId": id } }),
-                            None => json!({ "outcome": { "outcome": "cancelled" } }),
-                        };
-                        write_msg(stdin, &response_ok(rpc_id, outcome)).await?;
-                    }
-                    Some(AcpRequest::ElicitationResponse { rpc_id, outcome }) => {
-                        write_msg(stdin, &response_ok(rpc_id, elicit_result(outcome))).await?;
-                    }
-                    None => {} // all UI senders dropped; keep serving until child exits
+            req = req_rx.recv(), if conn.ready => {
+                // None: all UI senders dropped; keep serving until child exits.
+                if let Some(req) = req {
+                    conn.request(req).await?;
                 }
             }
         }
     }
 }
 
-/// Dispatch one incoming JSON-RPC message: a response to one of our requests, a
-/// reverse request from the agent, or a notification.
-#[allow(clippy::too_many_arguments)]
-async fn handle_message(
-    msg: Value,
-    stdin: &mut Outgoing,
-    pending: &mut HashMap<u64, Pending>,
-    next_id: &mut u64,
-    cwd: &PathBuf,
-    resume: Option<&str>,
-    ready: &mut bool,
-    session_id: &mut Option<String>,
-    images: &mut bool,
-    req_tx: &super::types::ReqTx,
-    output: &mut EventTx<AcpEvent>,
-    registry: &mut TerminalRegistry,
-    resp_tx: &mpsc::UnboundedSender<(Value, Value)>,
-) -> Result<(), String> {
-    // Reverse request (has both method and id) — answer it.
-    if let (Some(method), Some(id)) = (msg.get("method").and_then(Value::as_str), msg.get("id")) {
-        let params = msg.get("params").cloned().unwrap_or(Value::Null);
+/// How the agent says it is logged in, from the handshake's `authMethods`:
+/// the first way it describes, without the backticks it quotes a command in,
+/// since the line it ends up in is drawn as plain text.
+fn auth_advice(result: Option<&Value>) -> Option<String> {
+    result?
+        .get("authMethods")?
+        .as_array()?
+        .iter()
+        .filter_map(|method| method.get("description").and_then(Value::as_str))
+        .map(|said| said.replace('`', "").trim().to_string())
+        .find(|said| !said.is_empty())
+}
 
-        // Permission is *parked*: surface it to the UI and answer later when the
-        // user clicks (permission buttons). No response written now.
-        if method == "session/request_permission" {
-            let _ = output
-                .send(AcpEvent::Permission(parse_permission(id.clone(), &params)))
-                .await;
-            return Ok(());
-        }
+/// The serve loop's side of one connection: the pipe it writes to, what it is
+/// waiting to hear back, what the agent has said about itself, and where events
+/// go.
+///
+/// **One value, so what a message changes is said by what it touches.** The
+/// handshake, the requests from the front end and the agent's own requests
+/// all read and write the same handful of facts; passed one by one they made a
+/// function of twelve parameters that every new capability had to widen.
+struct Conn {
+    stdin: Outgoing,
+    pending: HashMap<u64, Pending>,
+    next_id: u64,
+    /// The handshake is over: requests from the front end may go out.
+    ready: bool,
+    session_id: Option<String>,
+    /// Whether the agent said it reads image blocks; until it says so, it does not.
+    images: bool,
+    /// How the agent says it is logged in, for when it answers that it is not.
+    auth_advice: Option<String>,
+    opts: SessionOpts,
+    req_tx: super::types::ReqTx,
+    output: EventTx<AcpEvent>,
+    registry: TerminalRegistry,
+    resp_tx: mpsc::UnboundedSender<(Value, Value)>,
+}
 
-        // A question (`AskUserQuestion`, an MCP form, the refusal-fallback
-        // consent prompt) is parked the same way — the agent's tool call blocks
-        // on our answer. A form we can't render (url mode, or a schema with no
-        // usable properties) is *declined on the spot*: parking it would hang
-        // the turn on a card the user can never fill in.
-        if method == "elicitation/create" {
-            match parse_elicitation(id.clone(), &params) {
-                Some(e) => {
-                    let _ = output.send(AcpEvent::Elicitation(e)).await;
-                }
-                None => {
-                    write_msg(
-                        stdin,
-                        &response_ok(id.clone(), json!({ "action": "decline" })),
-                    )
-                    .await?
-                }
-            }
-            return Ok(());
-        }
-
-        // Terminal extension methods.
-        if let Some(rest) = method.strip_prefix("terminal/") {
-            return handle_terminal(rest, id, &params, cwd, registry, stdin, resp_tx).await;
-        }
-
-        // JSON-RPC's own answer for a method nobody serves, so an agent probing
-        // for an optional one reads an absence rather than a fault.
-        if !matches!(method, "fs/read_text_file" | "fs/write_text_file") {
-            write_msg(stdin, &method_not_found(id.clone(), method)).await?;
-            return Ok(());
-        }
-        let response = match handle_reverse(method, &params, cwd).await {
-            Ok(result) => response_ok(id.clone(), result),
-            Err(message) => response_err(id.clone(), &message),
-        };
-        write_msg(stdin, &response).await?;
-        return Ok(());
+impl Conn {
+    /// Send `method` as a request, remembering what its answer will be.
+    async fn send(&mut self, method: &str, params: Value, pending: Pending) -> Result<(), String> {
+        let id = alloc(&mut self.next_id);
+        self.pending.insert(id, pending);
+        write_msg(&mut self.stdin, &request(id, method, params)).await
     }
 
-    // Notification (method, no id).
-    if let Some(method) = msg.get("method").and_then(Value::as_str) {
-        if method == "session/update" {
-            if let Some(update) = msg.get("params").and_then(|p| p.get("update")) {
-                for u in parse::parse_session_update(update) {
-                    let ev = match u {
-                        parse::Update::Agent(s) => AcpEvent::AgentChunk(s),
-                        parse::Update::Thought(s) => AcpEvent::ThoughtChunk(s),
-                        parse::Update::User(s) => AcpEvent::UserChunk(s),
-                        parse::Update::ToolCall(tc) => AcpEvent::ToolCall(tc),
-                        parse::Update::ToolUpdate(tu) => AcpEvent::ToolUpdate(tu),
-                        parse::Update::Plan(p) => AcpEvent::Plan(p),
-                        parse::Update::Commands(c) => AcpEvent::AvailableCommands(c),
-                        parse::Update::ModeChanged(m) => AcpEvent::ModeChanged(m),
-                        parse::Update::ConfigOptions(c) => AcpEvent::ConfigOptions(c),
+    /// Open the session: a fresh one.
+    async fn new_session(&mut self) -> Result<(), String> {
+        let params = json!({ "cwd": self.opts.cwd.display().to_string(), "mcpServers": [] });
+        self.send("session/new", params, Pending::NewSession).await
+    }
+
+    /// Carry out one request from the front end.
+    async fn request(&mut self, req: AcpRequest) -> Result<(), String> {
+        match req {
+            AcpRequest::Prompt { text, attachments } => {
+                let sid = self.session_id.clone().unwrap_or_default();
+                let blocks = build_prompt_blocks(&text, &attachments, self.images).await;
+                let params = json!({ "sessionId": sid, "prompt": blocks });
+                self.send("session/prompt", params, Pending::PromptTurn)
+                    .await?;
+            }
+            AcpRequest::SetMode(mode_id) => {
+                if let Some(sid) = self.session_id.clone() {
+                    let pending = Pending::Pick {
+                        group: crate::chat::MODE_SELECTOR.to_string(),
+                        value: mode_id.clone(),
                     };
-                    let _ = output.send(ev).await;
+                    let params = json!({ "sessionId": sid, "modeId": mode_id });
+                    self.send("session/set_mode", params, pending).await?;
                 }
             }
+            AcpRequest::SetConfigOption { config_id, value } => {
+                if let Some(sid) = self.session_id.clone() {
+                    let pending = Pending::Pick {
+                        group: config_id.clone(),
+                        value: value.clone(),
+                    };
+                    let params = json!({ "sessionId": sid, "configId": config_id, "value": value });
+                    self.send("session/set_config_option", params, pending)
+                        .await?;
+                }
+            }
+            AcpRequest::Cancel => {
+                if let Some(sid) = &self.session_id {
+                    let params = json!({ "sessionId": sid });
+                    write_msg(&mut self.stdin, &notification("session/cancel", params)).await?;
+                }
+            }
+            AcpRequest::PermissionResponse { rpc_id, option_id } => {
+                // Answer the parked permission with the user's choice.
+                let outcome = match option_id {
+                    Some(id) => json!({ "outcome": { "outcome": "selected", "optionId": id } }),
+                    None => json!({ "outcome": { "outcome": "cancelled" } }),
+                };
+                write_msg(&mut self.stdin, &response_ok(rpc_id, outcome)).await?;
+            }
+            AcpRequest::ElicitationResponse { rpc_id, outcome } => {
+                write_msg(
+                    &mut self.stdin,
+                    &response_ok(rpc_id, elicit_result(outcome)),
+                )
+                .await?;
+            }
         }
-        return Ok(());
+        Ok(())
     }
 
-    // Response to one of our requests.
-    if let Some(id) = msg.get("id").and_then(Value::as_u64) {
-        match pending.remove(&id) {
-            Some(Pending::Init) => {
-                // Surface a failed handshake as what it is — otherwise an
-                // error response would read as "no loadSession capability"
-                // and the eventual failure would blame `session/new` instead
-                // of the real protocol-version/handshake problem.
-                if let Some(err) = msg.get("error") {
-                    return Err(format!("initialize failed: {err}"));
-                }
-                let capabilities = msg.get("result").and_then(|r| r.get("agentCapabilities"));
-                let load_supported = capabilities
-                    .and_then(|c| c.get("loadSession"))
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false);
-                *images = capabilities
-                    .and_then(|c| c.get("promptCapabilities"))
-                    .and_then(|p| p.get("image"))
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false);
-                let id2 = alloc(next_id);
-                if let (true, Some(prev)) = (load_supported, resume) {
-                    pending.insert(id2, Pending::LoadSession);
-                    let params = json!({
-                        "sessionId": prev, "cwd": cwd.display().to_string(), "mcpServers": [],
-                    });
-                    write_msg(stdin, &request(id2, "session/load", params)).await?;
-                } else {
-                    pending.insert(id2, Pending::NewSession);
-                    let params = json!({ "cwd": cwd.display().to_string(), "mcpServers": [] });
-                    write_msg(stdin, &request(id2, "session/new", params)).await?;
-                }
-            }
-            Some(Pending::NewSession) => {
-                if let Some(err) = msg.get("error") {
-                    // The whole object, code and all, for whoever reads the log.
-                    eprintln!("[acp] session/new failed: {err}");
-                    if login_required(err) {
-                        let _ = output.send(AcpEvent::LoginRequired).await;
-                    }
-                    return Err(format!("Could not start a session: {}", in_words(err).0));
-                }
-                let result = msg.get("result");
-                // Every prompt names the session; one the agent did not name
-                // cannot be prompted at all, so it is a start that failed.
-                let Some(sid) = result
-                    .and_then(|r| r.get("sessionId"))
-                    .and_then(Value::as_str)
-                    .filter(|sid| !sid.is_empty())
-                    .map(String::from)
-                else {
-                    return Err("Could not start a session: the agent named none".into());
-                };
-                *session_id = Some(sid.clone());
-                let _ = output.send(AcpEvent::SessionId(sid)).await;
-                if let Some(modes) = result.and_then(|r| r.get("modes")) {
-                    let _ = output.send(parse_modes(modes)).await;
-                }
-                let cfg = parse::parse_config_options(result.and_then(|r| r.get("configOptions")));
-                if !cfg.is_empty() {
-                    let _ = output.send(AcpEvent::ConfigOptions(cfg)).await;
-                }
-                let _ = output
-                    .send(AcpEvent::Connected {
-                        tx: req_tx.clone(),
-                        resumed: false,
-                    })
+    /// Dispatch one incoming JSON-RPC message: a response to one of our requests, a
+    /// reverse request from the agent, or a notification.
+    async fn handle_message(&mut self, msg: Value) -> Result<(), String> {
+        // Reverse request (has both method and id) — answer it.
+        if let (Some(method), Some(id)) = (msg.get("method").and_then(Value::as_str), msg.get("id"))
+        {
+            let params = msg.get("params").cloned().unwrap_or(Value::Null);
+
+            // Permission is *parked*: surface it to the UI and answer later when the
+            // user clicks (permission buttons). No response written now.
+            if method == "session/request_permission" {
+                let _ = self
+                    .output
+                    .send(AcpEvent::Permission(parse_permission(id.clone(), &params)))
                     .await;
-                *ready = true;
+                return Ok(());
             }
-            Some(Pending::LoadSession) => {
-                if let Some(err) = msg.get("error") {
-                    // A stale persisted session id (the adapter's store was
-                    // wiped or expired) must not brick the session — failing
-                    // here would refreeze the same id on every restart and
-                    // refail forever. Note it and fall back to a fresh
-                    // session; the loaded history stays as read-only context.
-                    eprintln!("[acp] session/load failed: {err}");
-                    let (message, detail) = in_words(err);
-                    let _ = output
-                        .send(AcpEvent::Error {
-                            text: format!(
-                                "Loading the session failed: {message}; starting a fresh one"
-                            ),
-                            detail,
-                        })
-                        .await;
-                    let id2 = alloc(next_id);
-                    pending.insert(id2, Pending::NewSession);
-                    let params = json!({ "cwd": cwd.display().to_string(), "mcpServers": [] });
-                    write_msg(stdin, &request(id2, "session/new", params)).await?;
-                    return Ok(());
-                }
-                let result = msg.get("result");
-                *session_id = resume.map(String::from);
-                if let Some(s) = session_id.clone() {
-                    let _ = output.send(AcpEvent::SessionId(s)).await;
-                }
-                // `session/load` returns the same session info as `session/new`
-                // (available modes + config options). Emit them here too, else a
-                // *resumed* session shows no mode (permission) / model selectors.
-                if let Some(modes) = result.and_then(|r| r.get("modes")) {
-                    let _ = output.send(parse_modes(modes)).await;
-                }
-                let cfg = parse::parse_config_options(result.and_then(|r| r.get("configOptions")));
-                if !cfg.is_empty() {
-                    let _ = output.send(AcpEvent::ConfigOptions(cfg)).await;
-                }
-                let _ = output
-                    .send(AcpEvent::Connected {
-                        tx: req_tx.clone(),
-                        resumed: true,
-                    })
-                    .await;
-                *ready = true;
-            }
-            // The agent's answer to a pick is its confirmation or its
-            // refusal: what is shown follows it.
-            Some(Pending::Pick { group, value }) => {
-                // A model picked may change what else is offered, and an
-                // adapter may say so only in this answer. It lands before
-                // the confirmation, so whoever plans the next pick on it
-                // plans against the offer as it stands now.
-                let cfg = parse::parse_config_options(
-                    msg.get("result").and_then(|r| r.get("configOptions")),
-                );
-                if !cfg.is_empty() {
-                    let _ = output.send(AcpEvent::ConfigOptions(cfg)).await;
-                }
-                let event = match msg.get("error") {
-                    Some(err) => AcpEvent::PickRefused {
-                        group,
-                        why: in_words(err).0,
-                    },
-                    None => AcpEvent::PickConfirmed { group, value },
-                };
-                let _ = output.send(event).await;
-            }
-            Some(Pending::PromptTurn) => {
-                if let Some(err) = msg.get("error") {
-                    // The whole object, code and all, for whoever reads the log.
-                    eprintln!("[acp] the turn failed: {err}");
-                    if login_required(err) {
-                        let _ = output.send(AcpEvent::LoginRequired).await;
+
+            // A question (`AskUserQuestion`, an MCP form, the refusal-fallback
+            // consent prompt) is parked the same way — the agent's tool call blocks
+            // on our answer. A form we can't render (url mode, or a schema with no
+            // usable properties) is *declined on the spot*: parking it would hang
+            // the turn on a card the user can never fill in.
+            if method == "elicitation/create" {
+                match parse_elicitation(id.clone(), &params) {
+                    Some(e) => {
+                        let _ = self.output.send(AcpEvent::Elicitation(e)).await;
                     }
-                    let (message, detail) = in_words(err);
-                    let _ = output
-                        .send(AcpEvent::Error {
-                            text: format!("The turn failed: {message}"),
-                            detail,
-                        })
-                        .await;
+                    None => {
+                        write_msg(
+                            &mut self.stdin,
+                            &response_ok(id.clone(), json!({ "action": "decline" })),
+                        )
+                        .await?
+                    }
                 }
-                let stop = msg
-                    .get("result")
-                    .and_then(|r| r.get("stopReason"))
-                    .and_then(Value::as_str)
-                    .unwrap_or("end_turn")
-                    .to_string();
-                let _ = output.send(AcpEvent::TurnEnded { stop_reason: stop }).await;
+                return Ok(());
             }
-            None => {}
+
+            // Terminal extension methods.
+            if let Some(rest) = method.strip_prefix("terminal/") {
+                return self.handle_terminal(rest, id, &params).await;
+            }
+
+            // JSON-RPC's own answer for a method nobody serves, so an agent probing
+            // for an optional one reads an absence rather than a fault.
+            if !matches!(method, "fs/read_text_file" | "fs/write_text_file") {
+                write_msg(&mut self.stdin, &method_not_found(id.clone(), method)).await?;
+                return Ok(());
+            }
+            let response = match handle_reverse(method, &params).await {
+                Ok(result) => response_ok(id.clone(), result),
+                Err(message) => response_err(id.clone(), &message),
+            };
+            write_msg(&mut self.stdin, &response).await?;
+            return Ok(());
         }
+
+        // Notification (method, no id).
+        if let Some(method) = msg.get("method").and_then(Value::as_str) {
+            if method == "session/update" {
+                if let Some(update) = msg.get("params").and_then(|p| p.get("update")) {
+                    for u in parse::parse_session_update(update) {
+                        let ev = match u {
+                            parse::Update::Agent(s) => AcpEvent::AgentChunk(s),
+                            parse::Update::Thought(s) => AcpEvent::ThoughtChunk(s),
+                            parse::Update::User(s) => AcpEvent::UserChunk(s),
+                            parse::Update::ToolCall(tc) => AcpEvent::ToolCall(tc),
+                            parse::Update::ToolUpdate(tu) => AcpEvent::ToolUpdate(tu),
+                            parse::Update::Plan(p) => AcpEvent::Plan(p),
+                            parse::Update::Commands(c) => AcpEvent::AvailableCommands(c),
+                            parse::Update::ModeChanged(m) => AcpEvent::ModeChanged(m),
+                            parse::Update::ConfigOptions(c) => AcpEvent::ConfigOptions(c),
+                        };
+                        let _ = self.output.send(ev).await;
+                    }
+                }
+            }
+            return Ok(());
+        }
+
+        // Response to one of our requests.
+        if let Some(id) = msg.get("id").and_then(Value::as_u64) {
+            match self.pending.remove(&id) {
+                Some(Pending::Init) => {
+                    // Surface a failed handshake as what it is — otherwise an
+                    // error response would read as "no loadSession capability"
+                    // and the eventual failure would blame `session/new` instead
+                    // of the real protocol-version/handshake problem.
+                    if let Some(err) = msg.get("error") {
+                        return Err(format!("initialize failed: {err}"));
+                    }
+                    self.auth_advice = auth_advice(msg.get("result"));
+                    let capabilities = msg.get("result").and_then(|r| r.get("agentCapabilities"));
+                    let load_supported = capabilities
+                        .and_then(|c| c.get("loadSession"))
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false);
+                    self.images = capabilities
+                        .and_then(|c| c.get("promptCapabilities"))
+                        .and_then(|p| p.get("image"))
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false);
+                    match (load_supported, self.opts.resume.clone()) {
+                        (true, Some(prev)) => {
+                            let params = json!({
+                                "sessionId": prev,
+                                "cwd": self.opts.cwd.display().to_string(),
+                                "mcpServers": [],
+                            });
+                            self.send("session/load", params, Pending::LoadSession)
+                                .await?;
+                        }
+                        _ => self.new_session().await?,
+                    }
+                }
+                Some(Pending::NewSession) => {
+                    if let Some(err) = msg.get("error") {
+                        // The whole object, code and all, for whoever reads the log.
+                        eprintln!("[acp] session/new failed: {err}");
+                        if login_required(err) {
+                            let advice = self.auth_advice.clone();
+                            let _ = self.output.send(AcpEvent::LoginRequired { advice }).await;
+                        }
+                        return Err(format!("Could not start a session: {}", in_words(err).0));
+                    }
+                    let result = msg.get("result");
+                    // Every prompt names the session; one the agent did not name
+                    // cannot be prompted at all, so it is a start that failed.
+                    let Some(sid) = result
+                        .and_then(|r| r.get("sessionId"))
+                        .and_then(Value::as_str)
+                        .filter(|sid| !sid.is_empty())
+                        .map(String::from)
+                    else {
+                        return Err("Could not start a session: the agent named none".into());
+                    };
+                    self.session_id = Some(sid.clone());
+                    let _ = self.output.send(AcpEvent::SessionId(sid)).await;
+                    if let Some(modes) = result.and_then(|r| r.get("modes")) {
+                        let _ = self.output.send(parse_modes(modes)).await;
+                    }
+                    let cfg =
+                        parse::parse_config_options(result.and_then(|r| r.get("configOptions")));
+                    if !cfg.is_empty() {
+                        let _ = self.output.send(AcpEvent::ConfigOptions(cfg)).await;
+                    }
+                    let _ = self
+                        .output
+                        .send(AcpEvent::Connected {
+                            tx: self.req_tx.clone(),
+                            resumed: false,
+                        })
+                        .await;
+                    self.ready = true;
+                }
+                Some(Pending::LoadSession) => {
+                    if let Some(err) = msg.get("error") {
+                        // A stale persisted session id (the adapter's store was
+                        // wiped or expired) must not brick the session — failing
+                        // here would refreeze the same id on every restart and
+                        // refail forever. Note it and fall back to a fresh
+                        // session; the loaded history stays as read-only context.
+                        eprintln!("[acp] session/load failed: {err}");
+                        let (message, detail) = in_words(err);
+                        let _ = self
+                            .output
+                            .send(AcpEvent::Error {
+                                text: format!(
+                                    "Loading the session failed: {message}; starting a fresh one"
+                                ),
+                                detail,
+                            })
+                            .await;
+                        self.new_session().await?;
+                        return Ok(());
+                    }
+                    let result = msg.get("result");
+                    self.session_id = self.opts.resume.clone();
+                    if let Some(s) = self.session_id.clone() {
+                        let _ = self.output.send(AcpEvent::SessionId(s)).await;
+                    }
+                    // `session/load` returns the same session info as `session/new`
+                    // (available modes + config options). Emit them here too, else a
+                    // *resumed* session shows no mode (permission) / model selectors.
+                    if let Some(modes) = result.and_then(|r| r.get("modes")) {
+                        let _ = self.output.send(parse_modes(modes)).await;
+                    }
+                    let cfg =
+                        parse::parse_config_options(result.and_then(|r| r.get("configOptions")));
+                    if !cfg.is_empty() {
+                        let _ = self.output.send(AcpEvent::ConfigOptions(cfg)).await;
+                    }
+                    let _ = self
+                        .output
+                        .send(AcpEvent::Connected {
+                            tx: self.req_tx.clone(),
+                            resumed: true,
+                        })
+                        .await;
+                    self.ready = true;
+                }
+                // The agent's answer to a pick is its confirmation or its
+                // refusal: what is shown follows it.
+                Some(Pending::Pick { group, value }) => {
+                    // A model picked may change what else is offered, and an
+                    // adapter may say so only in this answer. It lands before
+                    // the confirmation, so whoever plans the next pick on it
+                    // plans against the offer as it stands now.
+                    let cfg = parse::parse_config_options(
+                        msg.get("result").and_then(|r| r.get("configOptions")),
+                    );
+                    if !cfg.is_empty() {
+                        let _ = self.output.send(AcpEvent::ConfigOptions(cfg)).await;
+                    }
+                    let event = match msg.get("error") {
+                        Some(err) => AcpEvent::PickRefused {
+                            group,
+                            why: in_words(err).0,
+                        },
+                        None => AcpEvent::PickConfirmed { group, value },
+                    };
+                    let _ = self.output.send(event).await;
+                }
+                Some(Pending::PromptTurn) => {
+                    if let Some(err) = msg.get("error") {
+                        // The whole object, code and all, for whoever reads the log.
+                        eprintln!("[acp] the turn failed: {err}");
+                        if login_required(err) {
+                            let advice = self.auth_advice.clone();
+                            let _ = self.output.send(AcpEvent::LoginRequired { advice }).await;
+                        }
+                        let (message, detail) = in_words(err);
+                        let _ = self
+                            .output
+                            .send(AcpEvent::Error {
+                                text: format!("The turn failed: {message}"),
+                                detail,
+                            })
+                            .await;
+                    }
+                    let stop = msg
+                        .get("result")
+                        .and_then(|r| r.get("stopReason"))
+                        .and_then(Value::as_str)
+                        .unwrap_or("end_turn")
+                        .to_string();
+                    let _ = self
+                        .output
+                        .send(AcpEvent::TurnEnded { stop_reason: stop })
+                        .await;
+                }
+                None => {}
+            }
+        }
+        Ok(())
     }
-    Ok(())
+
+    /// Handle a `terminal/*` reverse request (the ACP terminal extension). All but
+    /// `wait_for_exit` answer inline; `wait_for_exit` parks an async waiter that
+    /// posts its response back through `resp_tx` when the process exits.
+    async fn handle_terminal(
+        &mut self,
+        method: &str,
+        id: &Value,
+        params: &Value,
+    ) -> Result<(), String> {
+        let (cwd, registry) = (&self.opts.cwd, &mut self.registry);
+        let term_id = params.get("terminalId").and_then(Value::as_str);
+
+        // Answer-now methods return a Result; `wait_for_exit` is handled specially.
+        let inline: Option<Result<Value, String>> = match method {
+            "create" => Some(registry.create(params, cwd)),
+            "output" => {
+                Some(term_id.map_or(Err("missing terminalId".into()), |t| registry.output(t)))
+            }
+            "kill" => Some(term_id.map_or(Err("missing terminalId".into()), |t| registry.kill(t))),
+            "release" => {
+                Some(term_id.map_or(Err("missing terminalId".into()), |t| registry.release(t)))
+            }
+            "wait_for_exit" => None,
+            other => {
+                let method = format!("terminal/{other}");
+                write_msg(&mut self.stdin, &method_not_found(id.clone(), &method)).await?;
+                return Ok(());
+            }
+        };
+
+        if let Some(result) = inline {
+            let response = match result {
+                Ok(value) => response_ok(id.clone(), value),
+                Err(message) => response_err(id.clone(), &message),
+            };
+            write_msg(&mut self.stdin, &response).await?;
+            return Ok(());
+        }
+
+        // wait_for_exit: respond immediately if already exited, else park a poller.
+        let Some(tid) = term_id else {
+            write_msg(
+                &mut self.stdin,
+                &response_err(id.clone(), "missing terminalId"),
+            )
+            .await?;
+            return Ok(());
+        };
+        if let Some(done) = registry.exit_now(tid) {
+            write_msg(&mut self.stdin, &response_ok(id.clone(), done)).await?;
+        } else if let Some(exit) = registry.waiter(tid) {
+            let rpc_id = id.clone();
+            let resp_tx = self.resp_tx.clone();
+            tokio::spawn(async move {
+                // Poll the shared exit state (race-free, no missed notification).
+                loop {
+                    if exit.lock().unwrap().exited {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(40)).await;
+                }
+                let result = terminal::wait_result(&exit.lock().unwrap());
+                let _ = resp_tx.send((rpc_id, result));
+            });
+        } else {
+            write_msg(
+                &mut self.stdin,
+                &response_err(id.clone(), "unknown terminal"),
+            )
+            .await?;
+        }
+        Ok(())
+    }
 }
 
 /// Answer an agent reverse request (the filesystem methods). Permission is
 /// handled separately (parked), so it never reaches here.
-async fn handle_reverse(method: &str, params: &Value, _cwd: &PathBuf) -> Result<Value, String> {
+async fn handle_reverse(method: &str, params: &Value) -> Result<Value, String> {
     match method {
         "fs/read_text_file" => {
             let path = params
@@ -906,516 +739,6 @@ async fn handle_reverse(method: &str, params: &Value, _cwd: &PathBuf) -> Result<
         }
         other => Err(format!("method not found: {other}")),
     }
-}
-
-/// Handle a `terminal/*` reverse request (the ACP terminal extension). All but
-/// `wait_for_exit` answer inline; `wait_for_exit` parks an async waiter that
-/// posts its response back through `resp_tx` when the process exits.
-async fn handle_terminal(
-    method: &str,
-    id: &Value,
-    params: &Value,
-    cwd: &Path,
-    registry: &mut TerminalRegistry,
-    stdin: &mut Outgoing,
-    resp_tx: &mpsc::UnboundedSender<(Value, Value)>,
-) -> Result<(), String> {
-    let term_id = params.get("terminalId").and_then(Value::as_str);
-
-    // Answer-now methods return a Result; `wait_for_exit` is handled specially.
-    let inline: Option<Result<Value, String>> = match method {
-        "create" => Some(registry.create(params, cwd)),
-        "output" => Some(term_id.map_or(Err("missing terminalId".into()), |t| registry.output(t))),
-        "kill" => Some(term_id.map_or(Err("missing terminalId".into()), |t| registry.kill(t))),
-        "release" => {
-            Some(term_id.map_or(Err("missing terminalId".into()), |t| registry.release(t)))
-        }
-        "wait_for_exit" => None,
-        other => {
-            let method = format!("terminal/{other}");
-            write_msg(stdin, &method_not_found(id.clone(), &method)).await?;
-            return Ok(());
-        }
-    };
-
-    if let Some(result) = inline {
-        let response = match result {
-            Ok(value) => response_ok(id.clone(), value),
-            Err(message) => response_err(id.clone(), &message),
-        };
-        write_msg(stdin, &response).await?;
-        return Ok(());
-    }
-
-    // wait_for_exit: respond immediately if already exited, else park a poller.
-    let Some(tid) = term_id else {
-        write_msg(stdin, &response_err(id.clone(), "missing terminalId")).await?;
-        return Ok(());
-    };
-    if let Some(done) = registry.exit_now(tid) {
-        write_msg(stdin, &response_ok(id.clone(), done)).await?;
-    } else if let Some(exit) = registry.waiter(tid) {
-        let rpc_id = id.clone();
-        let resp_tx = resp_tx.clone();
-        tokio::spawn(async move {
-            // Poll the shared exit state (race-free, no missed notification).
-            loop {
-                if exit.lock().unwrap().exited {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(40)).await;
-            }
-            let result = terminal::wait_result(&exit.lock().unwrap());
-            let _ = resp_tx.send((rpc_id, result));
-        });
-    } else {
-        write_msg(stdin, &response_err(id.clone(), "unknown terminal")).await?;
-    }
-    Ok(())
-}
-
-/// Parse a `session/request_permission` into a [`PermissionRequest`], carrying
-/// the raw JSON-RPC `id` so the eventual response echoes it.
-fn parse_permission(rpc_id: Value, params: &Value) -> PermissionRequest {
-    let tool_call = params.get("toolCall");
-    let tool_call_id = tool_call
-        .and_then(|t| t.get("toolCallId"))
-        .and_then(Value::as_str)
-        .map(String::from);
-    let kind = tool_call
-        .and_then(|t| t.get("kind"))
-        .and_then(Value::as_str)
-        .map(ToolKind::parse)
-        .unwrap_or(ToolKind::Other);
-    let title = tool_call
-        .and_then(|t| t.get("title"))
-        .and_then(Value::as_str)
-        .unwrap_or("Permission requested")
-        .to_string();
-    let options = params
-        .get("options")
-        .and_then(Value::as_array)
-        .map(|arr| {
-            arr.iter()
-                .map(|o| PermissionOption {
-                    id: o
-                        .get("optionId")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default()
-                        .to_string(),
-                    name: o
-                        .get("name")
-                        .and_then(Value::as_str)
-                        .unwrap_or("Option")
-                        .to_string(),
-                    kind: o
-                        .get("kind")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default()
-                        .to_string(),
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    PermissionRequest {
-        rpc_id,
-        tool_call_id,
-        kind,
-        title,
-        options,
-    }
-}
-
-// ── Elicitation (`elicitation/create`) ───────────────────────────────────────
-
-/// Suffix marking a select field's paired free-text "Other" property. Claude's
-/// adapter emits one per question (`question_0` + `question_0_custom`).
-const CUSTOM_SUFFIX: &str = "_custom";
-
-/// Parse an `elicitation/create` into an [`Elicitation`]. `None` for anything we
-/// can't render as a form — url mode, a missing/empty `requestedSchema` — so the
-/// caller declines instead of parking it.
-fn parse_elicitation(rpc_id: Value, params: &Value) -> Option<Elicitation> {
-    if params.get("mode").and_then(Value::as_str) == Some("url") {
-        return None;
-    }
-    let props = params
-        .get("requestedSchema")
-        .and_then(|s| s.get("properties"))
-        .and_then(Value::as_object)?;
-
-    // `serde_json` maps are sorted, not insertion-ordered, so `question_10`
-    // would sort before `question_2` and a question's `_custom` box between
-    // them. Order by the numeric suffix where the adapter's convention holds,
-    // and leave any other schema (an MCP form) in plain key order after it.
-    let mut keys: Vec<&String> = props.keys().collect();
-    keys.sort_by_key(|k| field_order(k));
-
-    // A question's "Other" box is a property of its own that belongs to the
-    // question rather than standing beside it: Claude's adapter names it
-    // `<key>_custom`, Codex's says so in its `_meta`.
-    let other_box = |key: &str| -> Option<String> {
-        let custom = format!("{key}{CUSTOM_SUFFIX}");
-        if props.contains_key(&custom) {
-            return Some(custom);
-        }
-        props
-            .iter()
-            .find(|(_, schema)| {
-                let codex = schema.pointer("/_meta/codex");
-                codex
-                    .and_then(|c| c.get("questionId"))
-                    .and_then(Value::as_str)
-                    == Some(key)
-                    && codex.and_then(|c| c.get("role")).and_then(Value::as_str)
-                        == Some("user_note")
-            })
-            .map(|(note, _)| note.clone())
-    };
-    let boxes: Vec<String> = keys.iter().filter_map(|k| other_box(k)).collect();
-    let fields = keys
-        .iter()
-        .filter(|k| !boxes.contains(k))
-        .map(|k| {
-            let schema = &props[*k];
-            ElicitField {
-                key: (*k).clone(),
-                title: str_field(schema, "title"),
-                description: str_field(schema, "description"),
-                kind: parse_elicit_kind(schema),
-                custom_key: other_box(k),
-            }
-        })
-        .collect::<Vec<_>>();
-    if fields.is_empty() {
-        return None;
-    }
-
-    Some(Elicitation {
-        rpc_id,
-        tool_call_id: str_field(params, "toolCallId"),
-        message: str_field(params, "message").unwrap_or_else(|| "The agent is asking".into()),
-        fields,
-    })
-}
-
-/// Sort key placing `question_<n>` (and its `_custom` box) in the adapter's own
-/// order; everything else sorts after, by key.
-fn field_order(key: &str) -> (u8, u64, u8, String) {
-    let (stem, custom) = match key.strip_suffix(CUSTOM_SUFFIX) {
-        Some(stem) => (stem, 1),
-        None => (key, 0),
-    };
-    match stem
-        .strip_prefix("question_")
-        .and_then(|n| n.parse::<u64>().ok())
-    {
-        Some(n) => (0, n, custom, String::new()),
-        None => (1, 0, custom, key.to_string()),
-    }
-}
-
-/// A string property of a JSON object, if present and non-empty.
-fn str_field(v: &Value, key: &str) -> Option<String> {
-    v.get(key)
-        .and_then(Value::as_str)
-        .filter(|s| !s.is_empty())
-        .map(String::from)
-}
-
-/// Classify one schema property: an array of choices → multi-select, a scalar
-/// with choices → single select, anything else → free text.
-fn parse_elicit_kind(schema: &Value) -> ElicitKind {
-    if schema.get("type").and_then(Value::as_str) == Some("array") {
-        return match schema.get("items").map(parse_choices) {
-            Some(c) if !c.is_empty() => ElicitKind::MultiSelect(c),
-            _ => ElicitKind::Text,
-        };
-    }
-    match parse_choices(schema) {
-        c if c.is_empty() => ElicitKind::Text,
-        c => ElicitKind::Select(c),
-    }
-}
-
-/// The choices of an enum-typed schema: ACP's titled `oneOf`/`anyOf` option
-/// objects, or a plain JSON-Schema `enum` array (optionally labelled by the
-/// MCP-style `enumNames`).
-fn parse_choices(schema: &Value) -> Vec<ElicitChoice> {
-    if let Some(arr) = schema
-        .get("oneOf")
-        .or_else(|| schema.get("anyOf"))
-        .and_then(Value::as_array)
-    {
-        return arr
-            .iter()
-            .filter_map(|o| {
-                let value = o.get("const").and_then(Value::as_str)?.to_string();
-                let label = str_field(o, "title").unwrap_or_else(|| value.clone());
-                Some(ElicitChoice {
-                    value,
-                    label,
-                    description: str_field(o, "description"),
-                })
-            })
-            .collect();
-    }
-    let names = schema.get("enumNames").and_then(Value::as_array);
-    schema
-        .get("enum")
-        .and_then(Value::as_array)
-        .map(|arr| {
-            arr.iter()
-                .enumerate()
-                .filter_map(|(i, v)| {
-                    let value = v.as_str()?.to_string();
-                    let label = names
-                        .and_then(|n| n.get(i))
-                        .and_then(Value::as_str)
-                        .map(String::from)
-                        .unwrap_or_else(|| value.clone());
-                    Some(ElicitChoice {
-                        value,
-                        label,
-                        description: None,
-                    })
-                })
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-/// Build the `elicitation/create` result from the user's outcome.
-fn elicit_result(outcome: ElicitOutcome) -> Value {
-    match outcome {
-        ElicitOutcome::Accept(answers) => {
-            let content: serde_json::Map<String, Value> = answers
-                .into_iter()
-                .map(|(k, v)| {
-                    let v = match v {
-                        ElicitValue::Text(s) => Value::String(s),
-                        ElicitValue::List(l) => {
-                            Value::Array(l.into_iter().map(Value::String).collect())
-                        }
-                    };
-                    (k, v)
-                })
-                .collect();
-            json!({ "action": "accept", "content": content })
-        }
-        ElicitOutcome::Decline => json!({ "action": "decline" }),
-        ElicitOutcome::Cancel => json!({ "action": "cancel" }),
-    }
-}
-
-// ── JSON-RPC helpers ─────────────────────────────────────────────────────────
-
-fn alloc(next: &mut u64) -> u64 {
-    let id = *next;
-    *next += 1;
-    id
-}
-
-fn init_params() -> Value {
-    json!({
-        "protocolVersion": PROTOCOL_VERSION,
-        "clientCapabilities": {
-            "fs": { "readTextFile": true, "writeTextFile": true },
-            "terminal": true,
-            // Form elicitation (`elicitation/create`) is what unlocks the agent's
-            // *question* prompts: Claude's adapter puts `AskUserQuestion` in
-            // `disallowedTools` unless this is advertised, so without it the model
-            // can never offer the user a choice — it just guesses and proceeds.
-            // `{}` is the whole capability ("we can render a form"); we answer the
-            // request in `handle_message` and, for a form we can't render, decline
-            // immediately rather than park it forever.
-            "elicitation": { "form": {} }
-        }
-    })
-}
-
-fn request(id: u64, method: &str, params: Value) -> Value {
-    json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params })
-}
-
-fn notification(method: &str, params: Value) -> Value {
-    json!({ "jsonrpc": "2.0", "method": method, "params": params })
-}
-
-fn response_ok(id: Value, result: Value) -> Value {
-    json!({ "jsonrpc": "2.0", "id": id, "result": result })
-}
-
-/// A JSON-RPC error as a person reads it: its message, and what the agent
-/// attached as `data`, as machine text. Its code is for programs and is not
-/// said. An error with no message has nothing better to say than itself.
-fn in_words(err: &Value) -> (String, Option<String>) {
-    let message = err
-        .get("message")
-        .and_then(Value::as_str)
-        .map_or_else(|| err.to_string(), str::to_string);
-    let detail = err.get("data").filter(|d| !d.is_null()).map(|d| match d {
-        Value::String(s) => s.clone(),
-        other => serde_json::to_string_pretty(other).unwrap_or_else(|_| other.to_string()),
-    });
-    (message, detail)
-}
-
-/// Whether an error is ACP's `auth_required`: the agent is not logged in. One
-/// adapter answers `session/new` with it, another only the first prompt.
-fn login_required(err: &Value) -> bool {
-    err.get("code").and_then(Value::as_i64) == Some(-32000)
-}
-
-fn method_not_found(id: Value, method: &str) -> Value {
-    json!({
-        "jsonrpc": "2.0",
-        "id": id,
-        "error": { "code": -32601, "message": format!("method not found: {method}") }
-    })
-}
-
-fn response_err(id: Value, message: &str) -> Value {
-    json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32603, "message": message } })
-}
-
-async fn write_msg(stdin: &mut Outgoing, msg: &Value) -> Result<(), String> {
-    let mut line = serde_json::to_string(msg).map_err(|e| e.to_string())?;
-    line.push('\n');
-    stdin
-        .write_all(line.as_bytes())
-        .await
-        .map_err(|e| e.to_string())?;
-    stdin.flush().await.map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-/// Parse the `modes` object from a `session/new` result into a `Modes` event.
-fn parse_modes(modes: &Value) -> AcpEvent {
-    let current = modes
-        .get("currentModeId")
-        .and_then(Value::as_str)
-        .map(String::from);
-    let available = modes
-        .get("availableModes")
-        .and_then(Value::as_array)
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|m| {
-                    let id = m
-                        .get("id")
-                        .or_else(|| m.get("modeId"))
-                        .and_then(Value::as_str)?
-                        .to_string();
-                    let name = m
-                        .get("name")
-                        .and_then(Value::as_str)
-                        .unwrap_or(&id)
-                        .to_string();
-                    Some(Mode { id, name })
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    AcpEvent::Modes { current, available }
-}
-
-/// Build the ACP `prompt` content-block array: a text block plus one block per
-/// attachment — inline `image` (base64) for images, else a `resource_link`.
-/// Max image size sent inline (base64 in the prompt JSON). Reading is
-/// whole-file-into-memory and base64 inflates it ~4/3× (plus a serialize copy),
-/// so an uncapped read of a huge file would transiently allocate several times
-/// its size. Anything larger degrades to a `resource_link`.
-async fn build_prompt_blocks(text: &str, attachments: &[Attachment], images: bool) -> Value {
-    let mut blocks = vec![json!({ "type": "text", "text": text })];
-    for att in attachments {
-        let name = att
-            .path
-            .file_name()
-            .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        if let Some(mime) = inline_image_mime(&att.path).filter(|_| images) {
-            let size_ok = tokio::fs::metadata(&att.path)
-                .await
-                .map(|m| m.len() <= MAX_INLINE_IMAGE_BYTES)
-                .unwrap_or(false);
-            if size_ok {
-                if let Ok(bytes) = tokio::fs::read(&att.path).await {
-                    blocks.push(json!({
-                        "type": "image",
-                        "mimeType": mime,
-                        "data": base64_encode(&bytes),
-                    }));
-                    continue;
-                }
-            }
-        }
-        blocks.push(json!({
-            "type": "resource_link",
-            "uri": file_uri(&att.path),
-            "name": name,
-        }));
-    }
-    Value::Array(blocks)
-}
-
-/// The part of `content` a read asked for: from `line` (counted from 1), at
-/// most `limit` lines, each kept with its own line ending.
-fn lines_of(content: &str, line: Option<u64>, limit: Option<u64>) -> String {
-    if line.is_none() && limit.is_none() {
-        return content.to_string();
-    }
-    let skip = line.unwrap_or(1).saturating_sub(1) as usize;
-    let take = limit.map_or(usize::MAX, |n| n as usize);
-    content
-        .split_inclusive('\n')
-        .skip(skip)
-        .take(take)
-        .collect()
-}
-
-/// A `file://` URI with the path percent-encoded (RFC 3986): unreserved chars
-/// and `/` pass through, everything else — spaces, `#`, `?`, non-ASCII — is
-/// escaped byte-wise. A raw `path.display()` URI truncates at the first `#`
-/// on the adapter side.
-fn file_uri(path: &std::path::Path) -> String {
-    let mut out = String::from("file://");
-    for &b in path.display().to_string().as_bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'/' => {
-                out.push(b as char)
-            }
-            _ => out.push_str(&format!("%{b:02X}")),
-        }
-    }
-    out
-}
-
-/// Dependency-free standard base64 encoder.
-pub fn base64_encode(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
-    for chunk in bytes.chunks(3) {
-        let b = [
-            chunk[0],
-            *chunk.get(1).unwrap_or(&0),
-            *chunk.get(2).unwrap_or(&0),
-        ];
-        let n = (b[0] as u32) << 16 | (b[1] as u32) << 8 | (b[2] as u32);
-        out.push(ALPHABET[(n >> 18 & 63) as usize] as char);
-        out.push(ALPHABET[(n >> 12 & 63) as usize] as char);
-        out.push(if chunk.len() > 1 {
-            ALPHABET[(n >> 6 & 63) as usize] as char
-        } else {
-            '='
-        });
-        out.push(if chunk.len() > 2 {
-            ALPHABET[(n & 63) as usize] as char
-        } else {
-            '='
-        });
-    }
-    out
 }
 
 #[cfg(test)]

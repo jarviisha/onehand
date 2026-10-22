@@ -49,7 +49,8 @@ async fn main() {
     };
 
     let cwd = std::env::current_dir().unwrap();
-    let stream = connect(command, args, env, cwd, None);
+    let launch = onehand_core::config::Launch { command, args, env };
+    let stream = connect(launch, onehand_core::acp::SessionOpts { cwd, resume: None });
     let mut stream = std::pin::pin!(stream);
     let mut tx_keep = None;
 
@@ -164,7 +165,7 @@ async fn main() {
                 break;
             }
             AcpEvent::Error { text, .. } => eprintln!("== ERROR: {text} =="),
-            AcpEvent::LoginRequired => eprintln!("== LOGIN REQUIRED =="),
+            AcpEvent::LoginRequired { .. } => eprintln!("== LOGIN REQUIRED =="),
             AcpEvent::Disconnected(e) => {
                 eprintln!("== DISCONNECTED: {e} ==");
                 break;

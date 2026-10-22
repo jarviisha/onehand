@@ -1,12 +1,26 @@
 use super::{
     base64_encode, connect_over, elicit_result, explain, file_uri, handle_reverse,
-    parse_elicitation, LastWords, Transport, ADAPTER_GRACE, STDERR_LINE_CAP, STDERR_TAIL_LINES,
+    parse_elicitation, LastWords, SessionOpts, Transport, ADAPTER_GRACE, STDERR_LINE_CAP,
+    STDERR_TAIL_LINES,
 };
 use crate::acp::{AcpEvent, AcpRequest, ElicitKind, ElicitOutcome, ElicitValue};
 use futures::StreamExt as _;
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
+
+/// `connect` on a command line, as the tests that start a real child write
+/// one.
+fn connect(
+    command: String,
+    args: Vec<String>,
+    env: Vec<(String, String)>,
+    cwd: PathBuf,
+    resume: Option<String>,
+) -> impl futures::Stream<Item = AcpEvent> {
+    let launch = crate::config::Launch { command, args, env };
+    super::connect(launch, SessionOpts { cwd, resume })
+}
 
 /// The agent's side of a scripted transport: read what the client wrote,
 /// write back what an adapter would have said.
@@ -79,7 +93,13 @@ fn client_resuming(
     let (read, out) = tokio::io::split(agent);
     let (tx, events) = tokio::sync::mpsc::unbounded_channel();
     tokio::spawn(async move {
-        let stream = connect_over(transport, PathBuf::from("/tmp"), resume);
+        let stream = connect_over(
+            transport,
+            SessionOpts {
+                cwd: PathBuf::from("/tmp"),
+                resume,
+            },
+        );
         futures::pin_mut!(stream);
         while let Some(event) = stream.next().await {
             if tx.send(event).is_err() {
@@ -517,7 +537,7 @@ fn a_tail_that_lost_lines_says_how_many() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_child_that_dies_before_speaking_carries_its_stderr_into_the_failure() {
     for attempt in 0..20 {
-        let mut events = Box::pin(super::connect(
+        let mut events = Box::pin(connect(
             "sh".into(),
             vec![
                 "-c".into(),
@@ -552,7 +572,7 @@ async fn a_child_that_dies_before_speaking_carries_its_stderr_into_the_failure()
 /// adapter that keeps writing blocks once the pipe fills.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_line_that_is_not_utf8_does_not_stop_the_drain() {
-    let mut events = Box::pin(super::connect(
+    let mut events = Box::pin(connect(
         "sh".into(),
         vec![
             "-c".into(),
@@ -726,7 +746,7 @@ fn npm_notice_lines_are_not_kept() {
 /// What an agent sets in its environment reaches the process it starts.
 #[tokio::test]
 async fn the_adapter_is_started_with_its_environment() {
-    let stream = super::connect(
+    let stream = connect(
         "sh".into(),
         vec!["-c".into(), "echo seen-$ONEHAND_PROBE >&2".into()],
         vec![("ONEHAND_PROBE".into(), "42".into())],
@@ -747,14 +767,19 @@ async fn the_adapter_is_started_with_its_environment() {
 
 /// The events a refused `session/new` with `error` produces, up to the end.
 async fn refused_start(error: Value) -> Vec<AcpEvent> {
+    refused_start_after(
+        json!({ "protocolVersion": 1, "agentCapabilities": {} }),
+        error,
+    )
+    .await
+}
+
+/// [`refused_start`], the handshake answered with `hello`.
+async fn refused_start_after(hello_result: Value, error: Value) -> Vec<AcpEvent> {
     let (mut agent, mut events) = client();
     let hello = agent.heard().await;
     agent
-        .say(json!({
-            "jsonrpc": "2.0",
-            "id": hello["id"],
-            "result": { "protocolVersion": 1, "agentCapabilities": {} }
-        }))
+        .say(json!({ "jsonrpc": "2.0", "id": hello["id"], "result": hello_result }))
         .await;
     let new = agent.heard().await;
     agent
@@ -777,15 +802,44 @@ async fn a_login_required_answer_is_read_as_such() {
     let seen = refused_start(json!({ "code": -32000, "message": "Authentication required" })).await;
     let login = seen
         .iter()
-        .position(|e| matches!(e, AcpEvent::LoginRequired))
+        .position(|e| matches!(e, AcpEvent::LoginRequired { .. }))
         .expect("read as a login");
     assert!(login < seen.len() - 1, "ahead of the disconnect");
+}
+
+/// The agent's own words on how to log in: the first of its ways that
+/// carries any, drawn as plain text.
+#[tokio::test]
+async fn the_first_described_auth_method_is_the_advice() {
+    let hello = json!({
+        "protocolVersion": 1,
+        "agentCapabilities": {},
+        "authMethods": [
+            { "id": "a", "name": "A" },
+            { "id": "b", "name": "B", "description": "Run `x login` in the terminal" },
+            { "id": "c", "name": "C", "description": "not this one" },
+        ],
+    });
+    let seen = refused_start_after(
+        hello,
+        json!({ "code": -32000, "message": "Authentication required" }),
+    )
+    .await;
+    assert!(
+        seen.iter().any(|e| matches!(
+            e,
+            AcpEvent::LoginRequired { advice } if advice.as_deref() == Some("Run x login in the terminal")
+        )),
+        "{seen:?}"
+    );
 }
 
 #[tokio::test]
 async fn another_error_is_not_read_as_login() {
     let seen = refused_start(json!({ "code": -32603, "message": "Internal error" })).await;
-    assert!(!seen.iter().any(|e| matches!(e, AcpEvent::LoginRequired)));
+    assert!(!seen
+        .iter()
+        .any(|e| matches!(e, AcpEvent::LoginRequired { .. })));
 }
 
 /// Codex's question as it sent it on 2026-10-22: the free-text answer is a
@@ -864,7 +918,7 @@ async fn a_login_required_turn_is_read_as_such_ahead_of_its_failure() {
     let mut order = Vec::new();
     while let Some(event) = events.recv().await {
         match event {
-            AcpEvent::LoginRequired => order.push("login"),
+            AcpEvent::LoginRequired { .. } => order.push("login"),
             AcpEvent::Error { .. } => order.push("error"),
             AcpEvent::TurnEnded { .. } => {
                 order.push("ended");
@@ -887,7 +941,7 @@ async fn a_write_without_content_leaves_the_file_alone() {
     std::fs::write(&path, "the user's work").unwrap();
 
     let params = json!({ "path": path.to_str().unwrap() });
-    let answer = handle_reverse("fs/write_text_file", &params, &PathBuf::from("/tmp")).await;
+    let answer = handle_reverse("fs/write_text_file", &params).await;
 
     assert!(answer.is_err(), "{answer:?}");
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "the user's work");
@@ -914,7 +968,13 @@ async fn the_last_answer_before_an_exit_is_not_lost() {
     };
     let (tx, mut events) = tokio::sync::mpsc::unbounded_channel();
     tokio::spawn(async move {
-        let stream = connect_over(transport, PathBuf::from("/tmp"), None);
+        let stream = connect_over(
+            transport,
+            SessionOpts {
+                cwd: PathBuf::from("/tmp"),
+                resume: None,
+            },
+        );
         futures::pin_mut!(stream);
         while let Some(event) = stream.next().await {
             if tx.send(event).is_err() {
@@ -1054,9 +1114,7 @@ async fn a_read_asked_for_a_range_gets_that_range() {
     std::fs::write(&path, "one\ntwo\nthree\nfour\nfive\n").unwrap();
     let path = path.to_str().unwrap();
     let read = |params: Value| async move {
-        handle_reverse("fs/read_text_file", &params, &PathBuf::from("/tmp"))
-            .await
-            .unwrap()["content"]
+        handle_reverse("fs/read_text_file", &params).await.unwrap()["content"]
             .as_str()
             .unwrap()
             .to_string()

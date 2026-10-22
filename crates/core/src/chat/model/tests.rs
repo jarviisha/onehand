@@ -2507,15 +2507,16 @@ fn notices(chat: &Chat) -> Vec<String> {
 #[test]
 fn a_login_required_turn_is_said_once_as_the_hint() {
     let mut chat = Chat::default();
-    chat.login_hint =
-        "Codex is not logged in. Run codex login in a terminal, then restart the agent".into();
+    chat.login_hint = Some(
+        "Codex is not logged in. Run codex login in a terminal, then restart the agent".into(),
+    );
     chat.busy = true;
-    chat.apply(AcpEvent::LoginRequired);
+    chat.apply(AcpEvent::LoginRequired { advice: None });
     chat.apply(AcpEvent::Error {
         text: "The turn failed: Authentication required".into(),
         detail: None,
     });
-    assert_eq!(notices(&chat), [chat.login_hint.clone()]);
+    assert_eq!(notices(&chat), [chat.login_hint.clone().unwrap()]);
     // Still the turn's failure, said in other words: it can be sent again
     // once logged in, and the rail marks it as any failed turn.
     assert!(chat.failed(), "the turn failed");
@@ -2524,8 +2525,8 @@ fn a_login_required_turn_is_said_once_as_the_hint() {
 #[test]
 fn a_login_required_start_is_said_once_and_the_link_is_lost() {
     let mut chat = Chat::default();
-    chat.login_hint = "hint".into();
-    chat.apply(AcpEvent::LoginRequired);
+    chat.login_hint = Some("hint".into());
+    chat.apply(AcpEvent::LoginRequired { advice: None });
     chat.apply(AcpEvent::Disconnected(
         "Could not start a session: Authentication required".into(),
     ));
@@ -2537,11 +2538,42 @@ fn a_login_required_start_is_said_once_and_the_link_is_lost() {
 #[test]
 fn a_login_without_a_hint_names_the_agent() {
     let mut chat = Chat::new(1, PathBuf::from("/tmp/p"), "Gemini".to_string(), None);
-    chat.apply(AcpEvent::LoginRequired);
+    chat.apply(AcpEvent::LoginRequired { advice: None });
     chat.apply(AcpEvent::Disconnected(
         "Could not start a session: Authentication required".into(),
     ));
     assert_eq!(notices(&chat), ["Gemini needs you to log in"]);
+}
+
+/// A declared agent that says how it is logged in is told so in its words.
+#[test]
+fn a_declared_agent_is_told_how_to_log_in_in_its_own_words() {
+    let mut chat = Chat::new(1, PathBuf::from("/tmp/p"), "OpenCode".to_string(), None);
+    chat.apply(AcpEvent::LoginRequired {
+        advice: Some("Run opencode auth login in the terminal".into()),
+    });
+    chat.apply(AcpEvent::Disconnected(
+        "Could not start a session: Authentication required".into(),
+    ));
+    assert_eq!(
+        notices(&chat),
+        ["OpenCode is not logged in. Run opencode auth login in the terminal"]
+    );
+}
+
+/// A built-in agent's own words carry its account, which the agent's do not.
+#[test]
+fn a_built_in_agent_keeps_its_own_login_words() {
+    let mut chat = Chat::default();
+    chat.login_hint = Some("Codex is not logged in. Run codex login in a terminal".into());
+    chat.apply(AcpEvent::LoginRequired {
+        advice: Some("other".into()),
+    });
+    chat.apply(AcpEvent::Disconnected("gone".into()));
+    assert_eq!(
+        notices(&chat),
+        ["Codex is not logged in. Run codex login in a terminal"]
+    );
 }
 
 #[test]
