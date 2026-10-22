@@ -24,6 +24,7 @@ pub use agent::{
 };
 pub(crate) use agent::{default_agents, found_agents};
 
+mod document;
 mod font;
 pub use font::{resolve_monospace, FontConfig};
 
