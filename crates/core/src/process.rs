@@ -129,18 +129,22 @@ fn drain(mut pipe: impl Read + Send + 'static) -> mpsc::Receiver<Vec<u8>> {
 /// End `child` and, on Unix, every process in its group.
 fn stop(child: &mut std::process::Child) {
     #[cfg(unix)]
-    {
-        // ponytail: through `kill(1)` rather than a libc binding, for one call.
-        // The `--` is load-bearing: procps' `kill` reads a bare `-<pid>` as an
-        // option rather than as a process group, and does nothing.
-        let _ = Command::new("kill")
-            .args(["-KILL", "--"])
-            .arg(format!("-{}", child.id()))
-            .stderr(Stdio::null())
-            .status();
-    }
+    kill_group(child.id());
     let _ = child.kill();
     let _ = child.wait();
+}
+
+/// Kill every process in the group `leader` leads, without asking first.
+#[cfg(unix)]
+pub(crate) fn kill_group(leader: u32) {
+    // ponytail: through `kill(1)` rather than a libc binding, for one call.
+    // The `--` is load-bearing: procps' `kill` reads a bare `-<pid>` as an
+    // option rather than as a process group, and does nothing.
+    let _ = Command::new("kill")
+        .args(["-KILL", "--"])
+        .arg(format!("-{leader}"))
+        .stderr(Stdio::null())
+        .status();
 }
 
 #[cfg(test)]
