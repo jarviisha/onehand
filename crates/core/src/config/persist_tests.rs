@@ -123,3 +123,70 @@ fn nothing_monospace_means_no_answer() {
         None
     );
 }
+
+/// A file of its own under the temp dir, holding `text`, for `test`.
+fn config_file(test: &str, text: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("onehand-{test}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("config.toml");
+    std::fs::write(&path, text).unwrap();
+    path
+}
+
+#[test]
+fn a_save_keeps_what_this_build_does_not_know() {
+    let path = config_file(
+        "save-keeps-unknown",
+        "# my agents\nfuture = 1\n\n[[agents]]\nname = \"Mine\"\ncommand = \"x\"\n\n\
+         [remote.telegram]\nfuture_nested = \"keep\"\n",
+    );
+    AppConfig::update_in_place(&path, |cfg| cfg.appearance = Appearance::Light).unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    for kept in [
+        "# my agents",
+        "future = 1",
+        "future_nested = \"keep\"",
+        "name = \"Mine\"",
+    ] {
+        assert!(text.contains(kept), "{kept} is gone from:\n{text}");
+    }
+    assert_eq!(
+        AppConfig::parse(&text).unwrap().appearance,
+        Appearance::Light
+    );
+    std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+}
+
+#[test]
+fn a_changed_agent_list_stays_a_list_of_tables() {
+    let path = config_file(
+        "agent-list-of-tables",
+        "[[agents]]\nname = \"One\"\ncommand = \"x\"\n",
+    );
+    AppConfig::update_in_place(&path, |cfg| {
+        cfg.agents.push(AgentSpec {
+            name: "Two".into(),
+            command: "y".into(),
+            ..Default::default()
+        })
+    })
+    .unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(text.matches("[[agents]]").count(), 2, "{text}");
+    assert!(!text.contains("agents = ["), "{text}");
+    std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+}
+
+#[test]
+fn a_first_save_of_anything_writes_the_found_agents() {
+    let original = "appearance = \"dark\"\n";
+    let path = config_file("first-save-found-agents", original);
+    AppConfig::update_in_place(&path, |cfg| cfg.appearance = Appearance::Light).unwrap();
+    let saved = AppConfig::parse(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    let found = AppConfig::from_disk(Some(original), std::env::var_os("PATH").as_deref())
+        .unwrap()
+        .agents;
+    assert_eq!(saved.agents, found);
+    std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+}

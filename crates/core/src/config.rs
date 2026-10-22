@@ -324,11 +324,17 @@ impl AppConfig {
         Ok(cfg)
     }
 
-    /// Read the config at `path`, apply `edit`, and write it back.
+    /// Read the config at `path`, apply `edit`, and write back what changed.
     ///
     /// A file that exists but **fails to parse** is left alone and reported:
     /// rewriting it from defaults would permanently destroy the user's other
     /// sections. A *missing* file is a first save and starts from defaults.
+    ///
+    /// **What changed is measured from the file as read, before it is
+    /// settled**, so a save still writes the settled agent list and the
+    /// agents a first launch found, as it always has; everything the two
+    /// agree on, every comment and every key this build does not know stays
+    /// as the file had it.
     ///
     /// Lives here rather than in the front end because the guard belongs to the
     /// file format, not to whoever is drawing the settings screen.
@@ -338,10 +344,22 @@ impl AppConfig {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
             Err(e) => return Err(format!("{} could not be read: {e}", path.display())),
         };
+        let unparsed = |e: &dyn std::fmt::Display| format!("{} won't parse: {e}", path.display());
+        let before = Self::parse(text.as_deref().unwrap_or("")).map_err(|e| unparsed(&e))?;
+        let mut doc: toml_edit::DocumentMut = text
+            .as_deref()
+            .unwrap_or("")
+            .parse()
+            .map_err(|e| unparsed(&e))?;
         let mut cfg = Self::from_disk(text.as_deref(), std::env::var_os("PATH").as_deref())
-            .map_err(|e| format!("{} won't parse: {e}", path.display()))?;
+            .map_err(|e| unparsed(&e))?;
         edit(&mut cfg);
-        cfg.save_to(path).map_err(|e| e.to_string())
+        let table = |cfg: &Self| toml::Table::try_from(cfg).map_err(|e| e.to_string());
+        document::merge(&mut doc, &table(&before)?, &table(&cfg)?);
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        }
+        write_atomic(path, &doc.to_string()).map_err(|e| e.to_string())
     }
 
     pub fn save_to(&self, path: &Path) -> std::io::Result<()> {

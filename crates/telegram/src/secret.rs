@@ -5,10 +5,9 @@
 //! factor and no per-device revocation. The app's own config file is the wrong
 //! place for one and would stay the wrong place even if nothing else changed,
 //! for three reasons that are all about what that file *is* rather than about
-//! how it happens to be written today. It is rewritten whole by the settings
-//! dialog, whose agent page rewrites the agent list, so a value put in it is a
-//! value the app
-//! prints back out on a schedule nobody chose. It is the file people paste into
+//! how it happens to be written today. Settings writes into it, and its agent
+//! page rewrites the agent list whole, so a value put in it is a value the app
+//! handles on a schedule nobody chose. It is the file people paste into
 //! a bug report, because it holds the agent list. And it is world-readable by
 //! default, because everything else in it is a preference.
 //!

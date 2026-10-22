@@ -35,7 +35,7 @@ pub struct AgentSpec {
 /// this release, and the binary on the machine the adapter drives.
 ///
 /// **The config names one by id and never copies its command.** Every
-/// settings save writes the whole file back, so a command written out there
+/// save of the agent list writes the whole list back, so a command written out there
 /// froze the adapter version at the first save, and a later release moving
 /// the pin never reached anyone who had saved once.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
