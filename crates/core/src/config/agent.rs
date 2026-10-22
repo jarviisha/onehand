@@ -362,8 +362,8 @@ impl AgentSpec {
     /// its name, stand in.
     pub fn login_hint(&self) -> Option<String> {
         // The preset itself, not the old default left declared: that one stays
-        // declared only where the agent's binary is missing, so a command that
-        // needs it is no help.
+        // declared only where the agent's binary is missing, so no command of
+        // ours is any help there, and it is told what the agent says instead.
         let preset = self.preset()?;
         let info = preset.info();
         let account = self
