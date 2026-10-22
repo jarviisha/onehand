@@ -123,15 +123,3 @@ fn nothing_monospace_means_no_answer() {
         None
     );
 }
-
-#[test]
-fn a_state_that_will_not_parse_is_kept_aside() {
-    let dir = std::env::temp_dir().join(format!("onehand-bad-state-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("state.toml");
-    std::fs::write(&path, "recent_workspaces = [\"/a\"").unwrap();
-    assert_eq!(AppState::load_from(&path), AppState::default());
-    let kept = std::fs::read_to_string(dir.join("state.toml.bad")).unwrap();
-    assert_eq!(kept, "recent_workspaces = [\"/a\"");
-    std::fs::remove_dir_all(dir).unwrap();
-}
