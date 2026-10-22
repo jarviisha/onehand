@@ -59,6 +59,8 @@ minor bump may break any of them.
 - Terminal tabs size to their names and scroll; the terminal caches rows and coalesces redraws.
 - The interface font is Be Vietnam Pro, shipped inside the binary in place of Inter.
 - The palette is VS Code's Dark Modern and Light Modern, the rail on its side bar's grey.
+- Copilot is a built-in agent: `copilot --acp`, found on first launch and offered in Settings. Its
+  unattended runs ask before each step unless `unattended.mode` names *Autopilot*.
 
 ### Fixed
 

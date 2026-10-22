@@ -1,3 +1,4 @@
+use super::agents::runs_line;
 use super::{DraftShift, check_key, draft_after_promote, draft_shift, draft_spec};
 use onehand_core::config::{AgentSpec, Preset};
 
@@ -154,5 +155,18 @@ fn a_name_another_agent_has_is_refused() {
             &["Codex"]
         )
         .is_ok()
+    );
+}
+
+/// A built-in agent that is its own binary says what runs, as an adapter's
+/// line names its package.
+#[test]
+fn a_native_built_in_agent_says_what_runs() {
+    let mut spec = AgentSpec::of(Preset::Copilot, &[]);
+    assert_eq!(runs_line(&spec), "Built in · copilot --acp");
+    spec.env.insert("COPILOT_HOME".into(), "/x".into());
+    assert_eq!(
+        runs_line(&spec),
+        "Built in · copilot --acp · COPILOT_HOME=/x"
     );
 }

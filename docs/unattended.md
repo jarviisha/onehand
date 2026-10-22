@@ -450,6 +450,13 @@ it fixed a file, fetched a URL, committed and pushed without one card. *Workspac
 before each of those, so a run in it parks. What Codex may do is otherwise its own configuration
 (`~/.codex/config.toml`), not the repository's.
 
+**Copilot gets no mode set, and its runs park.** Its default, *Agent*, asks before every edit and
+every command; the one mode that does not, *Autopilot*, allows every tool, and Copilot has no
+allowlist a repository keeps: its grants are command-line flags and the user's own config. A run
+in *Autopilot* is the "unsupervised with full rights" rule 1 refuses to make the default, so it is
+the config's to choose (`mode = "https://agentclientprotocol.com/protocol/session-modes#autopilot"`),
+written by the person who accepts it.
+
 **`acceptEdits` covers file edits and nothing else.** Under it Claude Code still
 asks before every command — `cargo test`, `git commit` — so with rule 1 below
 every run would stop at the first check it tried to run and wait for somebody
