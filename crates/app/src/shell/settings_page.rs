@@ -230,6 +230,22 @@ impl Shell {
         cx.notify();
     }
 
+    /// Add `preset`, offered because it is on this machine with no entry yet,
+    /// under its own name or the first free one.
+    pub fn add_found_agent(
+        &mut self,
+        preset: onehand_core::config::Preset,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        cx.update_global::<Shared, _>(|shared, _| {
+            let spec = AgentSpec::of(preset, &shared.agents);
+            shared.agents.push(spec);
+        });
+        self.persist_agents(window, cx);
+        cx.notify();
+    }
+
     // ── Appearance ──────────────────────────────────────────────────────────
 
     /// Which mode the user has chosen. App-wide, like the theme it selects.

@@ -254,9 +254,39 @@ pub(super) fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         .collect::<Vec<_>>();
     let (clear, save) = (handle.clone(), handle.clone());
 
+    // A built-in agent installed here with no entry of its own, offered rather
+    // than added behind the person's back: a list someone set up is theirs.
+    let offered = crate::state::Shared::global(cx)
+        .on_machine
+        .iter()
+        .copied()
+        .filter(|preset| specs.iter().all(|spec| spec.preset != Some(*preset)))
+        .map(|preset| {
+            let shell = handle.clone();
+            div()
+                .h_flex()
+                .items_center()
+                .justify_between()
+                .gap_2()
+                .text_size(crate::tokens::CHROME_TEXT)
+                .child(format!("{} is on this machine", preset.shown_name()))
+                .child(
+                    crate::controls::action(("add-found-agent", preset as usize))
+                        .secondary()
+                        .short()
+                        .label("Add")
+                        .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                            shell.update(cx, |shell, cx| shell.add_found_agent(preset, window, cx));
+                        }),
+                )
+                .into_any_element()
+        })
+        .collect::<Vec<_>>();
+
     let list = section(None, None, cx)
         .gap_3()
         .children(rows)
+        .children(offered)
         .when(more > 0, |list| {
             list.child(
                 div()
