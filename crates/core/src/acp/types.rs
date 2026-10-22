@@ -526,6 +526,10 @@ pub enum AcpEvent {
         text: String,
         detail: Option<String>,
     },
+    /// The agent answered that it is not logged in (ACP's `auth_required`,
+    /// `-32000`), ahead of the failure that request ends in. Its own event, so
+    /// the front end can say how to log in instead of the protocol's words.
+    LoginRequired,
     /// The adapter died / timed out / closed — the session is now `Failed`
     /// (restartable with Ctrl+Shift+R). Terminal for this worker.
     Disconnected(String),

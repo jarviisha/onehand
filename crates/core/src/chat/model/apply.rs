@@ -110,6 +110,16 @@ impl Away {
 }
 
 impl Chat {
+    /// How to log in, once, when the agent has just answered that it is not
+    /// logged in: the entry's own words, or the agent's name where none were
+    /// given.
+    fn take_login_hint(&mut self) -> Option<String> {
+        std::mem::take(&mut self.login_pending).then(|| match self.login_hint.is_empty() {
+            true => format!("{} needs you to log in", self.agent),
+            false => self.login_hint.clone(),
+        })
+    }
+
     /// Apply a worker event to the transcript/state.
     ///
     /// The outcome is what a front end has to act on, decided here rather than
@@ -352,6 +362,10 @@ impl Chat {
                 // a conversation that has finished closing the previous one.
                 self.flush_queued();
             }
+            // Said by the failure it comes ahead of, so that failure keeps what
+            // it is: a turn that failed can be sent again once logged in, and a
+            // start that failed leaves the link lost.
+            AcpEvent::LoginRequired => self.login_pending = true,
             AcpEvent::Error { text, detail } => {
                 // An error mid-turn is the prompt's answer: the turn ends on it.
                 // Not after a Stop, though: some adapters answer a cancel with
@@ -359,6 +373,10 @@ impl Chat {
                 let level = match self.busy && !self.cancelled {
                     true => NoticeLevel::Failed,
                     false => NoticeLevel::Error,
+                };
+                let (text, detail) = match self.take_login_hint() {
+                    Some(hint) => (hint, None),
+                    None => (text, detail),
                 };
                 self.items.push(ChatItem::failure(text, level, detail));
             }
@@ -375,11 +393,11 @@ impl Chat {
                 self.cancel_pending_permissions();
                 // No key in the words: the front end names the one its keymap
                 // binds, which the person may have changed.
-                self.items.push(ChatItem::failure(
-                    format!("Disconnected: {e}"),
-                    NoticeLevel::Error,
-                    None,
-                ));
+                let text = self
+                    .take_login_hint()
+                    .unwrap_or_else(|| format!("Disconnected: {e}"));
+                self.items
+                    .push(ChatItem::failure(text, NoticeLevel::Error, None));
             }
         }
 

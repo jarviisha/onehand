@@ -301,13 +301,15 @@ impl ChatSession {
             })
             .detach();
 
+            let mut chat = Chat::new(
+                uid,
+                root,
+                spec.name.clone(),
+                Some(onehand_core::chat::conversations_dir()),
+            );
+            chat.login_hint = spec.login_hint();
             Self {
-                chat: Chat::new(
-                    uid,
-                    root,
-                    spec.name.clone(),
-                    Some(onehand_core::chat::conversations_dir()),
-                ),
+                chat,
                 started,
                 md: HashMap::new(),
                 images: RefCell::new(HashMap::new()),

@@ -377,3 +377,76 @@ fn what_is_on_the_machine_is_the_presets_whose_binary_is_found() {
     let dir = bin_dir("on-machine", Some("codex"));
     assert_eq!(on_machine(Some(dir.as_os_str())), [Preset::Codex]);
 }
+
+#[test]
+fn the_login_hint_names_the_entrys_account() {
+    let codex = AgentSpec {
+        name: "Codex".into(),
+        preset: Some(Preset::Codex),
+        ..Default::default()
+    };
+    assert_eq!(
+        codex.login_hint(),
+        "Codex is not logged in. Run codex login in a terminal, then restart the agent"
+    );
+    let acc2 = AgentSpec {
+        name: "Claude Code (acc2)".into(),
+        preset: Some(Preset::ClaudeCode),
+        env: [
+            ("CLAUDE_CONFIG_DIR".into(), "/x/.claude-acc2".into()),
+            ("OTHER".into(), "1".into()),
+        ]
+        .into(),
+        ..Default::default()
+    };
+    assert_eq!(
+        acc2.login_hint(),
+        "Claude Code (acc2) is not logged in. Run CLAUDE_CONFIG_DIR=/x/.claude-acc2 claude auth login in a terminal, then restart the agent"
+    );
+    let other_var = AgentSpec {
+        env: [("OTHER".into(), "1".into())].into(),
+        ..codex.clone()
+    };
+    assert_eq!(other_var.login_hint(), codex.login_hint());
+    let gemini = AgentSpec {
+        name: "Gemini".into(),
+        command: "gemini".into(),
+        ..Default::default()
+    };
+    assert_eq!(gemini.login_hint(), "Gemini needs you to log in");
+}
+
+/// The old Claude default is left declared only where `claude` is missing,
+/// so a command that needs it is no help there.
+#[test]
+fn the_old_default_left_declared_is_asked_to_log_in_in_plain_words() {
+    let spec = default_agents().remove(0);
+    assert_eq!(spec.login_hint(), "Claude Code needs you to log in");
+}
+
+/// The command is pasted into a shell, so a directory with a space in it is
+/// quoted, and one without is left as typed.
+#[test]
+fn an_account_with_a_space_is_quoted_in_the_login_command() {
+    let spec = AgentSpec {
+        name: "Claude Code (work)".into(),
+        preset: Some(Preset::ClaudeCode),
+        env: [("CLAUDE_CONFIG_DIR".into(), "/home/me/My Claude".into())].into(),
+        ..Default::default()
+    };
+    assert_eq!(
+        spec.login_hint(),
+        "Claude Code (work) is not logged in. Run CLAUDE_CONFIG_DIR='/home/me/My Claude' claude auth login in a terminal, then restart the agent"
+    );
+    let quote = AgentSpec {
+        env: [("CLAUDE_CONFIG_DIR".into(), "/home/me/it's".into())].into(),
+        ..spec
+    };
+    assert!(
+        quote
+            .login_hint()
+            .contains(r"CLAUDE_CONFIG_DIR='/home/me/it'\''s' claude"),
+        "{}",
+        quote.login_hint()
+    );
+}

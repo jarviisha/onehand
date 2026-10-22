@@ -216,3 +216,6 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
 - **A workflow being written is lost to a signal or a logout.** The app ends when its last window
   closes, and closing a window over an unsaved workflow asks first; a process ended from outside
   (a signal, the session logging out) asks nothing, since GPUI gives no hook that can refuse it.
+- **The Plugins mode comes with the window, not with the agent list.** A window offers Plugins
+  when a Claude Code agent was set up as it opened; one added later brings it to the next window.
+  The Workbench builds its modes once per window, and nothing in it removes or adds one after.

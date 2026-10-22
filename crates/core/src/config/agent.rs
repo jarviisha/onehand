@@ -101,6 +101,23 @@ impl Preset {
         }
     }
 
+    /// The command that logs this agent in, run in a terminal.
+    fn login(self) -> &'static str {
+        match self {
+            Self::ClaudeCode => "claude auth login",
+            Self::Codex => "codex login",
+        }
+    }
+
+    /// The variable that points this agent at one account's directory, which
+    /// a login must be run under to log that account in.
+    fn account_var(self) -> &'static str {
+        match self {
+            Self::ClaudeCode => "CLAUDE_CONFIG_DIR",
+            Self::Codex => "CODEX_HOME",
+        }
+    }
+
     /// The variable the adapter reads its agent's path from.
     fn binary_var(self) -> &'static str {
         match self {
@@ -210,9 +227,37 @@ impl AgentSpec {
         }
     }
 
+    /// What to tell someone whose agent answered that it is not logged in.
+    ///
+    /// A built-in agent's words carry the command that logs it in, under the
+    /// entry's own account where its environment names one: a second account
+    /// logged in without it would log the first one in again.
+    pub fn login_hint(&self) -> String {
+        // The preset itself, not the old default left declared: that one stays
+        // declared only where the agent's binary is missing, so a command that
+        // needs it is no help.
+        let Some(preset) = self.preset else {
+            return format!("{} needs you to log in", self.name);
+        };
+        let account = self
+            .env
+            .get(preset.account_var())
+            .map(|dir| {
+                let dir = shell_word(&home_expanded(dir));
+                format!("{}={dir} ", preset.account_var())
+            })
+            .unwrap_or_default();
+        // No backticks: the line is drawn as text, where they would show.
+        format!(
+            "{} is not logged in. Run {account}{} in a terminal, then restart the agent",
+            self.name,
+            preset.login()
+        )
+    }
+
     /// The preset this agent is, counting the old Claude default left
     /// declared (for want of `claude` on `PATH`) as the Claude it still runs.
-    pub(crate) fn claude_or_preset(&self) -> Option<Preset> {
+    pub fn claude_or_preset(&self) -> Option<Preset> {
         self.preset
             .or_else(|| old_default_env(self).map(|_| Preset::ClaudeCode))
     }
@@ -241,6 +286,21 @@ pub(crate) fn found_agents(path: Option<&std::ffi::OsStr>) -> Vec<AgentSpec> {
         found.push(spec);
     }
     found
+}
+
+/// `value` as one word a shell reads back unchanged: as typed when it holds
+/// nothing a shell would split or expand, else in single quotes, a quote in
+/// it closed, escaped and reopened. A login command is pasted into a terminal,
+/// and an account directory with a space in it would otherwise run as two.
+fn shell_word(value: &str) -> String {
+    let plain = !value.is_empty()
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "_-./:@%+=,".contains(c));
+    match plain {
+        true => value.to_string(),
+        false => format!("'{}'", value.replace('\'', r"'\''")),
+    }
 }
 
 /// `value` with a leading `~/` as the home directory, as a shell would have

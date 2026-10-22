@@ -27,7 +27,14 @@ pub fn workbench_modes(
     font_size: Pixels,
     cx: &mut App,
 ) -> Vec<Box<dyn WorkbenchMode>> {
-    vec![
+    // Plugins manages Claude Code's, so it is offered where Claude Code is set
+    // up and nowhere else. Read when the window is made: a Claude Code agent
+    // added later brings it to the next window.
+    let claude = crate::state::Shared::global(cx)
+        .agents
+        .iter()
+        .any(|spec| spec.claude_or_preset() == Some(onehand_core::config::Preset::ClaudeCode));
+    let mut modes: Vec<Box<dyn WorkbenchMode>> = vec![
         // The Editor is the file tree and the buffers together -- Files is
         // still its own crate and still its own mode, composed inside this one
         // rather than listed beside it.
@@ -39,11 +46,14 @@ pub fn workbench_modes(
             tell,
             cx,
         )),
-        Box::new(onehand_claude_plugins::Mode::new(ask.clone(), cx)),
-        // Last: a terminal running an editor is the one mode that is a program
-        // of its own rather than a view of the project.
-        Box::new(onehand_neovim::Mode::new(ask, font_size, cx)),
-    ]
+    ];
+    if claude {
+        modes.push(Box::new(onehand_claude_plugins::Mode::new(ask.clone(), cx)));
+    }
+    // Last: a terminal running an editor is the one mode that is a program of
+    // its own rather than a view of the project.
+    modes.push(Box::new(onehand_neovim::Mode::new(ask, font_size, cx)));
+    modes
 }
 
 /// The outside systems a project can be connected to, in the order a project

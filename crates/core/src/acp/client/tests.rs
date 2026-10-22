@@ -744,3 +744,134 @@ async fn the_adapter_is_started_with_its_environment() {
     let said = said.expect("the adapter dies");
     assert!(said.contains("seen-42"), "{said}");
 }
+
+/// The events a refused `session/new` with `error` produces, up to the end.
+async fn refused_start(error: Value) -> Vec<AcpEvent> {
+    let (mut agent, mut events) = client();
+    let hello = agent.heard().await;
+    agent
+        .say(json!({
+            "jsonrpc": "2.0",
+            "id": hello["id"],
+            "result": { "protocolVersion": 1, "agentCapabilities": {} }
+        }))
+        .await;
+    let new = agent.heard().await;
+    agent
+        .say(json!({ "jsonrpc": "2.0", "id": new["id"], "error": error }))
+        .await;
+    let mut seen = Vec::new();
+    while let Some(event) = events.recv().await {
+        let done = matches!(event, AcpEvent::Disconnected(_));
+        seen.push(event);
+        if done {
+            break;
+        }
+    }
+    seen
+}
+
+/// ACP's `auth_required` is a failure of its own, said ahead of the end.
+#[tokio::test]
+async fn a_login_required_answer_is_read_as_such() {
+    let seen = refused_start(json!({ "code": -32000, "message": "Authentication required" })).await;
+    let login = seen
+        .iter()
+        .position(|e| matches!(e, AcpEvent::LoginRequired))
+        .expect("read as a login");
+    assert!(login < seen.len() - 1, "ahead of the disconnect");
+}
+
+#[tokio::test]
+async fn another_error_is_not_read_as_login() {
+    let seen = refused_start(json!({ "code": -32603, "message": "Internal error" })).await;
+    assert!(!seen.iter().any(|e| matches!(e, AcpEvent::LoginRequired)));
+}
+
+/// Codex's question as it sent it on 2026-10-22: the free-text answer is a
+/// property of its own that names its question in `_meta.codex`.
+fn codex_question() -> Value {
+    json!({
+        "mode": "form",
+        "message": "Codex needs your input to continue.",
+        "requestedSchema": { "type": "object", "required": ["add_change"], "properties": {
+            "add_change": {
+                "title": "Should add() be fixed to return a + b, or should a docstring be added instead?",
+                "description": "Change",
+                "_meta": { "codex": { "isOther": true, "isSecret": false } },
+                "type": "string",
+                "oneOf": [
+                    { "const": "Fix add() (Recommended)", "title": "Fix add() (Recommended)" },
+                    { "const": "Add a docstring", "title": "Add a docstring" },
+                    { "const": "None of the above", "title": "None of the above" }
+                ]
+            },
+            "add_change_note": {
+                "type": "string",
+                "title": "Additional answer or note",
+                "_meta": { "codex": { "questionId": "add_change", "role": "user_note", "isSecret": false } }
+            }
+        }},
+    })
+}
+
+/// One question with its Other box, not a question and a second one.
+#[test]
+fn codex_note_is_its_questions_other_box() {
+    let e = parse_elicitation(json!(1), &codex_question()).unwrap();
+    assert_eq!(e.fields.len(), 1, "{:?}", e.fields);
+    assert_eq!(e.fields[0].key, "add_change");
+    assert_eq!(e.fields[0].custom_key.as_deref(), Some("add_change_note"));
+}
+
+/// A note naming a question the form does not hold is kept as a field, so
+/// nothing the agent asked goes missing.
+#[test]
+fn a_note_naming_no_question_stays_a_field() {
+    let mut params = codex_question();
+    params["requestedSchema"]["properties"]["add_change_note"]["_meta"]["codex"]["questionId"] =
+        json!("missing");
+    let e = parse_elicitation(json!(1), &params).unwrap();
+    assert_eq!(e.fields.len(), 2);
+    assert!(e.fields.iter().all(|f| f.custom_key.is_none()));
+}
+
+/// A turn refused for want of a login says so ahead of the turn's failure,
+/// which is what lets the transcript say the one in the words of the other.
+#[tokio::test]
+async fn a_login_required_turn_is_read_as_such_ahead_of_its_failure() {
+    let (mut agent, mut events) = client();
+    agent.handshake().await;
+    let tx = loop {
+        if let Some(AcpEvent::Connected { tx, .. }) = events.recv().await {
+            break tx;
+        }
+    };
+    tx.send(AcpRequest::Prompt {
+        text: "hi".into(),
+        attachments: Vec::new(),
+    })
+    .unwrap();
+    let prompt = agent.heard().await;
+    assert_eq!(prompt["method"], "session/prompt");
+    agent
+        .say(json!({
+            "jsonrpc": "2.0",
+            "id": prompt["id"],
+            "error": { "code": -32000, "message": "Authentication required" }
+        }))
+        .await;
+    let mut order = Vec::new();
+    while let Some(event) = events.recv().await {
+        match event {
+            AcpEvent::LoginRequired => order.push("login"),
+            AcpEvent::Error { .. } => order.push("error"),
+            AcpEvent::TurnEnded { .. } => {
+                order.push("ended");
+                break;
+            }
+            _ => {}
+        }
+    }
+    assert_eq!(order, ["login", "error", "ended"]);
+}

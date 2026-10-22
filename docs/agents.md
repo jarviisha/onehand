@@ -104,6 +104,29 @@ A config is settled every time it is read, and a save writes the settled list
   left declared still counts as Claude Code for that mode, and the mode is read when each run starts,
   so making another agent the default changes it.
 
+## Not logged in
+
+An agent that answers a request with ACP's `auth_required` (`-32000`) is not logged in: Codex
+answers `session/new` so, Claude Code only its first prompt. The transcript says it once, in place
+of the failure that follows (`AgentSpec::login_hint`):
+
+- a built-in agent: *Codex is not logged in. Run codex login in a terminal, then restart the
+  agent*. Claude Code's command is `claude auth login`. When the entry's `env` sets its account
+  variable (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`), the command carries it, so the login reaches that
+  account: `CLAUDE_CONFIG_DIR=/home/me/.claude-work claude auth login`, the directory in single
+  quotes when it holds a space or anything else a shell would read. The line is drawn as text, so
+  the command carries no backticks;
+- a declared agent: *Gemini needs you to log in*.
+
+Logging in inside onehand (ACP `authenticate`) is not built.
+
+## Questions
+
+A question's free-text answer is its card's *Other* box. Claude Code sends it as `<key>_custom`;
+Codex as a property of its own whose `_meta.codex` names the question (`questionId`) and the role
+`user_note`. Both are folded into the question they belong to, read from the request itself, so a
+declared agent sending either gets the same card.
+
 ## Known differences
 
 - **Codex has no plan block.** It has no plan tool in its default mode and writes its steps as
@@ -111,7 +134,8 @@ A config is settled every time it is read, and a save writes the settled list
   plan?* as a permission request.
 - **Codex runs its commands itself**, not through the client's terminal: a command shows as a tool
   call with its output, without a live terminal.
-- **The Plugins mode manages Claude Code's plugins for the default account only** (the onehand
-  process's own `CLAUDE_CONFIG_DIR`, else `~/.claude`), whichever Claude entry a session uses.
+- **The Plugins mode is in the Workbench only where a Claude Code agent is set up**, and manages
+  Claude Code's plugins for the default account only (the onehand process's own
+  `CLAUDE_CONFIG_DIR`, else `~/.claude`), whichever Claude entry a session uses.
   Codex's plugins and skills (`codex plugin`, `~/.codex/skills`) are loaded by Codex itself and not
   managed in onehand.
