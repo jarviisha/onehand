@@ -622,3 +622,11 @@ fn copilot_logs_in_under_its_account() {
         "Copilot is not logged in. Run COPILOT_HOME=/home/me/.copilot-work copilot login in a terminal, then restart the agent"
     );
 }
+
+/// Copilot's only mode that runs without asking allows every tool, so a run
+/// is never put in it unless the config says so.
+#[test]
+fn copilot_runs_unattended_in_its_own_default_mode() {
+    let agents = [AgentSpec::of(Preset::Copilot, &[])];
+    assert_eq!(crate::config::run_mode(None, &agents, None), "");
+}

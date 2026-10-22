@@ -38,7 +38,7 @@ Every session is an ACP agent, started from an entry in the agent list (`[[agent
 | Adapter | `@agentclientprotocol/claude-agent-acp`, pinned at 0.81.2 | `@agentclientprotocol/codex-acp`, pinned at 2.2.2 | none; tried with Copilot 1.0.102, which updates itself |
 | Binary | `claude` | `codex` | `copilot` |
 | Variable pointing the adapter at it | `CLAUDE_CODE_EXECUTABLE` | `CODEX_PATH` | none |
-| Unattended mode when the config names none | `acceptEdits` | its own default (*Auto review*) | *Autopilot* (`…/session-modes#autopilot`), which allows every tool |
+| Unattended mode when the config names none | `acceptEdits` | its own default (*Auto review*) | its own default (*Agent*), which asks before every step; see unattended runs |
 | Effort and fast groups | `effort`, `fast` | `reasoning_effort`, `fast-mode` | none |
 
 The presets live in code (`crates/core/src/config/agent.rs`). The config names one by id and never

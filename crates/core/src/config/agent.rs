@@ -140,9 +140,10 @@ static COPILOT: PresetInfo = PresetInfo {
     install: "npm install -g @github/copilot",
     login: "copilot login",
     account_var: "COPILOT_HOME",
-    // Its default mode asks before every step, so a run left in it parks on
-    // the first card nobody answers; autopilot allows all and runs to the end.
-    unattended_mode: Some("https://agentclientprotocol.com/protocol/session-modes#autopilot"),
+    // None, on purpose. Its default mode asks before every step, and the one
+    // that does not, autopilot, allows every tool: a run never answers a card
+    // for a person, so a grant that wide is the config's to write, not ours.
+    unattended_mode: None,
     runs: Runs::Native {
         args: &["--acp"],
         tried: "1.0.102",
