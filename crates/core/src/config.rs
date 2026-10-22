@@ -28,6 +28,9 @@ mod document;
 mod font;
 pub use font::{resolve_monospace, FontConfig};
 
+mod secret;
+pub use secret::secret;
+
 mod state;
 pub use state::AppState;
 
