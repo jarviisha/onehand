@@ -879,3 +879,15 @@ fn a_claim_whose_comment_fails_still_holds() {
     assert!(claimed.is_ok(), "{claimed:?}");
     assert!(forge.said("3").labels.is_empty());
 }
+
+#[test]
+fn a_branch_whose_worktree_folder_is_left_is_passed_over() {
+    let parent = std::env::temp_dir().join(format!("onehand-left-folder-{}", std::process::id()));
+    let root = parent.join("proj");
+    std::fs::create_dir_all(crate::worktree::worktree_dir(&root, "onehand/x")).unwrap();
+    assert_eq!(
+        free_branch_blocking(&root, "onehand/x", |_| Ok(false)),
+        Ok("onehand/x-2".to_string())
+    );
+    std::fs::remove_dir_all(parent).unwrap();
+}

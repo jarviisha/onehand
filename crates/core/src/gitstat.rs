@@ -101,28 +101,38 @@ fn classify(xy: &str) -> FileChange {
 /// The path tail of a porcelain line whose first `fields` space-separated
 /// fields are metadata (paths may contain spaces, so only the tail is safe
 /// to take whole).
-fn path_tail(line: &str, fields: usize) -> Option<&str> {
-    line.splitn(fields + 1, ' ').nth(fields)
+fn path_tail(line: &[u8], fields: usize) -> Option<&[u8]> {
+    line.splitn(fields + 1, |b| *b == b' ').nth(fields)
+}
+
+/// A path as git printed it, byte for byte: a name that is not UTF-8 is
+/// still the file's name, and a lossy copy of it matches no file.
+pub(crate) fn raw_path(bytes: &[u8]) -> PathBuf {
+    #[cfg(unix)]
+    return PathBuf::from(<std::ffi::OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(bytes));
+    #[cfg(not(unix))]
+    PathBuf::from(String::from_utf8_lossy(bytes).as_ref())
 }
 
 /// Parse `git status --porcelain=v2 --branch -z` output (NUL-terminated
 /// records). `-z` matters: without it git C-quotes pathnames holding
 /// non-ASCII bytes (`"t\341\273\207p.txt"` for `tệp.txt` under the default
 /// `core.quotepath`), so the stored path would never match the real file and
-/// its badge silently vanished. With `-z` paths are always raw.
-pub(crate) fn parse_porcelain(out: &str) -> GitStatus {
+/// its badge silently vanished. With `-z` paths are always raw, and they are
+/// read as bytes for the same reason.
+pub(crate) fn parse_porcelain(out: impl AsRef<[u8]>) -> GitStatus {
     let mut branch = String::new();
     let mut changed = 0;
     let (mut ahead, mut behind) = (0, 0);
     let mut entries = HashMap::new();
-    let mut records = out.split('\0');
+    let mut records = out.as_ref().split(|b| *b == 0);
     while let Some(line) = records.next() {
-        if let Some(head) = line.strip_prefix("# branch.head ") {
-            branch = head.trim().to_string();
+        if let Some(head) = line.strip_prefix(b"# branch.head ") {
+            branch = String::from_utf8_lossy(head).trim().to_string();
             continue;
         }
-        if let Some(ab) = line.strip_prefix("# branch.ab ") {
-            for part in ab.split_whitespace() {
+        if let Some(ab) = line.strip_prefix(b"# branch.ab ") {
+            for part in String::from_utf8_lossy(ab).split_whitespace() {
                 let n = || part[1..].parse().unwrap_or(0);
                 match part.as_bytes().first() {
                     Some(b'+') => ahead = n(),
@@ -134,25 +144,28 @@ pub(crate) fn parse_porcelain(out: &str) -> GitStatus {
         }
         // Entry lines: `1` ordinary change, `2` rename/copy, `u` unmerged,
         // `?` untracked. Field counts per the git-status(1) v2 format.
-        let xy = line.get(2..4).unwrap_or("");
-        let parsed: Option<(&str, FileChange)> = if line.starts_with("1 ") {
+        let xy = line
+            .get(2..4)
+            .and_then(|xy| std::str::from_utf8(xy).ok())
+            .unwrap_or("");
+        let parsed: Option<(&[u8], FileChange)> = if line.starts_with(b"1 ") {
             path_tail(line, 8).map(|p| (p, classify(xy)))
-        } else if line.starts_with("2 ") {
+        } else if line.starts_with(b"2 ") {
             // Under `-z` a rename's origPath is the *next* NUL record —
             // consume it so it can't be misread as an entry; badge the new path.
             let p = path_tail(line, 9).map(|p| (p, classify(xy)));
             records.next();
             p
-        } else if line.starts_with("u ") {
+        } else if line.starts_with(b"u ") {
             path_tail(line, 10).map(|p| (p, FileChange::Conflicted))
-        } else if line.starts_with("? ") {
+        } else if line.starts_with(b"? ") {
             path_tail(line, 1).map(|p| (p, FileChange::Untracked))
         } else {
             None
         };
         if let Some((path, change)) = parsed {
             changed += 1;
-            entries.insert(PathBuf::from(path), change);
+            entries.insert(raw_path(path), change);
         }
     }
     GitStatus {
@@ -210,7 +223,7 @@ pub fn read_blocking(root: &Path) -> Option<GitStatus> {
     };
 
     let out = git(&["status", "--porcelain=v2", "--branch", "-z"])?;
-    let status = parse_porcelain(&String::from_utf8_lossy(&out.stdout));
+    let status = parse_porcelain(&out.stdout);
     // Porcelain paths are relative to the repo *toplevel*; the root may be a
     // subdir of it. Fetch the offset and re-base.
     let prefix = git(&["rev-parse", "--show-prefix"])
@@ -230,6 +243,15 @@ pub async fn read(root: PathBuf) -> Option<GitStatus> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn a_name_that_is_not_utf8_keeps_its_bytes() {
+        use std::os::unix::ffi::OsStrExt as _;
+        let st = parse_porcelain(b"? caf\xe9.txt\0");
+        let name = std::ffi::OsStr::from_bytes(b"caf\xe9.txt");
+        assert!(st.entries.contains_key(Path::new(name)));
+    }
 
     /// **Reading the status writes nothing.** A plain `git status` refreshes
     /// the index and writes it back under `index.lock`, and an agent's

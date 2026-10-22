@@ -81,7 +81,7 @@ impl Connector for GitHub {
                 "--author",
                 "@me",
                 "--label",
-                label,
+                &label_list(&[label]),
                 // Oldest first, as they are taken: the list is cut at its
                 // limit, and newest first left the oldest past it, never seen.
                 "--search",
@@ -97,7 +97,8 @@ impl Connector for GitHub {
 
     fn remove_label_blocking(&self, root: &Path, number: u64, label: &str) -> Result<(), String> {
         let n = number.to_string();
-        gh(root, &["issue", "edit", &n, "--remove-label", label]).map(drop)
+        let label = label_list(&[label]);
+        gh(root, &["issue", "edit", &n, "--remove-label", &label]).map(drop)
     }
 
     fn comment_blocking(&self, root: &Path, number: u64, body: &str) -> Result<(), String> {
@@ -368,7 +369,8 @@ impl Connector for GitHub {
                 // A label has to exist on the repository before an issue can
                 // carry it. Made here, and "already exists" is the common,
                 // harmless answer.
-                let _ = gh(root, &["label", "create", label]);
+                // After `--`, so a name that starts with a dash is a name.
+                let _ = gh(root, &["label", "create", "--", label]);
             }
             let args: Vec<&str> = args.iter().map(String::as_str).collect();
             gh(root, &args)?;
@@ -524,12 +526,26 @@ fn edit_args(key: &str, from: &Snapshot, to: &Snapshot) -> Option<Vec<String>> {
         .map(String::as_str)
         .collect();
     if !added.is_empty() {
-        args.extend(["--add-label".into(), added.join(",")]);
+        args.extend(["--add-label".into(), label_list(&added)]);
     }
     if !removed.is_empty() {
-        args.extend(["--remove-label".into(), removed.join(",")]);
+        args.extend(["--remove-label".into(), label_list(&removed)]);
     }
     (args.len() > 3).then_some(args)
+}
+
+/// `labels` as one value of a `gh` label flag, which reads its value as a
+/// line of CSV: a name holding a comma or a quote is quoted, or it would be
+/// read as two labels, or as none.
+fn label_list(labels: &[&str]) -> String {
+    labels
+        .iter()
+        .map(|label| match label.contains([',', '"']) {
+            true => format!("\"{}\"", label.replace('"', "\"\"")),
+            false => label.to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 /// `gh issue list --json number,title,body,author,labels` as rows.
@@ -904,6 +920,14 @@ mod tests {
             Some(123)
         );
         assert_eq!(created_number("nothing useful"), None);
+    }
+
+    #[test]
+    fn a_label_with_a_comma_or_a_quote_stays_one_label() {
+        assert_eq!(
+            label_list(&["bug", "a,b", "say \"hi\""]),
+            r#"bug,"a,b","say ""hi""""#
+        );
     }
 
     #[test]

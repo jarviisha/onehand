@@ -50,7 +50,8 @@ pub struct PtyTab {
     /// callback is `Send + Sync`, and a `Mutex` is what makes a `MasterPty`
     /// that is only `Send` usable from one.
     pty: Arc<Mutex<Box<dyn portable_pty::MasterPty + Send>>>,
-    child: Box<dyn portable_pty::Child + Send + Sync>,
+    /// Always there until [`Drop`] hands it to the thread that reaps it.
+    child: Option<Box<dyn portable_pty::Child + Send + Sync>>,
 }
 
 impl PtyTab {
@@ -65,7 +66,7 @@ impl PtyTab {
     /// The child's process id, while the platform gives one: what tells
     /// where it works now, wherever it was started.
     pub fn process_id(&self) -> Option<u32> {
-        self.child.process_id()
+        self.child.as_ref()?.process_id()
     }
 
     /// Whether the child has exited.
@@ -79,7 +80,9 @@ impl PtyTab {
     /// child that exited but was never waited on stays a zombie until the whole
     /// app ends.
     pub fn finished(&mut self) -> bool {
-        matches!(self.child.try_wait(), Ok(Some(_)))
+        self.child
+            .as_mut()
+            .is_some_and(|child| matches!(child.try_wait(), Ok(Some(_))))
     }
 
     /// Whether a command is running in the foreground, `None` when the
@@ -95,7 +98,7 @@ impl PtyTab {
             .and_then(|pid| u32::try_from(pid).ok());
         #[cfg(not(unix))]
         let foreground = None;
-        foreground_busy(self.child.process_id(), foreground)
+        foreground_busy(self.process_id(), foreground)
     }
 
     /// Re-apply a font size to this grid.
@@ -149,10 +152,18 @@ fn foreground_busy(shell: Option<u32>, foreground: Option<u32>) -> Option<bool> 
 ///
 /// `kill` then `wait`, in that order and unconditionally — `kill` on an
 /// already-dead child is a no-op, and `wait` is what actually collects it.
+///
+/// On a thread of its own: `kill` gives a child up to a fifth of a second to
+/// leave on `SIGHUP` before it sends `SIGKILL`, and a tab is dropped on the UI
+/// thread, so closing a few tabs at once froze the window that long each.
 impl Drop for PtyTab {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        if let Some(mut child) = self.child.take() {
+            std::thread::spawn(move || {
+                let _ = child.kill();
+                let _ = child.wait();
+            });
+        }
     }
 }
 
@@ -379,7 +390,7 @@ pub fn spawn_pty(
         view,
         label,
         pty: master,
-        child,
+        child: Some(child),
     })
 }
 

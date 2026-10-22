@@ -2543,3 +2543,29 @@ fn a_login_without_a_hint_names_the_agent() {
     ));
     assert_eq!(notices(&chat), ["Gemini needs you to log in"]);
 }
+
+#[test]
+fn a_call_announced_twice_is_one_card() {
+    let mut chat = Chat::default();
+    let call = |status, title: &str| {
+        AcpEvent::ToolCall(ToolCall {
+            id: "t1".into(),
+            title: title.into(),
+            description: None,
+            kind: crate::acp::ToolKind::Other,
+            status,
+            content: vec![],
+        })
+    };
+    chat.apply(call(ToolStatus::Pending, "ls"));
+    chat.apply(call(ToolStatus::Completed, "ls -la"));
+    let cards: Vec<_> = chat
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            ChatItem::Tool(t) => Some((t.call.title.as_str(), t.call.status)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(cards, [("ls -la", ToolStatus::Completed)]);
+}

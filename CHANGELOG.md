@@ -97,6 +97,24 @@ minor bump may break any of them.
   the rows it draws.
 - A closed step no longer reads its whole output on every frame; Copy on a read or a search takes
   every line, not the sixty shown; and ACP events already waiting are applied in one update.
+- Settings writes only the agent or shortcut it changed, so an entry added to `onehand.toml` by hand
+  while the app runs survives the next save.
+- A `state.toml` that will not parse is kept as `state.toml.bad` before recents start over.
+- Closing a terminal tab no longer holds the window while its shell is stopped, and an agent's
+  terminal is never hung up after its process was reaped.
+- Telegram keeps at most 20 messages waiting on a slow network; older ones are dropped and counted
+  in one message per chat.
+- An allowed chat written with spaces around its id hears announcements too.
+- Tasks read at start come before any added meanwhile, and none is listed twice.
+- Stopping a queued task is recorded in the run's history like any other stop.
+- A step the agent announces twice is one card.
+- A folded step stays folded on the right card after a resumed conversation's replay is dropped.
+- A label holding a comma, a quote or a leading dash syncs as one label.
+- A run's branch skips a name whose worktree folder is still on disk, and a branch past `-99` is an
+  error rather than a guess.
+- A file whose name is not UTF-8 gets its git badge and counts in a run's work.
+- On macOS, removing a worktree sees a shell or Neovim working in it.
+- One tool output keeps at most 1 MiB in the transcript and says how much more there was.
 
 ### Project
 

@@ -4,7 +4,7 @@ use crate::settings::{AgentCheck, AgentDraft, DraftShift, SettingsPage};
 use crate::state::Shared;
 use gpui::{App, BorrowAppContext, Context, Entity, Window, WindowAppearance};
 use gpui_component::{Theme, ThemeMode};
-use onehand_core::config::{AgentSpec, Appearance};
+use onehand_core::config::{AgentEdit, AgentSpec, Appearance};
 
 impl Shell {
     // ── Agents ──────────────────────────────────────────────────────────────
@@ -116,11 +116,9 @@ impl Shell {
     /// The rule is `settings::draft_shift`, which says why a position left
     /// uncorrected here is a form that saves over the wrong agent.
     fn delete_agent(&mut self, idx: usize, window: &mut Window, cx: &mut Context<Self>) {
-        cx.update_global::<Shared, _>(|shared, _| {
-            if idx < shared.agents.len() {
-                shared.agents.remove(idx);
-            }
-        });
+        let Some(spec) = Shared::global(cx).agents.get(idx).cloned() else {
+            return;
+        };
         match crate::settings::draft_shift(self.agent_draft.editing, idx) {
             DraftShift::Keep => {}
             // The fields go too, not just the index: left filled under a button
@@ -129,27 +127,22 @@ impl Shell {
             DraftShift::Clear => self.agent_draft.clear(window, cx),
             DraftShift::MoveTo(editing) => self.agent_draft.editing = Some(editing),
         }
-        self.persist_agents(window, cx);
+        self.persist_agents(AgentEdit::Remove(spec), window, cx);
         cx.notify();
     }
 
     /// Move an agent to the front of the list, which is what makes it the one
     /// *New session* starts.
     pub fn make_default_agent(&mut self, idx: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let moved = cx.update_global::<Shared, _>(|shared, _| {
-            if idx == 0 || idx >= shared.agents.len() {
-                return false;
-            }
-            let spec = shared.agents.remove(idx);
-            shared.agents.insert(0, spec);
-            true
-        });
-        if !moved {
+        if idx == 0 {
             return;
         }
+        let Some(spec) = Shared::global(cx).agents.get(idx).cloned() else {
+            return;
+        };
         self.agent_draft.editing =
             crate::settings::draft_after_promote(self.agent_draft.editing, idx);
-        self.persist_agents(window, cx);
+        self.persist_agents(AgentEdit::Promote(spec), window, cx);
         cx.notify();
     }
 
@@ -220,13 +213,12 @@ impl Shell {
         let Ok(spec) = self.agent_draft.to_spec(cx) else {
             return;
         };
-        let editing = self.agent_draft.editing;
-        cx.update_global::<Shared, _>(|shared, _| match editing {
-            Some(idx) if idx < shared.agents.len() => shared.agents[idx] = spec,
-            _ => shared.agents.push(spec),
-        });
+        let old = self
+            .agent_draft
+            .editing
+            .and_then(|idx| Shared::global(cx).agents.get(idx).cloned());
         self.agent_draft.clear(window, cx);
-        self.persist_agents(window, cx);
+        self.persist_agents(AgentEdit::Put { old, new: spec }, window, cx);
         cx.notify();
     }
 
@@ -238,11 +230,8 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        cx.update_global::<Shared, _>(|shared, _| {
-            let spec = AgentSpec::of(preset, &shared.agents);
-            shared.agents.push(spec);
-        });
-        self.persist_agents(window, cx);
+        let new = AgentSpec::of(preset, &Shared::global(cx).agents);
+        self.persist_agents(AgentEdit::Put { old: None, new }, window, cx);
         cx.notify();
     }
 
@@ -289,16 +278,17 @@ impl Shell {
         cx.notify();
     }
 
-    /// Write the agent list back to the file the config was loaded from,
-    /// preserving every other section.
-    fn persist_agents(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let agents = Shared::global(cx).agents.clone();
+    /// Make `edit` to the agent list on screen, then to the one in the file
+    /// the config was loaded from, preserving every other section and any
+    /// entry written there by hand since.
+    fn persist_agents(&mut self, edit: AgentEdit, window: &mut Window, cx: &mut Context<Self>) {
+        cx.update_global::<Shared, _>(|shared, _| edit.apply(&mut shared.agents));
         // Off the UI thread and in order; the form already waited on its
         // press, so a failure is said and the list stands.
         crate::saves::write_config(
             "agents",
             "Saving the agents",
-            move |cfg| cfg.agents = agents,
+            move |cfg| edit.apply(&mut cfg.agents),
             None::<crate::saves::Change<()>>,
             window,
             cx,

@@ -326,9 +326,29 @@ async fn poll_forever(
     }
 }
 
+/// How many requests may wait to be sent before the oldest are let go.
+///
+/// Sends go one at a time and each may take the whole request timeout, so on a
+/// lossy network an uncapped queue delivered cards hours after they mattered.
+const SEND_BACKLOG: usize = 20;
+
 /// Carry out what the app asks, until it stops asking.
 async fn send_forever(client: &reqwest::Client, bot: &Telegram, mut requests: ReqRx) {
-    while let Some(request) = requests.recv().await {
+    let mut queue = std::collections::VecDeque::new();
+    loop {
+        if queue.is_empty() {
+            match requests.recv().await {
+                Some(request) => queue.push_back(request),
+                None => return,
+            }
+        }
+        while let Ok(request) = requests.try_recv() {
+            queue.push_back(request);
+        }
+        shed(&mut queue, SEND_BACKLOG);
+        let Some(request) = queue.pop_front() else {
+            continue;
+        };
         let (method, body) = match request {
             RemoteRequest::Send(out) => ("sendMessage", send_body(&out)),
             RemoteRequest::Ack { press_id, text } => (
@@ -340,6 +360,32 @@ async fn send_forever(client: &reqwest::Client, bot: &Telegram, mut requests: Re
             ),
         };
         deliver(client, bot, method, &body).await;
+    }
+}
+
+/// Keep the newest `cap` requests, and in place of the messages let go say,
+/// first and once per chat, how many there were. A dropped acknowledgement
+/// goes unsaid: the press it answered has long stopped spinning.
+fn shed(queue: &mut std::collections::VecDeque<RemoteRequest>, cap: usize) {
+    if queue.len() <= cap {
+        return;
+    }
+    let mut dropped: Vec<(String, usize)> = Vec::new();
+    for request in queue.drain(..queue.len() - cap) {
+        if let RemoteRequest::Send(out) = request {
+            match dropped.iter_mut().find(|(chat, _)| *chat == out.chat) {
+                Some((_, n)) => *n += 1,
+                None => dropped.push((out.chat, 1)),
+            }
+        }
+    }
+    for (chat, n) in dropped.into_iter().rev() {
+        let what = match n {
+            1 => "1 older message was".to_string(),
+            n => format!("{n} older messages were"),
+        };
+        let text = format!("{what} not sent: the connection fell behind.");
+        queue.push_front(RemoteRequest::Send(Outbound::text(chat, text)));
     }
 }
 
@@ -622,6 +668,38 @@ impl Update {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_backlog_keeps_the_newest_and_says_what_it_let_go() {
+        let send = |chat: &str, text: &str| RemoteRequest::Send(Outbound::text(chat.into(), text));
+        let mut queue: std::collections::VecDeque<_> = [
+            send("a", "1"),
+            send("b", "2"),
+            RemoteRequest::Ack {
+                press_id: "p".into(),
+                text: None,
+            },
+            send("a", "3"),
+            send("a", "4"),
+        ]
+        .into();
+        shed(&mut queue, 1);
+        let texts: Vec<_> = queue
+            .iter()
+            .map(|request| match request {
+                RemoteRequest::Send(out) => format!("{}: {}", out.chat, out.text),
+                RemoteRequest::Ack { .. } => "ack".into(),
+            })
+            .collect();
+        assert_eq!(
+            texts,
+            [
+                "a: 2 older messages were not sent: the connection fell behind.",
+                "b: 1 older message was not sent: the connection fell behind.",
+                "a: 4",
+            ]
+        );
+    }
 
     fn parse_update(text: &str) -> Option<RemoteEvent> {
         serde_json::from_str::<Update>(text).unwrap().into_event()

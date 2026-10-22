@@ -214,6 +214,7 @@ impl Chat {
             self.history = stash;
             self.items
                 .retain(|it| matches!(it, ChatItem::Notice { .. }));
+            self.numbering = self.numbering.wrapping_add(1);
             self.touch();
         } else {
             // The agent replays what was said, never what onehand said about

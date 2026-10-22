@@ -290,8 +290,16 @@ impl Term {
     /// The library's own kill is a hangup and nothing more, which a command
     /// is free to ignore; the group is killed outright so the background
     /// children of a command that has already exited go too.
+    ///
+    /// No hangup once the waiter has reaped the child: its pid is free then,
+    /// and may already be somebody else's.
     fn stop(&mut self) {
-        let _ = self.killer.kill();
+        if !self.exit.lock().unwrap().exited {
+            let _ = self.killer.kill();
+        }
+        // ponytail: the group outlives its leader only while a member is
+        // alive, and an empty group's id is reusable, so a kill after a pid
+        // wrap-around could reach a stranger's group. Needs a pidfd to close.
         #[cfg(unix)]
         if let Some(pid) = self.pid {
             crate::process::kill_group(pid);

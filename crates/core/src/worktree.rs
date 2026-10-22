@@ -458,8 +458,7 @@ pub(crate) fn work_digest_blocking(dir: &Path) -> Result<String, String> {
     {
         // A file gone since it was listed reads as empty; the next measure
         // sees it gone from the status.
-        let contents =
-            std::fs::read(dir.join(String::from_utf8_lossy(name).as_ref())).unwrap_or_default();
+        let contents = std::fs::read(dir.join(crate::gitstat::raw_path(name))).unwrap_or_default();
         work.extend_from_slice(&crate::chat::store::fnv1a(&contents).to_le_bytes());
     }
     Ok(format!("{:016x}", crate::chat::store::fnv1a(&work)))

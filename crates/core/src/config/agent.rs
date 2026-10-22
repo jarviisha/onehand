@@ -146,6 +146,47 @@ pub fn agent_or_first<'a>(agents: &'a [AgentSpec], name: Option<&str>) -> Option
     }
 }
 
+/// One change Settings makes to the agent list.
+///
+/// **Applied to the list, never written over it.** The same edit lands on the
+/// list on screen and on the one re-read from disk at save time, each found by
+/// the whole spec rather than by position, so an entry written into the file
+/// by hand while the app runs survives the next save.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AgentEdit {
+    /// `new` in place of `old`, or added at the end when `old` is absent.
+    Put {
+        old: Option<AgentSpec>,
+        new: AgentSpec,
+    },
+    Remove(AgentSpec),
+    /// To the front, which makes it the one *New session* starts.
+    Promote(AgentSpec),
+}
+
+impl AgentEdit {
+    pub fn apply(&self, agents: &mut Vec<AgentSpec>) {
+        let at = |agents: &[AgentSpec], spec: &AgentSpec| agents.iter().position(|a| a == spec);
+        match self {
+            AgentEdit::Put { old, new } => match old.as_ref().and_then(|old| at(agents, old)) {
+                Some(idx) => agents[idx] = new.clone(),
+                None => agents.push(new.clone()),
+            },
+            AgentEdit::Remove(spec) => {
+                if let Some(idx) = at(agents, spec) {
+                    agents.remove(idx);
+                }
+            }
+            AgentEdit::Promote(spec) => {
+                if let Some(idx) = at(agents, spec) {
+                    let spec = agents.remove(idx);
+                    agents.insert(0, spec);
+                }
+            }
+        }
+    }
+}
+
 impl AgentSpec {
     /// `args` as one editable line.
     ///

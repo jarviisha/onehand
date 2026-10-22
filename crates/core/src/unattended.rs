@@ -432,8 +432,13 @@ pub fn free_branch_here_blocking(root: &Path, branch: &str) -> String {
     free_branch_blocking(root, branch, |_| Ok(false)).unwrap_or_else(|_| branch.to_string())
 }
 
-/// `branch`, or the first of `branch-2` … `branch-9` the repository at `root`
-/// does not have yet and `taken` does not say is taken elsewhere.
+/// `branch`, or the first of `branch-2` … `branch-99` the repository at
+/// `root` does not have yet, whose worktree folder is not on disk, and that
+/// `taken` does not say is taken elsewhere.
+///
+/// The folder is asked as well as the branch: a branch deleted by hand leaves
+/// its worktree folder behind, and `git worktree add` refuses a folder that is
+/// there. Past the last name it is an error, never a name nobody looked at.
 ///
 /// An issue whose label was put back after a run left work on its branch gets a
 /// branch of its own this time: the old one is still checked out in the
@@ -447,13 +452,18 @@ pub(crate) fn free_branch_blocking(
     branch: &str,
     taken: impl Fn(&str) -> Result<bool, String>,
 ) -> Result<String, String> {
-    for name in std::iter::once(branch.to_string()).chain((2..=9).map(|n| format!("{branch}-{n}")))
+    for name in std::iter::once(branch.to_string()).chain((2..=99).map(|n| format!("{branch}-{n}")))
     {
-        if !crate::worktree::branch_exists_blocking(root, &name) && !taken(&name)? {
+        if !crate::worktree::branch_exists_blocking(root, &name)
+            && !crate::worktree::worktree_dir(root, &name).exists()
+            && !taken(&name)?
+        {
             return Ok(name);
         }
     }
-    Ok(format!("{branch}-10"))
+    Err(format!(
+        "every branch from `{branch}` to `{branch}-99` is taken"
+    ))
 }
 
 /// Where every run builds, shared across runs.
