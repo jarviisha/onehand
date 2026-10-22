@@ -485,7 +485,10 @@ fn a_native_preset_runs_its_own_binary_with_its_args() {
         login: "",
         account_var: "",
         unattended_mode: None,
-        runs: Runs::Native { args: &["--acp"] },
+        runs: Runs::Native {
+            args: &["--acp"],
+            tried: "1",
+        },
     };
     let own = [("K".to_string(), "v".to_string())].into_iter();
     let launch = preset_launch(&info, Some("9.9"), Path::new("/bin/native"), own);
@@ -557,4 +560,65 @@ fn an_unknown_preset_does_not_drop_the_old_run_mode() {
         "[[agents]]\npreset = \"kimi\"\nname = \"K\"\n\n[unattended]\nmode = \"acceptEdits\"\n";
     let cfg = AppConfig::from_disk(Some(text), None).unwrap();
     assert_eq!(cfg.unattended.mode.as_deref(), Some("acceptEdits"));
+}
+
+#[test]
+fn copilot_runs_its_own_binary_in_acp_mode() {
+    let dir = bin_dir("copilot-launch", Some("copilot"));
+    let mut spec = AgentSpec::of(Preset::Copilot, &[]);
+    // A version written by hand means nothing to an agent that is its binary.
+    spec.version = Some("9".into());
+    spec.env.insert("K".into(), "v".into());
+    let launch = spec.launch(Some(dir.as_os_str())).unwrap();
+    assert_eq!(
+        launch,
+        Launch {
+            command: dir.join("copilot").display().to_string(),
+            args: vec!["--acp".into()],
+            env: vec![("K".into(), "v".into())],
+        }
+    );
+    assert_eq!(spec.adapter(), None);
+    assert!(!spec.outside_pin());
+}
+
+#[test]
+fn copilot_is_found_on_first_launch_after_the_adapters() {
+    let dir = bin_dir("copilot-first-launch", Some("claude"));
+    std::fs::write(dir.join("codex"), "").unwrap();
+    std::fs::write(dir.join("copilot"), "").unwrap();
+    let cfg = AppConfig::from_disk(None, Some(dir.as_os_str())).unwrap();
+    let presets: Vec<_> = cfg.agents.iter().map(|a| a.preset()).collect();
+    assert_eq!(
+        presets,
+        [
+            Some(Preset::ClaudeCode),
+            Some(Preset::Codex),
+            Some(Preset::Copilot)
+        ]
+    );
+    let alone = bin_dir("copilot-alone", Some("copilot"));
+    let cfg = AppConfig::from_disk(None, Some(alone.as_os_str())).unwrap();
+    let names: Vec<_> = cfg.agents.iter().map(|a| a.name.as_str()).collect();
+    assert_eq!(names, ["Copilot"]);
+}
+
+#[test]
+fn a_missing_copilot_is_said_in_words() {
+    let dir = bin_dir("copilot-missing", None);
+    let why = AgentSpec::of(Preset::Copilot, &[])
+        .launch(Some(dir.as_os_str()))
+        .unwrap_err();
+    assert!(why.contains("`copilot` is not on this machine"), "{why}");
+}
+
+#[test]
+fn copilot_logs_in_under_its_account() {
+    let mut spec = AgentSpec::of(Preset::Copilot, &[]);
+    spec.env
+        .insert("COPILOT_HOME".into(), "/home/me/.copilot-work".into());
+    assert_eq!(
+        spec.login_hint(),
+        "Copilot is not logged in. Run COPILOT_HOME=/home/me/.copilot-work copilot login in a terminal, then restart the agent"
+    );
 }

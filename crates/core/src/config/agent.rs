@@ -43,6 +43,7 @@ pub struct AgentSpec {
 pub enum Preset {
     ClaudeCode,
     Codex,
+    Copilot,
 }
 
 /// What onehand knows about one built-in agent, in one place.
@@ -73,8 +74,13 @@ pub enum Runs {
         pin: &'static str,
         binary_var: &'static str,
     },
-    /// The agent's binary itself, started with `args`.
-    Native { args: &'static [&'static str] },
+    /// The agent's binary itself, started with `args`. Nothing is pinned:
+    /// the agent updates itself, and `tried` is the version this release was
+    /// tried with.
+    Native {
+        args: &'static [&'static str],
+        tried: &'static str,
+    },
 }
 
 static CLAUDE_CODE: PresetInfo = PresetInfo {
@@ -128,14 +134,30 @@ impl From<Preset> for PresetId {
     }
 }
 
+static COPILOT: PresetInfo = PresetInfo {
+    shown_name: "Copilot",
+    binary: "copilot",
+    install: "npm install -g @github/copilot",
+    login: "copilot login",
+    account_var: "COPILOT_HOME",
+    // Its default mode asks before every step, so a run left in it parks on
+    // the first card nobody answers; autopilot allows all and runs to the end.
+    unattended_mode: Some("https://agentclientprotocol.com/protocol/session-modes#autopilot"),
+    runs: Runs::Native {
+        args: &["--acp"],
+        tried: "1.0.63",
+    },
+};
+
 impl Preset {
     /// Every built-in agent, in the order a first launch lists them.
-    pub const ALL: [Preset; 2] = [Preset::ClaudeCode, Preset::Codex];
+    pub const ALL: [Preset; 3] = [Preset::ClaudeCode, Preset::Codex, Preset::Copilot];
 
     pub fn info(self) -> &'static PresetInfo {
         match self {
             Self::ClaudeCode => &CLAUDE_CODE,
             Self::Codex => &CODEX,
+            Self::Copilot => &COPILOT,
         }
     }
 }
@@ -173,7 +195,7 @@ pub(crate) fn preset_launch(
                 env,
             }
         }
-        Runs::Native { args } => Launch {
+        Runs::Native { args, .. } => Launch {
             command: binary.display().to_string(),
             args: args.iter().map(|arg| arg.to_string()).collect(),
             env: own.collect(),
