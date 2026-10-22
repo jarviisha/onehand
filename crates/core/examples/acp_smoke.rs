@@ -1,5 +1,6 @@
 //! Headless smoke test of the ACP client against the real adapter.
-//! Run: `cargo run -p onehand-core --example acp_smoke`. Connects, sends one
+//! Run: `cargo run -p onehand-core --example acp_smoke`, or with
+//! `ACP_PRESET=codex` for a built-in agent as a session starts it. Connects, sends one
 //! prompt, prints the streamed reply, and exits on TurnEnded/Disconnected.
 //!
 //! Lives in core because that is where the client lives: it drives ACP with no
@@ -28,8 +29,27 @@ async fn main() {
         Err(_) => ("npx".into(), onehand_core::config::default_adapter_args()),
     };
 
+    // $ACP_PRESET runs a built-in agent the way a session does (`codex`,
+    // `claude-code`): its pinned adapter on the binary found on PATH.
+    let (command, args, env) = match std::env::var("ACP_PRESET") {
+        Ok(id) => {
+            let preset: onehand_core::config::Preset =
+                serde_json::from_value(serde_json::Value::String(id)).expect("a preset id");
+            let spec = onehand_core::config::AgentSpec {
+                name: preset.shown_name().into(),
+                preset: Some(preset),
+                ..Default::default()
+            };
+            let launch = spec
+                .launch(std::env::var_os("PATH").as_deref())
+                .unwrap_or_else(|why| panic!("{why}"));
+            (launch.command, launch.args, launch.env)
+        }
+        Err(_) => (command, args, Vec::new()),
+    };
+
     let cwd = std::env::current_dir().unwrap();
-    let stream = connect(command, args, cwd, None);
+    let stream = connect(command, args, env, cwd, None);
     let mut stream = std::pin::pin!(stream);
     let mut tx_keep = None;
 

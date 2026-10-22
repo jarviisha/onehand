@@ -34,6 +34,7 @@ The features that span core and app, each as built:
 - [docs/workflows.md](docs/workflows.md): workflows, the run engine and its one driver.
 - [docs/tasks.md](docs/tasks.md): the Tasks page and the task model behind it.
 - [docs/unattended.md](docs/unattended.md): unattended runs end to end.
+- [docs/agents.md](docs/agents.md): built-in and declared agents, presets and their migration.
 
 Everything else (chat pane, Workbench, rail, terminal, persistence, config) keeps its reasons in
 the comments beside its code, starting from each module's header; `crates/app/src/lib.rs` and

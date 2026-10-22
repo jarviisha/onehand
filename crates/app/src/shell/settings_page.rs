@@ -72,6 +72,16 @@ impl Shell {
         cx.notify();
     }
 
+    /// Make the form describe a built-in agent, or one written out in full.
+    pub fn set_agent_kind(
+        &mut self,
+        kind: Option<onehand_core::config::Preset>,
+        cx: &mut Context<Self>,
+    ) {
+        self.agent_draft.kind = kind;
+        cx.notify();
+    }
+
     /// Ask, then remove agent `idx`.
     pub(crate) fn confirm_delete_agent(
         &mut self,
@@ -154,7 +164,7 @@ impl Shell {
         let Some(spec) = Shared::global(cx).agents.get(idx).cloned() else {
             return;
         };
-        let (key, command) = (crate::settings::check_key(&spec), spec.command);
+        let key = crate::settings::check_key(&spec);
         // A session starts its agent in the project's root, so a relative
         // command is looked for from there: the project on screen is the one
         // the next *New session* would start in.
@@ -168,22 +178,33 @@ impl Shell {
         cx.spawn(async move |shell, cx| {
             let found = cx
                 .background_executor()
-                .spawn({
-                    let command = command.clone();
-                    async move {
-                        let path = std::env::var_os("PATH");
-                        onehand_core::config::find_command(
-                            &command,
+                .spawn(async move {
+                    let path = std::env::var_os("PATH");
+                    match spec.preset {
+                        // A built-in agent is its binary, looked for where a
+                        // start looks for it, and asked its version.
+                        Some(preset) => onehand_core::config::find_command(
+                            preset.binary(),
+                            path.as_deref(),
+                            None,
+                        )
+                        .map(|at| {
+                            let version = version_of(&at);
+                            (at, version)
+                        }),
+                        None => onehand_core::config::find_command(
+                            &spec.command,
                             path.as_deref(),
                             root.as_deref(),
                         )
+                        .map(|at| (at, None)),
                     }
                 })
                 .await;
             shell
                 .update(cx, |shell, cx| {
                     let check = match found {
-                        Some(at) => AgentCheck::Found(at),
+                        Some((at, version)) => AgentCheck::Found(at, version),
                         None => AgentCheck::Missing,
                     };
                     shell.agent_checks.insert(key, check);
@@ -196,7 +217,7 @@ impl Shell {
 
     /// Commit the form. Adds or replaces depending on `editing`.
     pub fn save_agent_draft(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(spec) = self.agent_draft.to_spec(cx) else {
+        let Ok(spec) = self.agent_draft.to_spec(cx) else {
             return;
         };
         let editing = self.agent_draft.editing;
@@ -341,4 +362,15 @@ pub(super) fn apply_appearance(choice: Appearance, window: Option<&mut Window>, 
     highlight.style.editor_gutter_background = Some(theme.tiles);
     theme.highlight_theme = std::sync::Arc::new(highlight);
     cx.refresh_windows();
+}
+
+/// The first line `<binary> --version` prints, when it prints one.
+fn version_of(binary: &std::path::Path) -> Option<String> {
+    let out = std::process::Command::new(binary)
+        .arg("--version")
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let line = text.lines().next()?.trim();
+    (!line.is_empty()).then(|| line.to_string())
 }

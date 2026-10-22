@@ -50,8 +50,8 @@ pub struct AcpRuntime {
 
 /// An adapter that is already booting for a session nobody has minted yet.
 struct Warm {
-    command: String,
-    args: Vec<String>,
+    /// The agent it runs, nameless: see [`Warm::matches`].
+    spec: AgentSpec,
     cwd: PathBuf,
     events: mpsc::Receiver<AcpEvent>,
     /// When its process was started, which is when the agent read what it
@@ -65,7 +65,15 @@ impl Warm {
     /// name: renaming an agent does not change the process, and two agents
     /// pointed at one command are interchangeable to the adapter.
     fn matches(&self, spec: &AgentSpec, cwd: &PathBuf) -> bool {
-        self.command == spec.command && self.args == spec.args && &self.cwd == cwd
+        self.spec == nameless(spec) && &self.cwd == cwd
+    }
+}
+
+/// `spec` without its name, which is everything that decides the process.
+fn nameless(spec: &AgentSpec) -> AgentSpec {
+    AgentSpec {
+        name: String::new(),
+        ..spec.clone()
     }
 }
 
@@ -110,8 +118,7 @@ impl AcpRuntime {
         }
         let events = self.start(spec, cwd.clone(), None);
         *self.warm.borrow_mut() = Some(Warm {
-            command: spec.command.clone(),
-            args: spec.args.clone(),
+            spec: nameless(spec),
             cwd,
             events,
             started: Instant::now(),
@@ -176,10 +183,19 @@ impl AcpRuntime {
         resume: Option<String>,
     ) -> mpsc::Receiver<AcpEvent> {
         let (mut tx, rx) = mpsc::channel(EVENT_BUFFER);
-        let (command, args) = (spec.command.clone(), spec.args.clone());
+        // A built-in agent whose binary is gone starts nothing and says so on
+        // the stream its session already reads, as any other failed start does.
+        let launch = spec.launch(std::env::var_os("PATH").as_deref());
 
         self.rt.spawn(async move {
-            let stream = acp::connect(command, args, cwd, resume);
+            let launch = match launch {
+                Ok(launch) => launch,
+                Err(why) => {
+                    let _ = tx.send(AcpEvent::Disconnected(why)).await;
+                    return;
+                }
+            };
+            let stream = acp::connect(launch.command, launch.args, launch.env, cwd, resume);
             futures::pin_mut!(stream);
             while let Some(event) = stream.next().await {
                 if tx.send(event).await.is_err() {

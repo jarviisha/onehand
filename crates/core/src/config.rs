@@ -16,27 +16,12 @@ use std::collections::BTreeMap;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
-/// A global agent *definition* — the menu a new session spawns from. Each
-/// `Session` holds a clone of its chosen spec.
-/// Every agent is driven over the Agent Client Protocol (ACP); the legacy
-/// terminal session kind has been removed.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AgentSpec {
-    pub name: String,
-    pub command: String,
-    #[serde(default)]
-    pub args: Vec<String>,
-}
-
-/// The agent called `name` among `agents`, or the first configured when none
-/// is named. A name nobody has is `None`, never the first: what names a gone
-/// agent is told so, rather than started on another.
-pub fn agent_or_first<'a>(agents: &'a [AgentSpec], name: Option<&str>) -> Option<&'a AgentSpec> {
-    match name {
-        Some(name) => agents.iter().find(|spec| spec.name == name),
-        None => agents.first(),
-    }
-}
+mod agent;
+pub(crate) use agent::default_agents;
+pub use agent::{
+    agent_or_first, default_adapter_args, find_command, join_args, split_args, AgentSpec, Launch,
+    Preset, DEFAULT_ACP_ADAPTER,
+};
 
 /// `mode` as a run takes it: a blank mode is none, and leaves the agent in
 /// the mode it starts in, which asks more rather than less.
@@ -44,126 +29,22 @@ pub fn mode_set(mode: &str) -> Option<String> {
     (!mode.trim().is_empty()).then(|| mode.to_string())
 }
 
-impl AgentSpec {
-    /// `args` as one editable line.
-    ///
-    /// Paired with [`split_args`]; the two must round-trip. The agent form used
-    /// to `join(" ")` on the way in and `split_whitespace()` on the way out, so
-    /// opening an agent whose argument contained a space and pressing Save --
-    /// without editing anything -- split that argument in two, permanently.
-    pub fn args_line(&self) -> String {
-        join_args(&self.args)
-    }
-}
-
-/// Render an argument list as one shell-ish line, quoting what needs it.
+/// The mode an unattended run starts in, as a run reads it when it starts:
+/// the one configured, else the one the agent runs use (`agent`, else the
+/// first) is known to need, else none (`""`), which leaves the agent in the
+/// mode it starts in.
 ///
-/// Not a general shell quoter: it exists so a round trip through the agent
-/// form is lossless, and its only contract is `split_args(join_args(a)) == a`.
-pub(crate) fn join_args(args: &[String]) -> String {
-    args.iter()
-        .map(|arg| {
-            if arg.is_empty() {
-                "\"\"".to_string()
-            } else if arg.contains([' ', '\t', '\n', '"', '\'', '\\']) {
-                let escaped = arg.replace('\\', "\\\\").replace('"', "\\\"");
-                format!("\"{escaped}\"")
-            } else {
-                arg.clone()
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-/// Where an agent's command would be found, if anywhere.
-///
-/// A command naming a path (anything with a separator in it) is checked as that
-/// path, a relative one from `cwd` -- the directory the session would start it
-/// in, which is the project's root, since checked from the app's own launch
-/// directory it would answer for a place the agent never runs. A bare name is
-/// looked for in each directory of `path`, the value of `PATH`, in order, as
-/// the shell would. `None` is what a session started with this command would
-/// fail on, which is what checking it ahead of time is for.
-///
-/// It asks whether a file is there, not whether it may be run or speaks the
-/// protocol: the permission bit is platform-specific, and the protocol can only
-/// be known by starting the program, which is the thing a check done ahead of a
-/// session must not do.
-pub fn find_command(
-    command: &str,
-    path: Option<&std::ffi::OsStr>,
-    cwd: Option<&Path>,
-) -> Option<PathBuf> {
-    let command = command.trim();
-    if command.is_empty() {
-        return None;
+/// Read at each start rather than once, because the agent is: making another
+/// agent the default must not leave runs in the mode the old one needed.
+pub fn run_mode(mode: Option<&str>, agents: &[AgentSpec], agent: Option<&str>) -> String {
+    match mode {
+        Some(mode) => mode.to_string(),
+        None => agent_or_first(agents, agent)
+            .and_then(AgentSpec::claude_or_preset)
+            .and_then(Preset::unattended_mode)
+            .unwrap_or_default()
+            .to_string(),
     }
-    if command.contains(std::path::MAIN_SEPARATOR) || command.contains('/') {
-        let candidate = match cwd {
-            Some(cwd) => cwd.join(command),
-            None => PathBuf::from(command),
-        };
-        return candidate.is_file().then_some(candidate);
-    }
-    std::env::split_paths(path?)
-        .map(|dir| dir.join(command))
-        .find(|candidate| candidate.is_file())
-}
-
-/// Parse one line of arguments back into a list.
-///
-/// Whitespace separates; `'…'` is literal; `"…"` honours `\` escapes; a bare
-/// `\` escapes the next character. An unterminated quote yields what it has
-/// rather than dropping it — a half-typed line in a form is a normal state, and
-/// silently losing the tail is worse than accepting it.
-pub fn split_args(line: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut cur = String::new();
-    let mut started = false;
-    let mut chars = line.chars().peekable();
-
-    while let Some(c) = chars.next() {
-        match c {
-            c if c.is_whitespace() => {
-                if started {
-                    out.push(std::mem::take(&mut cur));
-                    started = false;
-                }
-            }
-            '\'' => {
-                started = true;
-                for c in chars.by_ref() {
-                    if c == '\'' {
-                        break;
-                    }
-                    cur.push(c);
-                }
-            }
-            '"' => {
-                started = true;
-                while let Some(c) = chars.next() {
-                    match c {
-                        '"' => break,
-                        '\\' => cur.extend(chars.next()),
-                        c => cur.push(c),
-                    }
-                }
-            }
-            '\\' => {
-                started = true;
-                cur.extend(chars.next());
-            }
-            c => {
-                started = true;
-                cur.push(c);
-            }
-        }
-    }
-    if started {
-        out.push(cur);
-    }
-    out
 }
 
 /// `[font]` — the monospace family to prefer, if the machine has one by that
@@ -367,8 +248,10 @@ pub struct UnattendedConfig {
     /// How long a run may go before it is cancelled, in the same form.
     pub timeout: String,
     /// The ACP session mode a run starts in — the adapter's own id for it.
-    /// Empty leaves the agent in the mode it starts in.
-    pub mode: String,
+    /// Empty leaves the agent in the mode it starts in; absent takes the mode
+    /// its preset runs in unattended, if it has one (see [`run_mode`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
     /// Which configured agent runs it; the default agent when unset.
     pub agent: Option<String>,
     /// The id of the workflow an issue is worked with, unless one of its
@@ -394,7 +277,7 @@ impl Default for UnattendedConfig {
             label: "auto".to_string(),
             every: "30m".to_string(),
             timeout: "45m".to_string(),
-            mode: "acceptEdits".to_string(),
+            mode: None,
             agent: None,
             workflow: "builtin:issue".to_string(),
             workflows: BTreeMap::new(),
@@ -439,53 +322,36 @@ impl Default for AppConfig {
     }
 }
 
-/// The ACP adapter the default agent runs, pinned.
-///
-/// **Not `@latest`.** Every session in this app goes through this adapter, so
-/// `@latest` meant the same onehand binary could talk to a different protocol
-/// implementation on two consecutive days, with no way to reproduce a report.
-/// Bumping this is a commit, which is the point: the change is
-/// visible, bisectable, and revertable.
-///
-/// The pin is a *default*, not a lock — `onehand.toml` and the agent manager
-/// both override it, so anyone wanting the newest adapter can still ask for it.
-pub const DEFAULT_ACP_ADAPTER: &str = "@agentclientprotocol/claude-agent-acp@0.81.2";
-
-/// The `npx` argument list that launches [`DEFAULT_ACP_ADAPTER`].
-///
-/// **`--prefer-offline` is a latency fix, not a preference.** `npx` re-validates
-/// the package against the registry on every launch, even when the exact
-/// version asked for is already unpacked in its cache — measured here, that is
-/// six to seven seconds of network round-trips in front of an adapter that
-/// otherwise boots in three tenths of one. With the flag, npm uses what it has
-/// and only reaches for the network when the cache cannot answer, which is
-/// exactly right for a version that is pinned: a pin has no newer build to go
-/// looking for.
-///
-/// The flag is also what makes the pin worth having offline — without it, an
-/// adapter sitting in the cache still fails to start on a dead connection.
-pub fn default_adapter_args() -> Vec<String> {
-    vec![
-        "--prefer-offline".into(),
-        "-y".into(),
-        DEFAULT_ACP_ADAPTER.into(),
-    ]
-}
-
-/// Built-in default: Claude Code as an ACP agent.
-pub(crate) fn default_agents() -> Vec<AgentSpec> {
-    vec![AgentSpec {
-        name: "Claude Code".into(),
-        command: "npx".into(),
-        args: default_adapter_args(),
-    }]
-}
-
 impl AppConfig {
     /// Parse TOML text. A parse error falls back to defaults rather than
     /// failing the launch.
     pub fn parse(text: &str) -> Result<Self, toml::de::Error> {
         toml::from_str(text)
+    }
+
+    /// Bring a config read from disk up to what this build writes. Idempotent,
+    /// and run on every read, so the list in memory is the list a save writes.
+    ///
+    /// - The old Claude default, written out in full by earlier builds (alone
+    ///   or behind `env VAR=value`), becomes the preset — **only when `claude`
+    ///   is on `path`**: that entry ran the agent bundled in its adapter, and
+    ///   the preset runs the machine's, so without one it would stop working.
+    /// - A preset with no name takes its own; a name already taken gets a
+    ///   number, so every entry stays and a name finds one agent.
+    /// - The old default run mode, `acceptEdits`, written into every file, is
+    ///   dropped where runs use a preset, which knows its own; a declared
+    ///   agent keeps it.
+    pub(crate) fn settle(&mut self, path: Option<&std::ffi::OsStr>) {
+        if find_command(Preset::ClaudeCode.binary(), path, None).is_some() {
+            agent::migrate(&mut self.agents);
+        }
+        agent::name_uniquely(&mut self.agents);
+        let runs_on = agent_or_first(&self.agents, self.unattended.agent.as_deref());
+        if self.unattended.mode.as_deref() == Some("acceptEdits")
+            && runs_on.is_some_and(|agent| agent.preset.is_some())
+        {
+            self.unattended.mode = None;
+        }
     }
 
     /// Serialize back to TOML (round-trips all sections for `persist_agents`).
@@ -502,7 +368,10 @@ impl AppConfig {
         for path in [local, global.clone()] {
             if let Ok(text) = std::fs::read_to_string(&path) {
                 match Self::parse(&text) {
-                    Ok(cfg) => return (cfg, path),
+                    Ok(mut cfg) => {
+                        cfg.settle(std::env::var_os("PATH").as_deref());
+                        return (cfg, path);
+                    }
                     Err(e) => eprintln!("onehand: bad config {}: {e}", path.display()),
                 }
             }
@@ -526,6 +395,7 @@ impl AppConfig {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Self::default(),
             Err(e) => return Err(format!("{} could not be read: {e}", path.display())),
         };
+        cfg.settle(std::env::var_os("PATH").as_deref());
         edit(&mut cfg);
         cfg.save_to(path).map_err(|e| e.to_string())
     }

@@ -519,6 +519,7 @@ fn the_first_agent_stands_in_for_none_but_not_for_a_gone_name() {
         name: name.into(),
         command: name.into(),
         args: Vec::new(),
+        ..Default::default()
     };
     let agents = [spec("one"), spec("two")];
     assert_eq!(

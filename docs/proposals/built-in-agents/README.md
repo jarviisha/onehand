@@ -186,7 +186,7 @@ then, one step at a time and in this order. Publishing one writes its number her
 | Step | Spec | Built |
 |---|---|---|
 | 1 | none: small enough to be specified here | yes |
-| 2 | | |
+| 2 | none: planned in `docs/superpowers/plans/` | yes |
 | 3 | | |
 | 4 | | |
 | 5 | | |
