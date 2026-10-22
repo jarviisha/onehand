@@ -190,3 +190,22 @@ fn a_first_save_of_anything_writes_the_found_agents() {
     assert_eq!(saved.agents, found);
     std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
 }
+
+#[test]
+fn an_unknown_preset_survives_a_save_of_another_agent() {
+    let path = config_file(
+        "unknown-preset-survives",
+        "[[agents]]\npreset = \"kimi\"\nname = \"Kimi\"\nversion = \"2\"\nenv = { K = \"v\" }\n\n\
+         [[agents]]\nname = \"Mine\"\ncommand = \"x\"\n",
+    );
+    AppConfig::update_in_place(&path, |cfg| {
+        AgentEdit::Remove(cfg.agents[1].clone()).apply(&mut cfg.agents)
+    })
+    .unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    for kept in ["preset = \"kimi\"", "version = \"2\"", "K = \"v\""] {
+        assert!(text.contains(kept), "{kept} is gone from:\n{text}");
+    }
+    assert!(!text.contains("Mine"), "{text}");
+    std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+}

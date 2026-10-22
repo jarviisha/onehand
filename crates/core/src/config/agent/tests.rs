@@ -27,7 +27,7 @@ command = "gemini"
 args = ["--experimental-acp"]
 "#;
     let cfg = AppConfig::parse(text).unwrap();
-    assert_eq!(cfg.agents[0].preset, Some(Preset::ClaudeCode));
+    assert_eq!(cfg.agents[0].preset(), Some(Preset::ClaudeCode));
     assert!(cfg.agents[0].command.is_empty());
     assert_eq!(cfg.agents[1].preset, None);
     let written = cfg.to_toml().unwrap();
@@ -42,7 +42,7 @@ fn a_preset_launches_the_pinned_adapter_on_the_machines_binary() {
     let dir = bin_dir("launch-codex", Some("codex"));
     let spec = AgentSpec {
         name: "Codex".into(),
-        preset: Some(Preset::Codex),
+        preset: Some(Preset::Codex.into()),
         ..Default::default()
     };
     let launch = spec.launch(Some(dir.as_os_str())).unwrap();
@@ -68,7 +68,7 @@ fn an_entrys_env_and_version_win() {
     let dir = bin_dir("launch-env", Some("claude"));
     let spec = AgentSpec {
         name: "Claude Code (acc2)".into(),
-        preset: Some(Preset::ClaudeCode),
+        preset: Some(Preset::ClaudeCode.into()),
         version: Some("latest".into()),
         env: [
             ("CLAUDE_CONFIG_DIR".into(), "/x".into()),
@@ -104,7 +104,7 @@ fn a_missing_binary_is_said_and_nothing_is_launched() {
     let empty = bin_dir("launch-missing", None);
     let spec = AgentSpec {
         name: "Codex".into(),
-        preset: Some(Preset::Codex),
+        preset: Some(Preset::Codex.into()),
         ..Default::default()
     };
     assert_eq!(
@@ -136,7 +136,7 @@ fn the_old_default_becomes_the_preset_where_claude_is_installed() {
     let dir = bin_dir("settle-migrates", Some("claude"));
     let mut cfg = AppConfig::default();
     cfg.settle(Some(dir.as_os_str()));
-    assert_eq!(cfg.agents[0].preset, Some(Preset::ClaudeCode));
+    assert_eq!(cfg.agents[0].preset(), Some(Preset::ClaudeCode));
     assert_eq!(cfg.agents[0].name, "Claude Code");
     assert!(cfg.agents[0].command.is_empty() && cfg.agents[0].args.is_empty());
 }
@@ -167,7 +167,7 @@ fn the_env_form_keeps_values_whole() {
     }];
     cfg.settle(Some(dir.as_os_str()));
     let spec = &cfg.agents[0];
-    assert_eq!(spec.preset, Some(Preset::ClaudeCode));
+    assert_eq!(spec.preset(), Some(Preset::ClaudeCode));
     assert_eq!(spec.name, "Claude Code (acc2)");
     assert!(spec.command.is_empty() && spec.args.is_empty());
     assert_eq!(
@@ -205,7 +205,7 @@ fn duplicate_names_are_numbered_not_dropped() {
 fn a_nameless_preset_takes_its_shown_name() {
     let mut cfg = AppConfig {
         agents: vec![AgentSpec {
-            preset: Some(Preset::Codex),
+            preset: Some(Preset::Codex.into()),
             ..Default::default()
         }],
         ..Default::default()
@@ -233,12 +233,12 @@ fn the_stored_mode_is_cleared_for_a_preset_and_kept_for_a_declared_agent() {
 fn a_run_mode_comes_from_the_preset_when_none_is_set() {
     let claude = AgentSpec {
         name: "Claude Code".into(),
-        preset: Some(Preset::ClaudeCode),
+        preset: Some(Preset::ClaudeCode.into()),
         ..Default::default()
     };
     let codex = AgentSpec {
         name: "Codex".into(),
-        preset: Some(Preset::Codex),
+        preset: Some(Preset::Codex.into()),
         ..Default::default()
     };
     let both = [claude.clone(), codex.clone()];
@@ -255,12 +255,12 @@ fn a_run_mode_comes_from_the_preset_when_none_is_set() {
 fn a_run_mode_follows_the_agent_first_now() {
     let claude = AgentSpec {
         name: "Claude Code".into(),
-        preset: Some(Preset::ClaudeCode),
+        preset: Some(Preset::ClaudeCode.into()),
         ..Default::default()
     };
     let codex = AgentSpec {
         name: "Codex".into(),
-        preset: Some(Preset::Codex),
+        preset: Some(Preset::Codex.into()),
         ..Default::default()
     };
     assert_eq!(run_mode(None, &[codex.clone(), claude.clone()], None), "");
@@ -323,7 +323,7 @@ fn no_file_finds_the_installed_agents_claude_first() {
     let dir = bin_dir("first-both", Some("codex"));
     std::fs::write(dir.join("claude"), "").unwrap();
     let cfg = AppConfig::from_disk(None, Some(dir.as_os_str())).unwrap();
-    let presets: Vec<_> = cfg.agents.iter().map(|a| a.preset).collect();
+    let presets: Vec<_> = cfg.agents.iter().map(|a| a.preset()).collect();
     assert_eq!(presets, [Some(Preset::ClaudeCode), Some(Preset::Codex)]);
     assert_eq!(cfg.agents[1].name, "Codex");
 }
@@ -346,7 +346,7 @@ fn a_file_without_agents_gets_the_found_ones_and_keeps_the_rest() {
     )
     .unwrap();
     assert_eq!(cfg.agents.len(), 1);
-    assert_eq!(cfg.agents[0].preset, Some(Preset::Codex));
+    assert_eq!(cfg.agents[0].preset(), Some(Preset::Codex));
     assert_eq!(cfg.font.monospace.as_deref(), Some("Test Mono"));
 }
 
@@ -366,7 +366,7 @@ fn an_added_preset_takes_a_free_name() {
     };
     let added = AgentSpec::of(Preset::Codex, &[one("Codex"), one("Codex (2)")]);
     assert_eq!(
-        (added.name.as_str(), added.preset),
+        (added.name.as_str(), added.preset()),
         ("Codex (3)", Some(Preset::Codex))
     );
     assert_eq!(AgentSpec::of(Preset::Codex, &[]).name, "Codex");
@@ -382,7 +382,7 @@ fn what_is_on_the_machine_is_the_presets_whose_binary_is_found() {
 fn the_login_hint_names_the_entrys_account() {
     let codex = AgentSpec {
         name: "Codex".into(),
-        preset: Some(Preset::Codex),
+        preset: Some(Preset::Codex.into()),
         ..Default::default()
     };
     assert_eq!(
@@ -391,7 +391,7 @@ fn the_login_hint_names_the_entrys_account() {
     );
     let acc2 = AgentSpec {
         name: "Claude Code (acc2)".into(),
-        preset: Some(Preset::ClaudeCode),
+        preset: Some(Preset::ClaudeCode.into()),
         env: [
             ("CLAUDE_CONFIG_DIR".into(), "/x/.claude-acc2".into()),
             ("OTHER".into(), "1".into()),
@@ -430,7 +430,7 @@ fn the_old_default_left_declared_is_asked_to_log_in_in_plain_words() {
 fn an_account_with_a_space_is_quoted_in_the_login_command() {
     let spec = AgentSpec {
         name: "Claude Code (work)".into(),
-        preset: Some(Preset::ClaudeCode),
+        preset: Some(Preset::ClaudeCode.into()),
         env: [("CLAUDE_CONFIG_DIR".into(), "/home/me/My Claude".into())].into(),
         ..Default::default()
     };
@@ -474,4 +474,87 @@ fn an_agent_edit_keeps_entries_added_by_hand() {
     .apply(&mut disk);
     let names: Vec<_> = disk.iter().map(|a| a.name.as_str()).collect();
     assert_eq!(names, ["b2", "hand", "c"]);
+}
+
+#[test]
+fn a_native_preset_runs_its_own_binary_with_its_args() {
+    let info = PresetInfo {
+        shown_name: "Native",
+        binary: "native",
+        install: "",
+        login: "",
+        account_var: "",
+        unattended_mode: None,
+        runs: Runs::Native { args: &["--acp"] },
+    };
+    let own = [("K".to_string(), "v".to_string())].into_iter();
+    let launch = preset_launch(&info, Some("9.9"), Path::new("/bin/native"), own);
+    assert_eq!(
+        launch,
+        Launch {
+            command: "/bin/native".into(),
+            args: vec!["--acp".into()],
+            env: vec![("K".into(), "v".into())],
+        }
+    );
+}
+
+#[test]
+fn an_adapter_preset_launches_as_it_did() {
+    let launch = preset_launch(
+        Preset::ClaudeCode.info(),
+        None,
+        Path::new("/bin/claude"),
+        std::iter::empty(),
+    );
+    assert_eq!(
+        launch,
+        Launch {
+            command: "npx".into(),
+            args: vec![
+                "--prefer-offline".into(),
+                "-y".into(),
+                "@agentclientprotocol/claude-agent-acp@0.81.2".into(),
+            ],
+            env: vec![
+                ("npm_config_omit".into(), "optional".into()),
+                ("CLAUDE_CODE_EXECUTABLE".into(), "/bin/claude".into()),
+            ],
+        }
+    );
+}
+
+#[test]
+fn known_ids_still_read_as_known() {
+    let cfg = AppConfig::parse("[[agents]]\npreset = \"codex\"\n").unwrap();
+    assert_eq!(cfg.agents[0].preset(), Some(Preset::Codex));
+}
+
+#[test]
+fn an_unknown_preset_loads_and_refuses_to_start() {
+    let cfg = AppConfig::parse(
+        "[[agents]]\npreset = \"kimi\"\nname = \"Kimi\"\n\n[[agents]]\npreset = \"codex\"\n",
+    )
+    .unwrap();
+    assert_eq!(cfg.agents.len(), 2);
+    assert_eq!(cfg.agents[0].unknown_preset(), Some("kimi"));
+    assert_eq!(cfg.agents[0].preset(), None);
+    assert_eq!(
+        cfg.agents[0].launch(None).unwrap_err(),
+        "`kimi` is not an agent this build of onehand knows; update onehand, or remove it in Settings ▸ Agents"
+    );
+}
+
+#[test]
+fn an_unknown_preset_with_no_name_is_called_by_its_id() {
+    let cfg = AppConfig::from_disk(Some("[[agents]]\npreset = \"kimi\"\n"), None).unwrap();
+    assert_eq!(cfg.agents[0].name, "kimi");
+}
+
+#[test]
+fn an_unknown_preset_does_not_drop_the_old_run_mode() {
+    let text =
+        "[[agents]]\npreset = \"kimi\"\nname = \"K\"\n\n[unattended]\nmode = \"acceptEdits\"\n";
+    let cfg = AppConfig::from_disk(Some(text), None).unwrap();
+    assert_eq!(cfg.unattended.mode.as_deref(), Some("acceptEdits"));
 }

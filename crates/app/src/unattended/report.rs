@@ -301,7 +301,7 @@ mod tests {
     fn a_run_puts_the_build_directory_in_the_agents_environment() {
         let base = AgentSpec {
             name: "Codex".into(),
-            preset: Some(Preset::Codex),
+            preset: Some(Preset::Codex.into()),
             ..Default::default()
         };
         let run = wrapped(base.clone());

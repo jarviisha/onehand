@@ -19,7 +19,7 @@ pub struct AgentSpec {
     #[serde(default)]
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub preset: Option<Preset>,
+    pub preset: Option<PresetId>,
     /// The adapter version a preset runs instead of its pin.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
@@ -45,85 +45,139 @@ pub enum Preset {
     Codex,
 }
 
+/// What onehand knows about one built-in agent, in one place.
+#[derive(Debug, PartialEq, Eq)]
+pub struct PresetInfo {
+    pub shown_name: &'static str,
+    /// The agent's own program, looked for on `PATH`.
+    pub binary: &'static str,
+    /// The command that installs this agent, as its makers publish it.
+    pub install: &'static str,
+    /// The command that logs this agent in, run in a terminal.
+    pub(crate) login: &'static str,
+    /// The variable that points this agent at one account's directory, which
+    /// a login must be run under to log that account in.
+    pub(crate) account_var: &'static str,
+    /// The mode an unattended run starts in when the config names none.
+    pub(crate) unattended_mode: Option<&'static str>,
+    pub runs: Runs,
+}
+
+/// How a built-in agent speaks the protocol.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Runs {
+    /// Through an npm adapter, at the version this release was tried with,
+    /// pointed at the agent's binary by `binary_var`.
+    Adapter {
+        package: &'static str,
+        pin: &'static str,
+        binary_var: &'static str,
+    },
+    /// The agent's binary itself, started with `args`.
+    Native { args: &'static [&'static str] },
+}
+
+static CLAUDE_CODE: PresetInfo = PresetInfo {
+    shown_name: "Claude Code",
+    binary: "claude",
+    install: "npm install -g @anthropic-ai/claude-code",
+    login: "claude auth login",
+    account_var: "CLAUDE_CONFIG_DIR",
+    // Claude's default mode asks before every edit, so a run left in it parks
+    // on the first card nobody answers.
+    unattended_mode: Some("acceptEdits"),
+    runs: Runs::Adapter {
+        package: "@agentclientprotocol/claude-agent-acp",
+        pin: "0.81.2",
+        binary_var: "CLAUDE_CODE_EXECUTABLE",
+    },
+};
+
+static CODEX: PresetInfo = PresetInfo {
+    shown_name: "Codex",
+    binary: "codex",
+    install: "npm install -g @openai/codex",
+    login: "codex login",
+    account_var: "CODEX_HOME",
+    // Codex's default reviews its own escalations and finished a run that
+    // edited, fetched and pushed without asking once, so it needs none.
+    unattended_mode: None,
+    runs: Runs::Adapter {
+        package: "@agentclientprotocol/codex-acp",
+        pin: "2.2.2",
+        binary_var: "CODEX_PATH",
+    },
+};
+
+/// The `preset` an entry names: one this build knows, or one it does not.
+///
+/// **An id this build does not know is kept as written.** A newer build may
+/// write one, and reading it as an error lost the whole file to defaults,
+/// while reading it as a known one, or dropping it, would change what the
+/// entry starts or lose it at the next save.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum PresetId {
+    Known(Preset),
+    Unknown(String),
+}
+
+impl From<Preset> for PresetId {
+    fn from(preset: Preset) -> Self {
+        Self::Known(preset)
+    }
+}
+
 impl Preset {
     /// Every built-in agent, in the order a first launch lists them.
     pub const ALL: [Preset; 2] = [Preset::ClaudeCode, Preset::Codex];
 
-    pub fn shown_name(self) -> &'static str {
+    pub fn info(self) -> &'static PresetInfo {
         match self {
-            Self::ClaudeCode => "Claude Code",
-            Self::Codex => "Codex",
+            Self::ClaudeCode => &CLAUDE_CODE,
+            Self::Codex => &CODEX,
         }
     }
+}
 
-    /// The agent's own program, which the adapter is pointed at.
-    pub fn binary(self) -> &'static str {
-        match self {
-            Self::ClaudeCode => "claude",
-            Self::Codex => "codex",
+/// What preset `info` runs once its binary has been found at `binary`, with
+/// `own` the entry's own variables, which go last so they can override.
+///
+/// An adapter runs without the agent bundled inside it, pointed at the
+/// agent on this machine, so the agent is the person's own and as new as
+/// their terminal's; `version` replaces its pin. A native agent is its binary.
+pub(crate) fn preset_launch(
+    info: &PresetInfo,
+    version: Option<&str>,
+    binary: &Path,
+    own: impl Iterator<Item = (String, String)>,
+) -> Launch {
+    match &info.runs {
+        Runs::Adapter {
+            package,
+            pin,
+            binary_var,
+        } => {
+            let mut env = vec![
+                ("npm_config_omit".to_string(), "optional".to_string()),
+                (binary_var.to_string(), binary.display().to_string()),
+            ];
+            env.extend(own);
+            Launch {
+                command: "npx".into(),
+                args: vec![
+                    "--prefer-offline".into(),
+                    "-y".into(),
+                    format!("{package}@{}", version.unwrap_or(pin)),
+                ],
+                env,
+            }
         }
-    }
-
-    /// The adapter version this release was tried with.
-    pub fn pin(self) -> &'static str {
-        match self {
-            Self::ClaudeCode => "0.81.2",
-            Self::Codex => "2.2.2",
-        }
-    }
-
-    /// The mode an unattended run starts in when the config names none.
-    ///
-    /// Claude's default mode asks before every edit, so a run left in it parks
-    /// on the first card nobody answers. Codex's default reviews its own
-    /// escalations and finished a run that edited, fetched and pushed without
-    /// asking once, so it needs none.
-    pub(crate) fn unattended_mode(self) -> Option<&'static str> {
-        match self {
-            Self::ClaudeCode => Some("acceptEdits"),
-            Self::Codex => None,
-        }
-    }
-
-    fn package(self) -> &'static str {
-        match self {
-            Self::ClaudeCode => "@agentclientprotocol/claude-agent-acp",
-            Self::Codex => "@agentclientprotocol/codex-acp",
-        }
-    }
-
-    /// The command that installs this agent, as its makers publish it on npm,
-    /// which is already what runs every adapter.
-    pub fn install(self) -> &'static str {
-        match self {
-            Self::ClaudeCode => "npm install -g @anthropic-ai/claude-code",
-            Self::Codex => "npm install -g @openai/codex",
-        }
-    }
-
-    /// The command that logs this agent in, run in a terminal.
-    fn login(self) -> &'static str {
-        match self {
-            Self::ClaudeCode => "claude auth login",
-            Self::Codex => "codex login",
-        }
-    }
-
-    /// The variable that points this agent at one account's directory, which
-    /// a login must be run under to log that account in.
-    fn account_var(self) -> &'static str {
-        match self {
-            Self::ClaudeCode => "CLAUDE_CONFIG_DIR",
-            Self::Codex => "CODEX_HOME",
-        }
-    }
-
-    /// The variable the adapter reads its agent's path from.
-    fn binary_var(self) -> &'static str {
-        match self {
-            Self::ClaudeCode => "CLAUDE_CODE_EXECUTABLE",
-            Self::Codex => "CODEX_PATH",
-        }
+        Runs::Native { args } => Launch {
+            command: binary.display().to_string(),
+            args: args.iter().map(|arg| arg.to_string()).collect(),
+            env: own.collect(),
+        },
     }
 }
 
@@ -211,60 +265,69 @@ impl AgentSpec {
     /// either way, so it can override what a preset sets.
     pub fn launch(&self, path: Option<&std::ffi::OsStr>) -> Result<Launch, String> {
         let own = self.env.iter().map(|(k, v)| (k.clone(), home_expanded(v)));
-        let Some(preset) = self.preset else {
+        if let Some(id) = self.unknown_preset() {
+            return Err(format!(
+                "`{id}` is not an agent this build of onehand knows; update onehand, or remove it in Settings ▸ Agents"
+            ));
+        }
+        let Some(preset) = self.preset() else {
             return Ok(Launch {
                 command: self.command.clone(),
                 args: self.args.clone(),
                 env: own.collect(),
             });
         };
-        let Some(binary) = find_command(preset.binary(), path, None) else {
+        let info = preset.info();
+        let Some(binary) = find_command(info.binary, path, None) else {
             return Err(format!(
                 "`{}` is not on this machine — install it again, or remove {} in Settings ▸ Agents",
-                preset.binary(),
-                self.name
+                info.binary, self.name
             ));
         };
-        let mut env = vec![
-            ("npm_config_omit".to_string(), "optional".to_string()),
-            (
-                preset.binary_var().to_string(),
-                binary.display().to_string(),
-            ),
-        ];
-        env.extend(own);
-        Ok(Launch {
-            command: "npx".into(),
-            args: vec![
-                "--prefer-offline".into(),
-                "-y".into(),
-                self.adapter().expect("a preset has an adapter"),
-            ],
-            env,
-        })
+        Ok(preset_launch(info, self.version.as_deref(), &binary, own))
     }
 
     /// The adapter package a preset runs, at the version it runs:
     /// `@agentclientprotocol/codex-acp@2.2.2`. `None` for a declared agent.
     pub fn adapter(&self) -> Option<String> {
-        let preset = self.preset?;
-        let version = self.version.as_deref().unwrap_or(preset.pin());
-        Some(format!("{}@{version}", preset.package()))
+        match self.preset()?.info().runs {
+            Runs::Adapter { package, pin, .. } => Some(format!(
+                "{package}@{}",
+                self.version.as_deref().unwrap_or(pin)
+            )),
+            Runs::Native { .. } => None,
+        }
     }
 
     /// A bare entry for `preset`, named as it is shown, or with the first
     /// ` (n)` after that no entry in `taken` has, since a name finds one agent.
     pub fn of(preset: Preset, taken: &[AgentSpec]) -> AgentSpec {
         let free = |name: &String| taken.iter().all(|spec| &spec.name != name);
-        let shown = preset.shown_name().to_string();
+        let shown = preset.info().shown_name.to_string();
         let name = std::iter::once(shown.clone())
             .chain((2..).map(|n| format!("{shown} ({n})")))
             .find(free)
             .expect("an unbounded range finds a free number");
         AgentSpec {
             name,
-            preset: Some(preset),
+            preset: Some(preset.into()),
             ..Default::default()
+        }
+    }
+
+    /// The built-in agent this entry is, when this build knows it.
+    pub fn preset(&self) -> Option<Preset> {
+        match self.preset {
+            Some(PresetId::Known(preset)) => Some(preset),
+            Some(PresetId::Unknown(_)) | None => None,
+        }
+    }
+
+    /// The id of a preset this build does not know, when the entry names one.
+    pub fn unknown_preset(&self) -> Option<&str> {
+        match &self.preset {
+            Some(PresetId::Unknown(id)) => Some(id),
+            Some(PresetId::Known(_)) | None => None,
         }
     }
 
@@ -277,37 +340,39 @@ impl AgentSpec {
         // The preset itself, not the old default left declared: that one stays
         // declared only where the agent's binary is missing, so a command that
         // needs it is no help.
-        let Some(preset) = self.preset else {
+        let Some(preset) = self.preset() else {
             return format!("{} needs you to log in", self.name);
         };
+        let info = preset.info();
         let account = self
             .env
-            .get(preset.account_var())
+            .get(info.account_var)
             .map(|dir| {
                 let dir = shell_word(&home_expanded(dir));
-                format!("{}={dir} ", preset.account_var())
+                format!("{}={dir} ", info.account_var)
             })
             .unwrap_or_default();
         // No backticks: the line is drawn as text, where they would show.
         format!(
             "{} is not logged in. Run {account}{} in a terminal, then restart the agent",
-            self.name,
-            preset.login()
+            self.name, info.login
         )
     }
 
     /// The preset this agent is, counting the old Claude default left
     /// declared (for want of `claude` on `PATH`) as the Claude it still runs.
     pub fn claude_or_preset(&self) -> Option<Preset> {
-        self.preset
+        self.preset()
             .or_else(|| old_default_env(self).map(|_| Preset::ClaudeCode))
     }
 
     /// Whether this preset runs an adapter other than the one this release
     /// was tried with.
     pub fn outside_pin(&self) -> bool {
-        self.preset
-            .is_some_and(|preset| self.version.as_deref().is_some_and(|v| v != preset.pin()))
+        match self.preset().map(|preset| &preset.info().runs) {
+            Some(Runs::Adapter { pin, .. }) => self.version.as_deref().is_some_and(|v| v != *pin),
+            _ => false,
+        }
     }
 }
 
@@ -315,7 +380,7 @@ impl AgentSpec {
 pub fn on_machine(path: Option<&std::ffi::OsStr>) -> Vec<Preset> {
     Preset::ALL
         .into_iter()
-        .filter(|preset| find_command(preset.binary(), path, None).is_some())
+        .filter(|preset| find_command(preset.info().binary, path, None).is_some())
         .collect()
 }
 
@@ -361,7 +426,7 @@ pub(super) fn migrate(agents: &mut [AgentSpec]) {
         if let Some(env) = old_default_env(spec) {
             *spec = AgentSpec {
                 name: std::mem::take(&mut spec.name),
-                preset: Some(Preset::ClaudeCode),
+                preset: Some(Preset::ClaudeCode.into()),
                 env,
                 ..Default::default()
             };
@@ -400,8 +465,15 @@ fn old_default_env(spec: &AgentSpec) -> Option<BTreeMap<String, String>> {
 /// earlier in the list, skipping numbers some other entry already has.
 pub(super) fn name_uniquely(agents: &mut [AgentSpec]) {
     for spec in agents.iter_mut() {
-        if let (Some(preset), true) = (spec.preset, spec.name.trim().is_empty()) {
-            spec.name = preset.shown_name().to_string();
+        if !spec.name.trim().is_empty() {
+            continue;
+        }
+        // One this build does not know is called by its id, so it can still
+        // be found, and removed.
+        match &spec.preset {
+            Some(PresetId::Known(preset)) => spec.name = preset.info().shown_name.to_string(),
+            Some(PresetId::Unknown(id)) => spec.name = id.clone(),
+            None => {}
         }
     }
     let mut all: std::collections::HashSet<String> =

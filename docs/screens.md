@@ -203,7 +203,9 @@ as the rail's page rows), and beside it the sub-page, untitled (its nav row name
 its scope as a badge and a hint, its groups split by hairlines with semibold headings, not boxes.
 Every button there is secondary: Settings holds no primary. Under the Agents page's rows, each
 built-in agent installed on the machine with no entry of its own gets a line, *<agent> is on this
-machine*, with *Add* at its end; the first row carries the *Default* badge.
+machine*, with *Add* at its end; the first row carries the *Default* badge. An entry naming a preset
+this build does not know shows its `preset` line, *Not supported by this build of onehand* under it,
+and only *Delete…*.
 
 ## Persistence
 
