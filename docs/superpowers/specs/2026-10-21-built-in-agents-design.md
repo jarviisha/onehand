@@ -1,7 +1,8 @@
 # Design: Claude Code and Codex as built-in agents
 
 - Date: 2026-10-21.
-- Source: [docs/proposals/built-in-agents/](../../proposals/built-in-agents/README.md), reviewed against
+- Source: the built-in agents proposal (built in four steps and removed; `docs/agents.md` holds
+  what it became), reviewed against
   the code and re-tried against the real adapters on the same day. This document supersedes it
   where the two differ; the differences are listed under *Changes from the proposal*.
 - Contracts that still govern: [CONTEXT.md](../../../CONTEXT.md), [DESIGN.md](../../../DESIGN.md),
