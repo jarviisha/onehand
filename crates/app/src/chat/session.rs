@@ -6,7 +6,7 @@
 //! identity is window-independent because nothing about it names a window.
 
 use crate::state::Shared;
-use futures::StreamExt as _;
+use futures::{FutureExt as _, StreamExt as _};
 use gpui::{
     App, AppContext, BorrowAppContext as _, Context, Entity, EventEmitter, Subscription, Task,
 };
@@ -143,6 +143,9 @@ struct AskInput {
 /// on screen, what the empty box invites, and what has been typed into that
 /// field already.
 type AskBox = (usize, usize, String, String);
+
+/// The most ACP events one update takes, so a flood still yields to a frame.
+const EVENT_BATCH: usize = 64;
 
 pub struct ChatSession {
     pub chat: Chat,
@@ -323,31 +326,53 @@ impl ChatSession {
                 file_open: HashMap::new(),
                 _pump: cx.spawn(async move |session, cx| {
                     let mut events = events;
-                    while let Some(event) = events.next().await {
+                    while let Some(first) = events.next().await {
                         let delivered = session.update(cx, |session: &mut Self, cx| {
-                            // What the event did is the reducer's answer, not a
-                            // second match on the event here -- two copies of
-                            // "did the turn settle" is one copy too many.
-                            let outcome = session.chat.apply(event);
-                            if outcome.transcript_changed {
+                            // **Every event already waiting, in one update.** A
+                            // streamed answer is many small chunks, and a render
+                            // plan rebuilt and a frame asked for at each one cost
+                            // the UI thread most when several agents stream at
+                            // once. A batch ends after any event that tells a
+                            // subscriber more than that something was appended,
+                            // so what it reads then is as it was at that event.
+                            let mut next = Some(first);
+                            let mut changed = false;
+                            let mut taken = 0;
+                            while let Some(event) = next.take() {
+                                taken += 1;
+                                // What the event did is the reducer's answer, not
+                                // a second match on the event here -- two copies
+                                // of "did the turn settle" is one copy too many.
+                                let outcome = session.chat.apply(event);
+                                changed |= outcome.transcript_changed;
+                                cx.emit(ChatEvent::Appended);
+                                let told = outcome.turn_ended
+                                    || outcome.asked_user.is_some()
+                                    || outcome.pick_refused.is_some();
+                                if outcome.turn_ended {
+                                    cx.emit(ChatEvent::TurnEnded);
+                                }
+                                if let Some(ask) = outcome.asked_user {
+                                    cx.emit(ChatEvent::AwaitingUser(ask));
+                                }
+                                if let Some(why) = outcome.pick_refused.clone() {
+                                    cx.emit(ChatEvent::PickRefused(why));
+                                }
+                                // What the agent offers is kept for every start
+                                // that asks before it brings an agent up.
+                                if outcome.offer_changed {
+                                    let offer = session.chat.offer();
+                                    let spec = seen.clone();
+                                    cx.update_global::<Shared, _>(|s, _| s.saw_offer(spec, offer));
+                                }
+                                if !told && taken < EVENT_BATCH {
+                                    // A stream that has ended answers `None`
+                                    // again to the loop's own next wait.
+                                    next = events.next().now_or_never().flatten();
+                                }
+                            }
+                            if changed {
                                 session.sync_md(cx);
-                            }
-                            cx.emit(ChatEvent::Appended);
-                            if outcome.turn_ended {
-                                cx.emit(ChatEvent::TurnEnded);
-                            }
-                            if let Some(ask) = outcome.asked_user {
-                                cx.emit(ChatEvent::AwaitingUser(ask));
-                            }
-                            if let Some(why) = outcome.pick_refused.clone() {
-                                cx.emit(ChatEvent::PickRefused(why));
-                            }
-                            // What the agent offers is kept for every start
-                            // that asks before it brings an agent up.
-                            if outcome.offer_changed {
-                                let offer = session.chat.offer();
-                                let spec = seen.clone();
-                                cx.update_global::<Shared, _>(|s, _| s.saw_offer(spec, offer));
                             }
                             cx.notify();
                         });
