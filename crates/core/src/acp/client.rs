@@ -992,23 +992,39 @@ fn parse_elicitation(rpc_id: Value, params: &Value) -> Option<Elicitation> {
     let mut keys: Vec<&String> = props.keys().collect();
     keys.sort_by_key(|k| field_order(k));
 
-    // A `<key>_custom` property belongs to `<key>` as its "Other" box rather
-    // than standing on its own.
+    // A question's "Other" box is a property of its own that belongs to the
+    // question rather than standing beside it: Claude's adapter names it
+    // `<key>_custom`, Codex's says so in its `_meta`.
+    let other_box = |key: &str| -> Option<String> {
+        let custom = format!("{key}{CUSTOM_SUFFIX}");
+        if props.contains_key(&custom) {
+            return Some(custom);
+        }
+        props
+            .iter()
+            .find(|(_, schema)| {
+                let codex = schema.pointer("/_meta/codex");
+                codex
+                    .and_then(|c| c.get("questionId"))
+                    .and_then(Value::as_str)
+                    == Some(key)
+                    && codex.and_then(|c| c.get("role")).and_then(Value::as_str)
+                        == Some("user_note")
+            })
+            .map(|(note, _)| note.clone())
+    };
+    let boxes: Vec<String> = keys.iter().filter_map(|k| other_box(k)).collect();
     let fields = keys
         .iter()
-        .filter(|k| {
-            k.strip_suffix(CUSTOM_SUFFIX)
-                .is_none_or(|stem| !props.contains_key(stem))
-        })
+        .filter(|k| !boxes.contains(k))
         .map(|k| {
             let schema = &props[*k];
-            let custom = format!("{k}{CUSTOM_SUFFIX}");
             ElicitField {
                 key: (*k).clone(),
                 title: str_field(schema, "title"),
                 description: str_field(schema, "description"),
                 kind: parse_elicit_kind(schema),
-                custom_key: props.contains_key(&custom).then_some(custom),
+                custom_key: other_box(k),
             }
         })
         .collect::<Vec<_>>();

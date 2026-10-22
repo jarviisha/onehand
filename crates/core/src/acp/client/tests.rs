@@ -787,3 +787,51 @@ async fn another_error_is_not_read_as_login() {
     let seen = refused_start(json!({ "code": -32603, "message": "Internal error" })).await;
     assert!(!seen.iter().any(|e| matches!(e, AcpEvent::LoginRequired)));
 }
+
+/// Codex's question as it sent it on 2026-10-22: the free-text answer is a
+/// property of its own that names its question in `_meta.codex`.
+fn codex_question() -> Value {
+    json!({
+        "mode": "form",
+        "message": "Codex needs your input to continue.",
+        "requestedSchema": { "type": "object", "required": ["add_change"], "properties": {
+            "add_change": {
+                "title": "Should add() be fixed to return a + b, or should a docstring be added instead?",
+                "description": "Change",
+                "_meta": { "codex": { "isOther": true, "isSecret": false } },
+                "type": "string",
+                "oneOf": [
+                    { "const": "Fix add() (Recommended)", "title": "Fix add() (Recommended)" },
+                    { "const": "Add a docstring", "title": "Add a docstring" },
+                    { "const": "None of the above", "title": "None of the above" }
+                ]
+            },
+            "add_change_note": {
+                "type": "string",
+                "title": "Additional answer or note",
+                "_meta": { "codex": { "questionId": "add_change", "role": "user_note", "isSecret": false } }
+            }
+        }},
+    })
+}
+
+/// One question with its Other box, not a question and a second one.
+#[test]
+fn codex_note_is_its_questions_other_box() {
+    let e = parse_elicitation(json!(1), &codex_question()).unwrap();
+    assert_eq!(e.fields.len(), 1, "{:?}", e.fields);
+    assert_eq!(e.fields[0].key, "add_change");
+    assert_eq!(e.fields[0].custom_key.as_deref(), Some("add_change_note"));
+}
+
+/// A note naming a question the form does not hold is kept as a field, so
+/// nothing the agent asked goes missing.
+#[test]
+fn a_note_naming_no_question_stays_a_field() {
+    let mut params = codex_question();
+    params["requestedSchema"]["properties"]["add_change_note"]["_meta"]["codex"]["questionId"] =
+        json!("missing");
+    let e = parse_elicitation(json!(1), &params).unwrap();
+    assert_eq!(e.fields.len(), 2);
+    assert!(e.fields.iter().all(|f| f.custom_key.is_none()));
+}
