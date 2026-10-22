@@ -850,3 +850,32 @@ fn the_form_names_the_branch_the_cut_will_take() {
     );
     let _ = std::fs::remove_dir_all(&root);
 }
+
+/// **Once the label is off, the issue is taken, whether or not it was told.**
+/// The label is the whole of a run's state, so a claim whose comment failed
+/// and then gave up left an issue nothing would ever pick again, with no run
+/// and nothing on it to say why.
+#[test]
+fn a_claim_whose_comment_fails_still_holds() {
+    use crate::connector::memory::Forge;
+    use crate::issues::Snapshot;
+    static FORGE: std::sync::OnceLock<Forge> = std::sync::OnceLock::new();
+    let forge = FORGE.get_or_init(|| Forge {
+        refuse_comments: true,
+        ..Forge::with(vec![(
+            3,
+            Snapshot {
+                title: "work".into(),
+                body: String::new(),
+                open: true,
+                labels: vec!["auto".into()],
+            },
+        )])
+    });
+    let tracker = Tracker::Forge(forge);
+
+    let claimed = claim_blocking(&tracker, &std::env::temp_dir(), 3, "auto", None);
+
+    assert!(claimed.is_ok(), "{claimed:?}");
+    assert!(forge.said("3").labels.is_empty());
+}
