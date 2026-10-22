@@ -6,8 +6,9 @@
 //! Two separate tolerances keep a hand-written file working, and they are not
 //! the same mechanism. `#[serde(default)]` everywhere covers keys the file
 //! *omits*, so a partial file overrides only what it sets; a file that names
-//! no agents gets the ones found on the machine ([`AppConfig::from_disk`]). Keys the file has and this build does not are
-//! covered by serde's own default of ignoring unknown fields — nothing here
+//! no agents gets the ones found on the machine ([`AppConfig::from_disk`]).
+//! Keys the file has and this build does not are covered by serde's own
+//! default of ignoring unknown fields — nothing here
 //! opts into `deny_unknown_fields`, which is the attribute that would turn a
 //! setting left over from an older build into a refusal to load at all.
 

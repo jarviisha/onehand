@@ -542,9 +542,10 @@ pub(super) fn count_of(n: usize, noun: &str) -> String {
     }
 }
 
-/// What the pane shows while no agent is set up: the line saying so, how to
-/// install each built-in agent, and the way to the agent settings, where one
-/// installed later is offered and any other is declared.
+/// What the pane shows while no agent is set up: the line saying so, each
+/// built-in agent offered when it is on this machine and its install command
+/// when it is not, and the way to the agent settings, where any other agent
+/// is declared.
 ///
 /// **More than a hint's one line, on purpose.** Every action in the window
 /// waits on an agent, so the state names what fixes it rather than only that
@@ -553,12 +554,34 @@ pub(super) fn count_of(n: usize, noun: &str) -> String {
 fn no_agent(cx: &mut Context<ChatPane>) -> gpui::AnyElement {
     let muted = cx.theme().muted_foreground;
     let mono = cx.theme().mono_font_family.clone();
+    let on_machine = crate::state::Shared::global(cx).on_machine.clone();
+    // An agent already installed is offered rather than explained: the list can
+    // be empty with one on the machine (it was emptied, or written while
+    // nothing was installed), and telling someone to install what they have
+    // is a way out that leads back here.
     let install = onehand_core::config::Preset::ALL.map(|preset| {
-        div().font_family(mono.clone()).child(format!(
-            "{}: {}",
-            preset.shown_name(),
-            preset.install()
-        ))
+        if on_machine.contains(&preset) {
+            div()
+                .h_flex()
+                .items_center()
+                .gap_2()
+                .child(format!("{} is on this machine", preset.shown_name()))
+                .child(
+                    crate::controls::action(("no-agent-add", preset as usize))
+                        .secondary()
+                        .short()
+                        .label("Add")
+                        .on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {
+                            cx.emit(ChatPaneEvent::AddFoundAgent(preset));
+                        })),
+                )
+                .into_any_element()
+        } else {
+            div()
+                .font_family(mono.clone())
+                .child(format!("{}: {}", preset.shown_name(), preset.install()))
+                .into_any_element()
+        }
     });
     div()
         .flex_1()

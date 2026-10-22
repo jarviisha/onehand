@@ -123,8 +123,9 @@ height (its dragged height kept).
 ## Pages without a session
 
 - With no agent set up, the pane shows neither the project page nor the no-project line, but one
-  centred column in meta text: *No agent is set up*, how to install each built-in agent (its
-  command in the code face), *Then restart onehand, or add another agent in the settings*, and
+  centred column in meta text: *No agent is set up*, then per built-in agent either *<agent> is on
+  this machine* with *Add* (secondary) when it is installed, or how to install it (its command in
+  the code face), *Then restart onehand, or add another agent in the settings*, and
   *Open the agent settings* (secondary), which opens Settings on Agents.
 - A project with no session shows, from the top: a head (the project's name, its path and git line
   under it, *Run check* (spinning while a check runs) and *New session* (primary, with a caret
