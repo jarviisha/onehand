@@ -771,7 +771,7 @@ fn finish(uid: u64, session: Option<&Entity<ChatSession>>, outcome: Outcome, cx:
     let asked = session
         .filter(|_| driven.card)
         .and_then(|session| crate::unattended::card_question(session, cx));
-    crate::unattended::keep(&task, &run, driven.sent > 0, asked, cx);
+    crate::unattended::keep(&task, &run, asked, cx);
     cx.update_global::<Tasks, _>(|t, _| t.store_run(&task, run));
     super::ended(task, driven.pinned, session, cx);
     cx.defer(move |cx| {

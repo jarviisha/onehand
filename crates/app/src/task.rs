@@ -418,7 +418,7 @@ pub(crate) fn fail(id: String, why: String, kind: Failure, cx: &mut App) {
         return release(id, cx);
     };
     run.failed(why, kind);
-    crate::unattended::keep(&id, &run, false, None, cx);
+    crate::unattended::keep(&id, &run, None, cx);
     cx.update_global::<Tasks, _>(|t, _| t.store_run(&id, run));
     let_go(id, cx);
 }
@@ -476,7 +476,7 @@ pub(crate) fn stop_queued(id: &str, cx: &mut App) {
     // stay claimed with nothing after the claim.
     if let Some(mut run) = dropped {
         run.outcome = Some(onehand_core::workflow::Outcome::Stopped(Stop::ByPerson));
-        crate::unattended::keep(id, &run, false, None, cx);
+        crate::unattended::keep(id, &run, None, cx);
         crate::unattended::deliver(id.to_string(), cx);
     }
     enforce_cap(cx);
@@ -512,7 +512,7 @@ pub(crate) fn dismiss(id: &str, window: &mut Window, cx: &mut App) {
                 // once that is kept, is its end.
                 Ok(()) => {
                     if let Some(run) = cut_off {
-                        crate::unattended::keep(&id, &run, run.begun(), None, cx);
+                        crate::unattended::keep(&id, &run, None, cx);
                         crate::unattended::deliver(id, cx);
                     }
                     enforce_cap(cx);
