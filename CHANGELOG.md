@@ -79,6 +79,11 @@ minor bump may break any of them.
 - An adapter runs in a process group of its own and goes with everything it started.
 - Reading the git status takes no lock, so an agent's commit does not trip over it.
 - A folder cut at the file tree's cap is counted in its "more not shown".
+- An agent left by its adapter gets a moment to finish before what is left of the group is killed.
+- A picture goes inline only to an agent that says it reads pictures, and as a link otherwise.
+- A file read asked for a range of lines gets that range.
+- A method onehand does not serve is answered as missing, and a session the agent did not name is a
+  failed start.
 
 ### Project
 

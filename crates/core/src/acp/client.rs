@@ -244,15 +244,29 @@ fn explain(what: String, tail: &StderrTail) -> String {
     }
 }
 
-/// The adapter's process group, killed when this is dropped: with the
-/// transport, whichever way the stream ends.
+/// How long an adapter's group is given to leave on its own before what is
+/// left of it is killed.
+const ADAPTER_GRACE: Duration = Duration::from_secs(2);
+
+/// The adapter's process group, killed a grace after this is dropped: with
+/// the transport, whichever way the stream ends.
+///
+/// **Not at once.** The child itself goes on drop, but the agent under it
+/// learns the session is over from its stdin closing, and may still have its
+/// own session to write down for a resume; a group killed on the spot cut that
+/// short. What is left after the grace is what would otherwise outlive it.
 struct Group(Option<u32>);
 
 impl Drop for Group {
     fn drop(&mut self) {
         #[cfg(unix)]
         if let Some(leader) = self.0 {
-            crate::process::kill_group(leader);
+            // ponytail: a thread per ended adapter, asleep for the grace; a
+            // reaper shared by every adapter if these ever come in numbers.
+            std::thread::spawn(move || {
+                std::thread::sleep(ADAPTER_GRACE);
+                crate::process::kill_group(leader);
+            });
         }
     }
 }
@@ -451,6 +465,8 @@ async fn run(
     let mut pending: HashMap<u64, Pending> = HashMap::new();
     let mut ready = false;
     let mut session_id: Option<String> = None;
+    // Whether the agent said it reads image blocks; until it says so, it does not.
+    let mut images = false;
 
     // The terminal extension: a registry of live PTYs, a channel its reader
     // threads stream output over, and a channel async waiters use to post their
@@ -510,7 +526,8 @@ async fn run(
                 };
                 handle_message(
                     msg, stdin, &mut pending, &mut next_id, cwd, resume.as_deref(),
-                    &mut ready, &mut session_id, &req_tx, output, &mut registry, &resp_tx,
+                    &mut ready, &mut session_id, &mut images, &req_tx, output, &mut registry,
+                    &resp_tx,
                 )
                 .await?;
             }
@@ -543,7 +560,7 @@ async fn run(
                         let id = alloc(&mut next_id);
                         pending.insert(id, Pending::PromptTurn);
                         let sid = session_id.clone().unwrap_or_default();
-                        let blocks = build_prompt_blocks(&text, &attachments).await;
+                        let blocks = build_prompt_blocks(&text, &attachments, images).await;
                         let params = json!({ "sessionId": sid, "prompt": blocks });
                         write_msg(stdin, &request(id, "session/prompt", params)).await?;
                     }
@@ -607,6 +624,7 @@ async fn handle_message(
     resume: Option<&str>,
     ready: &mut bool,
     session_id: &mut Option<String>,
+    images: &mut bool,
     req_tx: &super::types::ReqTx,
     output: &mut EventTx<AcpEvent>,
     registry: &mut TerminalRegistry,
@@ -651,6 +669,12 @@ async fn handle_message(
             return handle_terminal(rest, id, &params, cwd, registry, stdin, resp_tx).await;
         }
 
+        // JSON-RPC's own answer for a method nobody serves, so an agent probing
+        // for an optional one reads an absence rather than a fault.
+        if !matches!(method, "fs/read_text_file" | "fs/write_text_file") {
+            write_msg(stdin, &method_not_found(id.clone(), method)).await?;
+            return Ok(());
+        }
         let response = match handle_reverse(method, &params, cwd).await {
             Ok(result) => response_ok(id.clone(), result),
             Err(message) => response_err(id.clone(), &message),
@@ -693,10 +717,14 @@ async fn handle_message(
                 if let Some(err) = msg.get("error") {
                     return Err(format!("initialize failed: {err}"));
                 }
-                let load_supported = msg
-                    .get("result")
-                    .and_then(|r| r.get("agentCapabilities"))
+                let capabilities = msg.get("result").and_then(|r| r.get("agentCapabilities"));
+                let load_supported = capabilities
                     .and_then(|c| c.get("loadSession"))
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                *images = capabilities
+                    .and_then(|c| c.get("promptCapabilities"))
+                    .and_then(|p| p.get("image"))
                     .and_then(Value::as_bool)
                     .unwrap_or(false);
                 let id2 = alloc(next_id);
@@ -722,14 +750,18 @@ async fn handle_message(
                     return Err(format!("Could not start a session: {}", in_words(err).0));
                 }
                 let result = msg.get("result");
-                let sid = result
+                // Every prompt names the session; one the agent did not name
+                // cannot be prompted at all, so it is a start that failed.
+                let Some(sid) = result
                     .and_then(|r| r.get("sessionId"))
                     .and_then(Value::as_str)
-                    .map(String::from);
-                *session_id = sid.clone();
-                if let Some(s) = sid {
-                    let _ = output.send(AcpEvent::SessionId(s)).await;
-                }
+                    .filter(|sid| !sid.is_empty())
+                    .map(String::from)
+                else {
+                    return Err("Could not start a session: the agent named none".into());
+                };
+                *session_id = Some(sid.clone());
+                let _ = output.send(AcpEvent::SessionId(sid)).await;
                 if let Some(modes) = result.and_then(|r| r.get("modes")) {
                     let _ = output.send(parse_modes(modes)).await;
                 }
@@ -851,10 +883,12 @@ async fn handle_reverse(method: &str, params: &Value, _cwd: &PathBuf) -> Result<
                 .get("path")
                 .and_then(Value::as_str)
                 .ok_or("missing path")?;
-            tokio::fs::read_to_string(path)
+            let content = tokio::fs::read_to_string(path)
                 .await
-                .map(|content| json!({ "content": content }))
-                .map_err(|e| e.to_string())
+                .map_err(|e| e.to_string())?;
+            let line = params.get("line").and_then(Value::as_u64);
+            let limit = params.get("limit").and_then(Value::as_u64);
+            Ok(json!({ "content": lines_of(&content, line, limit) }))
         }
         "fs/write_text_file" => {
             let path = params
@@ -870,7 +904,7 @@ async fn handle_reverse(method: &str, params: &Value, _cwd: &PathBuf) -> Result<
                 .map(|_| Value::Null)
                 .map_err(|e| e.to_string())
         }
-        other => Err(format!("unsupported method {other}")),
+        other => Err(format!("method not found: {other}")),
     }
 }
 
@@ -897,7 +931,11 @@ async fn handle_terminal(
             Some(term_id.map_or(Err("missing terminalId".into()), |t| registry.release(t)))
         }
         "wait_for_exit" => None,
-        other => Some(Err(format!("unsupported terminal/{other}"))),
+        other => {
+            let method = format!("terminal/{other}");
+            write_msg(stdin, &method_not_found(id.clone(), &method)).await?;
+            return Ok(());
+        }
     };
 
     if let Some(result) = inline {
@@ -1229,6 +1267,14 @@ fn login_required(err: &Value) -> bool {
     err.get("code").and_then(Value::as_i64) == Some(-32000)
 }
 
+fn method_not_found(id: Value, method: &str) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "error": { "code": -32601, "message": format!("method not found: {method}") }
+    })
+}
+
 fn response_err(id: Value, message: &str) -> Value {
     json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32603, "message": message } })
 }
@@ -1280,7 +1326,7 @@ fn parse_modes(modes: &Value) -> AcpEvent {
 /// whole-file-into-memory and base64 inflates it ~4/3× (plus a serialize copy),
 /// so an uncapped read of a huge file would transiently allocate several times
 /// its size. Anything larger degrades to a `resource_link`.
-async fn build_prompt_blocks(text: &str, attachments: &[Attachment]) -> Value {
+async fn build_prompt_blocks(text: &str, attachments: &[Attachment], images: bool) -> Value {
     let mut blocks = vec![json!({ "type": "text", "text": text })];
     for att in attachments {
         let name = att
@@ -1288,7 +1334,7 @@ async fn build_prompt_blocks(text: &str, attachments: &[Attachment]) -> Value {
             .file_name()
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_default();
-        if let Some(mime) = inline_image_mime(&att.path) {
+        if let Some(mime) = inline_image_mime(&att.path).filter(|_| images) {
             let size_ok = tokio::fs::metadata(&att.path)
                 .await
                 .map(|m| m.len() <= MAX_INLINE_IMAGE_BYTES)
@@ -1311,6 +1357,21 @@ async fn build_prompt_blocks(text: &str, attachments: &[Attachment]) -> Value {
         }));
     }
     Value::Array(blocks)
+}
+
+/// The part of `content` a read asked for: from `line` (counted from 1), at
+/// most `limit` lines, each kept with its own line ending.
+fn lines_of(content: &str, line: Option<u64>, limit: Option<u64>) -> String {
+    if line.is_none() && limit.is_none() {
+        return content.to_string();
+    }
+    let skip = line.unwrap_or(1).saturating_sub(1) as usize;
+    let take = limit.map_or(usize::MAX, |n| n as usize);
+    content
+        .split_inclusive('\n')
+        .skip(skip)
+        .take(take)
+        .collect()
 }
 
 /// A `file://` URI with the path percent-encoded (RFC 3986): unreserved chars
