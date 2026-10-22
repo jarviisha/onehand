@@ -2395,3 +2395,49 @@ fn every_fold_moves_the_fold_counter() {
     chat.toggle_tool_output(TranscriptItemId::Live(0), 0);
     assert_eq!(chat.folds(), before + 4);
 }
+
+fn notices(chat: &Chat) -> Vec<String> {
+    chat.items
+        .iter()
+        .filter_map(|item| match item {
+            ChatItem::Notice { text, .. } => Some(text.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// An agent that is not logged in is said so once, in the words that fix it,
+/// not again as the turn's failure.
+#[test]
+fn a_login_required_turn_is_said_once_as_the_hint() {
+    let mut chat = Chat::default();
+    chat.login_hint =
+        "Codex is not logged in. Run `codex login` in a terminal, then restart the agent".into();
+    chat.busy = true;
+    chat.apply(AcpEvent::LoginRequired);
+    chat.apply(AcpEvent::Error {
+        text: "The turn failed: Authentication required".into(),
+        detail: None,
+    });
+    assert_eq!(notices(&chat), [chat.login_hint.clone()]);
+}
+
+#[test]
+fn a_login_required_start_is_said_once_and_the_link_is_lost() {
+    let mut chat = Chat::default();
+    chat.login_hint = "hint".into();
+    chat.apply(AcpEvent::LoginRequired);
+    chat.apply(AcpEvent::Disconnected(
+        "Could not start a session: Authentication required".into(),
+    ));
+    assert_eq!(chat.link, Link::Lost);
+    assert_eq!(notices(&chat), ["hint"]);
+}
+
+/// A chat whose spec set no hint still says what happened.
+#[test]
+fn a_login_without_a_hint_names_the_agent() {
+    let mut chat = Chat::new(1, PathBuf::from("/tmp/p"), "Gemini".to_string(), None);
+    chat.apply(AcpEvent::LoginRequired);
+    assert_eq!(notices(&chat), ["Gemini needs you to log in"]);
+}

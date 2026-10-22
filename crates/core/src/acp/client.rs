@@ -695,6 +695,9 @@ async fn handle_message(
                 if let Some(err) = msg.get("error") {
                     // The whole object, code and all, for whoever reads the log.
                     eprintln!("[acp] session/new failed: {err}");
+                    if login_required(err) {
+                        let _ = output.send(AcpEvent::LoginRequired).await;
+                    }
                     return Err(format!("Could not start a session: {}", in_words(err).0));
                 }
                 let result = msg.get("result");
@@ -793,6 +796,9 @@ async fn handle_message(
                 if let Some(err) = msg.get("error") {
                     // The whole object, code and all, for whoever reads the log.
                     eprintln!("[acp] the turn failed: {err}");
+                    if login_required(err) {
+                        let _ = output.send(AcpEvent::LoginRequired).await;
+                    }
                     let (message, detail) = in_words(err);
                     let _ = output
                         .send(AcpEvent::Error {
@@ -1178,6 +1184,12 @@ fn in_words(err: &Value) -> (String, Option<String>) {
         other => serde_json::to_string_pretty(other).unwrap_or_else(|_| other.to_string()),
     });
     (message, detail)
+}
+
+/// Whether an error is ACP's `auth_required`: the agent is not logged in. One
+/// adapter answers `session/new` with it, another only the first prompt.
+fn login_required(err: &Value) -> bool {
+    err.get("code").and_then(Value::as_i64) == Some(-32000)
 }
 
 fn response_err(id: Value, message: &str) -> Value {

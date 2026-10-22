@@ -111,7 +111,9 @@ fn check(ask: &Ask, cx: &mut App) {
                     | AcpEvent::PickRefused { .. }
                     | AcpEvent::TerminalOutput { .. }
                     | AcpEvent::TerminalExit { .. }
-                    | AcpEvent::TurnEnded { .. } => {}
+                    | AcpEvent::TurnEnded { .. }
+                    // The refusal it comes ahead of ends the check, in words.
+                    | AcpEvent::LoginRequired => {}
                 }
             }
             Err("the agent closed before it came up".to_string())

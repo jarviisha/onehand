@@ -744,3 +744,46 @@ async fn the_adapter_is_started_with_its_environment() {
     let said = said.expect("the adapter dies");
     assert!(said.contains("seen-42"), "{said}");
 }
+
+/// The events a refused `session/new` with `error` produces, up to the end.
+async fn refused_start(error: Value) -> Vec<AcpEvent> {
+    let (mut agent, mut events) = client();
+    let hello = agent.heard().await;
+    agent
+        .say(json!({
+            "jsonrpc": "2.0",
+            "id": hello["id"],
+            "result": { "protocolVersion": 1, "agentCapabilities": {} }
+        }))
+        .await;
+    let new = agent.heard().await;
+    agent
+        .say(json!({ "jsonrpc": "2.0", "id": new["id"], "error": error }))
+        .await;
+    let mut seen = Vec::new();
+    while let Some(event) = events.recv().await {
+        let done = matches!(event, AcpEvent::Disconnected(_));
+        seen.push(event);
+        if done {
+            break;
+        }
+    }
+    seen
+}
+
+/// ACP's `auth_required` is a failure of its own, said ahead of the end.
+#[tokio::test]
+async fn a_login_required_answer_is_read_as_such() {
+    let seen = refused_start(json!({ "code": -32000, "message": "Authentication required" })).await;
+    let login = seen
+        .iter()
+        .position(|e| matches!(e, AcpEvent::LoginRequired))
+        .expect("read as a login");
+    assert!(login < seen.len() - 1, "ahead of the disconnect");
+}
+
+#[tokio::test]
+async fn another_error_is_not_read_as_login() {
+    let seen = refused_start(json!({ "code": -32603, "message": "Internal error" })).await;
+    assert!(!seen.iter().any(|e| matches!(e, AcpEvent::LoginRequired)));
+}

@@ -96,6 +96,12 @@ pub struct Chat {
     /// The session's root + agent name, for the persisted metadata.
     pub root: PathBuf,
     pub agent: String,
+    /// What to say when the agent answers that it is not logged in: the
+    /// entry's own words, carrying the command that logs it in.
+    pub login_hint: String,
+    /// The login hint was just said, so the failure that follows it is not
+    /// said a second time in the protocol's words.
+    login_said: bool,
     /// User-chosen conversation title. `None` keeps automatic title generation
     /// from the first prompt; persisted independently so Reset can restore it.
     pub custom_title: Option<String>,

@@ -164,6 +164,7 @@ async fn main() {
                 break;
             }
             AcpEvent::Error { text, .. } => eprintln!("== ERROR: {text} =="),
+            AcpEvent::LoginRequired => eprintln!("== LOGIN REQUIRED =="),
             AcpEvent::Disconnected(e) => {
                 eprintln!("== DISCONNECTED: {e} ==");
                 break;
