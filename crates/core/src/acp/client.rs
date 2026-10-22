@@ -465,6 +465,8 @@ async fn run(
     let mut pending: HashMap<u64, Pending> = HashMap::new();
     let mut ready = false;
     let mut session_id: Option<String> = None;
+    // Whether the agent said it reads image blocks; until it says so, it does not.
+    let mut images = false;
 
     // The terminal extension: a registry of live PTYs, a channel its reader
     // threads stream output over, and a channel async waiters use to post their
@@ -524,7 +526,8 @@ async fn run(
                 };
                 handle_message(
                     msg, stdin, &mut pending, &mut next_id, cwd, resume.as_deref(),
-                    &mut ready, &mut session_id, &req_tx, output, &mut registry, &resp_tx,
+                    &mut ready, &mut session_id, &mut images, &req_tx, output, &mut registry,
+                    &resp_tx,
                 )
                 .await?;
             }
@@ -557,7 +560,7 @@ async fn run(
                         let id = alloc(&mut next_id);
                         pending.insert(id, Pending::PromptTurn);
                         let sid = session_id.clone().unwrap_or_default();
-                        let blocks = build_prompt_blocks(&text, &attachments).await;
+                        let blocks = build_prompt_blocks(&text, &attachments, images).await;
                         let params = json!({ "sessionId": sid, "prompt": blocks });
                         write_msg(stdin, &request(id, "session/prompt", params)).await?;
                     }
@@ -621,6 +624,7 @@ async fn handle_message(
     resume: Option<&str>,
     ready: &mut bool,
     session_id: &mut Option<String>,
+    images: &mut bool,
     req_tx: &super::types::ReqTx,
     output: &mut EventTx<AcpEvent>,
     registry: &mut TerminalRegistry,
@@ -707,10 +711,14 @@ async fn handle_message(
                 if let Some(err) = msg.get("error") {
                     return Err(format!("initialize failed: {err}"));
                 }
-                let load_supported = msg
-                    .get("result")
-                    .and_then(|r| r.get("agentCapabilities"))
+                let capabilities = msg.get("result").and_then(|r| r.get("agentCapabilities"));
+                let load_supported = capabilities
                     .and_then(|c| c.get("loadSession"))
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                *images = capabilities
+                    .and_then(|c| c.get("promptCapabilities"))
+                    .and_then(|p| p.get("image"))
                     .and_then(Value::as_bool)
                     .unwrap_or(false);
                 let id2 = alloc(next_id);
@@ -1294,7 +1302,7 @@ fn parse_modes(modes: &Value) -> AcpEvent {
 /// whole-file-into-memory and base64 inflates it ~4/3× (plus a serialize copy),
 /// so an uncapped read of a huge file would transiently allocate several times
 /// its size. Anything larger degrades to a `resource_link`.
-async fn build_prompt_blocks(text: &str, attachments: &[Attachment]) -> Value {
+async fn build_prompt_blocks(text: &str, attachments: &[Attachment], images: bool) -> Value {
     let mut blocks = vec![json!({ "type": "text", "text": text })];
     for att in attachments {
         let name = att
@@ -1302,7 +1310,7 @@ async fn build_prompt_blocks(text: &str, attachments: &[Attachment]) -> Value {
             .file_name()
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_default();
-        if let Some(mime) = inline_image_mime(&att.path) {
+        if let Some(mime) = inline_image_mime(&att.path).filter(|_| images) {
             let size_ok = tokio::fs::metadata(&att.path)
                 .await
                 .map(|m| m.len() <= MAX_INLINE_IMAGE_BYTES)

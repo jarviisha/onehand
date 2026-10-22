@@ -1001,3 +1001,44 @@ async fn an_agent_left_by_its_adapter_may_finish_before_the_group_goes() {
         "the agent was killed before it could finish"
     );
 }
+
+/// **A picture goes as a picture only to an agent that said it reads them.**
+/// One that did not is sent a link to the file instead, which every agent
+/// takes; an image block it never offered to read can fail the whole turn.
+#[tokio::test]
+async fn a_picture_goes_inline_only_to_an_agent_that_reads_them() {
+    let shot = std::env::temp_dir().join(format!("onehand-shot-{}.png", std::process::id()));
+    std::fs::write(&shot, b"\x89PNG\r\n\x1a\n").unwrap();
+    for (capabilities, inline) in [
+        (json!({}), false),
+        (json!({ "promptCapabilities": { "image": true } }), true),
+    ] {
+        let (mut agent, mut events) = client();
+        let hello = agent.heard().await;
+        agent
+            .say(json!({
+                "jsonrpc": "2.0",
+                "id": hello["id"],
+                "result": { "protocolVersion": 1, "agentCapabilities": capabilities }
+            }))
+            .await;
+        let new = agent.heard().await;
+        agent
+            .say(json!({ "jsonrpc": "2.0", "id": new["id"], "result": { "sessionId": "s" } }))
+            .await;
+        let tx = connected(&mut events).await;
+        tx.send(AcpRequest::Prompt {
+            text: "look".into(),
+            attachments: vec![crate::acp::Attachment { path: shot.clone() }],
+        })
+        .unwrap();
+
+        let prompt = agent.heard().await;
+        let kind = prompt["params"]["prompt"][1]["type"].clone();
+        assert_eq!(kind == "image", inline, "{prompt:#}");
+        if !inline {
+            assert_eq!(kind, "resource_link", "{prompt:#}");
+        }
+    }
+    let _ = std::fs::remove_file(&shot);
+}
