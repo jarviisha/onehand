@@ -187,7 +187,7 @@ then, one step at a time and in this order. Publishing one writes its number her
 |---|---|---|
 | 1 | none: small enough to be specified here | yes |
 | 2 | none: planned in `docs/superpowers/plans/` | yes |
-| 3 | | |
+| 3 | none: planned in `docs/superpowers/plans/` | yes |
 | 4 | | |
 | 5 | | |
 

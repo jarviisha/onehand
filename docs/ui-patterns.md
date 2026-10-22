@@ -420,7 +420,9 @@ uses a word or recognizable mark as well as colour. A quieter state must still b
 One meta line, in sentence case, without a period: at the list's place, left-aligned, inside a
 list; centred (`hint`) when it fills the whole panel. *No <things> yet* when there have never been
 any; *No <things> match* when a search or a filter hides them all; *Nothing <state>* for a status
-box (*Nothing needs you*).
+box (*Nothing needs you*). An empty state that blocks every action in the window (no agent set up)
+may carry, under its line, what fixes it: commands in the code face and one secondary button to
+the place it is fixed, all centred in one column.
 
 ### Failing and refusing
 
