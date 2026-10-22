@@ -177,7 +177,7 @@ impl Shell {
                         // A built-in agent is its binary, looked for where a
                         // start looks for it, and asked its version.
                         Some(preset) => onehand_core::config::find_command(
-                            preset.binary(),
+                            preset.info().binary,
                             path.as_deref(),
                             None,
                         )

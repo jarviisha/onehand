@@ -36,7 +36,7 @@ async fn main() {
             let preset: onehand_core::config::Preset =
                 serde_json::from_value(serde_json::Value::String(id)).expect("a preset id");
             let spec = onehand_core::config::AgentSpec {
-                name: preset.shown_name().into(),
+                name: preset.info().shown_name.into(),
                 preset: Some(preset),
                 ..Default::default()
             };

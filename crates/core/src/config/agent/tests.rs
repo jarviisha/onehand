@@ -475,3 +475,51 @@ fn an_agent_edit_keeps_entries_added_by_hand() {
     let names: Vec<_> = disk.iter().map(|a| a.name.as_str()).collect();
     assert_eq!(names, ["b2", "hand", "c"]);
 }
+
+#[test]
+fn a_native_preset_runs_its_own_binary_with_its_args() {
+    let info = PresetInfo {
+        shown_name: "Native",
+        binary: "native",
+        install: "",
+        login: "",
+        account_var: "",
+        unattended_mode: None,
+        runs: Runs::Native { args: &["--acp"] },
+    };
+    let own = [("K".to_string(), "v".to_string())].into_iter();
+    let launch = preset_launch(&info, Some("9.9"), Path::new("/bin/native"), own);
+    assert_eq!(
+        launch,
+        Launch {
+            command: "/bin/native".into(),
+            args: vec!["--acp".into()],
+            env: vec![("K".into(), "v".into())],
+        }
+    );
+}
+
+#[test]
+fn an_adapter_preset_launches_as_it_did() {
+    let launch = preset_launch(
+        Preset::ClaudeCode.info(),
+        None,
+        Path::new("/bin/claude"),
+        std::iter::empty(),
+    );
+    assert_eq!(
+        launch,
+        Launch {
+            command: "npx".into(),
+            args: vec![
+                "--prefer-offline".into(),
+                "-y".into(),
+                "@agentclientprotocol/claude-agent-acp@0.81.2".into(),
+            ],
+            env: vec![
+                ("npm_config_omit".into(), "optional".into()),
+                ("CLAUDE_CODE_EXECUTABLE".into(), "/bin/claude".into()),
+            ],
+        }
+    );
+}

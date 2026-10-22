@@ -59,7 +59,7 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
             AgentCheck::Found(at, version) => {
                 let what = match (spec.preset, version) {
                     (Some(_), Some(version)) => version.clone(),
-                    (Some(preset), None) => preset.binary().to_string(),
+                    (Some(preset), None) => preset.info().binary.to_string(),
                     (None, _) => spec.command.clone(),
                 };
                 (format!("{what} found at {}", at.display()), muted)
@@ -269,7 +269,7 @@ pub(super) fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                 .justify_between()
                 .gap_2()
                 .text_size(crate::tokens::CHROME_TEXT)
-                .child(format!("{} is on this machine", preset.shown_name()))
+                .child(format!("{} is on this machine", preset.info().shown_name))
                 .child(
                     crate::controls::action(("add-found-agent", preset as usize))
                         .secondary()

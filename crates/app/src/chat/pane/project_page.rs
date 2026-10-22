@@ -565,7 +565,7 @@ fn no_agent(cx: &mut Context<ChatPane>) -> gpui::AnyElement {
                 .h_flex()
                 .items_center()
                 .gap_2()
-                .child(format!("{} is on this machine", preset.shown_name()))
+                .child(format!("{} is on this machine", preset.info().shown_name))
                 .child(
                     crate::controls::action(("no-agent-add", preset as usize))
                         .secondary()
@@ -579,7 +579,11 @@ fn no_agent(cx: &mut Context<ChatPane>) -> gpui::AnyElement {
         } else {
             div()
                 .font_family(mono.clone())
-                .child(format!("{}: {}", preset.shown_name(), preset.install()))
+                .child(format!(
+                    "{}: {}",
+                    preset.info().shown_name,
+                    preset.info().install
+                ))
                 .into_any_element()
         }
     });

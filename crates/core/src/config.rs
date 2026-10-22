@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 mod agent;
 pub use agent::{
     agent_or_first, default_adapter_args, find_command, join_args, on_machine, split_args,
-    AgentEdit, AgentSpec, Launch, Preset, DEFAULT_ACP_ADAPTER,
+    AgentEdit, AgentSpec, Launch, Preset, PresetInfo, Runs, DEFAULT_ACP_ADAPTER,
 };
 pub(crate) use agent::{default_agents, found_agents};
 
@@ -49,7 +49,7 @@ pub fn run_mode(mode: Option<&str>, agents: &[AgentSpec], agent: Option<&str>) -
         Some(mode) => mode.to_string(),
         None => agent_or_first(agents, agent)
             .and_then(AgentSpec::claude_or_preset)
-            .and_then(Preset::unattended_mode)
+            .and_then(|preset| preset.info().unattended_mode)
             .unwrap_or_default()
             .to_string(),
     }
@@ -262,7 +262,7 @@ impl AppConfig {
     ///   dropped where runs use a preset, which knows its own; a declared
     ///   agent keeps it.
     pub(crate) fn settle(&mut self, path: Option<&std::ffi::OsStr>) {
-        if find_command(Preset::ClaudeCode.binary(), path, None).is_some() {
+        if find_command(Preset::ClaudeCode.info().binary, path, None).is_some() {
             agent::migrate(&mut self.agents);
         }
         agent::name_uniquely(&mut self.agents);
