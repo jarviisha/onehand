@@ -5,9 +5,9 @@ Every session is an ACP agent, started from an entry in the agent list (`[[agent
 
 | | **Built-in agent** | **Declared agent** |
 |---|---|---|
-| Which | Claude Code, Codex | any other ACP agent |
+| Which | Claude Code, Codex, Copilot | any other ACP agent |
 | Written as | `preset = "<id>"`, the command left to onehand | `name`, `command`, `args`, written out |
-| Adapter version | chosen and tried by onehand | the person's |
+| Adapter or agent version | chosen and tried by onehand | the person's |
 | Promise | everything below | what the protocol gives, plus the generic guesses onehand makes |
 
 ## What built-in promises
@@ -16,6 +16,9 @@ Every session is an ACP agent, started from an entry in the agent list (`[[agent
   test (`cargo run -p onehand-core --example acp_smoke`), run by hand before a pin moves. There is
   no scheduled check: the agent is the person's own and updates without a release, so a new agent
   that breaks the pinned adapter shows up as a report, and the fix is moving the pin.
+- **An agent that speaks the protocol itself has no adapter and no pin.** Each release names the
+  agent version it was tried with; the agent updates itself, so a break shows up as a report, as
+  with an adapter.
 - **The agent is the person's own.** The adapter is installed without the agent bundled inside it
   (`npm_config_omit=optional`) and pointed at the binary on `PATH`, so a session runs the same
   agent as the person's terminal. An agent update needs no onehand release.
@@ -28,15 +31,15 @@ Every session is an ACP agent, started from an entry in the agent list (`[[agent
 
 ## Presets
 
-| | `claude-code` | `codex` |
-|---|---|---|
-| Shown name | Claude Code | Codex |
-| Runs | through an npm adapter | through an npm adapter |
-| Adapter | `@agentclientprotocol/claude-agent-acp`, pinned at 0.81.2 | `@agentclientprotocol/codex-acp`, pinned at 2.2.2 |
-| Binary | `claude` | `codex` |
-| Variable pointing the adapter at it | `CLAUDE_CODE_EXECUTABLE` | `CODEX_PATH` |
-| Unattended mode when the config names none | `acceptEdits` | its own default (*Auto review*) |
-| Effort and fast groups | `effort`, `fast` | `reasoning_effort`, `fast-mode` |
+| | `claude-code` | `codex` | `copilot` |
+|---|---|---|---|
+| Shown name | Claude Code | Codex | Copilot |
+| Runs | through an npm adapter | through an npm adapter | itself (`copilot --acp`) |
+| Adapter | `@agentclientprotocol/claude-agent-acp`, pinned at 0.81.2 | `@agentclientprotocol/codex-acp`, pinned at 2.2.2 | none; tried with Copilot 1.0.63 |
+| Binary | `claude` | `codex` | `copilot` |
+| Variable pointing the adapter at it | `CLAUDE_CODE_EXECUTABLE` | `CODEX_PATH` | none |
+| Unattended mode when the config names none | `acceptEdits` | its own default (*Auto review*) | *Autopilot* (`…/session-modes#autopilot`), which allows every tool |
+| Effort and fast groups | `effort`, `fast` | `reasoning_effort`, `fast-mode` | none |
 
 The presets live in code (`crates/core/src/config/agent.rs`). The config names one by id and never
 copies its command: every save of the agent list writes the whole list back, so a command written
@@ -85,7 +88,8 @@ with the first save. A list the person wrote, even `agents = []`, is never looke
 
 - **No agent in the list:** the agent pane says *No agent is set up*. Each built-in agent installed
   on the machine is offered there with *Add*; each one that is not shows the npm command that
-  installs it (`npm install -g @anthropic-ai/claude-code`, `npm install -g @openai/codex`). A way to
+  installs it (`npm install -g @anthropic-ai/claude-code`, `npm install -g @openai/codex`,
+  `npm install -g @github/copilot`). A way to
   Settings ▸ Agents follows. The offer is what makes a restart after installing enough even when an
   unrelated save already wrote the empty list.
 - **Installed later:** the built-in agents on the machine are looked up once at start
@@ -118,8 +122,9 @@ answers `session/new` so, Claude Code only its first prompt. The transcript says
 of the failure that follows (`AgentSpec::login_hint`):
 
 - a built-in agent: *Codex is not logged in. Run codex login in a terminal, then restart the
-  agent*. Claude Code's command is `claude auth login`. When the entry's `env` sets its account
-  variable (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`), the command carries it, so the login reaches that
+  agent*. Claude Code's command is `claude auth login`, Copilot's `copilot login`. When the
+  entry's `env` sets its account variable (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `COPILOT_HOME`), the
+  command carries it, so the login reaches that
   account: `CLAUDE_CONFIG_DIR=/home/me/.claude-work claude auth login`, the directory in single
   quotes when it holds a space or anything else a shell would read. The line is drawn as text, so
   the command carries no backticks;
@@ -146,3 +151,8 @@ declared agent sending either gets the same card.
   `CLAUDE_CONFIG_DIR`, else `~/.claude`), whichever Claude entry a session uses.
   Codex's plugins and skills (`codex plugin`, `~/.codex/skills`) are loaded by Codex itself and not
   managed in onehand.
+- **Copilot's mode ids are URLs** (`https://agentclientprotocol.com/protocol/session-modes#agent`,
+  `#plan`, `#autopilot`). The chip and its menu show each mode's name; a workflow step or
+  `unattended.mode` naming one writes the whole id.
+- **Copilot offers an *Allow All* switch** (`allow_all`) among its options, and no effort or fast
+  group.

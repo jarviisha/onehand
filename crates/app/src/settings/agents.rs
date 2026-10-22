@@ -13,9 +13,10 @@ use gpui_component::{ActiveTheme, Icon, Sizable as _, StyledExt};
 use onehand_core::config::{AgentSpec, Preset, Runs};
 
 /// What a row's code line says an agent runs: a built-in agent's adapter, or
-/// a declared agent's command line, with the variables it sets in front, as a
-/// shell would read them.
-fn runs_line(spec: &AgentSpec) -> String {
+/// its own program when it speaks the protocol itself, or a declared agent's
+/// command line, with the variables it sets in front, as a shell would read
+/// them.
+pub(super) fn runs_line(spec: &AgentSpec) -> String {
     // The entry as the file names it, which is all this build can say of it.
     if let Some(id) = spec.unknown_preset() {
         return format!("preset = \"{id}\"");
@@ -26,9 +27,19 @@ fn runs_line(spec: &AgentSpec) -> String {
         .map(|(key, value)| format!("{key}={value}"))
         .collect::<Vec<_>>();
     let env = onehand_core::config::join_args(&env);
-    match spec.adapter() {
-        Some(adapter) if env.is_empty() => format!("Built in · {adapter}"),
-        Some(adapter) => format!("Built in · {adapter} · {env}"),
+    let built_in = spec.preset().map(|preset| {
+        let info = preset.info();
+        match info.runs {
+            Runs::Adapter { .. } => spec.adapter().unwrap_or_default(),
+            Runs::Native { args, .. } => std::iter::once(info.binary)
+                .chain(args.iter().copied())
+                .collect::<Vec<_>>()
+                .join(" "),
+        }
+    });
+    match built_in {
+        Some(runs) if env.is_empty() => format!("Built in · {runs}"),
+        Some(runs) => format!("Built in · {runs} · {env}"),
         None => [env, spec.command.clone(), spec.args_line()]
             .into_iter()
             .filter(|part| !part.is_empty())
