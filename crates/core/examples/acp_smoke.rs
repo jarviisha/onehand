@@ -71,6 +71,7 @@ async fn main() {
             }
             AcpEvent::ThoughtChunk(s) => eprintln!("[think] {s}"),
             AcpEvent::UserChunk(_) => {}
+            AcpEvent::Interrupted => eprintln!("== INTERRUPTED =="),
             AcpEvent::ToolCall(tc) => {
                 eprintln!("== TOOL {:?} [{:?}] {} ==", tc.kind, tc.status, tc.title);
             }

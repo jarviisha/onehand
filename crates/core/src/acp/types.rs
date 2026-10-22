@@ -529,6 +529,9 @@ pub enum AcpEvent {
         text: String,
         detail: Option<String>,
     },
+    /// The adapter's own marker for a turn the person cut short, which it
+    /// sends in the person's voice, as a user chunk.
+    Interrupted,
     /// The agent answered that it is not logged in (ACP's `auth_required`,
     /// `-32000`), ahead of the failure that request ends in. Its own event, so
     /// the front end can say how to log in instead of the protocol's words.
