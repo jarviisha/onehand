@@ -5,9 +5,10 @@
 //!
 //! Two separate tolerances keep a hand-written file working, and they are not
 //! the same mechanism. `#[serde(default)]` everywhere covers keys the file
-//! *omits*, so a partial file overrides only what it sets and a `[font]`-only
-//! file keeps the default agents. Keys the file has and this build does not are
-//! covered by serde's own default of ignoring unknown fields — nothing here
+//! *omits*, so a partial file overrides only what it sets; a file that names
+//! no agents gets the ones found on the machine ([`AppConfig::from_disk`]).
+//! Keys the file has and this build does not are covered by serde's own
+//! default of ignoring unknown fields — nothing here
 //! opts into `deny_unknown_fields`, which is the attribute that would turn a
 //! setting left over from an older build into a refusal to load at all.
 
@@ -17,11 +18,11 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 mod agent;
-pub(crate) use agent::default_agents;
 pub use agent::{
-    agent_or_first, default_adapter_args, find_command, join_args, split_args, AgentSpec, Launch,
-    Preset, DEFAULT_ACP_ADAPTER,
+    agent_or_first, default_adapter_args, find_command, join_args, on_machine, split_args,
+    AgentSpec, Launch, Preset, DEFAULT_ACP_ADAPTER,
 };
+pub(crate) use agent::{default_agents, found_agents};
 
 /// `mode` as a run takes it: a blank mode is none, and leaves the agent in
 /// the mode it starts in, which asks more rather than less.
@@ -360,23 +361,48 @@ impl AppConfig {
     }
 
     /// Resolve config + the path it should be written back to. Search order:
-    /// `./onehand.toml`, then `<config_dir>/onehand/config.toml`, else built-in
-    /// defaults written back to the global path.
+    /// `./onehand.toml`, then `<config_dir>/onehand/config.toml`, else what a
+    /// first launch gets (the agents found on the machine), written back to the
+    /// global path at the first save.
     pub fn load_resolved() -> (Self, PathBuf) {
         let local = PathBuf::from("onehand.toml");
         let global = config_dir().join("config.toml");
+        let path_var = std::env::var_os("PATH");
         for path in [local, global.clone()] {
             if let Ok(text) = std::fs::read_to_string(&path) {
-                match Self::parse(&text) {
-                    Ok(mut cfg) => {
-                        cfg.settle(std::env::var_os("PATH").as_deref());
-                        return (cfg, path);
-                    }
+                match Self::from_disk(Some(&text), path_var.as_deref()) {
+                    Ok(cfg) => return (cfg, path),
                     Err(e) => eprintln!("onehand: bad config {}: {e}", path.display()),
                 }
             }
         }
-        (Self::default(), global)
+        let cfg = Self::from_disk(None, path_var.as_deref()).expect("no text has nothing to parse");
+        (cfg, global)
+    }
+
+    /// The config `text` holds, or a first launch's when there is none, as this
+    /// build runs it.
+    ///
+    /// **A file that names no agents is a first launch too**: it gets the
+    /// built-in agents installed on the machine, Claude Code first, rather
+    /// than a command written out for an agent that may not be there. A list
+    /// the person emptied (`agents = []`) is theirs and is kept.
+    pub(crate) fn from_disk(
+        text: Option<&str>,
+        path: Option<&std::ffi::OsStr>,
+    ) -> Result<Self, toml::de::Error> {
+        let mut cfg = match text {
+            Some(text) => Self::parse(text)?,
+            None => Self::default(),
+        };
+        let names_agents = text.is_some_and(|text| {
+            toml::from_str::<toml::Table>(text).is_ok_and(|table| table.contains_key("agents"))
+        });
+        if !names_agents {
+            cfg.agents = found_agents(path);
+        }
+        cfg.settle(path);
+        Ok(cfg)
     }
 
     /// Read the config at `path`, apply `edit`, and write it back.
@@ -388,14 +414,13 @@ impl AppConfig {
     /// Lives here rather than in the front end because the guard belongs to the
     /// file format, not to whoever is drawing the settings screen.
     pub fn update_in_place(path: &Path, edit: impl FnOnce(&mut Self)) -> Result<(), String> {
-        let mut cfg = match std::fs::read_to_string(path) {
-            Ok(text) => {
-                Self::parse(&text).map_err(|e| format!("{} won't parse: {e}", path.display()))?
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Self::default(),
+        let text = match std::fs::read_to_string(path) {
+            Ok(text) => Some(text),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
             Err(e) => return Err(format!("{} could not be read: {e}", path.display())),
         };
-        cfg.settle(std::env::var_os("PATH").as_deref());
+        let mut cfg = Self::from_disk(text.as_deref(), std::env::var_os("PATH").as_deref())
+            .map_err(|e| format!("{} won't parse: {e}", path.display()))?;
         edit(&mut cfg);
         cfg.save_to(path).map_err(|e| e.to_string())
     }

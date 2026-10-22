@@ -69,6 +69,24 @@ env = { SOME_VAR = "x" }
 - **`version`** on a preset runs that adapter version instead of the pin.
 - The first entry is the default agent everywhere (`config::agent_or_first`).
 
+## First launch
+
+When no config file is read, or the file names no `agents`, the list is the built-in agents
+installed on the machine, Claude Code first (`AppConfig::from_disk`). It is looked up while the
+config loads, a few file checks on `PATH`, so no settings save can race it, and it reaches the file
+with the first save. A list the person wrote, even `agents = []`, is never looked up again.
+
+- **No agent in the list:** the agent pane says *No agent is set up*. Each built-in agent installed
+  on the machine is offered there with *Add*; each one that is not shows the npm command that
+  installs it (`npm install -g @anthropic-ai/claude-code`, `npm install -g @openai/codex`). A way to
+  Settings ▸ Agents follows. The offer is what makes a restart after installing enough even when an
+  unrelated save already wrote the empty list.
+- **Installed later:** the built-in agents on the machine are looked up once at start
+  (`Shared::on_machine`), and Settings ▸ Agents offers each one with no entry: *Codex is on this
+  machine*, *Add*. Opening Settings looks at nothing on disk.
+- **The default:** the first row, marked *Default*, is what *New session*, a new project's first
+  session, an unattended run with no `unattended.agent` and a workflow step naming no agent use.
+
 ## Migration
 
 A config is settled every time it is read, and a save writes the settled list

@@ -317,3 +317,63 @@ fn a_leading_tilde_in_an_env_value_is_the_home_directory() {
     )));
     assert!(env.contains(&("PLAIN".into(), "a~/b".into())));
 }
+
+#[test]
+fn no_file_finds_the_installed_agents_claude_first() {
+    let dir = bin_dir("first-both", Some("codex"));
+    std::fs::write(dir.join("claude"), "").unwrap();
+    let cfg = AppConfig::from_disk(None, Some(dir.as_os_str())).unwrap();
+    let presets: Vec<_> = cfg.agents.iter().map(|a| a.preset).collect();
+    assert_eq!(presets, [Some(Preset::ClaudeCode), Some(Preset::Codex)]);
+    assert_eq!(cfg.agents[1].name, "Codex");
+}
+
+#[test]
+fn no_file_and_no_agent_installed_is_an_empty_list() {
+    let empty = bin_dir("first-none", None);
+    assert!(AppConfig::from_disk(None, Some(empty.as_os_str()))
+        .unwrap()
+        .agents
+        .is_empty());
+}
+
+#[test]
+fn a_file_without_agents_gets_the_found_ones_and_keeps_the_rest() {
+    let dir = bin_dir("first-partial", Some("codex"));
+    let cfg = AppConfig::from_disk(
+        Some("[font]\nmonospace = \"Test Mono\"\n"),
+        Some(dir.as_os_str()),
+    )
+    .unwrap();
+    assert_eq!(cfg.agents.len(), 1);
+    assert_eq!(cfg.agents[0].preset, Some(Preset::Codex));
+    assert_eq!(cfg.font.monospace.as_deref(), Some("Test Mono"));
+}
+
+#[test]
+fn an_empty_list_the_person_wrote_is_kept() {
+    let dir = bin_dir("first-kept-empty", Some("claude"));
+    let cfg = AppConfig::from_disk(Some("agents = []\n"), Some(dir.as_os_str())).unwrap();
+    assert!(cfg.agents.is_empty());
+}
+
+#[test]
+fn an_added_preset_takes_a_free_name() {
+    let one = |name: &str| AgentSpec {
+        name: name.into(),
+        command: "x".into(),
+        ..Default::default()
+    };
+    let added = AgentSpec::of(Preset::Codex, &[one("Codex"), one("Codex (2)")]);
+    assert_eq!(
+        (added.name.as_str(), added.preset),
+        ("Codex (3)", Some(Preset::Codex))
+    );
+    assert_eq!(AgentSpec::of(Preset::Codex, &[]).name, "Codex");
+}
+
+#[test]
+fn what_is_on_the_machine_is_the_presets_whose_binary_is_found() {
+    let dir = bin_dir("on-machine", Some("codex"));
+    assert_eq!(on_machine(Some(dir.as_os_str())), [Preset::Codex]);
+}

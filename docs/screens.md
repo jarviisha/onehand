@@ -122,6 +122,11 @@ height (its dragged height kept).
 
 ## Pages without a session
 
+- With no agent set up, the pane shows neither the project page nor the no-project line, but one
+  centred column in meta text: *No agent is set up*, then per built-in agent either *<agent> is on
+  this machine* with *Add* (secondary) when it is installed, or how to install it (its command in
+  the code face), *Then restart onehand, or add another agent in the settings*, and
+  *Open the agent settings* (secondary), which opens Settings on Agents.
 - A project with no session shows, from the top: a head (the project's name, its path and git line
   under it, *Run check* (spinning while a check runs) and *New session* (primary, with a caret
   picking another agent while more than one is configured) at the end); then, in one column at every width, the box *Past
@@ -196,7 +201,9 @@ height (its dragged height kept).
 Settings is a page: a nav column with Appearance, Workspace, Agents, Connections and Shortcuts (rows
 as the rail's page rows), and beside it the sub-page, untitled (its nav row names it), opening on
 its scope as a badge and a hint, its groups split by hairlines with semibold headings, not boxes.
-Every button there is secondary: Settings holds no primary.
+Every button there is secondary: Settings holds no primary. Under the Agents page's rows, each
+built-in agent installed on the machine with no entry of its own gets a line, *<agent> is on this
+machine*, with *Add* at its end; the first row carries the *Default* badge.
 
 ## Persistence
 

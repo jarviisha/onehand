@@ -186,6 +186,16 @@ impl Shell {
                     E::DeleteConversation(dir) => {
                         shell.confirm_delete_conversation(dir.clone(), window, cx)
                     }
+                    E::OpenAgentSettings => {
+                        shell.show_settings_page(crate::settings::SettingsPage::Agents, cx);
+                        shell.open_settings(window, cx);
+                    }
+                    E::AddFoundAgent(preset) => {
+                        shell.add_found_agent(*preset, window, cx);
+                        // The pane drew the no-agent state from the list it
+                        // just stopped being empty; it reads the list again.
+                        shell.chat.update(cx, |_, cx| cx.notify());
+                    }
                     E::StartSession { agent, resume } => {
                         // The uid is only wanted where the caller has to name
                         // what it just made; a click on the page has the new

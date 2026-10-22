@@ -141,6 +141,12 @@ pub enum ChatPaneEvent {
         agent: Option<SharedString>,
         resume: Option<PathBuf>,
     },
+    /// Open Settings on its Agents page — the no-agent state's way to where an
+    /// agent is set up. Settings is the shell's, as every page is.
+    OpenAgentSettings,
+    /// Add a built-in agent found on this machine — the no-agent state's offer.
+    /// The agent list is the shell's to change and to save.
+    AddFoundAgent(onehand_core::config::Preset),
     /// A conversation could not be written to disk.
     ///
     /// Announced rather than shown here because the pane has no window to show
