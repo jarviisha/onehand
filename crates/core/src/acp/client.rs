@@ -669,6 +669,12 @@ async fn handle_message(
             return handle_terminal(rest, id, &params, cwd, registry, stdin, resp_tx).await;
         }
 
+        // JSON-RPC's own answer for a method nobody serves, so an agent probing
+        // for an optional one reads an absence rather than a fault.
+        if !matches!(method, "fs/read_text_file" | "fs/write_text_file") {
+            write_msg(stdin, &method_not_found(id.clone(), method)).await?;
+            return Ok(());
+        }
         let response = match handle_reverse(method, &params, cwd).await {
             Ok(result) => response_ok(id.clone(), result),
             Err(message) => response_err(id.clone(), &message),
@@ -744,14 +750,18 @@ async fn handle_message(
                     return Err(format!("Could not start a session: {}", in_words(err).0));
                 }
                 let result = msg.get("result");
-                let sid = result
+                // Every prompt names the session; one the agent did not name
+                // cannot be prompted at all, so it is a start that failed.
+                let Some(sid) = result
                     .and_then(|r| r.get("sessionId"))
                     .and_then(Value::as_str)
-                    .map(String::from);
-                *session_id = sid.clone();
-                if let Some(s) = sid {
-                    let _ = output.send(AcpEvent::SessionId(s)).await;
-                }
+                    .filter(|sid| !sid.is_empty())
+                    .map(String::from)
+                else {
+                    return Err("Could not start a session: the agent named none".into());
+                };
+                *session_id = Some(sid.clone());
+                let _ = output.send(AcpEvent::SessionId(sid)).await;
                 if let Some(modes) = result.and_then(|r| r.get("modes")) {
                     let _ = output.send(parse_modes(modes)).await;
                 }
@@ -894,7 +904,7 @@ async fn handle_reverse(method: &str, params: &Value, _cwd: &PathBuf) -> Result<
                 .map(|_| Value::Null)
                 .map_err(|e| e.to_string())
         }
-        other => Err(format!("unsupported method {other}")),
+        other => Err(format!("method not found: {other}")),
     }
 }
 
@@ -921,7 +931,11 @@ async fn handle_terminal(
             Some(term_id.map_or(Err("missing terminalId".into()), |t| registry.release(t)))
         }
         "wait_for_exit" => None,
-        other => Some(Err(format!("unsupported terminal/{other}"))),
+        other => {
+            let method = format!("terminal/{other}");
+            write_msg(stdin, &method_not_found(id.clone(), &method)).await?;
+            return Ok(());
+        }
     };
 
     if let Some(result) = inline {
@@ -1251,6 +1265,14 @@ fn in_words(err: &Value) -> (String, Option<String>) {
 /// adapter answers `session/new` with it, another only the first prompt.
 fn login_required(err: &Value) -> bool {
     err.get("code").and_then(Value::as_i64) == Some(-32000)
+}
+
+fn method_not_found(id: Value, method: &str) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "error": { "code": -32601, "message": format!("method not found: {method}") }
+    })
 }
 
 fn response_err(id: Value, message: &str) -> Value {

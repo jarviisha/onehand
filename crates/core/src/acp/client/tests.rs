@@ -1077,3 +1077,54 @@ async fn a_read_asked_for_a_range_gets_that_range() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// **A method the client does not serve is answered as one.** JSON-RPC has a
+/// code for it; answered as an internal error instead, an agent probing for an
+/// optional method reads a fault where there is only an absence.
+#[tokio::test]
+async fn a_method_the_client_does_not_serve_is_said_to_be_missing() {
+    let (mut agent, mut events) = client();
+    agent.handshake().await;
+    let _ = connected(&mut events).await;
+    for method in ["fs/watch", "terminal/resize"] {
+        agent
+            .say(json!({ "jsonrpc": "2.0", "id": 99, "method": method, "params": {} }))
+            .await;
+        let answer = agent.heard().await;
+        assert_eq!(answer["id"], 99, "{answer:#}");
+        assert_eq!(answer["error"]["code"], -32601, "{method}: {answer:#}");
+    }
+}
+
+/// **A session the agent did not name cannot be prompted.** Every prompt
+/// carries the session's id; taken as ready without one, each went out naming
+/// the empty string and failed far from the reason.
+#[tokio::test]
+async fn a_session_started_without_a_name_is_a_failed_start() {
+    let (mut agent, mut events) = client();
+    let hello = agent.heard().await;
+    agent
+        .say(json!({
+            "jsonrpc": "2.0",
+            "id": hello["id"],
+            "result": { "protocolVersion": 1, "agentCapabilities": {} }
+        }))
+        .await;
+    let new = agent.heard().await;
+    agent
+        .say(json!({ "jsonrpc": "2.0", "id": new["id"], "result": {} }))
+        .await;
+
+    let mut connected = false;
+    let mut last = None;
+    let drained = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while let Some(event) = events.recv().await {
+            connected |= matches!(event, AcpEvent::Connected { .. });
+            last = Some(event);
+        }
+    })
+    .await;
+    assert!(!connected, "a session with no id was taken as ready");
+    assert!(drained.is_ok(), "the start never ended");
+    assert!(matches!(&last, Some(AcpEvent::Disconnected(_))), "{last:?}");
+}
