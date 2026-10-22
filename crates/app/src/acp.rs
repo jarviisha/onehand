@@ -195,7 +195,7 @@ impl AcpRuntime {
                     return;
                 }
             };
-            let stream = acp::connect(launch.command, launch.args, launch.env, cwd, resume);
+            let stream = acp::connect(launch, acp::SessionOpts { cwd, resume });
             futures::pin_mut!(stream);
             while let Some(event) = stream.next().await {
                 if tx.send(event).await.is_err() {

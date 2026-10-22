@@ -13,7 +13,7 @@ pub mod parse;
 pub mod terminal;
 pub mod types;
 
-pub use client::{base64_encode, connect};
+pub use client::{base64_encode, connect, SessionOpts};
 pub use parse::base64_decode;
 pub use types::{
     AcpEvent, AcpRequest, Attachment, ConfigChoice, ConfigOption, ElicitChoice, ElicitField,
