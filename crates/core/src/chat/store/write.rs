@@ -57,10 +57,19 @@ pub fn commit(write: &PendingWrite) -> std::io::Result<()> {
         // than halves of a line. Holding the file open would also leave a
         // writer adding into an inode a rewrite had already replaced.
         let mut file = std::fs::OpenOptions::new()
+            .read(true)
             .append(true)
             .create(true)
             .open(&items)?;
-        let mut body = write.lines.join("\n");
+        // A crash mid-write leaves the last line without its newline. Added
+        // straight onto it, this save's first line would join a fragment that
+        // never parses, and be lost with it.
+        let mut body = if ends_torn(&mut file)? {
+            "\n".to_string()
+        } else {
+            String::new()
+        };
+        body.push_str(&write.lines.join("\n"));
         body.push('\n');
         file.write_all(body.as_bytes())?;
         // Waited for before this call answers. Without it "written at the end
@@ -78,6 +87,18 @@ pub fn commit(write: &PendingWrite) -> std::io::Result<()> {
         *newest_landed = write.meta.read_at;
     }
     Ok(())
+}
+
+/// Whether `file` is non-empty and does not end in a newline.
+fn ends_torn(file: &mut std::fs::File) -> std::io::Result<bool> {
+    use std::io::{Read, Seek, SeekFrom};
+    if file.metadata()?.len() == 0 {
+        return Ok(false);
+    }
+    file.seek(SeekFrom::End(-1))?;
+    let mut last = [0u8];
+    file.read_exact(&mut last)?;
+    Ok(last[0] != b'\n')
 }
 
 /// Write `meta.json`, keeping the fields that are the file's to remember.

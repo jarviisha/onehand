@@ -326,6 +326,9 @@ pub struct PendingWrite {
     pub(crate) lines: Vec<String>,
     pub(crate) blobs: Vec<Blob>,
     pub(crate) meta: MetaWrite,
+    /// The mark this save was built from, which [`Chat::unflush`] hands back
+    /// when it does not land.
+    pub(crate) from: usize,
     /// Replace `items.jsonl` with `lines` instead of adding to it.
     ///
     /// The one whole-file write left, and it happens at most once per resume.
@@ -498,16 +501,21 @@ pub fn load(dir: &Path) -> Option<ConversationSnapshot> {
     // A line that will not parse costs one item, not the conversation. That is
     // what append-only buys at the tail: a crash mid-write truncates the last
     // line instead of leaving a document nothing can read.
+    let mut skipped = false;
     let parsed: Vec<Line> = transcript
         .lines()
         .filter(|line| !line.trim().is_empty())
-        .filter_map(|line| serde_json::from_str(line).ok())
+        .filter_map(|line| {
+            let line = serde_json::from_str(line).ok();
+            skipped |= line.is_none();
+            line
+        })
         .collect();
 
-    let complete = parsed.len() <= MAX_RESTORED_ITEMS;
+    let bounded = parsed.len() > MAX_RESTORED_ITEMS;
     let tail = parsed.len().saturating_sub(MAX_RESTORED_ITEMS);
     let mut items: Vec<ChatItem> = Vec::with_capacity(parsed.len() - tail + 1);
-    if !complete {
+    if bounded {
         items.push(ChatItem::notice(
             "Older messages in this conversation are not shown",
         ));
@@ -523,7 +531,9 @@ pub fn load(dir: &Path) -> Option<ConversationSnapshot> {
         // notice included, so nothing on screen is ever appended a second time.
         written: items.len(),
         items,
-        complete,
+        // A skipped line — a newer build's item kind, or a torn one — is still
+        // in the file, and a rewrite from what was read would delete it.
+        complete: !bounded && !skipped,
     })
 }
 
