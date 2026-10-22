@@ -83,7 +83,7 @@ pub(super) fn tool(
             ToolContent::Terminal(id) => session.read(cx).chat.terminals.get(id),
             _ => None,
         });
-    let detail = tool_detail(t, &presented, &root, live);
+    let detail = tool_detail(t, &presented, &root, live, open);
     let toggle = {
         let session = session.clone();
         move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
@@ -166,6 +166,8 @@ enum Detail {
     Lines {
         lines: Vec<SharedString>,
         hidden: usize,
+        /// Every line, for Copy: the box is bounded, what is copied is not.
+        all: String,
     },
     /// A picture the step produced.
     Image(std::sync::Arc<Vec<u8>>),
@@ -188,13 +190,7 @@ impl Detail {
                 true => command.clone(),
                 false => format!("{command}\n\n{output}"),
             }),
-            Self::Lines { lines, .. } => Some(
-                lines
-                    .iter()
-                    .map(|l| l.to_string())
-                    .collect::<Vec<_>>()
-                    .join("\n"),
-            ),
+            Self::Lines { all, .. } => Some(all.clone()),
             Self::Diffs => Some(rows.join("\n")),
             // Bytes are not text, and a clipboard image is a different feature.
             Self::Image(_) => None,
@@ -202,14 +198,25 @@ impl Detail {
     }
 }
 
+///
+/// **Read in full only while `open`.** Every card on screen asks this on every
+/// frame, closed ones only for whether there is anything to open; redacting all
+/// of a long output to answer that was the cost of each frame.
 fn tool_detail(
     t: &ToolItem,
     presented: &activity::Presentation,
     root: &Path,
     live: Option<&onehand_core::chat::TermView>,
+    open: bool,
 ) -> Option<Detail> {
     if t.call.kind == ToolKind::Execute {
         let command = onehand_core::chat::redact(t.call.title.trim());
+        if !open {
+            return (!command.is_empty()).then(|| Detail::Command {
+                command,
+                output: String::new(),
+            });
+        }
         let mut output = t
             .call
             .content
@@ -248,7 +255,7 @@ fn tool_detail(
     }
     // A read or a search says what it looked at, one line each — the paths a
     // merged row stands for, or whatever the tool printed back.
-    let all: Vec<SharedString> = t
+    let raw: Vec<&str> = t
         .call
         .content
         .iter()
@@ -257,23 +264,33 @@ fn tool_detail(
             _ => None,
         })
         .flat_map(|text| text.lines())
-        .map(|line| SharedString::from(onehand_core::chat::redact(line)))
         .collect();
+    if raw.is_empty() {
+        let subject = path_for_display(root, &presented.subject);
+        return (!subject.trim().is_empty()).then(|| Detail::Lines {
+            all: subject.clone(),
+            lines: vec![subject.into()],
+            hidden: 0,
+        });
+    }
+    if !open {
+        return Some(Detail::Lines {
+            lines: Vec::new(),
+            hidden: 0,
+            all: String::new(),
+        });
+    }
     // Bounded, and the bound is counted rather than swallowed: a list cut at
     // sixty with nothing said is a list claiming the step looked at sixty
-    // things.
-    let hidden = all.len().saturating_sub(MAX_MONO_LINES);
-    let lines: Vec<SharedString> = all.into_iter().take(MAX_MONO_LINES).collect();
-    match lines.is_empty() {
-        true => {
-            let subject = path_for_display(root, &presented.subject);
-            (!subject.trim().is_empty()).then(|| Detail::Lines {
-                lines: vec![subject.into()],
-                hidden: 0,
-            })
-        }
-        false => Some(Detail::Lines { lines, hidden }),
-    }
+    // things. Only the lines drawn are redacted for drawing.
+    let hidden = raw.len().saturating_sub(MAX_MONO_LINES);
+    let lines: Vec<SharedString> = raw
+        .iter()
+        .take(MAX_MONO_LINES)
+        .map(|line| SharedString::from(onehand_core::chat::redact(line)))
+        .collect();
+    let all = onehand_core::chat::redact(&raw.join("\n"));
+    Some(Detail::Lines { lines, hidden, all })
 }
 
 /// The well a row opens into, carrying nothing but the text and a way to copy
@@ -309,7 +326,7 @@ fn detail_frame(
                 None => well.text_color(ink).child(unrecognized),
             }
         }),
-        Detail::Lines { lines, hidden } => well
+        Detail::Lines { lines, hidden, .. } => well
             .p_3()
             .text_color(crate::theme::meta_ink(cx))
             .child(sideways(

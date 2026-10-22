@@ -453,7 +453,12 @@ impl Shell {
         cx: &mut Context<Self>,
     ) {
         self.window.workspace.select_root(root_idx);
-        self.new_session_with(agent, window, cx);
+        // The selection has moved whether or not a session could start (no
+        // agent configured): the panels follow it, or the rail names one
+        // project while every panel shows another.
+        if self.spawn_session(agent, None, window, cx).is_none() {
+            self.show_active_session(window, cx);
+        }
     }
 
     /// Drop a session at another place under its project.

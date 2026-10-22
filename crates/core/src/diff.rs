@@ -64,10 +64,12 @@ fn split(text: &str) -> Vec<&str> {
     }
 }
 
-/// Cap on the LCS table. Above this the quadratic table is both slow and
+/// Cap on the LCS table, in cells: the product of the two sides, which is what
+/// it costs in memory and time, on the UI thread at every update of the step.
+/// A million cells is about 4 MB. Above it the quadratic table is both slow and
 /// pointless — the render budget is a couple of hundred lines either way — so
-/// the whole-file fallback stands in, exactly as before.
-const MAX_LCS_LINES: usize = 3000;
+/// the whole-block fallback stands in.
+const MAX_LCS_CELLS: usize = 1_000_000;
 
 /// The edit script: `Context` / `Removed` / `Added`, no elision yet.
 fn script<'a>(a: &[&'a str], b: &[&'a str]) -> Vec<Line<'a>> {
@@ -90,7 +92,7 @@ fn script<'a>(a: &[&'a str], b: &[&'a str]) -> Vec<Line<'a>> {
 
     let mut out: Vec<Line<'a>> = a[..head].iter().copied().map(Line::Context).collect();
 
-    if mid_a.len().max(mid_b.len()) > MAX_LCS_LINES {
+    if mid_a.len().saturating_mul(mid_b.len()) > MAX_LCS_CELLS {
         // Too big to diff properly: fall back to replace-the-block. Still far
         // better than before, because the untouched head and tail stay context.
         out.extend(mid_a.iter().copied().map(Line::Removed));
@@ -186,6 +188,35 @@ fn with_context(script: &[Line<'_>]) -> Vec<Row> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **The table is bounded by its size, not by the length of one side.**
+    /// Three thousand lines a side was nine million cells, built on the UI
+    /// thread at every update of the step; past the bound the changed block is
+    /// shown replaced, as it always was past the old one.
+    #[test]
+    fn a_middle_past_the_table_bound_is_shown_replaced() {
+        let old: String = (0..1100).map(|i| format!("line {i}\n")).collect();
+        // Every other line changed: an exact diff keeps half as context.
+        let new: String = (0..1100)
+            .map(|i| match i % 2 {
+                0 => format!("line {i}\n"),
+                _ => format!("edited {i}\n"),
+            })
+            .collect();
+        let rows = rows(&old, &new);
+        // The first line is the same on both sides and stays context; after
+        // it, the middle is one block replaced, with no context kept inside.
+        let first_removed = rows
+            .iter()
+            .position(|r| matches!(r, Row::Removed(_)))
+            .unwrap();
+        assert!(
+            rows[first_removed..]
+                .iter()
+                .all(|r| !matches!(r, Row::Context(_))),
+            "the middle was diffed line by line"
+        );
+    }
 
     #[test]
     fn a_one_line_change_in_a_long_file_shows_the_change() {

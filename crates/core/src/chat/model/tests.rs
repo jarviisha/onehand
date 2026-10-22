@@ -423,6 +423,37 @@ fn a_card_holds_the_hunks_its_edit_produced() {
     );
 }
 
+/// **A card's counts are its rows'.** Worked out by a second diff with a
+/// bound of its own, the +N/−M in the header could disagree with the rows
+/// drawn under it.
+#[test]
+fn a_cards_counts_are_the_rows_it_draws() {
+    let old: String = (0..600).map(|i| format!("x{i}\n")).collect();
+    let new: String = (0..600).rev().map(|i| format!("x{i}\n")).collect();
+    let tool = ToolItem::new(ToolCall {
+        id: "e".into(),
+        title: "Edit".into(),
+        description: None,
+        kind: crate::acp::ToolKind::Edit,
+        status: ToolStatus::Completed,
+        content: vec![ToolContent::Diff {
+            path: "f".into(),
+            old: Some(old),
+            new,
+        }],
+    });
+    let rows = &tool.diff_rows[&0];
+    let added = rows
+        .iter()
+        .filter(|r| matches!(r, crate::diff::Row::Added(_)))
+        .count();
+    let removed = rows
+        .iter()
+        .filter(|r| matches!(r, crate::diff::Row::Removed(_)))
+        .count();
+    assert_eq!(tool.diff_summary, vec![("f".to_string(), added, removed)]);
+}
+
 #[test]
 fn line_change_counts_reports_actual_edits() {
     assert_eq!(line_change_counts(Some("a\nb\nc\n"), "a\nx\nc\n"), (1, 1));

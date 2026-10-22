@@ -114,5 +114,25 @@ pub(super) fn terminal_press(
     }
 }
 
+/// The panel a panel command means when no panel holds the caret: the one
+/// last aimed at, `terminal_open` and `workbench_open` saying whether theirs
+/// are on screen.
+///
+/// One that is not on screen is not meant: closing the terminal remembers it
+/// as the last aimed at, and maximizing it then put a panel nobody could see
+/// over everything. The conversation is always there.
+pub(super) fn addressed(
+    last: super::FocusedPanel,
+    terminal_open: bool,
+    workbench_open: bool,
+) -> super::FocusedPanel {
+    use super::FocusedPanel as P;
+    match last {
+        P::Terminal if !terminal_open => P::Chat,
+        P::Workbench if !workbench_open => P::Chat,
+        last => last,
+    }
+}
+
 #[cfg(test)]
 mod tests;

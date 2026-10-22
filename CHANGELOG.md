@@ -90,6 +90,13 @@ minor bump may break any of them.
 - Stop waits for a push or a pull request in flight, and no pull request is opened after it.
 - Publishing an issue that timed out says it may have been created, so it is not published twice.
 - Each project's issues file has its own lock, so one slow sync holds no other project.
+- The maximize key never blows up a panel that is off screen; a removed project's check field goes
+  with it; a file opened from a maximized conversation is shown; and a session that cannot start
+  leaves the panels on the project the rail selected.
+- A large edit's diff is bounded by its size on the UI thread, and a card's +N/−M always matches
+  the rows it draws.
+- A closed step no longer reads its whole output on every frame; Copy on a read or a search takes
+  every line, not the sixty shown; and ACP events already waiting are applied in one update.
 
 ### Project
 

@@ -64,3 +64,17 @@ fn the_terminal_key_opens_an_empty_dock_rather_than_closing_it() {
         }
     );
 }
+
+/// **A panel that is not on screen is not the one a panel command means.**
+/// Closing the terminal remembered it as the panel last aimed at, so with the
+/// caret in the rail the maximize key blew up a terminal that was not there,
+/// and its strip's Hide then did nothing.
+#[test]
+fn a_remembered_panel_off_screen_falls_back_to_the_conversation() {
+    use super::super::FocusedPanel as P;
+    assert_eq!(addressed(P::Terminal, false, true), P::Chat);
+    assert_eq!(addressed(P::Workbench, true, false), P::Chat);
+    assert_eq!(addressed(P::Terminal, true, false), P::Terminal);
+    assert_eq!(addressed(P::Workbench, false, true), P::Workbench);
+    assert_eq!(addressed(P::Chat, false, false), P::Chat);
+}

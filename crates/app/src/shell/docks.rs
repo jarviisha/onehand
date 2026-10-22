@@ -7,7 +7,7 @@ use std::path::Path;
 
 impl Shell {
     /// The panel a panel-scoped command addresses: whichever holds focus, else
-    /// the last one a panel command was aimed at.
+    /// the last one a panel command was aimed at, while it is on screen.
     pub fn focused_panel(&self, window: &Window, cx: &App) -> FocusedPanel {
         if self.terminal.focus_handle(cx).contains_focused(window, cx) {
             FocusedPanel::Terminal
@@ -16,7 +16,12 @@ impl Shell {
         } else if self.chat.focus_handle(cx).contains_focused(window, cx) {
             FocusedPanel::Chat
         } else {
-            self.last_panel
+            let dock = self.dock.read(cx);
+            dock_rules::addressed(
+                self.last_panel,
+                dock.is_dock_open(DockPlacement::Bottom, cx),
+                dock.is_dock_open(DockPlacement::Right, cx),
+            )
         }
     }
 
