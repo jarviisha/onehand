@@ -39,6 +39,9 @@ impl std::fmt::Display for Failure {
     }
 }
 
+/// How long a command that has exited is given to hand over its output.
+const DRAIN_FLOOR: Duration = Duration::from_secs(1);
+
 /// Run `cmd` to completion, or stop it once it has run for `limit`.
 ///
 /// **A command nobody is watching must not be able to hang its caller.** A
@@ -106,7 +109,14 @@ pub fn output_until(
     // Whatever the child left running is ended too, so a pipe it was holding
     // closes and the drains below come back at once rather than at the deadline.
     stop(&mut child);
-    let left = |at: Instant| at.saturating_duration_since(Instant::now());
+    // At least a moment, whatever the deadline left: a command that exited in
+    // the last poll before it would otherwise come back successful and silent,
+    // and a caller reading its stdout (the number of an issue it just made)
+    // would take the silence for an answer.
+    let left = |at: Instant| {
+        at.saturating_duration_since(Instant::now())
+            .max(DRAIN_FLOOR)
+    };
     Ok(Output {
         status,
         stdout: out.recv_timeout(left(deadline)).unwrap_or_default(),

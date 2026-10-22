@@ -319,9 +319,14 @@ impl Connector for GitHub {
                 "--body",
                 &said.body,
             ],
-        )?;
-        let number = created_number(&printed)
-            .ok_or_else(|| format!("gh created an issue and did not say which: {printed}"))?;
+        )
+        .map_err(create_unsure)?;
+        let number = created_number(&printed).ok_or_else(|| {
+            format!(
+                "gh created an issue and did not say which: {printed}. Look on GitHub before \
+                 publishing it again, or it will be there twice."
+            )
+        })?;
         let key = number.to_string();
         // Created bare and then brought up to what was asked for, so a label
         // that does not exist on the repository yet is made rather than
@@ -648,6 +653,19 @@ fn gh(root: &Path, args: &[&str]) -> Result<String, String> {
     }
 }
 
+/// Why an issue could not be created, said so that a create cut off by its
+/// limit is not taken for one that never happened: GitHub may have made it
+/// before `gh` was stopped, and publishing again would make it twice.
+fn create_unsure(why: String) -> String {
+    match why.contains("did not finish") {
+        true => format!(
+            "{why}. The issue may have been created on GitHub anyway; look there before \
+             publishing it again."
+        ),
+        false => why,
+    }
+}
+
 /// What `gh` says about being signed in. Kept as its four cases rather than
 /// read straight into a sentence, because each one has a different fix.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -787,6 +805,16 @@ mod tests {
     /// **A pull request from a fork is never the run's own.** Its branch name
     /// is predictable from the issue, so anyone could open one on it: taken as
     /// the run's, it was reported on the issue and its checks read to the agent.
+    /// A create stopped at its limit may have happened; the failure says so,
+    /// and a refusal is left in its own words.
+    #[test]
+    fn a_create_cut_off_says_it_may_have_happened() {
+        let cut = create_unsure("gh issue: did not finish within 60s and was stopped".into());
+        assert!(cut.contains("may have been created"), "{cut}");
+        let refused = create_unsure("GraphQL: title can't be blank".into());
+        assert_eq!(refused, "GraphQL: title can't be blank");
+    }
+
     #[test]
     fn a_pull_request_from_a_fork_is_not_the_branchs_own() {
         let json = r#"[
