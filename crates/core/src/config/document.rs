@@ -86,8 +86,7 @@ fn merge_into(
 /// Call `visit` on every table under `item`, in the order the document
 /// writes them.
 fn each_table(item: &mut Item, visit: &mut dyn FnMut(&mut toml_edit::Table)) {
-    let children = |table: &mut toml_edit::Table,
-                        visit: &mut dyn FnMut(&mut toml_edit::Table)| {
+    let children = |table: &mut toml_edit::Table, visit: &mut dyn FnMut(&mut toml_edit::Table)| {
         for (_, child) in table.iter_mut() {
             each_table(child, visit);
         }
