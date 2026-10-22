@@ -35,7 +35,7 @@ Every session is an ACP agent, started from an entry in the agent list (`[[agent
 |---|---|---|---|
 | Shown name | Claude Code | Codex | Copilot |
 | Runs | through an npm adapter | through an npm adapter | itself (`copilot --acp`) |
-| Adapter | `@agentclientprotocol/claude-agent-acp`, pinned at 0.81.2 | `@agentclientprotocol/codex-acp`, pinned at 2.2.2 | none; tried with Copilot 1.0.63 |
+| Adapter | `@agentclientprotocol/claude-agent-acp`, pinned at 0.81.2 | `@agentclientprotocol/codex-acp`, pinned at 2.2.2 | none; tried with Copilot 1.0.102, which updates itself |
 | Binary | `claude` | `codex` | `copilot` |
 | Variable pointing the adapter at it | `CLAUDE_CODE_EXECUTABLE` | `CODEX_PATH` | none |
 | Unattended mode when the config names none | `acceptEdits` | its own default (*Auto review*) | *Autopilot* (`…/session-modes#autopilot`), which allows every tool |

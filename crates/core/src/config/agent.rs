@@ -145,7 +145,7 @@ static COPILOT: PresetInfo = PresetInfo {
     unattended_mode: Some("https://agentclientprotocol.com/protocol/session-modes#autopilot"),
     runs: Runs::Native {
         args: &["--acp"],
-        tried: "1.0.63",
+        tried: "1.0.102",
     },
 };
 
