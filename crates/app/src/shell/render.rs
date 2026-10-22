@@ -63,14 +63,6 @@ impl Render for Shell {
             .size_full()
             .v_flex()
             .key_context("Shell")
-            .capture_key_up(
-                cx.listener(|shell: &mut Self, event: &gpui::KeyUpEvent, _, cx| {
-                    let overrides = &Shared::global(cx).keymap;
-                    shell
-                        .held_commands
-                        .retain(|id| !crate::keymap::released(id, &event.keystroke.key, overrides));
-                }),
-            )
             .on_action(
                 cx.listener(|shell: &mut Self, _: &OpenSettings, window, cx| {
                     shell.open_settings(window, cx);
@@ -221,6 +213,18 @@ impl Render for Shell {
         div()
             .size_full()
             .relative()
+            // On the outermost element rather than the frame: a confirm a held
+            // command opens takes focus into the dialog layer, a sibling of the
+            // frame, and a release heard only inside the frame never cleared
+            // the latch -- the same key then did nothing until pressed again.
+            .capture_key_up(
+                cx.listener(|shell: &mut Self, event: &gpui::KeyUpEvent, _, cx| {
+                    let overrides = &Shared::global(cx).keymap;
+                    shell
+                        .held_commands
+                        .retain(|id| !crate::keymap::released(id, &event.keystroke.key, overrides));
+                }),
+            )
             .child(frame)
             // The backdrop under the shell's own dialogs. The library dims
             // the window only under a dialog it opened itself, and these are
