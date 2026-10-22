@@ -1,6 +1,6 @@
 use super::{
     base64_encode, connect_over, elicit_result, explain, file_uri, handle_reverse,
-    parse_elicitation, LastWords, Transport, STDERR_LINE_CAP, STDERR_TAIL_LINES,
+    parse_elicitation, LastWords, Transport, ADAPTER_GRACE, STDERR_LINE_CAP, STDERR_TAIL_LINES,
 };
 use crate::acp::{AcpEvent, AcpRequest, ElicitKind, ElicitOutcome, ElicitValue};
 use futures::StreamExt as _;
@@ -952,7 +952,38 @@ async fn the_last_answer_before_an_exit_is_not_lost() {
 async fn a_dropped_adapter_takes_its_children_with_it() {
     let marker = std::env::temp_dir().join(format!("onehand-adapter-tree-{}", std::process::id()));
     let _ = std::fs::remove_file(&marker);
-    let script = format!("(sleep 1; touch {}) & sleep 30", marker.display());
+    // Past the grace an adapter is given to leave on its own.
+    let late = ADAPTER_GRACE.as_secs_f32() + 1.0;
+    let script = format!("(sleep {late}; touch {}) & sleep 30", marker.display());
+    let transport = Transport::spawn(
+        "sh".into(),
+        vec!["-c".into(), script],
+        Vec::new(),
+        std::env::temp_dir(),
+    )
+    .unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    drop(transport);
+
+    tokio::time::sleep(ADAPTER_GRACE + std::time::Duration::from_millis(1500)).await;
+    assert!(!marker.exists(), "a child of the dropped adapter still ran");
+}
+
+/// **An agent under the adapter gets to leave on its own first.** Its stdin
+/// closing is how it learns the session is over, and it may still have its own
+/// session to write down; killed on the spot, a resume could come back short.
+#[cfg(unix)]
+#[tokio::test]
+async fn an_agent_left_by_its_adapter_may_finish_before_the_group_goes() {
+    let marker = std::env::temp_dir().join(format!("onehand-adapter-grace-{}", std::process::id()));
+    let _ = std::fs::remove_file(&marker);
+    // The agent stands in for one under `npx`: it reads stdin to its end, then
+    // takes a moment to write what it keeps before it exits.
+    let script = format!(
+        "(cat >/dev/null; sleep 0.5; touch {}) & wait",
+        marker.display()
+    );
     let transport = Transport::spawn(
         "sh".into(),
         vec!["-c".into(), script],
@@ -965,5 +996,8 @@ async fn a_dropped_adapter_takes_its_children_with_it() {
     drop(transport);
 
     tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
-    assert!(!marker.exists(), "a child of the dropped adapter still ran");
+    assert!(
+        marker.exists(),
+        "the agent was killed before it could finish"
+    );
 }

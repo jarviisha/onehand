@@ -244,15 +244,29 @@ fn explain(what: String, tail: &StderrTail) -> String {
     }
 }
 
-/// The adapter's process group, killed when this is dropped: with the
-/// transport, whichever way the stream ends.
+/// How long an adapter's group is given to leave on its own before what is
+/// left of it is killed.
+const ADAPTER_GRACE: Duration = Duration::from_secs(2);
+
+/// The adapter's process group, killed a grace after this is dropped: with
+/// the transport, whichever way the stream ends.
+///
+/// **Not at once.** The child itself goes on drop, but the agent under it
+/// learns the session is over from its stdin closing, and may still have its
+/// own session to write down for a resume; a group killed on the spot cut that
+/// short. What is left after the grace is what would otherwise outlive it.
 struct Group(Option<u32>);
 
 impl Drop for Group {
     fn drop(&mut self) {
         #[cfg(unix)]
         if let Some(leader) = self.0 {
-            crate::process::kill_group(leader);
+            // ponytail: a thread per ended adapter, asleep for the grace; a
+            // reaper shared by every adapter if these ever come in numbers.
+            std::thread::spawn(move || {
+                std::thread::sleep(ADAPTER_GRACE);
+                crate::process::kill_group(leader);
+            });
         }
     }
 }
