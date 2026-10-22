@@ -943,3 +943,27 @@ async fn the_last_answer_before_an_exit_is_not_lost() {
     let (text, _) = failure(&mut events).await;
     assert_eq!(text, "The turn failed: out of credit");
 }
+
+/// **An adapter goes with everything it started.** Killing the child alone
+/// killed `npx`; the agent under it, and whatever that ran, were left running
+/// with nobody reading them.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_dropped_adapter_takes_its_children_with_it() {
+    let marker = std::env::temp_dir().join(format!("onehand-adapter-tree-{}", std::process::id()));
+    let _ = std::fs::remove_file(&marker);
+    let script = format!("(sleep 1; touch {}) & sleep 30", marker.display());
+    let transport = Transport::spawn(
+        "sh".into(),
+        vec!["-c".into(), script],
+        Vec::new(),
+        std::env::temp_dir(),
+    )
+    .unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    drop(transport);
+
+    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+    assert!(!marker.exists(), "a child of the dropped adapter still ran");
+}
