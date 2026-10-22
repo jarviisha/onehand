@@ -9,6 +9,7 @@
 //! - [`history`] says which finished tasks are old enough to let go;
 //! - [`work`] says where an issue's work stands and what to do next.
 
+pub mod drive;
 pub mod files;
 pub mod history;
 pub mod marks;
