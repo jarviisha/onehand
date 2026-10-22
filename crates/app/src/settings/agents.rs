@@ -10,12 +10,16 @@ use gpui::{
 };
 use gpui_component::button::ButtonVariants;
 use gpui_component::{ActiveTheme, Icon, Sizable as _, StyledExt};
-use onehand_core::config::{AgentSpec, Preset};
+use onehand_core::config::{AgentSpec, Preset, Runs};
 
 /// What a row's code line says an agent runs: a built-in agent's adapter, or
 /// a declared agent's command line, with the variables it sets in front, as a
 /// shell would read them.
 fn runs_line(spec: &AgentSpec) -> String {
+    // The entry as the file names it, which is all this build can say of it.
+    if let Some(id) = spec.unknown_preset() {
+        return format!("preset = \"{id}\"");
+    }
     let env = spec
         .env
         .iter()
@@ -33,6 +37,26 @@ fn runs_line(spec: &AgentSpec) -> String {
     }
 }
 
+/// What the *Kind* field says of the choice made: how a built-in agent
+/// runs, or what any other agent has to be.
+fn kind_about(kind: Option<Preset>) -> SharedString {
+    let Some(preset) = kind else {
+        return "Any other agent that speaks the Agent Client Protocol".into();
+    };
+    let info = preset.info();
+    match info.runs {
+        Runs::Adapter { .. } => format!(
+            "Runs the {} on this machine through the adapter onehand was tried with",
+            info.binary
+        ),
+        Runs::Native { .. } => format!(
+            "Runs the {} on this machine, which speaks the protocol itself",
+            info.binary
+        ),
+    }
+    .into()
+}
+
 /// One row in the agent list: name + what it runs, with edit and delete actions.
 fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> impl IntoElement {
     let line = SharedString::from(runs_line(spec));
@@ -44,6 +68,11 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
             spec.version.as_deref().unwrap_or_default()
         )
     });
+    // One a newer build wrote: kept as it is, and said under the line, since
+    // it cannot start until onehand is updated or it is removed.
+    let unknown = spec.unknown_preset().is_some();
+    let outside =
+        outside.or_else(|| unknown.then(|| "Not supported by this build of onehand".to_string()));
     let ink = crate::theme::status_ink(cx);
     let muted = cx.theme().muted_foreground;
     // What the last check of this agent found, said under the command it is
@@ -124,7 +153,7 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
                     .flex_none(),
                 )
             })
-            .when(!is_default, |row| {
+            .when(!is_default && !unknown, |row| {
                 row.child(
                     crate::controls::action(("default-agent", idx))
                         .secondary()
@@ -141,37 +170,41 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
                 )
             })
             // Asked for, never run on its own: opening Settings must not go
-            // looking through the disk for every agent in the list.
-            .child(
-                crate::controls::action(("check-agent", idx))
-                    .secondary()
-                    .short()
-                    .label("Test")
-                    .loading(running)
-                    .tooltip("Look for the command without starting it")
-                    .on_click({
-                        let shell = shell.clone();
-                        move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                            shell.update(cx, |shell, cx| shell.check_agent(idx, cx));
-                        }
-                    }),
-            )
-            .child(
-                crate::controls::action(("edit-agent", idx))
-                    .small()
-                    .secondary()
-                    // Not the bundled `replace`, which is a find-and-replace
-                    // mark: it reads as swapping this agent for another one
-                    // rather than as opening it in the form below.
-                    .icon(Icon::new(crate::icons::Icon::SquarePen))
-                    .tooltip("Edit")
-                    .on_click({
-                        let shell = shell.clone();
-                        move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
-                            shell.update(cx, |shell, cx| shell.edit_agent(idx, window, cx));
-                        }
-                    }),
-            )
+            // looking through the disk for every agent in the list. An entry
+            // this build does not know has nothing to test or edit: only its
+            // removal is offered.
+            .when(!unknown, |row| {
+                row.child(
+                    crate::controls::action(("check-agent", idx))
+                        .secondary()
+                        .short()
+                        .label("Test")
+                        .loading(running)
+                        .tooltip("Look for the command without starting it")
+                        .on_click({
+                            let shell = shell.clone();
+                            move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                                shell.update(cx, |shell, cx| shell.check_agent(idx, cx));
+                            }
+                        }),
+                )
+                .child(
+                    crate::controls::action(("edit-agent", idx))
+                        .small()
+                        .secondary()
+                        // Not the bundled `replace`, which is a find-and-replace
+                        // mark: it reads as swapping this agent for another one
+                        // rather than as opening it in the form below.
+                        .icon(Icon::new(crate::icons::Icon::SquarePen))
+                        .tooltip("Edit")
+                        .on_click({
+                            let shell = shell.clone();
+                            move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                                shell.update(cx, |shell, cx| shell.edit_agent(idx, window, cx));
+                            }
+                        }),
+                )
+            })
             // A word in the danger tint rather than a trash glyph, like every
             // other control here that removes something for good.
             .child(
@@ -314,37 +347,29 @@ pub(super) fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     )
     .child(field(
         "Kind",
-        about(match kind {
-            Some(Preset::ClaudeCode) => {
-                "Runs the claude on this machine through the adapter onehand was tried with"
-            }
-            Some(Preset::Codex) => {
-                "Runs the codex on this machine through the adapter onehand was tried with"
-            }
-            None => "Any other agent that speaks the Agent Client Protocol",
-        }),
+        Some(kind_about(kind).into_any_element()),
         onehand_ui::choice_track(
-            [
-                (Some(Preset::ClaudeCode), "Claude Code"),
-                (Some(Preset::Codex), "Codex"),
-                (None, "Another agent"),
-            ]
-            .into_iter()
-            .enumerate()
-            .map(|(n, (choice, label))| {
-                let shell = handle.clone();
-                onehand_ui::choice(
-                    ("agent-kind", n),
-                    label,
-                    kind == choice,
-                    // At the height of the form's fields beside it.
-                    onehand_ui::ControlSize::Short,
-                    cx,
-                )
-                .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                    shell.update(cx, |shell, cx| shell.set_agent_kind(choice, cx));
-                })
-            }),
+            Preset::ALL
+                .into_iter()
+                .map(|preset| (Some(preset), preset.info().shown_name))
+                .chain([(None, "Another agent")])
+                .enumerate()
+                .map(|(n, (choice, label))| {
+                    let shell = handle.clone();
+                    onehand_ui::choice(
+                        ("agent-kind", n),
+                        label,
+                        kind == choice,
+                        // At the height of the form's fields beside it.
+                        onehand_ui::ControlSize::Short,
+                        cx,
+                    )
+                    .on_click(
+                        move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                            shell.update(cx, |shell, cx| shell.set_agent_kind(choice, cx));
+                        },
+                    )
+                }),
             cx,
         ),
         cx,

@@ -31,6 +31,7 @@ Every session is an ACP agent, started from an entry in the agent list (`[[agent
 | | `claude-code` | `codex` |
 |---|---|---|
 | Shown name | Claude Code | Codex |
+| Runs | through an npm adapter | through an npm adapter |
 | Adapter | `@agentclientprotocol/claude-agent-acp`, pinned at 0.81.2 | `@agentclientprotocol/codex-acp`, pinned at 2.2.2 |
 | Binary | `claude` | `codex` |
 | Variable pointing the adapter at it | `CLAUDE_CODE_EXECUTABLE` | `CODEX_PATH` |
@@ -69,6 +70,9 @@ env = { SOME_VAR = "x" }
 - **`env`** is set on the adapter after onehand's own variables, so an entry can override either.
 - **`version`** on a preset runs that adapter version instead of the pin.
 - The first entry is the default agent everywhere (`config::agent_or_first`).
+- **A `preset` this build does not know** (written by a newer one) keeps its entry: Settings shows
+  it as *Not supported by this build of onehand* with only *Delete…*, it refuses to start, and a
+  save writes it back as it was. With no `name` it is called by its id.
 
 ## First launch
 
