@@ -115,6 +115,8 @@ minor bump may break any of them.
 - A file whose name is not UTF-8 gets its git badge and counts in a run's work.
 - On macOS, removing a worktree sees a shell or Neovim working in it.
 - One tool output keeps at most 1 MiB in the transcript and says how much more there was.
+- A settings save writes only what it changed: comments, formatting and keys from a newer build
+  stay in `onehand.toml`.
 
 ### Project
 

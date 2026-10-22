@@ -24,6 +24,13 @@ pub use agent::{
 };
 pub(crate) use agent::{default_agents, found_agents};
 
+mod document;
+mod font;
+pub use font::{resolve_monospace, FontConfig};
+
+mod state;
+pub use state::AppState;
+
 /// `mode` as a run takes it: a blank mode is none, and leaves the agent in
 /// the mode it starts in, which asks more rather than less.
 pub fn mode_set(mode: &str) -> Option<String> {
@@ -46,95 +53,6 @@ pub fn run_mode(mode: Option<&str>, agents: &[AgentSpec], agent: Option<&str>) -
             .unwrap_or_default()
             .to_string(),
     }
-}
-
-/// `[font]` — the monospace family to prefer, if the machine has one by that
-/// name.
-///
-/// One key, because one key is what is read. This table also carried a body
-/// size, a master zoom, a sans family and a fallback list; all four parsed
-/// cleanly and none of them reached the screen, so a file setting `size = 18`
-/// loaded without complaint and changed nothing. A key that is honoured only by
-/// the parser is worse than a missing one: the missing key is a feature the app
-/// does not have, and the parsed one is a feature it appears to have and lies
-/// about.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct FontConfig {
-    pub monospace: Option<String>,
-}
-
-/// Monospace families to fall back through, in order, when nothing preferred
-/// is installed.
-///
-/// Every platform's list in one, because only the installed ones can match:
-/// picking by `cfg!(target_os)` would be guessing at the same thing the caller
-/// can simply look up.
-const MONO_FALLBACKS: &[&str] = &[
-    // Platform defaults first — the family a user of this OS expects to see,
-    // before the one a developer happened to install.
-    "SF Mono",
-    "Menlo",
-    "Monaco",
-    "Cascadia Mono",
-    "Consolas",
-    "DejaVu Sans Mono",
-    "Liberation Mono",
-    "Noto Sans Mono",
-    "Ubuntu Mono",
-    "Adwaita Mono",
-    // Then the ones people go out of their way to install.
-    "JetBrains Mono",
-    "Fira Code",
-    "Source Code Pro",
-    "Cascadia Code",
-    "Courier New",
-];
-
-/// The monospace family to actually ask for, given what is installed.
-///
-/// **A font family is a request, not a guarantee, and a missing one fails
-/// silently** — the text renders in whatever the fallback face is and nothing
-/// says why. That is not hypothetical: the component library's default mono
-/// family is one name per platform, and on Linux it is DejaVu Sans Mono, which
-/// plenty of distributions do not ship. Every diff, every command, every line
-/// of terminal output then draws in the body face, and the code asking for
-/// mono looks correct while the screen says otherwise.
-///
-/// So the family is chosen against the list of what the system actually has.
-/// `preferred` is tried in order — the user's configured choice, then whatever
-/// default was already in place — then the fallback ladder, and last **any**
-/// installed family whose name says monospace, sorted so the answer is the
-/// same on every launch. `None` means the machine offered nothing that
-/// identifies itself as monospace, in which case the caller has no better move
-/// than to leave the default alone.
-///
-/// Matching is case-insensitive because font enumeration capitalizes as the
-/// foundry pleases and a config file is typed by a person.
-pub fn resolve_monospace<'a>(
-    preferred: impl IntoIterator<Item = &'a str>,
-    installed: &[String],
-) -> Option<String> {
-    let find = |want: &str| {
-        installed
-            .iter()
-            .find(|have| have.eq_ignore_ascii_case(want))
-            .cloned()
-    };
-
-    preferred
-        .into_iter()
-        .filter(|want| !want.trim().is_empty())
-        .find_map(&find)
-        .or_else(|| MONO_FALLBACKS.iter().copied().find_map(find))
-        .or_else(|| {
-            let mut named: Vec<&String> = installed
-                .iter()
-                .filter(|have| have.to_ascii_lowercase().contains("mono"))
-                .collect();
-            named.sort();
-            named.first().map(|name| name.to_string())
-        })
 }
 
 /// Which of the theme's two modes the window is drawn in.
@@ -406,11 +324,17 @@ impl AppConfig {
         Ok(cfg)
     }
 
-    /// Read the config at `path`, apply `edit`, and write it back.
+    /// Read the config at `path`, apply `edit`, and write back what changed.
     ///
     /// A file that exists but **fails to parse** is left alone and reported:
     /// rewriting it from defaults would permanently destroy the user's other
     /// sections. A *missing* file is a first save and starts from defaults.
+    ///
+    /// **What changed is measured from the file as read, before it is
+    /// settled**, so a save still writes the settled agent list and the
+    /// agents a first launch found, as it always has; everything the two
+    /// agree on, every comment and every key this build does not know stays
+    /// as the file had it.
     ///
     /// Lives here rather than in the front end because the guard belongs to the
     /// file format, not to whoever is drawing the settings screen.
@@ -420,10 +344,22 @@ impl AppConfig {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
             Err(e) => return Err(format!("{} could not be read: {e}", path.display())),
         };
+        let unparsed = |e: &dyn std::fmt::Display| format!("{} won't parse: {e}", path.display());
+        let before = Self::parse(text.as_deref().unwrap_or("")).map_err(|e| unparsed(&e))?;
+        let mut doc: toml_edit::DocumentMut = text
+            .as_deref()
+            .unwrap_or("")
+            .parse()
+            .map_err(|e| unparsed(&e))?;
         let mut cfg = Self::from_disk(text.as_deref(), std::env::var_os("PATH").as_deref())
-            .map_err(|e| format!("{} won't parse: {e}", path.display()))?;
+            .map_err(|e| unparsed(&e))?;
         edit(&mut cfg);
-        cfg.save_to(path).map_err(|e| e.to_string())
+        let table = |cfg: &Self| toml::Table::try_from(cfg).map_err(|e| e.to_string());
+        document::merge(&mut doc, &table(&before)?, &table(&cfg)?);
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        }
+        write_atomic(path, &doc.to_string()).map_err(|e| e.to_string())
     }
 
     pub fn save_to(&self, path: &Path) -> std::io::Result<()> {
@@ -798,137 +734,6 @@ impl WorkspaceConfig {
         std::fs::create_dir_all(dir)?;
         let text = toml::to_string_pretty(self).map_err(std::io::Error::other)?;
         write_atomic(&dir.join(Self::FILE), &text)
-    }
-}
-
-/// Global, cross-launch app state at `<config_dir>/onehand/state.toml`.
-/// Remembers which workspace storage directories were used, most-recent-first;
-/// the next launch reopens `recent_workspaces[0]` (taking precedence over the
-/// CLI root).
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct AppState {
-    /// Legacy single remembered dir (pre-recents). Folded into
-    /// `recent_workspaces` on load; mirrors `recent_workspaces[0]` on save so
-    /// an older binary reading this file still reopens the right workspace.
-    pub(crate) workspace_dir: Option<PathBuf>,
-    /// Bound workspace storage dirs, most-recent-first, deduped, capped.
-    pub recent_workspaces: Vec<PathBuf>,
-    /// Each remembered workspace's name, as last opened or renamed, so a list
-    /// of them reads as the rail does without opening every one's own file.
-    /// A dir with none, remembered before names were, reads as its folder.
-    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    names: BTreeMap<PathBuf, String>,
-}
-
-impl AppState {
-    /// Cap on `recent_workspaces`.
-    pub const MAX_RECENTS: usize = 8;
-
-    pub(crate) fn path() -> PathBuf {
-        config_dir().join("state.toml")
-    }
-
-    /// Load state, falling back to the default (nothing remembered) on any error.
-    pub fn load() -> Self {
-        let mut state = Self::load_from(&Self::path());
-        state.migrate();
-        state
-    }
-
-    /// The state at `path`. One that will not parse is copied to
-    /// `state.toml.bad` first: the next save writes the file whole, and
-    /// without the copy the recents it held would be gone for good.
-    fn load_from(path: &Path) -> Self {
-        let Ok(text) = std::fs::read_to_string(path) else {
-            return Self::default();
-        };
-        toml::from_str(&text).unwrap_or_else(|e| {
-            let kept = path.with_extension("toml.bad");
-            eprintln!(
-                "onehand: bad state {}: {e}; kept as {}",
-                path.display(),
-                kept.display()
-            );
-            let _ = std::fs::copy(path, &kept);
-            Self::default()
-        })
-    }
-
-    /// Fold the legacy `workspace_dir` into `recent_workspaces`, dedup, cap.
-    fn migrate(&mut self) {
-        if let Some(dir) = self.workspace_dir.clone() {
-            if !self.recent_workspaces.contains(&dir) {
-                self.recent_workspaces.insert(0, dir);
-            }
-        }
-        let mut seen = Vec::new();
-        self.recent_workspaces.retain(|d| {
-            let fresh = !seen.contains(d);
-            if fresh {
-                seen.push(d.clone());
-            }
-            fresh
-        });
-        self.recent_workspaces.truncate(Self::MAX_RECENTS);
-        self.prune_names();
-    }
-
-    /// Drop the names of workspaces no longer remembered.
-    fn prune_names(&mut self) {
-        let recents = &self.recent_workspaces;
-        self.names.retain(|dir, _| recents.contains(dir));
-    }
-
-    /// Remember `dir`'s name, if `dir` is remembered at all; whether that
-    /// changed anything, so a caller writes only what is new.
-    pub fn set_name(&mut self, dir: &Path, name: &str) -> bool {
-        if !self.recent_workspaces.iter().any(|d| d == dir) || self.name_of(dir) == Some(name) {
-            return false;
-        }
-        self.names.insert(dir.to_path_buf(), name.to_string());
-        true
-    }
-
-    /// What a list of workspaces calls `dir`: its remembered name, else its
-    /// folder's, else the whole path.
-    pub fn label_of(&self, dir: &Path) -> String {
-        self.name_of(dir).map_or_else(
-            || {
-                dir.file_name()
-                    .map(|name| name.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| dir.display().to_string())
-            },
-            str::to_string,
-        )
-    }
-
-    /// The name `dir` was last opened or renamed under, if one was remembered.
-    pub fn name_of(&self, dir: &Path) -> Option<&str> {
-        self.names.get(dir).map(String::as_str)
-    }
-
-    /// Move `dir` to the front of the recents (inserting if absent), keep the
-    /// list capped, and mirror the legacy field. Pure — callers canonicalize.
-    pub fn touch(&mut self, dir: PathBuf) {
-        self.recent_workspaces.retain(|d| *d != dir);
-        self.recent_workspaces.insert(0, dir);
-        self.recent_workspaces.truncate(Self::MAX_RECENTS);
-        self.workspace_dir = self.recent_workspaces.first().cloned();
-        self.prune_names();
-    }
-
-    /// Drop `dir` from the recents and re-mirror the legacy field (used by
-    /// Unbind: an unbound workspace must not be reopened at boot).
-    pub fn forget(&mut self, dir: &Path) {
-        self.recent_workspaces.retain(|d| d != dir);
-        self.workspace_dir = self.recent_workspaces.first().cloned();
-        self.prune_names();
-    }
-
-    pub fn save(&self) -> std::io::Result<()> {
-        let text = toml::to_string_pretty(self).map_err(std::io::Error::other)?;
-        write_atomic(&Self::path(), &text)
     }
 }
 

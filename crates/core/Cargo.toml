@@ -15,7 +15,8 @@ path = "src/lib.rs"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
-toml = "0.8"
+toml = { version = "0.8", features = ["preserve_order"] }
+toml_edit = "0.22"
 serde_json = "1"  # JSON-RPC wire format for ACP
 dirs = "5"
 

@@ -38,8 +38,9 @@ Every session is an ACP agent, started from an entry in the agent list (`[[agent
 | Effort and fast groups | `effort`, `fast` | `reasoning_effort`, `fast-mode` |
 
 The presets live in code (`crates/core/src/config/agent.rs`). The config names one by id and never
-copies its command: every settings save writes the whole file back, so a command written out there
-froze the adapter version at the first save.
+copies its command: every save of the agent list writes the whole list back, so a command written
+out there froze the adapter version at the first save. A save writes only what it changed, so
+comments and keys from a newer build stay in the file.
 
 ## The config
 
