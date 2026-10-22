@@ -54,6 +54,13 @@ mod tests {
         let first = try_lock(&dir).unwrap();
         assert!(matches!(try_lock(&dir), Err(TryLockError::WouldBlock)));
         drop(first);
+        // A lock goes with the open file, and a child another test forks
+        // meanwhile holds a copy of it until it execs: let go is let go
+        // within a moment, not at the instant of the drop.
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while try_lock(&dir).is_err() && std::time::Instant::now() < until {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
         assert!(try_lock(&dir).is_ok());
         let _ = std::fs::remove_dir_all(&dir);
     }

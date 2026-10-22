@@ -74,6 +74,9 @@ pub struct ConfigOption {
     pub id: String,
     /// Human label (e.g. `"Model"`).
     pub name: String,
+    /// What the agent says this group is (`"model"`, `"thought_level"`…),
+    /// when it says.
+    pub category: Option<String>,
     /// The currently selected value (matches a `ConfigChoice::value`).
     pub current: Option<String>,
     pub choices: Vec<ConfigChoice>,
@@ -526,6 +529,9 @@ pub enum AcpEvent {
         text: String,
         detail: Option<String>,
     },
+    /// The adapter's own marker for a turn the person cut short, which it
+    /// sends in the person's voice, as a user chunk.
+    Interrupted,
     /// The agent answered that it is not logged in (ACP's `auth_required`,
     /// `-32000`), ahead of the failure that request ends in. Its own event, so
     /// the front end can say how to log in instead of the protocol's words.

@@ -118,6 +118,8 @@ minor bump may break any of them.
 - On macOS, removing a worktree sees a shell or Neovim working in it.
 - One tool output keeps at most 1 MiB in the transcript and says how much more there was.
 - A declared agent that is not logged in is told how in the agent's own words, when it gives any.
+- An agent that marks its config groups with ACP's `category` (`model`, `thought_level`) gets the
+  model and effort chips whatever it names them.
 - A config naming an agent this build does not know loads: the entry is kept with its id, said to
   be unsupported, and refuses to start. Before, the whole file was set aside for defaults.
 - A settings save writes only what it changed: comments, formatting and keys from a newer build

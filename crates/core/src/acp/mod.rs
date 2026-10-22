@@ -10,11 +10,13 @@
 
 pub mod client;
 pub mod parse;
+mod roles;
 pub mod terminal;
 pub mod types;
 
 pub use client::{base64_encode, connect, SessionOpts};
 pub use parse::base64_decode;
+pub use roles::{Role, Switch};
 pub use types::{
     AcpEvent, AcpRequest, Attachment, ConfigChoice, ConfigOption, ElicitChoice, ElicitField,
     ElicitKind, ElicitOutcome, ElicitValue, Elicitation, Mode, PermissionOption, PermissionRequest,

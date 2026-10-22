@@ -19,6 +19,8 @@ pub enum Update {
     Thought(String),
     /// A chunk echoed from the user (resume replay).
     User(String),
+    /// The adapter's own marker for a turn the person cut short.
+    Interrupted,
     /// A new tool call.
     ToolCall(ToolCall),
     /// An update to an existing tool call.
@@ -33,6 +35,15 @@ pub enum Update {
     ConfigOptions(Vec<ConfigOption>),
 }
 
+/// Whether a user chunk is the adapter's own marker for a turn the person cut
+/// short, which it sends in the person's voice: `[Request interrupted by
+/// user]`, or `... for tool use]` when a tool was refused. Read as a user
+/// chunk it would be drawn as something the person typed.
+fn is_interruption(chunk: &str) -> bool {
+    let chunk = chunk.trim();
+    chunk.starts_with("[Request interrupted by user") && chunk.ends_with(']')
+}
+
 /// Parse the inner `update` object of a `session/update` notification.
 pub(crate) fn parse_session_update(update: &Value) -> Vec<Update> {
     let kind = update
@@ -43,7 +54,13 @@ pub(crate) fn parse_session_update(update: &Value) -> Vec<Update> {
     match kind {
         "agent_message_chunk" => text().map(Update::Agent).into_iter().collect(),
         "agent_thought_chunk" => text().map(Update::Thought).into_iter().collect(),
-        "user_message_chunk" => text().map(Update::User).into_iter().collect(),
+        "user_message_chunk" => text()
+            .map(|chunk| match is_interruption(&chunk) {
+                true => Update::Interrupted,
+                false => Update::User(chunk),
+            })
+            .into_iter()
+            .collect(),
         "tool_call" => vec![Update::ToolCall(parse_tool_call(update))],
         "tool_call_update" => vec![Update::ToolUpdate(parse_tool_update(update))],
         "plan" => vec![Update::Plan(parse_plan(update))],
@@ -82,6 +99,10 @@ fn parse_config_option(o: &Value) -> Option<ConfigOption> {
         .and_then(Value::as_str)
         .unwrap_or(&id)
         .to_string();
+    let category = o
+        .get("category")
+        .and_then(Value::as_str)
+        .map(str::to_string);
     let current = o
         .get("currentValue")
         .and_then(Value::as_str)
@@ -116,6 +137,7 @@ fn parse_config_option(o: &Value) -> Option<ConfigOption> {
     Some(ConfigOption {
         id,
         name,
+        category,
         current,
         choices,
     })
@@ -376,6 +398,29 @@ fn block_text(block: &Value) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The adapter sends it in the person's voice, as a user chunk.
+    #[test]
+    fn the_interrupted_marker_is_its_own_update() {
+        let chunk = |text: &str| {
+            json!({
+                "sessionUpdate": "user_message_chunk",
+                "content": { "type": "text", "text": text },
+            })
+        };
+        assert_eq!(
+            parse_session_update(&chunk("[Request interrupted by user for tool use]")),
+            vec![Update::Interrupted]
+        );
+        assert_eq!(
+            parse_session_update(&chunk("[Request interrupted by user]")),
+            vec![Update::Interrupted]
+        );
+        assert_eq!(
+            parse_session_update(&chunk("hi")),
+            vec![Update::User("hi".into())]
+        );
+    }
 
     #[test]
     fn a_huge_tool_output_is_cut_and_says_so() {

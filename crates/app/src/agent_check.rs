@@ -100,6 +100,7 @@ fn check(ask: &Ask, cx: &mut App) {
                     | AcpEvent::AgentChunk(_)
                     | AcpEvent::ThoughtChunk(_)
                     | AcpEvent::UserChunk(_)
+                    | AcpEvent::Interrupted
                     | AcpEvent::ToolCall(_)
                     | AcpEvent::ToolUpdate(_)
                     | AcpEvent::Plan(_)

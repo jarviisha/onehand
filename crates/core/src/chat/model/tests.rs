@@ -1254,6 +1254,7 @@ fn selectors_flatten_the_mode_and_the_config_groups() {
     chat.config_options = vec![ConfigOption {
         id: "effort".into(),
         name: "Effort".into(),
+        category: None,
         current: None,
         choices: vec![ConfigChoice {
             value: "high".into(),
@@ -1311,6 +1312,7 @@ fn choosing_sends_the_request_the_picker_belongs_to() {
     chat.config_options = vec![ConfigOption {
         id: "effort".into(),
         name: "Effort".into(),
+        category: None,
         current: None,
         choices: vec![ConfigChoice {
             value: "high".into(),
@@ -1671,6 +1673,7 @@ fn chat_with_tx() -> (Chat, tokio::sync::mpsc::UnboundedReceiver<AcpRequest>) {
         ConfigOption {
             id: "effort".into(),
             name: "Effort".into(),
+            category: None,
             current: Some("default".into()),
             choices: vec![
                 crate::acp::ConfigChoice {
@@ -1688,6 +1691,7 @@ fn chat_with_tx() -> (Chat, tokio::sync::mpsc::UnboundedReceiver<AcpRequest>) {
         ConfigOption {
             id: "model".into(),
             name: "Model".into(),
+            category: None,
             current: Some("opus[1m]".into()),
             choices: vec![crate::acp::ConfigChoice {
                 value: "opus".into(),
@@ -2043,6 +2047,7 @@ fn config_options_change_the_offer() {
     let outcome = chat.apply(AcpEvent::ConfigOptions(vec![ConfigOption {
         id: "effort".into(),
         name: "Effort".into(),
+        category: None,
         current: Some("default".into()),
         choices: vec![ConfigChoice {
             value: "default".into(),
@@ -2227,14 +2232,12 @@ fn a_stopped_turn_answered_with_an_error_is_not_failed() {
     assert!(!chat.failed());
 }
 
-/// The adapter's interruption marker arrives as a user chunk, and is a notice
-/// rather than a prompt the person never typed.
+/// The adapter's interruption marker is a notice rather than a prompt the
+/// person never typed.
 #[test]
 fn an_interruption_marker_is_a_notice_and_not_a_prompt() {
     let mut chat = Chat::default();
-    chat.apply(AcpEvent::UserChunk(
-        "[Request interrupted by user for tool use]".into(),
-    ));
+    chat.apply(AcpEvent::Interrupted);
     chat.apply(AcpEvent::UserChunk("read the whole project".into()));
     assert!(matches!(
         chat.items.as_slice(),
@@ -2273,6 +2276,7 @@ fn a_refused_pick_goes_back_to_what_the_agent_last_confirmed() {
     let effort = |current: &str| ConfigOption {
         id: "effort".into(),
         name: "Effort".into(),
+        category: None,
         current: Some(current.into()),
         choices: ["low", "high"]
             .into_iter()

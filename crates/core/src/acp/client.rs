@@ -441,6 +441,7 @@ impl Conn {
                             parse::Update::Agent(s) => AcpEvent::AgentChunk(s),
                             parse::Update::Thought(s) => AcpEvent::ThoughtChunk(s),
                             parse::Update::User(s) => AcpEvent::UserChunk(s),
+                            parse::Update::Interrupted => AcpEvent::Interrupted,
                             parse::Update::ToolCall(tc) => AcpEvent::ToolCall(tc),
                             parse::Update::ToolUpdate(tu) => AcpEvent::ToolUpdate(tu),
                             parse::Update::Plan(p) => AcpEvent::Plan(p),
