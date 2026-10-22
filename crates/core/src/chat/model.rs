@@ -99,9 +99,9 @@ pub struct Chat {
     /// What to say when the agent answers that it is not logged in: the
     /// entry's own words, carrying the command that logs it in.
     pub login_hint: String,
-    /// The login hint was just said, so the failure that follows it is not
-    /// said a second time in the protocol's words.
-    login_said: bool,
+    /// The agent just answered that it is not logged in, so the failure that
+    /// follows is said as how to log in rather than in the protocol's words.
+    login_pending: bool,
     /// User-chosen conversation title. `None` keeps automatic title generation
     /// from the first prompt; persisted independently so Reset can restore it.
     pub custom_title: Option<String>,

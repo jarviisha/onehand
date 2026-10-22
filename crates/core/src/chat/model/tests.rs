@@ -2420,6 +2420,9 @@ fn a_login_required_turn_is_said_once_as_the_hint() {
         detail: None,
     });
     assert_eq!(notices(&chat), [chat.login_hint.clone()]);
+    // Still the turn's failure, said in other words: it can be sent again
+    // once logged in, and the rail marks it as any failed turn.
+    assert!(chat.failed(), "the turn failed");
 }
 
 #[test]
@@ -2439,5 +2442,8 @@ fn a_login_required_start_is_said_once_and_the_link_is_lost() {
 fn a_login_without_a_hint_names_the_agent() {
     let mut chat = Chat::new(1, PathBuf::from("/tmp/p"), "Gemini".to_string(), None);
     chat.apply(AcpEvent::LoginRequired);
+    chat.apply(AcpEvent::Disconnected(
+        "Could not start a session: Authentication required".into(),
+    ));
     assert_eq!(notices(&chat), ["Gemini needs you to log in"]);
 }

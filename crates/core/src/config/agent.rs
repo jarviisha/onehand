@@ -233,7 +233,10 @@ impl AgentSpec {
     /// entry's own account where its environment names one: a second account
     /// logged in without it would log the first one in again.
     pub fn login_hint(&self) -> String {
-        let Some(preset) = self.claude_or_preset() else {
+        // The preset itself, not the old default left declared: that one stays
+        // declared only where the agent's binary is missing, so a command that
+        // needs it is no help.
+        let Some(preset) = self.preset else {
             return format!("{} needs you to log in", self.name);
         };
         let account = self

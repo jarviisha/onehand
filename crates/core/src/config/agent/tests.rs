@@ -415,3 +415,11 @@ fn the_login_hint_names_the_entrys_account() {
     };
     assert_eq!(gemini.login_hint(), "Gemini needs you to log in");
 }
+
+/// The old Claude default is left declared only where `claude` is missing,
+/// so a command that needs it is no help there.
+#[test]
+fn the_old_default_left_declared_is_asked_to_log_in_in_plain_words() {
+    let spec = default_agents().remove(0);
+    assert_eq!(spec.login_hint(), "Claude Code needs you to log in");
+}
