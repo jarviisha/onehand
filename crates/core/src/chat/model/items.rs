@@ -551,8 +551,8 @@ pub struct ToolItem {
 
 impl ToolItem {
     pub fn new(call: ToolCall) -> Self {
-        let diff_summary = Self::summarize_diffs(&call);
         let diff_rows = Self::hunks(&call);
+        let diff_summary = Self::summarize_diffs(&call, &diff_rows);
         let running = matches!(call.status, ToolStatus::Pending | ToolStatus::InProgress);
         Self {
             // Only work that has not finished gets a start: a step that arrives
@@ -583,11 +583,26 @@ impl ToolItem {
             .collect()
     }
 
-    fn summarize_diffs(call: &ToolCall) -> Vec<(String, usize, usize)> {
+    /// The +N/−M per file, counted off the rows the card draws so the two
+    /// never disagree.
+    fn summarize_diffs(
+        call: &ToolCall,
+        rows: &HashMap<usize, Vec<crate::diff::Row>>,
+    ) -> Vec<(String, usize, usize)> {
         let mut summary: Vec<(String, usize, usize)> = Vec::new();
-        for content in &call.content {
-            if let ToolContent::Diff { path, old, new } = content {
-                let (adds, removes) = line_change_counts(old.as_deref(), new);
+        for (i, content) in call.content.iter().enumerate() {
+            if let ToolContent::Diff { path, .. } = content {
+                let rows = rows.get(&i).map(Vec::as_slice).unwrap_or_default();
+                let count = |added| {
+                    rows.iter()
+                        .filter(|row| match row {
+                            crate::diff::Row::Added(_) => added,
+                            crate::diff::Row::Removed(_) => !added,
+                            _ => false,
+                        })
+                        .count()
+                };
+                let (adds, removes) = (count(true), count(false));
                 match summary.iter_mut().find(|(current, _, _)| current == path) {
                     Some(entry) => {
                         entry.1 += adds;
@@ -606,8 +621,8 @@ impl ToolItem {
     /// sections and forgetting either leaves a card describing an edit it is no
     /// longer showing.
     pub(super) fn refresh_diffs(&mut self) {
-        self.diff_summary = Self::summarize_diffs(&self.call);
         self.diff_rows = Self::hunks(&self.call);
+        self.diff_summary = Self::summarize_diffs(&self.call, &self.diff_rows);
     }
     /// Live work starts open and settled work closed; the user's choice,
     /// once made, wins either way, while it runs too.
