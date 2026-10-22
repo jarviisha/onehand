@@ -606,3 +606,34 @@ fn a_turn_read_judges_the_answer_since_the_prompt() {
         Some("The plan.")
     );
 }
+
+/// Streamed chunks are most of what a session says: only one that can move
+/// the run is worth handing over.
+#[test]
+fn a_chunk_is_heeded_only_when_it_can_move_the_run() {
+    let mut rig = in_turn();
+    rig.chat.apply(AcpEvent::AgentChunk("thinking".into()));
+    assert!(!rig.drive.heeds_appended(&rig.chat), "a reply streaming in");
+    let mut taken = at_approval();
+    assert!(taken.chat.submit("my own words", &[]));
+    assert!(taken.drive.heeds_appended(&taken.chat), "a person's prompt");
+
+    let (mut picking, _) = Rig::start(wanting_model(), None, with_models());
+    picking.on(Input::Pinned(Ok("c0".into())));
+    picking.on(Input::Measured(Ok(mark("a", "d0"))));
+    assert!(picking.drive.heeds_appended(&picking.chat), "a pick out");
+
+    let (mut waiting, _) = Rig::start(checkout(), None, (Chat::default(), connected().1));
+    waiting.on(Input::Pinned(Ok("c0".into())));
+    waiting.on(Input::Measured(Ok(mark("a", "d0"))));
+    assert!(!waiting.drive.heeds_appended(&waiting.chat), "not up yet");
+    let (tx, rx): (ReqTx, _) = tokio::sync::mpsc::unbounded_channel();
+    waiting._rx = rx;
+    waiting
+        .chat
+        .apply(AcpEvent::Connected { tx, resumed: false });
+    assert!(
+        waiting.drive.heeds_appended(&waiting.chat),
+        "the held prompt can go"
+    );
+}

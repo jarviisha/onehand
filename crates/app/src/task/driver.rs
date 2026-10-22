@@ -71,9 +71,18 @@ pub(crate) fn start(
     pinned: usize,
     cx: &mut App,
 ) {
-    let watch = cx.subscribe(session, move |_, event: &ChatEvent, cx| {
+    let watch = cx.subscribe(session, move |session, event: &ChatEvent, cx| {
         let input = match event {
-            ChatEvent::Appended => Input::Appended,
+            // Most of what a session says is its reply streaming in. Asked
+            // first, read-only, so a chunk that cannot move the run does not
+            // tell every observer of the tasks that they changed.
+            ChatEvent::Appended => {
+                let chat = &session.read(cx).chat;
+                if !read(uid, cx, |d| d.drive.heeds_appended(chat)).unwrap_or(false) {
+                    return;
+                }
+                Input::Appended
+            }
             ChatEvent::TurnEnded => Input::TurnEnded,
             ChatEvent::AwaitingUser(_) => Input::AwaitingUser,
             ChatEvent::Disconnected => Input::Disconnected,

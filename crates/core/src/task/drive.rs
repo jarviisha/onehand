@@ -181,6 +181,16 @@ impl Drive {
         self.stopping.is_some()
     }
 
+    /// Whether [`Input::Appended`] could move the run, read without moving
+    /// it: a prompt held until the agent came up, a prompt a person sent, or
+    /// picks under way. Anything else the transcript grows by is the reply
+    /// streaming in, which a front end should not hand over chunk by chunk.
+    pub fn heeds_appended(&self, chat: &Chat) -> bool {
+        (self.pending.is_some() && chat.link == Link::Connected)
+            || chat.prompted_beyond(self.sent)
+            || self.picking.is_some()
+    }
+
     /// Working time spent on the run, sessions before this one included.
     pub fn spent_secs(&self, now: Instant) -> u64 {
         let used = self.budget.limit().saturating_sub(self.budget.left(now));
