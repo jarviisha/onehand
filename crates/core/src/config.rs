@@ -216,7 +216,8 @@ pub struct TelegramConfig {
     /// Off unless asked for. A bridge that came up by default would put a
     /// process on the network on the strength of a file the user never edited.
     pub enabled: bool,
-    /// The chat ids allowed to reach the app, as Telegram numbers them.
+    /// The chat ids allowed to reach the app, as Telegram numbers them. A
+    /// group listed here admits only the members whose own ids are listed too.
     ///
     /// **The empty list allows nobody**, and that is the useful reading rather
     /// than a degenerate one: an enabled bridge with no list is a bot anyone who

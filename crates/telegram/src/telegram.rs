@@ -558,6 +558,8 @@ struct Update {
 #[derive(Deserialize)]
 struct TgMessage {
     chat: TgChat,
+    /// Who wrote it: absent on a channel post or a message sent as a chat.
+    from: Option<TgChat>,
     text: Option<String>,
 }
 
@@ -569,6 +571,10 @@ struct TgChat {
 #[derive(Deserialize)]
 struct TgCallback {
     id: String,
+    /// Who pressed, which is not who wrote the message pressed on: that was
+    /// the bot. Optional only so one odd update cannot fail the whole batch it
+    /// arrived in; a press with no presser is refused as a stranger's.
+    from: Option<TgChat>,
     data: Option<String>,
     message: Option<TgMessage>,
 }
@@ -588,19 +594,27 @@ impl Update {
             let chat = press.message?.chat.id.to_string();
             return Some(RemoteEvent::Pressed {
                 chat,
+                from: press
+                    .from
+                    .map(|from| from.id.to_string())
+                    .unwrap_or_default(),
                 press_id: press.id,
                 data: press.data?,
             });
         }
         let message = self.message?;
         let chat = message.chat.id.to_string();
+        let from = message
+            .from
+            .map(|from| from.id.to_string())
+            .unwrap_or_default();
         // A caption is not read as the message either. It is the text *beside* a
         // photo, so taking it alone would hand the agent "fix this" with nothing
         // to look at — a prompt about a picture that never travelled, which is a
         // worse answer than saying the picture did not travel.
         Some(match message.text {
-            Some(text) => RemoteEvent::Message { chat, text },
-            None => RemoteEvent::Unreadable { chat },
+            Some(text) => RemoteEvent::Message { chat, from, text },
+            None => RemoteEvent::Unreadable { chat, from },
         })
     }
 }
@@ -696,9 +710,12 @@ mod tests {
     #[test]
     fn a_text_message_becomes_a_message_event() {
         assert_eq!(
-            parse_update(r#"{"update_id":9,"message":{"chat":{"id":-100123},"text":"hello"}}"#),
+            parse_update(
+                r#"{"update_id":9,"message":{"chat":{"id":-100123},"from":{"id":42},"text":"hello"}}"#
+            ),
             Some(RemoteEvent::Message {
                 chat: "-100123".to_string(),
+                from: "42".to_string(),
                 text: "hello".to_string(),
             })
         );
@@ -708,11 +725,12 @@ mod tests {
     fn a_press_carries_the_chat_it_was_pressed_in() {
         assert_eq!(
             parse_update(
-                r#"{"update_id":9,"callback_query":{"id":"cb1","data":"p:3:0",
-                    "message":{"chat":{"id":77}}}}"#
+                r#"{"update_id":9,"callback_query":{"id":"cb1","data":"p:3:0","from":{"id":5},
+                    "message":{"chat":{"id":77},"from":{"id":1}}}}"#
             ),
             Some(RemoteEvent::Pressed {
                 chat: "77".to_string(),
+                from: "5".to_string(),
                 press_id: "cb1".to_string(),
                 data: "p:3:0".to_string(),
             })
@@ -734,7 +752,8 @@ mod tests {
             assert_eq!(
                 parse_update(update),
                 Some(RemoteEvent::Unreadable {
-                    chat: "1".to_string()
+                    chat: "1".to_string(),
+                    from: String::new(),
                 }),
                 "for {update}"
             );

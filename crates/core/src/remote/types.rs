@@ -86,8 +86,13 @@ pub enum RemoteEvent {
     /// far side calls this bot, which is the one thing worth saying about a
     /// connection nobody can see.
     Connected { name: String },
-    /// Someone wrote to the bot.
-    Message { chat: ChatId, text: String },
+    /// Someone wrote to the bot. `from` is who: in a chat of one, the chat
+    /// itself; in a group, the member who wrote.
+    Message {
+        chat: ChatId,
+        from: ChatId,
+        text: String,
+    },
     /// Something arrived from a chat that this build cannot read — a photo, a
     /// voice note, a sticker.
     ///
@@ -98,13 +103,14 @@ pub enum RemoteEvent {
     /// screenshot, nothing came back, and there is no way from the outside to
     /// tell that apart from a crashed process. What the app says is the app's
     /// business; that it must say *something* is this variant.
-    Unreadable { chat: ChatId },
+    Unreadable { chat: ChatId, from: ChatId },
     /// Someone pressed a button on a message the app sent.
     ///
     /// `data` is what [`Button::data`] carried; `press_id` is what an
     /// [`RemoteRequest::Ack`] has to echo.
     Pressed {
         chat: ChatId,
+        from: ChatId,
         press_id: String,
         data: String,
     },
