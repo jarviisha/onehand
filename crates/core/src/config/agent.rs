@@ -250,7 +250,7 @@ impl AgentSpec {
 
     /// The preset this agent is, counting the old Claude default left
     /// declared (for want of `claude` on `PATH`) as the Claude it still runs.
-    pub(crate) fn claude_or_preset(&self) -> Option<Preset> {
+    pub fn claude_or_preset(&self) -> Option<Preset> {
         self.preset
             .or_else(|| old_default_env(self).map(|_| Preset::ClaudeCode))
     }
