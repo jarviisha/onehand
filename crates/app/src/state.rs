@@ -42,6 +42,9 @@ pub struct Shared {
     /// The menu a new session spawns from. Agent definitions are global; each
     /// session keeps a clone of the spec it was spawned with.
     pub agents: Vec<AgentSpec>,
+    /// The built-in agents installed on this machine, looked for once at
+    /// start, so a page that offers one never goes looking when it opens.
+    pub on_machine: Vec<onehand_core::config::Preset>,
     /// Where `persist_agents` writes back to — the file the config came from.
     pub config_path: PathBuf,
     pub keymap: std::collections::BTreeMap<String, Vec<String>>,
@@ -129,6 +132,7 @@ impl Shared {
         Self {
             appearance: cfg.appearance,
             agents: cfg.agents,
+            on_machine: onehand_core::config::on_machine(std::env::var_os("PATH").as_deref()),
             config_path,
             keymap: cfg.keymap,
             mono_family: None,

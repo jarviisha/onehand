@@ -18,8 +18,8 @@ use std::path::{Path, PathBuf};
 
 mod agent;
 pub use agent::{
-    agent_or_first, default_adapter_args, find_command, join_args, split_args, AgentSpec, Launch,
-    Preset, DEFAULT_ACP_ADAPTER,
+    agent_or_first, default_adapter_args, find_command, join_args, on_machine, split_args,
+    AgentSpec, Launch, Preset, DEFAULT_ACP_ADAPTER,
 };
 pub(crate) use agent::{default_agents, found_agents};
 

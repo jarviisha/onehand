@@ -356,3 +356,24 @@ fn an_empty_list_the_person_wrote_is_kept() {
     let cfg = AppConfig::from_disk(Some("agents = []\n"), Some(dir.as_os_str())).unwrap();
     assert!(cfg.agents.is_empty());
 }
+
+#[test]
+fn an_added_preset_takes_a_free_name() {
+    let one = |name: &str| AgentSpec {
+        name: name.into(),
+        command: "x".into(),
+        ..Default::default()
+    };
+    let added = AgentSpec::of(Preset::Codex, &[one("Codex"), one("Codex (2)")]);
+    assert_eq!(
+        (added.name.as_str(), added.preset),
+        ("Codex (3)", Some(Preset::Codex))
+    );
+    assert_eq!(AgentSpec::of(Preset::Codex, &[]).name, "Codex");
+}
+
+#[test]
+fn what_is_on_the_machine_is_the_presets_whose_binary_is_found() {
+    let dir = bin_dir("on-machine", Some("codex"));
+    assert_eq!(on_machine(Some(dir.as_os_str())), [Preset::Codex]);
+}

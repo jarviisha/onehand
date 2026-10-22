@@ -92,6 +92,15 @@ impl Preset {
         }
     }
 
+    /// The command that installs this agent, as its makers publish it on npm,
+    /// which is already what runs every adapter.
+    pub fn install(self) -> &'static str {
+        match self {
+            Self::ClaudeCode => "npm install -g @anthropic-ai/claude-code",
+            Self::Codex => "npm install -g @openai/codex",
+        }
+    }
+
     /// The variable the adapter reads its agent's path from.
     fn binary_var(self) -> &'static str {
         match self {
@@ -185,6 +194,22 @@ impl AgentSpec {
         Some(format!("{}@{version}", preset.package()))
     }
 
+    /// A bare entry for `preset`, named as it is shown, or with the first
+    /// ` (n)` after that no entry in `taken` has, since a name finds one agent.
+    pub fn of(preset: Preset, taken: &[AgentSpec]) -> AgentSpec {
+        let free = |name: &String| taken.iter().all(|spec| &spec.name != name);
+        let shown = preset.shown_name().to_string();
+        let name = std::iter::once(shown.clone())
+            .chain((2..).map(|n| format!("{shown} ({n})")))
+            .find(free)
+            .expect("an unbounded range finds a free number");
+        AgentSpec {
+            name,
+            preset: Some(preset),
+            ..Default::default()
+        }
+    }
+
     /// The preset this agent is, counting the old Claude default left
     /// declared (for want of `claude` on `PATH`) as the Claude it still runs.
     pub(crate) fn claude_or_preset(&self) -> Option<Preset> {
@@ -200,17 +225,22 @@ impl AgentSpec {
     }
 }
 
-/// The built-in agents whose binary is on `path`, as entries of their own.
-pub(crate) fn found_agents(path: Option<&std::ffi::OsStr>) -> Vec<AgentSpec> {
+/// The built-in agents whose binary is on `path`.
+pub fn on_machine(path: Option<&std::ffi::OsStr>) -> Vec<Preset> {
     Preset::ALL
         .into_iter()
         .filter(|preset| find_command(preset.binary(), path, None).is_some())
-        .map(|preset| AgentSpec {
-            name: preset.shown_name().to_string(),
-            preset: Some(preset),
-            ..Default::default()
-        })
         .collect()
+}
+
+/// The built-in agents whose binary is on `path`, as entries of their own.
+pub(crate) fn found_agents(path: Option<&std::ffi::OsStr>) -> Vec<AgentSpec> {
+    let mut found = Vec::new();
+    for preset in on_machine(path) {
+        let spec = AgentSpec::of(preset, &found);
+        found.push(spec);
+    }
+    found
 }
 
 /// `value` with a leading `~/` as the home directory, as a shell would have
