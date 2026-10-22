@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 mod agent;
 pub use agent::{
     agent_or_first, default_adapter_args, find_command, join_args, on_machine, split_args,
-    AgentSpec, Launch, Preset, DEFAULT_ACP_ADAPTER,
+    AgentEdit, AgentSpec, Launch, Preset, DEFAULT_ACP_ADAPTER,
 };
 pub(crate) use agent::{default_agents, found_agents};
 
@@ -831,12 +831,28 @@ impl AppState {
 
     /// Load state, falling back to the default (nothing remembered) on any error.
     pub fn load() -> Self {
-        let mut state: Self = std::fs::read_to_string(Self::path())
-            .ok()
-            .and_then(|text| toml::from_str(&text).ok())
-            .unwrap_or_default();
+        let mut state = Self::load_from(&Self::path());
         state.migrate();
         state
+    }
+
+    /// The state at `path`. One that will not parse is copied to
+    /// `state.toml.bad` first: the next save writes the file whole, and
+    /// without the copy the recents it held would be gone for good.
+    fn load_from(path: &Path) -> Self {
+        let Ok(text) = std::fs::read_to_string(path) else {
+            return Self::default();
+        };
+        toml::from_str(&text).unwrap_or_else(|e| {
+            let kept = path.with_extension("toml.bad");
+            eprintln!(
+                "onehand: bad state {}: {e}; kept as {}",
+                path.display(),
+                kept.display()
+            );
+            let _ = std::fs::copy(path, &kept);
+            Self::default()
+        })
     }
 
     /// Fold the legacy `workspace_dir` into `recent_workspaces`, dedup, cap.

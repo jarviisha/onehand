@@ -207,6 +207,9 @@ pub struct Chat {
     /// run layout reads the item folds to choose how far a run stands from
     /// its neighbours, so it has to be built again when one moves.
     folds: u64,
+    /// Moved each time the transcript is numbered afresh, so whatever is keyed
+    /// by an item's position knows its keys now name other items.
+    numbering: u64,
 
     // ── what is on disk ──
     /// Where this conversation is kept. `None` never persists — which is what
@@ -267,6 +270,11 @@ impl Chat {
     /// How many folds have been toggled. See the field.
     pub fn folds(&self) -> u64 {
         self.folds
+    }
+
+    /// How many times the transcript has been numbered afresh.
+    pub fn numbering(&self) -> u64 {
+        self.numbering
     }
 
     /// Record that a fold was toggled.

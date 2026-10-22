@@ -450,3 +450,28 @@ fn an_account_with_a_space_is_quoted_in_the_login_command() {
         quote.login_hint()
     );
 }
+
+#[test]
+fn an_agent_edit_keeps_entries_added_by_hand() {
+    let named = |name: &str| AgentSpec {
+        name: name.into(),
+        command: "x".into(),
+        ..Default::default()
+    };
+    // On screen: a, b. On disk, written by hand meanwhile: a, hand, b.
+    let mut disk = vec![named("a"), named("hand"), named("b")];
+    AgentEdit::Put {
+        old: Some(named("b")),
+        new: named("b2"),
+    }
+    .apply(&mut disk);
+    AgentEdit::Promote(named("b2")).apply(&mut disk);
+    AgentEdit::Remove(named("a")).apply(&mut disk);
+    AgentEdit::Put {
+        old: None,
+        new: named("c"),
+    }
+    .apply(&mut disk);
+    let names: Vec<_> = disk.iter().map(|a| a.name.as_str()).collect();
+    assert_eq!(names, ["b2", "hand", "c"]);
+}

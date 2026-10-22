@@ -247,11 +247,29 @@ impl Chat {
             AcpEvent::ToolCall(tc) => {
                 self.consume_replay();
                 self.finalize_thought();
-                let mut item = ToolItem::new(tc);
-                // The same rule for a step that arrives already failed, which
-                // is how an adapter reports one it never started.
-                item.fold = (item.call.status == ToolStatus::Failed).then_some(true);
-                self.items.push(ChatItem::Tool(item));
+                // A call announced again under an id already on screen is the
+                // same step, said over: it updates its card rather than
+                // drawing a second one.
+                let known = self.items.iter_mut().rev().find_map(|item| match item {
+                    ChatItem::Tool(t) if t.call.id == tc.id => Some(t),
+                    _ => None,
+                });
+                if let Some(card) = known {
+                    card.call.kind = tc.kind;
+                    self.apply_tool_update(ToolCallUpdate {
+                        id: tc.id,
+                        status: Some(tc.status),
+                        title: Some(tc.title),
+                        description: tc.description,
+                        content: Some(tc.content),
+                    });
+                } else {
+                    let mut item = ToolItem::new(tc);
+                    // The same rule for a step that arrives already failed,
+                    // which is how an adapter reports one it never started.
+                    item.fold = (item.call.status == ToolStatus::Failed).then_some(true);
+                    self.items.push(ChatItem::Tool(item));
+                }
             }
             AcpEvent::ToolUpdate(tu) => {
                 self.consume_replay();

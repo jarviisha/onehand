@@ -203,12 +203,25 @@ pub struct Process {
 pub fn working_in_blocking(folder: &Path, processes: &[Process]) -> Vec<String> {
     processes
         .iter()
-        .filter(|p| {
-            std::fs::read_link(format!("/proc/{}/cwd", p.pid))
-                .is_ok_and(|cwd| cwd.starts_with(folder))
-        })
+        .filter(|p| cwd_of(p.pid).is_some_and(|cwd| cwd.starts_with(folder)))
         .map(|p| format!("{}, working in it,", p.what))
         .collect()
+}
+
+/// The directory process `pid` is in, as the system says: `/proc` where
+/// there is one, else `lsof`, which macOS ships.
+fn cwd_of(pid: u32) -> Option<PathBuf> {
+    if Path::new("/proc/self/cwd").exists() {
+        return std::fs::read_link(format!("/proc/{pid}/cwd")).ok();
+    }
+    let mut lsof = std::process::Command::new("lsof");
+    lsof.args(["-a", "-d", "cwd", "-Fn", "-p", &pid.to_string()]);
+    let out = output_within(&mut lsof, LOCAL_LIMIT).ok()?;
+    // `-Fn` prints one field per line, the name's prefixed `n`.
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .find_map(|line| line.strip_prefix('n'))
+        .map(PathBuf::from)
 }
 
 /// What a removal did.

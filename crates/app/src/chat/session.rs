@@ -251,6 +251,8 @@ pub struct ChatSession {
     /// shows -- taken once when the row opens rather than on every frame it is
     /// drawn. See `toggle_file`.
     file_open: HashMap<(TranscriptItemId, String), Vec<onehand_core::diff::Row>>,
+    /// The chat's numbering the folds above were keyed under.
+    numbering: u64,
     /// The event pump.
     ///
     /// Held rather than detached so the adapter's lifetime is tied to this
@@ -324,6 +326,7 @@ impl ChatSession {
                 section_open: HashSet::new(),
                 turn_open: HashMap::new(),
                 file_open: HashMap::new(),
+                numbering: 0,
                 _pump: cx.spawn(async move |session, cx| {
                     let mut events = events;
                     while let Some(first) = events.next().await {
@@ -571,15 +574,20 @@ impl ChatSession {
         cx: &mut Context<Self>,
     ) {
         self.chat.resume_from(snapshot);
-        // Folds are keyed by position, and the transcript is numbered afresh,
-        // so a choice kept from before would land on an unrelated step.
+        self.forget_folds();
+        self.sync_md(cx);
+        cx.notify();
+    }
+
+    /// Folds are keyed by position, and the transcript is numbered afresh,
+    /// so a choice kept from before would land on an unrelated step.
+    fn forget_folds(&mut self) {
+        self.numbering = self.chat.numbering();
         self.activity_open.clear();
         self.section_open.clear();
         self.turn_open.clear();
         self.file_open.clear();
         self.chat.fold_changed();
-        self.sync_md(cx);
-        cx.notify();
     }
 
     /// Reparse whatever grew, drop whatever went away.
@@ -588,6 +596,11 @@ impl ChatSession {
     /// length comparison and a streaming one costs `push_str` of the delta —
     /// never a reparse of the whole answer on every chunk.
     fn sync_md(&mut self, cx: &mut Context<Self>) {
+        // Here because this runs after everything that moves the transcript:
+        // a dropped replay renumbers it under the folds.
+        if self.chat.numbering() != self.numbering {
+            self.forget_folds();
+        }
         // The blocks are walked twice rather than copied once. Collecting them
         // as owned strings copied *every* answer in the conversation on *every*
         // streamed chunk -- work proportional to the whole transcript, to

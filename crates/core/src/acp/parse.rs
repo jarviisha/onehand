@@ -262,11 +262,36 @@ fn parse_tool_content(content: Option<&Value>) -> Vec<ToolContent> {
                             .map(|bytes| ToolContent::Image(Arc::new(bytes)))
                             .unwrap_or_else(|| ToolContent::Text("(image)".to_string())),
                     ),
-                    _ => block_text(block).map(|s| ToolContent::Text(strip_wrapping_fence(&s))),
+                    _ => block_text(block)
+                        .map(|s| ToolContent::Text(clip_tool_text(strip_wrapping_fence(&s)))),
                 }
             }
         })
         .collect()
+}
+
+/// The most of one tool output a transcript keeps.
+///
+/// A step's output stays in memory for as long as the conversation is open,
+/// and is written to its file: a read of a huge file or a command that prints
+/// without end grew both with no bound. The card shows a few dozen lines; what
+/// is past this is said rather than kept.
+const TOOL_TEXT_MAX: usize = 1 << 20;
+
+/// `text`, cut at [`TOOL_TEXT_MAX`] on a character boundary, saying how much
+/// was left out.
+fn clip_tool_text(mut text: String) -> String {
+    if text.len() <= TOOL_TEXT_MAX {
+        return text;
+    }
+    let mut end = TOOL_TEXT_MAX;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    let cut = text.len() - end;
+    text.truncate(end);
+    text.push_str(&format!("\n… {} KB more not kept", cut.div_ceil(1024)));
+    text
 }
 
 /// Unwrap a tool-output text that is exactly one markdown code fence. Claude's
@@ -351,6 +376,15 @@ fn block_text(block: &Value) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_huge_tool_output_is_cut_and_says_so() {
+        let text = "é".repeat(TOOL_TEXT_MAX);
+        let kept = clip_tool_text(text);
+        assert!(kept.len() < TOOL_TEXT_MAX + 64);
+        assert!(kept.ends_with("… 1024 KB more not kept"));
+        assert_eq!(clip_tool_text("ok".into()), "ok");
+    }
     use serde_json::json;
 
     #[test]

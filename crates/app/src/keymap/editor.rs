@@ -60,11 +60,21 @@ impl Editor {
         // Shown at once and written after; a write that fails puts the keys
         // back as they were last saved, said once.
         let before = Shared::global(cx).keymap.clone();
-        let written = overrides.clone();
+        // Only this command's keys go into the file, so a shortcut written
+        // there by hand while the app runs survives the save.
+        let id = command.id.to_string();
+        let written = overrides.get(command.id).cloned();
         crate::saves::write_config(
             "keymap",
             "Saving the shortcuts",
-            move |cfg| cfg.keymap = written,
+            move |cfg| match written {
+                Some(keys) => {
+                    cfg.keymap.insert(id, keys);
+                }
+                None => {
+                    cfg.keymap.remove(&id);
+                }
+            },
             Some(crate::saves::Change {
                 before,
                 after: overrides.clone(),

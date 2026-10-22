@@ -224,7 +224,15 @@ pub(crate) fn boot(cx: &mut App) {
                     .ok()
                 })
                 .collect();
-            cx.update_global::<Tasks, _>(|t, _| t.tasks.extend(tasks));
+            // Oldest first, as everything that looks for the newest task of an
+            // issue reads them: what was read is older than anything added
+            // while it was being read, and a task added then may have been
+            // written in time to be read too.
+            cx.update_global::<Tasks, _>(|t, _| {
+                let added = std::mem::replace(&mut t.tasks, tasks);
+                t.tasks.retain(|task| added.iter().all(|a| a.id != task.id));
+                t.tasks.extend(added);
+            });
             enforce_cap(cx);
             // An issue not told how its run ended before the last quit is
             // told now.
@@ -486,7 +494,8 @@ pub(crate) fn stop_queued(id: &str, cx: &mut App) {
     // An issue whose run never began is told it was stopped, or it would
     // stay claimed with nothing after the claim.
     if let Some(mut run) = dropped {
-        run.outcome = Some(onehand_core::workflow::Outcome::Stopped(Stop::ByPerson));
+        // Through the engine, so the stop is in the run's history as any is.
+        run.stopped(Stop::ByPerson);
         crate::unattended::keep(id, &run, None, cx);
         crate::unattended::deliver(id.to_string(), cx);
     }

@@ -159,9 +159,16 @@ pub struct Chats {
 
 impl Chats {
     /// A bridge that remembers nothing yet, for the chats on `allowed`.
+    ///
+    /// Trimmed here, once: the list is hand-typed, and an entry kept with its
+    /// spaces is one every lookup by a chat's own id misses.
     pub fn new(allowed: Vec<ChatId>) -> Self {
         Self {
-            allowed,
+            allowed: allowed
+                .into_iter()
+                .map(|chat| chat.trim().to_string())
+                .filter(|chat| !chat.is_empty())
+                .collect(),
             pointed: HashMap::new(),
             followed: HashMap::new(),
             archives: HashMap::new(),
@@ -234,7 +241,7 @@ impl Chats {
     pub fn allows(&self, chat: &str, from: &str) -> bool {
         let listed = |id: &str| {
             let id = id.trim();
-            !id.is_empty() && self.allowed.iter().any(|allowed| allowed.trim() == id)
+            !id.is_empty() && self.allowed.iter().any(|allowed| allowed == id)
         };
         listed(chat) && (from.trim() == chat.trim() || listed(from))
     }
@@ -877,6 +884,13 @@ mod tests {
             chats.audience_for(11).is_empty(),
             "nobody asked about 11, so nobody hears about it"
         );
+    }
+
+    #[test]
+    fn a_hand_typed_entry_with_spaces_still_hears_its_news() {
+        let mut chats = allowing(&[" 7 "]);
+        chats.point_at("7", 3, &[session(3)]);
+        assert_eq!(chats.audience_for(3), vec!["7".to_string()]);
     }
 
     fn origin(uid: u64) -> Origin {
