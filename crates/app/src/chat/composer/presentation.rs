@@ -543,6 +543,7 @@ mod tests {
         ConfigOption {
             id: id.into(),
             name: name.into(),
+            category: None,
             current: current.map(str::to_string),
             choices: values.iter().copied().map(choice).collect(),
         }

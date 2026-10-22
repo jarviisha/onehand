@@ -82,6 +82,10 @@ fn parse_config_option(o: &Value) -> Option<ConfigOption> {
         .and_then(Value::as_str)
         .unwrap_or(&id)
         .to_string();
+    let category = o
+        .get("category")
+        .and_then(Value::as_str)
+        .map(str::to_string);
     let current = o
         .get("currentValue")
         .and_then(Value::as_str)
@@ -116,6 +120,7 @@ fn parse_config_option(o: &Value) -> Option<ConfigOption> {
     Some(ConfigOption {
         id,
         name,
+        category,
         current,
         choices,
     })

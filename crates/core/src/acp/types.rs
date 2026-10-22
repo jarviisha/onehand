@@ -74,6 +74,9 @@ pub struct ConfigOption {
     pub id: String,
     /// Human label (e.g. `"Model"`).
     pub name: String,
+    /// What the agent says this group is (`"model"`, `"thought_level"`…),
+    /// when it says.
+    pub category: Option<String>,
     /// The currently selected value (matches a `ConfigChoice::value`).
     pub current: Option<String>,
     pub choices: Vec<ConfigChoice>,
