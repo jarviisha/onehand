@@ -369,7 +369,7 @@ fn ended(
     let late = drained.clone();
     cx.spawn(async move |cx| {
         cx.background_executor().timer(DRAIN_LIMIT).await;
-        let _ = cx.update(|cx| late(cx));
+        cx.update(|cx| late(cx));
     })
     .detach();
     let watch = cx.subscribe(
