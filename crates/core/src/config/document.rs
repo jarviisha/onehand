@@ -12,10 +12,19 @@ use toml_edit::{DocumentMut, Item, TableLike};
 /// Put into `doc` `after`'s value at every key where `before` and `after`
 /// differ, and leave everything else in it as it was.
 pub(super) fn merge(doc: &mut DocumentMut, before: &toml::Table, after: &toml::Table) {
-    merge_into(doc.as_table_mut(), before, after);
+    let mut next = 0;
+    each_table(doc.as_item_mut(), &mut |table| {
+        next = next.max(table.position().map_or(0, |at| at + 1));
+    });
+    merge_into(doc.as_table_mut(), before, after, &mut next);
 }
 
-fn merge_into(target: &mut dyn TableLike, before: &toml::Table, after: &toml::Table) {
+fn merge_into(
+    target: &mut dyn TableLike,
+    before: &toml::Table,
+    after: &toml::Table,
+    next: &mut usize,
+) {
     for key in before.keys().filter(|key| !after.contains_key(*key)) {
         target.remove(key);
     }
@@ -33,7 +42,7 @@ fn merge_into(target: &mut dyn TableLike, before: &toml::Table, after: &toml::Ta
                     Some(toml::Value::Table(was)) => was,
                     _ => &empty,
                 };
-                merge_into(table, was, now);
+                merge_into(table, was, now, next);
                 continue;
             }
         }
@@ -42,14 +51,27 @@ fn merge_into(target: &mut dyn TableLike, before: &toml::Table, after: &toml::Ta
         // when the list changes. Merge entries by position once `AgentSpec`
         // gains a field.
         let mut item = item_of(key, value);
+        // A table is drawn where its position says, and one read from the
+        // scratch document has that document's: numbered after every table
+        // already here, it lands at the end instead of among them.
+        each_table(&mut item, &mut |table| {
+            table.set_position(*next);
+            *next += 1;
+        });
         // Replaced where it stands rather than inserted anew: the key keeps
         // its own decor, which is where the comment above a line lives, and
-        // the value keeps the comment after it.
+        // the value keeps the comment after it. A list of tables keeps each
+        // entry's, by position, which is where the comments around it live.
         match target.get_mut(key) {
             Some(slot) => {
                 match (&*slot, &mut item) {
                     (Item::Value(old), Item::Value(new)) => *new.decor_mut() = old.decor().clone(),
                     (Item::Table(old), Item::Table(new)) => *new.decor_mut() = old.decor().clone(),
+                    (Item::ArrayOfTables(old), Item::ArrayOfTables(new)) => {
+                        for (old, new) in old.iter().zip(new.iter_mut()) {
+                            *new.decor_mut() = old.decor().clone();
+                        }
+                    }
                     _ => {}
                 }
                 *slot = item;
@@ -58,6 +80,30 @@ fn merge_into(target: &mut dyn TableLike, before: &toml::Table, after: &toml::Ta
                 target.insert(key, item);
             }
         }
+    }
+}
+
+/// Call `visit` on every table under `item`, in the order the document
+/// writes them.
+fn each_table(item: &mut Item, visit: &mut dyn FnMut(&mut toml_edit::Table)) {
+    let children = |table: &mut toml_edit::Table,
+                        visit: &mut dyn FnMut(&mut toml_edit::Table)| {
+        for (_, child) in table.iter_mut() {
+            each_table(child, visit);
+        }
+    };
+    match item {
+        Item::Table(table) => {
+            visit(table);
+            children(table, visit);
+        }
+        Item::ArrayOfTables(tables) => {
+            for table in tables.iter_mut() {
+                visit(table);
+                children(table, visit);
+            }
+        }
+        Item::None | Item::Value(_) => {}
     }
 }
 

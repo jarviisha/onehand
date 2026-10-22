@@ -63,3 +63,38 @@ fn dotted_and_inline_tables_are_merged_in_place() {
     assert!(out.contains("font = { monospace = \"Y\" }"), "{out}");
     assert!(!out.contains("[remote") && !out.contains("[font]"), "{out}");
 }
+
+#[test]
+fn a_new_table_lands_after_the_tables_already_there() {
+    let text = "[[agents]]\nname = \"A\"\n\n[agents.env]\nK = \"1\"\n\n[[agents]]\nname = \"B\"\n";
+    let out = merged(text, text, &format!("{text}\n[keymap]\nx = [\"a\"]\n"));
+    assert!(
+        out.find("[keymap]").unwrap() > out.rfind("name = \"B\"").unwrap(),
+        "{out}"
+    );
+    let text = "[keymap]\nx = [\"a\"]\n\n[font]\nmonospace = \"X\"\n";
+    let agents = "[[agents]]\nname = \"A\"\n\n[[agents]]\nname = \"B\"\n";
+    let out = merged(text, text, &format!("{text}\n{agents}"));
+    assert!(
+        out.find("[[agents]]").unwrap() > out.find("[font]").unwrap(),
+        "{out}"
+    );
+}
+
+#[test]
+fn a_changed_agent_list_keeps_the_comments_around_it() {
+    let text = "# top\n\n# about agents\n[[agents]]\nname = \"A\"\ncommand = \"a\"\n\n\
+                # about font\n[font]\nmonospace = \"X\"\n";
+    let out = merged(
+        text,
+        text,
+        &text.replace("command = \"a\"", "command = \"b\""),
+    );
+    for kept in ["# top", "# about agents", "# about font", "command = \"b\""] {
+        assert!(out.contains(kept), "{kept} is gone from:\n{out}");
+    }
+    assert!(
+        out.find("name").unwrap() < out.find("command").unwrap(),
+        "{out}"
+    );
+}
