@@ -254,7 +254,7 @@ fn rows_of(option: &onehand_core::acp::ConfigOption) -> Vec<Row> {
 /// `None` where the model's list would hold nothing.
 pub(super) fn options_action(session: &Entity<ChatSession>, cx: &App) -> Option<SharedString> {
     let options = &session.read(cx).chat.config_options;
-    if !options.iter().any(|option| listed(&option)) {
+    if !options.iter().any(|option| listed(option, options)) {
         return None;
     }
     let model = options
@@ -403,11 +403,20 @@ pub(super) fn mode_rows(session: &Entity<ChatSession>, cx: &App) -> Vec<Row> {
 /// the condition their own control is drawn on**, never on the name alone -- a
 /// group named `effort` that offers one choice, or `fast` that offers two
 /// values neither of which reads as *on*, gets no control of its own and has
-/// to come back here or it is reachable from nowhere.
-fn listed(option: &&onehand_core::acp::ConfigOption) -> bool {
-    let promoted =
-        has_own_chip(option) || (option.role() == Some(Role::Fast) && !option.choices.is_empty());
-    !promoted
+/// to come back here or it is reachable from nowhere. Only the one group each
+/// control draws leaves, too: a second group core reads as effort has no chip.
+fn listed(
+    option: &onehand_core::acp::ConfigOption,
+    options: &[onehand_core::acp::ConfigOption],
+) -> bool {
+    let drawn = [
+        options.iter().find(|option| has_own_chip(option)),
+        fast_group(options),
+    ];
+    !drawn
+        .into_iter()
+        .flatten()
+        .any(|drawn| std::ptr::eq(drawn, option))
 }
 
 pub(super) fn options_rows(session: &Entity<ChatSession>, cx: &App) -> Vec<Row> {
@@ -416,7 +425,7 @@ pub(super) fn options_rows(session: &Entity<ChatSession>, cx: &App) -> Vec<Row> 
         .config_options
         .iter()
         .enumerate()
-        .filter(|(_, option)| listed(option))
+        .filter(|(_, option)| listed(option, &chat.config_options))
         .collect();
     // The trigger promises Model, so Model leads. Preserve the agent's own
     // order within everything after it.
@@ -484,16 +493,24 @@ mod tests {
     fn a_promoted_group_that_cannot_be_drawn_stays_in_the_list() {
         let chip = effort("fast", "Fast mode", &["on", "off"], Some("on"));
         assert_eq!(chip.role(), Some(Role::Fast));
-        assert!(!listed(&&chip), "the chip has it, so the list must not");
         assert!(
-            listed(&&effort("fast", "Fast mode", &[], None)),
+            !listed(&chip, std::slice::from_ref(&chip)),
+            "the chip has it, so the list must not"
+        );
+        let empty = effort("fast", "Fast mode", &[], None);
+        assert!(
+            listed(&empty, std::slice::from_ref(&empty)),
             "a group with nothing to pick gets no chip, so dropping it would hide it entirely"
         );
 
         let own = effort("effort", "Effort", &["low", "high"], Some("high"));
-        assert!(!listed(&&own), "its own chip has it");
         assert!(
-            listed(&&effort("effort", "Effort", &["high"], Some("high"))),
+            !listed(&own, std::slice::from_ref(&own)),
+            "its own chip has it"
+        );
+        let one = effort("effort", "Effort", &["high"], Some("high"));
+        assert!(
+            listed(&one, std::slice::from_ref(&one)),
             "one choice gets no chip, so it is a row"
         );
     }
@@ -505,10 +522,28 @@ mod tests {
             effort("fast", "Fast mode", &["on", "off"], Some("off")),
         ];
         assert!(
-            !promoted.iter().any(|option| listed(&option)),
+            !promoted.iter().any(|option| listed(option, &promoted)),
             "both are drawn by controls of their own, so neither is a row"
         );
         assert!(has_own_chip(&promoted[0]), "effort is still reachable");
+    }
+
+    /// Only the group its control draws leaves the list: a second group core
+    /// reads as effort has no chip, and would otherwise be reachable from
+    /// nowhere.
+    #[test]
+    fn a_second_effort_group_stays_in_the_list() {
+        let thinking = ConfigOption {
+            category: Some("thought_level".into()),
+            ..effort("thinking", "Thinking", &["on", "off"], Some("on"))
+        };
+        let budget = ConfigOption {
+            category: Some("thought_level".into()),
+            ..effort("budget", "Budget", &["low", "high"], Some("low"))
+        };
+        let options = [thinking, budget];
+        assert!(!listed(&options[0], &options), "the chip has it");
+        assert!(listed(&options[1], &options), "nothing else draws it");
     }
 
     #[test]
