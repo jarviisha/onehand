@@ -835,3 +835,43 @@ fn a_note_naming_no_question_stays_a_field() {
     assert_eq!(e.fields.len(), 2);
     assert!(e.fields.iter().all(|f| f.custom_key.is_none()));
 }
+
+/// A turn refused for want of a login says so ahead of the turn's failure,
+/// which is what lets the transcript say the one in the words of the other.
+#[tokio::test]
+async fn a_login_required_turn_is_read_as_such_ahead_of_its_failure() {
+    let (mut agent, mut events) = client();
+    agent.handshake().await;
+    let tx = loop {
+        if let Some(AcpEvent::Connected { tx, .. }) = events.recv().await {
+            break tx;
+        }
+    };
+    tx.send(AcpRequest::Prompt {
+        text: "hi".into(),
+        attachments: Vec::new(),
+    })
+    .unwrap();
+    let prompt = agent.heard().await;
+    assert_eq!(prompt["method"], "session/prompt");
+    agent
+        .say(json!({
+            "jsonrpc": "2.0",
+            "id": prompt["id"],
+            "error": { "code": -32000, "message": "Authentication required" }
+        }))
+        .await;
+    let mut order = Vec::new();
+    while let Some(event) = events.recv().await {
+        match event {
+            AcpEvent::LoginRequired => order.push("login"),
+            AcpEvent::Error { .. } => order.push("error"),
+            AcpEvent::TurnEnded { .. } => {
+                order.push("ended");
+                break;
+            }
+            _ => {}
+        }
+    }
+    assert_eq!(order, ["login", "error", "ended"]);
+}

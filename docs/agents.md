@@ -110,10 +110,12 @@ An agent that answers a request with ACP's `auth_required` (`-32000`) is not log
 answers `session/new` so, Claude Code only its first prompt. The transcript says it once, in place
 of the failure that follows (`AgentSpec::login_hint`):
 
-- a built-in agent: *Codex is not logged in. Run `codex login` in a terminal, then restart the
+- a built-in agent: *Codex is not logged in. Run codex login in a terminal, then restart the
   agent*. Claude Code's command is `claude auth login`. When the entry's `env` sets its account
   variable (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`), the command carries it, so the login reaches that
-  account: `CLAUDE_CONFIG_DIR=/home/me/.claude-work claude auth login`;
+  account: `CLAUDE_CONFIG_DIR=/home/me/.claude-work claude auth login`, the directory in single
+  quotes when it holds a space or anything else a shell would read. The line is drawn as text, so
+  the command carries no backticks;
 - a declared agent: *Gemini needs you to log in*.
 
 Logging in inside onehand (ACP `authenticate`) is not built.

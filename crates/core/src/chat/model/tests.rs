@@ -2412,7 +2412,7 @@ fn notices(chat: &Chat) -> Vec<String> {
 fn a_login_required_turn_is_said_once_as_the_hint() {
     let mut chat = Chat::default();
     chat.login_hint =
-        "Codex is not logged in. Run `codex login` in a terminal, then restart the agent".into();
+        "Codex is not logged in. Run codex login in a terminal, then restart the agent".into();
     chat.busy = true;
     chat.apply(AcpEvent::LoginRequired);
     chat.apply(AcpEvent::Error {

@@ -242,10 +242,14 @@ impl AgentSpec {
         let account = self
             .env
             .get(preset.account_var())
-            .map(|dir| format!("{}={} ", preset.account_var(), home_expanded(dir)))
+            .map(|dir| {
+                let dir = shell_word(&home_expanded(dir));
+                format!("{}={dir} ", preset.account_var())
+            })
             .unwrap_or_default();
+        // No backticks: the line is drawn as text, where they would show.
         format!(
-            "{} is not logged in. Run `{account}{}` in a terminal, then restart the agent",
+            "{} is not logged in. Run {account}{} in a terminal, then restart the agent",
             self.name,
             preset.login()
         )
@@ -282,6 +286,21 @@ pub(crate) fn found_agents(path: Option<&std::ffi::OsStr>) -> Vec<AgentSpec> {
         found.push(spec);
     }
     found
+}
+
+/// `value` as one word a shell reads back unchanged: as typed when it holds
+/// nothing a shell would split or expand, else in single quotes, a quote in
+/// it closed, escaped and reopened. A login command is pasted into a terminal,
+/// and an account directory with a space in it would otherwise run as two.
+fn shell_word(value: &str) -> String {
+    let plain = !value.is_empty()
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "_-./:@%+=,".contains(c));
+    match plain {
+        true => value.to_string(),
+        false => format!("'{}'", value.replace('\'', r"'\''")),
+    }
 }
 
 /// `value` with a leading `~/` as the home directory, as a shell would have
