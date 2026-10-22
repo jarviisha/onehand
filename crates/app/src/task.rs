@@ -335,6 +335,9 @@ pub(crate) fn request(id: String, window: &mut Window, cx: &mut Context<Shell>) 
     .detach();
 }
 
+/// How long a cancelled turn is waited for before its place is given up anyway.
+const DRAIN_LIMIT: std::time::Duration = std::time::Duration::from_secs(30);
+
 /// Task `id` ended in `session`: its place is given up once the work has
 /// stopped, which is at once unless the session's turn is still going.
 /// Marks from the `from`th boundary on are still to be pinned.
@@ -361,6 +364,14 @@ fn ended(
         }
     };
     let on_event = drained.clone();
+    // The second deadline. A turn that was cancelled ends when the agent says
+    // so, and one that never does held this place, and a slot, for good.
+    let late = drained.clone();
+    cx.spawn(async move |cx| {
+        cx.background_executor().timer(DRAIN_LIMIT).await;
+        cx.update(|cx| late(cx));
+    })
+    .detach();
     let watch = cx.subscribe(
         session,
         move |_, event: &crate::chat::session::ChatEvent, cx| {

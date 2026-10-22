@@ -5,6 +5,8 @@ use super::{advance, read, with};
 use gpui::{App, Task};
 use onehand_core::connector::{self, CheckState, Connector, PullRequest};
 use onehand_core::workflow::{PrOpened, Seen, judge, pull_request_step, waited_on, with_logs};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 /// How often a run waiting on its pull request's status checks looks at
@@ -60,6 +62,11 @@ pub(super) fn on_forge(uid: u64, commit: Option<String>, cx: &mut App) {
             task.as_ref().and_then(|task| task.issue()),
         )
     });
+    // Held as a step's command is, so a Stop waits for the forge call in
+    // flight and the run is said to be stopped only once it has landed, and
+    // no pull request is opened after that.
+    let cancel = Arc::new(AtomicBool::new(false));
+    with(uid, cx, |d| d.command = Some(cancel.clone()));
     cx.spawn(async move |cx| {
         let done = cx
             .background_executor()
@@ -83,6 +90,9 @@ pub(super) fn on_forge(uid: u64, commit: Option<String>, cx: &mut App) {
                 {
                     return Ok(Some(opened(pr)));
                 }
+                if cancel.load(Ordering::SeqCst) {
+                    return Ok(None);
+                }
                 let (title, body) = text.unwrap_or_default();
                 connector.open_pull_request_blocking(&dir, &branch, &title, &body)?;
                 // Read back for what to keep; one that cannot be read yet is
@@ -94,7 +104,17 @@ pub(super) fn on_forge(uid: u64, commit: Option<String>, cx: &mut App) {
                     .map(opened))
             })
             .await;
-        cx.update(|cx| advance(uid, cx, move |run| run.forge_done(done)));
+        cx.update(|cx| {
+            let stopping = with(uid, cx, |d| {
+                d.command = None;
+                d.stopping.take()
+            })
+            .flatten();
+            match stopping {
+                Some(stop) => advance(uid, cx, move |run| run.stopped(stop)),
+                None => advance(uid, cx, move |run| run.forge_done(done)),
+            }
+        });
     })
     .detach();
 }

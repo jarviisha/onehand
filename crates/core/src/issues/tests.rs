@@ -252,3 +252,35 @@ fn a_label_is_told_by_what_it_asks_for() {
     assert_eq!(LabelKind::of("documentation"), LabelKind::Docs);
     assert_eq!(LabelKind::of("bug"), LabelKind::Category);
 }
+
+/// **One project's slow write does not hold another's.** A sync holds its
+/// file while it asks the forge, which can take minutes; with one lock for
+/// every file, editing an issue in any other project waited for it too.
+#[test]
+fn a_write_to_one_file_does_not_wait_on_another() {
+    let dir = std::env::temp_dir().join(format!("onehand-issues-locks-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let (slow, quick) = (dir.join("slow.json"), dir.join("quick.json"));
+    let (held, holding) = std::sync::mpsc::channel();
+    let slow_writer = std::thread::spawn(move || {
+        update_blocking(&slow, |_| {
+            held.send(()).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(800));
+            Ok(())
+        })
+        .unwrap();
+    });
+    holding.recv().unwrap();
+
+    let started = std::time::Instant::now();
+    update_blocking(&quick, |_| Ok(())).unwrap();
+
+    assert!(
+        started.elapsed() < std::time::Duration::from_millis(400),
+        "waited {:?}",
+        started.elapsed()
+    );
+    slow_writer.join().unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+}

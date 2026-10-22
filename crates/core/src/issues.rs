@@ -545,9 +545,21 @@ pub fn load_blocking(file: &Path) -> Result<Issues, String> {
     }
 }
 
-/// Serializes every read-change-write in this process, so no two can
-/// interleave and lose one another's change.
-static WRITING: Mutex<()> = Mutex::new(());
+/// The lock that serializes every read-change-write of `file` in this
+/// process, so no two can interleave and lose one another's change.
+///
+/// One per file rather than one for all: a sync holds its file while it asks
+/// the forge, and a slow forge must not hold every other project's issues too.
+fn writing(file: &Path) -> std::sync::Arc<Mutex<()>> {
+    static WRITING: std::sync::OnceLock<
+        Mutex<std::collections::HashMap<PathBuf, std::sync::Arc<Mutex<()>>>>,
+    > = std::sync::OnceLock::new();
+    let locks = WRITING.get_or_init(Default::default);
+    let mut locks = locks
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    locks.entry(file.to_path_buf()).or_default().clone()
+}
 
 /// Read `file`, apply `change`, and write it back if the change succeeded —
 /// all under one lock. Hands back what is now kept and what `change` said.
@@ -559,9 +571,8 @@ pub fn update_blocking<R>(
     file: &Path,
     change: impl FnOnce(&mut Issues) -> Result<R, String>,
 ) -> Result<(Issues, R), String> {
-    let _held = WRITING
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let lock = writing(file);
+    let _held = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let mut issues = load_blocking(file)?;
     let said = change(&mut issues)?;
     issues.revision += 1;

@@ -84,6 +84,12 @@ minor bump may break any of them.
 - A file read asked for a range of lines gets that range.
 - A method onehand does not serve is answered as missing, and a session the agent did not name is a
   failed start.
+- A free unattended slot is filled at once rather than at the next tick, and labelled issues are
+  read oldest first so the oldest are never the ones past the list's limit.
+- A cancelled turn the agent never ends lets go of its slot after 30 seconds.
+- Stop waits for a push or a pull request in flight, and no pull request is opened after it.
+- Publishing an issue that timed out says it may have been created, so it is not published twice.
+- Each project's issues file has its own lock, so one slow sync holds no other project.
 
 ### Project
 

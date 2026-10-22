@@ -80,7 +80,11 @@ pub(super) fn landed(
         }
         Some(Err(unstarted)) => unstarted,
         Some(Ok(landed)) => match start(landed, cx) {
-            Ok(()) => return,
+            // One claim per search, so a slot still free after it is filled by
+            // looking again now rather than at the next tick: with several
+            // runs at once, filling them one interval apart left them empty
+            // for most of an hour. The look stops itself at the cap.
+            Ok(()) => return cx.defer(|cx| super::tick(None, cx)),
             Err(unstarted) => unstarted,
         },
     };

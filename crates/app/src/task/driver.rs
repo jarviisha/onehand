@@ -72,7 +72,7 @@ pub(super) struct Driven {
     spent_before: u64,
     /// The agent parked a card nobody has answered yet.
     card: bool,
-    /// Set to call off the step's command, while one is running.
+    /// Set to call off the step's command or forge call, while one is running.
     pub(super) command: Option<Arc<AtomicBool>>,
     /// How the run ends once its called-off command has exited.
     pub(super) stopping: Option<Stop>,
@@ -261,7 +261,8 @@ fn with<R>(uid: u64, cx: &mut App, act: impl FnOnce(&mut Driven) -> R) -> Option
 }
 
 /// End the run as `stop` — at once, or, while the step's command runs, once
-/// that command and everything it started have been stopped and have exited.
+/// that command and everything it started have been stopped and have exited;
+/// while a forge call runs, once it has landed.
 /// A run said to be stopped never leaves a build or a test writing to the
 /// work behind it. The first reason given is the one the run ends with.
 fn end(uid: u64, stop: Stop, cx: &mut App) {

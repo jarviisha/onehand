@@ -606,7 +606,7 @@ fn with<R>(cx: &mut App, act: impl FnOnce(&mut Unattended) -> R) -> Option<R> {
 /// look found, and a tick that only looked while it was about to search left
 /// them as old as the run was long — and left an account signed in on screen after it
 /// had been signed out.
-fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
+pub(super) fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
     // A report that could not reach its issue is tried again at every tick,
     // switched on or not: an issue picked by hand needs no switch, and its
     // report must not wait for one.
