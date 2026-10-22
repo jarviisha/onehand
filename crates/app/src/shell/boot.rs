@@ -186,6 +186,10 @@ impl Shell {
                     E::DeleteConversation(dir) => {
                         shell.confirm_delete_conversation(dir.clone(), window, cx)
                     }
+                    E::OpenAgentSettings => {
+                        shell.show_settings_page(crate::settings::SettingsPage::Agents, cx);
+                        shell.open_settings(window, cx);
+                    }
                     E::StartSession { agent, resume } => {
                         // The uid is only wanted where the caller has to name
                         // what it just made; a click on the page has the new

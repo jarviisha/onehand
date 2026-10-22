@@ -141,6 +141,9 @@ pub enum ChatPaneEvent {
         agent: Option<SharedString>,
         resume: Option<PathBuf>,
     },
+    /// Open Settings on its Agents page — the no-agent state's way to where an
+    /// agent is set up. Settings is the shell's, as every page is.
+    OpenAgentSettings,
     /// A conversation could not be written to disk.
     ///
     /// Announced rather than shown here because the pane has no window to show
