@@ -54,7 +54,7 @@ impl AgentDraft {
     /// Load an existing agent into the form for editing.
     pub fn load(&mut self, idx: usize, spec: &AgentSpec, window: &mut Window, cx: &mut App) {
         self.editing = Some(idx);
-        self.kind = spec.preset;
+        self.kind = spec.preset();
         self.version = spec.version.clone();
         let env = spec
             .env
@@ -143,7 +143,7 @@ fn draft_spec(
     Ok(match kind {
         Some(preset) => AgentSpec {
             name,
-            preset: Some(preset),
+            preset: Some(preset.into()),
             version,
             env,
             ..Default::default()

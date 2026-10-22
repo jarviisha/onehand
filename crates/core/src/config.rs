@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 mod agent;
 pub use agent::{
     agent_or_first, default_adapter_args, find_command, join_args, on_machine, split_args,
-    AgentEdit, AgentSpec, Launch, Preset, PresetInfo, Runs, DEFAULT_ACP_ADAPTER,
+    AgentEdit, AgentSpec, Launch, Preset, PresetId, PresetInfo, Runs, DEFAULT_ACP_ADAPTER,
 };
 pub(crate) use agent::{default_agents, found_agents};
 
@@ -268,7 +268,7 @@ impl AppConfig {
         agent::name_uniquely(&mut self.agents);
         let runs_on = agent_or_first(&self.agents, self.unattended.agent.as_deref());
         if self.unattended.mode.as_deref() == Some("acceptEdits")
-            && runs_on.is_some_and(|agent| agent.preset.is_some())
+            && runs_on.is_some_and(|agent| agent.preset().is_some())
         {
             self.unattended.mode = None;
         }

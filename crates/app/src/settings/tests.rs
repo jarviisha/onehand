@@ -54,7 +54,7 @@ fn deleting_an_agent_moves_the_form_off_the_hole() {
 #[test]
 fn a_preset_draft_needs_only_a_name() {
     let spec = draft_spec(Some(Preset::Codex), "Codex", "", "", "", None, &[]).unwrap();
-    assert_eq!(spec.preset, Some(Preset::Codex));
+    assert_eq!(spec.preset(), Some(Preset::Codex));
     assert!(spec.command.is_empty() && spec.args.is_empty());
     assert_eq!(
         draft_spec(Some(Preset::Codex), " ", "", "", "", None, &[]).unwrap_err(),

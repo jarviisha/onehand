@@ -19,7 +19,7 @@ pub struct AgentSpec {
     #[serde(default)]
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub preset: Option<Preset>,
+    pub preset: Option<PresetId>,
     /// The adapter version a preset runs instead of its pin.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
@@ -108,6 +108,25 @@ static CODEX: PresetInfo = PresetInfo {
         binary_var: "CODEX_PATH",
     },
 };
+
+/// The `preset` an entry names: one this build knows, or one it does not.
+///
+/// **An id this build does not know is kept, verbatim.** A newer build may
+/// write one, and reading it as an error lost the whole file to defaults,
+/// while reading it as a known one, or dropping it, would change what the
+/// entry starts or lose it at the next save.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum PresetId {
+    Known(Preset),
+    Unknown(String),
+}
+
+impl From<Preset> for PresetId {
+    fn from(preset: Preset) -> Self {
+        Self::Known(preset)
+    }
+}
 
 impl Preset {
     /// Every built-in agent, in the order a first launch lists them.
@@ -246,7 +265,12 @@ impl AgentSpec {
     /// either way, so it can override what a preset sets.
     pub fn launch(&self, path: Option<&std::ffi::OsStr>) -> Result<Launch, String> {
         let own = self.env.iter().map(|(k, v)| (k.clone(), home_expanded(v)));
-        let Some(preset) = self.preset else {
+        if let Some(id) = self.unknown_preset() {
+            return Err(format!(
+                "`{id}` is not an agent this build of onehand knows; update onehand, or remove it in Settings ▸ Agents"
+            ));
+        }
+        let Some(preset) = self.preset() else {
             return Ok(Launch {
                 command: self.command.clone(),
                 args: self.args.clone(),
@@ -266,7 +290,7 @@ impl AgentSpec {
     /// The adapter package a preset runs, at the version it runs:
     /// `@agentclientprotocol/codex-acp@2.2.2`. `None` for a declared agent.
     pub fn adapter(&self) -> Option<String> {
-        match self.preset?.info().runs {
+        match self.preset()?.info().runs {
             Runs::Adapter { package, pin, .. } => Some(format!(
                 "{package}@{}",
                 self.version.as_deref().unwrap_or(pin)
@@ -286,8 +310,24 @@ impl AgentSpec {
             .expect("an unbounded range finds a free number");
         AgentSpec {
             name,
-            preset: Some(preset),
+            preset: Some(preset.into()),
             ..Default::default()
+        }
+    }
+
+    /// The built-in agent this entry is, when this build knows it.
+    pub fn preset(&self) -> Option<Preset> {
+        match self.preset {
+            Some(PresetId::Known(preset)) => Some(preset),
+            Some(PresetId::Unknown(_)) | None => None,
+        }
+    }
+
+    /// The id of a preset this build does not know, when the entry names one.
+    pub fn unknown_preset(&self) -> Option<&str> {
+        match &self.preset {
+            Some(PresetId::Unknown(id)) => Some(id),
+            Some(PresetId::Known(_)) | None => None,
         }
     }
 
@@ -300,7 +340,7 @@ impl AgentSpec {
         // The preset itself, not the old default left declared: that one stays
         // declared only where the agent's binary is missing, so a command that
         // needs it is no help.
-        let Some(preset) = self.preset else {
+        let Some(preset) = self.preset() else {
             return format!("{} needs you to log in", self.name);
         };
         let info = preset.info();
@@ -322,14 +362,14 @@ impl AgentSpec {
     /// The preset this agent is, counting the old Claude default left
     /// declared (for want of `claude` on `PATH`) as the Claude it still runs.
     pub fn claude_or_preset(&self) -> Option<Preset> {
-        self.preset
+        self.preset()
             .or_else(|| old_default_env(self).map(|_| Preset::ClaudeCode))
     }
 
     /// Whether this preset runs an adapter other than the one this release
     /// was tried with.
     pub fn outside_pin(&self) -> bool {
-        match self.preset.map(|preset| &preset.info().runs) {
+        match self.preset().map(|preset| &preset.info().runs) {
             Some(Runs::Adapter { pin, .. }) => self.version.as_deref().is_some_and(|v| v != *pin),
             _ => false,
         }
@@ -386,7 +426,7 @@ pub(super) fn migrate(agents: &mut [AgentSpec]) {
         if let Some(env) = old_default_env(spec) {
             *spec = AgentSpec {
                 name: std::mem::take(&mut spec.name),
-                preset: Some(Preset::ClaudeCode),
+                preset: Some(Preset::ClaudeCode.into()),
                 env,
                 ..Default::default()
             };
@@ -425,8 +465,15 @@ fn old_default_env(spec: &AgentSpec) -> Option<BTreeMap<String, String>> {
 /// earlier in the list, skipping numbers some other entry already has.
 pub(super) fn name_uniquely(agents: &mut [AgentSpec]) {
     for spec in agents.iter_mut() {
-        if let (Some(preset), true) = (spec.preset, spec.name.trim().is_empty()) {
-            spec.name = preset.info().shown_name.to_string();
+        if !spec.name.trim().is_empty() {
+            continue;
+        }
+        // One this build does not know is called by its id, so it can still
+        // be found, and removed.
+        match &spec.preset {
+            Some(PresetId::Known(preset)) => spec.name = preset.info().shown_name.to_string(),
+            Some(PresetId::Unknown(id)) => spec.name = id.clone(),
+            None => {}
         }
     }
     let mut all: std::collections::HashSet<String> =

@@ -57,7 +57,7 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
             AgentCheck::Running => ("Checking…".to_string(), muted),
             // Found is the state at rest: muted, as a fact is.
             AgentCheck::Found(at, version) => {
-                let what = match (spec.preset, version) {
+                let what = match (spec.preset(), version) {
                     (Some(_), Some(version)) => version.clone(),
                     (Some(preset), None) => preset.info().binary.to_string(),
                     (None, _) => spec.command.clone(),
@@ -67,7 +67,7 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
             // A built-in agent is missing in the words a start would use.
             AgentCheck::Missing => (
                 match spec.launch(Some(std::ffi::OsStr::new(""))) {
-                    Err(why) if spec.preset.is_some() => why,
+                    Err(why) if spec.preset().is_some() => why,
                     _ => format!(
                         "{} was not found — check the command, or give its full path",
                         spec.command
@@ -260,7 +260,7 @@ pub(super) fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         .on_machine
         .iter()
         .copied()
-        .filter(|preset| specs.iter().all(|spec| spec.preset != Some(*preset)))
+        .filter(|preset| specs.iter().all(|spec| spec.preset() != Some(*preset)))
         .map(|preset| {
             let shell = handle.clone();
             div()
