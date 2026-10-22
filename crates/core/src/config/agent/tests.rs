@@ -386,8 +386,8 @@ fn the_login_hint_names_the_entrys_account() {
         ..Default::default()
     };
     assert_eq!(
-        codex.login_hint(),
-        "Codex is not logged in. Run codex login in a terminal, then restart the agent"
+        codex.login_hint().as_deref(),
+        Some("Codex is not logged in. Run codex login in a terminal, then restart the agent")
     );
     let acc2 = AgentSpec {
         name: "Claude Code (acc2)".into(),
@@ -400,8 +400,8 @@ fn the_login_hint_names_the_entrys_account() {
         ..Default::default()
     };
     assert_eq!(
-        acc2.login_hint(),
-        "Claude Code (acc2) is not logged in. Run CLAUDE_CONFIG_DIR=/x/.claude-acc2 claude auth login in a terminal, then restart the agent"
+        acc2.login_hint().as_deref(),
+        Some("Claude Code (acc2) is not logged in. Run CLAUDE_CONFIG_DIR=/x/.claude-acc2 claude auth login in a terminal, then restart the agent")
     );
     let other_var = AgentSpec {
         env: [("OTHER".into(), "1".into())].into(),
@@ -413,15 +413,15 @@ fn the_login_hint_names_the_entrys_account() {
         command: "gemini".into(),
         ..Default::default()
     };
-    assert_eq!(gemini.login_hint(), "Gemini needs you to log in");
+    assert_eq!(gemini.login_hint(), None);
 }
 
 /// The old Claude default is left declared only where `claude` is missing,
 /// so a command that needs it is no help there.
 #[test]
-fn the_old_default_left_declared_is_asked_to_log_in_in_plain_words() {
+fn the_old_default_left_declared_has_no_login_command() {
     let spec = default_agents().remove(0);
-    assert_eq!(spec.login_hint(), "Claude Code needs you to log in");
+    assert_eq!(spec.login_hint(), None);
 }
 
 /// The command is pasted into a shell, so a directory with a space in it is
@@ -435,8 +435,8 @@ fn an_account_with_a_space_is_quoted_in_the_login_command() {
         ..Default::default()
     };
     assert_eq!(
-        spec.login_hint(),
-        "Claude Code (work) is not logged in. Run CLAUDE_CONFIG_DIR='/home/me/My Claude' claude auth login in a terminal, then restart the agent"
+        spec.login_hint().as_deref(),
+        Some("Claude Code (work) is not logged in. Run CLAUDE_CONFIG_DIR='/home/me/My Claude' claude auth login in a terminal, then restart the agent")
     );
     let quote = AgentSpec {
         env: [("CLAUDE_CONFIG_DIR".into(), "/home/me/it's".into())].into(),
@@ -445,8 +445,9 @@ fn an_account_with_a_space_is_quoted_in_the_login_command() {
     assert!(
         quote
             .login_hint()
+            .unwrap()
             .contains(r"CLAUDE_CONFIG_DIR='/home/me/it'\''s' claude"),
-        "{}",
+        "{:?}",
         quote.login_hint()
     );
 }
@@ -618,8 +619,8 @@ fn copilot_logs_in_under_its_account() {
     spec.env
         .insert("COPILOT_HOME".into(), "/home/me/.copilot-work".into());
     assert_eq!(
-        spec.login_hint(),
-        "Copilot is not logged in. Run COPILOT_HOME=/home/me/.copilot-work copilot login in a terminal, then restart the agent"
+        spec.login_hint().as_deref(),
+        Some("Copilot is not logged in. Run COPILOT_HOME=/home/me/.copilot-work copilot login in a terminal, then restart the agent")
     );
 }
 

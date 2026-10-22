@@ -111,12 +111,13 @@ impl Away {
 
 impl Chat {
     /// How to log in, once, when the agent has just answered that it is not
-    /// logged in: the entry's own words, or the agent's name where none were
-    /// given.
+    /// logged in: the entry's own words, else the agent's, else its name.
     fn take_login_hint(&mut self) -> Option<String> {
-        std::mem::take(&mut self.login_pending).then(|| match self.login_hint.is_empty() {
-            true => format!("{} needs you to log in", self.agent),
-            false => self.login_hint.clone(),
+        let advice = self.login_pending.take()?;
+        Some(match (&self.login_hint, advice) {
+            (Some(hint), _) => hint.clone(),
+            (None, Some(advice)) => format!("{} is not logged in. {advice}", self.agent),
+            (None, None) => format!("{} needs you to log in", self.agent),
         })
     }
 
@@ -392,7 +393,7 @@ impl Chat {
             // Said by the failure it comes ahead of, so that failure keeps what
             // it is: a turn that failed can be sent again once logged in, and a
             // start that failed leaves the link lost.
-            AcpEvent::LoginRequired => self.login_pending = true,
+            AcpEvent::LoginRequired { advice } => self.login_pending = Some(advice),
             AcpEvent::Error { text, detail } => {
                 // An error mid-turn is the prompt's answer: the turn ends on it.
                 // Not after a Stop, though: some adapters answer a cancel with

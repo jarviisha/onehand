@@ -354,18 +354,17 @@ impl AgentSpec {
         }
     }
 
-    /// What to tell someone whose agent answered that it is not logged in.
-    ///
-    /// A built-in agent's words carry the command that logs it in, under the
-    /// entry's own account where its environment names one: a second account
-    /// logged in without it would log the first one in again.
-    pub fn login_hint(&self) -> String {
+    /// What to tell someone whose agent answered that it is not logged in,
+    /// when this entry knows: a built-in agent's words carry the command that
+    /// logs it in, under the entry's own account where its environment names
+    /// one, since a second account logged in without it would log the first
+    /// one in again. Any other entry has none, and the agent's own words, or
+    /// its name, stand in.
+    pub fn login_hint(&self) -> Option<String> {
         // The preset itself, not the old default left declared: that one stays
         // declared only where the agent's binary is missing, so a command that
         // needs it is no help.
-        let Some(preset) = self.preset() else {
-            return format!("{} needs you to log in", self.name);
-        };
+        let preset = self.preset()?;
         let info = preset.info();
         let account = self
             .env
@@ -376,10 +375,10 @@ impl AgentSpec {
             })
             .unwrap_or_default();
         // No backticks: the line is drawn as text, where they would show.
-        format!(
+        Some(format!(
             "{} is not logged in. Run {account}{} in a terminal, then restart the agent",
             self.name, info.login
-        )
+        ))
     }
 
     /// The preset this agent is, counting the old Claude default left

@@ -113,7 +113,7 @@ fn check(ask: &Ask, cx: &mut App) {
                     | AcpEvent::TerminalExit { .. }
                     | AcpEvent::TurnEnded { .. }
                     // The refusal it comes ahead of ends the check, in words.
-                    | AcpEvent::LoginRequired => {}
+                    | AcpEvent::LoginRequired { .. } => {}
                 }
             }
             Err("the agent closed before it came up".to_string())

@@ -178,6 +178,7 @@ async fn run(
         ready: false,
         session_id: None,
         images: false,
+        auth_advice: None,
         opts,
         req_tx,
         output,
@@ -264,6 +265,19 @@ async fn run(
     }
 }
 
+/// How the agent says it is logged in, from the handshake's `authMethods`:
+/// the first way it describes, without the backticks it quotes a command in,
+/// since the line it ends up in is drawn as plain text.
+fn auth_advice(result: Option<&Value>) -> Option<String> {
+    result?
+        .get("authMethods")?
+        .as_array()?
+        .iter()
+        .filter_map(|method| method.get("description").and_then(Value::as_str))
+        .map(|said| said.replace('`', "").trim().to_string())
+        .find(|said| !said.is_empty())
+}
+
 /// The serve loop's side of one connection: the pipe it writes to, what it is
 /// waiting to hear back, what the agent has said about itself, and where events
 /// go.
@@ -281,6 +295,8 @@ struct Conn {
     session_id: Option<String>,
     /// Whether the agent said it reads image blocks; until it says so, it does not.
     images: bool,
+    /// How the agent says it is logged in, for when it answers that it is not.
+    auth_advice: Option<String>,
     opts: SessionOpts,
     req_tx: super::types::ReqTx,
     output: EventTx<AcpEvent>,
@@ -450,6 +466,7 @@ impl Conn {
                     if let Some(err) = msg.get("error") {
                         return Err(format!("initialize failed: {err}"));
                     }
+                    self.auth_advice = auth_advice(msg.get("result"));
                     let capabilities = msg.get("result").and_then(|r| r.get("agentCapabilities"));
                     let load_supported = capabilities
                         .and_then(|c| c.get("loadSession"))
@@ -478,7 +495,8 @@ impl Conn {
                         // The whole object, code and all, for whoever reads the log.
                         eprintln!("[acp] session/new failed: {err}");
                         if login_required(err) {
-                            let _ = self.output.send(AcpEvent::LoginRequired).await;
+                            let advice = self.auth_advice.clone();
+                            let _ = self.output.send(AcpEvent::LoginRequired { advice }).await;
                         }
                         return Err(format!("Could not start a session: {}", in_words(err).0));
                     }
@@ -585,7 +603,8 @@ impl Conn {
                         // The whole object, code and all, for whoever reads the log.
                         eprintln!("[acp] the turn failed: {err}");
                         if login_required(err) {
-                            let _ = self.output.send(AcpEvent::LoginRequired).await;
+                            let advice = self.auth_advice.clone();
+                            let _ = self.output.send(AcpEvent::LoginRequired { advice }).await;
                         }
                         let (message, detail) = in_words(err);
                         let _ = self

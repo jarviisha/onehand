@@ -767,14 +767,19 @@ async fn the_adapter_is_started_with_its_environment() {
 
 /// The events a refused `session/new` with `error` produces, up to the end.
 async fn refused_start(error: Value) -> Vec<AcpEvent> {
+    refused_start_after(
+        json!({ "protocolVersion": 1, "agentCapabilities": {} }),
+        error,
+    )
+    .await
+}
+
+/// [`refused_start`], the handshake answered with `hello`.
+async fn refused_start_after(hello_result: Value, error: Value) -> Vec<AcpEvent> {
     let (mut agent, mut events) = client();
     let hello = agent.heard().await;
     agent
-        .say(json!({
-            "jsonrpc": "2.0",
-            "id": hello["id"],
-            "result": { "protocolVersion": 1, "agentCapabilities": {} }
-        }))
+        .say(json!({ "jsonrpc": "2.0", "id": hello["id"], "result": hello_result }))
         .await;
     let new = agent.heard().await;
     agent
@@ -797,15 +802,44 @@ async fn a_login_required_answer_is_read_as_such() {
     let seen = refused_start(json!({ "code": -32000, "message": "Authentication required" })).await;
     let login = seen
         .iter()
-        .position(|e| matches!(e, AcpEvent::LoginRequired))
+        .position(|e| matches!(e, AcpEvent::LoginRequired { .. }))
         .expect("read as a login");
     assert!(login < seen.len() - 1, "ahead of the disconnect");
+}
+
+/// The agent's own words on how to log in: the first of its ways that
+/// carries any, drawn as plain text.
+#[tokio::test]
+async fn the_first_described_auth_method_is_the_advice() {
+    let hello = json!({
+        "protocolVersion": 1,
+        "agentCapabilities": {},
+        "authMethods": [
+            { "id": "a", "name": "A" },
+            { "id": "b", "name": "B", "description": "Run `x login` in the terminal" },
+            { "id": "c", "name": "C", "description": "not this one" },
+        ],
+    });
+    let seen = refused_start_after(
+        hello,
+        json!({ "code": -32000, "message": "Authentication required" }),
+    )
+    .await;
+    assert!(
+        seen.iter().any(|e| matches!(
+            e,
+            AcpEvent::LoginRequired { advice } if advice.as_deref() == Some("Run x login in the terminal")
+        )),
+        "{seen:?}"
+    );
 }
 
 #[tokio::test]
 async fn another_error_is_not_read_as_login() {
     let seen = refused_start(json!({ "code": -32603, "message": "Internal error" })).await;
-    assert!(!seen.iter().any(|e| matches!(e, AcpEvent::LoginRequired)));
+    assert!(!seen
+        .iter()
+        .any(|e| matches!(e, AcpEvent::LoginRequired { .. })));
 }
 
 /// Codex's question as it sent it on 2026-10-22: the free-text answer is a
@@ -884,7 +918,7 @@ async fn a_login_required_turn_is_read_as_such_ahead_of_its_failure() {
     let mut order = Vec::new();
     while let Some(event) = events.recv().await {
         match event {
-            AcpEvent::LoginRequired => order.push("login"),
+            AcpEvent::LoginRequired { .. } => order.push("login"),
             AcpEvent::Error { .. } => order.push("error"),
             AcpEvent::TurnEnded { .. } => {
                 order.push("ended");

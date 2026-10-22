@@ -97,11 +97,13 @@ pub struct Chat {
     pub root: PathBuf,
     pub agent: String,
     /// What to say when the agent answers that it is not logged in: the
-    /// entry's own words, carrying the command that logs it in.
-    pub login_hint: String,
+    /// entry's own words, carrying the command that logs it in, when it has
+    /// any.
+    pub login_hint: Option<String>,
     /// The agent just answered that it is not logged in, so the failure that
-    /// follows is said as how to log in rather than in the protocol's words.
-    login_pending: bool,
+    /// follows is said as how to log in rather than in the protocol's words:
+    /// with the agent's own advice, when it gave some.
+    login_pending: Option<Option<String>>,
     /// User-chosen conversation title. `None` keeps automatic title generation
     /// from the first prompt; persisted independently so Reset can restore it.
     pub custom_title: Option<String>,
