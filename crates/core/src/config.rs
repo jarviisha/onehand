@@ -706,12 +706,26 @@ pub(crate) fn migrate_dir_blocking(
 /// file, which is the property worth paying an extra wait per write for.
 pub(crate) fn write_atomic(path: &Path, text: &str) -> std::io::Result<()> {
     static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    // Through a symlink to the file it names: renaming over the link would
+    // replace it with a plain file, and whatever keeps the real one (a
+    // dotfiles checkout) would never see the save.
+    let path = &std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
     let seq = TMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let tmp = tmp_path(path, std::process::id(), seq);
-    if let Err(e) = write_synced(&tmp, text.as_bytes()) {
+    // The file's own permissions, set before anything is written: a config a
+    // person narrowed because it holds keys must not come back readable by
+    // all, not even for the moment between the write and the rename.
+    let kept = std::fs::metadata(path).ok().map(|meta| meta.permissions());
+    let staged = match kept {
+        Some(perms) => std::fs::File::create(&tmp)
+            .and_then(|_| std::fs::set_permissions(&tmp, perms))
+            .and_then(|()| write_synced(&tmp, text.as_bytes())),
+        None => write_synced(&tmp, text.as_bytes()),
+    };
+    if let Err(e) = staged {
         let _ = std::fs::remove_file(&tmp);
         return Err(e);
     }

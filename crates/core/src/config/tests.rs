@@ -541,3 +541,48 @@ fn a_blank_mode_is_none() {
     assert_eq!(mode_set("plan"), Some("plan".to_string()));
     assert_eq!(mode_set(" plan "), Some(" plan ".to_string()));
 }
+
+/// **A save keeps the file's permissions.** A config holding API keys in an
+/// agent's environment is one a person narrows to their own eyes; a save that
+/// staged a fresh file and renamed it over put it back to world-readable.
+#[cfg(unix)]
+#[test]
+fn write_atomic_keeps_a_narrowed_mode() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let dir = std::env::temp_dir().join(format!("onehand-atomic-mode-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let dest = dir.join("config.toml");
+    std::fs::write(&dest, "old").unwrap();
+    std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+    write_atomic(&dest, "new").unwrap();
+
+    let mode = std::fs::metadata(&dest).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// **A save through a symlink writes where it points.** A config kept with
+/// the rest of someone's dotfiles is a link; renaming over the link replaced it
+/// with a plain file, and the dotfiles never saw the change.
+#[cfg(unix)]
+#[test]
+fn write_atomic_writes_through_a_symlink() {
+    let dir = std::env::temp_dir().join(format!("onehand-atomic-link-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let target = dir.join("dotfiles-config.toml");
+    std::fs::write(&target, "old").unwrap();
+    let link = dir.join("config.toml");
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+
+    write_atomic(&link, "new").unwrap();
+
+    assert!(std::fs::symlink_metadata(&link)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), "new");
+    let _ = std::fs::remove_dir_all(&dir);
+}
