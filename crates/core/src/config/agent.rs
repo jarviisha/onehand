@@ -101,6 +101,23 @@ impl Preset {
         }
     }
 
+    /// The command that logs this agent in, run in a terminal.
+    fn login(self) -> &'static str {
+        match self {
+            Self::ClaudeCode => "claude auth login",
+            Self::Codex => "codex login",
+        }
+    }
+
+    /// The variable that points this agent at one account's directory, which
+    /// a login must be run under to log that account in.
+    fn account_var(self) -> &'static str {
+        match self {
+            Self::ClaudeCode => "CLAUDE_CONFIG_DIR",
+            Self::Codex => "CODEX_HOME",
+        }
+    }
+
     /// The variable the adapter reads its agent's path from.
     fn binary_var(self) -> &'static str {
         match self {
@@ -208,6 +225,27 @@ impl AgentSpec {
             preset: Some(preset),
             ..Default::default()
         }
+    }
+
+    /// What to tell someone whose agent answered that it is not logged in.
+    ///
+    /// A built-in agent's words carry the command that logs it in, under the
+    /// entry's own account where its environment names one: a second account
+    /// logged in without it would log the first one in again.
+    pub fn login_hint(&self) -> String {
+        let Some(preset) = self.claude_or_preset() else {
+            return format!("{} needs you to log in", self.name);
+        };
+        let account = self
+            .env
+            .get(preset.account_var())
+            .map(|dir| format!("{}={} ", preset.account_var(), home_expanded(dir)))
+            .unwrap_or_default();
+        format!(
+            "{} is not logged in. Run `{account}{}` in a terminal, then restart the agent",
+            self.name,
+            preset.login()
+        )
     }
 
     /// The preset this agent is, counting the old Claude default left
