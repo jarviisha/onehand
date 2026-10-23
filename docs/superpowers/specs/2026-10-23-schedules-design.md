@@ -23,8 +23,9 @@ background process with no window: those are not wanted.
 
 ## What a schedule is (the owner's calls)
 
-- **A schedule** names a project, what it starts, an agent, a mode, the tools its agent may use,
-  and when, as a cron expression.
+- **A schedule** names a project, what it starts, an agent, a mode, the agent's settings (its
+  model, and whatever else it advertises, such as effort), the tools its agent may use, and when,
+  as a cron expression.
 - **What it starts** is one of two:
   - a session with a prompt written in the schedule; a skill is used by naming it in the prompt;
   - a workflow on a brief written in the schedule (title, and optional body).
@@ -33,6 +34,10 @@ background process with no window: those are not wanted.
 - **The mode** is the agent's own session mode the session starts in, as `unattended.mode` sets
   one for unattended runs, so a schedule can run through without asking for permission. onehand
   still answers nothing for a person: a question the agent asks waits for them (unattended rule 1).
+- **The model and the other settings** are chosen as an agent step's are in a workflow
+  (`options`, docs/workflows.md): from what the agent offers, as learned, with *Check the agent*
+  when nothing is known yet, judged by the preflight, and set when the session comes up. None
+  chosen leaves the agent's own.
 - **The tools** are a set chosen per schedule from onehand's tools (docs/control.md), none by
   default. The schedule's sessions list only those, and a call to any other is refused, whatever
   the prompt asks.
@@ -142,12 +147,13 @@ switched off by itself.
 ### 4. What a workflow start takes from the schedule *(builder's call)*
 
 The schedule's agent is every agent step's that names none, as the launcher's first agent is
-today; the schedule's mode is every step's that sets none, and a step's own mode wins. The
-preflight judges that.
+today; the schedule's mode and settings are every step's that sets none, and a step's own mode,
+model or option wins, setting by setting. The preflight judges that. A prompt start's one step
+carries the schedule's mode and settings as its own.
 
 ### 5. What a scheduled task keeps *(builder's call)*
 
-The agent, mode, tool set and issue labels are copied onto the task when it starts, as a run keeps
+The agent, mode, settings, tool set and issue labels are copied onto the task when it starts, as a run keeps
 its workflow's snapshot. A Retry or a Resume uses the copy, so editing, switching off or deleting
 the schedule never widens what an earlier task may do.
 
