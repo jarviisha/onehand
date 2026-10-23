@@ -65,7 +65,7 @@ pub(crate) fn setting_row(
             .text_color(warning)
             // A refusal keeps its own tooltip.
             .when(refused.is_none(), |chip| {
-                chip.tooltip("The agent does not offer it: a run fails at this step")
+                chip.tooltip("The agent does not offer it: a run with it fails")
             }),
             // An option's values were learned under whatever model ran
             // then: one missing may be offered under the step's.

@@ -120,8 +120,10 @@ impl SchedulesPage {
 
     /// Close the form, asking first while it holds changes.
     fn close_form(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // The keys come back to the page as the form's fields go.
         if !self.draft.as_ref().is_some_and(|d| d.dirty(cx)) {
             self.draft = None;
+            self.focus_handle.clone().focus(window, cx);
             cx.notify();
             return;
         }
@@ -136,8 +138,9 @@ impl SchedulesPage {
             },
             window,
             cx,
-            |page, _, cx| {
+            |page, window, cx| {
                 page.draft = None;
+                page.focus_handle.clone().focus(window, cx);
                 cx.notify();
             },
         );
@@ -154,22 +157,45 @@ impl SchedulesPage {
             return;
         }
         let mut s = draft.schedule(cx);
-        let was_on = draft.original.as_ref().is_some_and(|o| o.on);
-        if s.on && !was_on {
-            s.on_since = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |d| d.as_secs());
+        let original = draft.original.clone();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs());
+        // Switched on by this save, or told a new time while on: it counts
+        // from now, so no time before the save is caught up.
+        let restart = s.on && original.as_ref().is_none_or(|o| !o.on || o.when != s.when);
+        if restart {
+            s.on_since = now;
         }
-        let path = schedule::path();
+        let (path, id) = (schedule::path(), s.id.clone());
         let write = Shared::global(cx).writer.write(move || {
             let mut all = schedule::load_blocking(&path)?;
-            match all.iter_mut().find(|kept| kept.id == s.id) {
-                Some(kept) => *kept = s,
-                None => all.push(s),
+            match (all.iter_mut().find(|kept| kept.id == s.id), &original) {
+                // What the clock moved while the form was open stands: a
+                // time it fired for is not fired again.
+                (Some(kept), _) => {
+                    s.last_fired = kept.last_fired;
+                    s.said = kept.said.clone();
+                    if !restart {
+                        s.on_since = kept.on_since;
+                    }
+                    *kept = s;
+                }
+                (None, None) => all.push(s),
+                (None, Some(_)) => {
+                    return Err("it was deleted from the file meanwhile".to_string());
+                }
             }
             schedule::save_blocking(&path, &all).map(|()| all)
         });
-        self.finish(write, "Saving the schedule", "Schedule saved", window, cx);
+        self.finish(
+            write,
+            &id,
+            "Saving the schedule",
+            "Schedule saved",
+            window,
+            cx,
+        );
     }
 
     /// Ask, then delete the schedule open in the form. Its tasks stay.
@@ -190,13 +216,15 @@ impl SchedulesPage {
             cx,
             move |page, window, cx| {
                 let (id, path) = (original.id.clone(), schedule::path());
+                let gone = id.clone();
                 let write = Shared::global(cx).writer.write(move || {
                     let mut all = schedule::load_blocking(&path)?;
-                    all.retain(|kept| kept.id != id);
+                    all.retain(|kept| kept.id != gone);
                     schedule::save_blocking(&path, &all).map(|()| all)
                 });
                 page.finish(
                     write,
+                    &id,
                     "Deleting the schedule",
                     "Schedule deleted",
                     window,
@@ -211,6 +239,7 @@ impl SchedulesPage {
     fn finish(
         &mut self,
         write: impl std::future::Future<Output = Result<Vec<Schedule>, String>> + 'static,
+        id: &str,
         doing: &'static str,
         done: &'static str,
         window: &mut Window,
@@ -218,13 +247,19 @@ impl SchedulesPage {
     ) {
         self.writing = true;
         cx.notify();
+        let id = id.to_string();
         cx.spawn_in(window, async move |page, cx| {
             let written = write.await;
             let _ = page.update_in(cx, |page, window, cx| {
                 page.writing = false;
                 let landed = written.map(|all| {
                     crate::schedules::put(all, cx);
-                    page.draft = None;
+                    // Only the form it was written from: one opened since
+                    // stays.
+                    if page.draft.as_ref().is_some_and(|d| d.id == id) {
+                        page.draft = None;
+                        page.focus_handle.clone().focus(window, cx);
+                    }
                 });
                 crate::toast::report(window, cx, doing, Some(done), landed);
                 cx.notify();

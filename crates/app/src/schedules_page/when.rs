@@ -34,7 +34,20 @@ pub(super) fn when_section(
         .on_click({
             let handle = handle.clone();
             move |_, window: &mut Window, cx: &mut App| {
-                edit(&handle, move |d| d.when = kind)(window, cx)
+                handle.update(cx, |page, cx| {
+                    if let Some(d) = page.draft.as_mut() {
+                        // The expression field starts from what the quick
+                        // choice said, not from the schedule as opened.
+                        if kind == WhenKind::Expression
+                            && let Ok(expr) = d.when_expr(cx)
+                        {
+                            d.expr
+                                .update(cx, |state, cx| state.set_value(expr, window, cx));
+                        }
+                        d.when = kind;
+                    }
+                    cx.notify();
+                })
             }
         })
     });

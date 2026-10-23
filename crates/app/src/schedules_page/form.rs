@@ -81,13 +81,19 @@ pub(super) fn head(
                     .quiet_icon(false, cx)
                     .icon(IconName::Ellipsis)
                     .tooltip("More"),
-                move |menu, _, _| {
+                move |menu, _, cx| {
                     let handle = handle.clone();
-                    menu.item(crate::controls::menu_item("Delete…").on_click(
-                        move |_, window: &mut Window, cx: &mut App| {
-                            handle.update(cx, |page, cx| page.confirm_delete(window, cx))
-                        },
-                    ))
+                    let danger = crate::theme::status_ink(cx).danger;
+                    menu.item(
+                        crate::controls::menu_row(move |_, _| {
+                            div().text_color(danger).child("Delete…")
+                        })
+                        .on_click(
+                            move |_, window: &mut Window, cx: &mut App| {
+                                handle.update(cx, |page, cx| page.confirm_delete(window, cx))
+                            },
+                        ),
+                    )
                 },
             )
             .into_any_element(),
@@ -362,10 +368,13 @@ fn agent_section(handle: &Entity<SchedulesPage>, draft: &ScheduleDraft, cx: &App
         ))
         .children(check.map(|check| div().h_flex().child(check)));
 
-    let setting =
-        |id: String, offered: Option<&[String]>, current: Option<&str>, pick: SettingPick| {
-            setting_row(id, "Agent's own", offered, current, true, None, pick, cx)
-        };
+    let setting = |id: String,
+                   offered: Option<&[String]>,
+                   current: Option<&str>,
+                   strict: bool,
+                   pick: SettingPick| {
+        setting_row(id, "Agent's own", offered, current, strict, None, pick, cx)
+    };
     let mode_pick: SettingPick = {
         let handle = handle.clone();
         Rc::new(move |to, window, cx| edit(&handle, move |d| d.mode = to.clone())(window, cx))
@@ -377,6 +386,7 @@ fn agent_section(handle: &Entity<SchedulesPage>, draft: &ScheduleDraft, cx: &App
             "schedule-mode".into(),
             offer.as_ref().map(|o| o.modes.as_slice()),
             draft.mode.as_deref(),
+            true,
             mode_pick,
         ),
         cx,
@@ -413,15 +423,28 @@ fn agent_section(handle: &Entity<SchedulesPage>, draft: &ScheduleDraft, cx: &App
                 })(window, cx)
             })
         };
+        // Strict where what was learned decides it, as a workflow step's:
+        // the model, or a setting offering nothing. Others hang on the model.
+        let strict = id == "model" || values.as_ref().is_some_and(Vec::is_empty);
         let row = setting(
             format!("schedule-option-{n}"),
             values.as_deref(),
             draft.options.get(&id).map(String::as_str),
+            strict,
             pick,
         );
         group = group.child(field(id, None, row, cx));
     }
     group.into_any_element()
+}
+
+/// A tool's name as words: `list_issues` as *List issues*.
+fn said_as(name: &str) -> String {
+    let words = name.replace('_', " ");
+    let mut chars = words.chars();
+    chars.next().map_or_else(String::new, |first| {
+        first.to_uppercase().chain(chars).collect()
+    })
 }
 
 /// The tools its agent may use, a switch each; and the labels its issues get.
@@ -436,14 +459,21 @@ fn tools_section(handle: &Entity<SchedulesPage>, draft: &ScheduleDraft, cx: &App
                 Switch::new(SharedString::from(format!("schedule-tool-{name}")))
                     .checked(on)
                     .small()
-                    .label(name)
+                    .label(said_as(name))
                     .on_click(move |on: &bool, window: &mut Window, cx: &mut App| {
                         let on = *on;
                         edit(&handle, move |d| {
-                            d.tools.retain(|t| t != name);
-                            if on {
-                                d.tools.push(name.to_string());
-                            }
+                            // In the catalogue's order, so switching one off
+                            // and on again changes nothing.
+                            let given: Vec<String> = onehand_core::control::tool_names()
+                                .iter()
+                                .filter(|t| match **t == name {
+                                    true => on,
+                                    false => d.tools.iter().any(|g| g == *t),
+                                })
+                                .map(|t| t.to_string())
+                                .collect();
+                            d.tools = given;
                         })(window, cx)
                     }),
             ),
@@ -469,7 +499,7 @@ fn tools_section(handle: &Entity<SchedulesPage>, draft: &ScheduleDraft, cx: &App
     )
     .child(field(
         "Labels",
-        about("Given to every issue its agent writes, comma-separated; auto hands each one to unattended runs"),
+        about("Comma-separated, given to every issue its agent writes"),
         text_input(&draft.labels, cx).tall(),
         cx,
     ))
