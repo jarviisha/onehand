@@ -298,7 +298,8 @@ impl Composer {
                 }))
         });
         let branch = branch.map(|chip| self.opens_menu(Overlay::Branch, chip));
-        if branch.is_none() && mode.is_none() {
+        let control = control_chip(session, cx);
+        if branch.is_none() && mode.is_none() && control.is_none() {
             return None;
         }
         let strip = match narrow {
@@ -313,7 +314,15 @@ impl Composer {
                 .px_1p5()
                 .pt_1p5()
                 .child(div().h_flex().min_w_0().max_w_full().children(branch))
-                .children(mode),
+                .child(
+                    div()
+                        .h_flex()
+                        .items_center()
+                        .gap_2()
+                        .min_w_0()
+                        .children(control)
+                        .children(mode),
+                ),
         )
     }
 }
@@ -351,6 +360,35 @@ fn mode_action_chip(
         .on_click(cx.listener(move |composer: &mut Composer, _, window, cx| {
             composer.toggle_picker(Overlay::Mode, &session, window, cx);
         }))
+}
+
+/// That this session's agent can use onehand's tools, at a glance, while it
+/// can: its mark lit as a mode switched on is, and a press switches it off.
+/// Nothing while it cannot.
+fn control_chip(
+    session: &Entity<ChatSession>,
+    cx: &mut Context<Composer>,
+) -> Option<impl IntoElement + use<>> {
+    let uid = session.read(cx).chat.uid;
+    if !crate::control::switched_on(uid) {
+        return None;
+    }
+    Some(
+        chip("control-onehand", false, cx)
+            .flex_shrink_1()
+            .min_w_0()
+            .child(
+                Icon::new(gpui_component::IconName::Bot)
+                    .small()
+                    .text_color(crate::theme::status_ink(cx).warning),
+            )
+            .child(chip_text("Controls onehand"))
+            .tooltip("This session's agent can use onehand's tools. Press to stop it")
+            .on_click(cx.listener(move |_: &mut Composer, _, _, cx| {
+                crate::control::switch(uid, false);
+                cx.notify();
+            })),
+    )
 }
 
 /// Fast mode's mark: the muted ink at rest, the warning ink while fast.

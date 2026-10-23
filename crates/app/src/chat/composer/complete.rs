@@ -55,6 +55,7 @@ fn act_rows(query: &str, session: &Entity<ChatSession>, cx: &App) -> Vec<Row> {
         Act::Mode => mode_action(session, cx).is_some(),
         Act::Fast => fast_action(session, cx).is_some(),
         Act::Attach | Act::Mention | Act::Command | Act::Workflow => true,
+        Act::Control => crate::control::offered(session.read(cx).chat.uid, cx),
     };
     // Hoisted, for the reason the folder run hoists its own: inside the filter
     // it is an allocation per row, on a list rebuilt at every keystroke.
@@ -106,7 +107,7 @@ pub(super) fn picker_rows(
         Overlay::Options => Some(options_rows(session, cx)),
         Overlay::Effort => Some(effort_rows(session, cx)),
         Overlay::Fast => Some(fast_rows(session, cx)),
-        Overlay::Add => Some(add_rows()),
+        Overlay::Add => Some(add_rows(session, cx)),
         Overlay::Branch => Some(branch_rows()),
         Overlay::Completion | Overlay::Attachments => None,
     }
@@ -206,6 +207,11 @@ impl Composer {
                         window.dispatch_action(Box::new(crate::shell::RunWorkflow), cx)
                     }),
                     (None, Act::Mention) => self.insert_trigger('@', window, cx),
+                    (None, Act::Control) => {
+                        let uid = session.read(cx).chat.uid;
+                        crate::control::switch(uid, !crate::control::switched_on(uid));
+                        cx.notify();
+                    }
                     // Every picker opens an overlay, so these never land here.
                     (None, Act::Options | Act::Effort | Act::Mode | Act::Fast) => {}
                 }

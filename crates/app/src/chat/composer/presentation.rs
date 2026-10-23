@@ -96,6 +96,8 @@ pub(super) enum Act {
     Command,
     /// Open the workflow launcher, which the window owns.
     Workflow,
+    /// Let this session's agent use onehand's tools, or stop it.
+    Control,
 }
 
 impl Act {
@@ -111,7 +113,7 @@ impl Act {
             Self::Effort => Some(super::Overlay::Effort),
             Self::Mode => Some(super::Overlay::Mode),
             Self::Fast => Some(super::Overlay::Fast),
-            Self::Attach | Self::Mention | Self::Command | Self::Workflow => None,
+            Self::Attach | Self::Mention | Self::Command | Self::Workflow | Self::Control => None,
         }
     }
 }
@@ -304,8 +306,20 @@ pub(super) fn fast_toggle(session: &Entity<ChatSession>, cx: &App) -> Option<Fas
 /// **Each row names the mark it stands for**, in its glyph and its detail. With
 /// a Vietnamese input method on Linux a typed `@` or `/` can be swallowed before
 /// it reaches the composer, so these rows are the only route to either trigger.
-pub(super) fn add_rows() -> Vec<Row> {
-    [
+///
+/// Last, the session's own switch for onehand's tools, checked while on: not a
+/// thing put into the prompt but standing state of the session, so it closes
+/// the menu rather than leading it. Not offered in an unattended run's session.
+pub(super) fn add_rows(session: &Entity<ChatSession>, cx: &App) -> Vec<Row> {
+    let uid = session.read(cx).chat.uid;
+    let control = crate::control::offered(uid, cx).then(|| Row {
+        label: "Let the agent control onehand".into(),
+        checked: crate::control::switched_on(uid),
+        mark: Some(Icon::new(IconName::Bot)),
+        pick: Pick::Act(Act::Control),
+        ..Row::default()
+    });
+    let mut rows: Vec<Row> = [
         (
             "Attach files…",
             None,
@@ -341,7 +355,9 @@ pub(super) fn add_rows() -> Vec<Row> {
         pick: Pick::Act(act),
         ..Row::default()
     })
-    .collect()
+    .collect();
+    rows.extend(control);
+    rows
 }
 
 /// The branch chip's rows: everything the shell already does about the branch
