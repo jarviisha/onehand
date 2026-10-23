@@ -390,3 +390,10 @@ pub(crate) fn set_on(id: &str, on: bool, window: &mut gpui::Window, cx: &mut App
         })
         .detach();
 }
+
+/// What a save or a delete left in the file: the list the pages show, until
+/// the next look reads it again.
+pub(crate) fn put(all: Vec<Schedule>, cx: &mut App) {
+    cx.update_global::<Clock, _>(|c, _| c.all = all);
+    cx.refresh_windows();
+}
