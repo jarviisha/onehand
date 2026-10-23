@@ -41,6 +41,11 @@ struct Clock {
     looking: bool,
     /// The schedules as the last look found them, for the pages to show.
     all: Vec<Schedule>,
+    /// What the last read of the file came to: nothing yet, or why it failed.
+    read: Option<Result<(), String>>,
+    /// Switches not yet written, by schedule: a look's list gives way to
+    /// them, so a switch does not flip back on screen while it is written.
+    pending: HashMap<String, usize>,
     _tick: Task<()>,
 }
 
@@ -68,6 +73,8 @@ pub(crate) fn boot(cx: &mut App) {
         told: HashMap::new(),
         looking: false,
         all: Vec::new(),
+        read: None,
+        pending: HashMap::new(),
         _tick: tick,
     });
 }
@@ -82,7 +89,13 @@ type Firing = (
 /// One look: read the file, decide each schedule, start what is due, and
 /// write back what changed.
 fn look(cx: &mut App) {
-    let busy = cx.update_global::<Clock, _>(|clock, _| std::mem::replace(&mut clock.looking, true));
+    let busy = cx.update_global::<Clock, _>(|clock, _| {
+        if clock.looking {
+            return true;
+        }
+        clock.looking = true;
+        false
+    });
     if busy {
         return;
     }
@@ -97,8 +110,14 @@ fn look(cx: &mut App) {
         let mut all = match read {
             Ok(all) => all,
             Err(why) => {
-                eprintln!("onehand: the schedules were not read: {why}");
-                cx.update(|cx| cx.update_global::<Clock, _>(|c, _| c.looking = false));
+                // Said on the pages that list them, not only here.
+                cx.update(|cx| {
+                    cx.update_global::<Clock, _>(|c, _| {
+                        c.looking = false;
+                        c.read = Some(Err(why));
+                    });
+                    cx.refresh_windows();
+                });
                 return;
             }
         };
@@ -118,10 +137,11 @@ fn look(cx: &mut App) {
             // What the clock moved, onto the file as it is now: a start can
             // take a while (a worktree cut), and a hand edit made meanwhile
             // stands.
+            // Through the one writer every switch goes through too, so the
+            // two land in the order they were made.
             let looked = all.clone();
-            let written = cx
-                .background_executor()
-                .spawn(async move {
+            let write = cx.update(|cx| {
+                Shared::global(cx).writer.write(move || {
                     let mut now_kept = schedule::load_blocking(&path)?;
                     for kept in &mut now_kept {
                         if let Some(looked) = looked.iter().find(|s| s.id == kept.id) {
@@ -131,22 +151,31 @@ fn look(cx: &mut App) {
                     }
                     schedule::save_blocking(&path, &now_kept).map(|()| now_kept)
                 })
-                .await;
+            });
+            let written = write.await;
             match written {
                 Ok(now_kept) => all = now_kept,
                 Err(why) => eprintln!("onehand: the schedules were not written: {why}"),
             }
         }
         cx.update(|cx| {
-            let shown = cx.update_global::<Clock, _>(|c, _| {
+            cx.update_global::<Clock, _>(|c, _| {
                 c.looking = false;
-                let shown = c.all != all;
+                c.read = Some(Ok(()));
+                // A switch still being written stands over what was read.
+                for s in &mut all {
+                    if c.pending.get(&s.id).is_some_and(|n| *n > 0)
+                        && let Some(shown) = c.all.iter().find(|shown| shown.id == s.id)
+                    {
+                        s.on = shown.on;
+                        s.on_since = shown.on_since;
+                    }
+                }
                 c.all = all;
-                shown
             });
-            if shown {
-                cx.refresh_windows();
-            }
+            // Every look, changed or not: a row's next time moves with the
+            // clock.
+            cx.refresh_windows();
         });
     })
     .detach();
@@ -271,12 +300,19 @@ pub(crate) fn listed(cx: &App) -> &[Schedule] {
     cx.try_global::<Clock>().map_or(&[], |c| c.all.as_slice())
 }
 
+/// What the last read of the schedules came to: `None` before the first,
+/// else why it failed.
+pub(crate) fn read(cx: &App) -> Option<Result<(), String>> {
+    cx.try_global::<Clock>().and_then(|c| c.read.clone())
+}
+
 /// Switch schedule `id` on or off: at once on screen, then in the file as it
-/// is, off the UI thread. Switched on, nothing due before now is caught up. A
-/// write that fails puts it back and says so.
+/// is, through the one writer, in the order the switches were made. Switched
+/// on, nothing due before now is caught up. A write that fails puts back what
+/// the file holds, and says so.
 pub(crate) fn set_on(id: &str, on: bool, window: &mut gpui::Window, cx: &mut App) {
     let since = now();
-    let put = move |c: &mut Clock, id: &str, on: bool| {
+    let shown = cx.update_global::<Clock, _>(|c, _| {
         let Some(s) = c.all.iter_mut().find(|s| s.id == id).filter(|s| s.on != on) else {
             return false;
         };
@@ -284,35 +320,64 @@ pub(crate) fn set_on(id: &str, on: bool, window: &mut gpui::Window, cx: &mut App
         if on {
             s.on_since = since;
         }
+        *c.pending.entry(id.to_string()).or_default() += 1;
         true
-    };
-    if !cx.update_global::<Clock, _>(|c, _| put(c, id, on)) {
+    });
+    if !shown {
         return;
     }
     cx.refresh_windows();
     let (id, path) = (id.to_string(), schedule::path());
+    let write = {
+        let (id, path) = (id.clone(), path.clone());
+        Shared::global(cx).writer.write(move || {
+            let mut all = schedule::load_blocking(&path)?;
+            let s = all
+                .iter_mut()
+                .find(|s| s.id == id)
+                .ok_or("that schedule is no longer in the file")?;
+            s.on = on;
+            if on {
+                s.on_since = since;
+            }
+            schedule::save_blocking(&path, &all)
+        })
+    };
     window
         .spawn(cx, async move |cx| {
-            let written = {
-                let id = id.clone();
-                cx.background_executor()
-                    .spawn(async move {
-                        let mut all = schedule::load_blocking(&path)?;
-                        let s = all
-                            .iter_mut()
-                            .find(|s| s.id == id)
-                            .ok_or("that schedule is no longer in the file")?;
-                        s.on = on;
-                        if on {
-                            s.on_since = since;
-                        }
-                        schedule::save_blocking(&path, &all)
-                    })
-                    .await
+            let written = write.await;
+            let failed = written.err();
+            // What the file holds, read back after a failure, in the same
+            // order, so the switch shows what is kept.
+            let kept = match &failed {
+                Some(_) => {
+                    let read = cx.update(|_, cx| {
+                        Shared::global(cx)
+                            .writer
+                            .write(move || schedule::load_blocking(&path))
+                    });
+                    match read {
+                        Ok(read) => read.await.ok(),
+                        Err(_) => None,
+                    }
+                }
+                None => None,
             };
-            if let Err(why) = written {
-                let _ = cx.update(|window, cx| {
-                    cx.update_global::<Clock, _>(|c, _| put(c, &id, !on));
+            let _ = cx.update(|window, cx| {
+                cx.update_global::<Clock, _>(|c, _| {
+                    if let Some(n) = c.pending.get_mut(&id) {
+                        *n = n.saturating_sub(1);
+                    }
+                    let back = kept
+                        .as_ref()
+                        .and_then(|all| all.iter().find(|s| s.id == id));
+                    if let (Some(back), Some(shown)) = (back, c.all.iter_mut().find(|s| s.id == id))
+                    {
+                        shown.on = back.on;
+                        shown.on_since = back.on_since;
+                    }
+                });
+                if let Some(why) = failed {
                     let doing = if on {
                         "Switching the schedule on"
                     } else {
@@ -320,8 +385,8 @@ pub(crate) fn set_on(id: &str, on: bool, window: &mut gpui::Window, cx: &mut App
                     };
                     window.push_notification(crate::toast::failed(doing, why), cx);
                     cx.refresh_windows();
-                });
-            }
+                }
+            });
         })
         .detach();
 }

@@ -417,6 +417,7 @@ impl ChatPane {
             || self.showing_workflows()
             || self.showing_settings()
             || self.showing_tasks()
+            || self.showing_schedules()
         {
             self.focus_handle.clone().focus(window, cx);
         }

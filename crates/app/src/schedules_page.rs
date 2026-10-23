@@ -77,10 +77,7 @@ impl Render for SchedulesPage {
             .cloned()
             .collect();
         let on = mine.iter().filter(|s| s.on).count();
-        let facts = match mine.len() {
-            0 => "None yet".to_string(),
-            _ => format!("{on} on · {} off", mine.len() - on),
-        };
+        let facts = (!mine.is_empty()).then(|| format!("{on} on · {} off", mine.len() - on));
         let left_out = mine.len().saturating_sub(SCHEDULES_SHOWN);
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -91,14 +88,32 @@ impl Render for SchedulesPage {
             .map(|s| schedule_row(s, &self.label_of(&s.project), now, cx))
             .collect();
         let empty = rows.is_empty();
-        let title = self
-            .filter
-            .as_deref()
-            .map_or_else(|| "Every project".into(), |root| self.label_of(root));
         let meta = crate::theme::meta_ink(cx);
+        // Before the first read, waiting; a read that failed, said here.
+        let read = crate::schedules::read(cx);
+        let narrowed = self.filter.is_some();
 
-        let list = page_card(title, Some(mine.len()), None, cx)
-            .when(empty, |card| card.child(nothing_yet(cx)))
+        let list = page_card("Schedules", Some(mine.len()), None, cx)
+            .when(read.is_none(), |card| {
+                card.child(
+                    div()
+                        .text_xs()
+                        .text_color(meta)
+                        .child("Reading the schedules…"),
+                )
+            })
+            .when_some(read.and_then(Result::err), |card, why| {
+                card.child(
+                    div()
+                        .text_xs()
+                        .text_color(crate::theme::status_ink(cx).warning)
+                        .child(format!("The schedules could not be read: {why}")),
+                )
+            })
+            .when(empty && !narrowed, |card| card.child(nothing_yet(cx)))
+            .when(empty && narrowed, |card| {
+                card.child(div().text_xs().text_color(meta).child("No schedules match"))
+            })
             .when(!empty, |card| card.child(ruled(rows, cx)))
             .when(left_out > 0, |card| {
                 card.child(
@@ -123,9 +138,10 @@ impl Render for SchedulesPage {
                         .gap_6()
                         .w_full()
                         .max_w(crate::tokens::PAGE_PROSE)
+                        .text_size(crate::tokens::CHROME_TEXT)
                         .child(page_head(
                             "Schedules",
-                            Some(facts.into_any_element()),
+                            facts.map(IntoElement::into_any_element),
                             Vec::new(),
                             cx,
                         ))
@@ -182,10 +198,11 @@ impl SchedulesPage {
     }
 }
 
-/// One schedule: its name, then when it runs, its project and when it runs
-/// next, then what its last look said; its switch at the end.
+/// One schedule, as a task's row is drawn: its name, then when it runs, its
+/// project and when it runs next, then what its last look said; its switch
+/// at the end.
 fn schedule_row(s: &Schedule, project: &SharedString, now: u64, cx: &App) -> gpui::AnyElement {
-    let meta = crate::theme::meta_ink(cx);
+    let muted = cx.theme().muted_foreground;
     let ink = crate::theme::status_ink(cx);
     let parses = schedule::parse(&s.when).is_ok();
     let next = match (s.on, parses) {
@@ -203,43 +220,46 @@ fn schedule_row(s: &Schedule, project: &SharedString, now: u64, cx: &App) -> gpu
         .filter(|part| !part.is_empty())
         .collect();
     let id = s.id.clone();
-    div()
+    let tip = if s.on {
+        "Switch it off"
+    } else {
+        "Switch it on"
+    };
+    onehand_ui::row(false, cx)
         .h_flex()
         .items_center()
-        .justify_between()
-        .gap_3()
-        .py_2()
+        .gap_2()
+        .py_1p5()
         .child(
             div()
                 .v_flex()
                 .gap_0p5()
+                .flex_1()
                 .min_w_0()
-                .child(
-                    div()
-                        .truncate()
-                        .text_sm()
-                        .font_medium()
-                        .child(s.name.clone()),
-                )
+                .child(div().truncate().child(s.name.clone()))
                 .child(
                     div()
                         .text_xs()
-                        .text_color(if parses { meta } else { ink.warning })
+                        .truncate()
+                        .text_color(if parses { muted } else { ink.warning })
                         .child(line.join(" · ")),
                 )
-                .children(
-                    s.said
-                        .clone()
-                        .map(|said| div().text_xs().text_color(ink.warning).child(said)),
-                ),
+                .children(s.said.clone().map(|said| {
+                    div()
+                        .text_xs()
+                        .truncate()
+                        .text_color(ink.warning)
+                        .child(said)
+                })),
         )
         // Held to its own width, as the other switches are, and given the
-        // pointer the switch does not set itself.
+        // pointer the switch does not set itself. Its name is the row's.
         .child(
             div().flex_none().cursor_pointer().child(
                 Switch::new(SharedString::from(format!("schedule-on-{}", s.id)))
                     .checked(s.on)
                     .small()
+                    .tooltip(tip)
                     .on_click(move |on: &bool, window: &mut Window, cx: &mut App| {
                         crate::schedules::set_on(&id, *on, window, cx);
                     }),
@@ -256,7 +276,7 @@ fn nothing_yet(cx: &App) -> impl IntoElement + use<> {
         .gap_1()
         .text_xs()
         .text_color(cx.theme().muted_foreground)
-        .child("No schedule yet. They are kept in")
+        .child("No schedules yet, kept in")
         .child(
             div()
                 .font_family(cx.theme().mono_font_family.clone())

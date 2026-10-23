@@ -7,7 +7,7 @@
 
 use super::Shell;
 use crate::workbench::WorkbenchEvent;
-use gpui::{Context, SharedString, Window};
+use gpui::{Context, Focusable as _, SharedString, Window};
 use gpui_component::dock::DockPlacement;
 use onehand_issues::{IssuesEvent, Page, Tell};
 use onehand_workbench::{Ask, Request};
@@ -147,6 +147,8 @@ impl Shell {
         let view: gpui::AnyView = self.schedules_page.clone().into();
         self.chat
             .update(cx, |pane, cx| pane.show_schedules(view, window, cx));
+        // The page holds the keys while it shows, as Tasks does.
+        self.schedules_page.focus_handle(cx).focus(window, cx);
         self.sync_agent_started(cx);
         cx.notify();
     }
