@@ -41,7 +41,7 @@ impl Shell {
         if task.source == Source::Check {
             let first = last.template.steps.first().map(|step| step.id.as_str());
             if crate::task::retry(&id, last.template.clone(), first, None, cx) {
-                crate::task::request(id, window, cx);
+                crate::task::request(id, window.window_handle(), cx);
             }
             return;
         }
@@ -356,7 +356,7 @@ impl Shell {
                     let id = id.clone();
                     shell.update(cx, |_, cx| {
                         if crate::task::retry_with(&id, plan, cx) {
-                            crate::task::request(id, window, cx);
+                            crate::task::request(id, window.window_handle(), cx);
                         }
                     });
                 }
@@ -597,7 +597,7 @@ impl Shell {
             Some(why) => {
                 window.push_notification(crate::toast::warning(format!("Not resumed: {why}")), cx)
             }
-            None => crate::task::request(id, window, cx),
+            None => crate::task::request(id, window.window_handle(), cx),
         }
     }
 }
@@ -614,7 +614,7 @@ fn retry_now(
 ) {
     shell.update(cx, |_, cx| {
         if crate::task::retry(&id, template, from.as_deref(), None, cx) {
-            crate::task::request(id, window, cx);
+            crate::task::request(id, window.window_handle(), cx);
         }
     });
 }

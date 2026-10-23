@@ -3,15 +3,47 @@
 
 use super::{Tasks, enforce_cap, resumable_run};
 use crate::shell::Shell;
-use gpui::{App, BorrowAppContext as _, Context, Window};
+use crate::state::Shared;
+use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Context, Window};
 use gpui_component::WindowExt as _;
+use onehand_core::task::Task;
 use onehand_core::task::{marks, queue};
 use onehand_core::workflow::{Failure, Stop};
 
-/// Start task `id` from this window once its place is free: at once when
-/// nobody works there, or after the task that does, saying so. A task
-/// already running or waiting is left as it is.
-pub(crate) fn request(id: String, window: &mut Window, cx: &mut Context<Shell>) {
+/// Keep `task`, new, and ask for its place from `window`: the one way in for
+/// a task that did not exist before, whatever started it.
+pub(crate) fn submit(task: Task, window: AnyWindowHandle, cx: &mut App) {
+    let id = task.id.clone();
+    super::add(task, cx);
+    request(id, window, cx);
+}
+
+/// Run `f` on the shell of `window`, inside it: `None` when the window or its
+/// shell has gone.
+fn in_window<R>(
+    window: AnyWindowHandle,
+    cx: &mut App,
+    f: impl FnOnce(&mut Shell, &mut Window, &mut Context<Shell>) -> R,
+) -> Option<R> {
+    let shell = Shared::global(cx)
+        .windows
+        .iter()
+        .find(|w| w.handle == window)?
+        .shell
+        .upgrade()?;
+    window
+        .update(cx, |_, window, cx| {
+            shell.update(cx, |shell, cx| f(shell, window, cx))
+        })
+        .ok()
+}
+
+/// Start task `id` once its place is free, saying in `window` what happens:
+/// at once when nobody works there, or after the task that does, saying so.
+/// A task already running or waiting is left as it is. It starts in
+/// `window`, or, when it waited, in the window it was asked from, if that is
+/// still open.
+pub(crate) fn request(id: String, window: AnyWindowHandle, cx: &mut App) {
     if let Some(why) = crate::unattended::over_cap(&id, cx) {
         // A retry's new run never began: dropped, the task is as it was.
         cx.update_global::<Tasks, _>(|t, _| {
@@ -22,7 +54,12 @@ pub(crate) fn request(id: String, window: &mut Window, cx: &mut Context<Shell>) 
                 t.save(&id);
             }
         });
-        window.push_notification(crate::toast::warning(why), cx);
+        // Deferred: a request is often made from inside that window's shell.
+        cx.defer(move |cx| {
+            let _ = window.update(cx, |_, window, cx| {
+                window.push_notification(crate::toast::warning(why), cx)
+            });
+        });
         cx.refresh_windows();
         return;
     }
@@ -34,57 +71,57 @@ pub(crate) fn request(id: String, window: &mut Window, cx: &mut Context<Shell>) 
         crate::unattended::placed(&id, cx);
         return;
     };
-    cx.spawn_in(window, async move |shell, cx| {
+    cx.spawn(async move |cx| {
         let place = cx
             .background_executor()
             .spawn(async move { queue::place_blocking(&dir) })
             .await;
-        let asked = id.clone();
-        let landed = shell.update_in(cx, |shell: &mut Shell, window, cx| {
-            let handle = window.window_handle();
-            let weak = cx.entity().downgrade();
-            let free = cx.update_global::<Tasks, _>(|t, _| {
-                if t.busy(&id) {
-                    return None;
+        cx.update(|cx| {
+            let asked = id.clone();
+            let landed = in_window(window, cx, |shell, window, cx| {
+                let free = cx.update_global::<Tasks, _>(|t, _| {
+                    if t.busy(&id) {
+                        return None;
+                    }
+                    let free = t.queue.ask(place.clone(), id.clone());
+                    if !free {
+                        t.asked_in.insert(id.clone(), window.window_handle());
+                    }
+                    Some(free)
+                });
+                // Asked for, or held already: an issue's run counts against
+                // the cap from here as queued or running.
+                crate::unattended::placed(&id, cx);
+                match free {
+                    Some(true) => shell.drive_task(id, window, cx),
+                    Some(false) => {
+                        let t = cx.global::<Tasks>();
+                        let title = t
+                            .task(&id)
+                            .map_or_else(String::new, |task| task.brief.title.clone());
+                        let at = place.file_name().map_or_else(
+                            || place.display().to_string(),
+                            |n| n.to_string_lossy().into_owned(),
+                        );
+                        let holder = t.queue.holder_of(&id).and_then(|holder| t.task(holder));
+                        let said = onehand_core::task::queue::queued_said(
+                            &title,
+                            holder.map(|holder| holder.brief.title.as_str()),
+                            &at,
+                        );
+                        window.push_notification(crate::toast::info(said), cx);
+                        cx.refresh_windows();
+                    }
+                    None => {}
                 }
-                let free = t.queue.ask(place.clone(), id.clone());
-                if !free {
-                    t.asked_in.insert(id.clone(), (handle, weak));
-                }
-                Some(free)
             });
-            // Asked for, or held already: an issue's run counts against the
-            // cap from here as queued or running.
-            crate::unattended::placed(&id, cx);
-            match free {
-                Some(true) => shell.drive_task(id, window, cx),
-                Some(false) => {
-                    let t = cx.global::<Tasks>();
-                    let title = t
-                        .task(&id)
-                        .map_or_else(String::new, |task| task.brief.title.clone());
-                    let at = place.file_name().map_or_else(
-                        || place.display().to_string(),
-                        |n| n.to_string_lossy().into_owned(),
-                    );
-                    let holder = t.queue.holder_of(&id).and_then(|holder| t.task(holder));
-                    let said = onehand_core::task::queue::queued_said(
-                        &title,
-                        holder.map(|holder| holder.brief.title.as_str()),
-                        &at,
-                    );
-                    window.push_notification(crate::toast::info(said), cx);
-                    cx.refresh_windows();
-                }
-                None => {}
+            // The window went while the place was looked up, so nothing asks
+            // for it: the cap lets go here, and the task reads cut off, as
+            // after a restart, rather than holding a slot until one.
+            if landed.is_none() {
+                crate::unattended::placed(&asked, cx);
             }
-        });
-        // The window went while the place was looked up, so nothing asks for
-        // it: the cap lets go here, and the task reads cut off, as after a
-        // restart, rather than holding a slot until one.
-        if landed.is_err() {
-            gpui::AsyncApp::update(cx, |cx| crate::unattended::placed(&asked, cx));
-        }
+        })
     })
     .detach();
 }
@@ -209,14 +246,11 @@ pub(crate) fn release(id: String, cx: &mut App) {
     let Some((next, asked)) = next else {
         return;
     };
-    let started = asked.and_then(|(handle, shell)| {
-        let shell = shell.upgrade()?;
+    let started = asked.and_then(|window| {
         let next = next.clone();
-        handle
-            .update(cx, |_, window, cx| {
-                shell.update(cx, |shell, cx| shell.drive_task(next, window, cx))
-            })
-            .ok()
+        in_window(window, cx, |shell, window, cx| {
+            shell.drive_task(next, window, cx)
+        })
     });
     if started.is_none() {
         release(next, cx);
