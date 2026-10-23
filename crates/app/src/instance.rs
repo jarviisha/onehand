@@ -10,7 +10,7 @@ use futures::StreamExt as _;
 use futures::channel::mpsc::{UnboundedSender, unbounded};
 use futures::channel::oneshot;
 use gpui::App;
-use onehand_core::control::Call;
+use onehand_core::control::{Call, Peer};
 use onehand_core::instance::{self, Forwarded, Unforwarded};
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
@@ -124,7 +124,9 @@ pub(crate) fn listen(cx: &mut App) {
             }
             cx.update(|cx| match incoming {
                 Incoming::Open(forwarded) => open_forwarded(forwarded, cx),
-                Incoming::Call(call, answer) => crate::control::perform(call, answer, cx),
+                Incoming::Call(peer, call, answer) => {
+                    crate::control::perform(peer, call, answer, cx)
+                }
             });
         }
     })
@@ -135,8 +137,8 @@ pub(crate) fn listen(cx: &mut App) {
 pub(crate) enum Incoming {
     /// A second launch's folder, or only a window to raise.
     Open(Forwarded),
-    /// A tool's call, and where its answer goes.
-    Call(Call, oneshot::Sender<Result<String, String>>),
+    /// A tool's call, who made it, and where its answer goes.
+    Call(Peer, Call, oneshot::Sender<Result<String, String>>),
 }
 
 /// Answer every connection. One whose first line is a second launch's open
@@ -268,7 +270,7 @@ mod tests {
         // GPUI's side, answering every call alike.
         std::thread::spawn(move || {
             while let Some(incoming) = futures::executor::block_on(rx.next()) {
-                if let Incoming::Call(_, answer) = incoming {
+                if let Incoming::Call(_, _, answer) = incoming {
                     let _ = answer.send(Ok("done".to_string()));
                 }
             }

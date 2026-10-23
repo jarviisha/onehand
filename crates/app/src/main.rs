@@ -14,6 +14,21 @@ fn main() {
         println!("onehand {}", env!("CARGO_PKG_VERSION"));
         return;
     }
+    // What onehand gives a session's agent to reach onehand's tools: a proxy
+    // between the agent's stdio and the socket, speaking for the session the
+    // token names. Before the lock, which belongs to the app, not to this.
+    let args: Vec<String> = std::env::args().collect();
+    if let [_, flag, socket, token] = args.as_slice()
+        && flag == "--mcp-proxy"
+    {
+        let stdin = std::io::BufReader::new(std::io::stdin());
+        let done = onehand_core::control::proxy(socket.as_ref(), token, stdin, std::io::stdout());
+        if let Err(why) = done {
+            eprintln!("onehand: the proxy could not reach {socket}: {why}");
+            std::process::exit(1);
+        }
+        return;
+    }
     shell::hold_or_forward();
 
     gpui_platform::application()

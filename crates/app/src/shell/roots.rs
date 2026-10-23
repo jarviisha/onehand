@@ -269,6 +269,16 @@ impl Shell {
         .detach();
     }
 
+    /// The project session `uid` is on, when this window holds it.
+    pub(crate) fn session_project(&self, uid: u64) -> Option<PathBuf> {
+        self.window
+            .workspace
+            .roots
+            .iter()
+            .find(|root| root.sessions.iter().any(|s| s.uid == uid))
+            .map(|root| root.path.clone())
+    }
+
     /// The project on screen, its name and path.
     pub(crate) fn on_screen(&self) -> Option<(String, PathBuf)> {
         let root = self.window.workspace.active_root()?;
