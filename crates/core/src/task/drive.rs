@@ -103,6 +103,9 @@ pub struct Drive {
     stopping: Option<Stop>,
     /// The run has finished: nothing more is done.
     over: bool,
+    /// The run never had a session: a check, which only runs a command.
+    /// It has no timeout, and what needs no session is still done.
+    sessionless: bool,
 }
 
 impl Drive {
@@ -144,8 +147,12 @@ impl Drive {
             command: false,
             stopping: None,
             over: false,
+            sessionless: chat.is_none(),
         };
-        let mut fx = vec![Effect::ArmClock(limit)];
+        let mut fx = Vec::new();
+        if !drive.sessionless {
+            fx.push(Effect::ArmClock(limit));
+        }
         drive.act(first, chat, now, &mut fx);
         (drive, fx)
     }
@@ -531,11 +538,7 @@ impl Drive {
         fx: &mut Vec<Effect>,
     ) {
         let Some(chat) = chat else {
-            // The session is gone; only ending the run is left to do.
-            if let Action::Finish(outcome) = action {
-                self.finish(None, outcome, now, fx);
-            }
-            return;
+            return self.carry_out_without_session(action, now, fx);
         };
         if !ends_run(&action) {
             self.announce_step(fx);
@@ -585,6 +588,32 @@ impl Drive {
             }
             Action::Finish(outcome) => return self.finish(Some(chat), outcome, now, fx),
             Action::Idle => return,
+        }
+        self.run.spent_secs = self.spent_secs(now);
+        fx.push(Effect::Save);
+        fx.push(Effect::Refresh);
+    }
+
+    /// Do what the engine said with no session to do it in: a run that never
+    /// had one runs its command and measures its work; one whose session went
+    /// is only ended.
+    fn carry_out_without_session(&mut self, action: Action, now: Instant, fx: &mut Vec<Effect>) {
+        let dir = self.run.setup.dir.clone();
+        match action {
+            Action::Finish(outcome) => return self.finish(None, outcome, now, fx),
+            Action::RunCommand(command) if self.sessionless => {
+                self.command = true;
+                fx.push(Effect::RunCommand { dir, command });
+            }
+            Action::Measure if self.sessionless => fx.push(Effect::Measure { dir }),
+            Action::Measure
+            | Action::Prompt(_)
+            | Action::RunCommand(_)
+            | Action::AwaitApproval
+            | Action::Push(_)
+            | Action::OpenPullRequest
+            | Action::AwaitStatusChecks { .. }
+            | Action::Idle => return,
         }
         self.run.spent_secs = self.spent_secs(now);
         fx.push(Effect::Save);

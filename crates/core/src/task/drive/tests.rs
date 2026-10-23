@@ -297,30 +297,16 @@ fn a_finished_drive_ignores_everything() {
 
 #[test]
 fn a_gone_session_only_lets_the_run_end() {
-    let task = Task::new("t1".into(), checkout(), brief(), setup(None));
-    let mut run = task.runs[0].clone();
-    run.resume();
-    let now = Instant::now();
-    let (_, fx) = Drive::start(
-        "t1".into(),
-        run.clone(),
-        Action::Prompt("hi".into()),
-        usize::MAX,
-        false,
-        now,
-        None,
-    );
-    assert_eq!(fx, vec![Effect::ArmClock(run.template.timeout_limit())]);
-    let (_, fx) = Drive::start(
-        "t1".into(),
-        run,
-        Action::Finish(Outcome::Done),
-        0,
-        false,
-        now,
-        None,
-    );
-    assert_eq!(finished(&fx), Some(&Outcome::Done));
+    let mut rig = at_approval();
+    let at = approval_at(&rig);
+    let now = rig.now;
+    // The session went while the next step's mark was pinned.
+    let fx = rig.drive.on(Input::Approved { at }, None, now);
+    assert!(has(&fx, |e| matches!(e, Effect::Pin { .. })), "{fx:?}");
+    let fx = rig.drive.on(Input::Pinned(Ok("c2".into())), None, now);
+    assert!(fx.is_empty(), "nothing to prompt: {fx:?}");
+    let fx = rig.drive.on(Input::Stop, None, now);
+    assert_eq!(finished(&fx), Some(&Outcome::Stopped(Stop::ByPerson)));
     assert!(
         !has(&fx, |e| matches!(e, Effect::Note(_))),
         "nowhere to say it"
@@ -636,4 +622,50 @@ fn a_chunk_is_heeded_only_when_it_can_move_the_run() {
         waiting.drive.heeds_appended(&waiting.chat),
         "the held prompt can go"
     );
+}
+
+// ── A drive without a session: a check ───────────────────────────────────
+
+fn check_drive() -> (Drive, Vec<Effect>) {
+    let task = Task::check("t1".into(), "make check".into(), setup(None));
+    let mut run = task.runs[0].clone();
+    let first = run.resume();
+    Drive::start("t1".into(), run, first, 0, false, Instant::now(), None)
+}
+
+#[test]
+fn a_check_runs_its_command_and_finishes_without_a_session() {
+    let (mut drive, fx) = check_drive();
+    let now = Instant::now();
+    let fx = match has(&fx, |e| matches!(e, Effect::Pin { .. })) {
+        true => drive.on(Input::Pinned(Ok("c0".into())), None, now),
+        false => fx,
+    };
+    assert!(
+        has(&fx, |e| matches!(e, Effect::RunCommand { .. })),
+        "{fx:?}"
+    );
+    let fx = drive.on(Input::CommandExited(ran(true)), None, now);
+    let fx = match has(&fx, |e| matches!(e, Effect::Pin { .. })) {
+        true => drive.on(Input::Pinned(Ok("c1".into())), None, now),
+        false => fx,
+    };
+    assert_eq!(finished(&fx), Some(&Outcome::Done), "{fx:?}");
+}
+
+#[test]
+fn a_check_has_no_timeout() {
+    let (_, fx) = check_drive();
+    assert!(!has(&fx, |e| matches!(e, Effect::ArmClock(_))), "{fx:?}");
+}
+
+#[test]
+fn a_check_stopped_before_its_command_runs_none() {
+    let (mut drive, fx) = check_drive();
+    assert!(has(&fx, |e| matches!(e, Effect::Pin { .. })), "{fx:?}");
+    let now = Instant::now();
+    assert!(drive.on(Input::Stop, None, now).is_empty());
+    let fx = drive.on(Input::Pinned(Ok("c0".into())), None, now);
+    assert_eq!(finished(&fx), Some(&Outcome::Stopped(Stop::ByPerson)));
+    assert!(!has(&fx, |e| matches!(e, Effect::RunCommand { .. })));
 }
