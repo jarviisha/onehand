@@ -153,6 +153,15 @@ pub struct TelegramConfig {
     pub token_env: Option<String>,
 }
 
+/// `[control]` — who may use onehand's tools from outside a window.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ControlConfig {
+    /// A program run as the user (a script, cron) may use the tools over the
+    /// socket beside the instance lock. Off until the user turns it on.
+    pub outside: bool,
+}
+
 /// `[unattended]` — picking up small issues and working them with nobody
 /// watching.
 ///
@@ -227,6 +236,7 @@ pub struct AppConfig {
     pub font: FontConfig,
     pub remote: RemoteConfig,
     pub unattended: UnattendedConfig,
+    pub control: ControlConfig,
     /// App command IDs mapped to replacement shortcuts. An empty list unbinds
     /// a command; an omitted ID uses its built-in defaults.
     pub keymap: std::collections::BTreeMap<String, Vec<String>>,
@@ -240,6 +250,7 @@ impl Default for AppConfig {
             font: FontConfig::default(),
             remote: RemoteConfig::default(),
             unattended: UnattendedConfig::default(),
+            control: ControlConfig::default(),
             keymap: Default::default(),
         }
     }

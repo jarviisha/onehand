@@ -198,3 +198,43 @@ impl WorkspaceWindow {
         }
     }
 }
+
+/// Run `f` on the shell of `window`, inside it: `None` when the window or its
+/// shell has gone. The way in for work that starts outside a window — a task
+/// asking for its place, a tool's call — and never from inside that shell's
+/// own update, which would be updating it twice.
+pub(crate) fn with_shell<R>(
+    window: gpui::AnyWindowHandle,
+    cx: &mut App,
+    f: impl FnOnce(
+        &mut crate::shell::Shell,
+        &mut gpui::Window,
+        &mut gpui::Context<crate::shell::Shell>,
+    ) -> R,
+) -> Option<R> {
+    let shell = Shared::global(cx)
+        .windows
+        .iter()
+        .find(|w| w.handle == window)?
+        .shell
+        .upgrade()?;
+    window
+        .update(cx, |_, window, cx| {
+            shell.update(cx, |shell, cx| f(shell, window, cx))
+        })
+        .ok()
+}
+
+/// The window in front and its shell, or the first window when none is:
+/// where something asked for from outside every window lands.
+pub(crate) fn front(
+    cx: &App,
+) -> Option<(gpui::AnyWindowHandle, gpui::Entity<crate::shell::Shell>)> {
+    let active = cx.active_window();
+    let windows = &Shared::global(cx).windows;
+    windows
+        .iter()
+        .find(|w| Some(w.handle) == active)
+        .or(windows.first())
+        .and_then(|w| Some((w.handle, w.shell.upgrade()?)))
+}

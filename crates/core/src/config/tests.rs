@@ -481,3 +481,12 @@ fn write_atomic_writes_through_a_symlink() {
     assert_eq!(std::fs::read_to_string(&target).unwrap(), "new");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// **Outside control is off unless the file says so**: a program reaching
+/// onehand over its socket is something the user turns on.
+#[test]
+fn control_outside_is_off_unless_said() {
+    assert!(!AppConfig::parse("").unwrap().control.outside);
+    let on = AppConfig::parse("[control]\noutside = true\n").unwrap();
+    assert!(on.control.outside);
+}

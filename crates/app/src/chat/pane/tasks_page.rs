@@ -331,7 +331,7 @@ pub(super) type Press = Rc<dyn Fn(&gpui::ClickEvent, &mut Window, &mut App)>;
 
 /// What can be done with a task from where it is listed.
 #[derive(Clone, Copy, PartialEq)]
-pub(super) enum TaskAct {
+pub(crate) enum TaskAct {
     OpenSession,
     Stop,
     Resume,
@@ -340,7 +340,7 @@ pub(super) enum TaskAct {
 }
 
 impl TaskAct {
-    pub(super) fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> &'static str {
         match self {
             Self::OpenSession => "Open session",
             Self::Stop => "Stop",
@@ -409,7 +409,7 @@ impl TaskAct {
 /// What can be done with the task `row` from here, most fitting first. A
 /// finished task offers nothing on a row, and *Retry* in its detail when
 /// `retry_finished`.
-pub(super) fn task_acts(row: &Row, retry_finished: bool) -> Vec<TaskAct> {
+pub(crate) fn task_acts(row: &Row, retry_finished: bool) -> Vec<TaskAct> {
     let mut acts = Vec::new();
     match row.group {
         Group::Waiting | Group::Running | Group::Queued => {

@@ -7,7 +7,7 @@ use crate::state::{OpenWindow, Shared, WorkspaceWindow};
 use crate::terminal::TerminalPanel;
 use crate::workbench::Workbench;
 use gpui::{App, AppContext, BorrowAppContext, Context, Focusable as _, Window, px};
-use gpui_component::dock::{DockArea, DockEvent, DockItem, DockPlacement};
+use gpui_component::dock::{DockArea, DockEvent, DockItem};
 use gpui_component::input::{InputEvent, InputState};
 use gpui_component::{ResizableState, Root, WindowExt as _};
 use onehand_core::config::WorkspaceConfig;
@@ -143,26 +143,7 @@ impl Shell {
                 use crate::chat::pane::ChatPaneEvent as E;
                 match event {
                     E::OpenFile(path) => {
-                        // Another panel maximized would hide the Workbench the
-                        // file opens in: it is put back first, so the file is
-                        // seen where it was asked for.
-                        if shell
-                            .app_maximized
-                            .is_some_and(|p| p != FocusedPanel::Workbench)
-                        {
-                            shell.toggle_maximize_panel(FocusedPanel::Workbench, window, cx);
-                        }
-                        shell
-                            .workbench
-                            .update(cx, |panel, cx| panel.open_file(path, window, cx));
-                        // Opening a file is what makes the Workbench worth
-                        // showing -- but only if it is closed, since toggling
-                        // an open dock would hide the file just asked for.
-                        shell.dock.update(cx, |dock, cx| {
-                            if !dock.is_dock_open(DockPlacement::Right, cx) {
-                                dock.toggle_dock(DockPlacement::Right, window, cx);
-                            }
-                        });
+                        shell.open_file(path, window, cx);
                     }
                     E::WorkTreeTouched => shell.refresh_worktree(cx),
                     E::AgentStarted => shell.sync_agent_started(cx),
@@ -671,8 +652,7 @@ fn open_window(workspace: Workspace, cx: &mut App) {
 
 /// Install global state and open the first window.
 pub fn boot(cx: &mut App) {
-    // First, so a second launch waiting on the socket is answered soon. `main`
-    // took the lock and bound the socket before GPUI started.
+    // First, so a launch waiting on the socket `main` bound is answered soon.
     crate::instance::listen(cx);
     // Behind the lock, and before anything reads the templates.
     for problem in onehand_core::workflow::store::migrate_old_dir_blocking()
@@ -686,6 +666,7 @@ pub fn boot(cx: &mut App) {
     let appearance = cfg.appearance;
     let remote = cfg.remote.clone();
     let unattended = cfg.unattended.clone();
+    crate::control::boot(&cfg.control);
     cx.set_global(Shared::from_config(cfg, config_path));
     // The settings, workspace and conversation-name writes still queued at
     // quit would die with the process: waited for, as the task files are,

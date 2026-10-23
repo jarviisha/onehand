@@ -17,6 +17,7 @@ mod acp;
 mod agent_check;
 pub mod assets;
 mod chat;
+mod control;
 mod controls;
 mod dialogs;
 mod features;

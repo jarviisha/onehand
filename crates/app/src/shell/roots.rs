@@ -269,6 +269,36 @@ impl Shell {
         .detach();
     }
 
+    /// The project on screen, its name and path.
+    pub(crate) fn on_screen(&self) -> Option<(String, PathBuf)> {
+        let root = self.window.workspace.active_root()?;
+        Some((root.label.clone(), root.path.clone()))
+    }
+
+    /// Open `path` in the Workbench and show the Workbench, without moving
+    /// focus: a tool card's link and a tool's call land here alike.
+    pub(crate) fn open_file(&mut self, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
+        // Another panel maximized would hide the Workbench the file opens in:
+        // it is put back first, so the file is seen where it was asked for.
+        if self
+            .app_maximized
+            .is_some_and(|p| p != super::FocusedPanel::Workbench)
+        {
+            self.toggle_maximize_panel(super::FocusedPanel::Workbench, window, cx);
+        }
+        self.workbench
+            .update(cx, |panel, cx| panel.open_file(path, window, cx));
+        // Opening a file is what makes the Workbench worth showing -- but only
+        // if it is closed, since toggling an open dock would hide the file
+        // just asked for.
+        self.dock.update(cx, |dock, cx| {
+            use gpui_component::dock::DockPlacement;
+            if !dock.is_dock_open(DockPlacement::Right, cx) {
+                dock.toggle_dock(DockPlacement::Right, window, cx);
+            }
+        });
+    }
+
     /// Add `dir` as a project and select it, or select it if it is one
     /// already. The folder picker lands here, and so does a second launch.
     pub(crate) fn open_root(&mut self, dir: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
