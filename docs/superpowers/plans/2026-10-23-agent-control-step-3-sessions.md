@@ -89,7 +89,7 @@ claim + switch on → `On`, a registered sender gets `tools_changed`, drop → `
 
 ### Task 4: App — the composer's switch and its chip
 
-- `Act::Control` in `presentation.rs`: row *Let the agent control onehand*, `checked` from
+- `Act::Control` in `presentation.rs`: row *Agent controls onehand* (under *This session*), `checked` from
   `switched_on`, mark `IconName::Bot`; `add_rows(session, cx)` leaves it out for an issue task's
   session; `act_rows`' `offered` arm the same; `apply_pick` flips it and notifies.
 - `status_row`: the chip when on, pressing it switches off, tooltip *This session's agent can use

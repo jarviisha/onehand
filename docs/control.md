@@ -106,9 +106,9 @@ it back and says so.
   servers at `session/new` is connected, offered nothing, and told when that changes. A token
   whose session closed is refused as no such session. The token is on the proxy's command line,
   so another process of the same user can read it, as it can read the config.
-- **The switch is the session's**, in the composer's `+` menu: *Let the agent control onehand*,
-  off by default, kept by the session through a restart of its agent and not saved, so a session
-  reopened later starts off. While it is on, *Controls onehand* stands in the composer's status
+- **The switch is the session's**, in the composer's `+` menu: *Agent controls onehand*, under
+  a heading of its own, *This session*. Off by default, kept by the session through a restart of
+  its agent and not saved, so a session reopened later starts off. While it is on, *Controls onehand* stands in the composer's status
   row; pressing it switches it off. A session the tools opened, or a run they started, starts
   off; an unattended run's session is never offered it.
 - **No reconnect.** While the switch is off, `tools/list` is empty and every `tools/call` is

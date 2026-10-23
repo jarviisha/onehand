@@ -52,7 +52,7 @@ minor bump may break any of them.
   by default), a program run as you lists projects, agents, workflows and tasks, opens a session
   on a project with a first prompt, starts a workflow on a brief or on one of a project's issues
   (off screen, waiting its turn as any task does), stops a task and opens a file in the Workbench.
-  The same tools reach a session's own agent when *Let the agent control onehand* is on in the
+  The same tools reach a session's own agent when *Agent controls onehand* is on in the
   composer's `+` menu, off by default; the status row says so while it is. No tool
   answers a card, a permission or an approval.
 - A workspace overview of sessions, projects and recent conversations as cards.
