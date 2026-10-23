@@ -578,10 +578,10 @@ fn a_task_taken_up_after_the_search_keeps_the_issue_unclaimed() {
     assert!(still_free(&[], &tracker, 7));
     assert!(still_free(&[earlier(7, "b", false, true)], &tracker, 7));
     assert!(!still_free(&[earlier(7, "b", true, true)], &tracker, 7));
-    // Another issue's task is no matter, and the newest task on this one is
-    // what counts.
+    // Another issue's task is no matter; an older one on this issue retried
+    // is.
     assert!(still_free(&[earlier(8, "b", true, true)], &tracker, 7));
-    assert!(still_free(
+    assert!(!still_free(
         &[earlier(7, "a", true, true), earlier(7, "b", false, true)],
         &tracker,
         7

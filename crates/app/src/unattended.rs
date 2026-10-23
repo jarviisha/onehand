@@ -717,20 +717,21 @@ pub(super) fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
             .await;
         // Checked again here, where tasks start: a Retry pressed while the
         // search ran would otherwise have the issue claimed under it.
-        let found = cx.update(|cx| {
+        let (found, held) = cx.update(|cx| {
             if let Some(accounts) = accounts {
                 file_accounts(accounts, cx);
                 record(checked, true, cx);
             }
-            found.filter(|(found, _)| {
-                let free = found.still_free(&launch::earlier(cx));
-                if !free {
-                    eprintln!(
-                        "onehand: the issue found was taken up meanwhile; left for the next look"
-                    );
-                }
-                free
-            })
+            match found {
+                Some((found, _)) if !found.still_free(&launch::earlier(cx)) => (
+                    None,
+                    Some(
+                        "Nothing was picked up: the issue found is being worked, and keeps its label"
+                            .to_string(),
+                    ),
+                ),
+                found => (found, held),
+            }
         });
         let begun = match found {
             Some((found, label)) => {

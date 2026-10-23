@@ -316,7 +316,7 @@ pub fn taking_blocking(
     else {
         return Ok(Taking::Fresh);
     };
-    if last.working {
+    if !still_free(earlier, tracker, number) {
         return Err(Skip::Busy);
     }
     let Some(forge) = forge else {
@@ -531,14 +531,13 @@ impl Found {
     }
 }
 
-/// Whether the newest task on issue `number` of `tracker`, if any, is idle,
-/// as `taking_blocking` judged it from an older `earlier`.
+/// Whether no task on issue `number` of `tracker` is working: an older one
+/// retried counts as much as the newest.
 pub fn still_free(earlier: &[Earlier], tracker: &Tracker, number: u64) -> bool {
     let at = tracker.to_ref();
     !earlier
         .iter()
-        .rfind(|e| e.tracker == at && e.number == number)
-        .is_some_and(|e| e.working)
+        .any(|e| e.working && e.tracker == at && e.number == number)
 }
 
 /// Claim what the search found and make what it is worked on. Blocking.
