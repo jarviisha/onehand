@@ -659,7 +659,7 @@ pub(super) fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
         // A panic in there would otherwise leave `claiming` set for the life of
         // the process, and no issue would be looked for again. Said and treated
         // as nothing found.
-        let (accounts, checked, begun, held) = cx
+        let (accounts, checked, found, held) = cx
             .background_executor()
             .spawn(async move {
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -682,16 +682,16 @@ pub(super) fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
                             })
                         })
                         .collect();
-                    let begun = search.and_then(|(label, (choosing, judging))| {
-                        core::begin_blocking(
+                    let found = search.and_then(|(label, (choosing, judging))| {
+                        let found = core::find_blocking(
                             &workable,
                             &label,
                             &choosing,
                             &earlier,
                             &judging,
                             &mut checked,
-                        )
-                        .map(|begun| begun.map(|claimed| Landed::new(claimed, None)))
+                        )?;
+                        Some((found, label))
                     });
                     // Why nothing was started where something was looked
                     // for: the look refused the project, or what the search
@@ -705,21 +705,54 @@ pub(super) fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
                     // Said after the look, which would otherwise say the
                     // project is fine.
                     checked.extend(lacking.into_iter().map(|(root, why)| (root, Err(why))));
-                    (Some(accounts), checked, begun, held)
+                    (Some(accounts), checked, found, held)
                 }))
                 .unwrap_or_else(|_| {
-                    // The look, the search and the claim are all in here, and
-                    // none of them has taken a label unless it finished.
+                    // The look and the search are in here, and neither takes
+                    // a label.
                     eprintln!("onehand: looking for an unattended run panicked");
                     (None, Vec::new(), None, None)
                 })
             })
             .await;
-        cx.update(|cx| {
+        // Checked again here, where tasks start: a Retry pressed while the
+        // search ran would otherwise have the issue claimed under it.
+        let (found, held) = cx.update(|cx| {
             if let Some(accounts) = accounts {
                 file_accounts(accounts, cx);
                 record(checked, true, cx);
             }
+            match found {
+                Some((found, _)) if !found.still_free(&launch::earlier(cx)) => (
+                    None,
+                    Some(
+                        "Nothing was picked up: the issue found is being worked, and keeps its label"
+                            .to_string(),
+                    ),
+                ),
+                found => (found, held),
+            }
+        });
+        let begun = match found {
+            Some((found, label)) => {
+                cx.background_executor()
+                    .spawn(async move {
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            core::claim_found_blocking(found, &label)
+                                .map(|begun| begun.map(|claimed| Landed::new(claimed, None)))
+                        }))
+                        .unwrap_or_else(|_| {
+                            // `prepare_blocking` catches its own, so this is the
+                            // claim's: said, and treated as nothing found.
+                            eprintln!("onehand: claiming an unattended run panicked");
+                            None
+                        })
+                    })
+                    .await
+            }
+            None => None,
+        };
+        cx.update(|cx| {
             if searching {
                 landed(begun, asked_from, held, cx);
             }

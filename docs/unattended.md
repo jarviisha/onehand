@@ -27,6 +27,7 @@ tick (every N minutes, one process): send the reports not yet delivered, then,
 while a slot is free under at_once,
   └─ the project's own issues, then its forge's (gh issue list --label <trigger> --author @me)
      → the first labelled issue, or nothing
+     └─ back on the UI thread: a task taken up on it meanwhile (a Retry) leaves it, label on
      └─ claim it: remove the trigger label + a comment (a note, for one kept in onehand)
         └─ with a forge:    git fetch; git worktree add -b <branch> ../<dir> origin/<default>
            without a forge: git worktree add -b <branch> ../<dir> <the branch checked out>
@@ -78,7 +79,7 @@ background executor, one interval in the config, no cron expressions.
 |---|---|
 | `crates/core/src/unattended.rs` | `Issue`, the claim and search over a connector, `branch_for`, `brief_for`, `claim_comment`, `IssueSource` and `TrackerRef` (what a task keeps of its issue), `Slots`, `Budget`, `parse_every`, `target_dir` |
 | `crates/core/src/unattended/report.rs` | what a run leaves and what its issue is told: `Verdict`, `verdict_blocking`, `PendingReport`, `report`, `could_not_start`, `pull_request_text`, `review_note`, `review_unanswerable`, `review_closed`, `review_diverged` |
-| `crates/core/src/unattended/claim.rs` | everything a tick or a pick decides off the UI loop: the look (`look_blocking`), the search and claim (`begin_blocking`, `taking_blocking`, `trackers_blocking`), the worktree cut (`prepare_blocking`), the pick (`pickable_blocking`, `pickable_one_blocking`), `Choosing` and `Judging`, and the settings rules `cannot_start`, `fit_for_issue`, `check_missing`, `now_for` |
+| `crates/core/src/unattended/claim.rs` | everything a tick or a pick decides off the UI loop: the look (`look_blocking`), the search (`find_blocking`, `taking_blocking`, `trackers_blocking`), the recheck on the UI thread (`Found::still_free`, `still_free`) and the claim (`claim_found_blocking`), the worktree cut (`prepare_blocking`), the pick (`pickable_blocking`, `pickable_one_blocking`), `Choosing` and `Judging`, and the settings rules `cannot_start`, `fit_for_issue`, `check_missing`, `now_for` |
 | `crates/core/src/preflight.rs` | the preflight, and `new_issue_run`, which assembles what a new issue run is checked against |
 | `crates/core/src/workflow/builtin/issue.toml` | *Work an issue*, the workflow runs use by default |
 | `crates/core/src/connector.rs` | `Connector`, what a run asks of the system a project lives on, and `serving`, which picks the first one that takes a project |

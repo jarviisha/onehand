@@ -18,10 +18,10 @@ mod claim;
 mod report;
 
 pub use claim::{
-    begin_blocking, cannot_start, check_missing, fit_for_issue, look_blocking, now_for,
-    pickable_blocking, pickable_one_blocking, prepare_blocking, taking_blocking, Accounts,
-    Choosing, Claimed, Earlier, Judging, Pickable, Project, RunSettings, Served, Skip, Taking,
-    Unstarted, Work, Workable,
+    cannot_start, check_missing, claim_found_blocking, find_blocking, fit_for_issue, look_blocking,
+    now_for, pickable_blocking, pickable_one_blocking, prepare_blocking, still_free,
+    taking_blocking, Accounts, Choosing, Claimed, Earlier, Found, Judging, Pickable, Project,
+    RunSettings, Served, Skip, Taking, Unstarted, Work, Workable,
 };
 pub use report::{
     could_not_start, pull_request_text, report, review_closed, review_diverged, review_note,
