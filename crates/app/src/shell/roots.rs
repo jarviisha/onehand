@@ -262,16 +262,22 @@ impl Shell {
             };
             shell
                 .update_in(cx, |shell: &mut Self, window, cx| {
-                    let idx = shell.window.workspace.add_root(dir);
-                    shell.window.workspace.select_root(idx);
-                    shell.show_active_session(window, cx);
-                    shell.refresh_git(cx);
-                    shell.save_workspace(window, cx);
-                    cx.notify();
+                    shell.open_root(dir, window, cx)
                 })
                 .ok();
         })
         .detach();
+    }
+
+    /// Add `dir` as a project and select it, or select it if it is one
+    /// already. The folder picker lands here, and so does a second launch.
+    pub(crate) fn open_root(&mut self, dir: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        let idx = self.window.workspace.add_root(dir);
+        self.window.workspace.select_root(idx);
+        self.show_active_session(window, cx);
+        self.refresh_git(cx);
+        self.save_workspace(window, cx);
+        cx.notify();
     }
 
     /// Remove a project root, and everything the window keeps for it.
