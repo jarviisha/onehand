@@ -55,6 +55,12 @@ pub fn notify_turn_ended(agent: String, root: String) {
     );
 }
 
+/// Desktop notification for a schedule's task that ended: the schedule's name,
+/// then how it ended.
+pub(crate) fn notify_scheduled(schedule: String, said: String) {
+    notify_desktop(schedule, said, notify_rust::Urgency::Normal);
+}
+
 /// Desktop notification for an agent that has stopped and is waiting on the
 /// user.
 ///

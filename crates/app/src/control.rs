@@ -79,6 +79,9 @@ fn standing(peer: &Peer) -> Standing {
             match sessions.tokens.get(token) {
                 None => Standing::Refused("no such session".to_string()),
                 Some(Some(uid)) if sessions.on.contains(uid) => Standing::On,
+                Some(Some(uid)) if sessions.only.contains_key(uid) => {
+                    Standing::Only(sessions.only[uid].clone())
+                }
                 // Not claimed yet (a warm adapter's), or switched off.
                 Some(_) => Standing::Off,
             }
@@ -101,6 +104,8 @@ struct Sessions {
     opened: HashMap<u64, Vec<u64>>,
     /// The labels an issue each session's agent writes gets: its schedule's.
     labels: HashMap<u64, Vec<String>>,
+    /// The tools each session not switched on may use: its schedule's.
+    only: HashMap<u64, Vec<String>>,
 }
 
 static SESSIONS: LazyLock<Mutex<Sessions>> = LazyLock::new(Mutex::default);
@@ -181,12 +186,26 @@ pub(crate) fn switch(uid: u64, on: bool) {
     }
 }
 
+/// Give session `uid` what its task was given: the tools it may use while
+/// nobody switches it on, and the labels its issues get. A task given
+/// nothing changes nothing.
+pub(crate) fn grant(uid: u64, grant: &onehand_core::task::Grant) {
+    let mut sessions = sessions();
+    if !grant.tools.is_empty() {
+        sessions.only.insert(uid, grant.tools.clone());
+    }
+    if !grant.labels.is_empty() {
+        sessions.labels.insert(uid, grant.labels.clone());
+    }
+}
+
 /// Session `uid` is closed: its switch and what its tools opened go with it.
 pub(crate) fn forget(uid: u64) {
     let mut sessions = sessions();
     sessions.on.remove(&uid);
     sessions.opened.remove(&uid);
     sessions.labels.remove(&uid);
+    sessions.only.remove(&uid);
 }
 
 /// Said when a call's answer cannot come, because the app is going.
@@ -647,10 +666,17 @@ fn template(id: &str, cx: &App) -> Result<Template, String> {
     entry.template.clone()
 }
 
-/// Start a task of `template` on `root` with `brief`, as the launcher does
-/// and off screen, once what blocks the launcher's Run blocks nothing:
-/// on the checkout, or on a worktree cut for it first. Answers the task's id
-/// and whether it started or waits.
+/// What a start off screen carries beside its workflow and brief: who asked,
+/// what its sessions may use, and the agent and mode it runs with (none: the
+/// first agent, and its own mode).
+pub(crate) struct Started {
+    pub(crate) origin: onehand_core::task::Origin,
+    pub(crate) grant: onehand_core::task::Grant,
+    pub(crate) agent: Option<String>,
+    pub(crate) mode: Option<String>,
+}
+
+/// A tool's start, said as the caller reads it.
 async fn start(
     window: gpui::AnyWindowHandle,
     shell: gpui::Entity<crate::shell::Shell>,
@@ -659,9 +685,49 @@ async fn start(
     brief: Brief,
     cx: &mut gpui::AsyncApp,
 ) -> Result<String, String> {
+    let title = brief.title.clone();
+    let started = Started {
+        origin: onehand_core::task::Origin::Tool,
+        grant: onehand_core::task::Grant::default(),
+        agent: None,
+        mode: None,
+    };
+    match start_task(window, shell, root, template, brief, started, cx).await? {
+        (id, Placed::Started) => Ok(format!("Task {id} started: {title}")),
+        (id, Placed::Queued(said)) => Ok(format!("Task {id} queued: {said}")),
+        (_, Placed::Refused(why)) => Err(why),
+    }
+}
+
+/// Start a task of `template` on `root` with `brief`, as the launcher does
+/// and off screen, once what blocks the launcher's Run blocks nothing:
+/// on the checkout, or on a worktree cut for it first. Answers the task's id
+/// and where it landed.
+pub(crate) async fn start_task(
+    window: gpui::AnyWindowHandle,
+    shell: gpui::Entity<crate::shell::Shell>,
+    root: PathBuf,
+    template: Template,
+    brief: Brief,
+    started: Started,
+    cx: &mut gpui::AsyncApp,
+) -> Result<(String, Placed), String> {
+    let Started {
+        origin,
+        grant,
+        agent,
+        mode,
+    } = started;
     let (blocks, check) = cx.update(|cx| {
         let shell = shell.read(cx);
-        let found = shell.run_preflight(&root, Ok(template.clone()), None, cx);
+        let found = shell.run_preflight(
+            &root,
+            Ok(template.clone()),
+            None,
+            agent.as_deref(),
+            mode.as_deref(),
+            cx,
+        );
         let blocks: Vec<String> = found
             .into_iter()
             .filter(|f| f.blocks)
@@ -676,9 +742,9 @@ async fn start(
         repo: root.clone(),
         dir: root.clone(),
         branch: None,
-        agent: None,
+        agent,
         check,
-        mode: None,
+        mode,
         forge: None,
     };
     match template.place {
@@ -697,20 +763,17 @@ async fn start(
             };
         }
     }
-    let title = brief.title.clone();
     let (id, told) = cx
         .update(|cx| {
             crate::state::with_shell(window, cx, |shell, window, cx| {
-                shell.start_workflow_told(setup, template, brief, window, cx)
+                shell.start_workflow_told(setup, template, brief, origin, grant, window, cx)
             })
         })
         .ok_or("the window closed")?;
-    match told.await {
-        Ok(Placed::Started) => Ok(format!("Task {id} started: {title}")),
-        Ok(Placed::Queued(said)) => Ok(format!("Task {id} queued: {said}")),
-        Ok(Placed::Refused(why)) => Err(why),
-        Err(_) => Err("the task did not start".to_string()),
-    }
+    let placed = told
+        .await
+        .map_err(|_| "the task did not start".to_string())?;
+    Ok((id, placed))
 }
 
 /// Send `prompt` as `session`'s first message once its agent is up, as a
@@ -763,6 +826,30 @@ mod tests {
 
     fn standing_of(token: &str) -> Standing {
         standing(&Peer::Session(token.to_string()))
+    }
+
+    #[test]
+    fn a_granted_session_stands_with_its_set_until_switched_on() {
+        let uid = 900_002;
+        let token = Token::mint();
+        token.claim(uid);
+        let name = token.0.clone();
+        grant(
+            uid,
+            &onehand_core::task::Grant {
+                tools: vec!["list_issues".into()],
+                labels: vec!["auto".into()],
+            },
+        );
+        assert!(matches!(standing_of(&name), Standing::Only(set) if set == ["list_issues"]));
+        assert_eq!(sessions().labels[&uid], ["auto"]);
+        switch(uid, true);
+        assert!(matches!(standing_of(&name), Standing::On));
+        switch(uid, false);
+        assert!(matches!(standing_of(&name), Standing::Only(_)));
+        forget(uid);
+        assert!(matches!(standing_of(&name), Standing::Off));
+        assert!(!sessions().labels.contains_key(&uid));
     }
 
     #[test]

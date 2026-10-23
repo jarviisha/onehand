@@ -253,6 +253,14 @@ pub(crate) fn fail(id: String, why: String, kind: Failure, cx: &mut App) {
 /// Task `id` is over and its last mark pinned: tell an issue it works how it
 /// ended, then give its place up.
 fn let_go(id: String, cx: &mut App) {
+    // A schedule's task ended with nobody necessarily watching: said on the
+    // desktop as well as on the Tasks page.
+    if let Some(task) = super::task(&id, cx)
+        && let Some(onehand_core::task::Origin::Schedule { name, .. }) = &task.origin
+    {
+        let said = task.ended_said().unwrap_or_else(|| "ended".to_string());
+        crate::chat::session::notify_scheduled(name.clone(), said);
+    }
     crate::unattended::ended(&id, cx);
     release(id, cx);
 }

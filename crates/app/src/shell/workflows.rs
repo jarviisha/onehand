@@ -171,7 +171,8 @@ impl Shell {
                 .map_err(|why| format!("{} cannot be read: {why}", entry.name())),
             None => Err("pick a workflow".to_string()),
         };
-        Some(self.run_preflight(&launcher.root, workflow, launcher.ground.as_ref(), cx))
+        let ground = launcher.ground.as_ref();
+        Some(self.run_preflight(&launcher.root, workflow, ground, None, None, cx))
     }
 
     /// What the preflight finds of a new task of `workflow` on `root`, with
@@ -182,6 +183,8 @@ impl Shell {
         root: &std::path::Path,
         workflow: Result<Template, String>,
         ground: Option<&Ground>,
+        agent: Option<&str>,
+        mode: Option<&str>,
         cx: &gpui::App,
     ) -> Vec<preflight::Finding> {
         let shared = Shared::global(cx);
@@ -196,12 +199,12 @@ impl Shell {
             ),
             _ => None,
         };
-        let agent = onehand_core::config::agent_or_first(&shared.agents, None);
+        let agent = onehand_core::config::agent_or_first(&shared.agents, agent);
         let facts = preflight::Facts {
             workflow,
             agent: agent.map(|spec| spec.name.clone()),
             agent_configured: !shared.agents.is_empty(),
-            mode: None,
+            mode: mode.map(str::to_string),
             offered: agent.and_then(|spec| crate::unattended::offered(spec, cx)),
             has_check: self.check_of(root).is_some(),
             in_git,
@@ -370,6 +373,8 @@ impl Shell {
         setup: Setup,
         template: Template,
         brief: Brief,
+        origin: onehand_core::task::Origin,
+        grant: onehand_core::task::Grant,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> (
@@ -383,7 +388,11 @@ impl Shell {
             self.refresh_git(cx);
             self.save_workspace(window, cx);
         }
-        let task = new_task(setup, template, brief, cx);
+        let task = Task {
+            origin: Some(origin),
+            grant,
+            ..new_task(setup, template, brief, cx)
+        };
         let id = task.id.clone();
         crate::task::drive_off_screen(&id, cx);
         (
@@ -509,6 +518,9 @@ impl Shell {
                 cx,
             );
         };
+        // Every drive, a Resume's new session included: what the task was
+        // given when it started is what its session may use.
+        crate::control::grant(uid, &task.grant);
         // Counted from what landed, so a mark the app quit before pinning is
         // pinned now rather than taken as made.
         let pinned = run.pinned_count();
@@ -544,12 +556,15 @@ impl Shell {
     }
 }
 
-/// A new task of `template` on `setup`, with the agent a new session takes.
+/// A new task of `template` on `setup`, with the agent `setup` names, or the
+/// one a new session takes.
 fn new_task(mut setup: Setup, template: Template, brief: Brief, cx: &gpui::App) -> Task {
-    setup.agent = Shared::global(cx)
-        .agents
-        .first()
-        .map(|spec| spec.name.clone());
+    setup.agent = setup.agent.or_else(|| {
+        Shared::global(cx)
+            .agents
+            .first()
+            .map(|spec| spec.name.clone())
+    });
     Task::new(onehand_core::task::new_id(), template, brief, setup)
 }
 

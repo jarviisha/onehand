@@ -5,7 +5,7 @@ use super::Tasks;
 use gpui::{AnyWindowHandle, App};
 use onehand_core::issues::IssueKey;
 use onehand_core::task::work::{IssueWork, issue_work, waiting_said};
-use onehand_core::task::{Group, Source, Task, Working, sort_listed};
+use onehand_core::task::{Group, Origin, Source, Task, Working, sort_listed};
 use onehand_core::unattended::{Holder, TrackerRef};
 use onehand_core::workflow::Run;
 use std::path::PathBuf;
@@ -71,9 +71,14 @@ pub(crate) fn rows(roots: &[PathBuf], cx: &App) -> Vec<Row> {
         let row = Row {
             id: task.id.clone(),
             title: task.brief.title.clone(),
-            name: match (task.issue(), run) {
-                (Some(issue), Some(run)) => format!("{} · {}", issue.shown(), run.template.name),
-                (_, run) => run.map_or_else(String::new, |run| run.template.name.clone()),
+            name: {
+                let workflow = run.map_or_else(String::new, |run| run.template.name.clone());
+                match (task.issue(), &task.origin) {
+                    (Some(issue), _) => format!("{} · {workflow}", issue.shown()),
+                    (None, Some(Origin::Schedule { name, .. })) => format!("{name} · {workflow}"),
+                    (None, Some(Origin::Tool)) => format!("by a tool · {workflow}"),
+                    (None, None) => workflow,
+                }
             },
             at,
             project: task.setup.repo.clone(),
