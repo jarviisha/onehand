@@ -1,8 +1,12 @@
 # Control
 
-How onehand is driven from outside a window: the socket the running process listens on, and
-what a second launch does with it. The tools an agent or an outside program may call, and the
-switches that allow them, are not built yet.
+How onehand is driven from outside a window: the socket the running process listens on, what a
+second launch does with it, and onehand's own tools, which a program outside onehand may call over
+it when Settings allows. Two tools that start a task (`start_workflow`, `start_issue`) and the
+tools for an agent in a session are not built yet.
+
+**No tool answers a card, a permission or an approval.** Those always wait for a person; no tool
+is written for them.
 
 ## The socket
 
@@ -16,12 +20,13 @@ switches that allow them, are not built yet.
   directory when that is unset; the hash is FNV-1a over the config directory, so every build on
   that directory finds the same name.
 - **Mode `0600`:** the user's own, as the config directory beside it is.
-- **What is said:** JSON-RPC 2.0, one message per line. A connection is answered and closed.
-  A line that is not JSON is answered `-32700`, an unknown method `-32601`; the listener goes on.
-  A connection that sends nothing for five seconds, or more than 64 KiB without a newline, is
-  dropped.
-- **Where the rule lives:** core's `instance` writes and reads every line; the app's `instance`
-  only carries them, on a tokio runtime of its own, and crosses to GPUI over a channel.
+- **What is said:** JSON-RPC 2.0, one message per line. A connection says what it is in its first
+  line: `onehand/open` is a second launch, answered and closed; anything else starts an MCP
+  conversation, carried on until the client hangs up. A first line that does not come within five
+  seconds, or any line past 64 KiB without a newline, drops the connection.
+- **Where the rule lives:** core's `instance` reads and writes a second launch's lines, core's
+  `control` every MCP message; the app's `instance` and `control` only carry them, on a tokio
+  runtime of their own, and cross to GPUI over a channel only to carry out a call.
 
 ## A second launch
 
@@ -42,3 +47,43 @@ answer, and exits.
 | not a folder (`-32602`) | nothing | prints `onehand: <path> is not a folder`, exits 1 |
 | a path that is not UTF-8 | (never sent) | prints `onehand: <path> is not a UTF-8 path`, exits 1 |
 | nobody on the socket | (an older build, or one that could not bind) | prints `onehand is already running on <dir>`, exits 1 |
+
+## The MCP conversation
+
+- **Tools only:** `initialize`, `ping`, `tools/list`, `tools/call`. Resources, prompts and other
+  methods are answered `-32601`; a notification is not answered.
+- **`initialize` decides who the connection is.** Without a token it is an outside client,
+  refused (`-32001`, saying where the switch is) while outside control is off. A token
+  (`_meta.onehand.session`) is refused as an unknown session until sessions are given tokens.
+- **Asked on every message:** turning outside control off refuses the next `tools/list` or
+  `tools/call` of a client already connected (`-32001`). A call before `initialize` is `-32002`.
+- **A refusal the caller can act on is the tool's answer**, marked `isError`: an argument missing
+  or of the wrong type, a project or task not found, a file outside the project on screen. An
+  unknown tool is `-32602`; a malformed line `-32700`, and the conversation goes on.
+- **Where a call lands:** the window in front, or the first one. A call that arrives before the
+  first window is up waits for it.
+
+## The tools
+
+| Tool | Input | Does | Answers |
+|---|---|---|---|
+| `list_projects` | none | the window's projects | `name — path — check: yes/no`, one per line |
+| `list_agents` | none | the agents a session can be opened with | one name per line |
+| `open_session` | `project`, `agent`, optional `prompt` | opens a session on the project with that agent, not shown; it appears in the rail; `prompt` is sent once the agent is up | what it opened, or why not |
+| `list_workflows` | none | the library's workflows | `id — name`; an unreadable file says why |
+| `list_tasks` | optional `project` | the tasks of the window's projects, or of one | `id — title — state — step — next: …`, the next actions as the Tasks page offers them |
+| `stop_task` | `task` id | as the Tasks page's Stop, for a task of the window's projects | `Stopping <title>`, or why not |
+| `open_file` | `path` | opens the file in the Workbench and shows the Workbench, without taking focus | what it opened, or why not |
+
+- A project is named by its name or its path. A name two projects share is refused, naming both.
+- Every list answers at most 50 lines and ends `… and N more not listed` when it was cut.
+- `open_file` takes an absolute path without `..`, inside the project on screen; another
+  project's file is refused rather than switching projects under the person. It takes no line:
+  the editor cannot go to one.
+
+## Outside control
+
+Settings ▸ Connections, *Outside control*: off by default, kept as `control.outside` in
+`onehand.toml`. The section names the socket's path and says what a program may and may never do.
+Turning it on or off holds at once, for clients already connected too; a write that fails puts
+it back and says so.

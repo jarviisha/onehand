@@ -48,6 +48,10 @@ minor bump may break any of them.
 
 ### The window
 
+- onehand is an MCP server on its socket. With *Outside control* on in Settings ▸ Connections (off
+  by default), a program run as you lists projects, agents, workflows and tasks, opens a session
+  on a project with a first prompt, stops a task and opens a file in the Workbench. No tool
+  answers a card, a permission or an approval.
 - A workspace overview of sessions, projects and recent conversations as cards.
 - A Plugins mode in the Workbench manages Claude Code's plugins per project and globally.
 - Settings is one paged modal: Appearance, Workspace, Agents (with a default agent and a test),

@@ -205,7 +205,8 @@ Every button there is secondary: Settings holds no primary. Under the Agents pag
 built-in agent installed on the machine with no entry of its own gets a line, *<agent> is on this
 machine*, with *Add* at its end; the first row carries the *Default* badge. An entry naming a preset
 this build does not know shows its `preset` line, *Not supported by this build of onehand* under it,
-and only *Delete…*.
+and only *Delete…*. The Connections page lists each connector and who it acts as, then an *Outside
+control* group: what a program may and may never do, the socket's path in mono, and one switch.
 
 ## Persistence
 
