@@ -4,10 +4,8 @@
 //! Everything a task or a run decides is `onehand_core`'s; what is here is
 //! what needs a session, a timer or a window.
 
-use crate::shell::Shell;
 use gpui::{
-    AnyWindowHandle, App, BorrowAppContext as _, Global, SharedString, Subscription, WeakEntity,
-    Window,
+    AnyWindowHandle, App, BorrowAppContext as _, Global, SharedString, Subscription, Window,
 };
 use gpui_component::WindowExt as _;
 use onehand_core::task::work::UnderReview;
@@ -24,7 +22,7 @@ mod place;
 pub(crate) use driver::{approve, revise, start, stop};
 pub(crate) use listing::*;
 use place::ended;
-pub(crate) use place::{fail, release, request, stop_queued};
+pub(crate) use place::{fail, release, request, stop_queued, submit};
 
 /// Every task in this process and what each is doing.
 pub(crate) struct Tasks {
@@ -34,7 +32,7 @@ pub(crate) struct Tasks {
     live: HashMap<String, driver::Driven>,
     queue: queue::Queue,
     /// Where each queued task was asked for, to start it there.
-    asked_in: HashMap<String, (AnyWindowHandle, WeakEntity<Shell>)>,
+    asked_in: HashMap<String, AnyWindowHandle>,
     /// Tasks that ended while their session's turn was still going, holding
     /// their place until it is over.
     draining: HashMap<String, Vec<Subscription>>,

@@ -379,8 +379,11 @@ impl Shell {
             .first()
             .map(|spec| spec.name.clone());
         let id = onehand_core::task::new_id();
-        crate::task::add(Task::new(id.clone(), template, brief, setup), cx);
-        crate::task::request(id, window, cx);
+        crate::task::submit(
+            Task::new(id, template, brief, setup),
+            window.window_handle(),
+            cx,
+        );
     }
 
     /// Drive task `id`, whose place it now holds: show its project, adding
@@ -520,8 +523,7 @@ impl Shell {
             forge: None,
         };
         let id = onehand_core::task::new_id();
-        crate::task::add(Task::check(id.clone(), check, setup), cx);
-        crate::task::request(id, window, cx);
+        crate::task::submit(Task::check(id, check, setup), window.window_handle(), cx);
     }
 }
 

@@ -368,10 +368,12 @@ migration it protects.
 ### The app
 
 - **One `Tasks` global** (`crates/app/src/task.rs`) owns every task, the queue, the runs under way
-  by session uid (so the driver still finds its run from a session event), the window each queued
-  task was asked from, and the tasks still draining. `Workflows` keeps only the workflows on offer.
-- **Every start goes through `task::request`**: the launcher keeps the task first, then asks; Resume
-  asks too. A free place starts the task at once (`Shell::drive_task`); a taken one queues it and
+  by task id (each with its session's uid, if it has a session), the window each queued task was
+  asked from, and the tasks still draining. `Workflows` keeps only the workflows on offer.
+- **Every start goes through `task::request`**, given the window to speak in (a handle, so nothing
+  that starts a task needs to be inside a window): a new task through `task::submit`, which keeps
+  it and then asks (the launcher, *Run check*, an unattended claim); Retry, Resume and a review's
+  answer ask for an existing one. A free place starts the task at once (`Shell::drive_task`); a taken one queues it and
   says so in a notification. A task already running or waiting is left alone.
 - **The driver stays the only code that turns session events into reports.** It gained two
   duties: pinning the work at every boundary a step change crosses, before the step's first action,

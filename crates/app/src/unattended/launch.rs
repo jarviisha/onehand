@@ -137,7 +137,7 @@ fn start(landed: Landed, cx: &mut App) -> Result<(), Unstarted> {
         // A review is answered on the task's own snapshot, as any retry is:
         // the configured workflow is for new tasks only.
         Work::Review { task, note } => {
-            return answer_review(claimed, task, note, window, &shell, cx);
+            return answer_review(claimed, task, note, window, cx);
         }
     };
     let template = match workflow(&claimed.workflow, &timeout, cx) {
@@ -174,16 +174,7 @@ fn start(landed: Landed, cx: &mut App) -> Result<(), Unstarted> {
     });
     // Counted against the cap until it has asked for its place.
     with(cx, |u| u.starting.insert(task_id.clone()));
-    crate::task::add(task, cx);
-    let asked = {
-        let task_id = task_id.clone();
-        window.update(cx, |_, window, cx| {
-            shell.update(cx, |_, cx| crate::task::request(task_id, window, cx))
-        })
-    };
-    if asked.is_err() {
-        super::placed(&task_id, cx);
-    }
+    crate::task::submit(task, window, cx);
     Ok(())
 }
 
@@ -195,7 +186,6 @@ fn answer_review(
     task: String,
     note: String,
     window: gpui::AnyWindowHandle,
-    shell: &gpui::Entity<crate::shell::Shell>,
     cx: &mut App,
 ) -> Result<(), Unstarted> {
     let Some(last) = crate::task::task(&task, cx).and_then(|t| t.runs.last().cloned()) else {
@@ -209,12 +199,7 @@ fn answer_review(
         return Err(Unstarted::of(claimed, "a run is still working on it"));
     }
     with(cx, |u| u.starting.insert(task.clone()));
-    let asked = window.update(cx, |_, window, cx| {
-        shell.update(cx, |_, cx| crate::task::request(task.clone(), window, cx))
-    });
-    if asked.is_err() {
-        super::placed(&task, cx);
-    }
+    crate::task::request(task, window, cx);
     Ok(())
 }
 
