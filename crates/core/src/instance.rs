@@ -8,7 +8,7 @@
 //! is said over it is decided here, one JSON-RPC line each way, so both ends
 //! read the same rule: the app only carries the lines.
 
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::fs::{File, TryLockError};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -65,10 +65,16 @@ fn socket_path_in(dir: &Path, runtime: Option<&Path>) -> PathBuf {
     }
     // FNV-1a, written out because std's hasher may change between releases,
     // and the second launch can be a different build from the first.
-    let hash = dir.as_os_str().as_bytes().iter().fold(0xcbf29ce484222325u64, |h, b| {
-        (h ^ u64::from(*b)).wrapping_mul(0x100000001b3)
-    });
-    let runtime = runtime.map(Path::to_path_buf).unwrap_or_else(std::env::temp_dir);
+    let hash = dir
+        .as_os_str()
+        .as_bytes()
+        .iter()
+        .fold(0xcbf29ce484222325u64, |h, b| {
+            (h ^ u64::from(*b)).wrapping_mul(0x100000001b3)
+        });
+    let runtime = runtime
+        .map(Path::to_path_buf)
+        .unwrap_or_else(std::env::temp_dir);
     runtime.join(format!("onehand-{hash:016x}.sock"))
 }
 
@@ -211,7 +217,10 @@ mod tests {
         let path = socket_path_in(&dir, Some(Path::new("/run/user/1")));
         assert_eq!(path.parent(), Some(Path::new("/run/user/1")));
         let name = path.file_name().unwrap().to_str().unwrap();
-        assert!(name.starts_with("onehand-") && name.ends_with(".sock"), "{name}");
+        assert!(
+            name.starts_with("onehand-") && name.ends_with(".sock"),
+            "{name}"
+        );
         assert_eq!(path, socket_path_in(&dir, Some(Path::new("/run/user/1"))));
         assert_ne!(
             path,
@@ -251,7 +260,10 @@ mod tests {
         assert!(forwarded.is_none());
         let line = reply(&line);
         assert_eq!(line["error"]["code"], -32602);
-        assert!(line["error"]["message"].as_str().unwrap().contains("is not a folder"));
+        assert!(line["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("is not a folder"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -277,7 +289,9 @@ mod tests {
             for stream in listener.incoming() {
                 let mut stream = stream.unwrap();
                 let mut line = String::new();
-                std::io::BufReader::new(&stream).read_line(&mut line).unwrap();
+                std::io::BufReader::new(&stream)
+                    .read_line(&mut line)
+                    .unwrap();
                 let (reply, _) = answer(&line);
                 writeln!(stream, "{reply}").unwrap();
             }
@@ -298,7 +312,10 @@ mod tests {
         let socket = dir.join("onehand.sock");
         // What a crashed process leaves behind: the file, and nobody on it.
         drop(std::os::unix::net::UnixListener::bind(&socket).unwrap());
-        assert!(matches!(forward(&socket, None), Err(Unforwarded::Unreachable)));
+        assert!(matches!(
+            forward(&socket, None),
+            Err(Unforwarded::Unreachable)
+        ));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

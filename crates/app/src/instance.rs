@@ -180,7 +180,9 @@ mod tests {
         let mut stream = std::os::unix::net::UnixStream::connect(&socket).unwrap();
         writeln!(stream, "nonsense").unwrap();
         let mut reply = String::new();
-        std::io::BufReader::new(&stream).read_line(&mut reply).unwrap();
+        std::io::BufReader::new(&stream)
+            .read_line(&mut reply)
+            .unwrap();
         assert!(reply.contains("-32700"), "{reply}");
 
         assert!(instance::forward(&socket, Some(&dir)).is_ok());

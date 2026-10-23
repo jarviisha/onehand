@@ -14,8 +14,9 @@ minor bump may break any of them.
 - `pipelines/` in the config directory moves to `workflows/`, and `pipeline-runs/` to `tasks/`, at
   the first start of this build. The move can be cut short and run again, but there is no way back:
   an older build does not read what it leaves.
-- Only one onehand runs on a config directory. A second instance says so and exits; more windows
-  still open in the one process.
+- Only one onehand runs on a config directory. A second launch hands the folder it was given to
+  the running one, which opens it as a project in its front window, and exits; more windows still
+  open in the one process.
 - In a Telegram group on `remote.telegram.allowed_chats`, only members whose own ids are listed
   too reach the app. Before, every member of a listed group could prompt and answer permissions.
 
