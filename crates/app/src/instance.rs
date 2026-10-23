@@ -10,14 +10,27 @@ use futures::StreamExt as _;
 use futures::channel::mpsc::{UnboundedSender, unbounded};
 use gpui::App;
 use onehand_core::instance::{self, Forwarded, Unforwarded};
-use onehand_core::workspace::Workspace;
 use std::path::PathBuf;
-use std::sync::OnceLock;
-use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
+use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
+use tokio::io::{AsyncBufReadExt as _, AsyncReadExt as _, AsyncWriteExt as _, BufReader};
 use tokio::net::UnixListener;
 
 /// The listener's runtime, kept for the life of the process.
 static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+
+/// The socket, bound the moment the lock is taken and served once GPUI is up.
+/// A second launch in between waits in the socket's backlog instead of
+/// finding nobody there.
+static BOUND: Mutex<Option<std::os::unix::net::UnixListener>> = Mutex::new(None);
+
+/// How long a connection may take to send its line, and how long that line
+/// may be: past either it is dropped, not waited on.
+const LINE_WAIT: Duration = Duration::from_secs(5);
+const LINE_CAP: u64 = 64 * 1024;
+
+/// How often a line that arrived before the first window looks for it again.
+const WINDOW_POLL: Duration = Duration::from_millis(50);
 
 /// Take the instance lock, or hand this launch's folder to the process that
 /// holds it and exit. Runs before GPUI starts, so a second launch never opens
@@ -26,6 +39,7 @@ static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 pub fn hold_or_forward() {
     let dir = onehand_core::config::config_dir();
     if instance::hold_lock(&dir).is_ok() {
+        bind(&dir);
         return;
     }
     // The first argument, as a first launch reads it: no flag becomes a folder
@@ -44,16 +58,33 @@ pub fn hold_or_forward() {
     }
 }
 
-/// Listen on the socket beside the lock, for as long as the process lives.
+/// Bind the socket beside the lock on `dir`.
 ///
 /// Only the lock's holder does: it alone knows a socket file already there is
 /// stale. A socket that cannot be bound is reported and the app carries on; a
 /// second launch then says the app is already running, as it always did.
-pub(crate) fn listen(cx: &mut App) {
+fn bind(dir: &std::path::Path) {
     if !instance::holding() {
         return;
     }
-    let socket = instance::socket_path(&onehand_core::config::config_dir());
+    let socket = instance::socket_path(dir);
+    let _ = std::fs::remove_file(&socket);
+    match std::os::unix::net::UnixListener::bind(&socket) {
+        Ok(listener) => {
+            // The user's own, as the config directory beside it is.
+            use std::os::unix::fs::PermissionsExt as _;
+            let _ = std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600));
+            *BOUND.lock().unwrap_or_else(|e| e.into_inner()) = Some(listener);
+        }
+        Err(e) => eprintln!("onehand: no socket at {}: {e}", socket.display()),
+    }
+}
+
+/// Serve the bound socket for as long as the process lives.
+pub(crate) fn listen(cx: &mut App) {
+    let Some(listener) = BOUND.lock().unwrap_or_else(|e| e.into_inner()).take() else {
+        return;
+    };
     let rt = match tokio::runtime::Builder::new_multi_thread()
         .worker_threads(1)
         .enable_all()
@@ -66,28 +97,28 @@ pub(crate) fn listen(cx: &mut App) {
             return;
         }
     };
-    let _ = std::fs::remove_file(&socket);
-    let listener = {
+    let listener = listener.set_nonblocking(true).and_then(|()| {
         let _in_runtime = rt.enter();
-        UnixListener::bind(&socket)
-    };
+        UnixListener::from_std(listener)
+    });
     let listener = match listener {
         Ok(listener) => listener,
         Err(e) => {
-            eprintln!("onehand: no socket at {}: {e}", socket.display());
+            eprintln!("onehand: no socket for a second launch: {e}");
             return;
         }
     };
-    // The user's own, as the config directory beside it is.
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        let _ = std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600));
-    }
     let (tx, mut rx) = unbounded();
     rt.spawn(serve(listener, tx));
     let _ = RUNTIME.set(rt);
     cx.spawn(async move |cx| {
         while let Some(forwarded) = rx.next().await {
+            // The first window registers a moment after boot. A line that lands
+            // before it waits for it, rather than opening a second window onto
+            // the workspace that one is about to show.
+            while cx.update(|cx| Shared::global(cx).windows.is_empty()) {
+                cx.background_executor().timer(WINDOW_POLL).await;
+            }
             cx.update(|cx| open_forwarded(forwarded, cx));
         }
     })
@@ -112,7 +143,9 @@ async fn serve(listener: UnixListener, tx: UnboundedSender<Forwarded>) {
         tokio::spawn(async move {
             let (read, mut write) = stream.into_split();
             let mut line = String::new();
-            if BufReader::new(read).read_line(&mut line).await.is_err() {
+            let mut read = BufReader::new(read.take(LINE_CAP));
+            let got = tokio::time::timeout(LINE_WAIT, read.read_line(&mut line)).await;
+            if !matches!(got, Ok(Ok(_))) {
                 return;
             }
             let (reply, forwarded) = instance::answer(&line);
@@ -138,9 +171,6 @@ fn open_forwarded(forwarded: Forwarded, cx: &mut App) {
             .and_then(|w| Some((w.handle, w.shell.upgrade()?)))
     };
     let Some((handle, shell)) = front else {
-        if let Some(path) = forwarded.path {
-            crate::shell::open_or_focus(Workspace::seeded(path), cx);
-        }
         return;
     };
     handle

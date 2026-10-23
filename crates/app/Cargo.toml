@@ -82,8 +82,8 @@ serde_json = "1"
 
 # The ACP adapter's serve loop is tokio-based, so it needs a tokio reactor to be
 # polled on; GPUI runs on smol. `crate::acp` owns the runtime that bridges them.
-# `net` and `io-util` are the socket a second launch talks to (`crate::instance`).
-tokio = { version = "1", features = ["rt", "rt-multi-thread", "net", "io-util"] }
+# `net`, `io-util` and `time` are the socket a second launch talks to (`crate::instance`).
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "net", "io-util", "time"] }
 # `Stream` + the channel the two executors hand events across. Neither belongs
 # to tokio or to smol, which is the point.
 futures = "0.3"

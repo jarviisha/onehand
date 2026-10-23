@@ -671,8 +671,8 @@ fn open_window(workspace: Workspace, cx: &mut App) {
 
 /// Install global state and open the first window.
 pub fn boot(cx: &mut App) {
-    // First, so a second launch finds someone to hand its folder to. The lock
-    // is already held: `main` took it before GPUI started.
+    // First, so a second launch waiting on the socket is answered soon. `main`
+    // took the lock and bound the socket before GPUI started.
     crate::instance::listen(cx);
     // Behind the lock, and before anything reads the templates.
     for problem in onehand_core::workflow::store::migrate_old_dir_blocking()

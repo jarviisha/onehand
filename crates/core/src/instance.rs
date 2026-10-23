@@ -139,6 +139,12 @@ const FORWARD_WAIT: Duration = Duration::from_secs(5);
 /// Blocking: a second launch runs it before anything else is started.
 pub fn forward(socket: &Path, path: Option<&Path>) -> Result<(), Unforwarded> {
     use std::io::{BufRead as _, Write as _};
+    // The line carries a path as text, so one that is not would arrive as some
+    // other path: said here, rather than opening the wrong folder or none.
+    if let Some(path) = path.filter(|p| p.to_str().is_none()) {
+        let why = format!("{} is not a UTF-8 path", path.display());
+        return Err(Unforwarded::Refused(why));
+    }
     let mut stream =
         std::os::unix::net::UnixStream::connect(socket).map_err(|_| Unforwarded::Unreachable)?;
     stream
@@ -304,6 +310,17 @@ mod tests {
             other => panic!("{other:?}"),
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_path_that_is_not_utf8_is_refused_before_it_is_sent() {
+        use std::os::unix::ffi::OsStrExt as _;
+        let path = Path::new(std::ffi::OsStr::from_bytes(b"/tmp/\xff"));
+        let nowhere = Path::new("/nonexistent/onehand.sock");
+        match forward(nowhere, Some(path)) {
+            Err(Unforwarded::Refused(why)) => assert!(why.contains("UTF-8"), "{why}"),
+            other => panic!("{other:?}"),
+        }
     }
 
     #[test]
