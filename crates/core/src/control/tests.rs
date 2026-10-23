@@ -133,6 +133,8 @@ fn the_catalogue_lists_every_tool_with_a_schema() {
             "list_agents",
             "open_session",
             "list_workflows",
+            "start_workflow",
+            "start_issue",
             "list_tasks",
             "stop_task",
             "open_file"
@@ -322,4 +324,68 @@ fn a_batch_or_a_bare_value_is_answered_as_an_invalid_request() {
     let reply = reply(handle(&mut ready(), &no_method, on));
     assert_eq!(reply["error"]["code"], -32600);
     assert_eq!(reply["id"], 9);
+}
+
+#[test]
+fn the_starts_parse_their_input() {
+    assert_eq!(
+        performs(
+            "start_workflow",
+            json!({"project": "app", "workflow": "fix", "title": "Fix it"})
+        ),
+        Call::StartWorkflow {
+            project: "app".into(),
+            workflow: "fix".into(),
+            title: "Fix it".into(),
+            brief: None
+        }
+    );
+    assert_eq!(
+        performs(
+            "start_workflow",
+            json!({"project": "app", "workflow": "fix", "title": "Fix it", "brief": "how"})
+        ),
+        Call::StartWorkflow {
+            project: "app".into(),
+            workflow: "fix".into(),
+            title: "Fix it".into(),
+            brief: Some("how".into())
+        }
+    );
+    assert_eq!(
+        performs("start_issue", json!({"project": "app", "issue": 12})),
+        Call::StartIssue {
+            project: "app".into(),
+            issue: 12,
+            workflow: None
+        }
+    );
+    assert_eq!(
+        performs(
+            "start_issue",
+            json!({"project": "app", "issue": 12, "workflow": "fix"})
+        ),
+        Call::StartIssue {
+            project: "app".into(),
+            issue: 12,
+            workflow: Some("fix".into())
+        }
+    );
+}
+
+#[test]
+fn the_starts_refuse_malformed_input() {
+    let cases = [
+        ("start_workflow", json!({"project": "app", "workflow": "fix"}), "title"),
+        ("start_workflow", json!({"project": "app", "title": "t"}), "workflow"),
+        ("start_issue", json!({"project": "app"}), "issue"),
+        ("start_issue", json!({"project": "app", "issue": "12"}), "issue"),
+        ("start_issue", json!({"project": "app", "issue": 0}), "issue"),
+        ("start_issue", json!({"project": "app", "issue": -1}), "issue"),
+        ("start_issue", json!({"project": "app", "issue": 1.5}), "issue"),
+    ];
+    for (name, arguments, named) in cases {
+        let why = refusal(call(name, arguments.clone()));
+        assert!(why.contains(named), "{name} {arguments}: {why}");
+    }
 }

@@ -506,6 +506,17 @@ pub fn brief_for(tracker: &Tracker, issue: &Issue, added: &str) -> Brief {
     }
 }
 
+/// The brief for working `issue` with a person watching: its title and
+/// body, and which issue it is. Nothing is asked of the agent about working
+/// alone, since somebody is there to answer it.
+pub fn brief_supervised(tracker: &Tracker, issue: &Issue) -> Brief {
+    Brief {
+        title: issue.title.clone(),
+        body: issue.body.trim().to_string(),
+        instructions: Some(format!("This is {}.", tracker.names(issue))),
+    }
+}
+
 /// What the issue is told when a run takes it.
 ///
 /// Worded to stay true if nothing follows it. A crash between the claim and

@@ -420,6 +420,20 @@ fn the_brief_keeps_the_body_whole_and_names_the_issue() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
+#[test]
+fn a_supervised_brief_names_the_issue_and_says_nobody_is_away() {
+    let issue = Issue {
+        body: "  The body.  ".to_string(),
+        ..issue(42, "Crash on open")
+    };
+    let brief = brief_supervised(&forge(), &issue);
+    assert_eq!(brief.title, "Crash on open");
+    assert_eq!(brief.body, "The body.");
+    let asked = brief.instructions.unwrap();
+    assert!(asked.contains("Forge issue #42"), "{asked}");
+    assert!(!asked.contains("Nobody is watching"), "{asked}");
+}
+
 /// A run that ended as `outcome`, after asking its agent something.
 fn ran(outcome: Outcome) -> PendingReport {
     PendingReport {

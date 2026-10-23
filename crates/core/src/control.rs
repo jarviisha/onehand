@@ -19,6 +19,17 @@ pub enum Call {
     ListProjects,
     ListAgents,
     ListWorkflows,
+    StartWorkflow {
+        project: String,
+        workflow: String,
+        title: String,
+        brief: Option<String>,
+    },
+    StartIssue {
+        project: String,
+        issue: u64,
+        workflow: Option<String>,
+    },
     ListTasks {
         project: Option<String>,
     },
@@ -174,11 +185,13 @@ fn error(id: &Value, code: i64, message: &str) -> String {
 }
 
 /// The tools, in the order they are listed.
-const TOOLS: [&str; 7] = [
+const TOOLS: [&str; 9] = [
     "list_projects",
     "list_agents",
     "open_session",
     "list_workflows",
+    "start_workflow",
+    "start_issue",
     "list_tasks",
     "stop_task",
     "open_file",
@@ -227,6 +240,37 @@ fn catalogue() -> Value {
             none(),
         ),
         (
+            "start_workflow",
+            "Start a task of a workflow on a project, on a brief, as the Run workflow \
+             dialog does. It runs off screen and is listed on the Tasks page; it waits its \
+             turn when another task works in the same checkout",
+            schema(
+                json!({
+                    "project": text(project),
+                    "workflow": text("A workflow's id, as list_workflows gives it"),
+                    "title": text("What to do, in one line"),
+                    "brief": text("The details: what, why, and how to tell it is done"),
+                }),
+                &["project", "workflow", "title"],
+            ),
+        ),
+        (
+            "start_issue",
+            "Start a task working one of the project's own issues, the issue as its brief, \
+             with a person watching. Nothing is claimed or said on the forge",
+            schema(
+                json!({
+                    "project": text(project),
+                    "issue": {"type": "integer", "minimum": 1,
+                              "description": "The issue's number in the project's Issues tab"},
+                    "workflow": text(
+                        "A workflow's id; the one unattended runs use when left out"
+                    ),
+                }),
+                &["project", "issue"],
+            ),
+        ),
+        (
             "list_tasks",
             "The tasks of the window's projects, with their state and what can be done next",
             schema(json!({"project": text(project)}), &[]),
@@ -266,6 +310,8 @@ fn parse(name: &str, arguments: &Value) -> Result<Call, String> {
         "stop_task" => &["task"],
         "open_file" => &["path"],
         "open_session" => &["project", "agent", "prompt"],
+        "start_workflow" => &["project", "workflow", "title", "brief"],
+        "start_issue" => &["project", "issue", "workflow"],
         _ => &[],
     };
     if let Some(extra) = args.keys().find(|k| !known.contains(&k.as_str())) {
@@ -283,6 +329,21 @@ fn parse(name: &str, arguments: &Value) -> Result<Call, String> {
         "list_projects" => Call::ListProjects,
         "list_agents" => Call::ListAgents,
         "list_workflows" => Call::ListWorkflows,
+        "start_workflow" => Call::StartWorkflow {
+            project: required("project")?,
+            workflow: required("workflow")?,
+            title: required("title")?,
+            brief: optional("brief")?,
+        },
+        "start_issue" => Call::StartIssue {
+            project: required("project")?,
+            issue: args
+                .get("issue")
+                .and_then(Value::as_u64)
+                .filter(|&n| n > 0)
+                .ok_or("`issue` must be an issue's number, a whole number from 1")?,
+            workflow: optional("workflow")?,
+        },
         "list_tasks" => Call::ListTasks {
             project: optional("project")?,
         },
