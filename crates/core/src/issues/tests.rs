@@ -284,3 +284,42 @@ fn a_write_to_one_file_does_not_wait_on_another() {
     slow_writer.join().unwrap();
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn an_open_issue_with_the_same_title_is_not_written_twice() {
+    let dir = std::env::temp_dir().join(format!("onehand-issues-unless-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("issues.json");
+    let first = create_unless_open_blocking(&file, draft("Crash on open")).unwrap();
+    let Created::New(number) = first else {
+        panic!("{first:?}");
+    };
+    // Case and spaces aside, the same title.
+    assert_eq!(
+        create_unless_open_blocking(&file, draft("  crash ON open ")).unwrap(),
+        Created::Already(number)
+    );
+    // Closed, it no longer counts.
+    update_blocking(&file, |kept| {
+        kept.issues.iter_mut().for_each(|i| i.open = false);
+        Ok(())
+    })
+    .unwrap();
+    assert!(matches!(
+        create_unless_open_blocking(&file, draft("Crash on open")).unwrap(),
+        Created::New(n) if n != number
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_blank_title_is_refused_and_nothing_is_written() {
+    let dir = std::env::temp_dir().join(format!("onehand-issues-blank-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("issues.json");
+    assert!(create_unless_open_blocking(&file, draft("   ")).is_err());
+    assert!(!file.exists());
+    let _ = std::fs::remove_dir_all(&dir);
+}

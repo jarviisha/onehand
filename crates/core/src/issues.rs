@@ -580,6 +580,36 @@ pub fn update_blocking<R>(
     Ok((issues, said))
 }
 
+/// What [`create_unless_open_blocking`] did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Created {
+    /// Wrote a new issue with this number.
+    New(u64),
+    /// An open issue already has the title: this one, and nothing was written.
+    Already(u64),
+}
+
+/// Write `draft` into `file` unless an open issue already has its title,
+/// case and surrounding spaces aside. Looked for under the same lock the
+/// write takes, so two writers of one problem write it once.
+pub fn create_unless_open_blocking(file: &Path, draft: Draft) -> Result<Created, String> {
+    let lock = writing(file);
+    let _held = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut kept = load_blocking(file)?;
+    let title = draft.title.trim().to_lowercase();
+    if let Some(open) = kept
+        .issues
+        .iter()
+        .find(|i| i.open && i.title.trim().to_lowercase() == title)
+    {
+        return Ok(Created::Already(open.number));
+    }
+    let number = kept.create(draft, now())?;
+    kept.revision += 1;
+    save_blocking(file, &kept)?;
+    Ok(Created::New(number))
+}
+
 /// Write `issues` to `file` so a reader never sees half of it.
 fn save_blocking(file: &Path, issues: &Issues) -> Result<(), String> {
     let text = serde_json::to_string_pretty(issues)
