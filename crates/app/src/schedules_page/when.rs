@@ -106,7 +106,10 @@ pub(super) fn when_section(
             Err(why) => div()
                 .text_xs()
                 .text_color(ink.warning)
-                .child(format!("{expr}: {why}"))
+                .child(match expr.trim().is_empty() {
+                    true => "Say when it runs".to_string(),
+                    false => format!("{expr}: {why}"),
+                })
                 .into_any_element(),
             Ok(_) => {
                 let next: Vec<String> =

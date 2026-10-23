@@ -364,7 +364,10 @@ pub fn problems(s: &Schedule) -> Vec<String> {
         }
     }
     if let Err(why) = parse(&s.when) {
-        said.push(format!("When: {why}"));
+        said.push(match s.when.trim().is_empty() {
+            true => "Say when it runs".to_string(),
+            false => format!("When: {why}"),
+        });
     }
     said
 }
@@ -372,6 +375,9 @@ pub fn problems(s: &Schedule) -> Vec<String> {
 /// When `expr` runs, in words where it is a quick choice, else the
 /// expression itself; one that does not parse says why.
 pub fn when_said(expr: &str) -> String {
+    if expr.trim().is_empty() {
+        return "no time set yet".to_string();
+    }
     if let Err(why) = parse(expr) {
         return format!("{expr} does not parse: {why}");
     }

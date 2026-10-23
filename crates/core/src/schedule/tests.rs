@@ -463,3 +463,11 @@ fn a_blank_schedule_has_every_problem() {
 fn a_whole_schedule_has_none() {
     assert!(problems(&daily_at_nine()).is_empty());
 }
+
+#[test]
+fn no_expression_yet_is_said_as_such() {
+    assert_eq!(when_said(""), "no time set yet");
+    let mut s = daily_at_nine();
+    s.when = "  ".into();
+    assert!(problems(&s).contains(&"Say when it runs".to_string()));
+}
