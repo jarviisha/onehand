@@ -14,6 +14,7 @@ fn main() {
         println!("onehand {}", env!("CARGO_PKG_VERSION"));
         return;
     }
+    shell::hold_or_forward();
 
     gpui_platform::application()
         .with_assets(Assets)
