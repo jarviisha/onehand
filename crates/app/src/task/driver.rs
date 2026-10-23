@@ -176,6 +176,8 @@ pub(crate) fn start_check(
         .live
         .insert(task.clone(), driven);
     perform(&task, effects, cx);
+    // Busy from the press, not from when its first mark lands.
+    cx.refresh_windows();
 }
 
 /// A person approved what they read, as `approval` names it.
