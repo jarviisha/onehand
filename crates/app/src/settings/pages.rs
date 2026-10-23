@@ -288,7 +288,10 @@ fn outside_section(cx: &App) -> AnyElement {
     section(
         Some("Outside control"),
         Some(SharedString::from(
-            "A program you run — a script, a scheduled job — may use onehand's tools over its              socket: list projects, agents, workflows and tasks, open a session, stop a task              and open a file. It never answers a card, a permission or an approval; those              wait for you",
+            "A program you run — a script, a scheduled job — may use onehand's tools over its \
+             socket: list projects, agents, workflows and tasks, open a session, stop a task \
+             and open a file. It never answers a card, a permission or an approval; those \
+             wait for you",
         )),
         cx,
     )

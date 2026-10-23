@@ -85,11 +85,22 @@ pub fn handle(conn: &mut Conn, line: &str, standing: impl Fn(&Peer) -> Standing)
     let Ok(msg) = serde_json::from_str::<Value>(line) else {
         return Handled::Reply(error(&Value::Null, -32700, "not a JSON-RPC line"));
     };
+    // A batch, or a value that is no message at all, is answered rather than
+    // taken for a notification: a client waiting on it would wait for ever.
+    if !msg.is_object() {
+        return Handled::Reply(error(
+            &Value::Null,
+            -32600,
+            "one message per line, as an object",
+        ));
+    }
     let Some(id) = msg.get("id").cloned() else {
         return Handled::Quiet;
     };
     let params = &msg["params"];
-    let method = msg["method"].as_str().unwrap_or("");
+    let Some(method) = msg["method"].as_str() else {
+        return Handled::Reply(error(&id, -32600, "a request names its method"));
+    };
     let reply = |result: Value| Handled::Reply(ok(&id, result));
     let fail = |code: i64, why: &str| Handled::Reply(error(&id, code, why));
     match method {

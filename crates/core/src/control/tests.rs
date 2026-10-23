@@ -306,3 +306,20 @@ fn answered_marks_a_refusal_as_an_error() {
     let no: Value = serde_json::from_str(&answered(&json!(4), Err("no".into()))).unwrap();
     assert_eq!(no["result"]["isError"], true);
 }
+
+#[test]
+fn a_batch_or_a_bare_value_is_answered_as_an_invalid_request() {
+    for line in [
+        "[{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}]",
+        "5",
+        "\"x\"",
+    ] {
+        let reply = reply(handle(&mut ready(), line, on));
+        assert_eq!(reply["error"]["code"], -32600, "{line}");
+        assert_eq!(reply["id"], Value::Null);
+    }
+    let no_method = json!({"jsonrpc": "2.0", "id": 9}).to_string();
+    let reply = reply(handle(&mut ready(), &no_method, on));
+    assert_eq!(reply["error"]["code"], -32600);
+    assert_eq!(reply["id"], 9);
+}

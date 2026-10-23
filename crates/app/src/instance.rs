@@ -177,13 +177,18 @@ async fn serve(listener: UnixListener, tx: UnboundedSender<Incoming>) {
 
 /// The next line `reader` holds, or `None` at its end, on a read error, or
 /// past [`LINE_CAP`] without a newline, which ends the connection rather
-/// than being held in memory.
+/// than being held in memory. Bytes that are not UTF-8 are kept as a line
+/// all the same, so it is answered as malformed and the connection goes on.
 pub(crate) async fn next_line(reader: &mut BufReader<OwnedReadHalf>) -> Option<String> {
-    let mut line = String::new();
-    match (&mut *reader).take(LINE_CAP).read_line(&mut line).await {
+    let mut line = Vec::new();
+    match (&mut *reader)
+        .take(LINE_CAP)
+        .read_until(b'\n', &mut line)
+        .await
+    {
         Ok(0) | Err(_) => None,
-        Ok(_) if !line.ends_with('\n') && line.len() as u64 >= LINE_CAP => None,
-        Ok(_) => Some(line),
+        Ok(_) if line.last() != Some(&b'\n') && line.len() as u64 >= LINE_CAP => None,
+        Ok(_) => Some(String::from_utf8_lossy(&line).into_owned()),
     }
 }
 
@@ -292,6 +297,17 @@ mod tests {
             "params": {"name": "list_agents", "arguments": {}}});
         let reply = ask(&mut stream, call);
         assert_eq!(reply["result"]["content"][0]["text"], "done");
+
+        // Bytes that are not UTF-8 are answered as malformed, and the
+        // conversation goes on.
+        stream.write_all(b"\xff\xfe\n").unwrap();
+        let mut reply = String::new();
+        std::io::BufReader::new(&stream)
+            .read_line(&mut reply)
+            .unwrap();
+        assert!(reply.contains("-32700"), "{reply}");
+        let ping = json!({"jsonrpc": "2.0", "id": 4, "method": "ping"});
+        assert_eq!(ask(&mut stream, ping)["result"], json!({}));
 
         // A second launch still finds the listener, on a connection of its own.
         assert!(instance::forward(&socket, Some(&dir)).is_ok());
