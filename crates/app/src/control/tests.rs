@@ -63,3 +63,25 @@ fn a_token_speaks_for_its_session_until_it_goes() {
     assert!(matches!(standing_of(&name), Standing::Refused(_)));
     assert!(!sessions().conns.contains_key(&name));
 }
+
+#[test]
+fn a_grant_tells_an_agent_that_listed_its_tools_before() {
+    let uid = 900_003;
+    let token = Token::mint();
+    let name = token.0.clone();
+    // A warm adapter's agent connected and listed nothing before the claim.
+    let (told, mut heard) = futures::channel::mpsc::unbounded();
+    sessions().conns.entry(name.clone()).or_default().push(told);
+    token.claim(uid);
+    let given = onehand_core::task::Grant {
+        tools: vec!["create_issue".into()],
+        labels: Vec::new(),
+    };
+    grant(uid, &given);
+    let note = futures::executor::block_on(heard.next()).unwrap();
+    assert!(note.contains("list_changed"), "{note}");
+    // The same grant again, a Resume's, tells nobody.
+    grant(uid, &given);
+    assert!(heard.try_recv().is_err());
+    forget(uid);
+}

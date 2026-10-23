@@ -111,9 +111,21 @@ fn look(cx: &mut App) {
             }
         }
         if changed {
+            // What the clock moved, onto the file as it is now: a start can
+            // take a while (a worktree cut), and a hand edit made meanwhile
+            // stands.
             let written = cx
                 .background_executor()
-                .spawn(async move { schedule::save_blocking(&path, &all) })
+                .spawn(async move {
+                    let mut now_kept = schedule::load_blocking(&path)?;
+                    for kept in &mut now_kept {
+                        if let Some(looked) = all.iter().find(|s| s.id == kept.id) {
+                            kept.last_fired = looked.last_fired;
+                            kept.said = looked.said.clone();
+                        }
+                    }
+                    schedule::save_blocking(&path, &now_kept)
+                })
                 .await;
             if let Err(why) = written {
                 eprintln!("onehand: the schedules were not written: {why}");
@@ -134,6 +146,11 @@ fn decide_all(all: &mut [Schedule], now: u64, cx: &mut App) -> (Vec<Firing>, boo
         .collect();
     let mut firing = Vec::new();
     let mut changed = false;
+    // A time held for a schedule since switched off, or gone, is let go.
+    cx.update_global::<Clock, _>(|c, _| {
+        c.queued
+            .retain(|id| all.iter().any(|s| s.on && &s.id == id))
+    });
     for s in all.iter_mut().filter(|s| s.on) {
         let Some((window, shell)) = windows
             .iter()

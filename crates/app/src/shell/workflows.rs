@@ -199,11 +199,15 @@ impl Shell {
             ),
             _ => None,
         };
-        let agent = onehand_core::config::agent_or_first(&shared.agents, agent);
+        let named = agent;
+        let agent = onehand_core::config::agent_or_first(&shared.agents, named);
         let facts = preflight::Facts {
             workflow,
-            agent: agent.map(|spec| spec.name.clone()),
-            agent_configured: !shared.agents.is_empty(),
+            // One named and gone is said by its name, as a Retry's is.
+            agent: agent
+                .map(|spec| spec.name.clone())
+                .or(named.map(str::to_string)),
+            agent_configured: agent.is_some(),
             mode: mode.map(str::to_string),
             offered: agent.and_then(|spec| crate::unattended::offered(spec, cx)),
             has_check: self.check_of(root).is_some(),
@@ -418,7 +422,15 @@ impl Shell {
         let refused = |why: String, kind: Failure, window: &mut Window, cx: &mut Context<Self>| {
             // An issue's run that cannot start ends failed, so its issue is
             // told rather than left claimed with nothing after the claim.
-            let issue = crate::task::task(&id, cx).is_some_and(|task| task.issue().is_some());
+            // A schedule's task too: nobody is watching it either, and failing
+            // is what says so, on its row and on the desktop.
+            let issue = crate::task::task(&id, cx).is_some_and(|task| {
+                task.issue().is_some()
+                    || matches!(
+                        task.origin,
+                        Some(onehand_core::task::Origin::Schedule { .. })
+                    )
+            });
             window.push_notification(crate::toast::warning(why.clone()), cx);
             // Deferred: handing the place on may start a task in this shell.
             let (id, said) = (id.clone(), why.clone());

@@ -175,10 +175,15 @@ pub(crate) fn switch(uid: u64, on: bool) {
         true => sessions.on.insert(uid),
         false => sessions.on.remove(&uid),
     };
-    if !changed {
-        return;
+    if changed {
+        tell_changed(&mut sessions, uid);
     }
-    let Sessions { tokens, conns, .. } = &mut *sessions;
+}
+
+/// Tell every connection of session `uid` that its tools changed, dropping
+/// the ones whose other end has gone.
+fn tell_changed(sessions: &mut Sessions, uid: u64) {
+    let Sessions { tokens, conns, .. } = sessions;
     let note = control::tools_changed();
     for (token, held) in tokens.iter() {
         if *held != Some(uid) {
@@ -195,8 +200,12 @@ pub(crate) fn switch(uid: u64, on: bool) {
 /// nothing changes nothing.
 pub(crate) fn grant(uid: u64, grant: &onehand_core::task::Grant) {
     let mut sessions = sessions();
-    if !grant.tools.is_empty() {
-        sessions.only.insert(uid, grant.tools.clone());
+    // An agent may have listed its tools before the session held its token
+    // (a warm adapter's): told, it asks again.
+    if !grant.tools.is_empty()
+        && sessions.only.insert(uid, grant.tools.clone()).as_ref() != Some(&grant.tools)
+    {
+        tell_changed(&mut sessions, uid);
     }
     if !grant.labels.is_empty() {
         sessions.labels.insert(uid, grant.labels.clone());

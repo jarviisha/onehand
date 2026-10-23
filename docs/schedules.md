@@ -64,6 +64,8 @@ whose project a window holds (the first window that holds it):
 | due while its last task is still queued, running or waiting | it is skipped (`overlap = "skip"`), or starts once that task is done (`overlap = "queue"`) |
 
 Anything but nothing moves `last_fired`, so one due time fires once. A skip is said in `said`.
+The clock writes only `last_fired` and `said`, onto the file as it is when it writes, so a hand
+edit made during a look stands. A time held for a schedule that is then switched off is let go.
 
 ## A start
 
@@ -79,6 +81,8 @@ Anything but nothing moves `last_fired`, so one due time fires once. A skip is s
   every drive of it gives its session that set (`docs/control.md`), a Resume or a Retry included;
   editing or deleting the schedule never widens what an earlier task may do.
 - **A start that cannot go** says why in `said`, and on the desktop once per reason; it tries again
-  at its next time. The schedule is never switched off by itself.
+  at its next time. The schedule is never switched off by itself. A task that waited for its place
+  and cannot start when its turn comes ends failed, as an issue's run does, so its row and the
+  desktop say why.
 - **Its task says where it came from**: *<schedule> · <workflow>* on the Tasks page.
 - **When it ends**, a desktop notification names the schedule and how it ended.
