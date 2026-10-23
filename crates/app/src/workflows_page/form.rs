@@ -10,7 +10,7 @@ use crate::controls::Short as _;
 use crate::controls::text_input;
 use crate::settings::{about, field, section};
 use gpui::{AnyElement, App, Entity, IntoElement, ParentElement, Styled, Window, div};
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, StyledExt};
 use onehand_core::workflow::Place;
 use onehand_ui::Tall as _;
 
@@ -217,35 +217,9 @@ pub(super) fn message_bar(draft: &super::WorkflowDraft, cx: &App) -> Option<AnyE
             problems,
         )
     };
-    // Across the page's foot, on its kind's tint, so it reads as one standing
-    // condition of the whole workflow rather than of the column it sits in.
-    let tint = onehand_ui::tint(base, cx);
-    // One line's height, set on the bar and on the mark's slot, so the mark
-    // stands centred on the first line however many follow it.
-    let line = gpui::rems(crate::tokens::CHROME_TEXT.0 * crate::tokens::LEADING);
-    Some(
-        div()
-            .flex_none()
-            .w_full()
-            .h_flex()
-            .items_start()
-            .gap_2()
-            .px_8()
-            .py_3()
-            .text_size(crate::tokens::CHROME_TEXT)
-            .line_height(line)
-            .bg(tint.fill)
-            .text_color(tint.ink)
-            .child(onehand_ui::mark_slot(Icon::new(icon).small()).h(line))
-            .child(
-                div()
-                    .v_flex()
-                    .gap_1()
-                    .min_w_0()
-                    .children(lines.into_iter().map(|line| div().child(line))),
-            )
-            .into_any_element(),
-    )
+    Some(crate::chat::pane::page_parts::foot_bar(
+        icon, base, lines, cx,
+    ))
 }
 
 /// What a prompt may use, a hint in meta text with each variable in mono, so

@@ -231,6 +231,12 @@ const TOOLS: [&str; 11] = [
     "create_issue",
 ];
 
+/// The tools' names, in the order they are listed: what a schedule may give
+/// its sessions.
+pub fn tool_names() -> &'static [&'static str] {
+    &TOOLS
+}
+
 /// Each tool's description and input schema, as `tools/list` gives them.
 fn catalogue() -> Vec<Value> {
     let none = || json!({"type": "object", "properties": {}, "additionalProperties": false});

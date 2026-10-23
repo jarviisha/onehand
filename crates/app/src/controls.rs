@@ -17,7 +17,10 @@
 //! than at forty call sites that each have to remember.
 
 use gpui::ElementId;
+
+mod setting_row;
 use gpui_component::button::Button;
+pub(crate) use setting_row::{SettingPick, setting_row};
 
 /// A button that answers the pointer, which is every button this app draws.
 ///

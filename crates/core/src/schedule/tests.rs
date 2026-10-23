@@ -435,3 +435,39 @@ fn the_next_time_reads_near_or_far() {
         "Oct 30 09:00"
     );
 }
+
+#[test]
+fn a_blank_schedule_has_every_problem() {
+    let mut s = daily_at_nine();
+    s.name = "  ".into();
+    s.project = PathBuf::new();
+    s.starts = Starts::Prompt { prompt: " ".into() };
+    s.when = "61 * * * *".into();
+    let said = problems(&s);
+    assert_eq!(said.len(), 4, "{said:?}");
+    assert!(said[0].contains("Name"));
+    assert!(said[1].contains("project"));
+    assert!(said[2].contains("ask"));
+    assert!(said[3].starts_with("When:"));
+    s.starts = Starts::Workflow {
+        workflow: String::new(),
+        title: String::new(),
+        body: String::new(),
+    };
+    let said = problems(&s);
+    assert!(said.iter().any(|p| p.contains("workflow")), "{said:?}");
+    assert!(said.iter().any(|p| p.contains("title")), "{said:?}");
+}
+
+#[test]
+fn a_whole_schedule_has_none() {
+    assert!(problems(&daily_at_nine()).is_empty());
+}
+
+#[test]
+fn no_expression_yet_is_said_as_such() {
+    assert_eq!(when_said(""), "no time set yet");
+    let mut s = daily_at_nine();
+    s.when = "  ".into();
+    assert!(problems(&s).contains(&"Say when it runs".to_string()));
+}

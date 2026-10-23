@@ -155,8 +155,20 @@ height (its dragged height kept).
   its tooltip saying what a press does. Capped, saying how many more. *Reading the schedules…*
   before the first read; a read that failed says why in the warning ink; *No schedules yet, kept
   in* the path in the code face, or *No schedules match* while a project is picked. Read again
-  every minute, its next times with it. The page takes the keys while it shows. No primary until
-  a schedule can be made here.
+  every minute, its next times with it. The page takes the keys while it shows. *New schedule* is
+  its primary (refusing with no project). A row's text opens the schedule in the form.
+- *A schedule's form*, in place of the list, under *Schedules* to go back (Esc too, asking first
+  while it holds changes): a head (the name, *New schedule* until named; when it runs and its
+  project; ⋯ with *Delete…* for one saved, *Cancel*, *Save* the primary, refusing with the first
+  problem); then *Name*, *Project* (a picker) and *On*; *What it starts* (a switch: *A session with
+  a prompt*, its *Prompt*, or *A workflow on a brief*, its *Workflow* picker, *Title* and *Brief*,
+  each kind keeping what was typed); *The agent* (*Agent*, *The first agent* by default; *Mode* and
+  each setting the agent offers as a row of choices, *Agent's own* first, *Check the agent* while
+  nothing is known); *Tools* (a switch per tool, *None given* at none; *Labels*); *When* (the quick
+  choices in one track, *Every N hours*, *Every day*, *On weekdays*, *Every week*, *Expression…*,
+  the fields each takes, the expression in the code face and the next three times, or why it does
+  not parse in the warning ink; *When it was missed* and *When the last run is still going*, each
+  a switch). Problems in a bar along the page's foot, none on a new form nobody has changed.
 - *Tasks*: a head (*Tasks*), a filter bar (the project picker), then four boxes two by two,
   *Needs attention*, *Running*, *Queued*, *Finished*, each with a count, an empty line and a cap,
   its rows parted by hairlines. A row is the title

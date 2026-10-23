@@ -528,6 +528,14 @@ pub const COMMANDS: &[Command] = &[
         "Workflows page"
     ),
     command!(
+        "schedules_close",
+        "Close the schedule form",
+        ["escape"],
+        crate::schedules_page::CloseScheduleForm,
+        "SchedulesPage && !Dialog && !Input",
+        "Schedules page"
+    ),
+    command!(
         "workflow_step_up",
         "Open the step before",
         ["up"],

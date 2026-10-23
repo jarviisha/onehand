@@ -48,6 +48,7 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | One of a few choices, the taken one filled (filter chips) | `choice` (a `quiet` ghost button, `selected` when taken, at the `ControlSize` its role takes) | `crates/ui/src/lib.rs` |
 | A choice between a few views, every one the same width | `switch` (a `choice` per view at `flex_1`, padded `p_0p5` and parted `gap_0p5` in one edged track, at one `ControlSize`) | `crates/ui/src/lib.rs` |
 | One of more choices than a switch holds, each at its own width (a setting's values) | `choice_track` (`choice`s in the switch's edged track, padded `p_0p5` and parted `gap_0p5`, wrapping) | `crates/ui/src/lib.rs` |
+| An agent's setting picked from what it offers (a mode, a model, an effort): a first choice leaving it to what runs, the values, one not offered marked | `setting_row(id, none_label, offered, current, strict, refused, pick, cx)` (a `choice_track`, capped, *N more*) | `crates/app/src/controls/setting_row.rs` |
 | Tabs that fit their strip, or one select | `tab_strip`, `tab_chip`, `tab_close`, `tab_select` (at a strip's size, with the picker's caret), `tab_menu_rows`, `measure_width` | `crates/ui/src/tabs.rs` |
 | A list beside its detail, or one at a time | `list_detail`, `ListWidths`, `back_link` | `crates/ui/src/list_detail.rs` |
 | A line filling an empty panel | `hint` | `crates/ui/src/lib.rs` |
@@ -61,6 +62,7 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | A form field | `field` (its line about the setting in meta text) | `crates/ui/src/lib.rs`, re-exported by `crates/app/src/settings.rs` |
 | A Settings group, a Settings row | `section`, `list_row` | `crates/app/src/settings.rs` |
 | A page's head, its box and title row, a list section (a box too), rows parted by hairlines, two boxes to a row | `page_head(title, facts, actions, cx)`, `page_card`, `card_title`, `ruled(rows, cx)`, `pair` | `crates/app/src/chat/pane/page_parts.rs` |
+| A page form's problems, or that it is only read, along the page's foot | `foot_bar(icon, base, lines, cx)` (the tint of `base`, the mark slotted on the first line) | `crates/app/src/chat/pane/page_parts.rs` |
 | A dialog's footer (a third action at its start) | `footer_row` | `crates/app/src/dialogs.rs` |
 | A run dialog's sections parted by hairlines; a preflight finding with its state's mark | `sections`, `finding_line` | `crates/app/src/dialogs.rs` |
 | A Settings sub-page's scope line | `page_head` | `crates/app/src/settings.rs` |

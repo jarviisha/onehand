@@ -54,7 +54,7 @@ minor bump may break any of them.
   skipped; one that finds the last run still going is skipped or queued; each as the schedule says.
   Every start is a task that says it came from its schedule, and its end is a desktop
   notification. Kept in `schedules.toml`, listed and switched on or off on the *Schedules* page
-  (and a box on each project's page); the form to make and edit them comes next.
+  (and a box on each project's page), and made, edited and deleted there in a form.
 - onehand is an MCP server on its socket. With *Outside control* on in Settings ▸ Connections (off
   by default), a program run as you lists projects, agents, workflows and tasks, opens a session
   on a project with a first prompt, starts a workflow on a brief or on one of a project's issues
