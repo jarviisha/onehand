@@ -29,10 +29,10 @@ struct Forge {
     connector: &'static dyn Connector,
 }
 
-/// Where the run on session `uid` goes on the forge: its setup's connector,
+/// Where task `id`'s run goes on the forge: its setup's connector,
 /// or why there is none.
-fn forge_of(uid: u64, cx: &App) -> Option<Result<Forge, String>> {
-    read(uid, cx, |d| {
+fn forge_of(id: &str, cx: &App) -> Option<Result<Forge, String>> {
+    read(id, cx, |d| {
         let setup = &d.run().setup;
         let branch = setup
             .branch
@@ -56,11 +56,11 @@ fn forge_of(uid: u64, cx: &App) -> Option<Result<Forge, String>> {
 ///
 /// Held as a step's command is: its flag is what a Stop sets, and no pull
 /// request is opened once it is.
-pub(super) fn on_forge(uid: u64, commit: Option<String>, cx: &mut App) {
-    let Some(forge) = forge_of(uid, cx) else {
+pub(super) fn on_forge(id: &str, commit: Option<String>, cx: &mut App) {
+    let Some(forge) = forge_of(id, cx) else {
         return;
     };
-    let text = read(uid, cx, |d| {
+    let text = read(id, cx, |d| {
         let task = crate::task::task(d.task(), cx);
         onehand_core::unattended::pull_request_text(
             &d.run().brief,
@@ -68,7 +68,8 @@ pub(super) fn on_forge(uid: u64, commit: Option<String>, cx: &mut App) {
         )
     });
     let cancel = Arc::new(AtomicBool::new(false));
-    with(uid, cx, |d| d.command = Some(cancel.clone()));
+    with(id, cx, |d| d.command = Some(cancel.clone()));
+    let task = id.to_string();
     cx.spawn(async move |cx| {
         let done = cx
             .background_executor()
@@ -107,8 +108,8 @@ pub(super) fn on_forge(uid: u64, commit: Option<String>, cx: &mut App) {
             })
             .await;
         cx.update(|cx| {
-            with(uid, cx, |d| d.command = None);
-            feed(uid, Input::ForgeDone(done), cx);
+            with(&task, cx, |d| d.command = None);
+            feed(&task, Input::ForgeDone(done), cx);
         });
     })
     .detach();
@@ -120,16 +121,17 @@ pub(super) fn on_forge(uid: u64, commit: Option<String>, cx: &mut App) {
 /// passing takes a draft out of draft first, and one that could not be is
 /// waited on like a forge that could not be read.
 pub(super) fn watch_status_checks(
-    uid: u64,
+    id: &str,
     pushed: Option<String>,
     since: Instant,
     wait: Duration,
     cx: &mut App,
 ) -> Task<()> {
+    let task = id.to_string();
     cx.spawn(async move |cx| {
         loop {
             cx.background_executor().timer(STATUS_CHECKS_EVERY).await;
-            let Some(forge) = cx.update(|cx| forge_of(uid, cx)) else {
+            let Some(forge) = cx.update(|cx| forge_of(&task, cx)) else {
                 return;
             };
             let pushed = pushed.clone();
@@ -185,7 +187,7 @@ pub(super) fn watch_status_checks(
             if seen == Seen::Pending {
                 continue;
             }
-            cx.update(|cx| feed(uid, Input::ChecksSeen(seen), cx));
+            cx.update(|cx| feed(&task, Input::ChecksSeen(seen), cx));
             return;
         }
     })

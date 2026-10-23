@@ -80,9 +80,14 @@ start_sway() {
 
 start_app() {
     local bin=${1:-$repo/target/debug/onehand}
-    (cd "$repo" && env -u DISPLAY RUST_BACKTRACE=1 WAYLAND_DISPLAY="$(cat "$root/display")" \
-        ONEHAND_CONFIG_DIR="$root/home" ONEHAND_TELEGRAM_TOKEN= "$bin" >"$root/app.log" 2>&1 &
-        echo $! >"$root/app.pid")
+    # `cd` on its own line: with `cd … && app &`, the whole list goes to the
+    # background and `$!` is a shell, not the app, so a stop misses the app.
+    (
+        cd "$repo"
+        env -u DISPLAY RUST_BACKTRACE=1 WAYLAND_DISPLAY="$(cat "$root/display")" \
+            ONEHAND_CONFIG_DIR="$root/home" ONEHAND_TELEGRAM_TOKEN= "$bin" >"$root/app.log" 2>&1 &
+        echo $! >"$root/app.pid"
+    )
     local sock="$run/sway-ipc.$(id -u).$(cat "$root/sway.pid").sock"
     for _ in $(seq 60); do
         swaymsg -s "$sock" -t get_tree 2>/dev/null | grep -q '"app_id": "onehand"' && return 0

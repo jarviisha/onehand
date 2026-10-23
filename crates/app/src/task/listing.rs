@@ -5,7 +5,7 @@ use super::Tasks;
 use gpui::{AnyWindowHandle, App};
 use onehand_core::issues::IssueKey;
 use onehand_core::task::work::{IssueWork, issue_work, waiting_said};
-use onehand_core::task::{Group, Task, Working, sort_listed};
+use onehand_core::task::{Group, Source, Task, Working, sort_listed};
 use onehand_core::unattended::{Holder, TrackerRef};
 use onehand_core::workflow::Run;
 use std::path::PathBuf;
@@ -39,9 +39,9 @@ pub(crate) struct Row {
 /// says it is busy.
 pub(crate) fn checking(root: &std::path::Path, cx: &App) -> bool {
     cx.try_global::<Tasks>().is_some_and(|t| {
-        t.tasks
-            .iter()
-            .any(|task| task.setup.repo == root && t.checks.contains_key(&task.id))
+        t.tasks.iter().any(|task| {
+            task.setup.repo == root && task.source == Source::Check && t.live.contains_key(&task.id)
+        })
     })
 }
 
@@ -67,7 +67,7 @@ pub(crate) fn rows(roots: &[PathBuf], cx: &App) -> Vec<Row> {
             (None, None) => format!("cut off at {step}"),
             (None, Some(said)) => said,
         };
-        let live = t.live.iter().find(|(_, d)| d.task() == task.id);
+        let live = t.live.get(&task.id);
         let row = Row {
             id: task.id.clone(),
             title: task.brief.title.clone(),
@@ -78,15 +78,13 @@ pub(crate) fn rows(roots: &[PathBuf], cx: &App) -> Vec<Row> {
             at,
             project: task.setup.repo.clone(),
             group: task.group(working),
-            session: live.map(|(uid, d)| (*uid, d.window)),
+            session: live.and_then(|d| Some((d.uid()?, d.window))),
             resumable: task.resumable(),
             resume_refused: task
                 .resumable()
                 .then(|| super::resume_refused(task, cx))
                 .flatten(),
-            stoppable: live.is_some()
-                || t.queue.queued(&task.id)
-                || t.checks.contains_key(&task.id),
+            stoppable: live.is_some() || t.queue.queued(&task.id),
             stopping: t.stopping(&task.id),
         };
         rows.push((Some(task), row));
@@ -162,10 +160,8 @@ pub(crate) fn issue_tasks(
 /// The session task `id`'s run is driven in, and the window holding it.
 pub(crate) fn session_of(id: &str, cx: &App) -> Option<(u64, AnyWindowHandle)> {
     let t = cx.try_global::<Tasks>()?;
-    t.live
-        .iter()
-        .find(|(_, d)| d.task() == id)
-        .map(|(uid, d)| (*uid, d.window))
+    let d = t.live.get(id)?;
+    Some((d.uid()?, d.window))
 }
 
 /// How many tasks of the projects at `roots` need a person: waiting on one,
@@ -260,8 +256,9 @@ pub(crate) fn live_issues(cx: &App) -> Vec<LiveRun> {
     };
     let mut live: Vec<_> = t
         .live
-        .iter()
-        .filter_map(|(uid, d)| {
+        .values()
+        .filter_map(|d| {
+            let uid = d.uid()?;
             let task = t.task(d.task())?;
             let issue = task.issue()?;
             let waiting = d
@@ -275,7 +272,7 @@ pub(crate) fn live_issues(cx: &App) -> Vec<LiveRun> {
                     TrackerRef::Forge { .. } => None,
                 },
                 title: task.brief.title.clone(),
-                uid: *uid,
+                uid,
                 window: d.window,
                 waiting,
             };

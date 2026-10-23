@@ -72,6 +72,9 @@ The scripts are in `scripts/` beside this file; run them from anywhere. `DRIVE_R
   instead.
 - **`wtype` can drop the first character** typed into a field that has just taken focus. Read
   the screenshot when the exact text matters.
+- **Seconds pass between tool calls.** Reading a screenshot takes time the app keeps running in,
+  so an action that has to land within a window (Stop on a short command, a press mid-turn) goes
+  in the same shell command as the one that started it, with `sleep` between.
 - **Layouts move.** A dialog grows a line (a warning, a hint) and its buttons shift down, so
   take coordinates from the latest screenshot, not from an earlier run.
 - `MESA-EGL: warning … failed to get driver name` in `app.log` is the pixman renderer's noise.

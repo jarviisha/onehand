@@ -266,7 +266,8 @@ carries out the effects and brings their results back. The mode and the settings
 the session's `Chat` by the drive itself, since the next pick is planned against what is still
 waiting.
 
-The `Tasks` global (`crate::task::Tasks`) holds every run under way by its session's uid;
+The `Tasks` global (`crate::task::Tasks`) holds every run under way by its task id (a check's run
+has no session);
 `crate::workflow::Workflows` keeps only the workflows on offer. The driver subscribes to the
 session and maps its events onto the engine:
 

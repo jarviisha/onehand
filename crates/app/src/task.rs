@@ -6,37 +6,38 @@
 
 use crate::shell::Shell;
 use gpui::{
-    AnyWindowHandle, App, BorrowAppContext as _, Context, Global, SharedString, Subscription,
-    WeakEntity, Window,
+    AnyWindowHandle, App, BorrowAppContext as _, Global, SharedString, Subscription, WeakEntity,
+    Window,
 };
 use gpui_component::WindowExt as _;
 use onehand_core::task::work::UnderReview;
 use onehand_core::task::{Group, Task, Working, files, history, marks, queue};
-use onehand_core::workflow::{Action, Failure, Run, Stop, Template, run_command_blocking};
+use onehand_core::workflow::{Run, Template};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 mod driver;
 mod listing;
+mod place;
 pub(crate) use driver::{approve, revise, start, stop};
 pub(crate) use listing::*;
+use place::ended;
+pub(crate) use place::{fail, release, request, stop_queued};
 
 /// Every task in this process and what each is doing.
 pub(crate) struct Tasks {
     /// Every task kept, unfinished or history. Empty until the boot read lands.
     tasks: Vec<Task>,
     /// Runs under way, by the uid of the session they drive.
-    live: HashMap<u64, driver::Driven>,
+    live: HashMap<String, driver::Driven>,
     queue: queue::Queue,
     /// Where each queued task was asked for, to start it there.
     asked_in: HashMap<String, (AnyWindowHandle, WeakEntity<Shell>)>,
     /// Tasks that ended while their session's turn was still going, holding
     /// their place until it is over.
     draining: HashMap<String, Vec<Subscription>>,
-    /// Checks running, each with the flag that calls its command off.
-    checks: HashMap<String, Arc<AtomicBool>>,
     /// What a person pressed on each task that is still being read or done,
     /// so the button waits wherever the task is drawn.
     acting: HashMap<String, onehand_core::task::work::Act>,
@@ -67,7 +68,6 @@ impl Default for Tasks {
             queue: queue::Queue::default(),
             asked_in: HashMap::new(),
             draining: HashMap::new(),
-            checks: HashMap::new(),
             acting: HashMap::new(),
             removed: HashMap::new(),
             commands: Arc::default(),
@@ -115,11 +115,7 @@ impl Tasks {
     /// Stop was pressed on task `id` and it has not given its place up
     /// yet: its step's command, or its check, is still being stopped.
     fn stopping(&self, id: &str) -> bool {
-        self.live.values().any(|d| d.task() == id && d.stopping())
-            || self
-                .checks
-                .get(id)
-                .is_some_and(|cancel| cancel.load(Ordering::SeqCst))
+        self.live.get(id).is_some_and(|d| d.stopping())
     }
 
     /// Whether task `id` is running or waiting for its place.
@@ -141,15 +137,15 @@ impl Tasks {
 
     /// The driver running task `id`'s run, if one is.
     fn driven(&self, id: &str) -> Option<&driver::Driven> {
-        self.live.values().find(|d| d.task() == id)
+        self.live.get(id)
     }
 
-    /// The session task `id`'s run is driven on, if one is.
-    fn live_uid(&self, id: &str) -> Option<u64> {
+    /// The task whose run is driven on session `uid`, if one is.
+    fn task_on(&self, uid: u64) -> Option<String> {
         self.live
             .iter()
-            .find(|(_, d)| d.task() == id)
-            .map(|(uid, _)| *uid)
+            .find(|(_, d)| d.uid() == Some(uid))
+            .map(|(id, _)| id.clone())
     }
 
     /// What task `id` is doing, if anything.
@@ -163,7 +159,7 @@ impl Tasks {
                 false => Working::Running,
             });
         }
-        (self.queue.holds(id) || self.checks.contains_key(id)).then_some(Working::Running)
+        self.queue.holds(id).then_some(Working::Running)
     }
 }
 
@@ -188,7 +184,7 @@ pub(crate) fn boot(cx: &mut App) {
     cx.on_app_quit(move |cx| {
         if let Some(t) = cx.try_global::<Tasks>() {
             let steps = t.live.values().filter_map(|d| d.command.as_ref());
-            for cancel in t.checks.values().chain(steps) {
+            for cancel in steps {
                 cancel.store(true, Ordering::SeqCst);
             }
         }
@@ -258,247 +254,6 @@ pub(crate) fn resumable_run(id: &str, cx: &App) -> Option<Run> {
         .runs
         .last()
         .cloned()
-}
-
-/// Start task `id` from this window once its place is free: at once when
-/// nobody works there, or after the task that does, saying so. A task
-/// already running or waiting is left as it is.
-pub(crate) fn request(id: String, window: &mut Window, cx: &mut Context<Shell>) {
-    if let Some(why) = crate::unattended::over_cap(&id, cx) {
-        // A retry's new run never began: dropped, the task is as it was.
-        cx.update_global::<Tasks, _>(|t, _| {
-            let Some(task) = t.task_mut(&id) else {
-                return;
-            };
-            if task.drop_unbegun_retry() {
-                t.save(&id);
-            }
-        });
-        window.push_notification(crate::toast::warning(why), cx);
-        cx.refresh_windows();
-        return;
-    }
-    let Some(dir) = cx
-        .try_global::<Tasks>()
-        .and_then(|t| t.task(&id))
-        .map(|task| task.setup.dir.clone())
-    else {
-        crate::unattended::placed(&id, cx);
-        return;
-    };
-    cx.spawn_in(window, async move |shell, cx| {
-        let place = cx
-            .background_executor()
-            .spawn(async move { queue::place_blocking(&dir) })
-            .await;
-        let asked = id.clone();
-        let landed = shell.update_in(cx, |shell: &mut Shell, window, cx| {
-            let handle = window.window_handle();
-            let weak = cx.entity().downgrade();
-            let free = cx.update_global::<Tasks, _>(|t, _| {
-                if t.busy(&id) {
-                    return None;
-                }
-                let free = t.queue.ask(place.clone(), id.clone());
-                if !free {
-                    t.asked_in.insert(id.clone(), (handle, weak));
-                }
-                Some(free)
-            });
-            // Asked for, or held already: an issue's run counts against the
-            // cap from here as queued or running.
-            crate::unattended::placed(&id, cx);
-            match free {
-                Some(true) => shell.drive_task(id, window, cx),
-                Some(false) => {
-                    let t = cx.global::<Tasks>();
-                    let title = t
-                        .task(&id)
-                        .map_or_else(String::new, |task| task.brief.title.clone());
-                    let at = place.file_name().map_or_else(
-                        || place.display().to_string(),
-                        |n| n.to_string_lossy().into_owned(),
-                    );
-                    let holder = t.queue.holder_of(&id).and_then(|holder| t.task(holder));
-                    let said = onehand_core::task::queue::queued_said(
-                        &title,
-                        holder.map(|holder| holder.brief.title.as_str()),
-                        &at,
-                    );
-                    window.push_notification(crate::toast::info(said), cx);
-                    cx.refresh_windows();
-                }
-                None => {}
-            }
-        });
-        // The window went while the place was looked up, so nothing asks for
-        // it: the cap lets go here, and the task reads cut off, as after a
-        // restart, rather than holding a slot until one.
-        if landed.is_err() {
-            gpui::AsyncApp::update(cx, |cx| crate::unattended::placed(&asked, cx));
-        }
-    })
-    .detach();
-}
-
-/// How long a cancelled turn is waited for before its place is given up anyway.
-const DRAIN_LIMIT: std::time::Duration = std::time::Duration::from_secs(30);
-
-/// Task `id` ended in `session`: its place is given up once the work has
-/// stopped, which is at once unless the session's turn is still going.
-/// Marks from the `from`th boundary on are still to be pinned.
-fn ended(
-    id: String,
-    from: usize,
-    session: Option<&gpui::Entity<crate::chat::session::ChatSession>>,
-    cx: &mut App,
-) {
-    let Some(session) = session.filter(|s| s.read(cx).chat.busy) else {
-        cx.defer(move |cx| freed(id, from, cx));
-        return;
-    };
-    let drained = {
-        let id = id.clone();
-        move |cx: &mut App| {
-            let id = id.clone();
-            cx.defer(move |cx| {
-                let waited = cx.update_global::<Tasks, _>(|t, _| t.draining.remove(&id));
-                if waited.is_some() {
-                    freed(id, from, cx);
-                }
-            });
-        }
-    };
-    let on_event = drained.clone();
-    // The second deadline. A turn that was cancelled ends when the agent says
-    // so, and one that never does held this place, and a slot, for good.
-    let late = drained.clone();
-    cx.spawn(async move |cx| {
-        cx.background_executor().timer(DRAIN_LIMIT).await;
-        cx.update(|cx| late(cx));
-    })
-    .detach();
-    let watch = cx.subscribe(
-        session,
-        move |_, event: &crate::chat::session::ChatEvent, cx| {
-            use crate::chat::session::ChatEvent as E;
-            match event {
-                E::TurnEnded | E::Disconnected => on_event(cx),
-                E::Appended | E::AwaitingUser(_) | E::OpenFile(_) | E::PickRefused(_) => {}
-            }
-        },
-    );
-    let gone = cx.observe_release(session, move |_, cx| drained(cx));
-    cx.update_global::<Tasks, _>(|t, _| {
-        t.draining.insert(id, vec![watch, gone]);
-    });
-}
-
-/// Task `id` has stopped working: pin where its last visit left the work,
-/// then give its place to whoever waits for it. An issue it works is told
-/// how the run ended.
-fn freed(id: String, from: usize, cx: &mut App) {
-    let unpinned = cx.try_global::<Tasks>().and_then(|t| {
-        let task = t.task(&id)?;
-        let run = task.runs.last()?;
-        let refs = marks::refs_from(&task.id, run, from);
-        (!refs.is_empty()).then(|| (run.setup.dir.clone(), refs))
-    });
-    let Some((dir, refs)) = unpinned else {
-        return let_go(id, cx);
-    };
-    cx.spawn(async move |cx| {
-        let pinned = cx
-            .background_executor()
-            .spawn(async move { marks::pin_blocking(&dir, &refs) })
-            .await;
-        cx.update(|cx| {
-            match pinned {
-                Ok(commit) => cx.update_global::<Tasks, _>(|t, _| {
-                    if let Some(run) = t.task_mut(&id).and_then(|task| task.runs.last_mut()) {
-                        run.pinned(&commit, from);
-                    }
-                    t.save(&id);
-                }),
-                Err(why) => eprintln!("onehand: a task's last mark was not pinned: {why}"),
-            }
-            let_go(id, cx);
-        });
-    })
-    .detach();
-}
-
-/// Task `id`, holding its place, could not start for `why`, of `kind`: its
-/// run ends failed, its issue is told, and its place passes on.
-pub(crate) fn fail(id: String, why: String, kind: Failure, cx: &mut App) {
-    let Some(mut run) = resumable_run(&id, cx) else {
-        return release(id, cx);
-    };
-    run.failed(why, kind);
-    crate::unattended::keep(&id, &run, None, cx);
-    cx.update_global::<Tasks, _>(|t, _| t.store_run(&id, run));
-    let_go(id, cx);
-}
-
-/// Task `id` is over and its last mark pinned: tell an issue it works how it
-/// ended, then give its place up.
-fn let_go(id: String, cx: &mut App) {
-    crate::unattended::ended(&id, cx);
-    release(id, cx);
-}
-
-/// Give task `id`'s place up, and start the next task waiting for it in the
-/// window it was asked from. One that cannot start there stays interrupted,
-/// and the place passes on.
-pub(crate) fn release(id: String, cx: &mut App) {
-    let next = cx.update_global::<Tasks, _>(|t, _| {
-        let next = t.queue.release(&id)?;
-        let asked = t.asked_in.remove(&next);
-        Some((next, asked))
-    });
-    enforce_cap(cx);
-    cx.refresh_windows();
-    let Some((next, asked)) = next else {
-        return;
-    };
-    let started = asked.and_then(|(handle, shell)| {
-        let shell = shell.upgrade()?;
-        let next = next.clone();
-        handle
-            .update(cx, |_, window, cx| {
-                shell.update(cx, |shell, cx| shell.drive_task(next, window, cx))
-            })
-            .ok()
-    });
-    if started.is_none() {
-        release(next, cx);
-    }
-}
-
-/// A person pressed Stop on queued task `id`: it no longer waits. One that
-/// never ran a step is over, stopped by a person, with no empty run kept;
-/// one resumed goes back to how it was.
-pub(crate) fn stop_queued(id: &str, cx: &mut App) {
-    let dropped = cx.update_global::<Tasks, _>(|t, _| {
-        if !t.queue.call_off(id) {
-            return None;
-        }
-        t.asked_in.remove(id);
-        let task = t.task_mut(id)?;
-        let dropped = task.take_unbegun();
-        t.save(id);
-        dropped
-    });
-    // An issue whose run never began is told it was stopped, or it would
-    // stay claimed with nothing after the claim.
-    if let Some(mut run) = dropped {
-        // Through the engine, so the stop is in the run's history as any is.
-        run.stopped(Stop::ByPerson);
-        crate::unattended::keep(id, &run, None, cx);
-        crate::unattended::deliver(id.to_string(), cx);
-    }
-    enforce_cap(cx);
-    cx.refresh_windows();
 }
 
 /// A person let interrupted task `id` go: it is kept as history and never
@@ -583,7 +338,8 @@ pub(crate) fn review_of(id: &str, cx: &App) -> Option<UnderReview> {
 
 /// Where the run on session `uid` stands, if one drives it.
 pub(crate) fn shown(uid: u64, cx: &App) -> Option<Shown> {
-    let driven = cx.try_global::<Tasks>()?.live.get(&uid)?;
+    let t = cx.try_global::<Tasks>()?;
+    let driven = t.live.get(&t.task_on(uid)?)?;
     let run = driven.run();
     Some(Shown {
         task: driven.task().to_string().into(),
@@ -674,16 +430,9 @@ pub(crate) fn stop_task(id: &str, cx: &mut App) {
     if t.queue.queued(id) {
         return stop_queued(id, cx);
     }
-    if let Some(uid) = t.live_uid(id) {
-        return stop(uid, cx);
+    if t.live.contains_key(id) {
+        driver::stop_task(id, cx);
     }
-    // Through the global, so whoever draws the task sees it stopping.
-    cx.update_global::<Tasks, _>(|t, _| {
-        if let Some(cancel) = t.checks.get(id) {
-            cancel.store(true, Ordering::SeqCst);
-        }
-    });
-    cx.refresh_windows();
 }
 
 /// Give task `id` a new run of `template`, from step `from` when that is
@@ -744,72 +493,7 @@ pub(crate) fn drive_check(id: String, window: AnyWindowHandle, cx: &mut App) {
     // Counted from what landed, as a session's run is.
     let from = run.pinned_count();
     let first = run.resume();
-    let Action::RunCommand(command) = first else {
-        // Nothing to run: the run ended before it began.
-        cx.update_global::<Tasks, _>(|t, _| t.store_run(&id, run));
-        return freed(id, from, cx);
-    };
-    let cancel = Arc::new(AtomicBool::new(false));
-    let refs = marks::refs_from(&id, &run, from);
-    // Counted from before the pin: a quit meanwhile waits for the command
-    // too, which never starts once called off.
-    let running = cx.update_global::<Tasks, _>(|t, _| {
-        t.checks.insert(id.clone(), cancel.clone());
-        t.store_run(&id, run.clone());
-        t.command_started()
-    });
-    cx.refresh_windows();
-    let dir = run.setup.dir.clone();
-    cx.spawn(async move |cx| {
-        let pinned = {
-            let (dir, refs) = (dir.clone(), refs.clone());
-            cx.background_executor()
-                .spawn(async move { marks::pin_blocking(&dir, &refs) })
-                .await
-        };
-        let ran = {
-            let cancel = cancel.clone();
-            cx.background_executor()
-                .spawn(async move {
-                    let ran = run_command_blocking(&dir, &command, &cancel);
-                    drop(running);
-                    ran
-                })
-                .await
-        };
-        cx.update(|cx| {
-            match &pinned {
-                Ok(commit) => run.pinned(commit, from),
-                Err(why) => eprintln!("onehand: a check's mark was not pinned: {why}"),
-            }
-            cx.update_global::<Tasks, _>(|t, _| t.checks.remove(&id));
-            let said = match cancel.load(Ordering::SeqCst) {
-                true => {
-                    run.stopped(Stop::ByPerson);
-                    None
-                }
-                false => {
-                    let passed = ran.passed;
-                    run.command_finished(ran);
-                    Some(passed)
-                }
-            };
-            let project = run.setup.repo.file_name().map_or_else(
-                || run.setup.repo.display().to_string(),
-                |n| n.to_string_lossy().into_owned(),
-            );
-            cx.update_global::<Tasks, _>(|t, _| t.store_run(&id, run));
-            if let Some(passed) = said {
-                let note = match passed {
-                    true => crate::toast::success(format!("Check passed in {project}")),
-                    false => crate::toast::warning(format!("Check failed in {project}")),
-                };
-                let _ = window.update(cx, |_, window, cx| window.push_notification(note, cx));
-            }
-            freed(id, from + refs.len(), cx);
-        });
-    })
-    .detach();
+    driver::start_check(id, run, first, from, window, cx);
 }
 
 /// Let go of the finished tasks past what each project keeps: their files,
