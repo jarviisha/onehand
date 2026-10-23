@@ -67,7 +67,7 @@ pub(crate) fn rows(roots: &[PathBuf], cx: &App) -> Vec<Row> {
             (None, None) => format!("cut off at {step}"),
             (None, Some(said)) => said,
         };
-        let live = t.live.iter().find(|(_, d)| d.task == task.id);
+        let live = t.live.iter().find(|(_, d)| d.task() == task.id);
         let row = Row {
             id: task.id.clone(),
             title: task.brief.title.clone(),
@@ -164,7 +164,7 @@ pub(crate) fn session_of(id: &str, cx: &App) -> Option<(u64, AnyWindowHandle)> {
     let t = cx.try_global::<Tasks>()?;
     t.live
         .iter()
-        .find(|(_, d)| d.task == id)
+        .find(|(_, d)| d.task() == id)
         .map(|(uid, d)| (*uid, d.window))
 }
 
@@ -262,11 +262,11 @@ pub(crate) fn live_issues(cx: &App) -> Vec<LiveRun> {
         .live
         .iter()
         .filter_map(|(uid, d)| {
-            let task = t.task(&d.task)?;
+            let task = t.task(d.task())?;
             let issue = task.issue()?;
             let waiting = d
                 .waits_on_person()
-                .then(|| waiting_said(d.run.awaiting_approval()).to_string());
+                .then(|| waiting_said(d.run().awaiting_approval()).to_string());
             let run = LiveRun {
                 repo: task.setup.repo.clone(),
                 name: issue.shown(),

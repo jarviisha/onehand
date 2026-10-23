@@ -1,9 +1,11 @@
-//! A run's forge steps: the push, the pull request and the wait on its
-//! status checks, each done off the UI thread and reported to the engine.
+//! A run's forge steps as the app carries them out: the push, the pull
+//! request and the look at its status checks, each done off the UI thread
+//! and reported to the run's drive.
 
-use super::{advance, read, with};
+use super::{feed, read, with};
 use gpui::{App, Task};
 use onehand_core::connector::{self, CheckState, Connector, PullRequest};
+use onehand_core::task::drive::Input;
 use onehand_core::workflow::{PrOpened, Seen, judge, pull_request_step, waited_on, with_logs};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -31,7 +33,7 @@ struct Forge {
 /// or why there is none.
 fn forge_of(uid: u64, cx: &App) -> Option<Result<Forge, String>> {
     read(uid, cx, |d| {
-        let setup = &d.run.setup;
+        let setup = &d.run().setup;
         let branch = setup
             .branch
             .clone()
@@ -51,20 +53,20 @@ fn forge_of(uid: u64, cx: &App) -> Option<Result<Forge, String>> {
 /// unless one is open on the branch already; then report how it went, with
 /// the pull request opened or taken up. One closed without being merged is
 /// refused: a person turned it down, and a second beside it would ask again.
+///
+/// Held as a step's command is: its flag is what a Stop sets, and no pull
+/// request is opened once it is.
 pub(super) fn on_forge(uid: u64, commit: Option<String>, cx: &mut App) {
     let Some(forge) = forge_of(uid, cx) else {
         return;
     };
     let text = read(uid, cx, |d| {
-        let task = crate::task::task(&d.task, cx);
+        let task = crate::task::task(d.task(), cx);
         onehand_core::unattended::pull_request_text(
-            &d.run.brief,
+            &d.run().brief,
             task.as_ref().and_then(|task| task.issue()),
         )
     });
-    // Held as a step's command is, so a Stop waits for the forge call in
-    // flight and the run is said to be stopped only once it has landed, and
-    // no pull request is opened after that.
     let cancel = Arc::new(AtomicBool::new(false));
     with(uid, cx, |d| d.command = Some(cancel.clone()));
     cx.spawn(async move |cx| {
@@ -105,15 +107,8 @@ pub(super) fn on_forge(uid: u64, commit: Option<String>, cx: &mut App) {
             })
             .await;
         cx.update(|cx| {
-            let stopping = with(uid, cx, |d| {
-                d.command = None;
-                d.stopping.take()
-            })
-            .flatten();
-            match stopping {
-                Some(stop) => advance(uid, cx, move |run| run.stopped(stop)),
-                None => advance(uid, cx, move |run| run.forge_done(done)),
-            }
+            with(uid, cx, |d| d.command = None);
+            feed(uid, Input::ForgeDone(done), cx);
         });
     })
     .detach();
@@ -190,10 +185,7 @@ pub(super) fn watch_status_checks(
             if seen == Seen::Pending {
                 continue;
             }
-            cx.update(|cx| {
-                with(uid, cx, |d| d.budget.resume(Instant::now()));
-                advance(uid, cx, move |run| run.status_checks_seen(seen));
-            });
+            cx.update(|cx| feed(uid, Input::ChecksSeen(seen), cx));
             return;
         }
     })

@@ -8,14 +8,14 @@
 //! One the step only takes from the start and the agent no longer offers is
 //! left as the agent has it.
 
-use super::{Driven, advance, read, send, with};
-use crate::chat::session::{ChatSession, note};
-use gpui::{App, Entity};
-use onehand_core::chat::MODE_SELECTOR;
-use onehand_core::preflight::{About, found_late};
-use onehand_core::workflow::{Next, Pick, Settings, next};
+use super::{Drive, Effect};
+use crate::chat::{Chat, MODE_SELECTOR};
+use crate::preflight::{found_late, About};
+use crate::workflow::{next, Next, Pick, Settings};
+use std::time::Instant;
 
 /// A visit's picks under way, and the prompt they hold back.
+#[derive(Debug)]
 pub(super) struct Picking {
     text: String,
     /// The groups picked this visit, answered or in flight.
@@ -25,7 +25,7 @@ pub(super) struct Picking {
 }
 
 /// The id of the run's open visit.
-fn open_visit(d: &Driven) -> Option<u32> {
+fn open_visit(d: &Drive) -> Option<u32> {
     d.run
         .visits()
         .last()
@@ -35,7 +35,7 @@ fn open_visit(d: &Driven) -> Option<u32> {
 
 /// What the open visit runs with: its step's own settings over the run's
 /// starting ones, and the groups the step names itself.
-fn wanted(d: &Driven) -> (Settings, Vec<String>) {
+fn wanted(d: &Drive) -> (Settings, Vec<String>) {
     let start = d.run.started_with.clone().unwrap_or_default();
     d.run
         .current()
@@ -51,16 +51,18 @@ fn wanted(d: &Driven) -> (Settings, Vec<String>) {
 /// Fail the run on a setting, `why`. A run of an issue pauses unattended
 /// runs too: every later one would fail the same way, each on a fresh issue.
 /// A person's run from the launcher does not.
-fn fail(uid: u64, why: String, cx: &mut App) {
-    let Some((task, workflow)) = read(uid, cx, |d| (d.task.clone(), d.run.template.id.clone()))
-    else {
-        return;
-    };
-    if crate::task::task(&task, cx).is_some_and(|task| task.issue().is_some()) {
-        let fix = format!("the step settings of workflow `{workflow}` are fixed");
-        crate::unattended::pause(&why, &fix, cx);
+fn fail(d: &mut Drive, why: String, chat: &mut Chat, now: Instant, fx: &mut Vec<Effect>) {
+    if d.issue {
+        let fix = format!(
+            "the step settings of workflow `{}` are fixed",
+            d.run.template.id
+        );
+        fx.push(Effect::Pause {
+            why: why.clone(),
+            fix,
+        });
     }
-    advance(uid, cx, move |run| {
+    d.advance(Some(chat), now, fx, move |run| {
         run.failed(why, found_late(About::Settings))
     });
 }
@@ -69,12 +71,13 @@ fn fail(uid: u64, why: String, cx: &mut App) {
 /// settings are in force. Otherwise it is held until they are, or the run
 /// has failed on one.
 pub(super) fn settle(
-    uid: u64,
-    session: &Entity<ChatSession>,
+    d: &mut Drive,
     text: String,
-    cx: &mut App,
+    chat: &mut Chat,
+    now: Instant,
+    fx: &mut Vec<Effect>,
 ) -> Option<String> {
-    if read(uid, cx, |d| d.settled == open_visit(d))? {
+    if d.settled == open_visit(d) {
         return Some(text);
     }
     let picking = Picking {
@@ -82,41 +85,37 @@ pub(super) fn settle(
         picked: Vec::new(),
         sent: None,
     };
-    plan(uid, session, picking, cx)
+    plan(d, picking, chat, now, fx)
 }
 
 /// The session answered something while picks are under way: once every
 /// pick is answered, plan the next, and send the held prompt when there is
 /// none. Run after everything the same answer emitted, so a refusal has
 /// already failed the run and left nothing to plan.
-pub(super) fn answered(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
+pub(super) fn answered(d: &mut Drive, chat: &mut Chat, now: Instant, fx: &mut Vec<Effect>) {
     // The run's own mode answered and not refused: nothing more of it.
-    if !session.read(cx).chat.pick_waiting(MODE_SELECTOR) {
-        with(uid, cx, |d| d.mode_out = None);
+    if !chat.pick_waiting(MODE_SELECTOR) {
+        d.mode_out = None;
     }
     // The visit's own pick answered while another group's is still out (a
     // person's in the composer): a refusal of that one is not the run's.
-    let sent = read(uid, cx, |d| {
-        Some(d.picking.as_ref()?.sent.as_ref()?.group().to_string())
-    })
-    .flatten();
-    if let Some(group) = sent
-        && !session.read(cx).chat.pick_waiting(&group)
-    {
-        with(uid, cx, |d| {
-            if let Some(picking) = d.picking.as_mut() {
-                picking.sent = None;
-            }
-        });
+    let sent = d
+        .picking
+        .as_ref()
+        .and_then(|picking| Some(picking.sent.as_ref()?.group().to_string()));
+    if sent.is_some_and(|group| !chat.pick_waiting(&group)) {
+        if let Some(picking) = d.picking.as_mut() {
+            picking.sent = None;
+        }
     }
-    if session.read(cx).chat.picks_waiting() {
+    if chat.picks_waiting() {
         return;
     }
-    let Some(picking) = with(uid, cx, |d| d.picking.take()).flatten() else {
+    let Some(picking) = d.picking.take() else {
         return;
     };
-    if let Some(text) = plan(uid, session, picking, cx) {
-        send(uid, session, text, cx);
+    if let Some(text) = plan(d, picking, chat, now, fx) {
+        d.send(text, chat, now, fx);
     }
 }
 
@@ -125,50 +124,60 @@ pub(super) fn answered(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
 /// answered, on the step's setting. A refusal while the visit's pick is
 /// still out, or of a pick the run did not send (a person's in the
 /// composer, those restored on reconnecting), is not the run's.
-pub(super) fn refused(uid: u64, session: &Entity<ChatSession>, why: &str, cx: &mut App) {
+pub(super) fn refused(
+    d: &mut Drive,
+    chat: &mut Chat,
+    why: &str,
+    now: Instant,
+    fx: &mut Vec<Effect>,
+) {
     // The run's own mode, refused: what is to be fixed is the mode the run
     // was given, not the workflow's steps.
-    let mode = read(uid, cx, |d| d.mode_out.clone()).flatten();
-    if let Some(mode) = mode
-        && !session.read(cx).chat.pick_waiting(MODE_SELECTOR)
+    if let Some(mode) = d
+        .mode_out
+        .clone()
+        .filter(|_| !chat.pick_waiting(MODE_SELECTOR))
     {
-        with(uid, cx, |d| {
-            d.mode_out = None;
-            d.picking = None;
-        });
+        d.mode_out = None;
+        d.picking = None;
         let why = format!("the agent refused mode `{mode}`: {why}");
-        crate::unattended::pause(&why, "unattended.mode is fixed", cx);
-        advance(uid, cx, move |run| run.failed(why, found_late(About::Mode)));
+        fx.push(Effect::Pause {
+            why: why.clone(),
+            fix: "unattended.mode is fixed".to_string(),
+        });
+        d.advance(Some(chat), now, fx, move |run| {
+            run.failed(why, found_late(About::Mode))
+        });
         return;
     }
-    let Some(pick) = read(uid, cx, |d| d.picking.as_ref()?.sent.clone()).flatten() else {
+    let Some(pick) = d.picking.as_ref().and_then(|p| p.sent.clone()) else {
         return;
     };
-    if session.read(cx).chat.pick_waiting(pick.group()) {
+    if chat.pick_waiting(pick.group()) {
         return;
     }
-    with(uid, cx, |d| d.picking = None);
+    d.picking = None;
     let said = match pick {
         Pick::Mode(mode) => format!("the agent refused mode `{mode}`: {why}"),
         Pick::Option { id, value } => format!("the agent refused `{value}` for `{id}`: {why}"),
     };
-    fail(uid, said, cx);
+    fail(d, said, chat, now, fx);
 }
 
 /// Send the visit's next pick and hold the prompt, or fail the run on a
 /// setting not offered, or, with nothing left to pick, record what the
 /// visit runs with and give the prompt back.
 fn plan(
-    uid: u64,
-    session: &Entity<ChatSession>,
+    d: &mut Drive,
     mut picking: Picking,
-    cx: &mut App,
+    chat: &mut Chat,
+    now: Instant,
+    fx: &mut Vec<Effect>,
 ) -> Option<String> {
-    let (want, named) = read(uid, cx, wanted)?;
+    let (want, named) = wanted(d);
     // Whatever was sent before has been answered.
     picking.sent = None;
     loop {
-        let chat = &session.read(cx).chat;
         // A pick put in before this one (the run's mode, or one restored on
         // reconnecting) is answered first, so what is planned against holds.
         if chat.picks_waiting() {
@@ -182,32 +191,28 @@ fn plan(
             &picking.picked,
         ) {
             Next::Pick(pick) => {
-                session.update(cx, |session, cx| {
-                    session.chat.pick(&pick);
-                    cx.notify();
-                });
+                chat.pick(&pick);
+                fx.push(Effect::SessionChanged);
                 picking.picked.push(pick.group().to_string());
                 picking.sent = Some(pick);
             }
             Next::Refused(why) => {
-                fail(uid, why, cx);
+                fail(d, why, chat, now, fx);
                 return None;
             }
             Next::Done => {
                 let held = chat.held();
                 let said = said(&want, &held);
-                with(uid, cx, |d| {
-                    d.run.ran_with(held);
-                    d.settled = open_visit(d);
-                });
+                d.run.ran_with(held);
+                d.settled = open_visit(d);
                 if !picking.picked.is_empty() {
-                    note(session, said, cx);
+                    fx.push(Effect::Note(said));
                 }
                 return Some(picking.text);
             }
         }
     }
-    with(uid, cx, |d| d.picking = Some(picking));
+    d.picking = Some(picking);
     None
 }
 
