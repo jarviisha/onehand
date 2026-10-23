@@ -47,10 +47,13 @@ pub enum Call {
 }
 
 /// Who a connection speaks for, fixed by its `initialize`.
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Peer {
     /// A program outside onehand: a script, the system's cron.
     Outside,
+    /// The agent of the session this token was given to, through the proxy
+    /// onehand starts for it.
+    Session(String),
 }
 
 /// What a connection may do right now. Asked for on every message, so a
@@ -70,6 +73,13 @@ pub enum Standing {
 #[derive(Debug, Default)]
 pub struct Conn {
     peer: Option<Peer>,
+}
+
+impl Conn {
+    /// Who it speaks for, once its `initialize` is answered.
+    pub fn peer(&self) -> Option<&Peer> {
+        self.peer.as_ref()
+    }
 }
 
 /// What one line comes to.
@@ -116,10 +126,10 @@ pub fn handle(conn: &mut Conn, line: &str, standing: impl Fn(&Peer) -> Standing)
     let fail = |code: i64, why: &str| Handled::Reply(error(&id, code, why));
     match method {
         "initialize" => {
-            if !params["_meta"]["onehand"]["session"].is_null() {
-                return fail(NOT_ALLOWED, "no such session");
-            }
-            let peer = Peer::Outside;
+            let peer = match params["_meta"]["onehand"]["session"].as_str() {
+                Some(token) => Peer::Session(token.to_string()),
+                None => Peer::Outside,
+            };
             if let Standing::Refused(why) = standing(&peer) {
                 return fail(NOT_ALLOWED, &why);
             }
@@ -389,6 +399,89 @@ pub fn pick_project<'a>(
             ))
         }
     }
+}
+
+/// `line` as the proxy sends it on: an `initialize` carries the session's
+/// token, whatever the client put there; every other line goes as it is.
+pub fn with_token(line: &str, token: &str) -> String {
+    let Ok(mut msg) = serde_json::from_str::<Value>(line) else {
+        return line.to_string();
+    };
+    if msg["method"] != "initialize" {
+        return line.to_string();
+    }
+    if !msg["params"].is_object() {
+        msg["params"] = json!({});
+    }
+    msg["params"]["_meta"]["onehand"] = json!({"session": token});
+    msg.to_string()
+}
+
+/// The `mcpServers` entry a session is given: onehand at `command`, as the
+/// proxy to the socket at `socket`, speaking for the session `token` names.
+/// The stdio kind, which every ACP agent takes.
+pub fn proxy_entry(command: &Path, socket: &Path, token: &str) -> Value {
+    json!({
+        "name": "onehand",
+        "command": command.to_string_lossy(),
+        "args": ["--mcp-proxy", socket.to_string_lossy(), token],
+        "env": [],
+    })
+}
+
+/// A token nobody can guess, for one session.
+///
+/// Two of std's randomly seeded hashers, rather than a crate for it: the
+/// token keeps one agent from speaking for another session, and the socket
+/// is the user's own already.
+pub fn new_token() -> String {
+    use std::hash::{BuildHasher as _, Hasher as _};
+    let half = || {
+        std::collections::hash_map::RandomState::new()
+            .build_hasher()
+            .finish()
+    };
+    format!("{:016x}{:016x}", half(), half())
+}
+
+/// What a connection is sent when its session's switch changes, so the
+/// agent asks for the list again.
+pub fn tools_changed() -> String {
+    json!({"jsonrpc": "2.0", "method": "notifications/tools/list_changed"}).to_string()
+}
+
+/// Carry an agent's MCP conversation between `input` and `output` (its
+/// stdin and stdout) and the socket at `socket`, speaking for the session
+/// `token` was given to. Returns when the socket closes. Blocking.
+pub fn proxy(
+    socket: &Path,
+    token: &str,
+    input: impl std::io::BufRead + Send + 'static,
+    mut output: impl std::io::Write,
+) -> std::io::Result<()> {
+    use std::io::Write as _;
+    let stream = std::os::unix::net::UnixStream::connect(socket)?;
+    let mut to_socket = stream.try_clone()?;
+    let token = token.to_string();
+    // Its own thread, so the socket's end closing ends the proxy even while
+    // the agent has nothing to send.
+    std::thread::spawn(move || {
+        for line in input.lines() {
+            let Ok(line) = line else { break };
+            if writeln!(to_socket, "{}", with_token(&line, &token)).is_err() {
+                break;
+            }
+        }
+        let _ = to_socket.shutdown(std::net::Shutdown::Write);
+    });
+    let mut from_socket = std::io::BufReader::new(stream);
+    let mut line = String::new();
+    while std::io::BufRead::read_line(&mut from_socket, &mut line)? > 0 {
+        output.write_all(line.as_bytes())?;
+        output.flush()?;
+        line.clear();
+    }
+    Ok(())
 }
 
 /// How many lines a list answers with.

@@ -65,6 +65,8 @@ pub struct SessionOpts {
     pub cwd: PathBuf,
     /// The session to load rather than start, when there is one to resume.
     pub resume: Option<String>,
+    /// The MCP servers the session is given, as ACP's `mcpServers` entries.
+    pub mcp_servers: Vec<Value>,
 }
 
 /// Start the agent `launch` describes, with its variables set over what it
@@ -314,7 +316,10 @@ impl Conn {
 
     /// Open the session: a fresh one.
     async fn new_session(&mut self) -> Result<(), String> {
-        let params = json!({ "cwd": self.opts.cwd.display().to_string(), "mcpServers": [] });
+        let params = json!({
+            "cwd": self.opts.cwd.display().to_string(),
+            "mcpServers": self.opts.mcp_servers,
+        });
         self.send("session/new", params, Pending::NewSession).await
     }
 
@@ -483,7 +488,7 @@ impl Conn {
                             let params = json!({
                                 "sessionId": prev,
                                 "cwd": self.opts.cwd.display().to_string(),
-                                "mcpServers": [],
+                                "mcpServers": self.opts.mcp_servers,
                             });
                             self.send("session/load", params, Pending::LoadSession)
                                 .await?;
