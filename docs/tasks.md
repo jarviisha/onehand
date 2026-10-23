@@ -392,12 +392,13 @@ migration it protects.
 - **The check command as a task** (`Task::check`) is a run of a template named *Check* with one
   command step whose `on_fail` is empty, so a failure ends the run failed. The template is made on
   the spot and never saved or validated. *Run check* on the project page keeps the task and asks
-  for its place like any other. With no session to watch, the driver is not involved:
-  `task::drive_check` pins the start mark, runs the command on the background executor with a
-  cancel flag, reports `command_finished` (passed on the exit status alone, so a folder outside
-  git or a repository with no commit passes too) (or `stopped` by a person when called off), says *Check
-  passed in <project>* or *Check failed in <project>* in the window it was asked from, then pins the end mark
-  and gives the place up.
+  for its place like any other. It runs on the same driver as every run, with no session: a drive
+  started without one (`Drive::start` with no chat) arms no timeout and carries out only what needs
+  no session. It pins the start mark, runs the command with a cancel flag, reports
+  `command_finished` (passed on the exit status alone, so a folder outside git or a repository with
+  no commit passes too) (or `stopped` by a person when called off), says *Check passed in <project>*
+  or *Check failed in <project>* in the window it was asked from (nothing when stopped), then pins
+  the end mark and gives the place up.
 - **The history cap runs** once the tasks are read at boot and whenever a task lets go of its
   place, is dismissed or is called off. Each task past the cap has its file removed, leaves the
   global, and has its marks dropped off the UI thread; a failure is logged. How many went is counted
