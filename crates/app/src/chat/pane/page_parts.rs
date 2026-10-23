@@ -123,3 +123,46 @@ pub(super) fn pair(left: Div, right: Div) -> Div {
         .child(left.flex_grow_1().flex_basis(PAGE_CARD))
         .child(right.flex_grow_1().flex_basis(PAGE_CARD))
 }
+
+/// A bar along a page's foot, the page's whole width, on the tint of `base`,
+/// led by `icon`: what a form tells its person while it stands (its problems,
+/// or that it is only read), one line each.
+pub(crate) fn foot_bar(
+    icon: gpui_component::IconName,
+    base: gpui::Hsla,
+    lines: Vec<String>,
+    cx: &App,
+) -> AnyElement {
+    // Across the page's foot, on its kind's tint, so it reads as one standing
+    // condition of the whole form rather than of the column it sits in.
+    let tint = onehand_ui::tint(base, cx);
+    // One line's height, set on the bar and on the mark's slot, so the mark
+    // stands centred on the first line however many follow it.
+    let line = gpui::rems(crate::tokens::CHROME_TEXT.0 * crate::tokens::LEADING);
+    div()
+        .flex_none()
+        .w_full()
+        .h_flex()
+        .items_start()
+        .gap_2()
+        .px_8()
+        .py_3()
+        .text_size(crate::tokens::CHROME_TEXT)
+        .line_height(line)
+        .bg(tint.fill)
+        .text_color(tint.ink)
+        .child(
+            onehand_ui::mark_slot(gpui_component::Sizable::small(gpui_component::Icon::new(
+                icon,
+            )))
+            .h(line),
+        )
+        .child(
+            div()
+                .v_flex()
+                .gap_1()
+                .min_w_0()
+                .children(lines.into_iter().map(|line| div().child(line))),
+        )
+        .into_any_element()
+}

@@ -7,8 +7,8 @@
 
 use super::super::WorkflowsPage;
 use super::super::draft::{StepDraft, run_agent_offer, set_pick};
+use crate::controls::Quiet as _;
 use crate::controls::text_input;
-use crate::controls::{Quiet as _, Refuses as _};
 use crate::settings::{about, field, section};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -20,10 +20,6 @@ use onehand_ui::Tall as _;
 use std::path::Path;
 use std::rc::Rc;
 
-/// The most of an agent's values a setting's row draws before it counts
-/// the rest.
-const CHOICES_SHOWN: usize = 12;
-
 /// The most of an agent's options drawn as rows of choices before it counts
 /// the rest, which are still set by id among the typed rows.
 const OPTIONS_SHOWN: usize = 12;
@@ -32,7 +28,7 @@ const OPTIONS_SHOWN: usize = 12;
 const SHIPPED: &str = "Built in: duplicate it to change it";
 
 /// What picking a choice does: `None` for the run's own value.
-type Pick = Rc<dyn Fn(Option<String>, &mut Window, &mut App)>;
+type Pick = crate::controls::SettingPick;
 
 /// The section on step `i`: what the agent runs take offers as rows of
 /// choices, *Mode* first, then the rows typed by id and *Add option*. While
@@ -78,13 +74,13 @@ pub(super) fn agent_settings(
         // Picked while the agent's offer was known: each stays on screen,
         // to keep or leave to the run, with nothing judged of it.
         for (n, (id, value)) in step.picked.iter().enumerate() {
-            let row = pick_row(
+            let row = crate::controls::setting_row(
                 format!("step-pick-{i}-{n}"),
                 "Run's value",
                 None,
                 Some(value),
                 false,
-                shipped,
+                shipped.then_some(SHIPPED),
                 option_pick(handle, i, id),
                 cx,
             );
@@ -116,13 +112,13 @@ pub(super) fn agent_settings(
                 })
             })
         };
-        let row = pick_row(
+        let row = crate::controls::setting_row(
             format!("step-mode-{i}"),
             "Run's mode",
             Some(&offer.modes),
             mode.as_deref(),
             true,
-            shipped,
+            shipped.then_some(SHIPPED),
             pick,
             cx,
         );
@@ -163,7 +159,7 @@ pub(super) fn agent_settings(
         .filter(|(id, _)| !shown.iter().any(|(shown, _)| shown == id))
         .count();
     for (n, (id, values)) in shown.into_iter().enumerate() {
-        let row = pick_row(
+        let row = crate::controls::setting_row(
             format!("step-pick-{i}-{n}"),
             "Run's value",
             Some(values),
@@ -172,7 +168,7 @@ pub(super) fn agent_settings(
             // judged on what was learned; another's values depend on the
             // model.
             id == "model" || values.is_empty(),
-            shipped,
+            shipped.then_some(SHIPPED),
             option_pick(handle, i, id),
             cx,
         );
@@ -232,103 +228,6 @@ fn taken<'a>(step: &'a StepDraft, typed: &'a [(String, String)], id: &str) -> Op
             .find(|(row, value)| row.trim() == id && !value.trim().is_empty())
             .map(|(_, value)| value.trim())
     })
-}
-
-/// A setting's row of choices: `run` (the step names none) first, then the
-/// values offered, the one taken filled; a value taken that the agent does
-/// not offer is marked: in the warning ink when `strict` (what was learned
-/// decides it), muted otherwise (the run's check at the step does).
-/// `offered` is `None` while what the agent offers is not known, and nothing
-/// is marked.
-/// In one edged track that wraps on a narrow panel; past [`CHOICES_SHOWN`]
-/// a line says how many more.
-#[allow(clippy::too_many_arguments)]
-fn pick_row(
-    id: String,
-    run: &'static str,
-    offered: Option<&[String]>,
-    current: Option<&str>,
-    strict: bool,
-    shipped: bool,
-    pick: Pick,
-    cx: &App,
-) -> AnyElement {
-    let known = offered.is_some();
-    let (shown, more) = chips(offered.unwrap_or_default(), current);
-    let warning = crate::theme::status_ink(cx).warning;
-    let chip = |n: usize, label: SharedString, to: Option<String>, on: bool| {
-        let pick = pick.clone();
-        onehand_ui::choice(
-            SharedString::from(format!("{id}-{n}")),
-            label,
-            on,
-            // A page form's pickers stand at its inputs' height.
-            onehand_ui::ControlSize::Tall,
-            cx,
-        )
-        .refuses(shipped.then_some(SHIPPED))
-        .on_click(move |_, window: &mut Window, cx: &mut App| pick(to.clone(), window, cx))
-    };
-    let chips = shown.into_iter().enumerate().map(|(n, (value, offered))| {
-        let on = current == Some(value.as_str());
-        match offered || !known {
-            true => chip(n + 1, value.clone().into(), Some(value), on),
-            false if strict => chip(
-                n + 1,
-                format!("{value} · not offered").into(),
-                Some(value),
-                on,
-            )
-            .text_color(warning)
-            // A shipped workflow's refusal keeps its own tooltip.
-            .when(!shipped, |chip| {
-                chip.tooltip("The agent does not offer it: a run fails at this step")
-            }),
-            // An option's values were learned under whatever model ran
-            // then: one missing may be offered under the step's.
-            false => chip(n + 1, format!("{value} · not seen").into(), Some(value), on)
-                .text_color(crate::theme::meta_ink(cx))
-                .when(!shipped, |chip| {
-                    chip.tooltip(
-                        "Not among what the agent offered under the model it last ran; \
-                     the run checks it when the step starts",
-                    )
-                }),
-        }
-    });
-    div()
-        .v_flex()
-        .gap_1()
-        .child(onehand_ui::choice_track(
-            std::iter::once(chip(0, run.into(), None, current.is_none())).chain(chips),
-            cx,
-        ))
-        .when(more > 0, |col| {
-            col.child(
-                div()
-                    .text_xs()
-                    .text_color(crate::theme::meta_ink(cx))
-                    .child(format!("{more} more")),
-            )
-        })
-        .into_any_element()
-}
-
-/// The values a row draws after its first choice, each with whether the
-/// agent offers it: the first [`CHOICES_SHOWN`] offered, the one taken
-/// even past them, and a value taken that is not offered last; and how many
-/// offered values are left out.
-fn chips(offered: &[String], current: Option<&str>) -> (Vec<(String, bool)>, usize) {
-    let mut shown: Vec<(String, bool)> = offered
-        .iter()
-        .take(CHOICES_SHOWN)
-        .map(|value| (value.clone(), true))
-        .collect();
-    if let Some(current) = current.filter(|current| !shown.iter().any(|(v, _)| v == current)) {
-        shown.push((current.to_string(), offered.iter().any(|v| v == current)));
-    }
-    let drawn = shown.iter().filter(|(_, known)| *known).count();
-    (shown, offered.len() - drawn)
 }
 
 /// The rows of options typed by id and value, and *Add option*.
@@ -408,48 +307,4 @@ fn typed_options(
         })
         .when(!shipped, |col| col.child(div().h_flex().child(add)))
         .into_any_element()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn values(n: usize) -> Vec<String> {
-        (0..n).map(|v| format!("v{v}")).collect()
-    }
-
-    #[test]
-    fn chips_show_what_is_offered() {
-        let (shown, more) = chips(&values(2), Some("v1"));
-        assert_eq!(
-            shown,
-            vec![("v0".to_string(), true), ("v1".to_string(), true)]
-        );
-        assert_eq!(more, 0);
-    }
-
-    #[test]
-    fn a_value_not_offered_stays_marked() {
-        let (shown, more) = chips(&values(1), Some("opus"));
-        assert_eq!(
-            shown,
-            vec![("v0".to_string(), true), ("opus".to_string(), false)]
-        );
-        assert_eq!(more, 0);
-        assert_eq!(
-            chips(&[], Some("plan")).0,
-            vec![("plan".to_string(), false)]
-        );
-    }
-
-    #[test]
-    fn chips_are_capped_and_the_one_taken_kept() {
-        let offered = values(CHOICES_SHOWN + 3);
-        let (shown, more) = chips(&offered, None);
-        assert_eq!((shown.len(), more), (CHOICES_SHOWN, 3));
-        let last = offered.last().unwrap();
-        let (shown, more) = chips(&offered, Some(last));
-        assert_eq!(shown.last(), Some(&(last.clone(), true)));
-        assert_eq!((shown.len(), more), (CHOICES_SHOWN + 1, 2));
-    }
 }

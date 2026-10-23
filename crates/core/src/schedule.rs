@@ -338,6 +338,37 @@ pub fn brief(s: &Schedule) -> Brief {
     }
 }
 
+/// Why schedule `s` cannot be saved, a sentence each; none when it can.
+pub fn problems(s: &Schedule) -> Vec<String> {
+    let mut said = Vec::new();
+    if s.name.trim().is_empty() {
+        said.push("Name it".to_string());
+    }
+    if s.project.as_os_str().is_empty() {
+        said.push("Pick a project".to_string());
+    }
+    match &s.starts {
+        Starts::Prompt { prompt } if prompt.trim().is_empty() => {
+            said.push("Say what to ask the agent".to_string())
+        }
+        Starts::Prompt { .. } => {}
+        Starts::Workflow {
+            workflow, title, ..
+        } => {
+            if workflow.trim().is_empty() {
+                said.push("Pick a workflow".to_string());
+            }
+            if title.trim().is_empty() {
+                said.push("Give the brief a title".to_string());
+            }
+        }
+    }
+    if let Err(why) = parse(&s.when) {
+        said.push(format!("When: {why}"));
+    }
+    said
+}
+
 /// When `expr` runs, in words where it is a quick choice, else the
 /// expression itself; one that does not parse says why.
 pub fn when_said(expr: &str) -> String {
