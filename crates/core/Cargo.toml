@@ -19,6 +19,8 @@ toml = { version = "0.8", features = ["preserve_order"] }
 toml_edit = "0.22"
 serde_json = "1"  # JSON-RPC wire format for ACP
 dirs = "5"
+# The local calendar a schedule's cron expression is read in.
+chrono = "0.4"
 
 # Subprocess + async I/O. Not a GUI dependency: the ACP adapter and `git status`
 # both run off any UI loop, and the same runtime backs the GPUI shell later.
