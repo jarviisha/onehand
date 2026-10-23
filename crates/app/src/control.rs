@@ -243,10 +243,13 @@ pub(crate) async fn converse(
         if let Some(reply) = reply
             && out.unbounded_send(reply).is_err()
         {
-            return;
+            break;
         }
         line = next_line(&mut reader).await;
     }
+    // For every clone, the one kept to tell the session too: the writer then
+    // lets the socket go, so the proxy on the other end hears it close.
+    out.close_channel();
 }
 
 /// Carry out `call` in the window in front, and answer what came of it in

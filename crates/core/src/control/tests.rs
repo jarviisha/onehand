@@ -230,6 +230,12 @@ fn the_proxy_puts_the_token_on_initialize_only() {
     let sent: Value = serde_json::from_str(&with_token(&forged, "abc")).unwrap();
     assert_eq!(sent["params"]["_meta"]["onehand"]["session"], "abc");
     assert_eq!(with_token("not json", "abc"), "not json");
+    // A `_meta` that is not an object is replaced, not indexed into.
+    for meta in [json!("x"), json!([1])] {
+        let odd = line("initialize", json!({"_meta": meta}));
+        let sent: Value = serde_json::from_str(&with_token(&odd, "abc")).unwrap();
+        assert_eq!(sent["params"]["_meta"]["onehand"]["session"], "abc");
+    }
 }
 
 #[test]

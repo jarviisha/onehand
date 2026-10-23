@@ -413,6 +413,9 @@ pub fn with_token(line: &str, token: &str) -> String {
     if !msg["params"].is_object() {
         msg["params"] = json!({});
     }
+    if !msg["params"]["_meta"].is_object() {
+        msg["params"]["_meta"] = json!({});
+    }
     msg["params"]["_meta"]["onehand"] = json!({"session": token});
     msg.to_string()
 }

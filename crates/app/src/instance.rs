@@ -265,6 +265,29 @@ mod tests {
     }
 
     #[test]
+    fn a_sessions_connection_is_let_go_when_its_client_hangs_up() {
+        let (dir, _rt, _rx) = listening("hangup");
+        let token = crate::control::Token::mint();
+        let servers = token.servers();
+        let name = servers[0]["args"][2].as_str().unwrap().to_string();
+        let mut stream = UnixStream::connect(dir.join("onehand.sock")).unwrap();
+        let init = json!({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {"_meta": {"onehand": {"session": name}}}});
+        assert!(ask(&mut stream, init)["result"].is_object());
+        // The proxy's stdin ended: the server's end has to close too, or the
+        // proxy waits on it for ever.
+        stream.shutdown(std::net::Shutdown::Write).unwrap();
+        stream
+            .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+            .unwrap();
+        let mut rest = String::new();
+        let read = std::io::Read::read_to_string(&mut stream, &mut rest);
+        assert_eq!(read.unwrap(), 0, "the server kept the socket open");
+        drop(token);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn an_outside_client_is_answered_over_the_socket() {
         let (dir, _rt, mut rx) = listening("outside");
         // GPUI's side, answering every call alike.
