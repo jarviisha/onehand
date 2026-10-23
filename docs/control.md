@@ -2,8 +2,7 @@
 
 How onehand is driven from outside a window: the socket the running process listens on, what a
 second launch does with it, and onehand's own tools, which a program outside onehand may call over
-it when Settings allows. Two tools that start a task (`start_workflow`, `start_issue`) and the
-tools for an agent in a session are not built yet.
+it when Settings allows. The tools for an agent in a session are not built yet.
 
 **No tool answers a card, a permission or an approval.** Those always wait for a person; no tool
 is written for them.
@@ -71,10 +70,16 @@ answer, and exits.
 | `list_agents` | none | the agents a session can be opened with | one name per line |
 | `open_session` | `project`, `agent`, optional `prompt` | opens a session on the project with that agent, not shown; it appears in the rail; `prompt` is sent once the agent is up | what it opened, or why not |
 | `list_workflows` | none | the library's workflows | `id — name`; an unreadable file says why |
+| `start_workflow` | `project`, `workflow` id, `title`, optional `brief` | a new task through `task::submit`, as the launcher makes it: on the checkout or on a worktree cut first, as the workflow's place says; what blocks the launcher's *Run* blocks it, in the same words | `Task <id> started: <title>`, or `Task <id> queued: …`, or why not |
+| `start_issue` | `project`, `issue` number, optional `workflow` id | the same, the brief being the issue: one of the project's own issues, as its Issues tab numbers them. A supervised task, not the unattended pick: nothing is claimed or said on the forge, unattended runs need not be set up, and the brief does not tell the agent it is alone. Without `workflow`, the one unattended runs use | as above |
 | `list_tasks` | optional `project` | the tasks of the window's projects, or of one | `id — title — state — step — next: …`, the next actions as the Tasks page offers them |
 | `stop_task` | `task` id | as the Tasks page's Stop, for a task of the window's projects | `Stopping <title>`, or why not |
 | `open_file` | `path` | opens the file in the Workbench and shows the Workbench, without taking focus | what it opened, or why not |
 
+- **A task a tool starts is driven off screen**, the way an issue's run is: its session is in the
+  rail and the task on the Tasks page, and nothing the person is looking at moves. Only its first
+  drive: a Resume or Retry a person presses later shows, as theirs does. A person still sees the
+  toasts the launcher's start shows (queued, over the cap).
 - A project is named by its name or its path. A name two projects share is refused, naming both.
 - Every list answers at most 50 lines and ends `… and N more not listed` when it was cut.
 - `open_file` takes an absolute path without `..`, inside the project on screen; another

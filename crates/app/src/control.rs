@@ -7,6 +7,7 @@
 
 use crate::instance::{Incoming, next_line};
 use crate::state::Shared;
+use crate::task::Placed;
 use futures::channel::mpsc::UnboundedSender;
 use futures::channel::oneshot;
 use gpui::{App, Window};
@@ -14,6 +15,7 @@ use onehand_core::chat::model::Link;
 use onehand_core::config::ControlConfig;
 use onehand_core::control::{self, Call, Conn, Handled, Peer, Standing};
 use onehand_core::task::Group;
+use onehand_core::workflow::{Brief, Place, Setup, Template};
 use std::cell::RefCell;
 use std::path::{Component, PathBuf};
 use std::rc::Rc;
@@ -112,10 +114,23 @@ pub(crate) async fn converse(
     }
 }
 
-/// Carry out `call` in the window in front, and say what came of it in the
-/// words the caller reads. Never from inside a shell's update: it runs from
-/// the socket's own task.
-pub(crate) fn perform(call: Call, cx: &mut App) -> Result<String, String> {
+/// Carry out `call` in the window in front, and answer what came of it in
+/// the words the caller reads. Never from inside a shell's update: it runs
+/// from the socket's own task.
+pub(crate) fn perform(call: Call, answer: Answer, cx: &mut App) {
+    let mut answer = Some(answer);
+    let outcome = perform_now(call, &mut answer, cx);
+    // Still here: the call was done, or refused, at once. A start that goes on
+    // took it, and answers once its task has landed.
+    if let Some(answer) = answer {
+        let _ = answer.send(outcome);
+    }
+}
+
+/// Where a call's answer goes.
+pub(crate) type Answer = oneshot::Sender<Result<String, String>>;
+
+fn perform_now(call: Call, answer: &mut Option<Answer>, cx: &mut App) -> Result<String, String> {
     let (handle, shell) = crate::state::front(cx).ok_or("no onehand window is open")?;
     let projects: Vec<(String, PathBuf)> = shell
         .read(cx)
@@ -124,6 +139,70 @@ pub(crate) fn perform(call: Call, cx: &mut App) -> Result<String, String> {
         .map(|(path, name)| (name, path))
         .collect();
     match call {
+        Call::StartWorkflow {
+            project,
+            workflow,
+            title,
+            brief,
+        } => {
+            let root = control::pick_project(&projects, &project)?.to_path_buf();
+            let template = template(&workflow, cx)?;
+            let brief = Brief {
+                title: title.trim().to_string(),
+                body: brief.unwrap_or_default().trim().to_string(),
+                instructions: None,
+            };
+            let answer = answer.take();
+            cx.spawn(async move |cx| {
+                let outcome = start(handle, shell, root, template, brief, cx).await;
+                if let Some(answer) = answer {
+                    let _ = answer.send(outcome);
+                }
+            })
+            .detach();
+            Ok(String::new())
+        }
+        Call::StartIssue {
+            project,
+            issue,
+            workflow,
+        } => {
+            let root = control::pick_project(&projects, &project)?.to_path_buf();
+            let workflow = workflow
+                .or_else(|| Some(crate::unattended::workflows(cx).0).filter(|id| !id.is_empty()))
+                .ok_or("name a workflow; list_workflows gives them")?;
+            let template = template(&workflow, cx)?;
+            let issues = shell.read(cx).issues_file(&root);
+            let answer = answer.take();
+            cx.spawn(async move |cx| {
+                let outcome = async {
+                    let at = root.clone();
+                    let (rows, ..) = cx
+                        .background_executor()
+                        .spawn(async move {
+                            onehand_core::unattended::pickable_one_blocking(
+                                crate::features::connectors(),
+                                &at,
+                                issues,
+                                issue,
+                            )
+                        })
+                        .await?;
+                    let (tracker, row) = rows
+                        .into_iter()
+                        .next()
+                        .ok_or_else(|| format!("no issue {issue} in this project"))?;
+                    let brief = onehand_core::unattended::brief_supervised(&tracker, &row.issue);
+                    start(handle, shell, root, template, brief, cx).await
+                }
+                .await;
+                if let Some(answer) = answer {
+                    let _ = answer.send(outcome);
+                }
+            })
+            .detach();
+            Ok(String::new())
+        }
         Call::ListProjects => {
             let shell = shell.read(cx);
             let lines = projects
@@ -251,6 +330,82 @@ pub(crate) fn perform(call: Call, cx: &mut App) -> Result<String, String> {
                 "Opened a session with {name} on {project}. It is in the rail, not shown"
             ))
         }
+    }
+}
+
+/// The library's workflow whose id is `id`, read.
+fn template(id: &str, cx: &App) -> Result<Template, String> {
+    let entries = crate::workflow::templates(cx);
+    let entry = entries
+        .iter()
+        .find(|entry| entry.template.as_ref().is_ok_and(|t| t.id == id))
+        .ok_or_else(|| format!("no workflow with id {id}; list_workflows gives them"))?;
+    entry.template.clone()
+}
+
+/// Start a task of `template` on `root` with `brief`, as the launcher does
+/// and off screen, once what blocks the launcher's Run blocks nothing:
+/// on the checkout, or on a worktree cut for it first. Answers the task's id
+/// and whether it started or waits.
+async fn start(
+    window: gpui::AnyWindowHandle,
+    shell: gpui::Entity<crate::shell::Shell>,
+    root: PathBuf,
+    template: Template,
+    brief: Brief,
+    cx: &mut gpui::AsyncApp,
+) -> Result<String, String> {
+    let (blocks, check) = cx.update(|cx| {
+        let shell = shell.read(cx);
+        let found = shell.run_preflight(&root, Ok(template.clone()), None, cx);
+        let blocks: Vec<String> = found
+            .into_iter()
+            .filter(|f| f.blocks)
+            .map(|f| f.text)
+            .collect();
+        (blocks, shell.check_of(&root))
+    });
+    if !blocks.is_empty() {
+        return Err(blocks.join("; "));
+    }
+    let mut setup = Setup {
+        repo: root.clone(),
+        dir: root.clone(),
+        branch: None,
+        agent: None,
+        check,
+        mode: None,
+        forge: None,
+    };
+    match template.place {
+        Place::Checkout => {}
+        Place::Worktree => {
+            let title = brief.title.clone();
+            let (dir, branch, forge) = cx
+                .background_executor()
+                .spawn(async move { crate::shell::cut_worktree_blocking(&root, &title) })
+                .await?;
+            setup = Setup {
+                dir,
+                branch: Some(branch),
+                forge,
+                ..setup
+            };
+        }
+    }
+    let title = brief.title.clone();
+    let (id, told) = cx
+        .update(|cx| {
+            crate::state::with_shell(window, cx, |shell, window, cx| {
+                shell.start_workflow_told(setup, template, brief, window, cx)
+            })
+        })
+        .ok_or("the window closed")?;
+    match told.await {
+        Ok(Placed::Started) => Ok(format!("Task {id} started: {title}")),
+        Ok(Placed::Queued(said)) => Ok(format!("Task {id} queued: {said}")),
+        Ok(Placed::Refused(why)) => Err(why),
+        Err(_) => Err("the task did not start".to_string()),
     }
 }
 

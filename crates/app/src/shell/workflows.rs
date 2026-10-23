@@ -171,15 +171,25 @@ impl Shell {
                 .map_err(|why| format!("{} cannot be read: {why}", entry.name())),
             None => Err("pick a workflow".to_string()),
         };
+        Some(self.run_preflight(&launcher.root, workflow, launcher.ground.as_ref(), cx))
+    }
+
+    /// What the preflight finds of a new task of `workflow` on `root`, with
+    /// `ground` once it is known: the launcher's question, asked by whatever
+    /// starts one.
+    pub(crate) fn run_preflight(
+        &self,
+        root: &std::path::Path,
+        workflow: Result<Template, String>,
+        ground: Option<&Ground>,
+        cx: &gpui::App,
+    ) -> Vec<preflight::Finding> {
         let shared = Shared::global(cx);
-        let git = self.window.git.get(&launcher.root);
+        let git = self.window.git.get(root);
         // Not known yet blocks nothing: the cut says so itself if it fails.
-        let (in_git, forge) = launcher
-            .ground
-            .as_ref()
-            .map_or((true, None), |g| (g.in_git, g.forge));
+        let (in_git, forge) = ground.map_or((true, None), |g| (g.in_git, g.forge));
         // Who holds the place, said only for a workflow that works there.
-        let queued_behind = match (&workflow, &launcher.ground) {
+        let queued_behind = match (&workflow, ground) {
             (Ok(template), Some(ground)) => preflight::queued_behind_for(
                 template.place,
                 crate::task::holder_at(&ground.place, None, cx),
@@ -193,7 +203,7 @@ impl Shell {
             agent_configured: !shared.agents.is_empty(),
             mode: None,
             offered: agent.and_then(|spec| crate::unattended::offered(spec, cx)),
-            has_check: self.check_of(&launcher.root).is_some(),
+            has_check: self.check_of(root).is_some(),
             in_git,
             checked_out: git.map(|git| git.branch.clone()),
             forge: forge.map(|forge| crate::unattended::forge_facts(forge, cx)),
@@ -201,10 +211,10 @@ impl Shell {
             slots: None,
             queued_behind,
             review: None,
-            shared_checkout: self.own_session_in(&launcher.root, cx),
-            forge_read: launcher.ground.is_some(),
+            shared_checkout: self.own_session_in(root, cx),
+            forge_read: ground.is_some(),
         };
-        Some(preflight::preflight(preflight::Kind::NewRun, &facts))
+        preflight::preflight(preflight::Kind::NewRun, &facts)
     }
 
     /// A session of a person's own, not a run's, that has been prompted in
@@ -279,33 +289,7 @@ impl Shell {
                 cx.spawn_in(window, async move |shell, cx| {
                     let made = cx
                         .background_executor()
-                        .spawn(async move {
-                            // Git checks out repositories, not folders: the
-                            // worktree is of the repository the project sits
-                            // in, put beside it, and the run works in the same
-                            // folder of it the project is.
-                            let top = worktree::repo_top_blocking(&root).ok_or_else(|| {
-                                format!("{} is not in a git repository", root.display())
-                            })?;
-                            // ponytail: only local branches count here; a
-                            // `workflow/` branch whose worktree is gone but
-                            // whose pull request is on the forge is reused.
-                            // Ask the forge as an issue's claim does if that
-                            // is seen.
-                            let (branch, made) = worktree::cut_blocking(
-                                &top,
-                                &core::branch_for(&title),
-                                "HEAD",
-                                |_| Ok(false),
-                            )?;
-                            let dir = worktree::subtree_or(made, &top, &root);
-                            // The forge the branch goes to, for a step on it;
-                            // none, and the branch is the result.
-                            let forge = crate::unattended::connector_for(&top)
-                                .ok()
-                                .map(|forge| forge.name().to_string());
-                            Ok::<_, String>((dir, branch, forge))
-                        })
+                        .spawn(async move { cut_worktree_blocking(&root, &title) })
                         .await;
                     let _ = shell.update_in(cx, |shell: &mut Self, window, cx| match made {
                         Ok((dir, branch, forge)) => {
@@ -368,22 +352,37 @@ impl Shell {
     /// restart, as interrupted.
     fn start_workflow(
         &mut self,
-        mut setup: Setup,
+        setup: Setup,
         template: Template,
         brief: Brief,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        setup.agent = Shared::global(cx)
-            .agents
-            .first()
-            .map(|spec| spec.name.clone());
-        let id = onehand_core::task::new_id();
-        crate::task::submit(
-            Task::new(id, template, brief, setup),
-            window.window_handle(),
-            cx,
-        );
+        let task = new_task(setup, template, brief, cx);
+        crate::task::submit(task, window.window_handle(), cx);
+    }
+
+    /// [`Self::start_workflow`] for a task started from outside the window:
+    /// driven off screen, so nothing the person is looking at moves, and
+    /// answering where it landed. Returns its id.
+    pub(crate) fn start_workflow_told(
+        &mut self,
+        setup: Setup,
+        template: Template,
+        brief: Brief,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> (
+        String,
+        futures::channel::oneshot::Receiver<crate::task::Placed>,
+    ) {
+        let task = new_task(setup, template, brief, cx);
+        let id = task.id.clone();
+        crate::task::drive_off_screen(&id, cx);
+        (
+            id,
+            crate::task::submit_told(task, window.window_handle(), cx),
+        )
     }
 
     /// Drive task `id`, whose place it now holds: show its project, adding
@@ -453,13 +452,15 @@ impl Shell {
             );
         }
         let mut unstarted = Failure::Other;
-        let session = match task.issue() {
+        let off_screen = crate::task::take_off_screen(&id, cx);
+        let session = match (task.issue(), off_screen) {
             // An issue's run comes up off screen, on a project of its own that
             // the workspace file never holds unless it was kept, so nothing the
             // person is looking at moves. One picked by hand too: the person
             // stays on the issue, which says the run is starting and leads to
-            // its session.
-            Some(_) => {
+            // its session. A task a tool started too: it is on the Tasks page
+            // and its session in the rail, and the caret stays where it was.
+            (Some(_), _) | (None, true) => {
                 let spec = crate::unattended::spec_for(run.setup.agent.as_deref(), cx);
                 // No agent of that name configured any more is what the
                 // preflight would have blocked.
@@ -467,12 +468,12 @@ impl Shell {
                     unstarted = found_late(About::Agent);
                 }
                 let started = spec.and_then(|spec| self.run_unattended(dir, spec, cx));
-                if let Some((_, session)) = &started {
+                if let (Some((_, session)), Some(_)) = (&started, task.issue()) {
                     crate::unattended::opening(&task, session, cx);
                 }
                 started
             }
-            None => {
+            (None, false) => {
                 let idx = self.root_index(&dir).unwrap_or_else(|| {
                     let idx = self.window.workspace.add_root(dir);
                     self.refresh_git(cx);
@@ -525,6 +526,41 @@ impl Shell {
         let id = onehand_core::task::new_id();
         crate::task::submit(Task::check(id, check, setup), window.window_handle(), cx);
     }
+}
+
+/// A new task of `template` on `setup`, with the agent a new session takes.
+fn new_task(mut setup: Setup, template: Template, brief: Brief, cx: &gpui::App) -> Task {
+    setup.agent = Shared::global(cx)
+        .agents
+        .first()
+        .map(|spec| spec.name.clone());
+    Task::new(onehand_core::task::new_id(), template, brief, setup)
+}
+
+/// A worktree of the repository `root` sits in, cut for a task titled
+/// `title`: the folder the task works in, its branch, and the forge the
+/// branch goes to. Blocking.
+pub(crate) fn cut_worktree_blocking(
+    root: &std::path::Path,
+    title: &str,
+) -> Result<(PathBuf, String, Option<String>), String> {
+    // Git checks out repositories, not folders: the worktree is of the
+    // repository the project sits in, put beside it, and the run works in the
+    // same folder of it the project is.
+    let top = worktree::repo_top_blocking(root)
+        .ok_or_else(|| format!("{} is not in a git repository", root.display()))?;
+    // ponytail: only local branches count here; a `workflow/` branch whose
+    // worktree is gone but whose pull request is on the forge is reused. Ask
+    // the forge as an issue's claim does if that is seen.
+    let (branch, made) =
+        worktree::cut_blocking(&top, &core::branch_for(title), "HEAD", |_| Ok(false))?;
+    let dir = worktree::subtree_or(made, &top, root);
+    // The forge the branch goes to, for a step on it; none, and the branch is
+    // the result.
+    let forge = crate::unattended::connector_for(&top)
+        .ok()
+        .map(|forge| forge.name().to_string());
+    Ok((dir, branch, forge))
 }
 
 /// The brief the launcher's fields say, as typed so far.

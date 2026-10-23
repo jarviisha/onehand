@@ -376,13 +376,37 @@ fn the_starts_parse_their_input() {
 #[test]
 fn the_starts_refuse_malformed_input() {
     let cases = [
-        ("start_workflow", json!({"project": "app", "workflow": "fix"}), "title"),
-        ("start_workflow", json!({"project": "app", "title": "t"}), "workflow"),
+        (
+            "start_workflow",
+            json!({"project": "app", "workflow": "fix"}),
+            "title",
+        ),
+        (
+            "start_workflow",
+            json!({"project": "app", "title": "t"}),
+            "workflow",
+        ),
         ("start_issue", json!({"project": "app"}), "issue"),
-        ("start_issue", json!({"project": "app", "issue": "12"}), "issue"),
-        ("start_issue", json!({"project": "app", "issue": 0}), "issue"),
-        ("start_issue", json!({"project": "app", "issue": -1}), "issue"),
-        ("start_issue", json!({"project": "app", "issue": 1.5}), "issue"),
+        (
+            "start_issue",
+            json!({"project": "app", "issue": "12"}),
+            "issue",
+        ),
+        (
+            "start_issue",
+            json!({"project": "app", "issue": 0}),
+            "issue",
+        ),
+        (
+            "start_issue",
+            json!({"project": "app", "issue": -1}),
+            "issue",
+        ),
+        (
+            "start_issue",
+            json!({"project": "app", "issue": 1.5}),
+            "issue",
+        ),
     ];
     for (name, arguments, named) in cases {
         let why = refusal(call(name, arguments.clone()));

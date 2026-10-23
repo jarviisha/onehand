@@ -124,9 +124,7 @@ pub(crate) fn listen(cx: &mut App) {
             }
             cx.update(|cx| match incoming {
                 Incoming::Open(forwarded) => open_forwarded(forwarded, cx),
-                Incoming::Call(call, answer) => {
-                    let _ = answer.send(crate::control::perform(call, cx));
-                }
+                Incoming::Call(call, answer) => crate::control::perform(call, answer, cx),
             });
         }
     })
@@ -291,7 +289,7 @@ mod tests {
                 .as_array()
                 .unwrap()
                 .len(),
-            7
+            9
         );
         let call = json!({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
             "params": {"name": "list_agents", "arguments": {}}});

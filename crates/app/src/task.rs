@@ -11,7 +11,7 @@ use gpui_component::WindowExt as _;
 use onehand_core::task::work::UnderReview;
 use onehand_core::task::{Group, Task, Working, files, history, marks, queue};
 use onehand_core::workflow::{Run, Template};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -22,7 +22,7 @@ mod place;
 pub(crate) use driver::{approve, revise, start, stop};
 pub(crate) use listing::*;
 use place::ended;
-pub(crate) use place::{fail, release, request, stop_queued, submit};
+pub(crate) use place::{Placed, fail, release, request, stop_queued, submit, submit_told};
 
 /// Every task in this process and what each is doing.
 pub(crate) struct Tasks {
@@ -43,6 +43,9 @@ pub(crate) struct Tasks {
     /// history bounded.
     // ponytail: counts since boot only; persist it if people ask.
     removed: HashMap<PathBuf, usize>,
+    /// Tasks to be driven off screen the first time they are driven: ones a
+    /// tool started, which must not move what the person is looking at.
+    off_screen: HashSet<String>,
     /// How many commands, a check's or a step's, have not exited yet.
     commands: Arc<AtomicUsize>,
     writer: files::Writer,
@@ -68,6 +71,7 @@ impl Default for Tasks {
             draining: HashMap::new(),
             acting: HashMap::new(),
             removed: HashMap::new(),
+            off_screen: HashSet::new(),
             commands: Arc::default(),
             writer: files::Writer::spawn(files::dir()),
         }
@@ -233,6 +237,19 @@ pub(crate) fn boot(cx: &mut App) {
         });
     })
     .detach();
+}
+
+/// Drive task `id` off screen the first time it is driven.
+pub(crate) fn drive_off_screen(id: &str, cx: &mut App) {
+    cx.update_global::<Tasks, _>(|t, _| t.off_screen.insert(id.to_string()));
+}
+
+/// Whether task `id` is to be driven off screen this time, which only its
+/// first drive is: a Resume or Retry a person presses later shows as theirs.
+pub(crate) fn take_off_screen(id: &str, cx: &mut App) -> bool {
+    cx.try_global::<Tasks>()
+        .is_some_and(|t| t.off_screen.contains(id))
+        && cx.update_global::<Tasks, _>(|t, _| t.off_screen.remove(id))
 }
 
 /// Keep `task`, new, and write it.
