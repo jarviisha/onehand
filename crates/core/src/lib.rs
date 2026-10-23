@@ -30,6 +30,7 @@ pub mod chat;
 pub mod completion;
 pub mod config;
 pub mod connector;
+pub mod control;
 pub mod diff;
 pub mod editor;
 pub mod gitstat;
