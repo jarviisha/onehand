@@ -113,9 +113,11 @@ it back and says so.
   its agent and not saved, so a session reopened later starts off. While it is on, *Controls onehand* stands in the composer's status
   row; pressing it switches it off. A session the tools opened, or a run they started, starts
   off; an unattended run's session is never offered it.
-- **A set of tools.** Beside all and none, a session may stand with a set of tools by name, as a
-  schedule's sessions will: only those are listed, and a call to any other is refused naming it,
-  whatever asked for it.
+- **A set of tools.** Beside all and none, a session may stand with a set of tools by name: a
+  schedule's task's sessions stand with the schedule's, copied onto the task, and an issue they
+  write gets the schedule's labels. Only those tools are listed, and a call to any other is
+  refused naming it, whatever asked for it. Switching the session on in the composer gives it all
+  of them; switching it off goes back to the set. See [schedules.md](schedules.md).
 - **No reconnect.** While the switch is off, `tools/list` is empty and every `tools/call` is
   refused. Switching either way sends `notifications/tools/list_changed` to each of that session's
   connections; an agent that ignores it still cannot call anything while off.

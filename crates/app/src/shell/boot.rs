@@ -689,6 +689,7 @@ pub fn boot(cx: &mut App) {
     crate::unattended::boot(&unattended, cx);
     crate::workflow::boot(cx);
     crate::task::boot(cx);
+    crate::schedules::boot(cx);
     // Before the theme names the bundled families, and before the monospace
     // scan looks for them among what is installed.
     crate::fonts::register(cx);

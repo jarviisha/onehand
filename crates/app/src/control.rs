@@ -7,7 +7,6 @@
 
 use crate::instance::{Incoming, next_line};
 use crate::state::Shared;
-use crate::task::Placed;
 use futures::channel::mpsc::UnboundedSender;
 use futures::channel::oneshot;
 use gpui::{App, Window};
@@ -15,7 +14,7 @@ use onehand_core::chat::model::Link;
 use onehand_core::config::ControlConfig;
 use onehand_core::control::{self, Call, Conn, Handled, Peer, Standing};
 use onehand_core::task::Group;
-use onehand_core::workflow::{Brief, Place, Setup, Template};
+use onehand_core::workflow::Brief;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::path::{Component, PathBuf};
@@ -24,6 +23,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{LazyLock, Mutex};
 use tokio::io::{AsyncWriteExt as _, BufReader};
 use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
+
+mod start;
+
+pub(crate) use start::{Started, start_task};
+use start::{start, template};
 
 /// Whether a program outside onehand may use the tools. Read by the
 /// listener on every message it answers, so it is shared with that runtime
@@ -656,126 +660,6 @@ fn issue_file(
         .ok_or_else(|| "this workspace keeps no issues of its own".to_string())
 }
 
-/// The library's workflow whose id is `id`, read.
-fn template(id: &str, cx: &App) -> Result<Template, String> {
-    let entries = crate::workflow::templates(cx);
-    let entry = entries
-        .iter()
-        .find(|entry| entry.template.as_ref().is_ok_and(|t| t.id == id))
-        .ok_or_else(|| format!("no workflow with id {id}; list_workflows gives them"))?;
-    entry.template.clone()
-}
-
-/// What a start off screen carries beside its workflow and brief: who asked,
-/// what its sessions may use, and the agent and mode it runs with (none: the
-/// first agent, and its own mode).
-pub(crate) struct Started {
-    pub(crate) origin: onehand_core::task::Origin,
-    pub(crate) grant: onehand_core::task::Grant,
-    pub(crate) agent: Option<String>,
-    pub(crate) mode: Option<String>,
-}
-
-/// A tool's start, said as the caller reads it.
-async fn start(
-    window: gpui::AnyWindowHandle,
-    shell: gpui::Entity<crate::shell::Shell>,
-    root: PathBuf,
-    template: Template,
-    brief: Brief,
-    cx: &mut gpui::AsyncApp,
-) -> Result<String, String> {
-    let title = brief.title.clone();
-    let started = Started {
-        origin: onehand_core::task::Origin::Tool,
-        grant: onehand_core::task::Grant::default(),
-        agent: None,
-        mode: None,
-    };
-    match start_task(window, shell, root, template, brief, started, cx).await? {
-        (id, Placed::Started) => Ok(format!("Task {id} started: {title}")),
-        (id, Placed::Queued(said)) => Ok(format!("Task {id} queued: {said}")),
-        (_, Placed::Refused(why)) => Err(why),
-    }
-}
-
-/// Start a task of `template` on `root` with `brief`, as the launcher does
-/// and off screen, once what blocks the launcher's Run blocks nothing:
-/// on the checkout, or on a worktree cut for it first. Answers the task's id
-/// and where it landed.
-pub(crate) async fn start_task(
-    window: gpui::AnyWindowHandle,
-    shell: gpui::Entity<crate::shell::Shell>,
-    root: PathBuf,
-    template: Template,
-    brief: Brief,
-    started: Started,
-    cx: &mut gpui::AsyncApp,
-) -> Result<(String, Placed), String> {
-    let Started {
-        origin,
-        grant,
-        agent,
-        mode,
-    } = started;
-    let (blocks, check) = cx.update(|cx| {
-        let shell = shell.read(cx);
-        let found = shell.run_preflight(
-            &root,
-            Ok(template.clone()),
-            None,
-            agent.as_deref(),
-            mode.as_deref(),
-            cx,
-        );
-        let blocks: Vec<String> = found
-            .into_iter()
-            .filter(|f| f.blocks)
-            .map(|f| f.text)
-            .collect();
-        (blocks, shell.check_of(&root))
-    });
-    if !blocks.is_empty() {
-        return Err(blocks.join("; "));
-    }
-    let mut setup = Setup {
-        repo: root.clone(),
-        dir: root.clone(),
-        branch: None,
-        agent,
-        check,
-        mode,
-        forge: None,
-    };
-    match template.place {
-        Place::Checkout => {}
-        Place::Worktree => {
-            let title = brief.title.clone();
-            let (dir, branch, forge) = cx
-                .background_executor()
-                .spawn(async move { crate::shell::cut_worktree_blocking(&root, &title) })
-                .await?;
-            setup = Setup {
-                dir,
-                branch: Some(branch),
-                forge,
-                ..setup
-            };
-        }
-    }
-    let (id, told) = cx
-        .update(|cx| {
-            crate::state::with_shell(window, cx, |shell, window, cx| {
-                shell.start_workflow_told(setup, template, brief, origin, grant, window, cx)
-            })
-        })
-        .ok_or("the window closed")?;
-    let placed = told
-        .await
-        .map_err(|_| "the task did not start".to_string())?;
-    Ok((id, placed))
-}
-
 /// Send `prompt` as `session`'s first message once its agent is up, as a
 /// person would after watching it connect; dropped if it never comes up.
 fn send_when_connected(
@@ -820,70 +704,4 @@ fn group_said(group: Group) -> &'static str {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use futures::StreamExt as _;
-
-    fn standing_of(token: &str) -> Standing {
-        standing(&Peer::Session(token.to_string()))
-    }
-
-    #[test]
-    fn a_granted_session_stands_with_its_set_until_switched_on() {
-        let uid = 900_002;
-        let token = Token::mint();
-        token.claim(uid);
-        let name = token.0.clone();
-        grant(
-            uid,
-            &onehand_core::task::Grant {
-                tools: vec!["list_issues".into()],
-                labels: vec!["auto".into()],
-            },
-        );
-        assert!(matches!(standing_of(&name), Standing::Only(set) if set == ["list_issues"]));
-        assert_eq!(sessions().labels[&uid], ["auto"]);
-        switch(uid, true);
-        assert!(matches!(standing_of(&name), Standing::On));
-        switch(uid, false);
-        assert!(matches!(standing_of(&name), Standing::Only(_)));
-        forget(uid);
-        assert!(matches!(standing_of(&name), Standing::Off));
-        assert!(!sessions().labels.contains_key(&uid));
-    }
-
-    #[test]
-    fn a_token_speaks_for_its_session_until_it_goes() {
-        let uid = 900_001;
-        let token = Token::mint();
-        let name = token.0.clone();
-        // A warm adapter's: known, and offered nothing.
-        assert!(matches!(standing_of(&name), Standing::Off));
-        token.claim(uid);
-        assert!(matches!(standing_of(&name), Standing::Off));
-
-        let (told, mut heard) = futures::channel::mpsc::unbounded();
-        let (gone, _) = futures::channel::mpsc::unbounded::<String>();
-        sessions()
-            .conns
-            .entry(name.clone())
-            .or_default()
-            .extend([told, gone]);
-        switch(uid, true);
-        assert!(switched_on(uid));
-        assert!(matches!(standing_of(&name), Standing::On));
-        let note = futures::executor::block_on(heard.next()).unwrap();
-        assert!(note.contains("list_changed"), "{note}");
-        // The connection whose other end went is dropped, the live one kept.
-        assert_eq!(sessions().conns[&name].len(), 1);
-        // Switching to where it is already tells nobody.
-        switch(uid, true);
-        assert!(heard.try_recv().is_err());
-
-        forget(uid);
-        assert!(!switched_on(uid));
-        drop(token);
-        assert!(matches!(standing_of(&name), Standing::Refused(_)));
-        assert!(!sessions().conns.contains_key(&name));
-    }
-}
+mod tests;

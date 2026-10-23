@@ -281,8 +281,8 @@ fn minute_of(t: u64) -> u64 {
 /// brief, which holds the schedule's prompt. The prompt goes in the brief
 /// rather than the step because a step's prompt may only name what a
 /// workflow knows, and a person's prompt may hold any braces it likes.
-pub fn prompt_template(name: &str) -> Template {
-    let mut template = Template::blank(name);
+pub fn prompt_template() -> Template {
+    let mut template = Template::blank("Prompt");
     template.steps.push(StepSpec {
         id: "prompt".to_string(),
         label: "Prompt".to_string(),

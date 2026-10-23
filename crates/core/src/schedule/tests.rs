@@ -353,7 +353,8 @@ fn a_rare_expression_is_cheap_in_the_machines_own_zone() {
 
 #[test]
 fn the_prompt_template_validates() {
-    let template = prompt_template("Nightly code review");
+    let template = prompt_template();
+    assert_eq!(template.name, "Prompt");
     assert!(crate::workflow::validate(&template).is_empty());
     assert_eq!(template.place, crate::workflow::Place::Checkout);
     let s = daily_at_nine();
@@ -365,7 +366,7 @@ fn the_prompt_template_validates() {
 #[test]
 fn fill_keeps_a_steps_own_settings() {
     use crate::workflow::{StepKind, StepSpec};
-    let mut template = prompt_template("t");
+    let mut template = prompt_template();
     template.steps.push(StepSpec {
         id: "own".into(),
         label: "Own".into(),

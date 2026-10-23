@@ -373,8 +373,7 @@ impl Shell {
         setup: Setup,
         template: Template,
         brief: Brief,
-        origin: onehand_core::task::Origin,
-        grant: onehand_core::task::Grant,
+        given: (onehand_core::task::Origin, onehand_core::task::Grant),
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> (
@@ -388,6 +387,7 @@ impl Shell {
             self.refresh_git(cx);
             self.save_workspace(window, cx);
         }
+        let (origin, grant) = given;
         let task = Task {
             origin: Some(origin),
             grant,

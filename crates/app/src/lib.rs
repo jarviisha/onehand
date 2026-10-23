@@ -30,6 +30,7 @@ mod keymap;
 mod rail;
 mod remote;
 mod saves;
+mod schedules;
 mod settings;
 pub mod shell;
 mod state;

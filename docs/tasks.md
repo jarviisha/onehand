@@ -28,6 +28,10 @@ running, what needs me, and what has finished.
 - **The project page links to this page** with one line, e.g. *2 tasks need attention · 1 queued*,
   drawn only when a task of the project needs attention, runs or waits, so two lists can never
   disagree. Beside *New session* it offers **Run check** when the project has a check command.
+- **A row says where its task came from** when a person did not start it: a schedule's task reads
+  with the schedule's name before its workflow's (*Nightly code review · Prompt*), one a tool
+  started with *by a tool*, as an unattended run's reads with its issue. Kept on the task, so it
+  holds after the schedule is renamed or deleted. See [schedules.md](schedules.md).
 - **An unattended run is a task like any other**: an issue worked by the configured workflow,
   listed with the issue it works before its workflow's name (*#57 · Work an issue*), and stopped,
   resumed, retried and dismissed from its row. See [unattended.md](unattended.md).

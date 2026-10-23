@@ -35,8 +35,9 @@ The features that span core and app, each as built:
 - [docs/tasks.md](docs/tasks.md): the Tasks page and the task model behind it.
 - [docs/unattended.md](docs/unattended.md): unattended runs end to end.
 - [docs/agents.md](docs/agents.md): built-in and declared agents, presets and their migration.
-- [docs/control.md](docs/control.md): the socket beside the instance lock and what a second
-  launch says over it.
+- [docs/control.md](docs/control.md): the socket beside the instance lock, a second launch, and
+  onehand's tools for an outside program or a session's agent.
+- [docs/schedules.md](docs/schedules.md): schedules, the clock, and the tasks they start.
 
 Everything else (chat pane, Workbench, rail, terminal, persistence, config) keeps its reasons in
 the comments beside its code, starting from each module's header; `crates/app/src/lib.rs` and
