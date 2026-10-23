@@ -350,3 +350,50 @@ fn a_rare_expression_is_cheap_in_the_machines_own_zone() {
         began.elapsed()
     );
 }
+
+#[test]
+fn the_prompt_template_validates() {
+    let template = prompt_template();
+    assert_eq!(template.name, "Prompt");
+    assert!(crate::workflow::validate(&template).is_empty());
+    assert_eq!(template.place, crate::workflow::Place::Checkout);
+    let s = daily_at_nine();
+    let brief = brief(&s);
+    assert_eq!(brief.title, "Nightly code review");
+    assert_eq!(brief.body, "review");
+}
+
+#[test]
+fn fill_keeps_a_steps_own_settings() {
+    use crate::workflow::{StepKind, StepSpec};
+    let mut template = prompt_template();
+    template.steps.push(StepSpec {
+        id: "own".into(),
+        label: "Own".into(),
+        kind: StepKind::Agent {
+            prompt: "{brief}".into(),
+            gates: Vec::new(),
+            keep_answer: false,
+            mode: Some("plan".into()),
+            options: BTreeMap::from([("model".to_string(), "cheap".to_string())]),
+        },
+    });
+    let options = BTreeMap::from([
+        ("model".to_string(), "strong".to_string()),
+        ("effort".to_string(), "high".to_string()),
+    ]);
+    let filled = fill(template, Some("acceptEdits"), &options);
+    let settings: Vec<_> = filled
+        .steps
+        .iter()
+        .map(|step| match &step.kind {
+            StepKind::Agent { mode, options, .. } => (mode.clone(), options.clone()),
+            _ => unreachable!(),
+        })
+        .collect();
+    assert_eq!(settings[0].0.as_deref(), Some("acceptEdits"));
+    assert_eq!(settings[0].1, options);
+    assert_eq!(settings[1].0.as_deref(), Some("plan"));
+    assert_eq!(settings[1].1["model"], "cheap");
+    assert_eq!(settings[1].1["effort"], "high");
+}

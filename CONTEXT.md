@@ -193,6 +193,12 @@ found: each finding blocks the start or only says something, and says where it i
 judges the configuration that will actually run, which for a Resume or a Retry is the run's own.
 _Avoid_: precheck, validation (that is the workflow's own)
 
+**Schedule**:
+A project, what to start there (a session with a prompt, or a workflow on a brief), the agent and
+how it runs, the tools its agent may use, and when, as a cron expression; it starts a task at each
+due time while onehand is open, and once for the times it missed while it was not.
+_Avoid_: cron job, timer, job
+
 ## Unattended runs
 
 **Unattended run**:

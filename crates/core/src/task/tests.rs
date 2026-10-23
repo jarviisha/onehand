@@ -808,3 +808,14 @@ fn the_holder_of_a_place_is_named_by_it() {
     assert_eq!(queue.holder_at(Path::new("/p")), Some("a"));
     assert_eq!(queue.holder_at(Path::new("/q")), None);
 }
+
+#[test]
+fn old_task_files_load_with_no_origin_and_no_grant() {
+    let task = task("t1");
+    let mut json: serde_json::Value = serde_json::to_value(&task).unwrap();
+    json.as_object_mut().unwrap().remove("origin");
+    json.as_object_mut().unwrap().remove("grant");
+    let back: Task = serde_json::from_value(json).unwrap();
+    assert_eq!(back.origin, None);
+    assert_eq!(back.grant, Grant::default());
+}

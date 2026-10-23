@@ -48,6 +48,12 @@ minor bump may break any of them.
 
 ### The window
 
+- Schedules start work by the clock while onehand is open: a session with a prompt, or a workflow
+  on a brief, on a project, with its own agent, mode, model, tools and issue labels, at the times a
+  cron expression names. A time missed while onehand was closed runs once when it opens, or is
+  skipped; one that finds the last run still going is skipped or queued; each as the schedule says.
+  Every start is a task that says it came from its schedule, and its end is a desktop
+  notification. Kept in `schedules.toml`; the page to edit them comes next.
 - onehand is an MCP server on its socket. With *Outside control* on in Settings ▸ Connections (off
   by default), a program run as you lists projects, agents, workflows and tasks, opens a session
   on a project with a first prompt, starts a workflow on a brief or on one of a project's issues
