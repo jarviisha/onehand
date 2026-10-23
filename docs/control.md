@@ -2,7 +2,7 @@
 
 How onehand is driven from outside a window: the socket the running process listens on, what a
 second launch does with it, and onehand's own tools, which a program outside onehand may call over
-it when Settings allows. The tools for an agent in a session are not built yet.
+it when Settings allows, or the agent of a session a person has switched on.
 
 **No tool answers a card, a permission or an approval.** Those always wait for a person; no tool
 is written for them.
@@ -92,3 +92,28 @@ Settings ▸ Connections, *Outside control*: off by default, kept as `control.ou
 `onehand.toml`. The section names the socket's path and says what a program may and may never do.
 Turning it on or off holds at once, for clients already connected too; a write that fails puts
 it back and says so.
+
+## A session's agent
+
+- **Every session's agent is given one MCP server**, in `session/new` and `session/load`: onehand
+  itself, the stdio kind every ACP agent takes, as `onehand --mcp-proxy <socket> <token>`. `main`
+  runs the proxy before the instance lock and exits when the socket closes; it carries the agent's
+  lines to the socket and back, putting the session's token on `initialize` whatever the agent
+  wrote there. No flag becomes a folder: `--mcp-proxy` takes exactly its two arguments.
+- **A token per started agent.** It is minted when the agent is started, which for the warm
+  adapter is before any session exists, and passed to the session that claims it; it goes with
+  the session. A token no session holds yet is known and switched off, so an agent that starts its
+  servers at `session/new` is connected, offered nothing, and told when that changes. A token
+  whose session closed is refused as no such session. The token is on the proxy's command line,
+  so another process of the same user can read it, as it can read the config.
+- **The switch is the session's**, in the composer's `+` menu: *Let the agent control onehand*,
+  off by default, kept by the session through a restart of its agent and not saved, so a session
+  reopened later starts off. While it is on, *Controls onehand* stands in the composer's status
+  row; pressing it switches it off. A session the tools opened, or a run they started, starts
+  off; an unattended run's session is never offered it.
+- **No reconnect.** While the switch is off, `tools/list` is empty and every `tools/call` is
+  refused. Switching either way sends `notifications/tools/list_changed` to each of that session's
+  connections; an agent that ignores it still cannot call anything while off.
+- **A session's call lands in its own window.** `open_file` resolves a relative path against the
+  session's project. `stop_task` refuses the task whose session is calling. A session's tools may
+  have at most four sessions open at once; the fifth `open_session` is refused, naming the four.

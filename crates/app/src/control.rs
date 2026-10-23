@@ -146,9 +146,9 @@ impl Drop for Token {
 /// Whether session `uid` can be switched on at all: not when it is an
 /// unattended run's, whose agent works with nobody watching.
 pub(crate) fn offered(uid: u64, cx: &App) -> bool {
-    !crate::task::shown(uid, cx)
+    crate::task::shown(uid, cx)
         .and_then(|shown| crate::task::task(&shown.task, cx))
-        .is_some_and(|task| task.issue().is_some())
+        .is_none_or(|task| task.issue().is_none())
 }
 
 /// Whether session `uid`'s agent may use the tools.
@@ -699,7 +699,7 @@ mod tests {
         assert_eq!(sessions().conns[&name].len(), 1);
         // Switching to where it is already tells nobody.
         switch(uid, true);
-        assert!(heard.try_next().is_err());
+        assert!(heard.try_recv().is_err());
 
         forget(uid);
         assert!(!switched_on(uid));
