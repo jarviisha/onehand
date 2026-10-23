@@ -1,6 +1,6 @@
 # R4: schedules, work onehand starts by the clock
 
-- Status: draft for the owner's approval.
+- Status: approved by the owner on 2026-10-23.
 - Source: the architecture audit of 2026-10-22 (local notes), R4 in its plan; R3's non-goal
   "starting runs by time". The conversation of 2026-10-23 settled what a schedule is, what it may
   start, where it lives and what its agent may do.
@@ -48,6 +48,10 @@ background process with no window: those are not wanted.
   the window's projects with the projects filter the Tasks page has; and a *Schedules* box on each
   project's page listing that project's, leading to the page.
 - **Told when it ends**: a desktop notification, and the task on the Tasks page.
+- **A task says where it came from.** A task a schedule started reads with the schedule's name
+  before its workflow's (*Nightly code review · Work in checkout*), as an unattended run's reads
+  with its issue; one a tool started (R3) reads *by a tool* there. Kept on the task, so it holds
+  after the schedule is renamed or deleted. Tasks a person started read as today.
 - **Set per schedule, in its form** (each with the default shown):
   - **Labels for the issues it creates**, none by default. Naming unattended's trigger label
     (`auto`) here hands every issue the schedule finds straight to unattended runs; leaving it
@@ -170,7 +174,7 @@ session the schedule's tools open, or a run they start, starts off, as in R3.
 |---|---|---|
 | 1 | Core `schedule` (shape, cron, quick choices, due rule) and `schedules.toml`, with tests | none |
 | 2 | Tool sets in core `control`; `list_issues` and `create_issue` | a session can be given some tools; agents can read and write issues |
-| 3 | The clock, firing, catch-up, overlap and notifications; scheduled tasks | schedules in the file run |
+| 3 | The clock, firing, catch-up, overlap and notifications; scheduled tasks; where a task came from | schedules in the file run, and tasks say where they came from |
 | 4 | The Schedules page, the project page's box, the form | schedules are made and edited in the app |
 
 Each step updates its owning documents: a new `docs/schedules.md`, `docs/control.md` (tool sets,
