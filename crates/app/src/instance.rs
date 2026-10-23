@@ -314,7 +314,7 @@ mod tests {
                 .as_array()
                 .unwrap()
                 .len(),
-            9
+            11
         );
         let call = json!({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
             "params": {"name": "list_agents", "arguments": {}}});

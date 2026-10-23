@@ -99,6 +99,8 @@ struct Sessions {
     conns: HashMap<String, Vec<UnboundedSender<String>>>,
     /// The sessions each session's tools opened.
     opened: HashMap<u64, Vec<u64>>,
+    /// The labels an issue each session's agent writes gets: its schedule's.
+    labels: HashMap<u64, Vec<String>>,
 }
 
 static SESSIONS: LazyLock<Mutex<Sessions>> = LazyLock::new(Mutex::default);
@@ -184,6 +186,7 @@ pub(crate) fn forget(uid: u64) {
     let mut sessions = sessions();
     sessions.on.remove(&uid);
     sessions.opened.remove(&uid);
+    sessions.labels.remove(&uid);
 }
 
 /// Said when a call's answer cannot come, because the app is going.
@@ -376,6 +379,72 @@ fn perform_now(
             .detach();
             Ok(String::new())
         }
+        Call::ListIssues { project } => {
+            let file = issue_file(&shell, &projects, project, &caller, cx)?;
+            let answer = answer.take();
+            cx.spawn(async move |cx| {
+                let read = cx
+                    .background_executor()
+                    .spawn(async move { onehand_core::issues::load_blocking(&file) })
+                    .await;
+                let outcome = read.map(|kept| {
+                    let lines = kept
+                        .listed()
+                        .into_iter()
+                        .filter(|issue| issue.open)
+                        .map(|issue| format!("#{} — {}", issue.number, issue.title))
+                        .collect();
+                    control::listed(lines, "No open issue in this project")
+                });
+                if let Some(answer) = answer {
+                    let _ = answer.send(outcome);
+                }
+            })
+            .detach();
+            Ok(String::new())
+        }
+        Call::CreateIssue {
+            project,
+            title,
+            body,
+        } => {
+            let file = issue_file(&shell, &projects, project, &caller, cx)?;
+            let draft = onehand_core::issues::Draft {
+                title: title.trim().to_string(),
+                body,
+                labels: caller
+                    .as_ref()
+                    .and_then(|(uid, _)| sessions().labels.get(uid).cloned())
+                    .unwrap_or_default(),
+            };
+            let answer = answer.take();
+            cx.spawn(async move |cx| {
+                use onehand_core::issues::Created;
+                let shown = draft.title.clone();
+                let written = cx
+                    .background_executor()
+                    .spawn(async move {
+                        onehand_core::issues::create_unless_open_blocking(&file, draft)
+                    })
+                    .await;
+                let outcome = match written {
+                    Ok(Created::New(number)) => {
+                        // Read again wherever the issues are on screen.
+                        cx.update(|cx| shell.update(cx, |shell, cx| shell.refresh_worktree(cx)));
+                        Ok(format!("Wrote issue #{number}: {shown}"))
+                    }
+                    Ok(Created::Already(number)) => {
+                        Ok(format!("Issue #{number} is already open with that title"))
+                    }
+                    Err(why) => Err(why),
+                };
+                if let Some(answer) = answer {
+                    let _ = answer.send(outcome);
+                }
+            })
+            .detach();
+            Ok(String::new())
+        }
         Call::ListProjects => {
             let shell = shell.read(cx);
             let lines = projects
@@ -546,6 +615,26 @@ fn perform_now(
             ))
         }
     }
+}
+
+/// The issue file of the project `named`, or of the calling session's when
+/// none is named, or why there is none.
+fn issue_file(
+    shell: &gpui::Entity<crate::shell::Shell>,
+    projects: &[(String, PathBuf)],
+    named: Option<String>,
+    caller: &Option<(u64, PathBuf)>,
+    cx: &App,
+) -> Result<PathBuf, String> {
+    let root = match (named, caller) {
+        (Some(named), _) => control::pick_project(projects, &named)?.to_path_buf(),
+        (None, Some((_, project))) => project.clone(),
+        (None, None) => return Err("name a project".to_string()),
+    };
+    shell
+        .read(cx)
+        .issues_file(&root)
+        .ok_or_else(|| "this workspace keeps no issues of its own".to_string())
 }
 
 /// The library's workflow whose id is `id`, read.
