@@ -392,8 +392,11 @@ fn the_search_passes_over_what_needs_a_check_and_takes_the_next() {
         has_check: false,
     };
     let mut checked = Vec::new();
-    let begun = begin_blocking(&[workable], "auto", &choosing, &[], &judging, &mut checked);
-    let claimed = begun.unwrap().ok().unwrap();
+    let found = find_blocking(&[workable], "auto", &choosing, &[], &judging, &mut checked);
+    let claimed = claim_found_blocking(found.unwrap(), "auto")
+        .unwrap()
+        .ok()
+        .unwrap();
     assert_eq!(claimed.issue.number, 2);
     assert_eq!(claimed.workflow, "plain");
     assert!(checked.is_empty());
@@ -561,4 +564,26 @@ fn check_missing_says_where_to_set_one() {
         .ends_with("; set one on the project's page"));
     assert_eq!(check_missing(&t, true), None);
     assert_eq!(check_missing(&template("plain", false), false), None);
+}
+
+/// A task taken up on the issue between the search and the claim (a Retry
+/// pressed meanwhile) leaves it unclaimed; one that ended does not.
+#[test]
+fn a_task_taken_up_after_the_search_keeps_the_issue_unclaimed() {
+    static FORGE: Fake = Fake {
+        name: "Forge",
+        ..Fake::SERVING
+    };
+    let tracker = Tracker::Forge(&FORGE);
+    assert!(still_free(&[], &tracker, 7));
+    assert!(still_free(&[earlier(7, "b", false, true)], &tracker, 7));
+    assert!(!still_free(&[earlier(7, "b", true, true)], &tracker, 7));
+    // Another issue's task is no matter, and the newest task on this one is
+    // what counts.
+    assert!(still_free(&[earlier(8, "b", true, true)], &tracker, 7));
+    assert!(still_free(
+        &[earlier(7, "a", true, true), earlier(7, "b", false, true)],
+        &tracker,
+        7
+    ));
 }

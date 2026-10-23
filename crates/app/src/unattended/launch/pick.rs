@@ -58,10 +58,12 @@ pub fn start_picked(
     cx.spawn(async move |cx| {
         let number = row.issue.number;
         let named = tracker.named(&row.issue);
-        let begun = cx
+        // Refused before the claim: claimed twice, it would be worked twice,
+        // on two branches.
+        let taking = cx
             .background_executor()
             .spawn({
-                let named = named.clone();
+                let (named, tracker, repo) = (named.clone(), tracker.clone(), repo.clone());
                 async move {
                     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         // An issue on the forge goes back to that forge; one kept
@@ -70,37 +72,9 @@ pub fn start_picked(
                             Tracker::Forge(forge) | Tracker::Synced { forge, .. } => Some(*forge),
                             Tracker::Local(_) => connector_for(&repo).ok(),
                         };
-                        // Refused before the claim: claimed twice, it would be
-                        // worked twice, on two branches.
-                        let taking = taking_blocking(&earlier, &tracker, number, &repo, forge)
-                            .map_err(|skip| skip.said(&named))?;
-                        core::claim_picked_blocking(
-                            &tracker,
-                            &repo,
-                            &row,
-                            &label,
-                            taking.answering(),
-                        )
-                        .map_err(|why| format!("Could not start on issue {named}: {why}"))?;
-                        let lacks = template::lacking(
-                            row.issue.body_text(),
-                            &template::for_project_blocking(&repo),
-                        )
-                        .map(|lacks| lacks.note());
-                        Ok(
-                            prepare_blocking(repo, tracker, forge, row.issue, workflow, taking)
-                                .map(|claimed| {
-                                    let claimed = core::Claimed {
-                                        instructions,
-                                        // The form said it, but its report is
-                                        // read later, by whoever judges why
-                                        // the run went wrong.
-                                        notes: lacks.into_iter().collect(),
-                                        ..claimed
-                                    };
-                                    Landed::new(claimed, Some(window))
-                                }),
-                        )
+                        taking_blocking(&earlier, &tracker, number, &repo, forge)
+                            .map(|taking| (forge, taking))
+                            .map_err(|skip| skip.said(&named))
                     }))
                     .unwrap_or_else(|_| {
                         Err("onehand panicked while claiming the issue".to_string())
@@ -108,6 +82,60 @@ pub fn start_picked(
                 }
             })
             .await;
+        // Checked again here, where tasks start: a Retry pressed while the
+        // pull request was looked up would otherwise have the issue claimed
+        // under it.
+        let taking = cx.update(|cx| {
+            taking.and_then(|taking| {
+                if core::still_free(&super::earlier(cx), &tracker, number) {
+                    Ok(taking)
+                } else {
+                    Err(core::Skip::Busy.said(&named))
+                }
+            })
+        });
+        let begun = match taking {
+            Err(why) => Err(why),
+            Ok((forge, taking)) => {
+                let named = named.clone();
+                cx.background_executor()
+                    .spawn(async move {
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            core::claim_picked_blocking(
+                                &tracker,
+                                &repo,
+                                &row,
+                                &label,
+                                taking.answering(),
+                            )
+                            .map_err(|why| format!("Could not start on issue {named}: {why}"))?;
+                            let lacks = template::lacking(
+                                row.issue.body_text(),
+                                &template::for_project_blocking(&repo),
+                            )
+                            .map(|lacks| lacks.note());
+                            Ok(
+                                prepare_blocking(repo, tracker, forge, row.issue, workflow, taking)
+                                    .map(|claimed| {
+                                        let claimed = core::Claimed {
+                                            instructions,
+                                            // The form said it, but its report is
+                                            // read later, by whoever judges why
+                                            // the run went wrong.
+                                            notes: lacks.into_iter().collect(),
+                                            ..claimed
+                                        };
+                                        Landed::new(claimed, Some(window))
+                                    }),
+                            )
+                        }))
+                        .unwrap_or_else(|_| {
+                            Err("onehand panicked while claiming the issue".to_string())
+                        })
+                    })
+                    .await
+            }
+        };
         cx.update(|cx| {
             let unstarted = match begun {
                 // Nothing was claimed, so the issue has nothing to be told; the

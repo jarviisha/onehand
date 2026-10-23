@@ -64,6 +64,9 @@ minor bump may break any of them.
 
 ### Fixed
 
+- A Retry pressed on an issue's task while an unattended search or a pick was looking at that issue
+  no longer has the issue claimed under it, spending its review request or opening a second branch.
+  The issue keeps its label for the next look, and a pick says the issue is being worked.
 - An agent's file write that names no content is refused instead of emptying the file.
 - An adapter that answers a turn with an error and exits says why, instead of only that it exited.
 - Releasing an agent's terminal stops a command that ignores the hangup, and what it started.

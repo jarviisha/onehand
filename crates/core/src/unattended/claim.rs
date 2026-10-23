@@ -373,12 +373,7 @@ pub(crate) fn trackers_blocking(
         .collect()
 }
 
-/// Find an issue, claim it and make its worktree. Blocking.
-///
-/// `None` when there is nothing to do — or when the claim itself failed, in
-/// which case there is nobody to tell but stderr, since an issue the app could
-/// not edit is one it cannot comment on either. After the claim every failure is
-/// the issue's to hear about.
+/// Find the issue to take next. Blocking; `None` when there is nothing to do.
 ///
 /// A project whose search failed has the reason added to `checked`, so its
 /// row says why rather than showing it as workable.
@@ -391,14 +386,18 @@ pub(crate) fn trackers_blocking(
 /// **A new task is preflighted before its claim**, as a pick is: what blocks
 /// it is said on the project's row, and the issue keeps its label for when
 /// it is fixed. A review answered is judged by its own refusals instead.
-pub fn begin_blocking(
+///
+/// Nothing is claimed here: the app looks again, on its own thread, that no
+/// task took the issue up meanwhile (`Found::still_free`), and only then
+/// claims it with `claim_found_blocking`.
+pub fn find_blocking(
     roots: &[Workable],
     label: &str,
     choosing: &Choosing,
     earlier: &[Earlier],
     judging: &Judging,
     checked: &mut Vec<(PathBuf, Served)>,
-) -> Option<Result<Claimed, Unstarted>> {
+) -> Option<Found> {
     // The oldest labelled issue no task is still working on: one being
     // worked is passed over, never claimed twice, and never in the way of
     // the next.
@@ -500,13 +499,68 @@ pub fn begin_blocking(
         }
         None
     })?;
-    let answering = taking.answering();
+    let workflow = choosing.workflow_for(&row.labels, label).to_string();
+    Some(Found {
+        repo,
+        tracker,
+        forge,
+        row,
+        taking,
+        workflow,
+        notes,
+    })
+}
+
+/// An issue the search found to take, not yet claimed.
+pub struct Found {
+    repo: PathBuf,
+    tracker: Tracker,
+    forge: Option<&'static dyn Connector>,
+    row: super::IssueRow,
+    taking: Taking,
+    workflow: String,
+    notes: Vec<String>,
+}
+
+impl Found {
+    /// Whether no task took the issue up after the search looked: a Retry
+    /// pressed meanwhile would otherwise have its review request, or a second
+    /// branch, spent on it.
+    pub fn still_free(&self, earlier: &[Earlier]) -> bool {
+        still_free(earlier, &self.tracker, self.row.issue.number)
+    }
+}
+
+/// Whether the newest task on issue `number` of `tracker`, if any, is idle,
+/// as `taking_blocking` judged it from an older `earlier`.
+pub fn still_free(earlier: &[Earlier], tracker: &Tracker, number: u64) -> bool {
+    let at = tracker.to_ref();
+    !earlier
+        .iter()
+        .rfind(|e| e.tracker == at && e.number == number)
+        .is_some_and(|e| e.working)
+}
+
+/// Claim what the search found and make what it is worked on. Blocking.
+///
+/// `None` when the claim itself failed, in which case there is nobody to tell
+/// but stderr, since an issue the app could not edit is one it cannot comment
+/// on either. After the claim every failure is the issue's to hear about.
+pub fn claim_found_blocking(found: Found, label: &str) -> Option<Result<Claimed, Unstarted>> {
+    let Found {
+        repo,
+        tracker,
+        forge,
+        row,
+        taking,
+        workflow,
+        notes,
+    } = found;
     let number = row.issue.number;
-    if let Err(why) = super::claim_blocking(&tracker, &repo, number, label, answering) {
+    if let Err(why) = super::claim_blocking(&tracker, &repo, number, label, taking.answering()) {
         eprintln!("onehand: could not claim issue #{number}: {why}");
         return None;
     }
-    let workflow = choosing.workflow_for(&row.labels, label).to_string();
     Some(
         prepare_blocking(repo, tracker, forge, row.issue, workflow, taking)
             .map(|claimed| Claimed { notes, ..claimed }),
