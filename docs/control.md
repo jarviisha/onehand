@@ -75,6 +75,8 @@ answer, and exits.
 | `list_tasks` | optional `project` | the tasks of the window's projects, or of one | `id — title — state — step — next: …`, the next actions as the Tasks page offers them |
 | `stop_task` | `task` id | as the Tasks page's Stop, for a task of the window's projects | `Stopping <title>`, or why not |
 | `open_file` | `path` | opens the file in the Workbench and shows the Workbench, without taking focus | what it opened, or why not |
+| `list_issues` | optional `project` | the project's own open issues, as its Issues tab keeps them (a synced project's imported ones too); the calling session's project when none is named | `#<n> — <title>`, one per line |
+| `create_issue` | optional `project`, `title`, optional `body` | writes one issue into the project's own issue file, read again wherever the issues are on screen; an open issue with the same title (case and spaces aside) is not written again. It takes no labels: the issue gets those of the calling session's schedule, so no agent labels its own issue for an unattended run | `Wrote issue #<n>: …`, or `Issue #<n> is already open with that title` |
 
 - **A task a tool starts is driven off screen**, the way an issue's run is: its session is in the
   rail and the task on the Tasks page, and nothing the person is looking at moves. Only its first
@@ -111,6 +113,9 @@ it back and says so.
   its agent and not saved, so a session reopened later starts off. While it is on, *Controls onehand* stands in the composer's status
   row; pressing it switches it off. A session the tools opened, or a run they started, starts
   off; an unattended run's session is never offered it.
+- **A set of tools.** Beside all and none, a session may stand with a set of tools by name, as a
+  schedule's sessions will: only those are listed, and a call to any other is refused naming it,
+  whatever asked for it.
 - **No reconnect.** While the switch is off, `tools/list` is empty and every `tools/call` is
   refused. Switching either way sends `notifications/tools/list_changed` to each of that session's
   connections; an agent that ignores it still cannot call anything while off.

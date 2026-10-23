@@ -39,6 +39,14 @@ pub enum Call {
     OpenFile {
         path: PathBuf,
     },
+    ListIssues {
+        project: Option<String>,
+    },
+    CreateIssue {
+        project: Option<String>,
+        title: String,
+        body: String,
+    },
     OpenSession {
         project: String,
         agent: String,
@@ -65,6 +73,9 @@ pub enum Standing {
     /// Connected, and allowed nothing until switched on: the tools are not
     /// listed and no call is made.
     Off,
+    /// These tools and no other, by name: a schedule's session. Only they
+    /// are listed, and a call to another is refused whatever asked for it.
+    Only(Vec<String>),
     /// Not allowed to talk at all, and why.
     Refused(String),
 }
@@ -152,17 +163,28 @@ pub fn handle(conn: &mut Conn, line: &str, standing: impl Fn(&Peer) -> Standing)
             if let Standing::Refused(why) = &standing {
                 return fail(NOT_ALLOWED, why);
             }
-            let on = matches!(standing, Standing::On);
+            let allowed = |name: &str| match &standing {
+                Standing::On => true,
+                Standing::Only(names) => names.iter().any(|n| n == name),
+                Standing::Off | Standing::Refused(_) => false,
+            };
             if method == "tools/list" {
-                return reply(json!({"tools": if on { catalogue() } else { json!([]) }}));
+                let tools: Vec<Value> = catalogue()
+                    .into_iter()
+                    .filter(|tool| tool["name"].as_str().is_some_and(allowed))
+                    .collect();
+                return reply(json!({ "tools": tools }));
             }
             let name = params["name"].as_str().unwrap_or("");
             if !TOOLS.contains(&name) {
                 return fail(-32602, &format!("no tool named `{name}`"));
             }
-            if !on {
-                let why = "onehand's tools are switched off for this session";
-                return Handled::Reply(answered(&id, Err(why.to_string())));
+            if !allowed(name) {
+                let why = match standing {
+                    Standing::Only(_) => format!("`{name}` is not among this session's tools"),
+                    _ => "onehand's tools are switched off for this session".to_string(),
+                };
+                return Handled::Reply(answered(&id, Err(why)));
             }
             match parse(name, &params["arguments"]) {
                 Ok(call) => Handled::Perform { id, call },
@@ -195,7 +217,7 @@ fn error(id: &Value, code: i64, message: &str) -> String {
 }
 
 /// The tools, in the order they are listed.
-const TOOLS: [&str; 9] = [
+const TOOLS: [&str; 11] = [
     "list_projects",
     "list_agents",
     "open_session",
@@ -205,10 +227,12 @@ const TOOLS: [&str; 9] = [
     "list_tasks",
     "stop_task",
     "open_file",
+    "list_issues",
+    "create_issue",
 ];
 
 /// Each tool's description and input schema, as `tools/list` gives them.
-fn catalogue() -> Value {
+fn catalogue() -> Vec<Value> {
     let none = || json!({"type": "object", "properties": {}, "additionalProperties": false});
     let text = |about: &str| json!({"type": "string", "description": about});
     let schema = |properties: Value, required: &[&str]| {
@@ -298,6 +322,28 @@ fn catalogue() -> Value {
             "Open a file of the project on screen in the Workbench, without taking focus",
             schema(json!({"path": text("The file's absolute path")}), &["path"]),
         ),
+        (
+            "list_issues",
+            "The project's own open issues, as its Issues tab keeps them. Read them before \
+             writing one, so a problem already written is not written twice",
+            schema(
+                json!({"project": text("A project of the window; this session's when left out")}),
+                &[],
+            ),
+        ),
+        (
+            "create_issue",
+            "Write one issue into the project's own issues. An open issue with the same title \
+             is not written again; its number is answered instead",
+            schema(
+                json!({
+                    "project": text("A project of the window; this session's when left out"),
+                    "title": text("What is wrong, in one line"),
+                    "body": text("Where it is (file and line), why it matters, how to see it"),
+                }),
+                &["title"],
+            ),
+        ),
     ];
     tools
         .into_iter()
@@ -319,6 +365,8 @@ fn parse(name: &str, arguments: &Value) -> Result<Call, String> {
         "list_tasks" => &["project"],
         "stop_task" => &["task"],
         "open_file" => &["path"],
+        "list_issues" => &["project"],
+        "create_issue" => &["project", "title", "body"],
         "open_session" => &["project", "agent", "prompt"],
         "start_workflow" => &["project", "workflow", "title", "brief"],
         "start_issue" => &["project", "issue", "workflow"],
@@ -362,6 +410,14 @@ fn parse(name: &str, arguments: &Value) -> Result<Call, String> {
         },
         "open_file" => Call::OpenFile {
             path: PathBuf::from(required("path")?),
+        },
+        "list_issues" => Call::ListIssues {
+            project: optional("project")?,
+        },
+        "create_issue" => Call::CreateIssue {
+            project: optional("project")?,
+            title: required("title")?,
+            body: optional("body")?.unwrap_or_default(),
         },
         "open_session" => Call::OpenSession {
             project: required("project")?,

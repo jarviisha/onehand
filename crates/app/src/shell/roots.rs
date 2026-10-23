@@ -550,7 +550,7 @@ impl Shell {
     /// One call for both, because there is one cause. Cheap enough to run on
     /// every turn end: `git status` is one process per root off the UI loop,
     /// and the rescan covers only the directories currently on screen.
-    pub(super) fn refresh_worktree(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn refresh_worktree(&mut self, cx: &mut Context<Self>) {
         self.refresh_git(cx);
         self.workbench.update(cx, |panel, cx| panel.rescan(cx));
         self.tell_issues_page(&onehand_workbench::Request::Rescan, cx);

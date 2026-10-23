@@ -137,7 +137,9 @@ fn the_catalogue_lists_every_tool_with_a_schema() {
             "start_issue",
             "list_tasks",
             "stop_task",
-            "open_file"
+            "open_file",
+            "list_issues",
+            "create_issue"
         ]
     );
     for tool in tools {
@@ -514,4 +516,68 @@ fn every_token_is_its_own() {
     assert_ne!(a, b);
     assert_eq!(a.len(), 32);
     assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
+}
+
+#[test]
+fn a_session_given_some_tools_lists_and_calls_only_those() {
+    let some = |_: &Peer| Standing::Only(vec!["list_issues".into(), "create_issue".into()]);
+    let reply = reply(handle(&mut ready(), &line("tools/list", json!({})), some));
+    let names: Vec<_> = reply["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(names, ["list_issues", "create_issue"]);
+    let handled = handle(
+        &mut ready(),
+        &line(
+            "tools/call",
+            json!({"name": "list_issues", "arguments": {}}),
+        ),
+        some,
+    );
+    assert!(matches!(handled, Handled::Perform { .. }));
+    // Asked for by name, whatever the prompt said, another is refused.
+    let handled = handle(
+        &mut ready(),
+        &line(
+            "tools/call",
+            json!({"name": "open_session",
+            "arguments": {"project": "app", "agent": "Claude"}}),
+        ),
+        some,
+    );
+    assert!(refusal(handled).contains("open_session"));
+}
+
+#[test]
+fn the_issue_tools_parse_their_input() {
+    assert_eq!(
+        performs("list_issues", json!({})),
+        Call::ListIssues { project: None }
+    );
+    assert_eq!(
+        performs("create_issue", json!({"title": "Crash", "body": "on open"})),
+        Call::CreateIssue {
+            project: None,
+            title: "Crash".into(),
+            body: "on open".into()
+        }
+    );
+    assert_eq!(
+        performs("create_issue", json!({"project": "app", "title": "Crash"})),
+        Call::CreateIssue {
+            project: Some("app".into()),
+            title: "Crash".into(),
+            body: String::new()
+        }
+    );
+    assert!(refusal(call("create_issue", json!({"body": "x"}))).contains("title"));
+    // No labels: an agent never labels its own issue.
+    assert!(refusal(call(
+        "create_issue",
+        json!({"title": "t", "labels": ["auto"]})
+    ))
+    .contains("labels"));
 }
