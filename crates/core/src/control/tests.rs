@@ -156,7 +156,10 @@ fn tools_list_is_empty_for_a_session_switched_off() {
 fn a_call_is_refused_while_switched_off() {
     let handled = handle(
         &mut ready(),
-        &line("tools/call", json!({"name": "list_agents", "arguments": {}})),
+        &line(
+            "tools/call",
+            json!({"name": "list_agents", "arguments": {}}),
+        ),
         |_| Standing::Off,
     );
     assert!(refusal(handled).contains("switched off"));
@@ -206,7 +209,10 @@ fn a_malformed_line_is_answered_and_the_connection_goes_on() {
 fn a_call_before_initialize_is_refused() {
     let handled = handle(
         &mut Conn::default(),
-        &line("tools/call", json!({"name": "list_agents", "arguments": {}})),
+        &line(
+            "tools/call",
+            json!({"name": "list_agents", "arguments": {}}),
+        ),
         on,
     );
     assert_eq!(reply(handled)["error"]["code"], -32002);
@@ -217,7 +223,10 @@ fn a_call_after_outside_control_is_switched_off_is_refused() {
     let mut conn = ready();
     let handled = handle(
         &mut conn,
-        &line("tools/call", json!({"name": "list_agents", "arguments": {}})),
+        &line(
+            "tools/call",
+            json!({"name": "list_agents", "arguments": {}}),
+        ),
         |_| Standing::Refused("outside control is off".into()),
     );
     assert_eq!(reply(handled)["error"]["code"], -32001);
@@ -250,7 +259,10 @@ fn a_name_two_projects_share_is_refused_naming_both() {
         ("app".to_string(), PathBuf::from("/two/app")),
     ];
     let why = pick_project(&projects, "app").unwrap_err();
-    assert!(why.contains("/one/app") && why.contains("/two/app"), "{why}");
+    assert!(
+        why.contains("/one/app") && why.contains("/two/app"),
+        "{why}"
+    );
     assert_eq!(
         pick_project(&projects, "/two/app/").unwrap(),
         Path::new("/two/app")
@@ -271,7 +283,9 @@ fn a_project_is_found_by_path_or_name() {
         pick_project(&projects, "/one/app").unwrap(),
         Path::new("/one/app")
     );
-    assert!(pick_project(&projects, "nope").unwrap_err().contains("nope"));
+    assert!(pick_project(&projects, "nope")
+        .unwrap_err()
+        .contains("nope"));
 }
 
 #[test]

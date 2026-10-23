@@ -2,9 +2,7 @@
 //! task at a time works in a checkout and the next one waiting starts there.
 
 use super::{Tasks, enforce_cap, resumable_run};
-use crate::shell::Shell;
-use crate::state::Shared;
-use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Context, Window};
+use gpui::{AnyWindowHandle, App, BorrowAppContext as _};
 use gpui_component::WindowExt as _;
 use onehand_core::task::Task;
 use onehand_core::task::{marks, queue};
@@ -16,26 +14,6 @@ pub(crate) fn submit(task: Task, window: AnyWindowHandle, cx: &mut App) {
     let id = task.id.clone();
     super::add(task, cx);
     request(id, window, cx);
-}
-
-/// Run `f` on the shell of `window`, inside it: `None` when the window or its
-/// shell has gone.
-fn in_window<R>(
-    window: AnyWindowHandle,
-    cx: &mut App,
-    f: impl FnOnce(&mut Shell, &mut Window, &mut Context<Shell>) -> R,
-) -> Option<R> {
-    let shell = Shared::global(cx)
-        .windows
-        .iter()
-        .find(|w| w.handle == window)?
-        .shell
-        .upgrade()?;
-    window
-        .update(cx, |_, window, cx| {
-            shell.update(cx, |shell, cx| f(shell, window, cx))
-        })
-        .ok()
 }
 
 /// Start task `id` once its place is free, saying in `window` what happens:
@@ -78,7 +56,7 @@ pub(crate) fn request(id: String, window: AnyWindowHandle, cx: &mut App) {
             .await;
         cx.update(|cx| {
             let asked = id.clone();
-            let landed = in_window(window, cx, |shell, window, cx| {
+            let landed = crate::state::with_shell(window, cx, |shell, window, cx| {
                 let free = cx.update_global::<Tasks, _>(|t, _| {
                     if t.busy(&id) {
                         return None;
@@ -248,7 +226,7 @@ pub(crate) fn release(id: String, cx: &mut App) {
     };
     let started = asked.and_then(|window| {
         let next = next.clone();
-        in_window(window, cx, |shell, window, cx| {
+        crate::state::with_shell(window, cx, |shell, window, cx| {
             shell.drive_task(next, window, cx)
         })
     });

@@ -8,13 +8,16 @@
 use crate::state::Shared;
 use futures::StreamExt as _;
 use futures::channel::mpsc::{UnboundedSender, unbounded};
+use futures::channel::oneshot;
 use gpui::App;
+use onehand_core::control::Call;
 use onehand_core::instance::{self, Forwarded, Unforwarded};
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt as _, AsyncReadExt as _, AsyncWriteExt as _, BufReader};
 use tokio::net::UnixListener;
+use tokio::net::unix::OwnedReadHalf;
 
 /// The listener's runtime, kept for the life of the process.
 static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
@@ -24,8 +27,8 @@ static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 /// finding nobody there.
 static BOUND: Mutex<Option<std::os::unix::net::UnixListener>> = Mutex::new(None);
 
-/// How long a connection may take to send its line, and how long that line
-/// may be: past either it is dropped, not waited on.
+/// How long a connection may take to send its first line, and how long any
+/// line may be: past either it is dropped, not waited on.
 const LINE_WAIT: Duration = Duration::from_secs(5);
 const LINE_CAP: u64 = 64 * 1024;
 
@@ -112,23 +115,37 @@ pub(crate) fn listen(cx: &mut App) {
     rt.spawn(serve(listener, tx));
     let _ = RUNTIME.set(rt);
     cx.spawn(async move |cx| {
-        while let Some(forwarded) = rx.next().await {
+        while let Some(incoming) = rx.next().await {
             // The first window registers a moment after boot. A line that lands
             // before it waits for it, rather than opening a second window onto
-            // the workspace that one is about to show.
+            // the workspace that one is about to show, or a call finding none.
             while cx.update(|cx| Shared::global(cx).windows.is_empty()) {
                 cx.background_executor().timer(WINDOW_POLL).await;
             }
-            cx.update(|cx| open_forwarded(forwarded, cx));
+            cx.update(|cx| match incoming {
+                Incoming::Open(forwarded) => open_forwarded(forwarded, cx),
+                Incoming::Call(call, answer) => {
+                    let _ = answer.send(crate::control::perform(call, cx));
+                }
+            });
         }
     })
     .detach();
 }
 
-/// Answer every connection: one line in, one line out, then closed. What a
-/// line asks to be opened goes to GPUI before the answer goes back, so a
-/// second launch that hears yes has been heard.
-async fn serve(listener: UnixListener, tx: UnboundedSender<Forwarded>) {
+/// What the socket hands to GPUI.
+pub(crate) enum Incoming {
+    /// A second launch's folder, or only a window to raise.
+    Open(Forwarded),
+    /// A tool's call, and where its answer goes.
+    Call(Call, oneshot::Sender<Result<String, String>>),
+}
+
+/// Answer every connection. One whose first line is a second launch's open
+/// is answered and closed; any other is an MCP conversation, carried on
+/// until the client hangs up. What a line asks for goes to GPUI before the
+/// answer goes back, so a second launch that hears yes has been heard.
+async fn serve(listener: UnixListener, tx: UnboundedSender<Incoming>) {
     loop {
         let stream = match listener.accept().await {
             Ok((stream, _)) => stream,
@@ -142,18 +159,31 @@ async fn serve(listener: UnixListener, tx: UnboundedSender<Forwarded>) {
         let tx = tx.clone();
         tokio::spawn(async move {
             let (read, mut write) = stream.into_split();
-            let mut line = String::new();
-            let mut read = BufReader::new(read.take(LINE_CAP));
-            let got = tokio::time::timeout(LINE_WAIT, read.read_line(&mut line)).await;
-            if !matches!(got, Ok(Ok(_))) {
+            let mut reader = BufReader::new(read);
+            let first = tokio::time::timeout(LINE_WAIT, next_line(&mut reader)).await;
+            let Ok(Some(first)) = first else {
                 return;
-            }
-            let (reply, forwarded) = instance::answer(&line);
+            };
+            let Some((reply, forwarded)) = instance::open(&first) else {
+                return crate::control::converse(first, reader, write, tx).await;
+            };
             if let Some(forwarded) = forwarded {
-                let _ = tx.unbounded_send(forwarded);
+                let _ = tx.unbounded_send(Incoming::Open(forwarded));
             }
             let _ = write.write_all(format!("{reply}\n").as_bytes()).await;
         });
+    }
+}
+
+/// The next line `reader` holds, or `None` at its end, on a read error, or
+/// past [`LINE_CAP`] without a newline, which ends the connection rather
+/// than being held in memory.
+pub(crate) async fn next_line(reader: &mut BufReader<OwnedReadHalf>) -> Option<String> {
+    let mut line = String::new();
+    match (&mut *reader).take(LINE_CAP).read_line(&mut line).await {
+        Ok(0) | Err(_) => None,
+        Ok(_) if !line.ends_with('\n') && line.len() as u64 >= LINE_CAP => None,
+        Ok(_) => Some(line),
     }
 }
 
@@ -161,16 +191,7 @@ async fn serve(listener: UnixListener, tx: UnboundedSender<Forwarded>) {
 /// one, and raise it. Never inside another entity's update: this runs from the
 /// channel's own task.
 fn open_forwarded(forwarded: Forwarded, cx: &mut App) {
-    let active = cx.active_window();
-    let front = {
-        let windows = &Shared::global(cx).windows;
-        windows
-            .iter()
-            .find(|w| Some(w.handle) == active)
-            .or(windows.first())
-            .and_then(|w| Some((w.handle, w.shell.upgrade()?)))
-    };
-    let Some((handle, shell)) = front else {
+    let Some((handle, shell)) = crate::state::front(cx) else {
         return;
     };
     handle
@@ -186,11 +207,20 @@ fn open_forwarded(forwarded: Forwarded, cx: &mut App) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures::channel::mpsc::UnboundedReceiver;
+    use serde_json::{Value, json};
     use std::io::{BufRead as _, Write as _};
+    use std::os::unix::net::UnixStream;
 
-    #[test]
-    fn a_second_launch_reaches_the_listener() {
-        let dir = std::env::temp_dir().join(format!("onehand-listen-{}", std::process::id()));
+    /// A listener on a socket of its own, and what reaches GPUI from it.
+    fn listening(
+        name: &str,
+    ) -> (
+        PathBuf,
+        tokio::runtime::Runtime,
+        UnboundedReceiver<Incoming>,
+    ) {
+        let dir = std::env::temp_dir().join(format!("onehand-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let socket = dir.join("onehand.sock");
@@ -203,25 +233,68 @@ mod tests {
             let _in_runtime = rt.enter();
             UnixListener::bind(&socket).unwrap()
         };
-        let (tx, mut rx) = unbounded();
+        let (tx, rx) = unbounded();
         rt.spawn(serve(listener, tx));
+        (dir, rt, rx)
+    }
 
-        // A line that is not an open is answered, and the listener goes on.
-        let mut stream = std::os::unix::net::UnixStream::connect(&socket).unwrap();
-        writeln!(stream, "nonsense").unwrap();
+    /// Send `msg` and read the answer.
+    fn ask(stream: &mut UnixStream, msg: Value) -> Value {
+        writeln!(stream, "{msg}").unwrap();
         let mut reply = String::new();
-        std::io::BufReader::new(&stream)
+        std::io::BufReader::new(&*stream)
             .read_line(&mut reply)
             .unwrap();
-        assert!(reply.contains("-32700"), "{reply}");
+        serde_json::from_str(&reply).unwrap()
+    }
 
-        assert!(instance::forward(&socket, Some(&dir)).is_ok());
+    #[test]
+    fn a_second_launch_reaches_the_listener() {
+        let (dir, _rt, mut rx) = listening("listen");
+        assert!(instance::forward(&dir.join("onehand.sock"), Some(&dir)).is_ok());
+        match rx.try_recv() {
+            Ok(Incoming::Open(forwarded)) => assert_eq!(forwarded.path, Some(dir.clone())),
+            _ => panic!("nothing forwarded"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_outside_client_is_answered_over_the_socket() {
+        let (dir, _rt, mut rx) = listening("outside");
+        // GPUI's side, answering every call alike.
+        std::thread::spawn(move || {
+            while let Some(incoming) = futures::executor::block_on(rx.next()) {
+                if let Incoming::Call(_, answer) = incoming {
+                    let _ = answer.send(Ok("done".to_string()));
+                }
+            }
+        });
+        let init = json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}});
+        let socket = dir.join("onehand.sock");
+
+        crate::control::boot(&onehand_core::config::ControlConfig { outside: false });
+        let mut stream = UnixStream::connect(&socket).unwrap();
+        assert_eq!(ask(&mut stream, init.clone())["error"]["code"], -32001);
+
+        crate::control::boot(&onehand_core::config::ControlConfig { outside: true });
+        let mut stream = UnixStream::connect(&socket).unwrap();
+        assert!(ask(&mut stream, init)["result"].is_object());
+        let list = json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"});
         assert_eq!(
-            rx.try_recv().ok(),
-            Some(Forwarded {
-                path: Some(dir.clone())
-            })
+            ask(&mut stream, list)["result"]["tools"]
+                .as_array()
+                .unwrap()
+                .len(),
+            7
         );
+        let call = json!({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+            "params": {"name": "list_agents", "arguments": {}}});
+        let reply = ask(&mut stream, call);
+        assert_eq!(reply["result"]["content"][0]["text"], "done");
+
+        // A second launch still finds the listener, on a connection of its own.
+        assert!(instance::forward(&socket, Some(&dir)).is_ok());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

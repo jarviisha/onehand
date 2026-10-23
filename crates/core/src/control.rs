@@ -10,7 +10,7 @@
 //! **No tool answers a card, a permission or an approval.** Those wait for a
 //! person, whoever asks; there is nothing here to call for them.
 
-use serde_json::{Map, Value, json};
+use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};
 
 /// What a tool call asks the app to do, its arguments read and checked.
@@ -292,7 +292,10 @@ fn parse(name: &str, arguments: &Value) -> Result<Call, String> {
 
 /// The project of `projects` (name, path) that `named` names: by its path,
 /// or by its name when only one project has it.
-pub fn pick_project<'a>(projects: &'a [(String, PathBuf)], named: &str) -> Result<&'a Path, String> {
+pub fn pick_project<'a>(
+    projects: &'a [(String, PathBuf)],
+    named: &str,
+) -> Result<&'a Path, String> {
     let as_path = Path::new(named.trim_end_matches('/'));
     if let Some((_, path)) = projects.iter().find(|(_, path)| path == as_path) {
         return Ok(path);

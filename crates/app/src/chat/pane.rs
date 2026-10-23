@@ -35,7 +35,7 @@ mod resume_picker;
 mod runs;
 mod sessions;
 mod step_strip;
-mod tasks_page;
+pub(crate) mod tasks_page;
 mod workspace_page;
 pub use events::{ChatPaneEvent, ProjectAction, Restart, SessionSignal};
 use header::Archives;

@@ -97,24 +97,22 @@ pub struct Forwarded {
     pub path: Option<PathBuf>,
 }
 
-/// The reply to one line read off the socket, and what it asks for when it
-/// is an `onehand/open` that can be done. Everything else is answered with a
-/// JSON-RPC error rather than dropped, so the other end hears why.
-pub fn answer(line: &str) -> (String, Option<Forwarded>) {
-    let Ok(msg) = serde_json::from_str::<Value>(line) else {
-        return (error(&Value::Null, -32700, "not a JSON-RPC line"), None);
-    };
-    let id = msg.get("id").cloned().unwrap_or(Value::Null);
+/// The reply to a line that is a second launch's `onehand/open`, and what
+/// it asks for when that can be done; `None` for any other line, which is the
+/// start of an MCP conversation and answered there.
+pub fn open(line: &str) -> Option<(String, Option<Forwarded>)> {
+    let msg = serde_json::from_str::<Value>(line).ok()?;
     if msg["method"] != "onehand/open" {
-        return (error(&id, -32601, "no such method"), None);
+        return None;
     }
+    let id = msg.get("id").cloned().unwrap_or(Value::Null);
     let path = msg["params"]["path"].as_str().map(PathBuf::from);
     if let Some(path) = path.as_ref().filter(|p| !p.is_dir()) {
         let why = format!("{} is not a folder", path.display());
-        return (error(&id, -32602, &why), None);
+        return Some((error(&id, -32602, &why), None));
     }
     let reply = json!({"jsonrpc": "2.0", "id": id, "result": {}}).to_string();
-    (reply, Some(Forwarded { path }))
+    Some((reply, Some(Forwarded { path })))
 }
 
 fn error(id: &Value, code: i64, message: &str) -> String {
@@ -247,12 +245,12 @@ mod tests {
     #[test]
     fn a_folder_is_forwarded() {
         let dir = scratch("forwarded");
-        let (line, forwarded) = answer(&open_request(Some(&dir)));
+        let (line, forwarded) = open(&open_request(Some(&dir))).unwrap();
         assert_eq!(forwarded.map(|f| f.path), Some(Some(dir.clone())));
         let line = reply(&line);
         assert_eq!(line["id"], 1);
         assert!(line.get("result").is_some());
-        let (_, forwarded) = answer(&open_request(None));
+        let (_, forwarded) = open(&open_request(None)).unwrap();
         assert_eq!(forwarded.map(|f| f.path), Some(None));
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -262,7 +260,7 @@ mod tests {
         let dir = scratch("not-a-folder");
         let file = dir.join("file");
         std::fs::write(&file, "").unwrap();
-        let (line, forwarded) = answer(&open_request(Some(&file)));
+        let (line, forwarded) = open(&open_request(Some(&file))).unwrap();
         assert!(forwarded.is_none());
         let line = reply(&line);
         assert_eq!(line["error"]["code"], -32602);
@@ -274,15 +272,9 @@ mod tests {
     }
 
     #[test]
-    fn a_line_that_is_not_open_is_answered_with_an_error() {
-        let (line, forwarded) = answer("nonsense");
-        assert!(forwarded.is_none());
-        assert_eq!(reply(&line)["error"]["code"], -32700);
-        let (line, forwarded) = answer(r#"{"jsonrpc":"2.0","id":7,"method":"tools/list"}"#);
-        assert!(forwarded.is_none());
-        let line = reply(&line);
-        assert_eq!(line["error"]["code"], -32601);
-        assert_eq!(line["id"], 7);
+    fn a_line_that_is_not_open_is_left_to_mcp() {
+        assert!(open("nonsense").is_none());
+        assert!(open(r#"{"jsonrpc":"2.0","id":7,"method":"initialize"}"#).is_none());
     }
 
     #[test]
@@ -298,7 +290,7 @@ mod tests {
                 std::io::BufReader::new(&stream)
                     .read_line(&mut line)
                     .unwrap();
-                let (reply, _) = answer(&line);
+                let (reply, _) = open(&line).unwrap();
                 writeln!(stream, "{reply}").unwrap();
             }
         });
