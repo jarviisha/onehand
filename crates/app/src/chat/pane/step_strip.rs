@@ -108,8 +108,14 @@ impl ChatPane {
                                     .label("Continue")
                                     .tooltip("Approve it and go on to the next step")
                                     .on_click(cx.listener(move |_, _, window, cx| {
+                                        // After this listener: the press goes
+                                        // back through the pane, which is the
+                                        // entity being updated right now.
                                         let pane = cx.entity().downgrade();
-                                        press_continue(pane, &pressed, window, cx)
+                                        let pressed = pressed.clone();
+                                        window.defer(cx, move |window, cx| {
+                                            press_continue(pane, &pressed, window, cx)
+                                        });
                                     })),
                             )
                         })
