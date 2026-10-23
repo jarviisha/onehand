@@ -2,6 +2,7 @@
 //! task at a time works in a checkout and the next one waiting starts there.
 
 use super::{Tasks, enforce_cap, resumable_run};
+use futures::channel::oneshot;
 use gpui::{AnyWindowHandle, App, BorrowAppContext as _};
 use gpui_component::WindowExt as _;
 use onehand_core::task::Task;
@@ -16,13 +17,53 @@ pub(crate) fn submit(task: Task, window: AnyWindowHandle, cx: &mut App) {
     request(id, window, cx);
 }
 
+/// Where a task asked for its place landed.
+pub(crate) enum Placed {
+    /// It holds the place and is being driven.
+    Started,
+    /// It waits behind another, as said.
+    Queued(String),
+    /// It was not taken, and why.
+    Refused(String),
+}
+
+/// [`submit`], answering where the task landed once that is known: for a
+/// caller that has to say so somewhere other than the window's toasts.
+pub(crate) fn submit_told(
+    task: Task,
+    window: AnyWindowHandle,
+    cx: &mut App,
+) -> oneshot::Receiver<Placed> {
+    let (tell, told) = oneshot::channel();
+    let id = task.id.clone();
+    super::add(task, cx);
+    request_told(id, window, Some(tell), cx);
+    told
+}
+
 /// Start task `id` once its place is free, saying in `window` what happens:
 /// at once when nobody works there, or after the task that does, saying so.
 /// A task already running or waiting is left as it is. It starts in
 /// `window`, or, when it waited, in the window it was asked from, if that is
 /// still open.
 pub(crate) fn request(id: String, window: AnyWindowHandle, cx: &mut App) {
+    request_told(id, window, None, cx);
+}
+
+/// [`request`], answering `tell` where the task landed.
+fn request_told(
+    id: String,
+    window: AnyWindowHandle,
+    tell: Option<oneshot::Sender<Placed>>,
+    cx: &mut App,
+) {
+    let told = move |placed: Placed| {
+        if let Some(tell) = tell {
+            let _ = tell.send(placed);
+        }
+    };
     if let Some(why) = crate::unattended::over_cap(&id, cx) {
+        told(Placed::Refused(why.clone()));
         // A retry's new run never began: dropped, the task is as it was.
         cx.update_global::<Tasks, _>(|t, _| {
             let Some(task) = t.task_mut(&id) else {
@@ -47,6 +88,7 @@ pub(crate) fn request(id: String, window: AnyWindowHandle, cx: &mut App) {
         .map(|task| task.setup.dir.clone())
     else {
         crate::unattended::placed(&id, cx);
+        told(Placed::Refused("that task is gone".to_string()));
         return;
     };
     cx.spawn(async move |cx| {
@@ -71,7 +113,10 @@ pub(crate) fn request(id: String, window: AnyWindowHandle, cx: &mut App) {
                 // the cap from here as queued or running.
                 crate::unattended::placed(&id, cx);
                 match free {
-                    Some(true) => shell.drive_task(id, window, cx),
+                    Some(true) => match shell.drive_task(id, window, cx) {
+                        Ok(()) => Placed::Started,
+                        Err(why) => Placed::Refused(why),
+                    },
                     Some(false) => {
                         let t = cx.global::<Tasks>();
                         let title = t
@@ -87,10 +132,11 @@ pub(crate) fn request(id: String, window: AnyWindowHandle, cx: &mut App) {
                             holder.map(|holder| holder.brief.title.as_str()),
                             &at,
                         );
-                        window.push_notification(crate::toast::info(said), cx);
+                        window.push_notification(crate::toast::info(said.clone()), cx);
                         cx.refresh_windows();
+                        Placed::Queued(said)
                     }
-                    None => {}
+                    None => Placed::Refused("that task is already running or waiting".to_string()),
                 }
             });
             // The window went while the place was looked up, so nothing asks
@@ -99,6 +145,7 @@ pub(crate) fn request(id: String, window: AnyWindowHandle, cx: &mut App) {
             if landed.is_none() {
                 crate::unattended::placed(&asked, cx);
             }
+            told(landed.unwrap_or(Placed::Refused("the window closed".to_string())));
         })
     })
     .detach();
@@ -227,7 +274,9 @@ pub(crate) fn release(id: String, cx: &mut App) {
     let started = asked.and_then(|window| {
         let next = next.clone();
         crate::state::with_shell(window, cx, |shell, window, cx| {
-            shell.drive_task(next, window, cx)
+            // Its refusal is said in the window, and nobody else is waiting
+            // on it.
+            let _ = shell.drive_task(next, window, cx);
         })
     });
     if started.is_none() {
@@ -239,6 +288,9 @@ pub(crate) fn release(id: String, cx: &mut App) {
 /// never ran a step is over, stopped by a person, with no empty run kept;
 /// one resumed goes back to how it was.
 pub(crate) fn stop_queued(id: &str, cx: &mut App) {
+    // Never driven, so what was asked for its first drive goes with it: a
+    // later Retry is a person's, and shows.
+    super::take_off_screen(id, cx);
     let dropped = cx.update_global::<Tasks, _>(|t, _| {
         if !t.queue.call_off(id) {
             return None;

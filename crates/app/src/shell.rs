@@ -38,7 +38,7 @@ pub use crate::instance::hold_or_forward;
 pub use boot::{boot, open_or_focus, seed_workspace};
 pub use drafts::{BranchDraft, Draft, WorktreeDraft};
 pub use workflows::WorkflowLauncher;
-pub(crate) use workflows::brief;
+pub(crate) use workflows::{brief, cut_worktree_blocking};
 
 gpui::actions!(
     onehand,

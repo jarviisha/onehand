@@ -50,7 +50,8 @@ minor bump may break any of them.
 
 - onehand is an MCP server on its socket. With *Outside control* on in Settings ▸ Connections (off
   by default), a program run as you lists projects, agents, workflows and tasks, opens a session
-  on a project with a first prompt, stops a task and opens a file in the Workbench. No tool
+  on a project with a first prompt, starts a workflow on a brief or on one of a project's issues
+  (off screen, waiting its turn as any task does), stops a task and opens a file in the Workbench. No tool
   answers a card, a permission or an approval.
 - A workspace overview of sessions, projects and recent conversations as cards.
 - A Plugins mode in the Workbench manages Claude Code's plugins per project and globally.
