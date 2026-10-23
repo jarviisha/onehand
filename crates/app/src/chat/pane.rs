@@ -42,6 +42,7 @@ use header::Archives;
 use project_page::EmptyProject;
 pub use tasks_page::CloseTaskDetail;
 use tasks_page::TasksPage;
+pub(crate) use workspace_page::ALL_PROJECTS;
 pub use workspace_page::PageProject;
 use workspace_page::WorkspacePage;
 
@@ -54,6 +55,8 @@ enum Page {
     Issues(gpui::AnyView),
     /// The Workflows page, an entity of the window's for the same reason.
     Workflows(gpui::AnyView),
+    /// The Schedules page, likewise.
+    Schedules(gpui::AnyView),
     /// Settings, whose drafts are the shell's and so outlive this.
     Settings(gpui::AnyView),
 }

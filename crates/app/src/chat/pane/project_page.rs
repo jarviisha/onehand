@@ -17,6 +17,9 @@ use onehand_core::chat::ConvMeta;
 use onehand_ui::Tall as _;
 use std::path::{Path, PathBuf};
 
+mod schedules_box;
+use schedules_box::schedules_box;
+
 /// How many past conversations the project page lists.
 ///
 /// The page is an entrance, not an archive browser: the newest handful is what
@@ -484,6 +487,7 @@ impl ChatPane {
         .children((hidden > 0).then(|| muted_line(format!("{hidden} more"))));
 
         let tasks = tasks_box(&project.path, cx);
+        let schedules = schedules_box(&project.path, cx);
         // What the project is set to: its check command, the shell's field.
         let settings = project.check_input.as_ref().map(|input| {
             page_card("Settings", None, None, cx).child(onehand_ui::field(
@@ -503,6 +507,7 @@ impl ChatPane {
             .w_full()
             .child(history)
             .child(tasks)
+            .child(schedules)
             .children(settings);
 
         div()

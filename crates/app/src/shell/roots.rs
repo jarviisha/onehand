@@ -606,9 +606,17 @@ impl Shell {
                     // The workspace page's project tiles name each branch.
                     if shell.page_shown(cx) {
                         let projects = shell.page_projects();
+                        let named = projects
+                            .iter()
+                            .map(|p| (p.root.clone(), SharedString::from(p.label.to_string())))
+                            .collect();
                         shell
                             .chat
                             .update(cx, |pane, cx| pane.set_page_projects(projects, cx));
+                        // The Schedules page's list and filter, likewise.
+                        shell
+                            .schedules_page
+                            .update(cx, |page, cx| page.set_projects(named, None, cx));
                     }
                     // This sweep is also the answer to "is the selected project
                     // a repository", which decides whether its page offers to

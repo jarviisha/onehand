@@ -217,6 +217,8 @@ pub enum ChatPaneEvent {
     StopTask(String),
     /// Show the Tasks page, narrowed to one project or not.
     ShowTasks(Option<PathBuf>),
+    /// Show the Schedules page, narrowed to one project or not.
+    ShowSchedules(Option<PathBuf>),
     /// Run the check command of the project on screen, as a task.
     RunCheck,
 }

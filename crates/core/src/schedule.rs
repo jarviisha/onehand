@@ -338,6 +338,55 @@ pub fn brief(s: &Schedule) -> Brief {
     }
 }
 
+/// When `expr` runs, in words where it is a quick choice, else the
+/// expression itself; one that does not parse says why.
+pub fn when_said(expr: &str) -> String {
+    if let Err(why) = parse(expr) {
+        return format!("{expr} does not parse: {why}");
+    }
+    const DAYS: [&str; 7] = [
+        "Sundays",
+        "Mondays",
+        "Tuesdays",
+        "Wednesdays",
+        "Thursdays",
+        "Fridays",
+        "Saturdays",
+    ];
+    match Quick::read(expr) {
+        Some(Quick::EveryHours { hours, minute }) => format!("every {hours} hours at :{minute:02}"),
+        Some(Quick::Daily { hour, minute }) => format!("every day at {hour:02}:{minute:02}"),
+        Some(Quick::Weekdays { hour, minute }) => format!("weekdays at {hour:02}:{minute:02}"),
+        Some(Quick::Weekly {
+            weekday,
+            hour,
+            minute,
+        }) => format!("{} at {hour:02}:{minute:02}", DAYS[usize::from(weekday)]),
+        None => expr.to_string(),
+    }
+}
+
+/// Time `t` as seen from `now`: *today 09:00*, *tomorrow 09:00*, a day of
+/// the coming week (*Fri 09:30*), else its date (*Oct 30 09:00*).
+pub fn next_said(t: u64, now: u64, tz: &impl TimeZone) -> String {
+    use chrono::Datelike as _;
+    let (Some(at), Some(today)) = (
+        tz.timestamp_opt(t as i64, 0).single(),
+        tz.timestamp_opt(now as i64, 0).single(),
+    ) else {
+        return String::new();
+    };
+    let (at, today) = (at.naive_local(), today.naive_local());
+    let days = (at.date() - today.date()).num_days();
+    let clock = at.format("%H:%M");
+    match days {
+        0 => format!("today {clock}"),
+        1 => format!("tomorrow {clock}"),
+        2..=6 => format!("{} {clock}", at.weekday()),
+        _ => format!("{} {clock}", at.format("%b %-d")),
+    }
+}
+
 /// Where the schedules are kept.
 pub fn path() -> PathBuf {
     crate::config::config_dir().join("schedules.toml")

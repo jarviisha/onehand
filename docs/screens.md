@@ -13,11 +13,11 @@ App chrome outside the dock, so a layout restore cannot lose it. Top to bottom: 
 (letter tile, name, switcher, *Hide the rail*); the search over session titles and project names
 (`Ctrl+K` outside a terminal, showing a hidden rail) beside *New* (secondary, the rail's only filled button), which starts in the keyboard's
 project, else the one on screen, its caret picking *Start in* or *With agent*; *Overview*, *Tasks*
-(a pill counting tasks that need attention, none at zero), *Issues* and *Workflows*, each filled
-while its page shows; *Sessions* with a warning-ink *N need attention* chip (shown above zero or
+(a pill counting tasks that need attention, none at zero), *Issues*, *Workflows* and *Schedules*,
+each filled while its page shows; *Sessions* with a warning-ink *N need attention* chip (shown above zero or
 while on, toggling that filter and back) and the filter menu (*By project*, *All sessions*, *Needs
 attention*, *Recent activity*) over a hairline; the scrolling list, ending on *Add project…*; a foot
-with *Settings*, a page row like the four above, filled while it shows. Every row at rest is in the
+with *Settings*, a page row like the five above, filled while it shows. Every row at rest is in the
 muted ink; the one where the person is takes its fill and the ink paired with it. A neutral badge
 sinks a step into the surface it sits on, here the inset step.
 
@@ -137,13 +137,26 @@ height (its dragged height kept).
   conversations* with its count, its rows the overview's (age, title, then items and agent at the
   edge, *Delete…* laid over them on hover), capped, its wait and empty lines inside it; under
   it the box *Tasks* (how many need attention, run or wait, each opening the Tasks page
-  narrowed to the project; *Nothing running here* at zero); then the box *Settings* (its *Check
-  command* field). The page scrolls as one.
+  narrowed to the project; *Nothing running here* at zero); then the box *Schedules* (the
+  project's schedules by name with when each runs next, or *off*, each opening the Schedules page
+  narrowed to the project; *No schedules here* at none; capped at five; reading and a failed read
+  said as on the page); then the box *Settings*
+  (its *Check command* field). The page scrolls as one.
 - *Workspace overview* shows, under its head (*Overview*), across all projects, the boxes *Waiting
   on you* (runs waiting for an answer or an approval, and sessions waiting, failed, finished or
   lost) and *Working*, then *Projects* as a grid of tiles (not drawn without projects), then the
   boxes *Recent conversations* and *Open issues* (its project picker kept while the page is left).
   The page scrolls as one.
+- *Schedules*: a head (*Schedules*, with how many are on and off), a filter bar (the project
+  picker, as Tasks'), then one box, *Schedules*, with its count: a row per schedule as a task's
+  row, parted by hairlines, its name over when it runs (in words where a quick choice says it,
+  else the expression; one that does not parse in the warning ink), its project and when it runs
+  next (or *off*), then what its last look said in the warning ink; its switch at the row's end,
+  its tooltip saying what a press does. Capped, saying how many more. *Reading the schedules…*
+  before the first read; a read that failed says why in the warning ink; *No schedules yet, kept
+  in* the path in the code face, or *No schedules match* while a project is picked. Read again
+  every minute, its next times with it. The page takes the keys while it shows. No primary until
+  a schedule can be made here.
 - *Tasks*: a head (*Tasks*), a filter bar (the project picker), then four boxes two by two,
   *Needs attention*, *Running*, *Queued*, *Finished*, each with a count, an empty line and a cap,
   its rows parted by hairlines. A row is the title

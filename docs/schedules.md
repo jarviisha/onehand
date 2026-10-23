@@ -15,7 +15,10 @@ its own that asks less; what it does ask waits for a person.
 ## The file
 
 `<config dir>/schedules.toml`, one `[[schedule]]` table each, read again at every look, so a
-schedule edited in the file holds from the next one. The Schedules page is not built yet.
+schedule edited in the file holds from the next one. The *Schedules* page on the rail lists them
+(filtered by project; a project's page has a *Schedules* box leading there) and switches each on
+or off; switched on, nothing due before then is caught up. The form to make and edit one is not
+built yet.
 
 ```toml
 [[schedule]]

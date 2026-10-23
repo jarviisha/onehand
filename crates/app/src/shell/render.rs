@@ -1,7 +1,8 @@
 use super::{
     CloseSession, FocusComposer, NewSession, NextSession, OpenNeovim, OpenSettings, PrevSession,
-    RestartSession, RunWorkflow, SaveFile, ShowTasks, ToggleMarkdown, ToggleMaximize, ToggleRail,
-    ToggleTerminal, ToggleWorkbench, ToggleWorkbenchVisibility, ZoomIn, ZoomOut, ZoomReset,
+    RestartSession, RunWorkflow, SaveFile, ShowSchedules, ShowTasks, ToggleMarkdown,
+    ToggleMaximize, ToggleRail, ToggleTerminal, ToggleWorkbench, ToggleWorkbenchVisibility, ZoomIn,
+    ZoomOut, ZoomReset,
 };
 use super::{FocusedPanel, SelectSession, Shell, ZoomStep};
 use crate::state::Shared;
@@ -182,6 +183,11 @@ impl Render for Shell {
             .on_action(cx.listener(|shell: &mut Self, _: &ShowTasks, window, cx| {
                 shell.show_tasks(None, window, cx);
             }))
+            .on_action(
+                cx.listener(|shell: &mut Self, _: &ShowSchedules, window, cx| {
+                    shell.show_schedules(None, window, cx);
+                }),
+            )
             .on_action(
                 cx.listener(|shell: &mut Self, _: &ToggleMaximize, window, cx| {
                     shell.toggle_maximize(window, cx);

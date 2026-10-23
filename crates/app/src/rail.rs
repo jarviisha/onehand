@@ -344,7 +344,8 @@ pub fn rail(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> impl Int
         .child(foot(shell, cx))
 }
 
-/// Overview, Tasks with how many tasks need a person, Issues and Workflows.
+/// Overview, Tasks with how many tasks need a person, Issues, Workflows and
+/// Schedules.
 fn pages(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
     let tasks = attention_pill(crate::task::attention(&shell.page_roots(), cx));
     div()
@@ -397,6 +398,18 @@ fn pages(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
             ("Every workflow, to run one or write one", None),
             cx,
             |shell, window, cx| shell.show_workflows(window, cx),
+        ))
+        .child(page_row(
+            ("rail-schedules", "Schedules"),
+            Icon::new(IconName::Calendar),
+            shell.schedules_shown(cx),
+            None,
+            (
+                "Every schedule, and when each runs next",
+                Some(&crate::shell::ShowSchedules),
+            ),
+            cx,
+            |shell, window, cx| shell.show_schedules(None, window, cx),
         ))
 }
 

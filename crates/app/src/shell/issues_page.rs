@@ -7,7 +7,7 @@
 
 use super::Shell;
 use crate::workbench::WorkbenchEvent;
-use gpui::{Context, SharedString, Window};
+use gpui::{Context, Focusable as _, SharedString, Window};
 use gpui_component::dock::DockPlacement;
 use onehand_issues::{IssuesEvent, Page, Tell};
 use onehand_workbench::{Ask, Request};
@@ -126,6 +126,36 @@ impl Shell {
             .update(cx, |pane, cx| pane.show_workflows(view, window, cx));
         self.sync_agent_started(cx);
         cx.notify();
+    }
+
+    /// Show the Schedules page, narrowed to project `only` when one is
+    /// named, else as it was left, the docks put away as for the other pages.
+    pub fn show_schedules(
+        &mut self,
+        only: Option<std::path::PathBuf>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let projects = self
+            .page_projects()
+            .into_iter()
+            .map(|project| (project.root, SharedString::from(project.label.to_string())))
+            .collect();
+        self.schedules_page
+            .update(cx, |page, cx| page.set_projects(projects, only, cx));
+        self.docks_aside(window, cx);
+        let view: gpui::AnyView = self.schedules_page.clone().into();
+        self.chat
+            .update(cx, |pane, cx| pane.show_schedules(view, window, cx));
+        // The page holds the keys while it shows, as Tasks does.
+        self.schedules_page.focus_handle(cx).focus(window, cx);
+        self.sync_agent_started(cx);
+        cx.notify();
+    }
+
+    /// Whether the Schedules page is what the centre of the window shows.
+    pub fn schedules_shown(&self, cx: &gpui::App) -> bool {
+        self.chat.read(cx).showing_schedules()
     }
 
     /// Whether the Workflows page is what the centre of the window shows.

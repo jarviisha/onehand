@@ -89,7 +89,10 @@ impl ChatPane {
                 // These pages, and a project's page, name themselves in their
                 // own head at its title size.
                 Some(
-                    super::Page::Workspace(_) | super::Page::Tasks(_) | super::Page::Workflows(_),
+                    super::Page::Workspace(_)
+                    | super::Page::Tasks(_)
+                    | super::Page::Workflows(_)
+                    | super::Page::Schedules(_),
                 )
                 | None => String::new(),
             }

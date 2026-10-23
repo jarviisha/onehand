@@ -67,7 +67,8 @@ gpui::actions!(
         PasteHere,
         CycleMode,
         RunWorkflow,
-        ShowTasks
+        ShowTasks,
+        ShowSchedules
     ]
 );
 
@@ -352,6 +353,8 @@ pub struct Shell {
     /// The Workflows page, made once for the same reason: a workflow being
     /// written is found as it was left.
     workflows_page: Entity<crate::workflows_page::WorkflowsPage>,
+    /// The Schedules page, made once so its filter is found as it was left.
+    schedules_page: Entity<crate::schedules_page::SchedulesPage>,
 }
 
 /// What reading a project's open issues came to: the issues and whether the

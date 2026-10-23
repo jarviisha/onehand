@@ -40,7 +40,7 @@ const PAGE_TITLE_LINE: Rems = rems(1.25);
 
 /// What a project filter reads while it is not narrowing the list at all:
 /// the workspace page's issues, or the Tasks page.
-pub(super) const ALL_PROJECTS: &str = "All projects";
+pub(crate) const ALL_PROJECTS: &str = "All projects";
 
 /// One project as the workspace page lists it.
 pub struct PageProject {
@@ -211,7 +211,8 @@ impl ChatPane {
                 }
                 page.projects = projects;
             }
-            Some(Page::Issues(_) | Page::Workflows(_) | Page::Settings(_)) | None => return,
+            Some(Page::Issues(_) | Page::Workflows(_) | Page::Schedules(_) | Page::Settings(_))
+            | None => return,
         }
         cx.notify();
     }
@@ -220,7 +221,13 @@ impl ChatPane {
     pub fn showing_workspace(&self) -> bool {
         match self.page {
             Some(Page::Workspace(_)) => true,
-            Some(Page::Tasks(_) | Page::Issues(_) | Page::Workflows(_) | Page::Settings(_))
+            Some(
+                Page::Tasks(_)
+                | Page::Issues(_)
+                | Page::Workflows(_)
+                | Page::Schedules(_)
+                | Page::Settings(_),
+            )
             | None => false,
         }
     }
@@ -229,7 +236,13 @@ impl ChatPane {
     pub fn showing_tasks(&self) -> bool {
         match self.page {
             Some(Page::Tasks(_)) => true,
-            Some(Page::Workspace(_) | Page::Issues(_) | Page::Workflows(_) | Page::Settings(_))
+            Some(
+                Page::Workspace(_)
+                | Page::Issues(_)
+                | Page::Workflows(_)
+                | Page::Schedules(_)
+                | Page::Settings(_),
+            )
             | None => false,
         }
     }
@@ -238,7 +251,13 @@ impl ChatPane {
     pub fn showing_issues(&self) -> bool {
         match self.page {
             Some(Page::Issues(_)) => true,
-            Some(Page::Workspace(_) | Page::Tasks(_) | Page::Workflows(_) | Page::Settings(_))
+            Some(
+                Page::Workspace(_)
+                | Page::Tasks(_)
+                | Page::Workflows(_)
+                | Page::Schedules(_)
+                | Page::Settings(_),
+            )
             | None => false,
         }
     }
@@ -247,16 +266,59 @@ impl ChatPane {
     pub fn showing_workflows(&self) -> bool {
         match self.page {
             Some(Page::Workflows(_)) => true,
-            Some(Page::Workspace(_) | Page::Tasks(_) | Page::Issues(_) | Page::Settings(_))
+            Some(
+                Page::Workspace(_)
+                | Page::Tasks(_)
+                | Page::Issues(_)
+                | Page::Schedules(_)
+                | Page::Settings(_),
+            )
             | None => false,
         }
+    }
+
+    /// Whether the Schedules page is what the pane shows.
+    pub fn showing_schedules(&self) -> bool {
+        match self.page {
+            Some(Page::Schedules(_)) => true,
+            Some(
+                Page::Workspace(_)
+                | Page::Tasks(_)
+                | Page::Issues(_)
+                | Page::Workflows(_)
+                | Page::Settings(_),
+            )
+            | None => false,
+        }
+    }
+
+    /// Show the Schedules page, `view`, as it was left, the way the
+    /// Workflows page is shown.
+    pub fn show_schedules(
+        &mut self,
+        view: gpui::AnyView,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.leave_issues_page(window, cx);
+        self.page = Some(Page::Schedules(view));
+        self.leave_shown_session(window, cx);
+        self.active = None;
+        self.empty = None;
+        cx.notify();
     }
 
     /// Whether Settings is what the pane shows.
     pub fn showing_settings(&self) -> bool {
         match self.page {
             Some(Page::Settings(_)) => true,
-            Some(Page::Workspace(_) | Page::Tasks(_) | Page::Issues(_) | Page::Workflows(_))
+            Some(
+                Page::Workspace(_)
+                | Page::Tasks(_)
+                | Page::Issues(_)
+                | Page::Workflows(_)
+                | Page::Schedules(_),
+            )
             | None => false,
         }
     }
@@ -355,6 +417,7 @@ impl ChatPane {
             || self.showing_workflows()
             || self.showing_settings()
             || self.showing_tasks()
+            || self.showing_schedules()
         {
             self.focus_handle.clone().focus(window, cx);
         }
