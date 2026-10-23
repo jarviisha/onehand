@@ -30,7 +30,7 @@ pub(crate) use place::{fail, release, request, stop_queued};
 pub(crate) struct Tasks {
     /// Every task kept, unfinished or history. Empty until the boot read lands.
     tasks: Vec<Task>,
-    /// Runs under way, by the uid of the session they drive.
+    /// Runs under way, by their task's id; a check's has no session.
     live: HashMap<String, driver::Driven>,
     queue: queue::Queue,
     /// Where each queued task was asked for, to start it there.
