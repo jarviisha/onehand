@@ -113,10 +113,10 @@ fn request_told(
                 // the cap from here as queued or running.
                 crate::unattended::placed(&id, cx);
                 match free {
-                    Some(true) => {
-                        shell.drive_task(id, window, cx);
-                        Placed::Started
-                    }
+                    Some(true) => match shell.drive_task(id, window, cx) {
+                        Ok(()) => Placed::Started,
+                        Err(why) => Placed::Refused(why),
+                    },
                     Some(false) => {
                         let t = cx.global::<Tasks>();
                         let title = t
@@ -274,7 +274,9 @@ pub(crate) fn release(id: String, cx: &mut App) {
     let started = asked.and_then(|window| {
         let next = next.clone();
         crate::state::with_shell(window, cx, |shell, window, cx| {
-            shell.drive_task(next, window, cx)
+            // Its refusal is said in the window, and nobody else is waiting
+            // on it.
+            let _ = shell.drive_task(next, window, cx);
         })
     });
     if started.is_none() {
@@ -286,6 +288,9 @@ pub(crate) fn release(id: String, cx: &mut App) {
 /// never ran a step is over, stopped by a person, with no empty run kept;
 /// one resumed goes back to how it was.
 pub(crate) fn stop_queued(id: &str, cx: &mut App) {
+    // Never driven, so what was asked for its first drive goes with it: a
+    // later Retry is a person's, and shows.
+    super::take_off_screen(id, cx);
     let dropped = cx.update_global::<Tasks, _>(|t, _| {
         if !t.queue.call_off(id) {
             return None;

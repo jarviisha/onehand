@@ -376,6 +376,13 @@ impl Shell {
         String,
         futures::channel::oneshot::Receiver<crate::task::Placed>,
     ) {
+        // A worktree cut for it is a project of the workspace, as the
+        // launcher's is: kept, listed, and there to come back to.
+        if self.root_index(&setup.dir).is_none() {
+            self.window.workspace.add_root(setup.dir.clone());
+            self.refresh_git(cx);
+            self.save_workspace(window, cx);
+        }
         let task = new_task(setup, template, brief, cx);
         let id = task.id.clone();
         crate::task::drive_off_screen(&id, cx);
@@ -390,18 +397,27 @@ impl Shell {
     /// to the driver, which starts the task's last run or carries it on from
     /// the step it was at. One that cannot start stays as it was, and its
     /// place passes on.
-    pub fn drive_task(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
+    /// Says why when it did not start.
+    pub fn drive_task(
+        &mut self,
+        id: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
+        // Taken first, so a first drive that is refused uses it up as well.
+        let off_screen = crate::task::take_off_screen(&id, cx);
         let refused = |why: String, kind: Failure, window: &mut Window, cx: &mut Context<Self>| {
             // An issue's run that cannot start ends failed, so its issue is
             // told rather than left claimed with nothing after the claim.
             let issue = crate::task::task(&id, cx).is_some_and(|task| task.issue().is_some());
             window.push_notification(crate::toast::warning(why.clone()), cx);
             // Deferred: handing the place on may start a task in this shell.
-            let id = id.clone();
+            let (id, said) = (id.clone(), why.clone());
             cx.defer(move |cx| match issue {
-                true => crate::task::fail(id, why, kind, cx),
+                true => crate::task::fail(id, said, kind, cx),
                 false => crate::task::release(id, cx),
             });
+            Err(why)
         };
         let Some(mut run) = crate::task::resumable_run(&id, cx) else {
             return refused(
@@ -433,7 +449,7 @@ impl Shell {
             // Deferred, as the driver is below: the check reaches into the
             // global the shell may be reading from.
             cx.defer(move |cx| crate::task::drive_check(id, handle, cx));
-            return;
+            return Ok(());
         }
         // A snapshot that no longer validates (a later build's rules) is what
         // the preflight would have blocked, found late.
@@ -452,7 +468,6 @@ impl Shell {
             );
         }
         let mut unstarted = Failure::Other;
-        let off_screen = crate::task::take_off_screen(&id, cx);
         let session = match (task.issue(), off_screen) {
             // An issue's run comes up off screen, on a project of its own that
             // the workspace file never holds unless it was kept, so nothing the
@@ -502,6 +517,7 @@ impl Shell {
         // shell is reading from while this runs.
         let handle = window.window_handle();
         cx.defer(move |cx| crate::task::start(uid, &session, handle, id, run, first, pinned, cx));
+        Ok(())
     }
 
     /// Run the check command of the project at `root` as a task of its own,
