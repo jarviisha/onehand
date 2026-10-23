@@ -131,6 +131,34 @@ pub struct Task {
     /// A file from before checks were tasks reads as a workflow's.
     #[serde(default)]
     pub source: Source,
+    /// What started it, when that was not a person: kept on the task, so it
+    /// still says so after the schedule is renamed or deleted.
+    #[serde(default)]
+    pub origin: Option<Origin>,
+    /// What its sessions' agent may use of onehand's tools, copied from what
+    /// started it, so a Retry or a Resume is never given more.
+    #[serde(default)]
+    pub grant: Grant,
+}
+
+/// What started a task, when it was not a person.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Origin {
+    /// A schedule, by its id and its name when it fired.
+    Schedule { id: String, name: String },
+    /// One of onehand's tools, called by an agent or a program.
+    Tool,
+}
+
+/// The tools a task's sessions may use, and the labels an issue they write
+/// gets.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Grant {
+    #[serde(default)]
+    pub tools: Vec<String>,
+    #[serde(default)]
+    pub labels: Vec<String>,
 }
 
 impl Task {
@@ -144,6 +172,8 @@ impl Task {
             dismissed: false,
             worktree_removed: false,
             source: Source::Workflow,
+            origin: None,
+            grant: Grant::default(),
         }
     }
 

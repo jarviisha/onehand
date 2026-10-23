@@ -14,6 +14,7 @@ mod cron;
 
 pub use cron::{parse, Cron};
 
+use crate::workflow::{Brief, StepKind, StepSpec, Template};
 use chrono::{TimeZone, Timelike};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -274,6 +275,67 @@ fn latest_due(cron: &Cron, after: u64, now: u64, tz: &impl TimeZone) -> Option<u
 
 fn minute_of(t: u64) -> u64 {
     t - t % 60
+}
+
+/// The workflow a prompt start runs: one agent step whose prompt is the
+/// brief, which holds the schedule's prompt. The prompt goes in the brief
+/// rather than the step because a step's prompt may only name what a
+/// workflow knows, and a person's prompt may hold any braces it likes.
+pub fn prompt_template(name: &str) -> Template {
+    let mut template = Template::blank(name);
+    template.steps.push(StepSpec {
+        id: "prompt".to_string(),
+        label: "Prompt".to_string(),
+        kind: StepKind::Agent {
+            prompt: "{brief}".to_string(),
+            gates: Vec::new(),
+            keep_answer: false,
+            mode: None,
+            options: BTreeMap::new(),
+        },
+    });
+    template
+}
+
+/// `template` with the schedule's `mode` and `options` for every agent step
+/// that sets none of its own, setting by setting: a step's own wins.
+pub fn fill(
+    mut template: Template,
+    mode: Option<&str>,
+    options: &BTreeMap<String, String>,
+) -> Template {
+    for step in &mut template.steps {
+        if let StepKind::Agent {
+            mode: own_mode,
+            options: own,
+            ..
+        } = &mut step.kind
+        {
+            if own_mode.is_none() {
+                *own_mode = mode.map(str::to_string);
+            }
+            for (id, value) in options {
+                own.entry(id.clone()).or_insert_with(|| value.clone());
+            }
+        }
+    }
+    template
+}
+
+/// What schedule `s` asks, as a task's brief.
+pub fn brief(s: &Schedule) -> Brief {
+    match &s.starts {
+        Starts::Prompt { prompt } => Brief {
+            title: s.name.clone(),
+            body: prompt.clone(),
+            instructions: None,
+        },
+        Starts::Workflow { title, body, .. } => Brief {
+            title: title.clone(),
+            body: body.clone(),
+            instructions: None,
+        },
+    }
 }
 
 /// Where the schedules are kept.
