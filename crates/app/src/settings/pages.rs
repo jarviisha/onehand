@@ -273,7 +273,57 @@ pub(super) fn connections_page(cx: &App) -> AnyElement {
                     })),
             ),
         )
+        .child(outside_section(cx))
         .into_any_element()
+}
+
+/// Whether a program outside onehand may use its tools over the socket.
+///
+/// On the connections page because it is one, the other way round: something
+/// on this machine reaching onehand rather than onehand reaching a service.
+/// What it may do is said beside the switch, and what it may never do, since
+/// turning it on is the moment that is decided.
+fn outside_section(cx: &App) -> AnyElement {
+    let socket = onehand_core::instance::socket_path(&onehand_core::config::config_dir());
+    section(
+        Some("Outside control"),
+        Some(SharedString::from(
+            "A program you run — a script, a scheduled job — may use onehand's tools over its              socket: list projects, agents, workflows and tasks, open a session, stop a task              and open a file. It never answers a card, a permission or an approval; those              wait for you",
+        )),
+        cx,
+    )
+    // The socket's path in the face a path is set in, as the config file's is.
+    .child(
+        div()
+            .h_flex()
+            .flex_wrap()
+            .gap_1()
+            .text_xs()
+            .text_color(cx.theme().muted_foreground)
+            .child("Socket")
+            .child(
+                div()
+                    .font_family(cx.theme().mono_font_family.clone())
+                    .child(socket.display().to_string()),
+            ),
+    )
+    // Held to its own width, as the unattended switches are, so the space
+    // beside the label is not a target, and given the pointer the switch does
+    // not set itself.
+    .child(
+        div().h_flex().child(
+            div().flex_none().cursor_pointer().child(
+                Switch::new("control-outside")
+                    .checked(crate::control::outside())
+                    .small()
+                    .label("Let programs on this machine control onehand")
+                    .on_click(|on: &bool, window: &mut Window, cx: &mut App| {
+                        crate::control::set_outside(*on, window, cx);
+                    }),
+            ),
+        ),
+    )
+    .into_any_element()
 }
 
 /// The per-project switch for unattended runs, as a list.

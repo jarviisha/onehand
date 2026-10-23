@@ -671,8 +671,7 @@ fn open_window(workspace: Workspace, cx: &mut App) {
 
 /// Install global state and open the first window.
 pub fn boot(cx: &mut App) {
-    // First, so a second launch waiting on the socket is answered soon. `main`
-    // took the lock and bound the socket before GPUI started.
+    // First, so a launch waiting on the socket `main` bound is answered soon.
     crate::instance::listen(cx);
     // Behind the lock, and before anything reads the templates.
     for problem in onehand_core::workflow::store::migrate_old_dir_blocking()
@@ -686,6 +685,7 @@ pub fn boot(cx: &mut App) {
     let appearance = cfg.appearance;
     let remote = cfg.remote.clone();
     let unattended = cfg.unattended.clone();
+    crate::control::boot(&cfg.control);
     cx.set_global(Shared::from_config(cfg, config_path));
     // The settings, workspace and conversation-name writes still queued at
     // quit would die with the process: waited for, as the task files are,
