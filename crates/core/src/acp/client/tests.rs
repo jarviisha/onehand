@@ -19,7 +19,14 @@ fn connect(
     resume: Option<String>,
 ) -> impl futures::Stream<Item = AcpEvent> {
     let launch = crate::config::Launch { command, args, env };
-    super::connect(launch, SessionOpts { cwd, resume })
+    super::connect(
+        launch,
+        SessionOpts {
+            cwd,
+            resume,
+            mcp_servers: Vec::new(),
+        },
+    )
 }
 
 /// The agent's side of a scripted transport: read what the client wrote,
@@ -98,6 +105,7 @@ fn client_resuming(
             SessionOpts {
                 cwd: PathBuf::from("/tmp"),
                 resume,
+                mcp_servers: vec![json!({"name": "onehand"})],
             },
         );
         futures::pin_mut!(stream);
@@ -114,6 +122,20 @@ fn client_resuming(
         },
         events,
     )
+}
+
+/// **The session's own MCP servers go with the session it opens**, so the
+/// agent can reach onehand's tools through them.
+#[tokio::test]
+async fn session_new_carries_the_sessions_mcp_servers() {
+    let (mut agent, _events) = client();
+    let hello = agent.heard().await;
+    agent
+        .say(json!({"jsonrpc": "2.0", "id": hello["id"],
+            "result": { "protocolVersion": 1, "agentCapabilities": {} }}))
+        .await;
+    let new = agent.heard().await;
+    assert_eq!(new["params"]["mcpServers"], json!([{"name": "onehand"}]));
 }
 
 /// **The capability that makes multiple-choice prompts appear at all.** The
@@ -973,6 +995,7 @@ async fn the_last_answer_before_an_exit_is_not_lost() {
             SessionOpts {
                 cwd: PathBuf::from("/tmp"),
                 resume: None,
+                mcp_servers: Vec::new(),
             },
         );
         futures::pin_mut!(stream);

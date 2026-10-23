@@ -154,6 +154,9 @@ pub struct ChatSession {
     /// when the agent now answering started, which is what tells a change to
     /// its plugins apart from one it has already loaded.
     pub started: std::time::Instant,
+    /// What this session's agent's proxy to onehand's tools speaks for; let
+    /// go with the session, and with it the agent's way in.
+    _token: crate::control::Token,
     /// Parsed markdown, keyed by [`MdId`]; the `usize` is how many bytes of the
     /// model's `source` are already in the state.
     ///
@@ -285,7 +288,8 @@ impl ChatSession {
         resume: Option<String>,
         cx: &mut App,
     ) -> Entity<Self> {
-        let (events, started) = Shared::global(cx).acp.connect(spec, root.clone(), resume);
+        let (events, started, token) = Shared::global(cx).acp.connect(spec, root.clone(), resume);
+        token.claim(uid);
         let seen = spec.clone();
 
         cx.new(|cx| {
@@ -316,6 +320,7 @@ impl ChatSession {
             Self {
                 chat,
                 started,
+                _token: token,
                 md: HashMap::new(),
                 images: RefCell::new(HashMap::new()),
                 ask_inputs: HashMap::new(),

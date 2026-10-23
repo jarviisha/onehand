@@ -17,9 +17,11 @@ use onehand_core::control::{self, Call, Conn, Handled, Peer, Standing};
 use onehand_core::task::Group;
 use onehand_core::workflow::{Brief, Place, Setup, Template};
 use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 use std::path::{Component, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{LazyLock, Mutex};
 use tokio::io::{AsyncWriteExt as _, BufReader};
 use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 
@@ -72,7 +74,116 @@ fn standing(peer: &Peer) -> Standing {
         Peer::Outside => Standing::Refused(
             "outside control is off: switch it on in Settings ▸ Connections".to_string(),
         ),
+        Peer::Session(token) => {
+            let sessions = sessions();
+            match sessions.tokens.get(token) {
+                None => Standing::Refused("no such session".to_string()),
+                Some(Some(uid)) if sessions.on.contains(uid) => Standing::On,
+                // Not claimed yet (a warm adapter's), or switched off.
+                Some(_) => Standing::Off,
+            }
+        }
     }
+}
+
+/// Every session's standing, shared with the listener's runtime, which reads
+/// it on every message a session's agent sends.
+#[derive(Default)]
+struct Sessions {
+    /// Each token given out, and the session that holds it once one does.
+    tokens: HashMap<String, Option<u64>>,
+    /// The sessions switched on.
+    on: HashSet<u64>,
+    /// Where each token's connections are written, to tell them the tools
+    /// changed.
+    conns: HashMap<String, Vec<UnboundedSender<String>>>,
+    /// The sessions each session's tools opened.
+    opened: HashMap<u64, Vec<u64>>,
+}
+
+static SESSIONS: LazyLock<Mutex<Sessions>> = LazyLock::new(Mutex::default);
+
+fn sessions() -> std::sync::MutexGuard<'static, Sessions> {
+    SESSIONS.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// A session's token: what its agent's proxy says it speaks for. Minted when
+/// the agent is started, which for a warm one is before any session holds
+/// it, and let go with whatever holds it.
+pub(crate) struct Token(String);
+
+impl Token {
+    pub(crate) fn mint() -> Self {
+        let token = control::new_token();
+        sessions().tokens.insert(token.clone(), None);
+        Self(token)
+    }
+
+    /// Held by session `uid` from now on.
+    pub(crate) fn claim(&self, uid: u64) {
+        sessions().tokens.insert(self.0.clone(), Some(uid));
+    }
+
+    /// The `mcpServers` entry that gives an agent this token: onehand itself,
+    /// as the proxy to its socket. Nothing when onehand cannot say where its
+    /// own executable is.
+    pub(crate) fn servers(&self) -> Vec<serde_json::Value> {
+        let socket = onehand_core::instance::socket_path(&onehand_core::config::config_dir());
+        std::env::current_exe()
+            .map(|exe| vec![control::proxy_entry(&exe, &socket, &self.0)])
+            .unwrap_or_default()
+    }
+}
+
+impl Drop for Token {
+    fn drop(&mut self) {
+        let mut sessions = sessions();
+        sessions.tokens.remove(&self.0);
+        sessions.conns.remove(&self.0);
+    }
+}
+
+/// Whether session `uid` can be switched on at all: not when it is an
+/// unattended run's, whose agent works with nobody watching.
+pub(crate) fn offered(uid: u64, cx: &App) -> bool {
+    crate::task::shown(uid, cx)
+        .and_then(|shown| crate::task::task(&shown.task, cx))
+        .is_none_or(|task| task.issue().is_none())
+}
+
+/// Whether session `uid`'s agent may use the tools.
+pub(crate) fn switched_on(uid: u64) -> bool {
+    sessions().on.contains(&uid)
+}
+
+/// Let session `uid`'s agent use the tools, or stop it, and tell every
+/// connection it has that the list changed.
+pub(crate) fn switch(uid: u64, on: bool) {
+    let mut sessions = sessions();
+    let changed = match on {
+        true => sessions.on.insert(uid),
+        false => sessions.on.remove(&uid),
+    };
+    if !changed {
+        return;
+    }
+    let Sessions { tokens, conns, .. } = &mut *sessions;
+    let note = control::tools_changed();
+    for (token, held) in tokens.iter() {
+        if *held != Some(uid) {
+            continue;
+        }
+        if let Some(senders) = conns.get_mut(token) {
+            senders.retain(|sender| sender.unbounded_send(note.clone()).is_ok());
+        }
+    }
+}
+
+/// Session `uid` is closed: its switch and what its tools opened go with it.
+pub(crate) fn forget(uid: u64) {
+    let mut sessions = sessions();
+    sessions.on.remove(&uid);
+    sessions.opened.remove(&uid);
 }
 
 /// Said when a call's answer cannot come, because the app is going.
@@ -87,39 +198,66 @@ pub(crate) async fn converse(
     mut writer: OwnedWriteHalf,
     tx: UnboundedSender<Incoming>,
 ) {
+    // One writer for the replies and for what the session is told unasked,
+    // so the two never interleave inside a line.
+    let (out, mut lines) = futures::channel::mpsc::unbounded::<String>();
+    tokio::spawn(async move {
+        use futures::StreamExt as _;
+        while let Some(line) = lines.next().await {
+            if writer
+                .write_all(format!("{line}\n").as_bytes())
+                .await
+                .is_err()
+            {
+                return;
+            }
+        }
+    });
     let mut conn = Conn::default();
+    let mut told = false;
     let mut line = Some(first);
     while let Some(text) = line.take() {
-        let out = match control::handle(&mut conn, &text, standing) {
+        let reply = match control::handle(&mut conn, &text, standing) {
             Handled::Reply(reply) => Some(reply),
             Handled::Quiet => None,
             Handled::Perform { id, call } => {
+                let peer = conn.peer().cloned().unwrap_or(Peer::Outside);
                 let (answer, answered) = oneshot::channel();
-                let outcome = match tx.unbounded_send(Incoming::Call(call, answer)) {
+                let outcome = match tx.unbounded_send(Incoming::Call(peer, call, answer)) {
                     Ok(()) => answered.await.unwrap_or_else(|_| Err(CLOSING.to_string())),
                     Err(_) => Err(CLOSING.to_string()),
                 };
                 Some(control::answered(&id, outcome))
             }
         };
-        if let Some(out) = out
-            && writer
-                .write_all(format!("{out}\n").as_bytes())
-                .await
-                .is_err()
+        // A session's connection, once it has said whose it is, is told when
+        // that session's switch changes.
+        if let (false, Some(Peer::Session(token))) = (told, conn.peer()) {
+            told = true;
+            sessions()
+                .conns
+                .entry(token.clone())
+                .or_default()
+                .push(out.clone());
+        }
+        if let Some(reply) = reply
+            && out.unbounded_send(reply).is_err()
         {
-            return;
+            break;
         }
         line = next_line(&mut reader).await;
     }
+    // For every clone, the one kept to tell the session too: the writer then
+    // lets the socket go, so the proxy on the other end hears it close.
+    out.close_channel();
 }
 
 /// Carry out `call` in the window in front, and answer what came of it in
 /// the words the caller reads. Never from inside a shell's update: it runs
 /// from the socket's own task.
-pub(crate) fn perform(call: Call, answer: Answer, cx: &mut App) {
+pub(crate) fn perform(peer: Peer, call: Call, answer: Answer, cx: &mut App) {
     let mut answer = Some(answer);
-    let outcome = perform_now(call, &mut answer, cx);
+    let outcome = perform_now(peer, call, &mut answer, cx);
     // Still here: the call was done, or refused, at once. A start that goes on
     // took it, and answers once its task has landed.
     if let Some(answer) = answer {
@@ -130,8 +268,43 @@ pub(crate) fn perform(call: Call, answer: Answer, cx: &mut App) {
 /// Where a call's answer goes.
 pub(crate) type Answer = oneshot::Sender<Result<String, String>>;
 
-fn perform_now(call: Call, answer: &mut Option<Answer>, cx: &mut App) -> Result<String, String> {
-    let (handle, shell) = crate::state::front(cx).ok_or("no onehand window is open")?;
+/// How many sessions one session's tools may have open at once.
+const OPENED_CAP: usize = 4;
+
+fn perform_now(
+    peer: Peer,
+    call: Call,
+    answer: &mut Option<Answer>,
+    cx: &mut App,
+) -> Result<String, String> {
+    // A session's call lands in its own window, about its own project; an
+    // outside program's in the window in front.
+    let (handle, shell, caller) = match &peer {
+        Peer::Outside => {
+            let (handle, shell) = crate::state::front(cx).ok_or("no onehand window is open")?;
+            (handle, shell, None)
+        }
+        Peer::Session(token) => {
+            let uid = sessions()
+                .tokens
+                .get(token)
+                .copied()
+                .flatten()
+                .ok_or("no such session")?;
+            let windows: Vec<_> = Shared::global(cx)
+                .windows
+                .iter()
+                .filter_map(|w| Some((w.handle, w.shell.upgrade()?)))
+                .collect();
+            windows
+                .into_iter()
+                .find_map(|(handle, shell)| {
+                    let project = shell.read(cx).session_project(uid)?;
+                    Some((handle, shell, Some((uid, project))))
+                })
+                .ok_or("this session is no longer open")?
+        }
+    };
     let projects: Vec<(String, PathBuf)> = shell
         .read(cx)
         .remote_roots()
@@ -270,6 +443,15 @@ fn perform_now(call: Call, answer: &mut Option<Answer>, cx: &mut App) -> Result<
                 .into_iter()
                 .find(|row| row.id == task)
                 .ok_or_else(|| format!("no task {task} in this window's projects"))?;
+            // A session stopping its own task would be an agent ending the
+            // run that is watching it; that is the person's to do.
+            let own = caller
+                .as_ref()
+                .and_then(|(uid, _)| crate::task::shown(*uid, cx))
+                .is_some_and(|shown| shown.task == row.id);
+            if own {
+                return Err("that is this session's own task".to_string());
+            }
             if !row.stoppable {
                 return Err(format!(
                     "{} has nothing to stop: it is {}",
@@ -281,9 +463,13 @@ fn perform_now(call: Call, answer: &mut Option<Answer>, cx: &mut App) -> Result<
             Ok(format!("Stopping {}", row.title))
         }
         Call::OpenFile { path } => {
-            if !path.is_absolute() {
-                return Err("give the file's absolute path".to_string());
-            }
+            // Relative to the calling session's project, which is where its
+            // agent works; an outside program has no project to start from.
+            let path = match (&caller, path.is_absolute()) {
+                (_, true) => path,
+                (Some((_, project)), false) => project.join(path),
+                (None, false) => return Err("give the file's absolute path".to_string()),
+            };
             // Refused rather than resolved, so a path can never climb out of
             // the project it names by its first components.
             if path.components().any(|c| c == Component::ParentDir) {
@@ -320,9 +506,38 @@ fn perform_now(call: Call, answer: &mut Option<Answer>, cx: &mut App) -> Result<
                     .cloned()
                     .ok_or_else(|| format!("no agent named {agent}; list_agents names them"))?;
             let name = spec.name.clone();
-            let (_, session) = shell
+            if let Some((uid, _)) = &caller {
+                let shell = shell.read(cx);
+                let open: Vec<u64> = sessions()
+                    .opened
+                    .get(uid)
+                    .into_iter()
+                    .flatten()
+                    .copied()
+                    .filter(|opened| shell.session_project(*opened).is_some())
+                    .collect();
+                if open.len() >= OPENED_CAP {
+                    let said: Vec<String> = open
+                        .iter()
+                        .map(|opened| {
+                            let at = shell.session_project(*opened).unwrap_or_default();
+                            format!("session {opened} on {}", at.display())
+                        })
+                        .collect();
+                    return Err(format!(
+                        "this session's tools already have {OPENED_CAP} sessions open: {}; \
+                         one has to close first",
+                        said.join(", ")
+                    ));
+                }
+                sessions().opened.insert(*uid, open);
+            }
+            let (opened, session) = shell
                 .update(cx, |shell, cx| shell.run_unattended(dir, spec, cx))
                 .ok_or("the session did not start")?;
+            if let Some((uid, _)) = &caller {
+                sessions().opened.entry(*uid).or_default().push(opened);
+            }
             if let Some(prompt) = prompt {
                 send_when_connected(session, prompt, cx);
             }
@@ -449,5 +664,50 @@ fn group_said(group: Group) -> &'static str {
         Group::Running => "running",
         Group::Queued => "queued",
         Group::Finished => "finished",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::StreamExt as _;
+
+    fn standing_of(token: &str) -> Standing {
+        standing(&Peer::Session(token.to_string()))
+    }
+
+    #[test]
+    fn a_token_speaks_for_its_session_until_it_goes() {
+        let uid = 900_001;
+        let token = Token::mint();
+        let name = token.0.clone();
+        // A warm adapter's: known, and offered nothing.
+        assert!(matches!(standing_of(&name), Standing::Off));
+        token.claim(uid);
+        assert!(matches!(standing_of(&name), Standing::Off));
+
+        let (told, mut heard) = futures::channel::mpsc::unbounded();
+        let (gone, _) = futures::channel::mpsc::unbounded::<String>();
+        sessions()
+            .conns
+            .entry(name.clone())
+            .or_default()
+            .extend([told, gone]);
+        switch(uid, true);
+        assert!(switched_on(uid));
+        assert!(matches!(standing_of(&name), Standing::On));
+        let note = futures::executor::block_on(heard.next()).unwrap();
+        assert!(note.contains("list_changed"), "{note}");
+        // The connection whose other end went is dropped, the live one kept.
+        assert_eq!(sessions().conns[&name].len(), 1);
+        // Switching to where it is already tells nobody.
+        switch(uid, true);
+        assert!(heard.try_recv().is_err());
+
+        forget(uid);
+        assert!(!switched_on(uid));
+        drop(token);
+        assert!(matches!(standing_of(&name), Standing::Refused(_)));
+        assert!(!sessions().conns.contains_key(&name));
     }
 }

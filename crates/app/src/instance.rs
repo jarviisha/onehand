@@ -10,7 +10,7 @@ use futures::StreamExt as _;
 use futures::channel::mpsc::{UnboundedSender, unbounded};
 use futures::channel::oneshot;
 use gpui::App;
-use onehand_core::control::Call;
+use onehand_core::control::{Call, Peer};
 use onehand_core::instance::{self, Forwarded, Unforwarded};
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
@@ -124,7 +124,9 @@ pub(crate) fn listen(cx: &mut App) {
             }
             cx.update(|cx| match incoming {
                 Incoming::Open(forwarded) => open_forwarded(forwarded, cx),
-                Incoming::Call(call, answer) => crate::control::perform(call, answer, cx),
+                Incoming::Call(peer, call, answer) => {
+                    crate::control::perform(peer, call, answer, cx)
+                }
             });
         }
     })
@@ -135,8 +137,8 @@ pub(crate) fn listen(cx: &mut App) {
 pub(crate) enum Incoming {
     /// A second launch's folder, or only a window to raise.
     Open(Forwarded),
-    /// A tool's call, and where its answer goes.
-    Call(Call, oneshot::Sender<Result<String, String>>),
+    /// A tool's call, who made it, and where its answer goes.
+    Call(Peer, Call, oneshot::Sender<Result<String, String>>),
 }
 
 /// Answer every connection. One whose first line is a second launch's open
@@ -263,12 +265,35 @@ mod tests {
     }
 
     #[test]
+    fn a_sessions_connection_is_let_go_when_its_client_hangs_up() {
+        let (dir, _rt, _rx) = listening("hangup");
+        let token = crate::control::Token::mint();
+        let servers = token.servers();
+        let name = servers[0]["args"][2].as_str().unwrap().to_string();
+        let mut stream = UnixStream::connect(dir.join("onehand.sock")).unwrap();
+        let init = json!({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {"_meta": {"onehand": {"session": name}}}});
+        assert!(ask(&mut stream, init)["result"].is_object());
+        // The proxy's stdin ended: the server's end has to close too, or the
+        // proxy waits on it for ever.
+        stream.shutdown(std::net::Shutdown::Write).unwrap();
+        stream
+            .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+            .unwrap();
+        let mut rest = String::new();
+        let read = std::io::Read::read_to_string(&mut stream, &mut rest);
+        assert_eq!(read.unwrap(), 0, "the server kept the socket open");
+        drop(token);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn an_outside_client_is_answered_over_the_socket() {
         let (dir, _rt, mut rx) = listening("outside");
         // GPUI's side, answering every call alike.
         std::thread::spawn(move || {
             while let Some(incoming) = futures::executor::block_on(rx.next()) {
-                if let Incoming::Call(_, answer) = incoming {
+                if let Incoming::Call(_, _, answer) = incoming {
                     let _ = answer.send(Ok("done".to_string()));
                 }
             }

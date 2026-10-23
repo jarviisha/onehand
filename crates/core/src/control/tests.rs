@@ -192,10 +192,88 @@ fn initialize_says_what_it_serves() {
 }
 
 #[test]
-fn initialize_with_a_token_is_refused_until_sessions_have_tokens() {
+fn initialize_with_a_token_speaks_for_that_session() {
     let token = json!({"_meta": {"onehand": {"session": "abc"}}});
-    let reply = reply(handle(&mut Conn::default(), &line("initialize", token), on));
+    let mut conn = Conn::default();
+    let standing = |peer: &Peer| match peer {
+        Peer::Session(token) if token == "abc" => Standing::Off,
+        Peer::Session(_) => Standing::Refused("no such session".into()),
+        Peer::Outside => Standing::Refused("outside control is off".into()),
+    };
+    assert!(reply(handle(&mut conn, &line("initialize", token), standing))["result"].is_object());
+    assert_eq!(conn.peer(), Some(&Peer::Session("abc".into())));
+    // Switched off: connected, and offered nothing.
+    let reply = self::reply(handle(&mut conn, &line("tools/list", json!({})), standing));
+    assert_eq!(reply["result"]["tools"], json!([]));
+    let other = json!({"_meta": {"onehand": {"session": "zzz"}}});
+    let reply = self::reply(handle(
+        &mut Conn::default(),
+        &line("initialize", other),
+        standing,
+    ));
     assert_eq!(reply["error"]["code"], -32001);
+}
+
+#[test]
+fn the_proxy_puts_the_token_on_initialize_only() {
+    let init = line("initialize", json!({"protocolVersion": "2025-06-18"}));
+    let sent: Value = serde_json::from_str(&with_token(&init, "abc")).unwrap();
+    assert_eq!(sent["params"]["_meta"]["onehand"]["session"], "abc");
+    assert_eq!(sent["params"]["protocolVersion"], "2025-06-18");
+    let list = line("tools/list", json!({}));
+    assert_eq!(with_token(&list, "abc"), list);
+    // A token the client tried to bring is replaced, not trusted.
+    let forged = line(
+        "initialize",
+        json!({"_meta": {"onehand": {"session": "zzz"}}}),
+    );
+    let sent: Value = serde_json::from_str(&with_token(&forged, "abc")).unwrap();
+    assert_eq!(sent["params"]["_meta"]["onehand"]["session"], "abc");
+    assert_eq!(with_token("not json", "abc"), "not json");
+    // A `_meta` that is not an object is replaced, not indexed into.
+    for meta in [json!("x"), json!([1])] {
+        let odd = line("initialize", json!({"_meta": meta}));
+        let sent: Value = serde_json::from_str(&with_token(&odd, "abc")).unwrap();
+        assert_eq!(sent["params"]["_meta"]["onehand"]["session"], "abc");
+    }
+}
+
+#[test]
+fn the_tools_changed_notification_is_a_notification() {
+    let note: Value = serde_json::from_str(&tools_changed()).unwrap();
+    assert_eq!(note["method"], "notifications/tools/list_changed");
+    assert!(note.get("id").is_none());
+}
+
+#[test]
+fn the_proxy_carries_lines_both_ways() {
+    use std::io::{BufRead as _, Write as _};
+    let dir = std::env::temp_dir().join(format!("onehand-proxy-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let socket = dir.join("onehand.sock");
+    let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+    // The socket's end: echoes each line it reads.
+    std::thread::spawn(move || {
+        let (stream, _) = listener.accept().unwrap();
+        let mut out = stream.try_clone().unwrap();
+        for line in std::io::BufReader::new(stream).lines() {
+            writeln!(out, "{}", line.unwrap()).unwrap();
+        }
+    });
+    let input = format!("{}\n", line("initialize", json!({})));
+    let mut output = Vec::new();
+    proxy(
+        &socket,
+        "abc",
+        std::io::Cursor::new(input.into_bytes()),
+        &mut output,
+    )
+    .unwrap();
+    let echoed: Value =
+        serde_json::from_slice(output.split(|b| *b == b'\n').next().unwrap()).unwrap();
+    assert_eq!(echoed["params"]["_meta"]["onehand"]["session"], "abc");
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
@@ -412,4 +490,28 @@ fn the_starts_refuse_malformed_input() {
         let why = refusal(call(name, arguments.clone()));
         assert!(why.contains(named), "{name} {arguments}: {why}");
     }
+}
+
+#[test]
+fn the_proxy_entry_starts_onehand_as_its_own_proxy() {
+    let entry = proxy_entry(
+        Path::new("/bin/onehand"),
+        Path::new("/c/onehand.sock"),
+        "abc",
+    );
+    assert_eq!(entry["name"], "onehand");
+    assert_eq!(entry["command"], "/bin/onehand");
+    assert_eq!(
+        entry["args"],
+        json!(["--mcp-proxy", "/c/onehand.sock", "abc"])
+    );
+    assert_eq!(entry["env"], json!([]));
+}
+
+#[test]
+fn every_token_is_its_own() {
+    let (a, b) = (new_token(), new_token());
+    assert_ne!(a, b);
+    assert_eq!(a.len(), 32);
+    assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
 }

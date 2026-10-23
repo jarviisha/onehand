@@ -75,7 +75,11 @@ is ever added to it (a refusal is Send's tooltip, a failure a toast). The field,
 *Fast* (its bolt alone, in the warning ink while fast: a toggle with no caret when its choices
 read as on and off; else a picker with a caret, the value in force on its tooltip), the model and
 effort chips, then *Send*, or *Stop* (solid danger,
-worded) and *Queue* over a draft. Under it the branch and the mode, stacked when narrow. Each chip's
+worded) and *Queue* over a draft. Under it the branch and the mode, stacked when narrow; while the
+session's agent may use onehand's tools, *Controls onehand* stands before the mode, its bot mark
+in the warning ink, and pressing it switches that off. The `+` menu ends on *Agent controls
+onehand* under a heading of its own, *This session*, checked while on, and not offered in an
+unattended run's session. Each chip's
 menu opens just above it, without its tooltip. Above the card: one pinned permission or question,
 the oldest, with how many more wait; then one surface on the card's fill and lift holding a
 reconnect and the queue as lines, then the staged files as one row of plates (a picture's preview,
