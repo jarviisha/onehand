@@ -484,6 +484,7 @@ impl ChatPane {
         .children((hidden > 0).then(|| muted_line(format!("{hidden} more"))));
 
         let tasks = tasks_box(&project.path, cx);
+        let schedules = schedules_box(&project.path, cx);
         // What the project is set to: its check command, the shell's field.
         let settings = project.check_input.as_ref().map(|input| {
             page_card("Settings", None, None, cx).child(onehand_ui::field(
@@ -503,6 +504,7 @@ impl ChatPane {
             .w_full()
             .child(history)
             .child(tasks)
+            .child(schedules)
             .children(settings);
 
         div()
@@ -726,4 +728,59 @@ fn tasks_box(root: &Path, cx: &mut Context<ChatPane>) -> Div {
                         }))
                 }),
         )
+}
+
+/// The project's schedules, each by its name and when it runs next, each
+/// opening the Schedules page narrowed to the project; capped as the page is.
+fn schedules_box(root: &Path, cx: &mut Context<ChatPane>) -> Div {
+    const SHOWN: usize = 5;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    let mine: Vec<_> = crate::schedules::listed(cx)
+        .iter()
+        .filter(|s| s.project == root)
+        .cloned()
+        .collect();
+    let muted = cx.theme().muted_foreground;
+    let left_out = mine.len().saturating_sub(SHOWN);
+    let rows = mine.iter().take(SHOWN).enumerate().map(|(i, s)| {
+        let root = root.to_path_buf();
+        let next = match s.on {
+            false => "off".to_string(),
+            true => onehand_core::schedule::next_times(&s.when, now, 1, &chrono::Local)
+                .first()
+                .map_or_else(String::new, |t| {
+                    onehand_core::schedule::next_said(*t, now, &chrono::Local)
+                }),
+        };
+        onehand_ui::row(false, cx)
+            .id(("project-schedule", i))
+            .h_flex()
+            .items_center()
+            .justify_between()
+            .gap_2()
+            .child(div().min_w_0().truncate().child(s.name.clone()))
+            .child(div().flex_none().text_xs().text_color(muted).child(next))
+            .tooltip(|window, cx| {
+                gpui_component::tooltip::Tooltip::new("Show it on the Schedules page")
+                    .build(window, cx)
+            })
+            .on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {
+                cx.emit(ChatPaneEvent::ShowSchedules(Some(root.clone())));
+            }))
+    });
+    page_card("Schedules", Some(mine.len()), None, cx)
+        .when(mine.is_empty(), |card| {
+            card.child(div().text_xs().text_color(muted).child("No schedule here"))
+        })
+        .children(rows)
+        .when(left_out > 0, |card| {
+            card.child(
+                div()
+                    .text_xs()
+                    .text_color(muted)
+                    .child(format!("{left_out} more on the Schedules page")),
+            )
+        })
 }

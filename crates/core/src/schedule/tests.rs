@@ -397,3 +397,41 @@ fn fill_keeps_a_steps_own_settings() {
     assert_eq!(settings[1].1["model"], "cheap");
     assert_eq!(settings[1].1["effort"], "high");
 }
+
+#[test]
+fn quick_choices_read_in_words() {
+    assert_eq!(when_said("0 9 * * *"), "every day at 09:00");
+    assert_eq!(when_said("5 */3 * * *"), "every 3 hours at :05");
+    assert_eq!(when_said("30 8 * * 1-5"), "weekdays at 08:30");
+    assert_eq!(when_said("0 9 * * 1"), "Mondays at 09:00");
+    assert_eq!(when_said("0 9 * * 0"), "Sundays at 09:00");
+    assert_eq!(when_said("0 9 1 * *"), "0 9 1 * *");
+}
+
+#[test]
+fn a_bad_expression_says_why() {
+    let said = when_said("0 25 * * *");
+    assert!(said.starts_with("0 25 * * * does not parse"), "{said}");
+    assert!(said.contains("hour"), "{said}");
+}
+
+#[test]
+fn the_next_time_reads_near_or_far() {
+    let now = at(2026, 10, 19, 8, 0, 0); // a Monday
+    assert_eq!(
+        next_said(at(2026, 10, 19, 9, 0, 0), now, &tz()),
+        "today 09:00"
+    );
+    assert_eq!(
+        next_said(at(2026, 10, 20, 9, 0, 0), now, &tz()),
+        "tomorrow 09:00"
+    );
+    assert_eq!(
+        next_said(at(2026, 10, 23, 9, 30, 0), now, &tz()),
+        "Fri 09:30"
+    );
+    assert_eq!(
+        next_said(at(2026, 10, 30, 9, 0, 0), now, &tz()),
+        "Oct 30 09:00"
+    );
+}

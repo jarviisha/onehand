@@ -77,6 +77,12 @@ pub const COMMANDS: &[Command] = &[
     ),
     command!("show_tasks", "Show the Tasks page", [], ShowTasks),
     command!(
+        "show_schedules",
+        "Show the Schedules page",
+        [],
+        ShowSchedules
+    ),
+    command!(
         "maximize",
         "Maximize focused panel / restore",
         ["ctrl-shift-k"],

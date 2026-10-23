@@ -252,6 +252,7 @@ impl ChatPane {
             Some(
                 super::Page::Issues(view)
                 | super::Page::Workflows(view)
+                | super::Page::Schedules(view)
                 | super::Page::Settings(view),
             ) => {
                 return self.view_page(view.clone(), cx);

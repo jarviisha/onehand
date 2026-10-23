@@ -31,6 +31,7 @@ mod rail;
 mod remote;
 mod saves;
 mod schedules;
+mod schedules_page;
 mod settings;
 pub mod shell;
 mod state;

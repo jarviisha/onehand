@@ -246,6 +246,7 @@ impl Shell {
                         cx.defer(move |cx| crate::task::stop_task(&id, cx));
                     }
                     E::ShowTasks(filter) => shell.show_tasks(filter.clone(), window, cx),
+                    E::ShowSchedules(only) => shell.show_schedules(only.clone(), window, cx),
                     E::RunCheck => {
                         if let Some(root) = shell.window.workspace.active_root() {
                             let root = root.path.clone();
@@ -519,6 +520,7 @@ impl Shell {
             workbench,
             issues_page,
             workflows_page,
+            schedules_page: crate::schedules_page::SchedulesPage::new(cx),
             terminal,
             _pending_save: None,
             saves: Default::default(),

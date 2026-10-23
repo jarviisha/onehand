@@ -11,6 +11,7 @@
 use crate::control::Started;
 use crate::state::Shared;
 use gpui::{App, BorrowAppContext as _, Global, Task};
+use gpui_component::WindowExt as _;
 use onehand_core::schedule::{self, Act, Schedule, Starts};
 use onehand_core::task::{Grant, Origin};
 use std::collections::{HashMap, HashSet};
@@ -38,6 +39,8 @@ struct Clock {
     told: HashMap<String, String>,
     /// A look is under way; the next waits for it.
     looking: bool,
+    /// The schedules as the last look found them, for the pages to show.
+    all: Vec<Schedule>,
     _tick: Task<()>,
 }
 
@@ -64,6 +67,7 @@ pub(crate) fn boot(cx: &mut App) {
         queued: HashSet::new(),
         told: HashMap::new(),
         looking: false,
+        all: Vec::new(),
         _tick: tick,
     });
 }
@@ -114,24 +118,36 @@ fn look(cx: &mut App) {
             // What the clock moved, onto the file as it is now: a start can
             // take a while (a worktree cut), and a hand edit made meanwhile
             // stands.
+            let looked = all.clone();
             let written = cx
                 .background_executor()
                 .spawn(async move {
                     let mut now_kept = schedule::load_blocking(&path)?;
                     for kept in &mut now_kept {
-                        if let Some(looked) = all.iter().find(|s| s.id == kept.id) {
+                        if let Some(looked) = looked.iter().find(|s| s.id == kept.id) {
                             kept.last_fired = looked.last_fired;
                             kept.said = looked.said.clone();
                         }
                     }
-                    schedule::save_blocking(&path, &now_kept)
+                    schedule::save_blocking(&path, &now_kept).map(|()| now_kept)
                 })
                 .await;
-            if let Err(why) = written {
-                eprintln!("onehand: the schedules were not written: {why}");
+            match written {
+                Ok(now_kept) => all = now_kept,
+                Err(why) => eprintln!("onehand: the schedules were not written: {why}"),
             }
         }
-        cx.update(|cx| cx.update_global::<Clock, _>(|c, _| c.looking = false));
+        cx.update(|cx| {
+            let shown = cx.update_global::<Clock, _>(|c, _| {
+                c.looking = false;
+                let shown = c.all != all;
+                c.all = all;
+                shown
+            });
+            if shown {
+                cx.refresh_windows();
+            }
+        });
     })
     .detach();
 }
@@ -248,4 +264,64 @@ fn record(s: &Schedule, outcome: Result<String, String>, cx: &mut App) -> Option
             Some(format!("did not start: {why}"))
         }
     }
+}
+
+/// The schedules as the clock last found them.
+pub(crate) fn listed(cx: &App) -> &[Schedule] {
+    cx.try_global::<Clock>().map_or(&[], |c| c.all.as_slice())
+}
+
+/// Switch schedule `id` on or off: at once on screen, then in the file as it
+/// is, off the UI thread. Switched on, nothing due before now is caught up. A
+/// write that fails puts it back and says so.
+pub(crate) fn set_on(id: &str, on: bool, window: &mut gpui::Window, cx: &mut App) {
+    let since = now();
+    let put = move |c: &mut Clock, id: &str, on: bool| {
+        let Some(s) = c.all.iter_mut().find(|s| s.id == id).filter(|s| s.on != on) else {
+            return false;
+        };
+        s.on = on;
+        if on {
+            s.on_since = since;
+        }
+        true
+    };
+    if !cx.update_global::<Clock, _>(|c, _| put(c, id, on)) {
+        return;
+    }
+    cx.refresh_windows();
+    let (id, path) = (id.to_string(), schedule::path());
+    window
+        .spawn(cx, async move |cx| {
+            let written = {
+                let id = id.clone();
+                cx.background_executor()
+                    .spawn(async move {
+                        let mut all = schedule::load_blocking(&path)?;
+                        let s = all
+                            .iter_mut()
+                            .find(|s| s.id == id)
+                            .ok_or("that schedule is no longer in the file")?;
+                        s.on = on;
+                        if on {
+                            s.on_since = since;
+                        }
+                        schedule::save_blocking(&path, &all)
+                    })
+                    .await
+            };
+            if let Err(why) = written {
+                let _ = cx.update(|window, cx| {
+                    cx.update_global::<Clock, _>(|c, _| put(c, &id, !on));
+                    let doing = if on {
+                        "Switching the schedule on"
+                    } else {
+                        "Switching the schedule off"
+                    };
+                    window.push_notification(crate::toast::failed(doing, why), cx);
+                    cx.refresh_windows();
+                });
+            }
+        })
+        .detach();
 }
