@@ -1,0 +1,5 @@
+# The toolchain CI builds with, so clippy here and there warn alike: CI denies
+# every warning, and a newer stable brings new lints. Bump it on purpose.
+[toolchain]
+channel = "1.99.1"
+components = ["rustfmt", "clippy"]
