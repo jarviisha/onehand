@@ -298,3 +298,55 @@ fn defaults_fill_what_the_file_leaves_out() {
     assert_eq!(s.last_fired, None);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_step_on_one_number_runs_from_it_to_the_end() {
+    let cron = parse("5/15 * * * *").unwrap();
+    for minute in [5, 20, 35, 50] {
+        assert!(
+            cron.matches(&local(at(2026, 10, 1, 9, minute, 0))),
+            "{minute}"
+        );
+    }
+    assert!(!cron.matches(&local(at(2026, 10, 1, 9, 6, 0))));
+}
+
+#[test]
+fn a_starred_step_counts_as_a_star_for_the_either_rule() {
+    // Odd days that are Mondays, as cron reads it: 2026-10-19 is a Monday.
+    let cron = parse("0 9 */2 * 1").unwrap();
+    assert!(cron.matches(&local(at(2026, 10, 19, 9, 0, 0))));
+    // An odd day that is not a Monday, and a Monday that is not odd.
+    assert!(!cron.matches(&local(at(2026, 10, 21, 9, 0, 0))));
+    assert!(!cron.matches(&local(at(2026, 10, 26, 9, 0, 0))));
+}
+
+#[test]
+fn a_schedule_switched_on_by_hand_in_the_file_catches_nothing_up() {
+    let mut s = daily_at_nine();
+    s.on_since = 0;
+    let opened = at(2026, 10, 1, 15, 0, 0);
+    assert_eq!(decide(&s, opened + 30, opened, false, &tz()), Act::Wait);
+    assert_eq!(
+        decide(&s, at(2026, 10, 2, 9, 0, 0), opened, false, &tz()),
+        Act::Start { missed: false }
+    );
+}
+
+#[test]
+fn a_rare_expression_is_cheap_in_the_machines_own_zone() {
+    let mut s = daily_at_nine();
+    s.when = "0 9 31 2 *".into();
+    s.on_since = 1;
+    let now = at(2026, 10, 1, 9, 0, 0);
+    let began = std::time::Instant::now();
+    for _ in 0..10 {
+        assert_eq!(decide(&s, now, now, false, &chrono::Local), Act::Wait);
+        assert!(next_times("0 0 1 1 *", now, 3, &chrono::Local).len() <= 1);
+    }
+    assert!(
+        began.elapsed() < std::time::Duration::from_millis(200),
+        "{:?}",
+        began.elapsed()
+    );
+}

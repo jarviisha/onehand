@@ -14,7 +14,7 @@ mod cron;
 
 pub use cron::{parse, Cron};
 
-use chrono::TimeZone;
+use chrono::{TimeZone, Timelike};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -193,7 +193,13 @@ pub fn decide(s: &Schedule, now: u64, opened_at: u64, busy: bool, tz: &impl Time
     let Some(cron) = s.on.then(|| parse(&s.when).ok()).flatten() else {
         return Act::Wait;
     };
-    let after = s.last_fired.unwrap_or(0).max(s.on_since);
+    // One switched on by hand in the file, with no time it was, counts from
+    // when onehand opened: nothing before that is caught up.
+    let since = match s.on_since {
+        0 => opened_at,
+        since => since,
+    };
+    let after = s.last_fired.unwrap_or(0).max(since);
     let Some(due) = latest_due(&cron, after, now, tz) else {
         return Act::Wait;
     };
@@ -213,26 +219,57 @@ pub fn next_times(expr: &str, after: u64, count: usize, tz: &impl TimeZone) -> V
     let Ok(cron) = parse(expr) else {
         return Vec::new();
     };
-    (1..=SEARCH_MINUTES)
-        .map(|i| minute_of(after) + i * 60)
-        .filter(|t| names(&cron, *t, tz))
-        .take(count)
-        .collect()
+    let end = after + SEARCH_MINUTES * 60;
+    let mut found = Vec::new();
+    let mut t = minute_of(after) + 60;
+    while t <= end && found.len() < count {
+        let Some(local) = tz.timestamp_opt(t as i64, 0).single() else {
+            break;
+        };
+        let into_day = u64::from(local.hour() * 60 + local.minute()) * 60;
+        if !cron.day_matches(&local) {
+            t += 24 * 3600 - into_day;
+        } else if !cron.hour_matches(&local) {
+            t += 3600 - u64::from(local.minute()) * 60;
+        } else {
+            if cron.matches(&local) {
+                found.push(t);
+            }
+            t += 60;
+        }
+    }
+    found
 }
 
-/// The latest minute in `(after, now]` that `cron` names.
+/// The latest minute in `(after, now]` that `cron` names, looking back at
+/// most [`SEARCH_MINUTES`]. A day, or an hour, the expression names no
+/// minute of is stepped over whole, so a rare expression costs a look per
+/// day rather than per minute.
+///
+/// ponytail: steps by the local wall clock, so across a daylight-saving change
+/// a time can be named twice (the repeated hour) or not at all (the skipped
+/// one); compare wall-clock times with the last firing if a zone that changes
+/// matters.
 fn latest_due(cron: &Cron, after: u64, now: u64, tz: &impl TimeZone) -> Option<u64> {
-    (0..SEARCH_MINUTES)
-        .map(|i| minute_of(now).checked_sub(i * 60))
-        .take_while(|t| t.is_some_and(|t| t > after))
-        .flatten()
-        .find(|t| names(cron, *t, tz))
-}
-
-fn names(cron: &Cron, t: u64, tz: &impl TimeZone) -> bool {
-    tz.timestamp_opt(t as i64, 0)
-        .single()
-        .is_some_and(|local| cron.matches(&local))
+    let floor = now.saturating_sub(SEARCH_MINUTES * 60).max(after);
+    let mut t = minute_of(now);
+    while t > floor {
+        let local = tz.timestamp_opt(t as i64, 0).single()?;
+        let into_day = u64::from(local.hour() * 60 + local.minute()) * 60;
+        let back = if !cron.day_matches(&local) {
+            // To the last minute of the day before.
+            into_day + 60
+        } else if !cron.hour_matches(&local) {
+            // To the last minute of the hour before.
+            u64::from(local.minute()) * 60 + 60
+        } else if cron.matches(&local) {
+            return Some(t);
+        } else {
+            60
+        };
+        t = t.checked_sub(back)?;
+    }
+    None
 }
 
 fn minute_of(t: u64) -> u64 {

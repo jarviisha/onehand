@@ -49,8 +49,10 @@ pub fn parse(expr: &str) -> Result<Cron, String> {
         day: bits[2],
         month: bits[3],
         weekday: bits[4],
-        any_day: parts[2] == "*",
-        any_weekday: parts[4] == "*",
+        // A field written from `*`, a step on it included, counts as `*` for
+        // that rule, as cron reads it.
+        any_day: parts[2].starts_with('*'),
+        any_weekday: parts[4].starts_with('*'),
     })
 }
 
@@ -72,9 +74,11 @@ fn field(text: &str, min: u32, max: u32) -> Result<u64, String> {
             "*" => (min, max),
             _ => match range.split_once('-') {
                 Some((a, b)) => (number(a, min, max)?, number(b, min, max)?),
+                // A step from one number runs to the field's end, as cron
+                // reads `5/15`: 5, 20, 35, 50.
                 None => {
                     let n = number(range, min, max)?;
-                    (n, n)
+                    (n, if item.contains('/') { max } else { n })
                 }
             },
         };
@@ -102,16 +106,27 @@ fn number(text: &str, min: u32, max: u32) -> Result<u32, String> {
 impl Cron {
     /// Whether the local minute `t` is one the expression names.
     pub(crate) fn matches(&self, t: &(impl Datelike + Timelike)) -> bool {
-        let has = |bits: u64, n: u32| bits & (1 << n) != 0;
+        self.day_matches(t) && self.hour_matches(t) && has(self.minute, t.minute())
+    }
+
+    /// Whether the expression names some minute of `t`'s day: what lets a
+    /// search step over a whole day at once.
+    pub(crate) fn day_matches(&self, t: &impl Datelike) -> bool {
         let day = has(self.day, t.day());
         let weekday = has(self.weekday, t.weekday().num_days_from_sunday());
         let on_day = match (self.any_day, self.any_weekday) {
             (false, false) => day || weekday,
             _ => day && weekday,
         };
-        has(self.minute, t.minute())
-            && has(self.hour, t.hour())
-            && has(self.month, t.month())
-            && on_day
+        has(self.month, t.month()) && on_day
     }
+
+    /// Whether the expression names some minute of `t`'s hour.
+    pub(crate) fn hour_matches(&self, t: &impl Timelike) -> bool {
+        has(self.hour, t.hour())
+    }
+}
+
+fn has(bits: u64, n: u32) -> bool {
+    bits & (1 << n) != 0
 }
