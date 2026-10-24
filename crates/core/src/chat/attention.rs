@@ -122,8 +122,9 @@ pub enum SessionSignal {
     Lost,
     /// The last turn ended on an error rather than an answer.
     Failed,
-    /// A parked permission or question. The only signal that is about *the
-    /// user*: nothing moves until they answer.
+    /// A parked permission or question, or an approval the run on the
+    /// session waits for (`Drive::waits_on_person`). The only signal that is
+    /// about *the user*: nothing moves until they answer.
     AwaitingUser,
     /// A turn is in flight.
     Busy,

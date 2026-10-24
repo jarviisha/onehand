@@ -1,6 +1,6 @@
 use super::row::{
-    DragGhost, MAX_BRANCH_W, ProjectDrag, faded, hover_fill, key_ring, labelled, menu_button,
-    project_key, row_control, row_inks, row_surfaces,
+    DragGhost, MAX_BRANCH_W, ProjectDrag, covered_tip, covering, faded, hover_fill, key_ring,
+    labelled, menu_button, project_key, row_control, row_inks, row_surfaces,
 };
 use super::session::{signal_hint, status_mark};
 use crate::chat::pane::{ProjectFacts, SessionSignal};
@@ -354,6 +354,7 @@ fn git_part(
     part: GitPart,
     n: usize,
     words: SharedString,
+    row: &SharedString,
     ink: gpui::Hsla,
 ) -> impl IntoElement + use<> {
     let mark = match part {
@@ -373,7 +374,9 @@ fn git_part(
         .gap_1()
         .role(gpui::accesskit::Role::Image)
         .aria_label(words.clone())
-        .tooltip(move |window, cx| Tooltip::new(words.clone()).build(window, cx))
+        .tooltip(covered_tip(row, move |window, cx| {
+            Tooltip::new(words.clone()).build(window, cx)
+        }))
         .child(mark)
         .child(n.to_string())
 }
@@ -518,11 +521,11 @@ pub(super) fn project_row(
                 hovered,
             )
             .min_w(super::row::NAME_MIN_W)
-            .tooltip(move |window, cx| {
+            .tooltip(covered_tip(&key, move |window, cx| {
                 let hint = hint.clone();
                 Tooltip::element(move |_, _| div().v_flex().gap_0p5().children(hint.clone()))
                     .build(window, cx)
-            }),
+            })),
         )
         .child(
             // Shrinks, by its branch alone: everything else on it keeps its
@@ -544,9 +547,9 @@ pub(super) fn project_row(
                             .min_w_0()
                             .max_w(MAX_BRANCH_W)
                             .truncate()
-                            .tooltip(move |window, cx| {
+                            .tooltip(covered_tip(&key, move |window, cx| {
                                 Tooltip::new(format!("Branch: {branch}")).build(window, cx)
-                            })
+                            }))
                             .font_family(cx.theme().mono_font_family.clone())
                             .text_size(crate::tokens::CODE_TEXT)
                             .child(git.branch.clone()),
@@ -554,7 +557,7 @@ pub(super) fn project_row(
                     .children(git.parts().into_iter().map(
                         |(part, n, words)| {
                             let id = SharedString::from(format!("{key}-{part:?}"));
-                            git_part(gpui::ElementId::Name(id), part, n, words, meta_ink)
+                            git_part(gpui::ElementId::Name(id), part, n, words, &key, meta_ink)
                         },
                     ))
                 })
@@ -597,13 +600,19 @@ pub(super) fn project_row(
         )
         .children(folded.filter(|_| !open).map(|signal| {
             let label = format!("{}: {}", root.label, signal_hint(Some(signal)));
-            status_mark(("badge", root_idx).into(), Some(signal), label.into(), cx)
+            status_mark(
+                ("badge", root_idx).into(),
+                Some(signal),
+                label.into(),
+                Some(&key),
+                cx,
+            )
         }))
         // Over the end of the row, in the place of its meta, on its fill, so
         // they take no room from the name while hidden: for the pointer, and
         // for the keyboard on its row.
         .child(
-            div()
+            covering(div().id(("project-actions", root_idx)), &key)
                 .h_flex()
                 .items_center()
                 .absolute()

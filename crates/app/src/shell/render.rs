@@ -218,6 +218,8 @@ impl Render for Shell {
         let sheet_layer = Root::render_sheet_layer(window, cx);
         let dialog_layer = Root::render_dialog_layer(window, cx);
         let notification_layer = Root::render_notification_layer(window, cx);
+        let layered = self.dialog_up() || sheet_layer.is_some() || dialog_layer.is_some();
+        let tooltip_guard = crate::controls::tooltip_guard(layered, window, cx);
 
         div()
             .size_full()
@@ -235,6 +237,7 @@ impl Render for Shell {
                 }),
             )
             .child(frame)
+            .child(tooltip_guard)
             // The backdrop under the shell's own dialogs. The library dims
             // the window only under a dialog it opened itself, and these are
             // mounted here instead, so without this they stand on the app's

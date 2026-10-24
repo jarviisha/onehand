@@ -30,7 +30,7 @@ folds it (not during a search); the rest of the row shows the project's last ses
 which then fills the row. `+` and `⋯` show on hover and on the keyboard's row, right-click opens the
 same menu. A session row, indented under its project: its state mark, title and `⋯` (on hover, on
 the keyboard's row, always on the one shown), and under them `state · agent · age` (*waiting Nm*
-while it needs input, the state's word in its ink while it waits on the person), over which the
+while it needs input, a card or its run's approval, the state's word in its ink while it waits on the person), over which the
 pointer and the keyboard's row lay *Stop* (running), *Send the last prompt again* (failed) and
 *Close*; the keyboard's row lays them on any session but the one shown, whose conversation already
 holds *Stop* and the way back, so a row the keys only pass through stays still. The other filters

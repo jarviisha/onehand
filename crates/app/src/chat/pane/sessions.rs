@@ -612,7 +612,7 @@ impl ChatPane {
         SessionSignal::pick(
             chat.link,
             chat.failed(),
-            chat.awaiting_permission(),
+            chat.awaiting_permission() || crate::task::waits_on_person(uid, cx),
             chat.busy,
             conv.unseen,
         )
