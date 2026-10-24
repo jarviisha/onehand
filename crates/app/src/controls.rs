@@ -68,3 +68,36 @@ pub(crate) use onehand_ui::Short;
 /// one call. The rule and its reasoning live with the definitions in
 /// [`onehand_ui`], where a feature crate's buttons reach them too.
 pub(crate) use onehand_ui::Refuses;
+
+/// Hide every tooltip on a key pressed, as gpui's own tooltips do.
+///
+/// The library's tooltip is put away when its trigger reports the pointer
+/// left, and a trigger that stops being drawn reports nothing. A row's
+/// actions are drawn only while the row is hovered, and a key pressed ends
+/// the hover (the window stops counting the pointer once the keyboard is
+/// used), so a key pressed over a row's control took the control away and
+/// left its tooltip on screen, across pages, until another tooltip replaced
+/// it. The tooltips live in one overlay per window, kept as each is made.
+pub(crate) fn hide_tooltips_on_keys(cx: &mut gpui::App) {
+    use gpui::{Global, WeakEntity};
+    use gpui_base::TooltipOverlay;
+
+    #[derive(Default)]
+    struct Overlays(Vec<WeakEntity<TooltipOverlay>>);
+    impl Global for Overlays {}
+
+    cx.observe_new(|_: &mut TooltipOverlay, _, cx| {
+        let overlay = cx.weak_entity();
+        cx.default_global::<Overlays>().0.push(overlay);
+    })
+    .detach();
+    cx.intercept_keystrokes(|_, _, cx| {
+        let overlays = std::mem::take(&mut cx.default_global::<Overlays>().0);
+        let live = overlays
+            .into_iter()
+            .filter(|overlay| overlay.update(cx, |o, cx| o.hide(cx)).is_ok())
+            .collect();
+        cx.default_global::<Overlays>().0 = live;
+    })
+    .detach();
+}

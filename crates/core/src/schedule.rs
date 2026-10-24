@@ -283,6 +283,7 @@ fn minute_of(t: u64) -> u64 {
 /// workflow knows, and a person's prompt may hold any braces it likes.
 pub fn prompt_template() -> Template {
     let mut template = Template::blank("Prompt");
+    template.id = crate::workflow::PROMPT_ID.to_string();
     template.steps.push(StepSpec {
         id: "prompt".to_string(),
         label: "Prompt".to_string(),

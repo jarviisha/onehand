@@ -353,7 +353,8 @@ impl Task {
     }
 
     /// How it ended, as its line in a list; `None` while it has not. A check
-    /// says whether it passed, any other task how its workflow ended.
+    /// says whether it passed, any other task how its workflow, or its
+    /// prompt, ended.
     pub fn ended_said(&self) -> Option<String> {
         let outcome = self.outcome()?;
         Some(match self.source {
@@ -370,7 +371,10 @@ impl Task {
                     None => "Stopped".to_string(),
                 },
             },
-            Source::Workflow | Source::Issue(_) => outcome.said(),
+            Source::Workflow | Source::Issue(_) => match self.runs.last() {
+                Some(run) => outcome.said_in(&run.template),
+                None => outcome.said(),
+            },
         })
     }
 

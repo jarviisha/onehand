@@ -138,6 +138,11 @@ case ${1:-} in
             { grep -vx refs/heads/main || true; } | while read -r ref; do git -C "$root/proj" update-ref -d "$ref"; done
         git -C "$root/proj" clean -qfd
         seed_workspace
+        # A fresh keyboard, not the held one: once a `wtype` has come and
+        # gone, the seat sends a new client its modifiers before any keymap,
+        # and gpui panics on that (`keymap_state.unwrap()` in its Wayland
+        # client). A keyboard made now is the seat's again, keymap and all.
+        drop_keyboard
         hold_keyboard
         start_app "${2:-}" ;;
     down) stop app.pid; drop_keyboard; stop sway.pid ;;

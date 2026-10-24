@@ -62,7 +62,8 @@ terminal*, which the page and the header already offer.
 ## Step strip
 
 Under the header, only while a run drives the session on screen: the workflow's name muted, each
-step's label between chevrons (done ones with a muted check, the current one in full ink), then
+step's label between chevrons (done ones with a muted check, the current one in full ink; a
+schedule's prompt names no step), then
 *Review…*, *Revise…* and *Continue* (primary) while it waits for approval, and *Stop* always. Only
 the step labels clip. *Review…* reads the answer from the run; *Revise…* refuses an empty note; a
 press the run no longer waits at shows the new answer, in the warning ink, rather than approving it

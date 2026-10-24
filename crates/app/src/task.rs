@@ -359,12 +359,16 @@ pub(crate) fn shown(uid: u64, cx: &App) -> Option<Shown> {
     Some(Shown {
         task: driven.task().to_string().into(),
         name: run.template.name.clone().into(),
-        steps: run
-            .template
-            .steps
-            .iter()
-            .map(|step| step.label.clone().into())
-            .collect(),
+        // A prompt's one step is the run itself, already named.
+        steps: match run.template.is_prompt() {
+            true => Vec::new(),
+            false => run
+                .template
+                .steps
+                .iter()
+                .map(|step| step.label.clone().into())
+                .collect(),
+        },
         at: run.step,
         review: UnderReview::of(run),
         stopping: driven.stopping(),

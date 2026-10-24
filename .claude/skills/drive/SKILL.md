@@ -40,7 +40,7 @@ The scripts are in `scripts/` beside this file; run them from anywhere. `DRIVE_R
    failure has been captured with its log.
 4. **Start over** without restarting sway: `scripts/session.sh restart`. It wipes tasks and
    conversations, resets the project (its worktrees, branches and step marks included) and the
-   workspace to `proj` alone, and starts the app again.
+   workspace to `proj` alone, makes the held keyboard afresh, and starts the app again.
 5. **Stop**: `scripts/session.sh down`. Done when no sway, held keyboard or debug onehand of
    this session is left (`pgrep -x sway` finds nothing).
 6. **Report** what was driven, each result with the screenshot that shows it, and anything

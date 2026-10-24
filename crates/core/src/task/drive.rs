@@ -621,13 +621,14 @@ impl Drive {
     }
 
     /// Tell the transcript the step the run is now in, once per step entered.
+    /// A prompt's run has no steps to tell apart, so it says none.
     fn announce_step(&mut self, fx: &mut Vec<Effect>) {
         let fresh = self.noted != Some(self.run.step);
         self.noted = Some(self.run.step);
         let Some(step) = self.run.current() else {
             return;
         };
-        if fresh {
+        if fresh && !self.run.template.is_prompt() {
             fx.push(Effect::Note(format!(
                 "Step {} of {}: {}",
                 self.run.step + 1,
@@ -722,9 +723,10 @@ impl Drive {
     ) {
         self.over = true;
         if chat.is_some() {
+            let said = outcome.said_in(&self.run.template);
             let said = match outcome.resumable() {
-                true => format!("{}; resume it from the Tasks page", outcome.said()),
-                false => outcome.said(),
+                true => format!("{said}; resume it from the Tasks page"),
+                false => said,
             };
             fx.push(Effect::Note(said));
         }

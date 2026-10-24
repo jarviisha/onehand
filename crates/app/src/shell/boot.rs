@@ -657,6 +657,8 @@ fn open_window(workspace: Workspace, cx: &mut App) {
 pub fn boot(cx: &mut App) {
     // First, so a launch waiting on the socket `main` bound is answered soon.
     crate::instance::listen(cx);
+    // Before any window, whose tooltip overlay it has to see made.
+    crate::controls::hide_tooltips_on_keys(cx);
     // Behind the lock, and before anything reads the templates.
     for problem in onehand_core::workflow::store::migrate_old_dir_blocking()
         .into_iter()

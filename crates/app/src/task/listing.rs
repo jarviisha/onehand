@@ -59,11 +59,15 @@ pub(crate) fn rows(roots: &[PathBuf], cx: &App) -> Vec<Row> {
     for task in tasks {
         let working = t.working(&task.id);
         let run = task.runs.last();
+        // A prompt's one step is the task itself: naming it would only say
+        // *Prompt* twice.
         let step = run
+            .filter(|run| !run.template.is_prompt())
             .and_then(Run::current)
             .map_or_else(String::new, |step| step.label.clone());
         let at = match (working, task.ended_said()) {
             (Some(_), _) => step,
+            (None, None) if step.is_empty() => "cut off".to_string(),
             (None, None) => format!("cut off at {step}"),
             (None, Some(said)) => said,
         };

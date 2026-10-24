@@ -75,7 +75,9 @@ edit made during a look stands. A time held for a schedule that is then switched
 
 - **A prompt** runs as a task of a workflow of one agent step, *Prompt*, whose prompt is the
   brief and the brief the schedule's prompt (a skill is used by naming it there). It
-  works on the project's checkout.
+  works on the project's checkout. It is said as a prompt, not a workflow: its row and its strip
+  name *Prompt* once and never its one step, its transcript tells no step, and it ends *Done*, or
+  *Stopped* with why.
 - **A workflow** runs the library's workflow of that id on the schedule's title and body, on the
   checkout or a worktree as the workflow says.
 - **The agent** is the schedule's for every step that names none; **its mode and settings** are

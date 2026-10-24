@@ -9,6 +9,10 @@ use std::collections::BTreeMap;
 /// read with whatever this build happens to understand of it.
 pub const SCHEMA_VERSION: u32 = 1;
 
+/// The id of the one-step workflow a schedule's prompt runs as. No library
+/// file takes it: a person's takes its file name, a shipped one `builtin:`.
+pub(crate) const PROMPT_ID: &str = "schedule:prompt";
+
 /// The steps of a workflow, in the order a run takes them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Template {
@@ -63,6 +67,13 @@ impl Template {
             timeout: default_timeout(),
             steps: Vec::new(),
         }
+    }
+
+    /// Whether it is the one-step workflow a schedule's prompt runs as: a
+    /// prompt to an agent rather than a workflow, so its run is not called a
+    /// workflow, and its one step is not named apart from it.
+    pub fn is_prompt(&self) -> bool {
+        self.id == PROMPT_ID
     }
 
     /// Whether a run needs the project's check command: a command step names
