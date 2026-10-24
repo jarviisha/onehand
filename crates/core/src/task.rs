@@ -344,7 +344,8 @@ impl Task {
 
     /// Whether its session leaves the rail now that it ended: a schedule's
     /// task that is done has nothing left in it to look at, and its
-    /// conversation is still reached from its row. One that failed, was
+    /// conversation is still reached from the project's past conversations.
+    /// One that failed, was
     /// stopped or waits on a person keeps its session where it is.
     pub fn closes_session(&self) -> bool {
         matches!(self.origin, Some(Origin::Schedule { .. }))
