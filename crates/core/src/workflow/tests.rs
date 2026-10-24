@@ -1941,3 +1941,20 @@ fn a_run_that_worked_says_so_whatever_session_it_ends_in() {
     back.failed("the push was refused".into(), Failure::Other);
     assert!(back.worked());
 }
+
+#[test]
+fn a_library_file_never_takes_the_id_a_schedules_prompt_keeps() {
+    let dir = temp_dir("reserved");
+    let (file, _) = store::save_blocking(&dir, None, &checkout()).unwrap();
+    let text = std::fs::read_to_string(&file).unwrap();
+    let id_line = text
+        .lines()
+        .find(|l| l.starts_with("id "))
+        .unwrap()
+        .to_string();
+    std::fs::write(&file, text.replace(&id_line, "id = \"schedule:prompt\"")).unwrap();
+    let read = store::read_blocking(&file).unwrap();
+    assert_eq!(read.id, "work-in-checkout");
+    assert!(!read.is_prompt());
+    let _ = std::fs::remove_dir_all(&dir);
+}

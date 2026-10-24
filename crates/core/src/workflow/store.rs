@@ -67,11 +67,12 @@ fn unread_key(given: &toml::Value, read: &toml::Value, at: &str) -> Option<Strin
 }
 
 /// The template in the file `path`, its id the file's name when the file
-/// has none, as one written before ids does not. Blocking.
+/// has none, as one written before ids does not, or names the id a
+/// schedule's prompt keeps for itself. Blocking.
 pub fn read_blocking(path: &Path) -> Result<Template, String> {
     let text = std::fs::read_to_string(path).map_err(|err| err.to_string())?;
     let mut template = parse(&text)?;
-    if template.id.is_empty() {
+    if template.id.is_empty() || template.id == super::PROMPT_ID {
         template.id = stem(path);
     }
     Ok(template)
