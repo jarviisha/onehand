@@ -398,9 +398,18 @@ fn finish(id: &str, session: Option<&Entity<ChatSession>>, cx: &mut App) {
     }
     crate::unattended::keep(&task, &run, asked, cx);
     cx.update_global::<Tasks, _>(|t, _| t.store_run(&task, run));
+    // A finished schedule's session leaves the rail once the run is let go,
+    // so nothing of the run is left listening to it.
+    let closes = driven
+        .uid()
+        .filter(|_| super::task(&task, cx).is_some_and(|task| task.closes_session()));
     super::ended(task, driven.drive.pinned(), session, cx);
     cx.defer(move |cx| {
+        let window = driven.window;
         drop(driven);
+        if let Some(uid) = closes {
+            crate::state::with_shell(window, cx, |shell, _, cx| shell.close_finished(uid, cx));
+        }
         cx.refresh_windows();
     });
 }

@@ -390,7 +390,7 @@ impl AskForm<'_> {
         // The forward button is about *this* question: a form is walked through
         // one at a time, so arming Submit off an answer three tabs back would
         // offer to send while the question on screen is blank.
-        let can_advance = self.a.field_answered(active);
+        let can_advance = self.a.may_advance(active);
         let last = self.a.is_last(active);
 
         card_foot(cx)
@@ -571,7 +571,7 @@ pub(in crate::chat) fn advance_pinned(session: &Entity<ChatSession>, cx: &mut Ap
         return;
     };
     let active = item.active_field();
-    if item.field_answered(active) {
+    if item.may_advance(active) {
         ask_advance(session, idx, active, cx);
     }
 }

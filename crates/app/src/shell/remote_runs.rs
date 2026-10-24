@@ -211,6 +211,22 @@ impl Shell {
         cx.notify();
     }
 
+    /// Close the session of a run that ended with nothing left in it to look
+    /// at, as a finished schedule's run does.
+    ///
+    /// Quietly, as a run's project is dropped: nothing else is shown and the
+    /// caret stays where it is. The one session it leaves is the one on
+    /// screen, since taking that away would move the person, and they can
+    /// close it themselves.
+    pub fn close_finished(&mut self, uid: u64, cx: &mut Context<Self>) {
+        if self.active_session_uid() == Some(uid) {
+            return;
+        }
+        if self.drop_session(uid, cx) {
+            cx.notify();
+        }
+    }
+
     /// Keep a run's project for good: a person has taken the run over, so it
     /// is their project now, and it is written into the workspace.
     pub fn adopt_unattended(&mut self, dir: &Path, window: &mut Window, cx: &mut Context<Self>) {

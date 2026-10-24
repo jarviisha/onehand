@@ -342,6 +342,15 @@ impl Task {
         }
     }
 
+    /// Whether its session leaves the rail now that it ended: a schedule's
+    /// task that is done has nothing left in it to look at, and its
+    /// conversation is still reached from its row. One that failed, was
+    /// stopped or waits on a person keeps its session where it is.
+    pub fn closes_session(&self) -> bool {
+        matches!(self.origin, Some(Origin::Schedule { .. }))
+            && matches!(self.outcome(), Some(Outcome::Done))
+    }
+
     /// How it ended, as its line in a list; `None` while it has not. A check
     /// says whether it passed, any other task how its workflow ended.
     pub fn ended_said(&self) -> Option<String> {
@@ -351,11 +360,14 @@ impl Task {
                 Outcome::Done => "Check passed".to_string(),
                 Outcome::Failed(why) => format!("Check failed: {why}"),
                 Outcome::Exhausted { .. } => "Check failed".to_string(),
-                Outcome::Stopped(stop) => {
-                    let mut said = stop.said().to_string();
-                    said[..1].make_ascii_uppercase();
-                    said
-                }
+                Outcome::Stopped(stop) => match stop.said() {
+                    Some(why) => {
+                        let mut said = why.to_string();
+                        said[..1].make_ascii_uppercase();
+                        said
+                    }
+                    None => "Stopped".to_string(),
+                },
             },
             Source::Workflow | Source::Issue(_) => outcome.said(),
         })

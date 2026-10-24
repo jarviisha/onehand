@@ -88,13 +88,10 @@ pub(super) fn ask_skip(
 /// question.
 pub(super) fn ask_advance(session: &Entity<ChatSession>, idx: usize, field: usize, cx: &mut App) {
     session.update(cx, |s, cx| {
-        let last = s.chat.ask_at_mut(idx).is_none_or(|item| {
-            let last = item.is_last(field);
-            if !last {
-                item.go_to(field + 1);
-            }
-            last
-        });
+        let last = s
+            .chat
+            .ask_at_mut(idx)
+            .is_none_or(|item| item.advance(field));
         if last {
             s.chat.answer_ask(idx, false);
         }

@@ -474,6 +474,11 @@ fn every_outcome_has_a_sentence_and_the_work_leads() {
         assert!(!unknown.contains("no commit"), "{unknown}");
         assert_ne!(ended(pending.outcome.as_ref()), "");
     }
+    // A Stop may have come from a tool as well as a person: it names neither.
+    assert_eq!(
+        ended(Some(&Outcome::Stopped(Stop::ByPerson))),
+        "The run was stopped."
+    );
     let one = report(&ran(Outcome::Done), &Ok(Verdict::Commits(1)), "b");
     assert!(one.starts_with("onehand left 1 commit on `b`."), "{one}");
     let none = report(
