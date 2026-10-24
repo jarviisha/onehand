@@ -385,9 +385,11 @@ impl Shell {
         futures::channel::oneshot::Receiver<crate::task::Placed>,
     ) {
         // A worktree cut for it is a project of the workspace, as the
-        // launcher's is: kept, listed, and there to come back to.
+        // launcher's is: kept, listed, and there to come back to; but not
+        // selected, as nothing the person is looking at moves for a task
+        // they did not start.
         if self.root_index(&setup.dir).is_none() {
-            self.window.workspace.add_root(setup.dir.clone());
+            self.window.workspace.add_root_quietly(setup.dir.clone());
             self.refresh_git(cx);
             self.save_workspace(window, cx);
         }

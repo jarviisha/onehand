@@ -184,6 +184,18 @@ fn a_turn_ending_while_a_pin_is_held_is_not_judged() {
     );
 }
 
+/// A run at its approval waits on a person as one held by a card does,
+/// though its agent's turn is over: its session's row says so, as it does
+/// for a card.
+#[test]
+fn an_approval_waits_on_a_person_until_answered() {
+    let mut rig = at_approval();
+    assert!(rig.drive.waits_on_person() && !rig.drive.card());
+    let at = approval_at(&rig);
+    rig.on(Input::Approved { at });
+    assert!(!rig.drive.waits_on_person());
+}
+
 #[test]
 fn an_approval_answers_and_says_so() {
     let mut rig = at_approval();

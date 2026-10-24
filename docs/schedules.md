@@ -79,7 +79,8 @@ edit made during a look stands. A time held for a schedule that is then switched
   name *Prompt* once and never its one step, its transcript tells no step, and it ends *Done*, or
   *Stopped* with why.
 - **A workflow** runs the library's workflow of that id on the schedule's title and body, on the
-  checkout or a worktree as the workflow says.
+  checkout or a worktree as the workflow says. A worktree it cuts is kept as a project, as the
+  launcher's is, without moving the rail's selection (which *Run on* offers first).
 - **The agent** is the schedule's for every step that names none; **its mode and settings** are
   every agent step's that sets none, setting by setting, and a step's own win. What blocks the
   launcher's *Run* blocks it, in the preflight's words.

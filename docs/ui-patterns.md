@@ -471,6 +471,10 @@ danger tint.
 - **A control bound to a command shows its key** in its tooltip (a `Kbd`); a field shows it as a
   `Kbd` at its end. A label's text never spells a key; a pinned card's answers carry theirs beside
   their words, in the button's own ink, since those keys reach the card from the composer.
+- **A tooltip stands for what is under the pointer, one at a time.** A key, a press, or a dialog
+  or sheet opening or closing puts it away; the control just pressed shows none again until the
+  pointer moves from where it was pressed, so none stands over the menu it opened. What a row's
+  hover actions lie over shows no tooltip while the pointer is on them.
 - **Keyboard focus shows the ring**, only when the keyboard moved it there. A field shows focus by
   its edge alone, turned the `ring` ink; a search field, edgeless at rest, gains one while focused.
 - A dialog, a popup or a floating panel opens with focus on its first field, or on its primary

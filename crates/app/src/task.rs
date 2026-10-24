@@ -375,6 +375,17 @@ pub(crate) fn shown(uid: u64, cx: &App) -> Option<Shown> {
     })
 }
 
+/// Whether the run on session `uid` waits on a person: an approval, which
+/// the session's own chat cannot tell, its agent's turn being over, or a card.
+pub(crate) fn waits_on_person(uid: u64, cx: &App) -> bool {
+    let Some(t) = cx.try_global::<Tasks>() else {
+        return false;
+    };
+    t.task_on(uid)
+        .and_then(|id| t.driven(&id))
+        .is_some_and(|d| d.waits_on_person())
+}
+
 /// What `look` makes of each task, told whether it is working, oldest first.
 pub(crate) fn each<R>(cx: &App, look: impl Fn(&Task, bool) -> Option<R>) -> Vec<R> {
     let Some(t) = cx.try_global::<Tasks>() else {

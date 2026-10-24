@@ -141,6 +141,61 @@ pub(super) fn faded(
         )
 }
 
+/// The row whose hover actions the pointer is on, by the row's group, if
+/// any. One pointer, so one row at most.
+#[derive(Default)]
+struct OnActions(Option<SharedString>);
+
+impl gpui::Global for OnActions {}
+
+/// A row's hover actions, laid over the end of row `group`: they say when the
+/// pointer is on them, so what they lie over stops answering it
+/// ([`covered_tip`]).
+pub(super) fn covering(actions: Stateful<Div>, group: &SharedString) -> Stateful<Div> {
+    let group = group.clone();
+    actions.on_hover(move |on, window, cx| {
+        let at = &mut cx.default_global::<OnActions>().0;
+        match on {
+            true => *at = Some(group.clone()),
+            false if at.as_ref() == Some(&group) => *at = None,
+            false => {}
+        }
+        window.refresh();
+    })
+}
+
+/// A tooltip built by `tip` for something row `group`'s hover actions lie
+/// over, drawn as nothing while the pointer is on those actions.
+///
+/// Under them the pointer is on both: the covered text's tooltip is gpui's
+/// own and an action's is the library's, two kinds that neither replaces the
+/// other, so both stood side by side.
+pub(super) fn covered_tip(
+    group: &SharedString,
+    tip: impl Fn(&mut Window, &mut App) -> gpui::AnyView + 'static,
+) -> impl Fn(&mut Window, &mut App) -> gpui::AnyView + 'static {
+    let group = group.clone();
+    move |window, cx| {
+        let tip = tip(window, cx);
+        let group = group.clone();
+        gpui::AppContext::new(cx, |_| CoveredTip { group, tip }).into()
+    }
+}
+
+struct CoveredTip {
+    group: SharedString,
+    tip: gpui::AnyView,
+}
+
+impl Render for CoveredTip {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let covered = cx
+            .try_global::<OnActions>()
+            .is_some_and(|on| on.0.as_ref() == Some(&self.group));
+        div().children((!covered).then(|| self.tip.clone()))
+    }
+}
+
 /// A control inside a row whose own click means something — opening a
 /// session, folding a project — named for assistive technology, which the
 /// library's button takes only from a text label.

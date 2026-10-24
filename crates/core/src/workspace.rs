@@ -421,6 +421,16 @@ impl Workspace {
         self.active_root
     }
 
+    /// [`Self::add_root`], **selecting nothing**: a worktree cut for a task
+    /// nobody here started (a schedule's, a tool's) must not move what the
+    /// person has selected, which is also what *Run on* offers first.
+    pub fn add_root_quietly(&mut self, path: impl Into<PathBuf>) -> usize {
+        let selected = self.active_root;
+        let idx = self.add_root(path);
+        self.active_root = selected;
+        idx
+    }
+
     /// Drop a root, keeping `active_root` valid and in-bounds.
     pub fn remove_root(&mut self, idx: usize) {
         if idx >= self.roots.len() {
@@ -524,6 +534,21 @@ mod tests {
             args: vec![],
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn a_root_added_quietly_leaves_the_selection_alone() {
+        let mut ws = Workspace::seeded("/a");
+        ws.add_root("/b");
+        ws.select_root(0);
+        assert_eq!(ws.add_root_quietly("/run"), 2);
+        assert_eq!(ws.active_root, 0);
+        assert_eq!(
+            ws.add_root_quietly("/b"),
+            1,
+            "an open project is not doubled"
+        );
+        assert_eq!(ws.active_root, 0);
     }
 
     #[test]

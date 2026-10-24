@@ -2,8 +2,8 @@
 
 use super::model::{Item, meta};
 use super::row::{
-    DragGhost, SessionDrag, ellipsize, faded, hover_fill, key_ring, labelled, menu_button,
-    meta_control, on_hover, row_control, row_inks, row_surfaces,
+    DragGhost, SessionDrag, covered_tip, covering, ellipsize, faded, hover_fill, key_ring,
+    labelled, menu_button, meta_control, on_hover, row_control, row_inks, row_surfaces,
 };
 use crate::chat::pane::SessionSignal;
 use crate::shell::Shell;
@@ -74,18 +74,25 @@ fn word_ink(signal: Option<SessionSignal>, cx: &App) -> Option<Hsla> {
 }
 
 /// A state's mark in its stable column, so titles never shift beside it,
-/// naming itself on hover and to assistive technology.
+/// naming itself on hover and to assistive technology. `covered_by` is the
+/// row whose hover actions lie over it, if they do.
 pub(super) fn status_mark(
     id: gpui::ElementId,
     signal: Option<SessionSignal>,
     label: SharedString,
+    covered_by: Option<&SharedString>,
     cx: &App,
 ) -> impl IntoElement + use<> {
-    mark_slot(status_icon(signal, cx))
+    let mark = mark_slot(status_icon(signal, cx))
         .id(id)
         .role(gpui::accesskit::Role::Image)
-        .aria_label(label.clone())
-        .tooltip(move |window, cx| Tooltip::new(label.clone()).build(window, cx))
+        .aria_label(label.clone());
+    let tip =
+        move |window: &mut Window, cx: &mut App| Tooltip::new(label.clone()).build(window, cx);
+    match covered_by {
+        Some(row) => mark.tooltip(covered_tip(row, tip)),
+        None => mark.tooltip(tip),
+    }
 }
 
 /// A signal's mark where a page names a session, outside the rail.
@@ -94,6 +101,7 @@ pub(crate) fn signal_mark(signal: SessionSignal, cx: &App) -> impl IntoElement +
         "signal".into(),
         Some(signal),
         signal_hint(Some(signal)).into(),
+        None,
         cx,
     )
 }
@@ -261,7 +269,7 @@ pub(super) fn session_row(
                 .h_flex()
                 .items_center()
                 .gap_2()
-                .child(status_mark(("status", uid).into(), signal, label, cx))
+                .child(status_mark(("status", uid).into(), signal, label, None, cx))
                 .child(
                     faded(("title", uid), title, group.clone(), rest, hovered)
                         .tooltip(move |window, cx| Tooltip::new(tip.clone()).build(window, cx))
@@ -292,9 +300,9 @@ pub(super) fn session_row(
                 .child(
                     faded(("meta", uid), words, group.clone(), rest, hovered)
                         .text_color(meta_ink)
-                        .tooltip(move |window, cx| {
+                        .tooltip(covered_tip(&group, move |window, cx| {
                             Tooltip::new(meta_tip.clone()).build(window, cx)
-                        }),
+                        })),
                 )
                 .child(actions(
                     item,
@@ -357,7 +365,7 @@ fn actions(
     let button = |id: &'static str, icon: Icon, tip: &'static str, cx: &App| {
         meta_control((id, uid), icon, cx).tooltip(tip)
     };
-    div()
+    covering(div().id(("session-actions", uid)), group)
         .h_flex()
         .absolute()
         .right_0()
