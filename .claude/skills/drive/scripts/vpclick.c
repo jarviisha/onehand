@@ -37,7 +37,7 @@ int main(int argc, char **argv) {
     zwlr_virtual_pointer_v1_button(p, 0, 272, 0); zwlr_virtual_pointer_v1_frame(p);
   } else if (!strcmp(what, "scroll")) {
     int n = argc > 4 ? atoi(argv[4]) : 3;
-    zwlr_virtual_pointer_v1_axis_source(p, 0);
+    zwlr_virtual_pointer_v1_axis_source(p, 1); /* finger: a wheel with no discrete step scrolls nothing */
     zwlr_virtual_pointer_v1_axis(p, 0, 0, wl_fixed_from_int(15 * n)); zwlr_virtual_pointer_v1_frame(p);
   }
   wl_display_roundtrip(d); usleep(80000);

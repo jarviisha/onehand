@@ -48,7 +48,9 @@ const readline = require('readline');
 const rl = readline.createInterface({ input: process.stdin });
 const send = (o) => process.stdout.write(JSON.stringify(o) + '\n');
 
-const SESSION = 'mock-ui';
+// Its own per session, as a real agent's is: onehand keeps a transcript by
+// session id, so one shared id would mix every session's into one.
+let SESSION = 'mock-ui';
 const update = (u) =>
   send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: SESSION, update: u } });
 
@@ -730,6 +732,7 @@ rl.on('line', (line) => {
     // Everything the chips read is here, in the one reply that opens a session.
     case 'session/new':
     case 'session/load':
+      SESSION = m.params?.sessionId ?? `mock-ui-${process.pid}-${Date.now()}`;
       send({
         jsonrpc: '2.0',
         id: m.id,
