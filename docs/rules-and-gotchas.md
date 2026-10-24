@@ -1,6 +1,6 @@
 # Rules and gotchas, in full
 
-The full text behind the short forms in `CLAUDE.md`, with the reason for each.
+The full text behind the short forms in `AGENTS.md`, with the reason for each.
 
 ## Rules
 
@@ -39,7 +39,7 @@ The full text behind the short forms in `CLAUDE.md`, with the reason for each.
   Lucide for shapes), register it in the `icons!` macro. A test fails if manifest and registry
   disagree.
 - **Code describes; it never cites.** No comment, doc comment or runtime string may name another
-  document — not `CLAUDE.md`, not `DESIGN.md`, and no
+  document — not `AGENTS.md`, not `DESIGN.md`, and no
   section number, anchor or item code belonging to one. The guard's list of forbidden names is
   deliberately longer than the set of documents that exist, because a name that was retired is
   exactly the one a stale comment would still be holding. Say the reason **in the comment's own

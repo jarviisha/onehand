@@ -863,6 +863,7 @@ mod tests {
         // pointing at -- a rule that only forbids live names stops catching a
         // citation at the moment it becomes worthless.
         const STEMS: &[&str] = &[
+            "AGENTS",
             "CLAUDE",
             "DESIGN",
             "DESIGN-ANSWER",

@@ -44,6 +44,6 @@ the rule, not just the question. For prose-only work, use the contract path in `
     `CONTEXT.md`)?
 16. The documents carried in the same change, a treatment that differs written as a rule of its
     role or recorded in `docs/known-gaps.md`, and no file past about 800 lines of code
-    (`SKILL.md`, *Finishing*; `CLAUDE.md`, *Rules*)?
+    (`SKILL.md`, *Finishing*; `AGENTS.md`, *Rules*)?
 17. The user's visual checks named: both themes, zoom, narrow and wide containers, long text and
     the states that apply, with what was observed kept apart from what is pending?
