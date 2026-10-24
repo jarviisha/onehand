@@ -294,14 +294,12 @@ impl AppConfig {
     }
 
     /// Resolve config + the path it should be written back to. Search order:
-    /// `./onehand.toml`, then `<config_dir>/onehand/config.toml`, else what a
-    /// first launch gets (the agents found on the machine), written back to the
-    /// global path at the first save.
+    /// `search_order`, else what a first launch gets (the agents found on
+    /// the machine), written back to the global path at the first save.
     pub fn load_resolved() -> (Self, PathBuf) {
-        let local = PathBuf::from("onehand.toml");
         let global = config_dir().join("config.toml");
         let path_var = std::env::var_os("PATH");
-        for path in [local, global.clone()] {
+        for path in search_order(own_root().is_some(), &global) {
             if let Ok(text) = std::fs::read_to_string(&path) {
                 match Self::from_disk(Some(&text), path_var.as_deref()) {
                     Ok(cfg) => return (cfg, path),
@@ -393,12 +391,30 @@ impl AppConfig {
 /// onehand's root only, where moving `XDG_CONFIG_HOME` would move every
 /// tool's, and `gh`, git and the agents a session starts read theirs there.
 pub fn config_dir() -> PathBuf {
-    match std::env::var_os("ONEHAND_CONFIG_DIR").filter(|dir| !dir.is_empty()) {
-        Some(dir) => PathBuf::from(dir),
-        None => dirs::config_dir()
+    own_root().unwrap_or_else(|| {
+        dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join("onehand"),
-    }
+            .join("onehand")
+    })
+}
+
+/// `$ONEHAND_CONFIG_DIR`, when it names a root.
+fn own_root() -> Option<PathBuf> {
+    std::env::var_os("ONEHAND_CONFIG_DIR")
+        .filter(|dir| !dir.is_empty())
+        .map(PathBuf::from)
+}
+
+/// Where a config is looked for, first to last: `./onehand.toml`, then
+/// `global`.
+///
+/// **A root of its own skips the working directory's file.** That file belongs
+/// to the instance in use, and one started beside it on another root from the
+/// same folder would read it, write into it and lose the other's settings: the
+/// instance lock guards a root, not a working directory.
+fn search_order(own_root: bool, global: &Path) -> Vec<PathBuf> {
+    let local = (!own_root).then(|| PathBuf::from("onehand.toml"));
+    local.into_iter().chain([global.to_path_buf()]).collect()
 }
 
 /// A workspace's own persisted shape — name + project roots + which is active

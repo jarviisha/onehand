@@ -490,3 +490,13 @@ fn control_outside_is_off_unless_said() {
     let on = AppConfig::parse("[control]\noutside = true\n").unwrap();
     assert!(on.control.outside);
 }
+
+#[test]
+fn a_root_of_its_own_never_reads_the_working_directorys_config() {
+    let global = Path::new("/root/config.toml");
+    assert_eq!(
+        search_order(false, global),
+        [PathBuf::from("onehand.toml"), global.to_path_buf()]
+    );
+    assert_eq!(search_order(true, global), [global.to_path_buf()]);
+}
