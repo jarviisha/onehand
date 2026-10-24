@@ -376,8 +376,8 @@ pub(super) fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                         cx,
                     )
                     .on_click(
-                        move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                            shell.update(cx, |shell, cx| shell.set_agent_kind(choice, cx));
+                        move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                            shell.update(cx, |shell, cx| shell.set_agent_kind(choice, window, cx));
                         },
                     )
                 }),

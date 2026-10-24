@@ -105,6 +105,9 @@ Task ──< Run ──< Step visit
   runs keeps a snapshot of the workflow it started with.
 - **The place belongs to the task.** Every run works in the same checkout, or the same worktree and
   branch, so a retry sees the work the run before it left.
+- **A task's session is named for the task.** Every session a run starts, a Resume's included,
+  takes the task's title as its name unless it already has one, so the rail tells runs apart
+  rather than showing each by the first line of its prompt.
 - **What a run keeps beyond its outcome is optional in its file**, added beside the old fields and
   never in place of one: what a failed run failed on (configuration, forge or other), the pull
   request its pull request step opened, and each command visit's result (passed or not, the exit,

@@ -58,7 +58,7 @@ pub struct PresetInfo {
     pub(crate) login: &'static str,
     /// The variable that points this agent at one account's directory, which
     /// a login must be run under to log that account in.
-    pub(crate) account_var: &'static str,
+    pub account_var: &'static str,
     /// The mode an unattended run starts in when the config names none.
     pub(crate) unattended_mode: Option<&'static str>,
     pub runs: Runs,

@@ -141,6 +141,14 @@ impl AskItem {
             || self.custom.get(field).is_some_and(|c| !c.trim().is_empty())
     }
 
+    /// How many questions carry an answer: the count the settled record
+    /// shows, which counts what was said rather than what was asked.
+    pub fn answered(&self) -> usize {
+        (0..self.req.fields.len())
+            .filter(|&f| self.field_answered(f))
+            .count()
+    }
+
     /// Pick (single-select) or toggle (multi-select) a choice. Picks and typed
     /// text are mutually exclusive per field — the adapter resolves a field
     /// that carries both in favour of the text, so letting both show at once

@@ -382,8 +382,9 @@ impl AskForm<'_> {
         )
     }
 
-    /// What closes the card: Skip, then the forward button. The keys are
-    /// named in the tooltips; the numbers are on the rows.
+    /// What closes the card: Skip, then the forward button. Each label carries
+    /// the pinned key that works from anywhere, Skip's tooltip the card's own
+    /// key; the numbers are on the rows.
     fn footer(&self, cx: &App) -> gpui::Div {
         let (session, idx, active, quick) = (self.session, self.idx, self.active, self.quick);
         // The forward button is about *this* question: a form is walked through

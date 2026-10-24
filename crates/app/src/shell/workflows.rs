@@ -533,6 +533,14 @@ impl Shell {
         // Every drive, a Resume's new session included: what the task was
         // given when it started is what its session may use.
         crate::control::grant(uid, &task.grant);
+        // Named for the task, or every run's session would be called by the
+        // same opening line of its first prompt. Before that prompt the name
+        // is only held, and the first turn's save writes it.
+        self.chat.update(cx, |pane, cx| {
+            if pane.custom_title(uid, cx).is_none() {
+                pane.rename(uid, &task.brief.title, cx);
+            }
+        });
         // Counted from what landed, so a mark the app quit before pinning is
         // pinned now rather than taken as made.
         let pinned = run.pinned_count();

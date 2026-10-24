@@ -76,9 +76,10 @@ impl Shell {
     pub fn set_agent_kind(
         &mut self,
         kind: Option<onehand_core::config::Preset>,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.agent_draft.kind = kind;
+        self.agent_draft.set_kind(kind, window, cx);
         cx.notify();
     }
 

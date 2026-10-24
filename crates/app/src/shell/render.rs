@@ -20,6 +20,7 @@ impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.apply_presentation(window, cx);
         self.apply_terminal_height(window, cx);
+        self.apply_rail_width(window, cx);
         self.sync_docks_open(cx);
         // A panel maximized in the app direction is the whole window: the rail
         // is not rendered at all rather than rendered at zero width, so
@@ -45,11 +46,13 @@ impl Render for Shell {
                         .child(rail),
                 )
                 .child(resizable_panel().child(dock))
-                // The drag emits per frame, so this goes through the same
-                // debounce the dock's own resizing does rather than writing the
-                // workspace file on every pixel.
+                // Called once, when a drag ends: the one thing that changes the
+                // width the person wants. Saved through the same debounce the
+                // dock's own resizing goes through.
                 .on_resize(
                     cx.listener(|shell: &mut Self, _: &Entity<ResizableState>, _, cx| {
+                        shell.window.workspace.layout.rail_w = shell.rail_width(cx);
+                        shell.rail_drawn = None;
                         shell.save_workspace_soon(cx);
                     }),
                 )

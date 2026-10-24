@@ -11,6 +11,7 @@ use super::{FocusedPanel, Shell};
 use crate::tokens::BAR_H;
 use gpui::{Context, Focusable as _, Rems, Window, px, rems};
 use gpui_component::dock::DockPlacement;
+use onehand_core::config::PanelLayout;
 
 /// The conversation's minimum beside a dock, before its zoom.
 const CHAT_MIN: Rems = rems(30.);
@@ -229,6 +230,35 @@ impl Shell {
             bottom.update(cx, |bottom, cx| bottom.set_size(height, window, cx));
         }
         self.terminal_drawn = Some(height);
+    }
+
+    /// Put the rail back at the width the person dragged it to.
+    ///
+    /// The split scales every panel by the same share when the window's width
+    /// changes, which would make a fixed rail creep with each resize. Only a
+    /// drag changes the width wanted (the split's `on_resize`), so any other
+    /// difference is put back, and nothing is while a drag is under way.
+    pub(super) fn apply_rail_width(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if cx.has_active_drag() {
+            return;
+        }
+        let wanted = self
+            .window
+            .workspace
+            .layout
+            .rail_w
+            .clamp(PanelLayout::RAIL_MIN, PanelLayout::RAIL_MAX);
+        // Within a pixel is the same width: anything finer is float drift
+        // that would ask for a resize on every frame.
+        let same = |a: f32, b: f32| (a - b).abs() < 1.;
+        let live = self.rail_width(cx);
+        if same(live, wanted) || self.rail_drawn.is_some_and(|drawn| same(live, drawn)) {
+            return;
+        }
+        self.rail_split.update(cx, |split, cx| {
+            split.resize_panel(0, px(wanted), window, cx)
+        });
+        self.rail_drawn = Some(self.rail_width(cx));
     }
 
     /// The Workbench steps aside so the conversation can be read: the dock

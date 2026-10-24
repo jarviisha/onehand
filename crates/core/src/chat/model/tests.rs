@@ -823,6 +823,18 @@ fn tab_clamps_and_answered_tracks_picks_and_text() {
 }
 
 #[test]
+fn answered_counts_only_the_questions_given_an_answer() {
+    let mut a = ask_item();
+    assert_eq!(a.answered(), 0);
+    a.toggle(1, 0);
+    assert_eq!(a.answered(), 1);
+    a.set_custom(0, "  ".into()); // blank text isn't an answer
+    assert_eq!(a.answered(), 1);
+    a.set_custom(0, "mine".into());
+    assert_eq!(a.answered(), 2);
+}
+
+#[test]
 fn single_select_replaces_multi_select_toggles() {
     let mut a = ask_item();
     a.toggle(0, 0);
