@@ -99,6 +99,9 @@ pub struct AskItem {
     /// nothing else on screen changes — and what changes while a form is open
     /// is the agent still streaming underneath it.
     pub cursor: usize,
+    /// Whether the answers were sent. A form skipped or cancelled keeps
+    /// whatever was picked on it, none of which reached the agent.
+    pub(crate) accepted: bool,
 }
 
 /// One row of the question showing on the card: the agent's choices, then the
@@ -125,6 +128,7 @@ impl AskItem {
             expanded: false,
             tab: 0,
             cursor: 0,
+            accepted: false,
         }
     }
 
@@ -141,12 +145,24 @@ impl AskItem {
             || self.custom.get(field).is_some_and(|c| !c.trim().is_empty())
     }
 
-    /// How many questions carry an answer: the count the settled record
-    /// shows, which counts what was said rather than what was asked.
-    pub fn answered(&self) -> usize {
+    /// How many questions carry an answer.
+    pub(crate) fn answered(&self) -> usize {
         (0..self.req.fields.len())
             .filter(|&f| self.field_answered(f))
             .count()
+    }
+
+    /// What a settled form of several questions says it came to, or `None`
+    /// while it is open: how many answers were sent, or how it ended without
+    /// sending any, never a count of picks the agent was not given.
+    pub fn outcome_words(&self) -> Option<String> {
+        let resolved = self.resolved.as_ref()?;
+        Some(match (self.accepted, self.answered()) {
+            (false, _) => resolved.clone(),
+            (true, 0) => "Skipped".into(),
+            (true, 1) => "1 answer".into(),
+            (true, n) => format!("{n} answers"),
+        })
     }
 
     /// Pick (single-select) or toggle (multi-select) a choice. Picks and typed

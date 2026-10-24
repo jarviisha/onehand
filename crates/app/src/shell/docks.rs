@@ -102,8 +102,8 @@ impl Shell {
     /// measures anything, so a size outside the range the rail could have been
     /// dragged to is that gap rather than a width the user chose.
     ///
-    /// Read by the drag that sets the width wanted and by the frame that puts
-    /// it back, so the check and the fallback are here rather than at each.
+    /// Read when a drag ends, as the width the person now wants; a drag never
+    /// leaves it outside that range.
     pub fn rail_width(&self, cx: &App) -> f32 {
         self.rail_split
             .read(cx)

@@ -41,16 +41,9 @@ pub(super) fn ask_record(
             .unwrap_or_else(|| a.req.message.to_string()),
     })))
     .meta(Some(match many {
-        // What was said, not what was asked: a skipped question is no answer.
-        true => pill(
-            match a.answered() {
-                0 => "Skipped".to_string(),
-                1 => "1 answer".to_string(),
-                n => format!("{n} answers"),
-            },
-            cx,
-        )
-        .into_any_element(),
+        true => {
+            pill(a.outcome_words().unwrap_or_else(|| answer.to_string()), cx).into_any_element()
+        }
         false => pill(answer.to_string(), cx).into_any_element(),
     }))
     .fold(many.then_some(a.expanded));
