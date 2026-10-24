@@ -164,6 +164,11 @@ fn a_missed_time_set_to_skip_is_skipped() {
     let opened = at(2026, 10, 2, 8, 0, 0);
     let act = decide(&s, at(2026, 10, 2, 9, 0, 1), opened, false, &tz());
     assert_eq!(act, Act::Start { missed: false });
+    // Due a few seconds before it opened, in the minute it opened in, is
+    // missed too: onehand was closed when the time came.
+    let opened = at(2026, 10, 2, 9, 0, 41);
+    let act = decide(&s, opened + 1, opened, false, &tz());
+    assert_eq!(act, Act::Skip("missed while onehand was closed".into()));
 }
 
 #[test]

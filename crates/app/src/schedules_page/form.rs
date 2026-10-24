@@ -226,7 +226,7 @@ fn about_section(
                     Switch::new("schedule-form-on")
                         .checked(draft.on)
                         .small()
-                        .label("On")
+                        .label("Runs at its times")
                         .on_click({
                             let handle = handle.clone();
                             move |on: &bool, window: &mut Window, cx: &mut App| {
