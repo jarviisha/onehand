@@ -4,8 +4,9 @@
 #   session.sh up [BIN]   seed the data root once, start sway and the app
 #                         (BIN defaults to the repo's target/debug/onehand)
 #   session.sh restart    stop the app only, wipe tasks and conversations,
-#                         reset the project, start the app again
-#   session.sh down       stop the app and sway
+#                         reset the project and the workspace, start the app
+#                         again
+#   session.sh down       stop the app, the held keyboard and sway
 #
 # Everything lives under $DRIVE_ROOT (default /tmp/onehand-drive). Processes
 # are stopped by the pids written there, never by name: the person's own
@@ -45,6 +46,12 @@ command = "node"
 args = ["$repo/crates/core/examples/mock_ui_agent.js"]
 TOML
     printf 'recent_workspaces = ["%s"]\n' "$root/ws" >"$root/home/state.toml"
+    seed_workspace
+}
+
+# The workspace as seeded: `proj` alone, so a restart drops the worktrees and
+# folders a run or a second launch added.
+seed_workspace() {
     cat >"$root/ws/onehand-workspace.toml" <<TOML
 name = "Drive"
 roots = ["$root/proj"]
@@ -78,6 +85,26 @@ start_sway() {
     echo "sway did not come up; see $root/sway.log" >&2; exit 1
 }
 
+# A keyboard that stays for the whole session. GPUI on Wayland counts its
+# window active only while it holds keyboard focus, and the headless seat has
+# no keyboard but the one each `wtype` makes and drops: with none between them
+# the window is never active, toasts never hide (their clock waits for an
+# active window) and the first key of a `wtype` can land before focus does.
+hold_keyboard() {
+    if [ -f "$root/keyboard.pid" ] && kill -0 "$(cat "$root/keyboard.pid")" 2>/dev/null; then return 0; fi
+    # A loop, because wtype's sleep tops out near 71 minutes; in a session of
+    # its own, so a stop ends the loop and the wtype it is waiting on at once.
+    WAYLAND_DISPLAY="$(cat "$root/display")" \
+        setsid bash -c 'while :; do wtype -s 3600000; done' >/dev/null 2>&1 &
+    echo $! >"$root/keyboard.pid"
+}
+
+drop_keyboard() {
+    [ -f "$root/keyboard.pid" ] || return 0
+    kill -- -"$(cat "$root/keyboard.pid")" 2>/dev/null || true
+    rm -f "$root/keyboard.pid"
+}
+
 start_app() {
     local bin=${1:-$repo/target/debug/onehand}
     # `cd` on its own line: with `cd … && app &`, the whole list goes to the
@@ -98,12 +125,21 @@ start_app() {
 }
 
 case ${1:-} in
-    up) seed; build_pointer; start_sway; stop app.pid; start_app "${2:-}" ;;
+    up) seed; build_pointer; start_sway; hold_keyboard; stop app.pid; start_app "${2:-}" ;;
     restart)
         stop app.pid
         rm -rf "$root/home/tasks" "$root/home/conversations"
-        git -C "$root/proj" checkout -q -- . && git -C "$root/proj" clean -qfd
+        # What runs left in the project: worktrees, their branches, step marks.
+        git -C "$root/proj" worktree list --porcelain | sed -n 's/^worktree //p' | tail -n +2 |
+            while read -r wt; do git -C "$root/proj" worktree remove --force "$wt"; done
+        git -C "$root/proj" checkout -q -f main
+        git -C "$root/proj" reset -q --hard "$(git -C "$root/proj" rev-list --max-parents=0 main)"
+        git -C "$root/proj" for-each-ref --format='%(refname)' refs/heads refs/onehand |
+            { grep -vx refs/heads/main || true; } | while read -r ref; do git -C "$root/proj" update-ref -d "$ref"; done
+        git -C "$root/proj" clean -qfd
+        seed_workspace
+        hold_keyboard
         start_app "${2:-}" ;;
-    down) stop app.pid; stop sway.pid ;;
+    down) stop app.pid; drop_keyboard; stop sway.pid ;;
     *) sed -n '2,13p' "$0"; exit 2 ;;
 esac

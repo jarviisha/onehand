@@ -18,11 +18,12 @@ The scripts are in `scripts/` beside this file; run them from anywhere. `DRIVE_R
 
 1. **Build** what is to be tested: `cargo build` (the app on the branch's code). Done when it
    builds. A `--release` binary works too; pass its path to `up`.
-2. **Start**: `scripts/session.sh up [BIN]`. It does four things:
+2. **Start**: `scripts/session.sh up [BIN]`. It does five things:
    - seeds the data root on the first run: a git project `proj` whose check command is `true`,
      and two agents, *Mock Work* and *Mock UI*;
    - builds the virtual pointer;
    - starts sway;
+   - holds a virtual keyboard for the whole session, so the window counts as active;
    - starts the app and waits for its window.
 
    Done when it returns 0. A non-zero exit prints the app's or sway's log tail.
@@ -38,9 +39,10 @@ The scripts are in `scripts/` beside this file; run them from anywhere. `DRIVE_R
    Done when every behaviour the change touches has been seen working on a screenshot, or a
    failure has been captured with its log.
 4. **Start over** without restarting sway: `scripts/session.sh restart`. It wipes tasks and
-   conversations, resets the project and starts the app again.
-5. **Stop**: `scripts/session.sh down`. Done when no sway or debug onehand of this session is
-   left (`pgrep -x sway` finds nothing).
+   conversations, resets the project (its worktrees, branches and step marks included) and the
+   workspace to `proj` alone, and starts the app again.
+5. **Stop**: `scripts/session.sh down`. Done when no sway, held keyboard or debug onehand of
+   this session is left (`pgrep -x sway` finds nothing).
 6. **Report** what was driven, each result with the screenshot that shows it, and anything
    found. A crash found while driving is a finding whether or not the change under test caused
    it; say which.
@@ -51,7 +53,8 @@ The scripts are in `scripts/` beside this file; run them from anywhere. `DRIVE_R
   launcher.
   - Each prompt streams for about four seconds, which leaves time to press Stop mid-turn.
   - An implement step's prompt (*This step is the change*) appends to `README.md`, so the
-    *code changed* gates pass.
+    *code changed* gates pass, and commits it when the prompt asks for a commit (*commit your
+    work*, a branch run), so the *committed* gate passes too.
   - A plan step's prompt changes nothing.
   - It parks no cards and returns no errors, so a run goes from its first step to its last.
 - **Mock UI** (`crates/core/examples/mock_ui_agent.js`) is for looking at the chrome.
@@ -70,8 +73,11 @@ The scripts are in `scripts/` beside this file; run them from anywhere. `DRIVE_R
 - **There is no pointer without `vpclick`.** The headless seat has no pointer device, so
   `swaymsg seat … cursor` moves nothing a client sees. The C tool creates a wlr virtual pointer
   instead.
-- **`wtype` can drop the first character** typed into a field that has just taken focus. Read
-  the screenshot when the exact text matters.
+- **A window that is never active stops toasts hiding.** GPUI on Wayland counts a window
+  active only while it holds keyboard focus, and the headless seat's only keyboard is the one
+  `session.sh` holds. If toasts pile up, or the first key of a `wtype` is lost, check that
+  `keyboard.pid` is alive; `session.sh restart` starts it again. Read the screenshot when the
+  exact text matters.
 - **Seconds pass between tool calls.** Reading a screenshot takes time the app keeps running in,
   so an action that has to land within a window (Stop on a short command, a press mid-turn) goes
   in the same shell command as the one that started it, with `sleep` between.
