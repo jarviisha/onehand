@@ -94,5 +94,7 @@ edit made during a look stands. A time held for a schedule that is then switched
 - **When it ends**, a desktop notification names the schedule and how it ended.
 - **A run that ends done closes its session**: it leaves the rail, and its conversation, named for
   the task, stays under past conversations. One that needs attention, failed or was stopped keeps
-  its session in the rail. The session on screen stays open, so nothing the person is looking at
-  moves; nothing else is shown and the caret stays where it was.
+  its session in the rail. A session whose conversation is on screen stays open, so nothing the
+  person is looking at moves; one behind a page (Tasks, Settings, any other) is not on screen and
+  closes, and leaving the page shows the project's next session, or its page when none is left.
+  Nothing else is shown and the caret stays where it was.

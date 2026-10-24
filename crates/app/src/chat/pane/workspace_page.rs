@@ -428,6 +428,12 @@ impl ChatPane {
         self.page.is_some()
     }
 
+    /// The session whose conversation the pane shows: none while a page
+    /// covers it, even though the project still has an active session.
+    pub fn viewing(&self) -> Option<u64> {
+        self.active.filter(|_| self.page.is_none())
+    }
+
     /// Narrow the workspace page's issue list to one project, or `None` for all.
     fn filter_workspace(&mut self, only: Option<PathBuf>, cx: &mut Context<Self>) {
         self.workspace_filter = only.clone();
