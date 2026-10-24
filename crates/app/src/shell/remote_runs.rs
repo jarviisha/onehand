@@ -215,11 +215,14 @@ impl Shell {
     /// at, as a finished schedule's run does.
     ///
     /// Quietly, as a run's project is dropped: nothing else is shown and the
-    /// caret stays where it is. The one session it leaves is the one on
-    /// screen, since taking that away would move the person, and they can
-    /// close it themselves.
+    /// caret stays where it is. The one session it leaves is the one whose
+    /// conversation is on screen, since taking that away would move the
+    /// person, and they can close it themselves. Its project's active session
+    /// behind a page is not on screen: it goes, the project's next session
+    /// becomes its active one, and leaving the page shows that one, or the
+    /// project page when none is left.
     pub fn close_finished(&mut self, uid: u64, cx: &mut Context<Self>) {
-        if self.active_session_uid() == Some(uid) {
+        if self.chat.read(cx).viewing() == Some(uid) {
             return;
         }
         if self.drop_session(uid, cx) {

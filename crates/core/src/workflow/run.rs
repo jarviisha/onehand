@@ -117,6 +117,23 @@ impl Outcome {
             Self::Failed(why) => format!("Workflow stopped: {why}"),
         }
     }
+
+    /// What happened, as a line for the transcript, in a run of `template`:
+    /// a prompt's run is not a workflow and has no steps to pass.
+    pub fn said_in(&self, template: &Template) -> String {
+        if !template.is_prompt() {
+            return self.said();
+        }
+        match self {
+            Self::Done => "Done".to_string(),
+            Self::Stopped(stop) => match stop.said() {
+                Some(why) => format!("Stopped: {why}"),
+                None => "Stopped".to_string(),
+            },
+            Self::Exhausted { .. } => "Stopped: too many misses".to_string(),
+            Self::Failed(why) => format!("Stopped: {why}"),
+        }
+    }
 }
 
 /// What kind of thing a failed run failed on, which decides the way out.
@@ -618,7 +635,7 @@ impl Run {
     fn enter(&mut self, at: usize, why: &str) -> Action {
         let from = self.step_id();
         let Some(to) = self.template.steps.get(at).map(|step| step.id.clone()) else {
-            self.close_visit(&Outcome::Done.said());
+            self.close_visit(&Outcome::Done.said_in(&self.template));
             self.log(from, "done".to_string(), why);
             self.awaiting = Await::Nothing;
             self.outcome = Some(Outcome::Done);
@@ -710,8 +727,9 @@ impl Run {
             Outcome::Exhausted { .. } => "exhausted",
             Outcome::Failed(_) => "failed",
         };
-        self.log(self.step_id(), to.to_string(), &outcome.said());
-        self.close_visit(&outcome.said());
+        let said = outcome.said_in(&self.template);
+        self.log(self.step_id(), to.to_string(), &said);
+        self.close_visit(&said);
         self.awaiting = Await::Nothing;
         self.outcome = Some(outcome.clone());
         Action::Finish(outcome)

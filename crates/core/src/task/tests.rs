@@ -675,6 +675,26 @@ fn a_check_says_whether_it_passed() {
 }
 
 #[test]
+fn a_prompts_task_is_not_said_as_a_workflow() {
+    let mut t = task("1");
+    t.runs[0].template = crate::schedule::prompt_template();
+    assert!(t.runs[0].template.is_prompt());
+    assert!(!task("2").runs[0].template.is_prompt());
+    t.runs[0].resume();
+    let mut said = |outcome| {
+        t.runs[0].outcome = Some(outcome);
+        t.ended_said().unwrap()
+    };
+    assert_eq!(said(Outcome::Done), "Done");
+    assert_eq!(said(Outcome::Stopped(Stop::ByPerson)), "Stopped");
+    assert_eq!(
+        said(Outcome::Failed("no agent".into())),
+        "Stopped: no agent"
+    );
+    assert!(!said(Outcome::Stopped(Stop::TimedOut)).contains("Workflow"));
+}
+
+#[test]
 fn a_retry_with_a_note_tells_its_first_step_what_to_change() {
     let mut t = task("1");
     t.runs[0].resume();

@@ -75,7 +75,9 @@ edit made during a look stands. A time held for a schedule that is then switched
 
 - **A prompt** runs as a task of a workflow of one agent step, *Prompt*, whose prompt is the
   brief and the brief the schedule's prompt (a skill is used by naming it there). It
-  works on the project's checkout.
+  works on the project's checkout. It is said as a prompt, not a workflow: its row and its strip
+  name *Prompt* once and never its one step, its transcript tells no step, and it ends *Done*, or
+  *Stopped* with why.
 - **A workflow** runs the library's workflow of that id on the schedule's title and body, on the
   checkout or a worktree as the workflow says.
 - **The agent** is the schedule's for every step that names none; **its mode and settings** are
@@ -92,5 +94,7 @@ edit made during a look stands. A time held for a schedule that is then switched
 - **When it ends**, a desktop notification names the schedule and how it ended.
 - **A run that ends done closes its session**: it leaves the rail, and its conversation, named for
   the task, stays under past conversations. One that needs attention, failed or was stopped keeps
-  its session in the rail. The session on screen stays open, so nothing the person is looking at
-  moves; nothing else is shown and the caret stays where it was.
+  its session in the rail. A session whose conversation is on screen stays open, so nothing the
+  person is looking at moves; one behind a page (Tasks, Settings, any other) is not on screen and
+  closes, and leaving the page shows the project's next session, or its page when none is left.
+  Nothing else is shown and the caret stays where it was.

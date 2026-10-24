@@ -277,7 +277,7 @@ pub(super) fn task_detail(
         for (n, run) in earlier.iter().enumerate().rev().take(EARLIER_SHOWN) {
             let open = detail.earlier_open.contains(&run.id);
             let ended = match &run.outcome {
-                Some(outcome) => outcome.said(),
+                Some(outcome) => outcome.said_in(&run.template),
                 None => "Cut off".to_string(),
             };
             let at = run
