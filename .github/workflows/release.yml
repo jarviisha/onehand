@@ -91,12 +91,24 @@ jobs:
           sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"
           echo "ARCHIVE=$name.tar.gz" >> "$GITHUB_ENV"
 
-      # The notes say what a tarball cannot: which libraries have to already be
-      # on the machine, and that this is a pre-release. The changelog carries
-      # the contents, so this does not restate them.
+      # The notes are this version's CHANGELOG.md section, then what a tarball
+      # cannot say: which libraries have to already be on the machine, and that
+      # this is a pre-release. A tag with no CHANGELOG section fails here.
       - name: Notes
         run: |
-          cat > notes.md <<'EOF'
+          awk -v version="${TAG#v}" '
+            $0 ~ "^## \\[" { if (found) exit; if (index($0, "## [" version "]") == 1) { found = 1; next } }
+            found && /^\[[^]]+\]: / { exit }
+            found { print }
+          ' CHANGELOG.md > notes.md
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "::error::CHANGELOG.md has no section for ${TAG#v}"
+            exit 1
+          fi
+          cat >> notes.md <<'EOF'
+
+          ---
+
           Pre-release. The config file, the on-disk transcript format, the window
           layout and the keymap are all still changing without migration.
 
@@ -110,8 +122,6 @@ jobs:
           Needs fontconfig, freetype, libxkbcommon and X11 or Wayland already
           installed, and Node for the default agent, which launches through
           `npx`. Point the config at another command and that requirement goes.
-
-          See `CHANGELOG.md` in the archive for what is in this build.
           EOF
 
       - name: Release
@@ -120,6 +130,6 @@ jobs:
         run: |
           gh release create "$TAG" \
             --prerelease \
-            --title "onehand $TAG" \
+            --title "$TAG" \
             --notes-file notes.md \
             "$ARCHIVE" "$ARCHIVE.sha256"

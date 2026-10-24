@@ -134,7 +134,7 @@ What this build does not do yet, with the reason for each, is listed in
 
 ## Layout
 
-The crates are listed in [CLAUDE.md](CLAUDE.md#repo-layout). `crates/core`
+The crates are listed in [AGENTS.md](AGENTS.md#repo-layout). `crates/core`
 has no dependency on any UI framework, deliberately: it is the half that
 survived one front-end rewrite. Every feature is a crate built into the same
 binary and composed at compile time; there is no plugin system: no plugin
@@ -147,7 +147,7 @@ Code's plugins, not onehand's.
 - [DESIGN.md](DESIGN.md): the UI as built.
 - [docs/](docs/): workflows, tasks and unattended runs end to end, the known
   gaps, and the reasons behind the repository's rules.
-- [CLAUDE.md](CLAUDE.md): working in the repository.
+- [AGENTS.md](AGENTS.md): working in the repository.
 - [AGENTS.md](AGENTS.md): discovery entrypoint for coding agents; routes to the same shared guide.
 - [CHANGELOG.md](CHANGELOG.md): what changed in each release.
 

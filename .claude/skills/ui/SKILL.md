@@ -113,7 +113,7 @@ Take the path the diff needs; neither path's evidence proves the other complete.
    skill applies them and is never a second system. No rule rests on another product; the one
    source the contract names is its palette's, VS Code's keys.
 2. Follow the changed rule through this skill, tokens.md, catalog.md, checklist.md and
-   `CLAUDE.md`, resolving contradictions and broken links; preserve feature behaviour unless the
+   `AGENTS.md`, resolving contradictions and broken links; preserve feature behaviour unless the
    user asked otherwise, and keep target rules apart from claims about the code. Walk realistic
    cases through the text (a new settings section, a row with secondary text, a hovered selected
    item, a narrow dock, a shared token change): each reaches an existing pattern or an explicit
