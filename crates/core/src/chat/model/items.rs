@@ -102,6 +102,10 @@ pub struct AskItem {
     /// Whether the answers were sent. A form skipped or cancelled keeps
     /// whatever was picked on it, none of which reached the agent.
     pub(crate) accepted: bool,
+    /// Per field, whether the person moved on from a multi-select with
+    /// nothing picked. "Pick as many as you want, or none" makes none an
+    /// answer of its own, sent as an empty list; a skip is not one.
+    pub(crate) none: Vec<bool>,
 }
 
 /// One row of the question showing on the card: the agent's choices, then the
@@ -129,6 +133,7 @@ impl AskItem {
             tab: 0,
             cursor: 0,
             accepted: false,
+            none: vec![false; n],
         }
     }
 
@@ -143,6 +148,35 @@ impl AskItem {
     pub fn field_answered(&self, field: usize) -> bool {
         self.picked.get(field).is_some_and(|p| !p.is_empty())
             || self.custom.get(field).is_some_and(|c| !c.trim().is_empty())
+            || self.none.get(field).is_some_and(|&n| n)
+    }
+
+    /// Whether the forward button may move on from `field`: once it carries
+    /// an answer, or at once on a multi-select, where picking nothing is an
+    /// answer too.
+    pub fn may_advance(&self, field: usize) -> bool {
+        self.field_answered(field)
+            || self
+                .req
+                .fields
+                .get(field)
+                .is_some_and(|f| f.kind.is_multi())
+    }
+
+    /// Move on from `field`, recording an empty multi-select as answered with
+    /// none. Answers `true` when it was the last question, which is the
+    /// caller's cue to settle the form. Call only where [`Self::may_advance`].
+    pub fn advance(&mut self, field: usize) -> bool {
+        if !self.field_answered(field) {
+            if let Some(none) = self.none.get_mut(field) {
+                *none = true;
+            }
+        }
+        if self.is_last(field) {
+            return true;
+        }
+        self.go_to(field + 1);
+        false
     }
 
     /// How many questions carry an answer.
@@ -268,6 +302,9 @@ impl AskItem {
         if let Some(custom) = self.custom.get_mut(field) {
             custom.clear();
         }
+        if let Some(none) = self.none.get_mut(field) {
+            *none = false;
+        }
         if self.is_last(field) {
             return true;
         }
@@ -296,10 +333,9 @@ impl AskItem {
         matches!(self.req.fields.as_slice(), [f] if matches!(f.kind, ElicitKind::Select(_)))
     }
 
-    /// Anything picked or typed — gates the Submit button.
+    /// Any question answered — gates sending the form.
     pub fn has_answer(&self) -> bool {
-        self.picked.iter().any(|p| !p.is_empty())
-            || self.custom.iter().any(|c| !c.trim().is_empty())
+        self.answered() > 0
     }
 
     /// Whether `field`'s free-text box is offered (a select's "Other", or the
@@ -313,7 +349,8 @@ impl AskItem {
 
     /// The `(key, value)` pairs for the response `content`: a typed answer wins
     /// over that field's picks (the user wrote their own instead of choosing),
-    /// and an unanswered field contributes nothing.
+    /// and an unanswered field contributes nothing; a multi-select answered
+    /// with none is an empty list.
     pub(crate) fn answers(&self) -> Vec<(String, ElicitValue)> {
         let mut out = Vec::new();
         for (i, f) in self.req.fields.iter().enumerate() {
@@ -334,7 +371,7 @@ impl AskItem {
                 .iter()
                 .filter_map(|&c| choices.get(c).map(|c| c.value.clone()))
                 .collect();
-            if values.is_empty() {
+            if values.is_empty() && !self.none.get(i).is_some_and(|&n| n) {
                 continue;
             }
             out.push(match f.kind {
@@ -356,11 +393,15 @@ impl AskItem {
                 continue;
             }
             let choices = f.kind.choices();
+            let before = parts.len();
             parts.extend(
                 self.picked[i]
                     .iter()
                     .filter_map(|&c| choices.get(c).map(|c| c.label.clone())),
             );
+            if parts.len() == before && self.none.get(i).is_some_and(|&n| n) {
+                parts.push("None".into());
+            }
         }
         if parts.is_empty() {
             "Skipped".into()

@@ -179,7 +179,7 @@ pub(super) fn ended(outcome: Option<&Outcome>) -> String {
     };
     match outcome {
         Outcome::Done => "Every step of the workflow passed.".to_string(),
-        Outcome::Stopped(Stop::ByPerson) => "The run was stopped by hand.".to_string(),
+        Outcome::Stopped(Stop::ByPerson) => "The run was stopped.".to_string(),
         Outcome::Stopped(Stop::TakenOver) => {
             "The run was taken over by hand, and stopped watching.".to_string()
         }

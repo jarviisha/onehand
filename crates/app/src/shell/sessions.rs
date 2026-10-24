@@ -244,6 +244,19 @@ impl Shell {
 
     /// Close session `uid` and its agent, no question asked.
     fn end_session(&mut self, uid: u64, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.drop_session(uid, cx) {
+            return;
+        }
+        // No toast: the row leaving the rail and the pane moving to whatever is
+        // left say it, where removing a project has to announce itself because
+        // most of what it destroys was never on screen.
+        self.show_active_session(window, cx);
+        cx.notify();
+    }
+
+    /// Take session `uid` and its agent out of the window, showing nothing in
+    /// its place; `false` when there was no such session.
+    pub(super) fn drop_session(&mut self, uid: u64, cx: &mut Context<Self>) -> bool {
         let Some((root_idx, session_idx, path)) = self
             .window
             .workspace
@@ -257,7 +270,7 @@ impl Shell {
                     .map(|si| (ri, si, root.path.clone()))
             })
         else {
-            return;
+            return false;
         };
 
         // The pane owns the conversation and, through it, the adapter: dropping
@@ -271,11 +284,7 @@ impl Shell {
         self.tab_cycle = None;
 
         self.window.workspace.close_session(root_idx, session_idx);
-        // No toast: the row leaving the rail and the pane moving to whatever is
-        // left say it, where removing a project has to announce itself because
-        // most of what it destroys was never on screen.
-        self.show_active_session(window, cx);
-        cx.notify();
+        true
     }
 
     /// Move `uid` to the front of its root's recency list.

@@ -273,7 +273,9 @@ fn stand(
             Some(Outcome::Done) => Stand::Done,
             Some(Outcome::Stopped(stop)) => match stop {
                 Stop::ByPerson | Stop::TakenOver => Stand::ByPerson,
-                Stop::LinkLost | Stop::Closed => Stand::Resumable(stop.said().to_string()),
+                Stop::LinkLost | Stop::Closed => {
+                    Stand::Resumable(stop.said().unwrap_or_default().to_string())
+                }
                 Stop::TimedOut => Stand::TimedOut(format!(
                     "Timed out at {} after {}, against its timeout of {}",
                     step_label(run, None),

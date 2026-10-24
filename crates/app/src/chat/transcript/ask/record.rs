@@ -126,9 +126,12 @@ pub(super) fn ask_pairs(a: &AskItem) -> Vec<(SharedString, SharedString)> {
             };
             (
                 SharedString::from(question),
-                SharedString::from(match chosen.is_empty() {
-                    true => "skipped".to_string(),
-                    false => chosen,
+                SharedString::from(match (chosen.is_empty(), a.field_answered(f)) {
+                    // A multi-select moved on from with nothing picked: none
+                    // was the answer, which a skip is not.
+                    (true, true) => "none".to_string(),
+                    (true, false) => "skipped".to_string(),
+                    (false, _) => chosen,
                 }),
             )
         })

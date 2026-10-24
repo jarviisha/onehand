@@ -668,7 +668,7 @@ fn a_check_says_whether_it_passed() {
     t.runs[0].outcome = Some(Outcome::Failed("exit 1".into()));
     assert_eq!(t.ended_said().as_deref(), Some("Check failed: exit 1"));
     t.runs[0].outcome = Some(Outcome::Stopped(Stop::ByPerson));
-    assert_eq!(t.ended_said().as_deref(), Some("Stopped by hand"));
+    assert_eq!(t.ended_said().as_deref(), Some("Stopped"));
     let mut w = task("2");
     w.runs[0].outcome = Some(Outcome::Done);
     assert_eq!(w.ended_said(), Some(Outcome::Done.said()));
@@ -818,4 +818,37 @@ fn old_task_files_load_with_no_origin_and_no_grant() {
     let back: Task = serde_json::from_value(json).unwrap();
     assert_eq!(back.origin, None);
     assert_eq!(back.grant, Grant::default());
+}
+
+#[test]
+fn only_a_schedules_task_that_is_done_closes_its_session() {
+    let schedule = Origin::Schedule {
+        id: "s".into(),
+        name: "Nightly".into(),
+    };
+    let ended = |origin: Option<Origin>, outcome: Option<Outcome>| {
+        let mut t = task("1");
+        t.origin = origin;
+        t.runs[0].outcome = outcome;
+        t.closes_session()
+    };
+    assert!(ended(Some(schedule.clone()), Some(Outcome::Done)));
+    assert!(!ended(Some(schedule.clone()), None), "still running");
+    assert!(!ended(
+        Some(schedule.clone()),
+        Some(Outcome::Failed("exit 1".into()))
+    ));
+    assert!(!ended(
+        Some(schedule.clone()),
+        Some(Outcome::Stopped(Stop::ByPerson))
+    ));
+    assert!(!ended(
+        Some(schedule),
+        Some(Outcome::Exhausted {
+            step: "Verify".into()
+        })
+    ));
+    // A person's task or a tool's keeps it: somebody chose to start it.
+    assert!(!ended(None, Some(Outcome::Done)));
+    assert!(!ended(Some(Origin::Tool), Some(Outcome::Done)));
 }

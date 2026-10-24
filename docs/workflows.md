@@ -552,7 +552,7 @@ change (`git checkout . && git clean -fd`).
 | Case | Do | Expect |
 |---|---|---|
 | Done | Brief `go`. *Continue* at the approval | Plan, Approve, Implement, Verify; *Workflow done*. `mock-workflow.txt` is left uncommitted. On *Implement on a branch*, a new branch holds one commit |
-| Stop while a command runs | Brief `go fast`, *Continue*, then *Stop* during Verify's `sleep 5` | The run ends *stopped by hand* only once the command has exited: no `sleep` is left (`pgrep -f 'sleep 5'`) |
+| Stop while a command runs | Brief `go fast`, *Continue*, then *Stop* during Verify's `sleep 5` | The run ends *Workflow stopped* only once the command has exited: no `sleep` is left (`pgrep -f 'sleep 5'`) |
 | Exhausted | Brief `miss` | The workflow allows three misses, so the plan misses `answered` four times; the fourth ends the run with *too many misses at the Plan step*. The task is listed under *Needs attention* on the Tasks page, and the rail's *Tasks* row counts it. *Retry* says it starts at Plan; *Retry* runs it again in a new run |
 | A failed command goes back | Brief `fail-check`, *Continue* | Verify fails, Implement runs again with the check's output in its prompt, Verify passes; *Workflow done* |
 | Approve and Revise | Brief `go`. *Revise…* with a note, then *Continue* | The plan runs again, its prompt carrying the note and the earlier answer; no miss is counted. *Review…* shows the kept answer |
@@ -563,7 +563,7 @@ change (`git checkout . && git clean -fd`).
 | Stop on a queued task | As above, then *Stop* on the queued row | The row moves to *Finished*; the first run carries on. The task's file keeps no run |
 | Dismiss | Quit mid-run, then *Dismiss* on the row at the next start | The row moves to *Finished*; the task's file is kept with `"dismissed": true` |
 | Run check | Set a check command, then *Run check* on the project page, once with a command that passes and once with `false` | A notification says *Check passed in <project>*, or *Check failed in <project>*; the task is under *Finished*, or under *Needs attention* with *Retry* |
-| Stop on a running row | *Stop* on a running task's row on the Tasks page | The run ends *stopped by hand* and moves to *Finished* |
+| Stop on a running row | *Stop* on a running task's row on the Tasks page | The run ends *Workflow stopped* and moves to *Finished* |
 | Marks | After any run, `git for-each-ref refs/onehand` | A `start` and an `end` ref per visit, under `refs/onehand/tasks/<task>/<run>/<visit>/`; `git show` on one includes `mock-workflow.txt` while it is untracked |
 | Task detail | After *Exhausted*, press the row's title | The detail shows Run 1: one Plan visit, ending *too many misses at the Plan step*; the misses are in the run's history. Open the visit: its output, then *No files changed.* (or the files, with `+N −N`). Press a file: its diff. *All tasks* goes back |
 | Retry from an earlier step | Brief `go`, *Continue*, then *Stop* during Implement; open the task under *Finished* and press *Retry* | The dialog's *From …* menu lists Plan, Approve and Implement, at Implement; pick Plan and the description says it starts at Plan carrying no answers; *Retry* runs Plan again |

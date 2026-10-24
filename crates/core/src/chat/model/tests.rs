@@ -2646,3 +2646,49 @@ fn a_call_announced_twice_is_one_card() {
         .collect();
     assert_eq!(cards, [("ls -la", ToolStatus::Completed)]);
 }
+
+/// "Pick as many as you want, or none": moving on from an empty
+/// multi-select answers it with an empty list, which a skip does not.
+#[test]
+fn an_empty_multi_select_moved_on_from_answers_none() {
+    let mut a = ask_item();
+    assert!(!a.may_advance(0), "a single-select still waits for a pick");
+    assert!(a.may_advance(1), "a multi-select may move on with none");
+    a.toggle(0, 0);
+    assert!(!a.advance(0));
+    assert!(!a.field_answered(1));
+    assert!(a.advance(1), "the last question settles the form");
+    assert!(a.field_answered(1));
+    assert_eq!(
+        a.answers()[1],
+        ("question_1".to_string(), ElicitValue::List(Vec::new())),
+    );
+    assert_eq!(a.summary(), "A, None");
+
+    // Skipping it takes the answer back.
+    a.skip_field(1);
+    assert!(!a.field_answered(1));
+    assert_eq!(a.answers().len(), 1);
+}
+
+#[test]
+fn a_form_answered_only_with_none_counts_one_answer() {
+    let mut chat = Chat::default();
+    chat.busy = true;
+    chat.apply(AcpEvent::Elicitation(ask_item().req));
+    let idx = chat.items.len() - 1;
+    if let Some(ChatItem::Ask(a)) = chat.items.last_mut() {
+        a.skip_field(0);
+        assert!(!a.has_answer());
+        assert!(a.advance(1));
+        assert!(a.has_answer(), "none is an answer worth sending");
+    }
+    chat.answer_ask(idx, false);
+    match chat.items.last() {
+        Some(ChatItem::Ask(a)) => {
+            assert_eq!(a.outcome_words().as_deref(), Some("1 answer"));
+            assert_eq!(a.resolved.as_deref(), Some("None"));
+        }
+        _ => panic!("the form is gone"),
+    }
+}

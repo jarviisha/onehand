@@ -107,7 +107,10 @@ impl Outcome {
     pub fn said(&self) -> String {
         match self {
             Self::Done => "Workflow done: every step passed".to_string(),
-            Self::Stopped(stop) => format!("Workflow stopped: {}", stop.said()),
+            Self::Stopped(stop) => match stop.said() {
+                Some(why) => format!("Workflow stopped: {why}"),
+                None => "Workflow stopped".to_string(),
+            },
             Self::Exhausted { step } => {
                 format!("Workflow stopped: too many misses at the {step} step")
             }
@@ -152,13 +155,15 @@ pub enum Stop {
 }
 
 impl Stop {
-    pub(crate) fn said(self) -> &'static str {
+    /// Why it stopped, or `None` for a plain Stop: that one has no reason to
+    /// give, and it may have come from a person, a tool or another program.
+    pub(crate) fn said(self) -> Option<&'static str> {
         match self {
-            Self::ByPerson => "stopped by hand",
-            Self::TakenOver => "taken over by hand",
-            Self::TimedOut => "it timed out",
-            Self::LinkLost => "the agent stopped",
-            Self::Closed => "its session was closed",
+            Self::ByPerson => None,
+            Self::TakenOver => Some("taken over by hand"),
+            Self::TimedOut => Some("it timed out"),
+            Self::LinkLost => Some("the agent stopped"),
+            Self::Closed => Some("its session was closed"),
         }
     }
 }

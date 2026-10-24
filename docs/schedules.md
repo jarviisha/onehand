@@ -90,3 +90,7 @@ edit made during a look stands. A time held for a schedule that is then switched
   desktop say why.
 - **Its task says where it came from**: *<schedule> · <workflow>* on the Tasks page.
 - **When it ends**, a desktop notification names the schedule and how it ended.
+- **A run that ends done closes its session**: it leaves the rail, and its conversation, named for
+  the task, stays under past conversations. One that needs attention, failed or was stopped keeps
+  its session in the rail. The session on screen stays open, so nothing the person is looking at
+  moves; nothing else is shown and the caret stays where it was.

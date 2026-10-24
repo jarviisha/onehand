@@ -487,6 +487,9 @@ danger tint.
   wherever the caret is. The footer's answers answer to Alt anywhere in the conversation too: a permission's
   Alt+Y once, Alt+A always, Alt+N deny (refusing once where the agent offers both refusals,
   and only that button carries the key); a question's Alt+Enter on, Alt+S skip.
+  A question's forward answer (*Next*, *Submit* on the last) refuses until the question showing
+  has an answer. On a multi-select none is an answer: moving on with nothing picked sends an empty
+  list, where *Skip* sends no answer for it.
 
 ### Words
 

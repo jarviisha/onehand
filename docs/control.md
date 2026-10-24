@@ -79,7 +79,8 @@ answer, and exits.
 | `create_issue` | optional `project`, `title`, optional `body` | writes one issue into the project's own issue file, read again wherever the issues are on screen; an open issue with the same title (case and spaces aside) is not written again. It takes no labels: the issue gets those of the calling session's schedule, so no agent labels its own issue for an unattended run | `Wrote issue #<n>: …`, or `Issue #<n> is already open with that title` |
 
 - **A task a tool starts is driven off screen**, the way an issue's run is: its session is in the
-  rail and the task on the Tasks page, and nothing the person is looking at moves. Only its first
+  rail (a schedule's that ends done leaves it, `docs/schedules.md`) and the task on the Tasks page,
+  and nothing the person is looking at moves. Only its first
   drive: a Resume or Retry a person presses later shows, as theirs does. A person still sees the
   toasts the launcher's start shows (queued, over the cap).
 - A project is named by its name or its path. A name two projects share is refused, naming both.

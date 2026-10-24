@@ -690,7 +690,7 @@ on `<branch>`: <why>"* — then one sentence per outcome:
 
 ```
 Done               → "Every step of the workflow passed."
-Stopped(ByPerson)  → "The run was stopped by hand."
+Stopped(ByPerson)  → "The run was stopped."
 Stopped(TakenOver) → "The run was taken over by hand, and stopped watching."
 Stopped(TimedOut)  → "The run hit its timeout and was cancelled."
 Stopped(LinkLost)  → "The agent stopped answering."
@@ -707,7 +707,7 @@ started, an earlier task left needing attention, since nobody read the form. A r
 anything (a mode the agent does not offer) is told only *"onehand could not start
 the run: <why>"*. A run cut off by a quit and then dismissed is told it was cut
 off and let go, and a queued task stopped before its run began is told it was
-stopped by hand, so no claim is left with nothing after it. A claim that then
+stopped, so no claim is left with nothing after it. A claim that then
 could not become a task is told `could_not_start` directly, best effort, since
 there is no task to keep it in.
 

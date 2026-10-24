@@ -808,6 +808,8 @@ fn going_back_is_a_new_visit_and_each_keeps_how_it_came_out() {
 
     run.stopped(Stop::ByPerson);
     let said = Outcome::Stopped(Stop::ByPerson).said();
+    // A Stop may come from a person or a tool, so it gives no reason.
+    assert_eq!(said, "Workflow stopped");
     assert_eq!(run.visits[4].why.as_deref(), Some(said.as_str()));
 }
 
