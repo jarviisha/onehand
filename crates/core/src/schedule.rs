@@ -204,7 +204,7 @@ pub fn decide(s: &Schedule, now: u64, opened_at: u64, busy: bool, tz: &impl Time
     let Some(due) = latest_due(&cron, after, now, tz) else {
         return Act::Wait;
     };
-    let missed = due < minute_of(opened_at);
+    let missed = due < opened_at;
     if missed && s.missed == Missed::Skip {
         return Act::Skip("missed while onehand was closed".to_string());
     }
