@@ -822,6 +822,47 @@ fn tab_clamps_and_answered_tracks_picks_and_text() {
     assert!(a.field_answered(0));
 }
 
+fn settled(skip: Option<bool>, pick: bool) -> Option<String> {
+    let mut chat = Chat::default();
+    chat.busy = true;
+    chat.apply(AcpEvent::Elicitation(ask_item().req));
+    if let Some(ChatItem::Ask(a)) = chat.items.last_mut() {
+        assert_eq!(a.outcome_words(), None, "an open form has no outcome");
+        if pick {
+            a.toggle(0, 0);
+        }
+    }
+    match skip {
+        Some(skip) => chat.answer_ask(chat.items.len() - 1, skip),
+        None => chat.cancel_turn(),
+    }
+    match chat.items.last() {
+        Some(ChatItem::Ask(a)) => a.outcome_words(),
+        _ => panic!("the form is gone"),
+    }
+}
+
+#[test]
+fn a_settled_form_counts_only_answers_that_were_sent() {
+    assert_eq!(settled(Some(false), true).as_deref(), Some("1 answer"));
+    assert_eq!(settled(Some(false), false).as_deref(), Some("Skipped"));
+    // Picked, then skipped or stopped: nothing reached the agent.
+    assert_eq!(settled(Some(true), true).as_deref(), Some("Skipped"));
+    assert_eq!(settled(None, true).as_deref(), Some("Cancelled"));
+}
+
+#[test]
+fn answered_counts_only_the_questions_given_an_answer() {
+    let mut a = ask_item();
+    assert_eq!(a.answered(), 0);
+    a.toggle(1, 0);
+    assert_eq!(a.answered(), 1);
+    a.set_custom(0, "  ".into()); // blank text isn't an answer
+    assert_eq!(a.answered(), 1);
+    a.set_custom(0, "mine".into());
+    assert_eq!(a.answered(), 2);
+}
+
 #[test]
 fn single_select_replaces_multi_select_toggles() {
     let mut a = ask_item();

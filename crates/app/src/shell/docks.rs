@@ -89,7 +89,9 @@ impl Shell {
             // The height the person wants, never one a short window drew.
             terminal_h: fallback.terminal_h,
             terminal_open: bottom.is_some_and(|d| d.is_open()),
-            rail_w: self.rail_width(cx),
+            // The width the person dragged to, never one a resized window
+            // scaled it to.
+            rail_w: fallback.rail_w,
         }
     }
 
@@ -100,10 +102,8 @@ impl Shell {
     /// measures anything, so a size outside the range the rail could have been
     /// dragged to is that gap rather than a width the user chose.
     ///
-    /// Two readers, and they want different things from it -- the snapshot
-    /// wants a number to write down, the rail wants to know how much of a name
-    /// a row can carry this frame -- so the check and the fallback are here
-    /// rather than at each of them.
+    /// Read when a drag ends, as the width the person now wants; a drag never
+    /// leaves it outside that range.
     pub fn rail_width(&self, cx: &App) -> f32 {
         self.rail_split
             .read(cx)

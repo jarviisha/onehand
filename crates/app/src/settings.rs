@@ -38,23 +38,39 @@ pub struct AgentDraft {
 
 impl AgentDraft {
     pub fn new(window: &mut Window, cx: &mut App) -> Self {
-        Self {
+        let mut draft = Self {
             editing: None,
-            kind: Some(Preset::ClaudeCode),
-            name: cx.new(|cx| InputState::new(window, cx).placeholder("Claude Code")),
+            kind: None,
+            name: cx.new(|cx| InputState::new(window, cx)),
             command: cx.new(|cx| InputState::new(window, cx).placeholder("gemini")),
             args: cx.new(|cx| InputState::new(window, cx).placeholder("--experimental-acp")),
-            env: cx.new(|cx| {
-                InputState::new(window, cx).placeholder("CLAUDE_CONFIG_DIR=~/.claude-work")
-            }),
+            env: cx.new(|cx| InputState::new(window, cx)),
             version: None,
+        };
+        draft.set_kind(Some(Preset::ClaudeCode), window, cx);
+        draft
+    }
+
+    /// Make the form describe `kind`, its placeholders included: an example
+    /// written for one agent reads as wrong under another's name.
+    pub fn set_kind(&mut self, kind: Option<Preset>, window: &mut Window, cx: &mut App) {
+        self.kind = kind;
+        let (name, env) = match kind.map(Preset::info) {
+            Some(info) => (
+                info.shown_name.to_string(),
+                format!("{}=~/.{}-work", info.account_var, info.binary),
+            ),
+            None => ("Gemini".to_string(), "NAME=value".to_string()),
+        };
+        for (field, hint) in [(&self.name, name), (&self.env, env)] {
+            field.update(cx, |s, cx| s.set_placeholder(hint, window, cx));
         }
     }
 
     /// Load an existing agent into the form for editing.
     pub fn load(&mut self, idx: usize, spec: &AgentSpec, window: &mut Window, cx: &mut App) {
         self.editing = Some(idx);
-        self.kind = spec.preset();
+        self.set_kind(spec.preset(), window, cx);
         self.version = spec.version.clone();
         let env = spec
             .env
@@ -74,7 +90,7 @@ impl AgentDraft {
     /// Clear the form back to "adding a new agent".
     pub fn clear(&mut self, window: &mut Window, cx: &mut App) {
         self.editing = None;
-        self.kind = Some(Preset::ClaudeCode);
+        self.set_kind(Some(Preset::ClaudeCode), window, cx);
         self.version = None;
         for field in [&self.name, &self.command, &self.args, &self.env] {
             field.update(cx, |s, cx| s.set_value("", window, cx));

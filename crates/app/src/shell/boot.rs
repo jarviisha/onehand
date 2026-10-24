@@ -544,6 +544,7 @@ impl Shell {
             presentation: super::presentation::Presentation::Conversation,
             workbench_drawn: None,
             terminal_drawn: None,
+            rail_drawn: None,
             stepped_aside: false,
         }
     }

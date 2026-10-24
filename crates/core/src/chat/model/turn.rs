@@ -149,6 +149,7 @@ impl Chat {
         };
         let (rpc_id, summary) = (a.req.rpc_id.clone(), a.summary());
         a.resolved = Some(if skip { "Skipped".into() } else { summary });
+        a.accepted = !skip;
         if let Some(tx) = &self.tx {
             let _ = tx.send(AcpRequest::ElicitationResponse { rpc_id, outcome });
         }

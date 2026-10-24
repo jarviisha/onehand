@@ -41,7 +41,9 @@ pub(super) fn ask_record(
             .unwrap_or_else(|| a.req.message.to_string()),
     })))
     .meta(Some(match many {
-        true => pill(format!("{} answers", pairs.len()), cx).into_any_element(),
+        true => {
+            pill(a.outcome_words().unwrap_or_else(|| answer.to_string()), cx).into_any_element()
+        }
         false => pill(answer.to_string(), cx).into_any_element(),
     }))
     .fold(many.then_some(a.expanded));
