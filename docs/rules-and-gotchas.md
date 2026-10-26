@@ -218,6 +218,13 @@ justifies it, and describe its limits rather than treating a source scan as a Ru
   This cost a round trip once: the transcript sat against the left edge while the composer, centred
   inside an ordinary flex column, sat in the middle of the panel, and the two halves disagreeing was
   the only symptom.
+- **Text selection spans the whole window.** gpui-component registers every selectable block with
+  one window-wide selection, and a drag ends on whatever block is under the pointer or nearest above
+  it, so a drag begun in the conversation ran into the Workbench's Markdown and back. Its only
+  partition is a scope, and only the scope its root activates each frame takes part, so a region of
+  its own scope could not be selected at all. `text_drag::region` instead parks the *other* regions
+  under a never-active scope while a drag is held. A new region that holds selectable text goes
+  through it too, or drags will cross into and out of it.
 - **A panel's focus handle is tracked by the dock, not by the panel — unless it has no tab group.**
   gpui-component's `TabPanel` calls `track_focus` on the active panel's handle, so `contains_focused`
   works without the panel adding it, and a panel that adds `track_focus` on top of that becomes

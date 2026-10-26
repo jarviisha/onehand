@@ -80,6 +80,13 @@ minor bump may break any of them.
 
 ### Fixed
 
+- A wide Markdown table in an answer keeps its columns readable and scrolls sideways inside the
+  column instead of squeezing every column to fit. Under every table, Copy takes it as Markdown and
+  *Open* shows it whole in a dialog as wide as the window allows.
+- A long failure from the agent (a connection error, say) wraps inside its banner instead of running
+  out past the conversation's column.
+- A text drag stays in the place it began: one begun in the conversation no longer runs on into the
+  Workbench's Markdown, and one begun there no longer runs back into the conversation.
 - A Retry pressed on an issue's task while an unattended search or a pick was looking at that issue
   no longer has the issue claimed under it, spending its review request or opening a second branch.
   The issue keeps its label for the next look, and a pick or *Look for an issue now* says it is

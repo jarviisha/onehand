@@ -114,6 +114,10 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   under its command, beside where it runs; a prompt's under its bubble, shown while the prompt
   is pointed at or the control holds focus) and one show-more control serve every block. Text
   that scrolls keeps a gutter for its scrollbar.
+- **A table keeps its columns readable**: each is as wide as its text down to a floor, and past
+  the column the table scrolls sideways in its own track while the vertical wheel stays the
+  conversation's. Under every table, Copy (as Markdown) and *Open*, which shows it whole in a
+  dialog as wide as the window allows.
 - **Calm once it is past**: a failure a later prompt has moved past keeps its words in the
   muted ink, with no fill; a settled *N failed* drops the danger ink; a refusal's badge is
   neutral. A live failure is a solid danger wash with no edge, in the agent's words (*The turn

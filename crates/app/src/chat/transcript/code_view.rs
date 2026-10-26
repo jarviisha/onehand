@@ -42,7 +42,7 @@ pub(super) fn held_back(code: &str) -> Option<usize> {
 
 /// The first `cap` lines of `code`, and how many it holds when they are not
 /// all of it.
-fn capped(code: &str, cap: usize) -> (&str, Option<usize>) {
+pub(super) fn capped(code: &str, cap: usize) -> (&str, Option<usize>) {
     let total = code.lines().count();
     if total <= cap {
         return (code, None);

@@ -37,6 +37,7 @@ pub mod shell;
 mod state;
 mod task;
 mod terminal;
+mod text_drag;
 mod theme;
 mod unattended;
 mod workbench;

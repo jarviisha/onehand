@@ -102,6 +102,28 @@ fn md_view(
                             })
                     }))
             })
+            // **Copy and Open under every table**: the track scrolls a few
+            // columns past the edge, the dialog shows a wide one at once.
+            .table_actions(|table, _, cx| {
+                let open = table.clone();
+                div()
+                    .h_flex()
+                    .justify_end()
+                    .gap(TIGHT_GAP)
+                    .child(copy_button(
+                        "copy-table",
+                        table.markdown.clone(),
+                        "Copy the table",
+                        cx,
+                    ))
+                    .child(
+                        show_more("table-all", "Open", cx)
+                            .tooltip("Open the whole table")
+                            .on_click(move |_, window, cx| {
+                                super::table_view::open(&open, window, cx)
+                            }),
+                    )
+            })
             .into_any_element(),
         None => div().child(md.source.clone()).into_any_element(),
     }
@@ -151,10 +173,22 @@ pub(super) fn prose_style(window: &Window, cx: &App) -> TextViewStyle {
                 .text_size(crate::tokens::CODE_TEXT)
                 .line_height(relative(LEADING)),
         )
-        // A table is read across, so its cells are wider than they are tall.
-        .table_cell(StyleRefinement::default().px_3().py_1p5());
+        // A cell's sides stay the renderer's: it measures each column with
+        // that padding, so a wider one breaks a short word ("change / d").
+        .table_cell(StyleRefinement::default().py_1p5())
+        .table(sideways());
     style.heading_base_font_size = window.rem_size() * TEXT.0;
     style
+}
+
+/// A table wider than the column scrolls sideways in its own track rather
+/// than squeezing every column to fit: the renderer's scroll layout measures
+/// each column by its text and stops shrinking at a floor. Only the sideways
+/// axis is taken, so the vertical wheel still reaches the conversation.
+fn sideways() -> StyleRefinement {
+    let mut table = StyleRefinement::default();
+    table.overflow.x = Some(gpui::Overflow::Scroll);
+    table
 }
 
 // ── thought — the agent's reasoning, a block of its own ─────────────────────

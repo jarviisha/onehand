@@ -26,6 +26,7 @@ mod permission;
 mod plan;
 mod prose;
 mod strip;
+mod table_view;
 mod tool;
 mod user;
 pub(in crate::chat) use ask::{advance_pinned, ask, pick_pinned, skip_pinned};
@@ -319,7 +320,10 @@ fn notice(
                         .flex_wrap()
                         .items_center()
                         .gap_x_2()
-                        .child(text.to_string())
+                        // In a box that may shrink: bare text in a flex row
+                        // measures its whole line as its least width, so an
+                        // adapter's long error ran out past the column.
+                        .child(div().min_w_0().child(text.to_string()))
                         .children(restart.map(|key| {
                             div()
                                 .h_flex()
