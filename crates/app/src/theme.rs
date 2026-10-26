@@ -247,10 +247,6 @@ fn paint(colors: &mut ThemeConfigColors, ramp: &Ramp) {
 
     set(&mut colors.background, ramp.background);
     set(&mut colors.foreground, ramp.foreground);
-    // The docks' surface rides in the slot the library gives a dock of tiles,
-    // which the app never draws: a feature crate hands it to a terminal grid
-    // and can only reach it through the theme.
-    set(&mut colors.tiles, ramp.panel);
     set(&mut colors.muted, ramp.well);
     set(&mut colors.muted_foreground, ramp.well_ink);
     set(&mut colors.secondary, ramp.chip);
@@ -441,6 +437,8 @@ fn paint(colors: &mut ThemeConfigColors, ramp: &Ramp) {
         (&mut colors.chart_5, ramp.chart_purple),
         (&mut colors.chart_bullish, ramp.chart_green),
         (&mut colors.chart_bearish, ramp.chart_red),
+        // A chart's grid lines are rules like any other.
+        (&mut colors.chart_grid, ramp.hairline),
     ] {
         set(slot, value);
     }
@@ -1199,7 +1197,7 @@ mod tests {
             ("dark", &DARK, ThemeMode::Dark),
         ] {
             let theme = resolve(ramp, mode);
-            let panel = theme.tiles;
+            let panel = theme.sidebar;
             assert_eq!(panel, Hsla::parse_hex(ramp.panel).unwrap());
             assert_ne!(
                 panel, theme.background,
@@ -1266,7 +1264,7 @@ mod tests {
                 let mut on = vec![
                     ("surface", theme.background),
                     ("well", theme.muted),
-                    ("dock", theme.tiles),
+                    ("dock", theme.sidebar),
                 ];
                 // A removal on a secondary button is its word in the danger
                 // ink, on the button's own fill.

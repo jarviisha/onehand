@@ -24,8 +24,7 @@ Slot names that mislead (the library's names, kept because its own controls read
 | `button_secondary`, `button_secondary_foreground` | the secondary button's own fill at rest (its pointed-at step under the pointer or pressed) and its ink |
 | `primary` | the primary action: a blue, with white on it |
 | `danger`, `warning`, `success` | fills with white on them; their text is `status_ink(cx)` |
-| `tiles` | the docks' surface, read through `dock_surface(cx)` |
-| `sidebar` | the rail's fill: the side bar's grey, the docks' too |
+| `sidebar` | the rail's fill: the side bar's grey, the docks' too, read for a dock through `dock_surface(cx)` |
 | `sidebar_accent` | the rail's hovered row; its chosen row is `rail_chosen(cx)` |
 
 Helpers:
@@ -138,7 +137,7 @@ Moving the library's rev means checking this table.
 | `.short()` (`CONTROL_H`) | 24 / 12 / 12 / 4 / 8 | 24 / 12 / 8 **px** | 12 |
 | `.tall()` (`FIELD_H`) | 30 / 14 / 14 / 4 / 12 | 30 / 14 / 8 **px** | 14 |
 | `.small()`: an icon-only button | 24 / 14 / 14 / 4 / 8: never with words | 24 / 14 / 8 **px** | 14 |
-| the library's default | 32 / 16 / 16 / 8 / 10: never used | 32 / 14 / 10 **px** | 16 |
+| the library's default | 32 / 14 / 16 / 8 / 10: never used | 32 / 14 / 10 **px** | 16 |
 
 An icon-only button is square at its height, and padding vertically equals its height less its
 words, halved: 4 at `.xsmall()`, 6 at `.short()`, 8 at `.tall()`. `.short()` is the extra small size given the small
@@ -155,7 +154,7 @@ Components that keep geometry of their own, centred in their row rather than siz
 
 | Component | Geometry |
 |---|---|
-| `Tag` at `.small()` through `badge` | words 12, inset 6 × 4; its height follows its line |
+| `Tag` at `.small()` through `badge` | words 12 set solid (`badge` overrides the library's 10 at 1.25), inset 6 × 4; its height follows its line |
 | `Checkbox` | box 12 / 14 / 16 at `.xsmall()` / `.small()` / default; its label 12 / 14 / 16 |
 | `Switch` | track 28 × 16 **px** at `.xsmall()` and `.small()`, 36 × 20 **px** at the default; thumb 12 / 16 **px** |
 | `Kbd` | words 12, inset 4 × 2 |

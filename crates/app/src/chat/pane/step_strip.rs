@@ -9,11 +9,12 @@ use crate::controls::text_area;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, AppContext as _, Context, InteractiveElement as _, IntoElement, ParentElement, Rems,
-    StatefulInteractiveElement as _, Styled, WeakEntity, Window, div, rems,
+    Styled, WeakEntity, Window, div, rems,
 };
 use gpui_component::WindowExt as _;
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::TextareaState;
+use gpui_component::scroll::ScrollableElement as _;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::task::Approval;
 use onehand_core::task::work::{ANSWER_CHANGED, UnderReview};
@@ -209,10 +210,11 @@ pub(super) fn open_review(
                 .text_color(cx.theme().muted_foreground)
                 .child("The step kept no answer")
                 .into_any_element(),
-            false => gpui_component::text::TextView::markdown(
+            false => onehand_ui::no_code_label(gpui_component::text::TextView::markdown(
                 "workflow-review-body",
                 review.answer.clone(),
-            )
+            ))
+            .style(onehand_ui::unedged_code())
             .selectable(true)
             .into_any_element(),
         };
@@ -235,8 +237,10 @@ pub(super) fn open_review(
                         div()
                             .id("workflow-review-scroll")
                             .max_h(REVIEW_MAX_H)
-                            .overflow_y_scroll()
-                            .child(body),
+                            .child(body)
+                            // With a bar of its own, so it still scrolls when the dialog body
+                            // around it overflows too.
+                            .overflow_y_scrollbar(),
                     ),
             )
             .footer(
@@ -307,6 +311,9 @@ pub(super) fn open_revise(approval: Approval, window: &mut Window, cx: &mut Cont
         };
         dialog
             .title("Send it back")
+            // A press beside it would throw the note being written away
+            // without asking.
+            .overlay_closable(false)
             .child(
                 div()
                     .v_flex()

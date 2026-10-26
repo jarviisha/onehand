@@ -116,7 +116,7 @@ impl Shell {
         // whoever left the page for a session wants to type there.
         if !self.page_shown(cx)
             && std::mem::take(&mut self.page_hid_workbench)
-            && !self.dock.read(cx).is_dock_open(DockPlacement::Right, cx)
+            && !self.dock.read(cx).is_dock_open(DockPlacement::Right)
         {
             self.dock.update(cx, |dock, cx| {
                 dock.toggle_dock(DockPlacement::Right, window, cx)
@@ -303,7 +303,7 @@ impl Shell {
         // just asked for.
         self.dock.update(cx, |dock, cx| {
             use gpui_component::dock::DockPlacement;
-            if !dock.is_dock_open(DockPlacement::Right, cx) {
+            if !dock.is_dock_open(DockPlacement::Right) {
                 dock.toggle_dock(DockPlacement::Right, window, cx);
             }
         });

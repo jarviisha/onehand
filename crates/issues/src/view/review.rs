@@ -377,7 +377,8 @@ impl IssuesView {
                     )
                 })
                 .child(
-                    TextView::markdown("issue-review-answer", shown)
+                    onehand_ui::no_code_label(TextView::markdown("issue-review-answer", shown))
+                        .style(onehand_ui::unedged_code())
                         .selectable(true)
                         .into_any_element(),
                 )
@@ -430,10 +431,13 @@ impl IssuesView {
                         ),
                     ))
                     .when(open, |column| {
-                        column.child(TextView::markdown(
-                            "issue-review-acceptance-text",
-                            acceptance,
-                        ))
+                        column.child(
+                            onehand_ui::no_code_label(TextView::markdown(
+                                "issue-review-acceptance-text",
+                                acceptance,
+                            ))
+                            .style(onehand_ui::unedged_code()),
+                        )
                     }),
             );
         }

@@ -12,9 +12,10 @@ use gpui::{
     px,
 };
 use gpui_component::{
-    ActiveTheme as _, ResizableState, Root, StyledExt, h_resizable, resizable_panel,
+    ActiveTheme as _, ResizableState, StyledExt, WindowExt as _, resizable_panel,
 };
 use onehand_core::config::PanelLayout;
+use onehand_ui::h_resizable;
 
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -210,32 +211,16 @@ impl Render for Shell {
             ))
             .child(body);
 
-        // `Root` stores dialogs, sheets and notifications; it does not draw
-        // them. Its own `render` puts up the view, the tooltip overlay and the
-        // native-menu overlay and stops -- every layer below is the app's to
-        // mount, and until this existed `Dialog::trigger` opened a dialog into
-        // a list nobody read, so every dialog did nothing when clicked.
-        let sheet_layer = Root::render_sheet_layer(window, cx);
-        let dialog_layer = Root::render_dialog_layer(window, cx);
-        let notification_layer = Root::render_notification_layer(window, cx);
-        let layered = self.dialog_up() || sheet_layer.is_some() || dialog_layer.is_some();
+        // The library's own sheet, dialog and toast layers are mounted by
+        // `Root` itself, beside this view rather than inside it; all the shell
+        // needs is whether one of them is up.
+        let layered =
+            self.dialog_up() || window.has_active_sheet(cx) || window.has_active_dialog(cx);
         let tooltip_guard = crate::controls::tooltip_guard(layered, window, cx);
 
         div()
             .size_full()
             .relative()
-            // On the outermost element rather than the frame: a confirm a held
-            // command opens takes focus into the dialog layer, a sibling of the
-            // frame, and a release heard only inside the frame never cleared
-            // the latch -- the same key then did nothing until pressed again.
-            .capture_key_up(
-                cx.listener(|shell: &mut Self, event: &gpui::KeyUpEvent, _, cx| {
-                    let overrides = &Shared::global(cx).keymap;
-                    shell
-                        .held_commands
-                        .retain(|id| !crate::keymap::released(id, &event.keystroke.key, overrides));
-                }),
-            )
             .child(frame)
             .child(tooltip_guard)
             // The backdrop under the shell's own dialogs. The library dims
@@ -281,9 +266,59 @@ impl Render for Shell {
                     .is_some()
                     .then(|| crate::dialogs::run_workflow(self, window, cx)),
             )
-            .children(sheet_layer)
-            .children(dialog_layer)
-            .children(notification_layer)
+    }
+}
+
+/// Hears every key release in the window and hands it to the window's shell.
+///
+/// A key held on a command latches it until released (`held_commands`), and
+/// the release has to reach the shell wherever focus went in between: a
+/// confirm the command opened takes focus into the library's dialog layer,
+/// which `Root` mounts beside the shell rather than inside it, so a listener
+/// anywhere in the shell's own tree never hears the release and the same key
+/// does nothing until pressed again. Wrapped around the whole root surface,
+/// the listener is on every path a key event takes.
+pub(super) struct KeyRelease;
+
+impl KeyRelease {
+    /// Register for every window opened from here on. A root copies the
+    /// registered plugins when it is built, so this runs before the first.
+    pub(super) fn register(cx: &mut gpui::App) {
+        gpui_base::Root::register_plugin::<Self>(cx, |_, _| Self);
+    }
+}
+
+impl Render for KeyRelease {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        gpui::Empty
+    }
+}
+
+impl gpui_base::RootPlugin for KeyRelease {
+    fn decorate(
+        &self,
+        surface: gpui::AnyElement,
+        root: &gpui_base::Root,
+        _: &mut Window,
+        _: &mut gpui::App,
+    ) -> impl IntoElement {
+        let Ok(shell) = root.view().clone().downcast::<Shell>() else {
+            return surface;
+        };
+        // `size_full`: this sits outside the library's window border too,
+        // and a wrapper sized by its content shrinks the window's to it.
+        div()
+            .size_full()
+            .capture_key_up(move |event: &gpui::KeyUpEvent, _, cx| {
+                shell.update(cx, |shell, cx| {
+                    let overrides = &Shared::global(cx).keymap;
+                    shell
+                        .held_commands
+                        .retain(|id| !crate::keymap::released(id, &event.keystroke.key, overrides));
+                });
+            })
+            .child(surface)
+            .into_any_element()
     }
 }
 

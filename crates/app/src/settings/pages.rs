@@ -9,7 +9,6 @@ use gpui::{
     div,
 };
 use gpui_component::button::ButtonVariants;
-use gpui_component::switch::Switch;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::config::Appearance;
 use onehand_core::unattended::Slots;
@@ -316,9 +315,7 @@ fn outside_section(cx: &App) -> AnyElement {
     .child(
         div().h_flex().child(
             div().flex_none().cursor_pointer().child(
-                Switch::new("control-outside")
-                    .checked(crate::control::outside())
-                    .small()
+                onehand_ui::toggle("control-outside", crate::control::outside())
                     .label("Let programs on this machine control onehand")
                     .on_click(|on: &bool, window: &mut Window, cx: &mut App| {
                         crate::control::set_outside(*on, window, cx);
@@ -452,9 +449,7 @@ fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                 // target.
                 div().h_flex().child(
                     div().flex_none().cursor_pointer().child(
-                        Switch::new(("unattended", idx))
-                            .checked(on)
-                            .small()
+                        onehand_ui::toggle(("unattended", idx), on)
                             .label(name)
                             .on_click(move |_: &bool, window: &mut Window, cx: &mut App| {
                                 shell.update(cx, |shell, cx| {

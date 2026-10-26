@@ -37,12 +37,12 @@ onehand-markdown = { path = "../markdown" }
 onehand-neovim = { path = "../neovim" }
 onehand-claude-plugins = { path = "../claude-plugins" }
 
-# gpui-component IS pinned by rev; gpui carries none, so Cargo.lock pins it.
+# The UI stack is pinned once, in the workspace manifest.
 # The `tree-sitter-*` set is deliberately a *subset*, not `tree-sitter-languages`
 # (all ~35). The Workbench stays a quick editor -- highlighting
 # for the languages this codebase is edited in, and no LSP. Each grammar is
 # build time and binary size for a language nobody has opened.
-gpui-component = { git = "https://github.com/longbridge/gpui-component", rev = "9e3a29dcbdebc318632bf68203f26c33e9f0e902", features = [
+gpui-component = { workspace = true, features = [
     "tree-sitter",
     "tree-sitter-rust",
     "tree-sitter-typescript",
@@ -57,22 +57,14 @@ gpui-component = { git = "https://github.com/longbridge/gpui-component", rev = "
     "tree-sitter-css",
     "tree-sitter-html",
 ] }
-gpui-component-assets = { git = "https://github.com/longbridge/gpui-component", rev = "9e3a29dcbdebc318632bf68203f26c33e9f0e902" }
+gpui-kit-assets.workspace = true
 # The layer under gpui-component, named here for two things it re-exports no
 # route to: the theme global a resize handle (painted by *that* layer) takes its
-# colour from, and the text-selection scope that keeps a drag in its region. Same git source and the same rev, so this is the crate already in
-# the graph rather than a second copy of it — moving one rev means moving both.
-gpui-base = { git = "https://github.com/longbridge/gpui-component", rev = "9e3a29dcbdebc318632bf68203f26c33e9f0e902" }
+# colour from, and the text-selection scope that keeps a drag in its region.
+gpui-base.workspace = true
 
-# gpui deliberately carries NO rev here. Upstream gpui-component declares it as
-# a revless Zed git dependency, and cargo keys git sources by URL *plus* rev --
-# so naming a rev on our side makes a second, distinct source and the build ends
-# up with two incompatible `gpui` crates in one graph ("expected gpui::app::App,
-# found App"). Staying revless unifies them; the exact commit is then pinned by
-# Cargo.lock, which is committed. Move it with:
-#   cargo update -p gpui --precise <sha>
-gpui = { git = "https://github.com/zed-industries/zed", features = ["profiler"] }
-gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["font-kit", "x11", "wayland", "runtime_shaders"] }
+gpui.workspace = true
+gpui_platform.workspace = true
 
 anyhow = "1"
 # The machine's own time zone, which a schedule's cron expression is read in.

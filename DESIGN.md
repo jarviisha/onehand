@@ -357,7 +357,8 @@ its own per project. Files lives inside Editor, not as a mode. Every mode is bui
 
 ## Icons
 
-Every icon is an SVG from gpui-component's `IconName`. `crate::icons` holds only what that set
+Every icon is an SVG from gpui-component's `IconName`, the library's default subset of Lucide.
+`crate::icons` holds only what that set
 cannot draw (shapes it has no drawing of, brand marks, and forks of bundled shapes for stroke
 weight), synced from `assets/icons/manifest.toml` by `scripts/sync-icons.sh`. Where the bundled
 set lacks a shape, an approximate icon is accepted. An icon at rest is `muted_foreground`. One that

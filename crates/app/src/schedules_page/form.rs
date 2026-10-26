@@ -10,8 +10,7 @@ use gpui::{
     AnyElement, App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div,
 };
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::switch::Switch;
-use gpui_component::{ActiveTheme as _, IconName, Sizable as _, StyledExt as _};
+use gpui_component::{ActiveTheme as _, IconName, StyledExt as _};
 use onehand_ui::{ControlSize, Tall as _};
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -223,9 +222,7 @@ fn about_section(
         .child(
             div().h_flex().child(
                 div().flex_none().cursor_pointer().child(
-                    Switch::new("schedule-form-on")
-                        .checked(draft.on)
-                        .small()
+                    onehand_ui::toggle("schedule-form-on", draft.on)
                         .label("Runs at its times")
                         .on_click({
                             let handle = handle.clone();
@@ -456,9 +453,7 @@ fn tools_section(handle: &Entity<SchedulesPage>, draft: &ScheduleDraft, cx: &App
         let name = *name;
         div().h_flex().child(
             div().flex_none().cursor_pointer().child(
-                Switch::new(SharedString::from(format!("schedule-tool-{name}")))
-                    .checked(on)
-                    .small()
+                onehand_ui::toggle(SharedString::from(format!("schedule-tool-{name}")), on)
                     .label(said_as(name))
                     .on_click(move |on: &bool, window: &mut Window, cx: &mut App| {
                         let on = *on;

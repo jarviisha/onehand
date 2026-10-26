@@ -103,11 +103,11 @@ pub fn menu_command(label: impl Into<SharedString>, action: Box<dyn Action>) -> 
 /// The menu entity is kept in window state and built once per open, not once
 /// per frame: the content closure runs on every render while the popup is up,
 /// and a menu rebuilt each frame forgets which row the keyboard was on.
-/// Emptying the slot on dismiss is what lets the menu entity go -- the
-/// subscription that empties it is keyed on the menu and holds the slot, so
-/// a slot never emptied is a menu never dropped -- and the slot itself is
-/// collected by the window a frame after the popup closes, since nothing
-/// accesses it while closed.
+/// Emptying the slot on dismiss is what lets the menu entity go, and the slot
+/// itself is collected by the window a frame after the popup closes, since
+/// nothing accesses it while closed. The dismiss listener holds the slot and
+/// the popover only weakly, so a trigger that leaves the frame with its menu
+/// open takes the menu with it.
 ///
 /// # The id has to name what the menu acts on
 ///
@@ -149,13 +149,17 @@ pub fn menu_below(
                     });
                     slot.update(cx, |state, _| *state = Some(menu.clone()));
                     menu.focus_handle(cx).focus(window, cx);
-                    let popover = cx.entity();
+                    // Weak, both: the listener lives as long as the menu,
+                    // which the slot holds, so a strong capture of the slot
+                    // is a cycle that keeps a menu open on a trigger that
+                    // has gone from the frame alive for good.
+                    let popover = cx.entity().downgrade();
                     window
                         .subscribe(&menu, cx, {
-                            let slot = slot.clone();
+                            let slot = slot.downgrade();
                             move |_, _: &DismissEvent, window, cx| {
-                                popover.update(cx, |state, cx| state.dismiss(window, cx));
-                                slot.update(cx, |state, _| *state = None);
+                                _ = popover.update(cx, |state, cx| state.dismiss(window, cx));
+                                _ = slot.update(cx, |state, _| *state = None);
                             }
                         })
                         .detach();

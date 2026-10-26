@@ -15,22 +15,28 @@ mod choice_mark;
 mod confirm;
 mod list_detail;
 mod menu;
+mod prose;
+mod resize;
 mod row_actions;
 mod strip;
 mod tabs;
 pub mod toast;
+mod toggle;
 pub mod tokens;
 pub use choice_mark::choice_mark;
 pub use confirm::{Confirm, confirm_on};
 pub use list_detail::{ListDetail, ListWidths, back_link, list_detail};
 pub use menu::{menu_below, menu_command, menu_item, menu_row, split_action};
 pub use onehand_core::worktree::removal::Process;
+pub use prose::{no_code_label, unedged_code};
+pub use resize::{edge_handle, h_resizable, v_resizable};
 pub use row_actions::{HoverSlot, hover_slot};
 pub use strip::{strip, strip_control};
 pub use tabs::{
     Measured, TAB_MAX_W, TabStrip, measure_width, tab_chip, tab_close, tab_menu_rows, tab_select,
     tab_strip, unmeasured,
 };
+pub use toggle::toggle;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -201,9 +207,9 @@ pub fn field(
 
 /// The surface a dock draws on: the palette's panel step, one off the reading
 /// surface the conversation sits on, so a dock reads as a surface of its own
-/// beside the conversation rather than as a card inset in it. The app
-/// writes that step into the theme slot read here, with its contrast tested
-/// beside the rest of its ramp.
+/// beside the conversation rather than as a card inset in it. The rail stands
+/// on the same step, so the app writes it into the sidebar slot read here,
+/// with its contrast tested beside the rest of its ramp.
 ///
 /// Here rather than in the app for the reason [`action`] is: the Neovim mode
 /// draws a terminal grid and has to hand it the surface it is sitting on, and
@@ -212,7 +218,7 @@ pub fn field(
 /// second copy of this answer is visible as a rectangle of the wrong shade
 /// behind a running program.
 pub fn dock_surface(cx: &App) -> Hsla {
-    cx.theme().tiles
+    cx.theme().sidebar
 }
 
 /// Status colours used as ink on the app's normal surfaces.
@@ -412,10 +418,13 @@ pub fn label_badge(label: impl Into<SharedString>, cx: &App) -> gpui_component::
 /// at its small size, fully round so it reads as a tag rather than as a button
 /// beside it, in the `tint`'s fill and ink, with room above and below its
 /// words (`py_1`) where the library leaves them a hair off its edge, and an
-/// edge of its own ([`badge_edge`]).
+/// edge of its own ([`badge_edge`]). Its words are the small text, set solid,
+/// rather than the library's smaller size for a small tag.
 pub fn badge(text: impl Into<SharedString>, tint: Tint) -> gpui_component::tag::Tag {
     gpui_component::tag::Tag::custom(tint.fill, tint.ink, badge_edge(tint))
         .small()
+        .text_xs()
+        .line_height(gpui::relative(1.))
         .rounded_full()
         .py_1()
         .child(text.into())

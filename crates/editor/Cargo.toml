@@ -16,8 +16,8 @@ onehand-core = { path = "../core" }
 # implementing the same trait, and is composed here rather than copied: what
 # was two entries on the mode strip is one view with a divider down it.
 onehand-files = { path = "../files" }
-gpui = { git = "https://github.com/zed-industries/zed", features = ["profiler"] }
-gpui-component = { git = "https://github.com/longbridge/gpui-component", rev = "9e3a29dcbdebc318632bf68203f26c33e9f0e902", features = [
+gpui.workspace = true
+gpui-component = { workspace = true, features = [
     "tree-sitter", "tree-sitter-rust", "tree-sitter-typescript", "tree-sitter-tsx",
     "tree-sitter-javascript", "tree-sitter-python", "tree-sitter-go",
     "tree-sitter-markdown", "tree-sitter-toml", "tree-sitter-yaml",

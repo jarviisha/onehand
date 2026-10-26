@@ -12,7 +12,6 @@ use gpui::{
 };
 use onehand_ui::Tall as _;
 
-use gpui_component::switch::Switch;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::workflow::{GateKind, Place};
 
@@ -444,9 +443,7 @@ pub(super) fn step_panel(
                     let on = step.gates.contains(&gate);
                     let handle = handle.clone();
                     div().flex_none().cursor_pointer().child(
-                        Switch::new(SharedString::from(format!("gate-{i}-{gate:?}")))
-                            .checked(on)
-                            .small()
+                        onehand_ui::toggle(SharedString::from(format!("gate-{i}-{gate:?}")), on)
                             .label(gate.label())
                             .on_click(move |_: &bool, window: &mut Window, cx: &mut App| {
                                 handle.update(cx, |page, cx| {
@@ -467,9 +464,7 @@ pub(super) fn step_panel(
             let keep = {
                 let handle = handle.clone();
                 div().flex_none().cursor_pointer().child(
-                    Switch::new(("keep-answer", i))
-                        .checked(step.keep_answer)
-                        .small()
+                    onehand_ui::toggle(("keep-answer", i), step.keep_answer)
                         .label("Keep its answer")
                         .on_click(move |_: &bool, window: &mut Window, cx: &mut App| {
                             handle.update(cx, |page, cx| {

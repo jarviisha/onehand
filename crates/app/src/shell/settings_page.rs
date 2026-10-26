@@ -333,42 +333,27 @@ pub(super) fn apply_appearance(choice: Appearance, window: Option<&mut Window>, 
     });
     Theme::change(mode, window, cx);
 
-    // Changing the mode swaps in the whole theme config, which carries the
-    // library's own monospace family; put back the one this machine resolved.
-    if let Some(family) = Shared::global(cx).mono_family.clone() {
-        Theme::global_mut(cx).mono_font_family = family.into();
-    }
-    // **A dock draws no divider; the thing inside it draws its own edge.**
-    //
-    // The library paints a permanent 1px rule in the hairline colour down the
-    // seam of every resizable split — between the rail and the docks, and
-    // between the conversation and each dock. Every panel on the other side of
-    // one of those seams already marks it: the Workbench is a change of surface,
-    // the terminal is a block on its own surface, and the rail is a change of
-    // surface too — the reading surface against the well, a pair the ramp's own
-    // tests hold at 1.14 or better in either palette, which is what makes a
-    // fill an edge rather than a tint. So
-    // the rule was a second line beside a first, which reads as a seam that
-    // could not decide where it was.
-    //
-    // Only the *resting* colour goes. Dragging still paints `active_handle`,
-    // which is the one moment the seam is the thing being looked at.
-    //
-    // It has to be written here, after `Theme::change`: that call rebuilds the
-    // Base layer's copy of the theme from scratch, so anything written onto it
-    // beforehand is thrown away. This is the single place a mode is applied, at
-    // boot and on every change, which is what keeps one write enough.
-    gpui_base::Theme::global_mut(cx).resizable.handle = gpui::transparent_black();
-    // The code editor paints its line numbers on an opaque gutter, in the
-    // field's own background when the syntax theme names none: the reading
-    // surface, a dark band down a dock that is a step lighter. The only editor
-    // with line numbers is the Workbench's, so the gutter takes the dock's
-    // surface. Written here for the reason the handle is.
-    let theme = gpui_component::Theme::global_mut(cx);
-    let mut highlight = (*theme.highlight_theme).clone();
-    highlight.style.editor_gutter_background = Some(theme.tiles);
-    theme.highlight_theme = std::sync::Arc::new(highlight);
-    cx.refresh_windows();
+    // Written after `Theme::change`, because that call rebuilds the theme from
+    // its config and drops anything written before it, and through
+    // `Theme::update`, which hands the result on to the layer under the
+    // library: rendered Markdown reads its monospace family there, so a
+    // family written straight into the global never reached a code block.
+    let mono = Shared::global(cx).mono_family.clone();
+    Theme::update(cx, |theme| {
+        // The config carries the library's own monospace family; put back
+        // the one this machine resolved.
+        if let Some(family) = mono {
+            theme.mono_font_family = family.into();
+        }
+        // The code editor paints its line numbers on an opaque gutter, in the
+        // field's own background when the syntax theme names none: the
+        // reading surface, a dark band down a dock that is a step lighter.
+        // The only editor with line numbers is the Workbench's, so the gutter
+        // takes the dock's surface.
+        let mut highlight = (*theme.highlight_theme).clone();
+        highlight.style.editor_gutter_background = Some(theme.sidebar);
+        theme.highlight_theme = std::sync::Arc::new(highlight);
+    });
 }
 
 /// The first line `<binary> --version` prints, when it prints one.

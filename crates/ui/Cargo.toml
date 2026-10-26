@@ -11,5 +11,8 @@ path = "src/lib.rs"
 
 [dependencies]
 onehand-core = { path = "../core" }
-gpui = { git = "https://github.com/zed-industries/zed", features = ["profiler"] }
-gpui-component = { git = "https://github.com/longbridge/gpui-component", rev = "9e3a29dcbdebc318632bf68203f26c33e9f0e902" }
+gpui.workspace = true
+gpui-component.workspace = true
+# The resize handle and the splits it sits in, which gpui-component does not
+# re-export: the splits are drawn here, in the app's own way.
+gpui-base.workspace = true

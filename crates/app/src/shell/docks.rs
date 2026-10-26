@@ -1,7 +1,8 @@
 use super::{FocusedPanel, Shell, ZoomStep, dock_rules};
 use crate::workbench::NEOVIM_MODE;
 use gpui::{App, Context, Focusable as _, Window, px};
-use gpui_component::dock::{DockItem, DockPlacement};
+use gpui::{Entity, EntityId};
+use gpui_component::dock::{DockArea, DockLayout, DockPlacement, PanelId};
 use onehand_core::config::PanelLayout;
 use std::path::Path;
 
@@ -19,8 +20,8 @@ impl Shell {
             let dock = self.dock.read(cx);
             dock_rules::addressed(
                 self.last_panel,
-                dock.is_dock_open(DockPlacement::Bottom, cx),
-                dock.is_dock_open(DockPlacement::Right, cx),
+                dock.is_dock_open(DockPlacement::Bottom),
+                dock.is_dock_open(DockPlacement::Right),
             )
         }
     }
@@ -47,8 +48,8 @@ impl Shell {
     pub(super) fn sync_docks_open(&mut self, cx: &mut Context<Self>) {
         let dock = self.dock.read(cx);
         let open = crate::chat::DocksOpen {
-            terminal: dock.is_dock_open(DockPlacement::Bottom, cx),
-            workbench: dock.is_dock_open(DockPlacement::Right, cx),
+            terminal: dock.is_dock_open(DockPlacement::Bottom),
+            workbench: dock.is_dock_open(DockPlacement::Right),
         };
         self.chat
             .update(cx, |pane, cx| pane.set_docks_open(open, cx));
@@ -80,15 +81,13 @@ impl Shell {
     pub(super) fn dock_layout(&self, cx: &App) -> PanelLayout {
         let dock = self.dock.read(cx);
         let fallback = self.window.workspace.layout;
-        let right = dock.right_dock().map(|d| d.read(cx));
-        let bottom = dock.bottom_dock().map(|d| d.read(cx));
         PanelLayout {
             // The width the person wants, never one a narrow window drew.
             workbench_w: fallback.workbench_w,
-            workbench_open: right.is_some_and(|d| d.is_open()) || self.stepped_aside,
+            workbench_open: dock.is_dock_open(DockPlacement::Right) || self.stepped_aside,
             // The height the person wants, never one a short window drew.
             terminal_h: fallback.terminal_h,
-            terminal_open: bottom.is_some_and(|d| d.is_open()),
+            terminal_open: dock.is_dock_open(DockPlacement::Bottom),
             // The width the person dragged to, never one a resized window
             // scaled it to.
             rail_w: fallback.rail_w,
@@ -129,7 +128,7 @@ impl Shell {
         // Never the closing direction: this was asked for by name, and a menu
         // entry called *Open terminal* that closes the terminal is a bug that
         // reads as one.
-        if !self.dock.read(cx).is_dock_open(DockPlacement::Bottom, cx) {
+        if !self.dock.read(cx).is_dock_open(DockPlacement::Bottom) {
             self.show_terminal(window, cx);
         }
     }
@@ -148,7 +147,7 @@ impl Shell {
         }
         self.last_panel = FocusedPanel::Workbench;
         self.stepped_aside = false;
-        let open = self.dock.read(cx).is_dock_open(DockPlacement::Right, cx);
+        let open = self.dock.read(cx).is_dock_open(DockPlacement::Right);
         self.workbench
             .update(cx, |panel, cx| panel.set_mode(mode, cx));
         if !open {
@@ -163,7 +162,7 @@ impl Shell {
 
     /// Toggle visibility independently of focus, preserving the selected mode.
     pub(super) fn toggle_workbench(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.dock.read(cx).is_dock_open(DockPlacement::Right, cx) {
+        if self.dock.read(cx).is_dock_open(DockPlacement::Right) {
             self.hide_workbench(window, cx);
         } else {
             let mode = self.workbench.read(cx).mode();
@@ -185,7 +184,7 @@ impl Shell {
                 .update(cx, |dock, cx| dock.set_zoomed_out(window, cx));
         }
         self.dock.update(cx, |dock, cx| {
-            if dock.is_dock_open(DockPlacement::Right, cx) {
+            if dock.is_dock_open(DockPlacement::Right) {
                 dock.toggle_dock(DockPlacement::Right, window, cx);
             }
         });
@@ -209,7 +208,7 @@ impl Shell {
         let press = dock_rules::terminal_press(
             self.page_shown(cx),
             self.workbench_fills_area(),
-            self.dock.read(cx).is_dock_open(DockPlacement::Bottom, cx),
+            self.dock.read(cx).is_dock_open(DockPlacement::Bottom),
             self.terminal.read(cx).has_shell(),
         );
         let (step_aside, spawn) = match press {
@@ -271,7 +270,7 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if visible == self.dock.read(cx).is_dock_open(DockPlacement::Bottom, cx) {
+        if visible == self.dock.read(cx).is_dock_open(DockPlacement::Bottom) {
             return;
         }
         // Asked while the panel is still in the frame, because a handle that is
@@ -287,10 +286,10 @@ impl Shell {
             // The panel entity is the same one every time, so the shells, their
             // PTYs and their scrollback all survive being taken off screen --
             // only the dock around them is rebuilt.
-            let item = DockItem::panel(std::sync::Arc::new(self.terminal.clone()));
             let height = px(self.window.workspace.layout.terminal_h);
+            let terminal = self.terminal.clone();
             self.dock.update(cx, |area, cx| {
-                area.set_bottom_dock(item, Some(height), true, window, cx);
+                mount_terminal(area, &terminal, height, window, cx);
                 cx.notify();
             });
             cx.notify();
@@ -305,7 +304,7 @@ impl Shell {
                 .update(cx, |dock, cx| dock.set_zoomed_out(window, cx));
         }
         self.dock.update(cx, |area, cx| {
-            area.remove_bottom_dock(window, cx);
+            area.remove_dock(DockPlacement::Bottom, window, cx);
             cx.notify();
         });
         cx.notify();
@@ -330,7 +329,7 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let live = self.dock.read(cx).is_dock_open(DockPlacement::Bottom, cx);
+        let live = self.dock.read(cx).is_dock_open(DockPlacement::Bottom);
         if let Some(wanted) = self.terminal_homes.arrive(root, live) {
             self.set_terminal_visible(wanted, window, cx);
         }
@@ -368,7 +367,7 @@ impl Shell {
     /// itself is: the dock is *read* rather than assumed, so this cannot drift
     /// from the four controls that toggle it.
     fn fill_open_terminal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.dock.read(cx).is_dock_open(DockPlacement::Bottom, cx) {
+        if !self.dock.read(cx).is_dock_open(DockPlacement::Bottom) {
             return;
         }
         self.terminal.update(cx, |panel, cx| {
@@ -417,11 +416,13 @@ impl Shell {
         // The rail goes with everything else but the panel, so a caret in it
         // moves into the panel that stays.
         let rail_had_focus = self.rail.holds_focus(window, cx);
-        self.dock.update(cx, |dock, cx| match panel {
-            FocusedPanel::Chat => dock.set_zoomed_in(self.chat.clone(), window, cx),
-            FocusedPanel::Workbench => dock.set_zoomed_in(self.workbench.clone(), window, cx),
-            FocusedPanel::Terminal => dock.set_zoomed_in(self.terminal.clone(), window, cx),
-        });
+        let (placement, id) = match panel {
+            FocusedPanel::Chat => (DockPlacement::Center, self.chat.entity_id()),
+            FocusedPanel::Workbench => (DockPlacement::Right, self.workbench.entity_id()),
+            FocusedPanel::Terminal => (DockPlacement::Bottom, self.terminal.entity_id()),
+        };
+        self.dock
+            .update(cx, |dock, cx| zoom_in(dock, placement, id, window, cx));
         if rail_had_focus {
             match panel {
                 FocusedPanel::Chat => self
@@ -560,5 +561,43 @@ impl Shell {
         self.show_workbench(crate::workbench::ISSUES_MODE, window, cx);
         self.workbench
             .update(cx, |panel, cx| panel.show_issue(number, cx));
+    }
+}
+
+/// Put the terminal into the bottom dock at `height`: a fresh dock every time,
+/// since unmounting takes the dock away (see [`Shell::set_terminal_visible`]).
+pub(super) fn mount_terminal(
+    area: &mut DockArea,
+    terminal: &Entity<crate::terminal::TerminalPanel>,
+    height: gpui::Pixels,
+    window: &mut Window,
+    cx: &mut Context<DockArea>,
+) {
+    area.set_dock(
+        DockPlacement::Bottom,
+        DockLayout::tabs().panel(terminal.clone()),
+        window,
+        cx,
+    );
+    area.set_dock_size(DockPlacement::Bottom, height, window, cx);
+    // Taken off screen by the key and the header's button alone: a drag
+    // past the floor would close it into a strip with nothing to reopen it.
+    area.set_dock_collapsible(DockPlacement::Bottom, false, window, cx);
+}
+
+/// Fill the area with the group holding panel `id` in `placement`. A zoom
+/// names the group, never the panel, so the group is looked up first.
+pub(super) fn zoom_in(
+    area: &mut DockArea,
+    placement: DockPlacement,
+    id: EntityId,
+    window: &mut Window,
+    cx: &mut Context<DockArea>,
+) {
+    let node = area
+        .layout(placement)
+        .and_then(|tree| tree.find_panel_node(PanelId::from(id)));
+    if let Some(node) = node {
+        area.set_zoomed_in(node, window, cx);
     }
 }

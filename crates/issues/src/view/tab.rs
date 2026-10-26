@@ -9,8 +9,9 @@ use gpui::{
     AnyElement, App, Context, InteractiveElement as _, IntoElement, ParentElement, Styled, Window,
     div,
 };
-use gpui_component::{ActiveTheme, StyledExt, h_resizable, resizable_panel};
+use gpui_component::{ActiveTheme, StyledExt, resizable_panel};
 use onehand_core::issues::Issues;
+use onehand_ui::h_resizable;
 use onehand_ui::{ListWidths, back_link, list_detail};
 use std::path::Path;
 

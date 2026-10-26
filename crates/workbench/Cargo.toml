@@ -11,4 +11,4 @@ path = "src/lib.rs"
 
 [dependencies]
 onehand-core = { path = "../core" }
-gpui = { git = "https://github.com/zed-industries/zed", features = ["profiler"] }
+gpui.workspace = true

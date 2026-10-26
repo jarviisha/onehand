@@ -229,7 +229,7 @@ impl Shell {
         self.workbench
             .update(cx, |panel, cx| panel.open_file(path, window, cx));
         self.dock.update(cx, |dock, cx| {
-            if !dock.is_dock_open(DockPlacement::Right, cx) {
+            if !dock.is_dock_open(DockPlacement::Right) {
                 dock.toggle_dock(DockPlacement::Right, window, cx);
             }
         });

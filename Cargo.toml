@@ -22,6 +22,19 @@ members = [
 ]
 resolver = "2"
 
+# The UI stack, pinned exactly and in one place. gpui-component names its gpui
+# as `gpui-pre` at an exact version, so ours must be that same version or the
+# graph holds two gpuis ("expected gpui::App, found App"): the gpui pair and the
+# gpui-component trio move together, and only here. Every member that draws
+# takes them with `workspace = true`, the vendored terminal included.
+[workspace.dependencies]
+# `stacker` grows the stack for deep layout trees; gpui made it opt-in.
+gpui = { package = "gpui-pre", version = "=0.3.9", features = ["profiler", "stacker"] }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.9", features = ["font-kit", "x11", "wayland", "runtime_shaders"] }
+gpui-component = "=0.8.0"
+gpui-base = "=0.8.0"
+gpui-kit-assets = "=0.8.0"
+
 # No `default-members`: bare `cargo run` / `cargo check` / `cargo test` should
 # cover everything there is.
 

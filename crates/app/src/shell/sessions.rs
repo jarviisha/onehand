@@ -690,11 +690,11 @@ impl Shell {
         if self.page_shown(cx) {
             return;
         }
-        let live = self.dock.read(cx).is_dock_open(DockPlacement::Bottom, cx);
+        let live = self.dock.read(cx).is_dock_open(DockPlacement::Bottom);
         self.terminal_homes.put_away(live);
         self.set_terminal_visible(false, window, cx);
         self.page_hid_workbench =
-            self.dock.read(cx).is_dock_open(DockPlacement::Right, cx) || self.stepped_aside;
+            self.dock.read(cx).is_dock_open(DockPlacement::Right) || self.stepped_aside;
         self.hide_workbench(window, cx);
     }
 

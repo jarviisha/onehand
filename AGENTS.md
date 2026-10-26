@@ -1,6 +1,6 @@
 # AGENTS.md
 
-`onehand` is a Rust desktop GUI (**GPUI** + [gpui-component](https://github.com/longbridge/gpui-component))
+`onehand` is a Rust desktop GUI (**GPUI** + gpui-component, from [GPUI Kit](https://github.com/longbridge/gpui-kit))
 that hosts AI coding agents. Window: a left navigation **rail**, a central **agent pane** (a native
 chat), a right **Workbench** dock (editor, file tree, Markdown, Neovim, Issues, Plugins) and a bottom
 **terminal** dock. A *workspace* groups *projects*; each project runs *sessions*, and **every
@@ -112,8 +112,8 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
   the module (`foo.rs` + `foo/tests.rs`); there is still no `tests/` directory.
 - **CI:** fmt, core tests, tests of every other workspace member (feature crates and vendor included),
   and clippy. Dependency-resolving commands use `--locked`, because `Cargo.lock` is the
-  only pin for revless `gpui`. A `v*` tag cuts a GitHub pre-release tarball. Nothing goes to
-  crates.io.
+  only pin for everything under the UI stack. A `v*` tag cuts a GitHub pre-release tarball.
+  Nothing goes to crates.io.
 
 ## Repo layout
 
@@ -130,8 +130,9 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
 
 ## Invariants
 
-- **Core is GUI-free:** `cargo tree -p onehand-core -i gpui` must error with "did not match any
-  packages". Use `-i`, not `| grep gpui`: the checkout path contains `gpui`.
+- **Core is GUI-free:** `cargo tree -p onehand-core -i gpui-pre` must error with "did not match
+  any packages". `gpui-pre` is the package the workspace's `gpui` resolves to; `-i gpui` matches
+  nothing and so always passes. Use `-i`, not `| grep gpui`: the checkout path contains `gpui`.
 - **Core dictates no async runtime.** Blocking functions, thin async wrappers. GPUI runs on smol
   with no tokio reactor; tokio I/O on the UI executor panics. In the app, `acp.rs` and `remote.rs`
   drive their tokio side on runtimes of their own and cross to GPUI over a `futures` channel.
@@ -173,12 +174,14 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
 ## Rules
 
 - **Icons:** every icon is an SVG from `gpui_component::IconName`, never a Unicode or emoji glyph.
+  That enum names exactly the 106 SVGs of `gpui-kit-assets`' default bundle, which the window
+  serves; the whole Lucide catalog is `gpui_kit_assets::IconName`, mostly not served.
   `crate::icons` holds only what that enum cannot draw. Add one via `assets/icons/manifest.toml` +
   `scripts/sync-icons.sh` + the `icons!` macro, and never hand-edit a synced SVG.
   - Some library icons are renamed: `close` is Lucide's `x`.
   - An icon that fails to resolve draws nothing rather than failing the build.
   - Some bundled SVGs have a hard-coded stroke (`dash.svg`, `resize-corner.svg`). After bumping
-    `gpui-component`, check for `stroke="black"` and `stroke="#`.
+    `gpui-kit-assets`, check for `stroke="black"` and `stroke="#`.
 - **Code describes; it never cites.** No comment, doc comment or runtime string names a document
   (AGENTS.md, DESIGN.md, anything under `docs/`, a section or item code). Give
   the reason in the comment's own words. Pointing at code is fine. Documents point at code, never
@@ -210,8 +213,9 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
     or the editor's save fires over `:w`.
   - The terminal toggle is plain `` Ctrl+` ``, because shift+backtick cannot be typed.
   - Commands live in `crates/app/src/keymap.rs`, and overrides persist under `[keymap]`.
-- **Overlay layers:** `Shell::render` mounts `Root::render_{sheet,dialog,notification}_layer`
-  itself. Without them every dialog is dead.
+- **Overlay layers:** `gpui_component::init` registers the sheet, dialog and toast layers as a
+  `Root` plugin, and a root copies the plugins registered when it is built: `init`, and the app's
+  own plugin (`KeyRelease`), run before the first window. The layers sit beside the shell, not in it.
 - **Unattended teardown:** a run's project is dropped with `Shell::forget_root`, never
   `remove_root`, which re-shows the active session and steals the caret.
 - **Transcripts:** `items.jsonl` is append-only and written at every turn end. A rename writes
@@ -232,14 +236,15 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
   `h_flex().justify_center()` around a `max_w` child.
 - **Text selection spans the window.** Wrap a region holding selectable text in
   `text_drag::region`, or a drag crosses into it from its neighbours.
-- **Bare dock panels track their own focus.** Every panel here is a bare `DockItem::Panel`, so
-  its `render` must call `track_focus`, or `contains_focused` lies and panel keys hit the wrong
-  panel.
+- **Dock panels track their own focus.** The dock's tab group tracks its panel's handle, and
+  every panel's `render` calls `track_focus` too, so `contains_focused` holds wherever the panel
+  is drawn. A new panel does the same, or panel keys can hit the wrong panel.
 - **Closing a panel that holds focus kills the whole keymap.** Call `ChatPane::reclaim_focus`
   *before* the panel leaves the frame.
 - **Zoom factors snap to the step**, or float drift leaves `Ctrl+0` the only way back to 100%.
-- **`gpui` carries no rev anywhere** (vendor included). `gpui-component` is pinned by rev.
-  `Cargo.lock` pins both.
+- **`gpui` is the `gpui-pre` version gpui-component pins**, exactly. Both, with `gpui_platform`,
+  `gpui-base` and `gpui-kit-assets`, are pinned once in `[workspace.dependencies]` and move
+  together; any other gpui is a second one in the graph ("expected gpui::App, found App").
 - **A Vietnamese IME can swallow a typed `/`.** Keep the composer's `+` menu entries that
   insert `@` and `/` from code (`Composer::insert_trigger`).
 - **Terminal pitfalls:** before changing `vendor/gpui-terminal/**`, `crates/terminal-ui/**`,

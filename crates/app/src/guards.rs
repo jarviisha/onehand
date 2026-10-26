@@ -271,6 +271,12 @@ mod tests {
             "gpui_platform",
             "gpui-component",
             "gpui-component-assets",
+            "gpui-base",
+            "gpui-kit-assets",
+            // What the workspace's `gpui` and `gpui_platform` resolve to, for
+            // a manifest that names the package outright.
+            "gpui-pre",
+            "gpui-pre-platform",
             "gpui-terminal",
             "reqwest",
             "rustls",

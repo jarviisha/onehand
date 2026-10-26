@@ -8,7 +8,6 @@ use gpui::{
     Window, div,
 };
 use gpui_component::menu::{PopupMenu, PopupMenuItem};
-use gpui_component::switch::Switch;
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Disableable as _, Icon, IconName, Sizable as _, StyledExt};
 use onehand_ui::Quiet as _;
@@ -49,9 +48,7 @@ impl PluginsView {
 
         // Always drawn: whether it is on here is a state, which is content.
         // While another change runs it refuses, its tooltip saying why.
-        let switch = Switch::new(("plugin-on", i))
-            .checked(on_here)
-            .small()
+        let switch = onehand_ui::toggle(("plugin-on", i), on_here)
             .disabled(busy)
             .tooltip(match (busy, on_here) {
                 (true, _) => ONE_AT_A_TIME,
