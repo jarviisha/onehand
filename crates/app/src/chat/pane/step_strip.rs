@@ -210,10 +210,11 @@ pub(super) fn open_review(
                 .text_color(cx.theme().muted_foreground)
                 .child("The step kept no answer")
                 .into_any_element(),
-            false => gpui_component::text::TextView::markdown(
+            false => onehand_ui::no_code_label(gpui_component::text::TextView::markdown(
                 "workflow-review-body",
                 review.answer.clone(),
-            )
+            ))
+            .style(onehand_ui::unedged_code())
             .selectable(true)
             .into_any_element(),
         };

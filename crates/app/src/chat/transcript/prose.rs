@@ -170,6 +170,7 @@ pub(super) fn prose_style(window: &Window, cx: &App) -> TextViewStyle {
                 .p(CODE_BLOCK_PAD)
                 .rounded(cx.theme().radius)
                 .bg(cx.theme().muted)
+                .border_0()
                 .text_size(crate::tokens::CODE_TEXT)
                 .line_height(relative(LEADING)),
         )

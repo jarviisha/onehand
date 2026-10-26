@@ -309,8 +309,14 @@ fn dirty_dot(cx: &App) -> gpui::Div {
 /// its own fill, border and radius — which inside the Workbench is a rounded
 /// box laid on the dock. The dock is the frame; the code sits on its surface
 /// the way the file tree beside it does.
+///
+/// At the code size in rems, over the library's in pixels, so the panel's
+/// zoom reaches it.
 pub(crate) fn body(state: &Entity<EditorState>) -> impl IntoElement + use<> {
-    Editor::new(state).appearance(false).h_full()
+    Editor::new(state)
+        .appearance(false)
+        .h_full()
+        .text_size(onehand_ui::tokens::CODE_TEXT)
 }
 
 /// Build a buffer for a newly opened file.

@@ -89,7 +89,7 @@ pub(super) fn open(
     let (shown, total) = capped(&code, CODE_VIEW_MAX_LINES);
     let fenced = SharedString::from(fence(shown, lang.as_deref()));
     window.open_dialog(cx, move |dialog, window, cx| {
-        let body = TextView::markdown("code-view-body", fenced.clone())
+        let body = onehand_ui::no_code_label(TextView::markdown("code-view-body", fenced.clone()))
             .selectable(true)
             .style(uncapped(super::prose::prose_style(window, cx)));
         let code = code.clone();

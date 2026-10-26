@@ -24,8 +24,7 @@ use gpui::{
     Window, div,
 };
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::switch::Switch;
-use gpui_component::{ActiveTheme as _, Sizable as _, StyledExt as _};
+use gpui_component::{ActiveTheme as _, StyledExt as _};
 use onehand_core::schedule::{self, Schedule};
 use onehand_ui::Tall as _;
 use std::path::PathBuf;
@@ -553,9 +552,7 @@ fn schedule_row(
         // pointer the switch does not set itself. Its name is the row's.
         .child(
             div().flex_none().cursor_pointer().child(
-                Switch::new(SharedString::from(format!("schedule-on-{}", s.id)))
-                    .checked(s.on)
-                    .small()
+                onehand_ui::toggle(SharedString::from(format!("schedule-on-{}", s.id)), s.on)
                     .tooltip(tip)
                     .on_click(move |on: &bool, window: &mut Window, cx: &mut App| {
                         crate::schedules::set_on(&id, *on, window, cx);

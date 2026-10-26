@@ -260,7 +260,7 @@ pub(super) fn issue_view(
                     .text_sm()
                     .line_height(gpui::relative(LEADING))
                     .child(
-                        TextView::new(parsed)
+                        onehand_ui::no_code_label(TextView::new(parsed))
                             .selectable(true)
                             .style(body_style(window.rem_size(), cx))
                             .on_link_click(on_link(cx.entity().downgrade())),
@@ -616,7 +616,8 @@ fn body_style(rem: gpui::Pixels, cx: &App) -> TextViewStyle {
             gpui::StyleRefinement::default()
                 .p(CODE_INSET)
                 .text_size(CODE_TEXT)
-                .bg(theme.muted),
+                .bg(theme.muted)
+                .border_0(),
         )
         // Inline code on the well, the quiet fill, rather than the renderer's
         // own fallback to the selected one, which in the dark palette is a

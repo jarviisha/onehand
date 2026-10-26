@@ -347,7 +347,7 @@ pub(crate) fn reader(
                     .relative()
                     .child(measure)
                     .child(
-                        TextView::new(&doc.state)
+                        onehand_ui::no_code_label(TextView::new(&doc.state))
                             .selectable(true)
                             // Virtualized: a long document draws the rows on
                             // screen rather than all of it.
@@ -385,6 +385,7 @@ fn doc_style(rem: gpui::Pixels, cx: &App) -> TextViewStyle {
             gpui::StyleRefinement::default()
                 .p_3()
                 .text_size(tokens::CODE_TEXT)
+                .border_0()
                 // **The fill is named here rather than left to the library**, and
                 // it is the step past the well: the dock this document is read on
                 // sits so near the well that a block filled with it showed only its

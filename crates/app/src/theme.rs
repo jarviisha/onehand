@@ -437,6 +437,8 @@ fn paint(colors: &mut ThemeConfigColors, ramp: &Ramp) {
         (&mut colors.chart_5, ramp.chart_purple),
         (&mut colors.chart_bullish, ramp.chart_green),
         (&mut colors.chart_bearish, ramp.chart_red),
+        // A chart's grid lines are rules like any other.
+        (&mut colors.chart_grid, ramp.hairline),
     ] {
         set(slot, value);
     }

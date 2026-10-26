@@ -15,17 +15,20 @@ mod choice_mark;
 mod confirm;
 mod list_detail;
 mod menu;
+mod prose;
 mod resize;
 mod row_actions;
 mod strip;
 mod tabs;
 pub mod toast;
+mod toggle;
 pub mod tokens;
 pub use choice_mark::choice_mark;
 pub use confirm::{Confirm, confirm_on};
 pub use list_detail::{ListDetail, ListWidths, back_link, list_detail};
 pub use menu::{menu_below, menu_command, menu_item, menu_row, split_action};
 pub use onehand_core::worktree::removal::Process;
+pub use prose::{no_code_label, unedged_code};
 pub use resize::{edge_handle, h_resizable, v_resizable};
 pub use row_actions::{HoverSlot, hover_slot};
 pub use strip::{strip, strip_control};
@@ -33,6 +36,7 @@ pub use tabs::{
     Measured, TAB_MAX_W, TabStrip, measure_width, tab_chip, tab_close, tab_menu_rows, tab_select,
     tab_strip, unmeasured,
 };
+pub use toggle::toggle;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -414,10 +418,13 @@ pub fn label_badge(label: impl Into<SharedString>, cx: &App) -> gpui_component::
 /// at its small size, fully round so it reads as a tag rather than as a button
 /// beside it, in the `tint`'s fill and ink, with room above and below its
 /// words (`py_1`) where the library leaves them a hair off its edge, and an
-/// edge of its own ([`badge_edge`]).
+/// edge of its own ([`badge_edge`]). Its words are the small text, set solid,
+/// rather than the library's smaller size for a small tag.
 pub fn badge(text: impl Into<SharedString>, tint: Tint) -> gpui_component::tag::Tag {
     gpui_component::tag::Tag::custom(tint.fill, tint.ink, badge_edge(tint))
         .small()
+        .text_xs()
+        .line_height(gpui::relative(1.))
         .rounded_full()
         .py_1()
         .child(text.into())
