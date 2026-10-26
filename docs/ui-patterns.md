@@ -98,7 +98,8 @@ size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in ea
 | An icon leading a label the app draws: a row, a menu item | Icon | `.small()` |
 | A state's mark leading a row's label (a session's) | Icon | `.xsmall()`, a step under the label |
 | A mark inside a line of meta text | Icon | `.xsmall()` |
-| A badge | Tag | `.small()`, at its own height |
+| A badge: a tag standing on its own (a state, a count, *Default*) | Tag | `.small()`, at its own height |
+| A label inside a line of meta text (an issue row's) | text | its kind's ink (`label_tint`), the one part of the line that truncates; the row's quieter ink on the selected fill |
 | A checkbox, a switch | Checkbox, Switch | `.small()` beside chrome text, at the library's own geometry |
 | A single-line row; a row with a second line | drawn by the app | `ROW_H`; at least `ROW_H` |
 | A strip along the top of a region | `strip` (`onehand_ui`) | `BAR_H` |

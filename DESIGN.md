@@ -178,8 +178,8 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   (`tokens::CORNER`): a control, a field, a row, a tab, a chip, a well, the bubble, a box, the
   composer, the terminal, a floating panel, a dialog, a toast. The theme sets `radius_lg` to the
   same, so the library's own surfaces follow. What is only read beside content is
-  `rounded_full`: a badge (a `Tag`), so it reads as a tag rather than a
-  button, its words `py_1` off its edges, its edge halfway from its fill to its ink (`badge_edge`), and a dot or a status mark is `rounded_full` too. The library's small parts keep its half
+  `rounded_full`: a badge (a `Tag`), a tag standing on its own, so it reads as a tag rather than a
+  button (inside a line of meta text a label is written in its kind's ink instead, unframed), its words `py_1` off its edges, its edge halfway from its fill to its ink (`badge_edge`), and a dot or a status mark is `rounded_full` too. The library's small parts keep its half
   corner (*Components*). A part joined to its container's edge takes its corner there.
 - **Lines** part regions and are a 1px `border`. A **mark** says where the person is, not where
   a region ends: the one under an open tab is 2px, as a stroke a step heavier than a line. A list page's lines across
