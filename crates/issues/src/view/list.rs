@@ -302,29 +302,34 @@ impl IssuesView {
         let muted = cx.theme().muted_foreground;
 
         let view = cx.entity();
-        let choices = div().w_full().flex_none().px(onehand_ui::tokens::ROW_INSET).py_2().child(switch(
-            "issues-showing",
-            &[
-                SharedString::from(format!("Open {open}")),
-                SharedString::from(format!("Closed {closed}")),
-            ],
-            match self.showing {
-                Showing::Open => 0,
-                Showing::Closed => 1,
-            },
-            ControlSize::Short,
-            move |picked, _, cx| {
-                view.update(cx, |view, cx| {
-                    view.showing = if *picked == 0 {
-                        Showing::Open
-                    } else {
-                        Showing::Closed
-                    };
-                    cx.notify();
-                })
-            },
-            cx,
-        ));
+        let choices = div()
+            .w_full()
+            .flex_none()
+            .px(onehand_ui::tokens::ROW_INSET)
+            .py_2()
+            .child(switch(
+                "issues-showing",
+                &[
+                    SharedString::from(format!("Open {open}")),
+                    SharedString::from(format!("Closed {closed}")),
+                ],
+                match self.showing {
+                    Showing::Open => 0,
+                    Showing::Closed => 1,
+                },
+                ControlSize::Short,
+                move |picked, _, cx| {
+                    view.update(cx, |view, cx| {
+                        view.showing = if *picked == 0 {
+                            Showing::Open
+                        } else {
+                            Showing::Closed
+                        };
+                        cx.notify();
+                    })
+                },
+                cx,
+            ));
 
         let cut = rows.len().saturating_sub(LIST_CAP);
         let empty = if issues.listed().is_empty() {

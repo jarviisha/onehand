@@ -191,7 +191,10 @@ mod tests {
     #[test]
     fn tree_row_fill_is_odd_and_rows_stack_at_the_pitch() {
         assert_eq!(px(TREE_ROW_FILL), 21.);
-        assert_eq!(px(TREE_ROW_ABOVE) + px(TREE_ROW_FILL) + px(TREE_ROW_BELOW), 24.);
+        assert_eq!(
+            px(TREE_ROW_ABOVE) + px(TREE_ROW_FILL) + px(TREE_ROW_BELOW),
+            24.
+        );
         assert_eq!(px(TREE_ROW_H), 24.);
     }
 
