@@ -230,7 +230,7 @@ impl IssuesView {
             .gap_2()
             .w_full()
             .flex_none()
-            .px_3()
+            .px(onehand_ui::tokens::ROW_INSET)
             .py_2()
             .border_b_1()
             .border_color(faint_rule(cx))
@@ -302,7 +302,7 @@ impl IssuesView {
         let muted = cx.theme().muted_foreground;
 
         let view = cx.entity();
-        let choices = div().w_full().flex_none().px_3().py_2().child(switch(
+        let choices = div().w_full().flex_none().px(onehand_ui::tokens::ROW_INSET).py_2().child(switch(
             "issues-showing",
             &[
                 SharedString::from(format!("Open {open}")),
@@ -539,7 +539,7 @@ impl IssuesView {
             .gap_1()
             .w_full()
             .flex_none()
-            .px_3()
+            .px(onehand_ui::tokens::ROW_INSET)
             .py_1()
             .child(status)
             // *Sync now* stays where it is while a sync runs, spinning: a

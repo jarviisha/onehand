@@ -56,7 +56,7 @@ and a word.
 | Compact metadata or a tightly coupled mark and label | `gap_1` |
 | Icon and label in a row the app draws; adjacent controls; parts within a box | `gap_2` |
 | Row inset | `px_2` |
-| Strip inset; box padding | `px_3`; `p_3` |
+| Strip inset; box padding | `px_3`, inside the Workbench `tokens::ROW_INSET`; `p_3` |
 | A box whose body scrolls inside it (a pinned card) | `p_4`, a step more so the scrollbar's thumb has room beside the text |
 | Form fields | `gap_4` |
 | Page sections; page outer padding | `gap_6`; `px_8` `py_6` |
@@ -147,6 +147,14 @@ Keep identity at the leading edge and actions at the trailing edge in every equi
 shows a region the strip's own panel hid may lead (the way back to the rail, a list's toggle).
 Filters belong below the region header with the content they filter. Reserve the action group's
 width while labels truncate; showing hover actions must not move the text beside them.
+
+Inside the Workbench a bar is a `workbench_strip`: padded `tokens::ROW_INSET` rather than `px_3`,
+so its words and the tree rows' names read down one edge. Each Workbench region draws one
+hairline (`border`) where its head ends and its content begins: under the Workbench's own strip,
+under a mode's head (the editor's tabs, the reader's bar, an issue's trail). Two bars stacked with
+no content between them are a stack to merge; until they are, only the lower bar draws the line
+over the content. The conversation's header and the terminal's strip draw no line and keep
+`px_3`.
 
 ### Cuts
 

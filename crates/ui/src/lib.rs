@@ -31,7 +31,7 @@ pub use onehand_core::worktree::removal::Process;
 pub use prose::{no_code_label, unedged_code};
 pub use resize::{edge_handle, h_resizable, v_resizable};
 pub use row_actions::{HoverSlot, hover_slot};
-pub use strip::{strip, strip_control};
+pub use strip::{strip, strip_control, workbench_strip};
 pub use tabs::{
     Measured, TAB_MAX_W, TabStrip, measure_width, tab_chip, tab_close, tab_menu_rows, tab_select,
     tab_strip, unmeasured,

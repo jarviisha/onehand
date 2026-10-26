@@ -29,7 +29,7 @@ impl Workbench {
         let compact = self.width.get().0 < MODES_MIN_W.0;
         // The shape of the conversation's header beside it, so the two bars
         // line up across the seam.
-        onehand_ui::strip(cx)
+        onehand_ui::workbench_strip(cx)
             // A line under it: most modes open on a strip of their own (the
             // editor's files, a document's bar), and two strips stacked with
             // nothing between them read as one bar twice as tall, the panel's
