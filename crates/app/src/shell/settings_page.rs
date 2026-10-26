@@ -347,9 +347,13 @@ pub(super) fn apply_appearance(choice: Appearance, window: Option<&mut Window>, 
         // field's own background when the syntax theme names none: the
         // reading surface, a dark band down a dock that is a step lighter.
         // The only editor with line numbers is the Workbench's, so the gutter
-        // takes the dock's surface.
+        // takes the dock's surface. Its numbers are a margin read only when
+        // looked for, so they rest in the muted ink; the caret's line keeps
+        // the full one, so where the caret is still reads down the column.
         let mut highlight = (*theme.highlight_theme).clone();
         highlight.style.editor_gutter_background = Some(theme.sidebar);
+        highlight.style.editor_line_number = Some(theme.muted_foreground);
+        highlight.style.editor_active_line_number = Some(theme.foreground);
         theme.highlight_theme = std::sync::Arc::new(highlight);
     });
 }
