@@ -82,6 +82,9 @@ minor bump may break any of them.
   more room above a heading, links underlined. Code blocks have no edge and name no language.
 - The Workbench editor sets code at the code size and zooms with its panel; `[font].monospace`
   now reaches code blocks in rendered Markdown too.
+- An image or file pasted into the composer is attached however the paste arrives, its field's
+  right-click *Paste* included. Shortcuts no longer lists *Paste text / attach image or file*:
+  the composer takes the field's own `Ctrl+V`, and a key saved for it under `[keymap]` is dropped.
 
 ### Fixed
 

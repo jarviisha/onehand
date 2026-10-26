@@ -92,15 +92,10 @@ impl Composer {
             .bg(crate::theme::raised(cx))
             .shadow(lift.clone())
             .rounded(cx.theme().radius)
-            // Held always, so `Ctrl+V` can be taken from the input wherever the
+            // Held always, so the card's keys reach the input wherever the
             // caret is in the prompt. The list context below is the one that
             // comes and goes.
             .key_context("ChatComposerCard")
-            .on_action(cx.listener(
-                |composer: &mut Self, _: &crate::shell::PasteHere, window, cx| {
-                    composer.paste(window, cx);
-                },
-            ))
             .on_action({
                 let session = session.clone();
                 move |_: &crate::shell::CycleMode, _, cx| {
@@ -175,7 +170,15 @@ impl Composer {
                             composer.commit(&take_row, window, cx);
                         },
                     ))
-                    .child(text_area(&self.state, cx).appearance(false)),
+                    .child(text_area(&self.state, cx).appearance(false).on_paste({
+                        let composer = cx.entity().downgrade();
+                        move |item, window, cx| {
+                            let handle = window.window_handle();
+                            composer
+                                .update(cx, |composer, cx| composer.attach_pasted(item, handle, cx))
+                                .unwrap_or(false)
+                        }
+                    })),
             )
             .child(
                 div()
