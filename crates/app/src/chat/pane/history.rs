@@ -3,6 +3,7 @@
 
 use super::{ChatPane, ChatPaneEvent, rel_time};
 use crate::chat::conversation::{Conversation, SessionPhase};
+use crate::controls::Named as _;
 use gpui::{App, Context, IntoElement, ParentElement, SharedString, Styled, Window, div};
 use gpui_component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_component::{ActiveTheme, IconName, StyledExt};
@@ -127,7 +128,7 @@ impl ChatPane {
         let this = cx.entity();
 
         onehand_ui::strip_control("history", IconName::GalleryVerticalEnd, false, cx)
-            .tooltip("Open a past conversation in a new session")
+            .named("Open a past conversation in a new session")
             // Anchored to its own right-hand corner: this button sits at the end
             // of the header, and a menu hanging rightwards from it opens off the
             // edge of the window.

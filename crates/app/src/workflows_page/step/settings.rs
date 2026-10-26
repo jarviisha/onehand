@@ -7,6 +7,7 @@
 
 use super::super::WorkflowsPage;
 use super::super::draft::{StepDraft, run_agent_offer, set_pick};
+use crate::controls::Named as _;
 use crate::controls::Quiet as _;
 use crate::controls::text_input;
 use crate::settings::{about, field, section};
@@ -245,7 +246,7 @@ fn typed_options(
                 .tall()
                 .quiet_icon(false, cx)
                 .icon(Icon::new(IconName::Close))
-                .tooltip("Remove this option")
+                .named("Remove this option")
                 .on_click(move |_, window: &mut Window, cx: &mut App| {
                     handle.update(cx, |page, cx| {
                         page.edit_workflow_draft(window, cx, |d, _, _| {

@@ -13,6 +13,7 @@ use gpui_component::input::InputState;
 use gpui_component::{ActiveTheme, Icon, IconName, StyledExt};
 use onehand_core::issues;
 use onehand_core::task::work::list::{Filters, Incomplete, Listed, Progress};
+use onehand_ui::Named as _;
 use onehand_ui::Quiet as _;
 use onehand_ui::Short as _;
 use onehand_ui::Tall as _;
@@ -258,7 +259,7 @@ impl IssuesView {
                             .quiet_icon(false, cx)
                             .icon(Icon::new(AppIcon::Refresh))
                             .loading(pr_reading)
-                            .tooltip(read)
+                            .named(read)
                             .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
                                 view.read_prs(cx);
                                 cx.notify();

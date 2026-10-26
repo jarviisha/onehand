@@ -4,6 +4,7 @@ use super::row::{
 };
 use super::session::{signal_hint, status_mark};
 use crate::chat::pane::{ProjectFacts, SessionSignal};
+use crate::controls::Named as _;
 use crate::controls::Quiet as _;
 use crate::shell::Shell;
 use crate::state::WorkspaceWindow;
@@ -502,7 +503,7 @@ pub(super) fn project_row(
                 },
                 cx,
             )
-            .tooltip(match open {
+            .named(match open {
                 true => "Hide this project's sessions",
                 false => "Show this project's sessions",
             })
@@ -628,7 +629,7 @@ pub(super) fn project_row(
                     ("project-new-name", root_idx),
                     "New session in this project",
                     row_control(("project-new", root_idx), IconName::Plus, cx)
-                        .tooltip("New session in this project")
+                        .named("New session in this project")
                         .on_click(cx.listener(move |shell: &mut Shell, _, window, cx| {
                             shell.new_session_in(root_idx, window, cx);
                         })),

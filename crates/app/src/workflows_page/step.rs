@@ -12,6 +12,7 @@ use gpui::{
 };
 use onehand_ui::Tall as _;
 
+use crate::controls::Named as _;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::workflow::{GateKind, Place};
 
@@ -95,7 +96,7 @@ fn step_row(
                 .small()
                 .quiet_icon(false, cx)
                 .icon(IconName::Ellipsis)
-                .tooltip("Move or remove this step"),
+                .named("Move or remove this step"),
             move |menu, _, _| {
                 let (up, down, remove) = (up.clone(), down.clone(), remove.clone());
                 menu.item(
@@ -332,7 +333,7 @@ pub(super) fn step_panel(
             .small()
             .quiet_icon(false, cx)
             .icon(Icon::new(icon))
-            .tooltip_with_action(tip, key, Some("WorkflowsPage"))
+            .named_with_action(tip, key, Some("WorkflowsPage"))
             .refuses(refused.map(str::to_string))
             .on_click(move |_, window: &mut Window, cx: &mut App| {
                 handle.update(cx, |page, cx| {

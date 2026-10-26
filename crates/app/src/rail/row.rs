@@ -1,6 +1,7 @@
 //! What every row of the rail shares: the fills, the fade at the end of a
 //! name, the controls a row carries, and the drags that reorder the tree.
 
+use crate::controls::Named as _;
 use crate::controls::Quiet as _;
 use gpui::{
     Anchor, App, Context, Div, ElementId, Hsla, InteractiveElement, IntoElement, MouseButton,
@@ -255,7 +256,7 @@ pub(super) fn menu_button(
     build: impl Fn(PopupMenu, &mut Window, &mut App) -> PopupMenu + 'static,
 ) -> impl IntoElement {
     control
-        .tooltip(tooltip)
+        .named(tooltip)
         .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, window, cx| {
             build(menu, window, cx)
         })

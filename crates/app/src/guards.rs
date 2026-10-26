@@ -1511,6 +1511,92 @@ mod tests {
         );
     }
 
+    /// The builders that hand back a button with no words of its own, beside
+    /// `action(` chains that set an `.icon(` themselves.
+    const ICON_ONLY_BUILDERS: [&str; 4] = [
+        "strip_control(",
+        "row_control(",
+        "meta_control(",
+        "menu_button(",
+    ];
+
+    /// Whether `line` starts a button: an `action(` call that is not the end
+    /// of another name (`tooltip_with_action(`, `on_action(`), or one of the
+    /// icon-only builders.
+    fn starts_button(line: &str) -> bool {
+        let action = line
+            .match_indices("action(")
+            .any(|(at, _)| !line[..at].ends_with(|c: char| c.is_alphanumeric() || c == '_'));
+        action || ICON_ONLY_BUILDERS.iter().any(|b| line.contains(b))
+    }
+
+    /// The builder chain a tooltip on line `at` closes: the lines from the
+    /// button that starts it up to, not including, that line. `None` where
+    /// none starts it before the statement above ends.
+    fn tooltip_chain<'a>(lines: &[&'a str], at: usize) -> Option<Vec<&'a str>> {
+        let start = (0..=at)
+            .rev()
+            .take_while(|&n| n == at || !lines[n].trim_end().ends_with(';'))
+            .find(|&n| starts_button(lines[n]))?;
+        Some(lines[start..at.max(start + 1)].to_vec())
+    }
+
+    /// Whether a chain gives its button words: a line opening with `.label(`,
+    /// or with a `.child(` that is not an icon.
+    fn has_words(chain: &[&str]) -> bool {
+        chain.iter().any(|line| {
+            let line = line.trim_start();
+            line.starts_with(".label(")
+                || (line.starts_with(".child(")
+                    && !line.starts_with(".child(Icon")
+                    && !line.starts_with(".child(bolt("))
+        })
+    }
+
+    /// An icon with no words is named through `named`, which gives it its
+    /// accessible name with its tooltip: the library names a button by its
+    /// label, so an icon-only button with a bare `tooltip` is announced as
+    /// nothing. Read across lines, as [`an_icon_alone_rests_muted`] reads a
+    /// chain; one that sets an `accessibility_label` of its own is named.
+    #[test]
+    fn an_icon_alone_is_named() {
+        let root = workspace_root().display().to_string();
+        let mut found = Vec::new();
+        for (path, source) in ui_sources() {
+            let rel = path
+                .strip_prefix(&root)
+                .unwrap_or(&path)
+                .trim_start_matches('/')
+                .to_string();
+            if rel.contains("/tests/") || rel.ends_with("/tests.rs") {
+                continue;
+            }
+            let code = source.split("#[cfg(test)]\nmod tests").next().unwrap_or("");
+            let lines: Vec<&str> = code.lines().collect();
+            for (n, line) in lines.iter().enumerate() {
+                if line.trim_start().starts_with("//")
+                    || !(line.contains(".tooltip(") || line.contains(".tooltip_with_action("))
+                {
+                    continue;
+                }
+                let Some(chain) = tooltip_chain(&lines, n) else {
+                    continue;
+                };
+                let joined = chain.join(" ");
+                let icon_only = joined.contains(".icon(")
+                    || ICON_ONLY_BUILDERS.iter().any(|b| joined.contains(b));
+                if icon_only && !has_words(&chain) && !joined.contains("accessibility_label(") {
+                    found.push(format!("{rel}:{}: {}", n + 1, line.trim()));
+                }
+            }
+        }
+        assert!(
+            found.is_empty(),
+            "an icon-only button named only in its tooltip; use `.named(..)`:\n{}",
+            found.join("\n")
+        );
+    }
+
     /// Text sized or weighted off the scale: `text_2xl` and above, bold and
     /// heavier, light and lighter, and a size written as a number.
     fn off_scale_type(line: &str) -> Vec<String> {

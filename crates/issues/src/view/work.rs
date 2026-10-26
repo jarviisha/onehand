@@ -18,6 +18,7 @@ use gpui_component::menu::PopupMenu;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::issues::LocalIssue;
 use onehand_core::task::work::{Act, Around, IssueWork, Next, PrSeen, next_action, pr_named};
+use onehand_ui::Named as _;
 use onehand_ui::Quiet as _;
 use onehand_ui::Refuses as _;
 use onehand_ui::Short as _;
@@ -401,7 +402,7 @@ fn more_menu(
         .quiet_icon(false, cx)
         .loading(doing.publishing || waits)
         .icon(Icon::new(IconName::Ellipsis))
-        .tooltip("More actions");
+        .named("More actions");
     // Named by the project and the issue, so a menu held open across a switch
     // is one for this issue and never for whichever took its place.
     let id = SharedString::from(format!("issue-more-menu-{}-{number}", root.display()));

@@ -5,6 +5,7 @@ use super::{
 use crate::chat::session::ChatSession;
 use crate::chat::transcript::{self};
 use crate::chat::viewport::{self};
+use crate::controls::Named as _;
 use crate::controls::Quiet as _;
 use crate::controls::Short as _;
 use gpui::Focusable as _;
@@ -226,7 +227,7 @@ impl ChatPane {
                         .quiet_icon(false, cx)
                         .small()
                         .icon(Icon::new(IconName::Close))
-                        .tooltip("Remove from the queue")
+                        .named("Remove from the queue")
                         .on_click(cx.listener(|pane: &mut Self, _, _, cx| {
                             if let Some(session) = pane.session() {
                                 session.update(cx, |session, cx| {
@@ -536,7 +537,7 @@ impl ChatPane {
                                                 .small()
                                                 .rounded(cx.theme().radius)
                                                 .icon(Icon::new(IconName::ChevronDown))
-                                                .tooltip("Jump to the latest activity")
+                                                .named("Jump to the latest activity")
                                                 .on_click(cx.listener(
                                                     |pane: &mut Self, _, _, cx| {
                                                         pane.jump_to_latest(cx);

@@ -160,7 +160,8 @@ The window keeps the rail's minimum beside the conversation's: it is never small
 
 A strip along the top of a region is `BAR_H` tall and padded `px_3`, its parts `gap_2` apart,
 at the chrome size (`strip`): what it names at the start, in full ink, its controls at the end as
-ghost buttons at their control sizes (`strip_control` for an icon alone). An icon-only control carries a tooltip.
+ghost buttons at their control sizes (`strip_control` for an icon alone). An icon-only control is named through `.named(..)`: its
+tooltip, and the same words as its accessible name.
 No line runs under a strip: it and what it heads are one surface, parted by space; the pane
 header over a list page is that page's, and draws its line (*List pages*). Keep identity
 at the leading edge and actions at the trailing edge in every equivalent strip; a control that

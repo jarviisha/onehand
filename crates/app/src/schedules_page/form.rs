@@ -3,6 +3,7 @@
 
 use super::SchedulesPage;
 use super::draft::ScheduleDraft;
+use crate::controls::Named as _;
 use crate::controls::{Quiet as _, Refuses as _, SettingPick, setting_row, text_input};
 use crate::settings::{about, field, section};
 use gpui::prelude::FluentBuilder as _;
@@ -79,7 +80,7 @@ pub(super) fn head(
                     .tall()
                     .quiet_icon(false, cx)
                     .icon(IconName::Ellipsis)
-                    .tooltip("More"),
+                    .named("More"),
                 move |menu, _, cx| {
                     let handle = handle.clone();
                     let danger = crate::theme::status_ink(cx).danger;

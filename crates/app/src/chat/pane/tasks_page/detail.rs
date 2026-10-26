@@ -6,6 +6,7 @@ use super::super::page_parts::page_card;
 use super::super::step_strip::{open_review, open_revise, press_continue};
 use super::super::{ChatPane, ChatPaneEvent, rel_time};
 use super::{Page, Press, TasksPage, open_session, row_said, task_acts};
+use crate::controls::Named as _;
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
 use crate::controls::Short as _;
@@ -372,7 +373,7 @@ fn trail(
             .small()
             .quiet_icon(false, cx)
             .icon(IconName::Ellipsis)
-            .tooltip("More actions")
+            .named("More actions")
             .loading(waits)
             .refuses(empty.then_some("Nothing more to do with this task")),
         move |mut menu, _, _| {

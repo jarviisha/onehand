@@ -62,7 +62,8 @@ changing navigation.
 
 Check the combined states, selected and hovered, selected and focused: feedback never erases the
 selection. Walk a row's keyboard path as well as its hover: its actions reachable, the label
-still as they appear. An icon-only action keeps its peers' hit area and carries a tooltip; never
+still as they appear. An icon-only action keeps its peers' hit area and is named with `.named(..)`, its tooltip and
+its accessible name at once; never
 shrink the hit area to the SVG. An optical correction peers share belongs in their builder.
 
 ## Right and wrong

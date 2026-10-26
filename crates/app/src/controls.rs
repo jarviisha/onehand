@@ -59,6 +59,11 @@ pub(crate) use onehand_ui::{search_input, text_area};
 /// buttons reach it too.
 pub(crate) use onehand_ui::Quiet;
 
+/// An icon-only button named in its tooltip and to a screen reader at once.
+/// The rule and its reasoning live with the definition in [`onehand_ui`],
+/// where a feature crate's buttons reach it too.
+pub(crate) use onehand_ui::Named;
+
 /// A control at a dialog's or a form's scale. The rule and its reasoning live
 /// with the definition in [`onehand_ui`], where a feature crate's
 /// controls reach it too.

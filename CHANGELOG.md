@@ -82,6 +82,8 @@ minor bump may break any of them.
   more room above a heading, links underlined. Code blocks have no edge and name no language.
 - The Workbench editor sets code at the code size and zooms with its panel; `[font].monospace`
   now reaches code blocks in rendered Markdown too.
+- Every button drawn as an icon alone tells a screen reader what it does, in the words of its
+  tooltip: the header's, the rail's, the strips', the Workbench modes' and the dialogs' close.
 
 ### Fixed
 
