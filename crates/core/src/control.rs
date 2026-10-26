@@ -19,6 +19,12 @@ pub enum Call {
     ListProjects,
     ListAgents,
     ListWorkflows,
+    ReadWorkflow {
+        workflow: String,
+    },
+    SaveWorkflow {
+        text: String,
+    },
     StartWorkflow {
         project: String,
         workflow: String,
@@ -217,11 +223,13 @@ fn error(id: &Value, code: i64, message: &str) -> String {
 }
 
 /// The tools, in the order they are listed.
-const TOOLS: [&str; 11] = [
+const TOOLS: [&str; 13] = [
     "list_projects",
     "list_agents",
     "open_session",
     "list_workflows",
+    "read_workflow",
+    "save_workflow",
     "start_workflow",
     "start_issue",
     "list_tasks",
@@ -278,6 +286,26 @@ fn catalogue() -> Vec<Value> {
             "list_workflows",
             "The workflows in the library, by id and name",
             none(),
+        ),
+        (
+            "read_workflow",
+            "A workflow's file, as TOML: what save_workflow takes back once changed",
+            schema(
+                json!({"workflow": text("A workflow's id, as list_workflows gives it")}),
+                &["workflow"],
+            ),
+        ),
+        (
+            "save_workflow",
+            "Save a workflow from its TOML, as read_workflow gives it. It goes over the \
+             person's own workflow with its id, else into a new one: a shipped workflow \
+             (its id starting builtin:) is never changed, only copied under a name of its \
+             own. Refused, saying why, when the TOML does not read, when the workflow has \
+             problems, or when another workflow has its name",
+            schema(
+                json!({"toml": text("The whole workflow file, as TOML")}),
+                &["toml"],
+            ),
         ),
         (
             "start_workflow",
@@ -374,6 +402,8 @@ fn parse(name: &str, arguments: &Value) -> Result<Call, String> {
         "list_issues" => &["project"],
         "create_issue" => &["project", "title", "body"],
         "open_session" => &["project", "agent", "prompt"],
+        "read_workflow" => &["workflow"],
+        "save_workflow" => &["toml"],
         "start_workflow" => &["project", "workflow", "title", "brief"],
         "start_issue" => &["project", "issue", "workflow"],
         _ => &[],
@@ -393,6 +423,12 @@ fn parse(name: &str, arguments: &Value) -> Result<Call, String> {
         "list_projects" => Call::ListProjects,
         "list_agents" => Call::ListAgents,
         "list_workflows" => Call::ListWorkflows,
+        "read_workflow" => Call::ReadWorkflow {
+            workflow: required("workflow")?,
+        },
+        "save_workflow" => Call::SaveWorkflow {
+            text: required("toml")?,
+        },
         "start_workflow" => Call::StartWorkflow {
             project: required("project")?,
             workflow: required("workflow")?,

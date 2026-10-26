@@ -148,6 +148,51 @@ pub fn save_blocking(
     Ok((path, template))
 }
 
+/// Save a template handed in as its file's text, as an agent hands one in:
+/// over the person's own file with its id, else to a new file, which is how
+/// a shipped one is copied. Refused when the text does not read, when it has
+/// problems, or when another workflow has its name, since the launcher lists
+/// them by name. Blocking.
+pub fn save_text_blocking(dir: &Path, text: &str) -> Result<(PathBuf, Template), String> {
+    let template = parse(text)?;
+    let problems: Vec<String> = super::validate(&template)
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    if !problems.is_empty() {
+        return Err(problems.join("; "));
+    }
+    let own: Vec<(PathBuf, Template)> = load_all_blocking(dir)
+        .into_iter()
+        .filter_map(|(path, read)| Some((path, read.ok()?)))
+        .collect();
+    let at = own
+        .iter()
+        .find(|(_, kept)| !template.id.is_empty() && kept.id == template.id)
+        .map(|(path, _)| path.clone());
+    let clash = super::builtin::all()
+        .iter()
+        .map(|shipped| &shipped.name)
+        .chain(
+            own.iter()
+                .filter(|(path, _)| Some(path) != at.as_ref())
+                .map(|(_, kept)| &kept.name),
+        )
+        .any(|name| *name == template.name);
+    if clash {
+        return Err(format!(
+            "another workflow is already called {}; give it a name of its own",
+            template.name
+        ));
+    }
+    save_blocking(dir, at.as_deref(), &template)
+}
+
+/// `template` as its file's text.
+pub fn to_text(template: &Template) -> Result<String, String> {
+    toml::to_string_pretty(template).map_err(|err| err.to_string())
+}
+
 /// The file name an export of `template` is offered under.
 pub fn export_name(template: &Template) -> String {
     format!("{}.toml", slug(&template.name))
@@ -156,7 +201,7 @@ pub fn export_name(template: &Template) -> String {
 /// Write `template` to `path`, a file of the person's choosing anywhere.
 /// Blocking.
 pub fn export_blocking(path: &Path, template: &Template) -> Result<(), String> {
-    let text = toml::to_string_pretty(template).map_err(|err| err.to_string())?;
+    let text = to_text(template)?;
     crate::config::write_atomic(path, &text)
         .map_err(|err| format!("{} could not be written: {err}", path.display()))
 }

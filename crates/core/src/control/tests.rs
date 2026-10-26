@@ -57,6 +57,18 @@ fn every_tool_parses_its_input() {
     assert_eq!(performs("list_agents", json!({})), Call::ListAgents);
     assert_eq!(performs("list_workflows", json!({})), Call::ListWorkflows);
     assert_eq!(
+        performs("read_workflow", json!({"workflow": "mine"})),
+        Call::ReadWorkflow {
+            workflow: "mine".into()
+        }
+    );
+    assert_eq!(
+        performs("save_workflow", json!({"toml": "name = \"Mine\""})),
+        Call::SaveWorkflow {
+            text: "name = \"Mine\"".into()
+        }
+    );
+    assert_eq!(
         performs("list_tasks", json!({})),
         Call::ListTasks { project: None }
     );
@@ -133,6 +145,8 @@ fn the_catalogue_lists_every_tool_with_a_schema() {
             "list_agents",
             "open_session",
             "list_workflows",
+            "read_workflow",
+            "save_workflow",
             "start_workflow",
             "start_issue",
             "list_tasks",

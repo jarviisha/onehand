@@ -314,7 +314,7 @@ mod tests {
                 .as_array()
                 .unwrap()
                 .len(),
-            11
+            onehand_core::control::tool_names().len()
         );
         let call = json!({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
             "params": {"name": "list_agents", "arguments": {}}});

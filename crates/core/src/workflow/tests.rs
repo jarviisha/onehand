@@ -1958,3 +1958,35 @@ fn a_library_file_never_takes_the_id_a_schedules_prompt_keeps() {
     assert!(!read.is_prompt());
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_template_saved_as_text_goes_over_its_own_file_or_to_a_new_one() {
+    let dir = temp_dir("text");
+    let shipped = store::to_text(&checkout()).unwrap();
+    // A shipped one keeps its name only by being renamed into a copy.
+    assert!(store::save_text_blocking(&dir, &shipped)
+        .unwrap_err()
+        .contains("already called"));
+    let copy = shipped.replacen(&checkout().name, "Mine", 1);
+    let (file, saved) = store::save_text_blocking(&dir, &copy).unwrap();
+    assert_eq!((saved.id.as_str(), saved.version), ("mine", 1));
+
+    // Its own id names the file it goes over, renamed or not.
+    let text = store::to_text(&saved)
+        .unwrap()
+        .replacen("Mine", "Still mine", 1);
+    let (again, changed) = store::save_text_blocking(&dir, &text).unwrap();
+    assert_eq!((again, changed.version), (file.clone(), 2));
+    assert_eq!(store::load_all_blocking(&dir).len(), 1);
+
+    // What does not read, or has problems, is refused and writes nothing.
+    assert!(store::save_text_blocking(&dir, "name = 1").is_err());
+    let nameless = store::to_text(&changed)
+        .unwrap()
+        .replacen("Still mine", "", 1);
+    assert!(store::save_text_blocking(&dir, &nameless)
+        .unwrap_err()
+        .contains("no name"));
+    assert_eq!(store::read_blocking(&file).unwrap(), changed);
+    let _ = std::fs::remove_dir_all(&dir);
+}

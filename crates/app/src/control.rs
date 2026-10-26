@@ -510,6 +510,32 @@ fn perform_now(
                 .collect();
             Ok(control::listed(lines, "The library holds no workflow"))
         }
+        Call::ReadWorkflow { workflow } => {
+            onehand_core::workflow::store::to_text(&template(&workflow, cx)?)
+        }
+        Call::SaveWorkflow { text } => {
+            let answer = answer.take();
+            cx.spawn(async move |cx| {
+                use onehand_core::workflow::store;
+                let saved = cx
+                    .background_executor()
+                    .spawn(async move { store::save_text_blocking(&store::dir(), &text) })
+                    .await;
+                let outcome = saved.map(|(_, saved)| {
+                    // Read again wherever the library is on screen.
+                    cx.update(crate::workflow::reload_templates);
+                    format!(
+                        "Saved {} as {}, version {}",
+                        saved.name, saved.id, saved.version
+                    )
+                });
+                if let Some(answer) = answer {
+                    let _ = answer.send(outcome);
+                }
+            })
+            .detach();
+            Ok(String::new())
+        }
         Call::ListTasks { project } => {
             let roots = match &project {
                 Some(named) => vec![control::pick_project(&projects, named)?.to_path_buf()],
