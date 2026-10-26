@@ -8,7 +8,7 @@ The full text behind the short forms in `AGENTS.md`, with the reason for each.
   emoji glyphs as icons. `IconName` names exactly the 106 SVGs of `gpui-kit-assets`' default
   bundle, which is also what the library's own components reach for in over a hundred places — so
   that set has to stay loaded regardless. (The whole Lucide catalog is `gpui_kit_assets::IconName`;
-  the window does not serve it.) Three things this costs, all silent: the library **renames icons when it packages
+  the window serves only the glyphs `crate::icons` picks from it.) Three things this costs, all silent: the library **renames icons when it packages
   them** (its `close` is Lucide's `x`, its `delete` is the backspace key), an icon that fails to
   resolve draws *nothing* rather than failing the build, and **a shipped SVG can carry a hard-coded
   `stroke`** — `dash` is `minus` drawn again with `stroke="black"` written in, so it ignores
@@ -19,7 +19,8 @@ The full text behind the short forms in `AGENTS.md`, with the reason for each.
   neither of which the app draws. Bumping `gpui-kit-assets` means
   looking at the app's chrome afterwards, and re-running that grep.
   `crate::icons` holds **only what that enum cannot draw**: a shape the bundled set has no drawing
-  of at all, and a brand mark, which belongs to the product it stands for rather than to a
+  of at all, picked by name from the kit's catalog (`gpui_kit_assets::icon_assets!` embeds only those
+  picked, so a variant is a glyph the window serves), and a brand mark, which belongs to the product it stands for rather than to a
   general-purpose UI kit. Plus one narrow exception, the `-light` entries: a shape the bundled set
   *does* draw, forked for its **stroke weight** alone. That weight lives inside the SVG and no API
   reaches it, so a glyph drawn much larger than the app draws glyphs anywhere else cannot be made
@@ -30,15 +31,17 @@ The full text behind the short forms in `AGENTS.md`, with the reason for each.
   override goes with it: `square-slash` carried one while it was a button in that row and lost it
   on moving into the `+` menu, where it stands beside two icons at the library's own weight. The weight is declared in the manifest's
   `[stroke]` table and written in by `sync-icons.sh`, never edited into a file by hand: that script
-  refetches every checked-in SVG, so a hand edit is one the next sync throws away in silence. It is a handful of shapes, each with its reason in the manifest, and **no brand marks** — the one there was, for
+  refetches every checked-in SVG, so a hand edit is one the next sync throws away in silence. It is a handful of shapes, each with its reason beside it, and **no brand marks** — the one there was, for
   the default agent, sat in the binary drawn by nothing, which is what the registry's
   `allow(dead_code)` guarantees nobody will ever notice. So an entry is added when a call site needs
   it, never in advance.
   An `IconName` whose *name* reads oddly does not qualify; a missing drawing does.
-  To add one: update [assets/icons/manifest.toml](../assets/icons/manifest.toml) with the reason beside
-  the entry, run [scripts/sync-icons.sh](../scripts/sync-icons.sh) (it knows Simple Icons for marks and
-  Lucide for shapes), register it in the `icons!` macro. A test fails if manifest and registry
-  disagree.
+  To add a missing shape: name it in the `icons!` macro's `picked` list with the reason beside it;
+  a test loads every registered icon through the window's assets. To add a brand mark or a fork:
+  update [assets/icons/manifest.toml](../assets/icons/manifest.toml) with the reason beside the entry,
+  run [scripts/sync-icons.sh](../scripts/sync-icons.sh) (it knows Simple Icons for marks and Lucide
+  for forks), and register it in the macro's `checked_in` list. A test fails if manifest and
+  registry disagree.
 - **Code describes; it never cites.** No comment, doc comment or runtime string may name another
   document — not `AGENTS.md`, not `DESIGN.md`, and no
   section number, anchor or item code belonging to one. The guard's list of forbidden names is

@@ -84,6 +84,9 @@ minor bump may break any of them.
   now reaches code blocks in rendered Markdown too.
 - Every button drawn as an icon alone tells a screen reader what it does, in the words of its
   tooltip: the header's, the rail's, the strips', the Workbench modes' and the dialogs' close.
+- An image or file pasted into the composer is attached however the paste arrives, its field's
+  right-click *Paste* included. Shortcuts no longer lists *Paste text / attach image or file*:
+  the composer takes the field's own `Ctrl+V`, and a key saved for it under `[keymap]` is dropped.
 
 ### Fixed
 

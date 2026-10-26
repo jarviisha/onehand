@@ -7,7 +7,7 @@ use crate::tokens::ROW_H;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, Context, InteractiveElement, IntoElement, ParentElement, Rems, SharedString,
-    StatefulInteractiveElement, Styled, Window, div, rems,
+    StatefulInteractiveElement, Styled, div, rems,
 };
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, Sizable as _, StyledExt};
@@ -43,7 +43,8 @@ impl Composer {
         cx.notify();
     }
 
-    /// What `Ctrl+V` does in the composer.
+    /// What a paste into the prompt does, whichever way it arrives: a key or
+    /// the field's own menu. Whether it was taken here.
     ///
     /// The clipboard holds *entries*, and only one kind of them is text. An
     /// image copied out of a screenshot tool and a file copied out of a file
@@ -51,30 +52,29 @@ impl Composer {
     /// things to type — pasted into the buffer they produced nothing at all,
     /// which is a paste that looks broken.
     ///
-    /// Anything else is the input's own business and is handed straight back to
-    /// it, so ordinary text paste keeps working exactly as it did, undo history
-    /// and all.
-    pub(super) fn paste(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let mine = cx.read_from_clipboard().is_some_and(|item| {
-            let mut mine = false;
-            for entry in item.into_entries() {
-                match entry {
-                    gpui::ClipboardEntry::Image(image) => {
-                        mine = true;
-                        self.stage_pasted_image(image, window.window_handle(), cx);
-                    }
-                    gpui::ClipboardEntry::ExternalPaths(paths) => {
-                        mine = true;
-                        self.stage(paths.paths().to_vec(), AttachmentSource::Clipboard, cx);
-                    }
-                    gpui::ClipboardEntry::String(_) => {}
+    /// Anything else is left to the field, so ordinary text paste keeps working
+    /// exactly as it did, undo history and all.
+    pub(super) fn attach_pasted(
+        &mut self,
+        item: &gpui::ClipboardItem,
+        window: gpui::AnyWindowHandle,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let mut mine = false;
+        for entry in item.entries() {
+            match entry {
+                gpui::ClipboardEntry::Image(image) => {
+                    mine = true;
+                    self.stage_pasted_image(image.clone(), window, cx);
                 }
+                gpui::ClipboardEntry::ExternalPaths(paths) => {
+                    mine = true;
+                    self.stage(paths.paths().to_vec(), AttachmentSource::Clipboard, cx);
+                }
+                gpui::ClipboardEntry::String(_) => {}
             }
-            mine
-        });
-        if !mine {
-            window.dispatch_action(Box::new(gpui_component::input::Paste), cx);
         }
+        mine
     }
 
     /// Write a pasted image out and stage the file it became.

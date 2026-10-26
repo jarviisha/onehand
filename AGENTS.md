@@ -175,9 +175,10 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
 
 - **Icons:** every icon is an SVG from `gpui_component::IconName`, never a Unicode or emoji glyph.
   That enum names exactly the 106 SVGs of `gpui-kit-assets`' default bundle, which the window
-  serves; the whole Lucide catalog is `gpui_kit_assets::IconName`, mostly not served.
-  `crate::icons` holds only what that enum cannot draw. Add one via `assets/icons/manifest.toml` +
-  `scripts/sync-icons.sh` + the `icons!` macro, and never hand-edit a synced SVG.
+  serves; the whole Lucide catalog is `gpui_kit_assets::IconName`, served only where picked.
+  `crate::icons` holds only what that enum cannot draw. A missing shape is picked by name in the
+  `icons!` macro's `picked` list; a brand mark or a `-light` fork goes through
+  `assets/icons/manifest.toml` + `scripts/sync-icons.sh`, and never hand-edit a synced SVG.
   - Some library icons are renamed: `close` is Lucide's `x`.
   - An icon that fails to resolve draws nothing rather than failing the build.
   - Some bundled SVGs have a hard-coded stroke (`dash.svg`, `resize-corner.svg`). After bumping

@@ -476,10 +476,10 @@ pub fn badge_edge(tint: Tint) -> Hsla {
     tint.ink.mix_oklab(tint.fill, 0.5)
 }
 
-/// A mark the app's own icon set draws for a feature crate, where the bundled set
-/// has no drawing: an open issue's circle with a dot, and a refresh. The app
-/// serves these under its own prefix, and its registry test holds each path to
-/// the one it serves.
+/// A mark the app picks from the kit's catalog for a feature crate, where the
+/// default bundle has no drawing: an open issue's circle with a dot, and a
+/// refresh. The app serves these, and its registry test holds each path to the
+/// one it serves.
 #[derive(Clone, Copy)]
 pub enum AppIcon {
     CircleDot,
@@ -489,8 +489,8 @@ pub enum AppIcon {
 impl gpui_component::IconNamed for AppIcon {
     fn path(self) -> SharedString {
         match self {
-            Self::CircleDot => "onehand/icons/circle-dot.svg".into(),
-            Self::Refresh => "onehand/icons/refresh-cw.svg".into(),
+            Self::CircleDot => "icons/circle-dot.svg".into(),
+            Self::Refresh => "icons/refresh-cw.svg".into(),
         }
     }
 }

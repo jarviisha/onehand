@@ -323,11 +323,20 @@ impl gpui::Global for LoadWarning {}
 /// throws the person's whole keymap away.
 const RENAMED: &[(&str, &str)] = &[("run_pipeline", "run_workflow")];
 
+/// Ids of commands that are gone, whose overrides are dropped for the same
+/// reason. `paste` attached an image or file pasted into the composer; the
+/// field now hands every paste to the composer itself, so it was the field's
+/// own `Ctrl+V` under another name.
+const RETIRED: &[&str] = &["paste"];
+
 fn rename_old_ids(overrides: &mut Overrides) {
     for (old, new) in RENAMED {
         if let Some(keys) = overrides.remove(*old) {
             overrides.entry((*new).to_string()).or_insert(keys);
         }
+    }
+    for id in RETIRED {
+        overrides.remove(*id);
     }
 }
 
@@ -398,6 +407,21 @@ mod tests {
             action_at(&map, "enter", &["Dialog", "Input"]),
             Some(gpui_component::input::SelectAll.name().into())
         );
+    }
+
+    #[test]
+    fn an_override_of_a_retired_command_is_dropped_rather_than_the_keymap() {
+        let keys = |k: &str| vec![k.to_string()];
+        let mut saved = Overrides::from([
+            ("paste".to_string(), keys("ctrl-alt-v")),
+            ("run_workflow".to_string(), keys("ctrl-alt-w")),
+        ]);
+        rename_old_ids(&mut saved);
+        assert_eq!(
+            saved,
+            Overrides::from([("run_workflow".to_string(), keys("ctrl-alt-w"))])
+        );
+        assert!(validate(&saved).is_ok());
     }
 
     #[test]
