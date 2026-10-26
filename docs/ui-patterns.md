@@ -74,7 +74,15 @@ labels after them start on one edge. A number or a time in a column takes a fixe
 longer value does not push its neighbours.
 
 Density follows the task: chrome and lists are compact, forms leave room for labels, and prose
-keeps its reading size and line height. Do not make a crowded panel fit by shrinking its font,
+keeps its reading size and line height. Chrome breathes; reading text stays dense:
+
+- A line that is itself content (an activity entry, a conflict, a fact's value, a row's
+  description) takes `CHROME_TEXT`; `.text_xs()` is for meta beside something (a time, a count,
+  a hint, the label over a run of rows).
+- Inside the Workbench, the parts of one group stand `gap_3` apart and groups `gap_6`, so an
+  issue's head reads as one thing and what follows it as the next.
+- Entries of a chrome list (an issue's activity, a plugin's skills) stand at least `gap_2` apart.
+- Reading text (an issue's description, Markdown, code) keeps the reading size on `LEADING`. Do not make a crowded panel fit by shrinking its font,
 icons or hit targets. Use the existing overflow, wrapping and list/detail patterns instead. A
 list page's rows are a density of their own, not a shrunk panel (*List pages*).
 Same-role peers keep the same control size (*Control sizes*). A single-line row is `ROW_H` tall; a

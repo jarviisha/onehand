@@ -94,6 +94,9 @@ minor bump may break any of them.
   long label now shortens instead of running out of the row), and the editor's line numbers rest
   in the muted ink.
 - A line runs down the rail's edge and the Workbench's, and the terminal's block is edged in one.
+- The Issues tab and Plugins read less cramped: an issue's activity, its conflicts and what came
+  before are set at the panel's text size and spaced further apart, as is a plugin's description
+  and the lists in its details.
 
 ### Fixed
 

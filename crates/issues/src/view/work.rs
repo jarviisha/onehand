@@ -525,7 +525,7 @@ pub(super) fn left_view(doing: &Doing, cx: &mut Context<IssuesView>) -> Option<A
             .items_start()
             .gap_2()
             .min_w_0()
-            .text_xs()
+            .text_size(onehand_ui::tokens::CHROME_TEXT)
             .child(
                 div()
                     .flex_none()
@@ -567,7 +567,7 @@ pub(super) fn left_view(doing: &Doing, cx: &mut Context<IssuesView>) -> Option<A
         div()
             .flex_none()
             .v_flex()
-            .gap_1()
+            .gap_2()
             .px_4()
             .pt_6()
             .child(
@@ -635,7 +635,7 @@ pub(super) fn before_view(work: &IssueWork, cx: &mut Context<IssuesView>) -> Opt
             .h_flex()
             .items_center()
             .gap_2()
-            .text_xs()
+            .text_size(onehand_ui::tokens::CHROME_TEXT)
             .child(
                 div()
                     .flex_1()
@@ -692,7 +692,7 @@ pub(super) fn before_view(work: &IssueWork, cx: &mut Context<IssuesView>) -> Opt
         div()
             .flex_none()
             .v_flex()
-            .gap_1()
+            .gap_2()
             .px_4()
             .pt_6()
             .child(div().text_xs().text_color(muted).child("Before"))
