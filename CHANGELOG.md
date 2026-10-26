@@ -77,6 +77,11 @@ minor bump may break any of them.
 - The palette is VS Code's Dark Modern and Light Modern, the rail on its side bar's grey.
 - Copilot is a built-in agent: `copilot --acp`, found on first launch and offered in Settings. Its
   unattended runs ask before each step unless `unattended.mode` names *Autopilot*.
+- The UI library moved to gpui-component 0.8. Code is highlighted in its new dark colours, and
+  Markdown in the reader, an issue and a review is spaced its new way: paragraphs further apart,
+  more room above a heading, links underlined. Code blocks have no edge and name no language.
+- The Workbench editor sets code at the code size and zooms with its panel; `[font].monospace`
+  now reaches code blocks in rendered Markdown too.
 
 ### Fixed
 

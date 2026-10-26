@@ -10,11 +10,12 @@ An existing use may still need migration to the contract; copying it is not a co
 ## gpui-component
 
 The app uses the library for: `Button` (always through `action`), `Input` (always through
-`text_input` or `search_input`) and `InputState`, `Textarea` (always through `text_area`), `Switch`,
+`text_input` or `search_input`) and `InputState`, `Textarea` (always through `text_area`), `Switch`
+(always through `toggle`),
 `Tag`, `Kbd`, `Spinner`, `Tooltip`, `Dialog` (`window.open_dialog`, `window.open_alert_dialog`, with
 `DialogFooter` and `DialogClose`), `Notification` (`window.push_notification`), `PopupMenu` and
 `DropdownMenu` (through the menu builders below), `Popover`, `Scrollbar`, the resizable panels,
-`DockArea`, `Root` and `TextView`; gpui's own `list` draws the transcript. Icons are
+`DockArea` (drawn by `crate::shell::dock_skin`), `Root` and `TextView`; gpui's own `list` draws the transcript. Icons are
 `gpui_component::IconName`; what that set lacks is `crate::icons` (synced through
 `assets/icons/manifest.toml`).
 
@@ -46,6 +47,9 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | An action joined to a menu of its alternatives (*New* and its caret) | `split_action(id, main, caret, surface, anchor, build)`: both halves built by the caller through `action` at their role's size and one variant, joined with square inner corners and parted by a seam in `surface`, the fill under it, the caret's menu opened below it | `crates/ui/src/menu.rs` |
 | A strip along the top of a region, and its icon control | `strip(cx)`, `strip_control(id, icon, on, cx)` | `crates/ui/src/strip.rs` |
 | One of a few choices, the taken one filled (filter chips) | `choice` (a `quiet` ghost button, `selected` when taken, at the `ControlSize` its role takes) | `crates/ui/src/lib.rs` |
+| A setting turned on or off | `toggle(id, on)`: the library's `Switch` at `.small()`, with no focus ring a pointer press would leave | `crates/ui/src/toggle.rs` |
+| A split, or a dock's edge | `h_resizable`, `v_resizable`, `edge_handle`: nothing drawn at rest or under the pointer, one `ring` line while held | `crates/ui/src/resize.rs` |
+| Rendered Markdown | `no_code_label(view)` on every `TextView`; `unedged_code()` as the style of one with none of its own (a code block is a well, no edge) | `crates/ui/src/prose.rs` |
 | A choice between a few views, every one the same width | `switch` (a `choice` per view at `flex_1`, padded `p_0p5` and parted `gap_0p5` in one edged track, at one `ControlSize`) | `crates/ui/src/lib.rs` |
 | One of more choices than a switch holds, each at its own width (a setting's values) | `choice_track` (`choice`s in the switch's edged track, padded `p_0p5` and parted `gap_0p5`, wrapping) | `crates/ui/src/lib.rs` |
 | An agent's setting picked from what it offers (a mode, a model, an effort): a first choice leaving it to what runs, the values, one not offered marked | `setting_row(id, none_label, offered, current, strict, refused, pick, cx)` (a `choice_track`, capped, *N more*) | `crates/app/src/controls/setting_row.rs` |

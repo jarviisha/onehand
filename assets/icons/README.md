@@ -4,7 +4,7 @@
 **only what the bundled set cannot supply**.
 
 Nearly every UI glyph comes from `gpui_component::IconName` instead — the enum
-generated from the SVGs `gpui-component-assets` ships, which the library's own
+naming the SVGs of `gpui-kit-assets`' default bundle, which the library's own
 components already draw from. Two kinds of thing live here instead:
 
 - a **brand mark**, which belongs to the product it stands for rather than to a
@@ -40,7 +40,7 @@ network; every SVG is committed.
   bundled set is packaged from, so a missing shape taken from here matches its
   neighbours' stroke weight exactly. See `licenses/LUCIDE.txt`.
 
-The bundled UI set now comes from `gpui-component-assets` (Apache-2.0), which is
+The bundled UI set now comes from `gpui-kit-assets` (Apache-2.0), which is
 a normal cargo dependency rather than a checked-in asset. It is Lucide
 underneath, so `licenses/LUCIDE.txt` would have to travel with the binary even
 if nothing here were fetched from Lucide directly.

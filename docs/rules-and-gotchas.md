@@ -5,9 +5,10 @@ The full text behind the short forms in `AGENTS.md`, with the reason for each.
 ## Rules
 
 - **Every icon is an SVG, and nearly every UI glyph comes from `gpui_component::IconName`.** No Unicode or
-  emoji glyphs as icons. `IconName` is generated from the SVGs `gpui-component-assets` ships, which
-  is also what the library's own components reach for in ~97 places — so that set has to stay loaded
-  regardless. Three things this costs, all silent: the library **renames icons when it packages
+  emoji glyphs as icons. `IconName` names exactly the 106 SVGs of `gpui-kit-assets`' default
+  bundle, which is also what the library's own components reach for in over a hundred places — so
+  that set has to stay loaded regardless. (The whole Lucide catalog is `gpui_kit_assets::IconName`;
+  the window does not serve it.) Three things this costs, all silent: the library **renames icons when it packages
   them** (its `close` is Lucide's `x`, its `delete` is the backspace key), an icon that fails to
   resolve draws *nothing* rather than failing the build, and **a shipped SVG can carry a hard-coded
   `stroke`** — `dash` is `minus` drawn again with `stroke="black"` written in, so it ignores
@@ -15,7 +16,7 @@ The full text behind the short forms in `AGENTS.md`, with the reason for each.
   `currentColor`. Two names for one drawing is reason enough to check which; a colour baked into one
   of them is reason enough to check every time — `grep -l 'stroke="black"\|stroke="#'` over the
   bundled set answers it in a second, and today finds exactly `dash.svg` and `resize-corner.svg`,
-  neither of which the app draws. Bumping the `gpui-component` rev means
+  neither of which the app draws. Bumping `gpui-kit-assets` means
   looking at the app's chrome afterwards, and re-running that grep.
   `crate::icons` holds **only what that enum cannot draw**: a shape the bundled set has no drawing
   of at all, and a brand mark, which belongs to the product it stands for rather than to a
@@ -108,7 +109,7 @@ Review the uncovered part when changing the relevant area:
 | Nothing animates | Finds `with_animation(`, `Animation::new(` and the library's sliding `TabBar::new(` | Motion through a library component other than a `Spinner` |
 | Nothing see-through | Finds `.opacity(`, `.fade_out(` and an `.alpha(` other than `alpha(0.)` and `alpha(1.)` outside the palette's shadows | An alpha written into a colour some other way |
 | One corner | Finds `radius_lg`, `radius_tokens().sm` and gpui's corner steps (`rounded_xs()` to `rounded_3xl()`) in UI sources | A corner written as a number in a `const`, gpui's per-side steps (`rounded_t_md()`…), `ButtonRounded` other than `Medium`, and `rounded_full` on anything but a badge, a dot or a status mark |
-| Core is GUI- and transport-free | Walks every manifest reachable from `crates/core` by path and refuses `gpui`, `gpui-component`, `gpui-terminal`, `reqwest` and `rustls`, under their real or renamed package names | A dependency reached through a registry crate rather than a path, and anything other than those names |
+| Core is GUI- and transport-free | Walks every manifest reachable from `crates/core` by path and refuses `gpui`, `gpui_platform`, `gpui-component`, `gpui-base`, `gpui-kit-assets`, `gpui-pre`, `gpui-pre-platform`, `gpui-terminal`, `reqwest` and `rustls`, under their real or renamed package names | A dependency reached through a registry crate rather than a path, and anything other than those names |
 | Status fills are not status ink | Finds `.text_color(cx.theme().danger)` and the like, for `danger`, `warning`, `success` and `info`, on the `cx.theme()` and `theme` receivers | The same token reached through another receiver, a variable or a helper; `border_color(` and other ink setters |
 | No flag is only ever lowered | Finds a `bool` field assigned `false` somewhere and `true` nowhere, across every first-party crate | A flag raised through a struct literal, a constructor or a method the scan does not read as an assignment |
 | An archived conversation is adopted in one place | Finds the model's loader called anywhere but `ChatSession::adopt` | A loader reached through an alias |
@@ -144,7 +145,10 @@ justifies it, and describe its limits rather than treating a source scan as a Ru
   the vendored default is the string `monospace`, which is a CSS generic and not a family anything
   enumerates. The app now ships its two families (`crate::fonts`, registered at boot before the theme
   names them), so the theme's defaults always resolve; the scan still guards a family
-  `[font].monospace` names. A system family also brings its own metrics: SF Pro Display, the
+  `[font].monospace` names. The family is written through `Theme::update`, never straight into the
+  global: `update` hands the theme on to the layer under the library, and rendered Markdown reads
+  its monospace family there, so a family written past it reached the editor and not a code block.
+  A system family also brings its own metrics: SF Pro Display, the
   `sans-serif` on one machine, sat every button label a pixel under its icon.
 - **`use super::*` in a test module inside `vendor/gpui-terminal` breaks `#[test]`.** That file imports
   gpui with a glob, and gpui exports an attribute macro of its own called `test`. Globbing it into a
@@ -225,14 +229,13 @@ justifies it, and describe its limits rather than treating a source scan as a Ru
   its own scope could not be selected at all. `text_drag::region` instead parks the *other* regions
   under a never-active scope while a drag is held. A new region that holds selectable text goes
   through it too, or drags will cross into and out of it.
-- **A panel's focus handle is tracked by the dock, not by the panel — unless it has no tab group.**
-  gpui-component's `TabPanel` calls `track_focus` on the active panel's handle, so `contains_focused`
-  works without the panel adding it, and a panel that adds `track_focus` on top of that becomes
-  doubly click-focusable. A `DockItem::Panel` renders bare, so nothing tracks it and
-  `contains_focused` answers "no" however deep inside the pane the caret is — which silently points
-  every focused-panel key (maximize, zoom) at the wrong panel. Every panel here renders bare, so
-  `ChatPane::render`, `TerminalPanel::render` and `Workbench::render` all track their own handles —
-  and one added later that forgets is a panel its own shortcut cannot find. Focus-on-click stays
+- **A panel's focus handle is tracked by its tab group, and by the panel too.** Each dock region is
+  a tab group of one panel (`crate::shell::dock_skin` draws no tab bar), and the group calls
+  `track_focus` on its active panel's handle, so `contains_focused` works without the panel adding
+  it. `ChatPane::render`, `TerminalPanel::render` and `Workbench::render` track their own handles as
+  well, as they had to while each was mounted with no group around it: a panel that tracks nothing
+  answers "no" to `contains_focused` however deep inside it the caret is, which silently points
+  every focused-panel key (maximize, zoom) at the wrong panel. A panel added later does the same. Focus-on-click stays
   correct either way: gpui's handler runs in the bubble phase and an inner focusable takes the click
   first and calls `prevent_default`.
 - **A panel closed while it holds focus takes the whole keymap with it.** GPUI resolves a key along
@@ -258,11 +261,12 @@ justifies it, and describe its limits rather than treating a source scan as a Ru
   `Shift` bypass, terminal replies going back to the PTY, `DECSCUSR` cursor shapes and the modified
   key sequences are all onehand's, marked
   `onehand patch`. Upstream is `zortax/gpui-terminal@51f0292`; the verbatim import is one commit and
-  the patches the next, so the delta stays readable. `gpui` there is a **revless** git dependency:
-  cargo keys a git source by URL plus rev, so any rev (or crates.io) yields a second `gpui` in the
-  graph and "expected gpui::App, found App".
-- **`gpui` carries no rev anywhere**, for the same reason; `gpui-component` *is* pinned by rev, and
-  `Cargo.lock` is the pin for both.
+  the patches the next, so the delta stays readable. `gpui` there is `gpui.workspace = true`: any
+  other gpui yields a second one in the graph and "expected gpui::App, found App".
+- **`gpui` is the exact `gpui-pre` version gpui-component pins.** gpui-component names its gpui as
+  `gpui-pre` at `=` a version, so the workspace's `gpui` (and `gpui_platform`) must be that same
+  version. The pair, with `gpui-component`, `gpui-base` and `gpui-kit-assets`, is pinned once in
+  `[workspace.dependencies]` and moves together; `Cargo.lock` pins everything under them.
 - **Native dialogs and file scans run off the UI loop** — pickers, the `@`-mention scan and directory
   scans go through `cx.background_executor()`, never inline in a render or an action handler.
 - **IME can swallow a typed `/` on Linux.** With a Vietnamese IME enabled, the composer may never

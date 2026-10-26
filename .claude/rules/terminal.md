@@ -15,8 +15,8 @@ What goes wrong in the terminal grid and the code around it. Full reasons:
   `onehand patch`. Never run `cargo fmt` / `clippy --fix` over it — use `make fmt` / `make lint`.
 - Never `use super::*` in a test module there: gpui's glob import shadows `#[test]` and rustc dies
   with "recursion limit reached while expanding `#[test]`". Import the needed items by name.
-- `gpui` is a revless git dependency everywhere, vendor included; adding a rev yields a second
-  `gpui` and "expected gpui::App, found App".
+- `gpui` comes from `[workspace.dependencies]` everywhere, vendor included (`gpui.workspace =
+  true`); any other source yields a second `gpui` and "expected gpui::App, found App".
 - Per-cell paint cost is multiplied by the screen on every redraw: paint per run
   (`render::split_row_runs`, forced cell width, ligatures off, double-width cells alone) and keep
   `render::RowCache`. Measure before assuming shaping is the cost.

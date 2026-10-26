@@ -2,7 +2,7 @@
 //! supply, and nothing else**.
 //!
 //! Nearly every UI glyph comes from `gpui_component::IconName`, the enum
-//! generated from the 99 SVGs `gpui-component-assets` ships. Two kinds of thing
+//! naming the 106 SVGs of `gpui-kit-assets`' default bundle. Two kinds of thing
 //! that enum cannot hold are checked in here instead. A **brand mark** belongs
 //! to the product it stands for rather than to a general-purpose UI kit, and no
 //! version of that kit is going to start shipping one. A **missing shape** is a
@@ -202,7 +202,7 @@ mod tests {
                 "{icon:?} must be embedded at {path}"
             );
         }
-        // A bundled library path must fall through to gpui-component-assets.
+        // A bundled library path must fall through to gpui-kit-assets.
         assert!(embedded("icons/folder.svg").is_none());
     }
 }

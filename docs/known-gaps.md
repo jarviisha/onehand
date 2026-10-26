@@ -42,10 +42,8 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
 - **Dragging a rail row has no edge autoscroll**, and the keyboard's row in the rail is not
   scrolled into view. A project past the bottom of a full rail has to be scrolled to first.
 - **The header's icon buttons have no accessible names, the conversation menu's dots included.**
-  The library builds a button's accessible name out of `label` and nothing else, and the only
-  setter is an inherent method on the base button it keeps in a private field — so an icon-only
-  button cannot be given one through this component. Every control on the row carries a tooltip
-  instead. The menu used to be the name itself, drawn as a child so it could ellipsize, which was
+  The library's `Button::accessibility_label` can now name an icon-only button, but nothing here
+  passes one yet. Every control on the row carries a tooltip instead. The menu used to be the name itself, drawn as a child so it could ellipsize, which was
   the same gap in a worse place; moving the menu onto the vertical-dots mark made the name plain
   prose and left one uniform row of tooltipped icon buttons. **The route out is the rail's
   `row::labelled`**: a `Stateful<Div>` around the button implements gpui's

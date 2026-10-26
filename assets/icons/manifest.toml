@@ -5,7 +5,7 @@ lucide_version = "1.34.0"
 # use "provider:upstream-slug".
 #
 # Nearly every UI glyph comes from `gpui_component::IconName` instead — the enum
-# generated from the SVGs `gpui-component-assets` ships. Only two kinds of thing
+# naming the SVGs of `gpui-kit-assets`' default bundle. Only two kinds of thing
 # are checked in here, because that set cannot supply them:
 #
 #   * a brand mark, which belongs to the product it stands for rather than to a
