@@ -73,18 +73,3 @@ fn the_terminal_leaves_the_conversation_room_to_read() {
     // A short window never shrinks it to nothing.
     assert_eq!(at(15., reading), TERM_MIN_H.0);
 }
-
-#[test]
-fn the_rail_is_put_back_after_a_resize_scaled_it_past_its_range() {
-    // A wider window scaled it past the most it draws at: still put back.
-    assert_eq!(rail_put_back(480., 300., None), Some(300.));
-    // A narrower one scaled it under the least.
-    assert_eq!(rail_put_back(200., 300., None), Some(300.));
-    // Where it was wanted, give or take float drift: left alone.
-    assert_eq!(rail_put_back(300.4, 300., None), None);
-    // A saved width out of range is wanted at the nearest end.
-    assert_eq!(rail_put_back(480., 900., None), Some(PanelLayout::RAIL_MAX));
-    // Put back once and landed short: not asked again until it moves.
-    assert_eq!(rail_put_back(260., 300., Some(260.)), None);
-    assert_eq!(rail_put_back(250., 300., Some(260.)), Some(300.));
-}

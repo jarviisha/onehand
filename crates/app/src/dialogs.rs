@@ -71,18 +71,7 @@ pub(crate) fn title_row(name: impl Into<SharedString>, cx: &App) -> impl IntoEle
         .justify_between()
         .gap_2()
         .w_full()
-        .child(
-            DialogTitle::new()
-                .min_w_0()
-                // The library sets this title's line height to exactly one em,
-                // and `truncate` clips to the box -- so every descender is cut
-                // off at the baseline, which is the "g" in *Settings* losing
-                // its tail. The refinement lands after the library's own, so
-                // asking for the room back here is enough.
-                .line_height(relative(crate::tokens::LEADING_TIGHT))
-                .truncate()
-                .child(name.into()),
-        )
+        .child(DialogTitle::new().min_w_0().truncate().child(name.into()))
         .child(
             div().flex_none().size_6().child(
                 DialogClose::new().child(

@@ -11,7 +11,6 @@ use super::{FocusedPanel, Shell};
 use crate::tokens::BAR_H;
 use gpui::{Context, Focusable as _, Rems, Window, px, rems};
 use gpui_component::dock::DockPlacement;
-use onehand_core::config::PanelLayout;
 
 /// The conversation's minimum beside a dock, before its zoom.
 const CHAT_MIN: Rems = rems(30.);
@@ -232,30 +231,6 @@ impl Shell {
         self.terminal_drawn = Some(height);
     }
 
-    /// Put the rail back at the width the person dragged it to.
-    ///
-    /// The split scales every panel by the same share when the window's width
-    /// changes, which would make a fixed rail creep with each resize. Only a
-    /// drag changes the width wanted (the split's `on_resize`), so any other
-    /// difference is put back, and nothing is while a drag is under way.
-    pub(super) fn apply_rail_width(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // A rail not drawn has no split measuring it, and a drag is the person
-        // choosing a width.
-        if self.app_maximized.is_some() || self.rail_hidden || cx.has_active_drag() {
-            return;
-        }
-        let Some(live) = rail_size(&self.rail_split, cx) else {
-            return;
-        };
-        let wanted = self.window.workspace.layout.rail_w;
-        let Some(width) = rail_put_back(live, wanted, self.rail_drawn) else {
-            return;
-        };
-        self.rail_split
-            .update(cx, |split, cx| split.resize_panel(0, px(width), window, cx));
-        self.rail_drawn = rail_size(&self.rail_split, cx);
-    }
-
     /// The Workbench steps aside so the conversation can be read: the dock
     /// closes without the Workbench being put away, so the header's button
     /// brings it straight back, and a wider window brings back the split.
@@ -281,32 +256,6 @@ impl Shell {
         self.presentation = Presentation::Conversation;
         self.dock
             .update(cx, |dock, cx| dock.set_zoomed_out(window, cx));
-    }
-}
-
-/// The rail's size as the split holds it, unclamped -- the panel draws it
-/// within its range, so a scaled size past either end is only seen here --
-/// or `None` before the split has measured anything.
-fn rail_size(split: &gpui::Entity<gpui_component::ResizableState>, cx: &gpui::App) -> Option<f32> {
-    let split = split.read(cx);
-    if split.container_size() <= px(0.) {
-        return None;
-    }
-    split.sizes().first().map(|w| f32::from(*w))
-}
-
-/// The width to put the rail back to, if it needs putting back: the split's
-/// size for it is `live`, the person wants `wanted`, and `drawn` is where
-/// the split settled the last time this put it back, which a split too
-/// narrow for the width wanted lands short of and must not be asked again.
-fn rail_put_back(live: f32, wanted: f32, drawn: Option<f32>) -> Option<f32> {
-    let wanted = wanted.clamp(PanelLayout::RAIL_MIN, PanelLayout::RAIL_MAX);
-    // Within a pixel is the same width: anything finer is float drift that
-    // would ask for a resize on every frame.
-    let same = |a: f32, b: f32| (a - b).abs() < 1.;
-    match same(live, wanted) || drawn.is_some_and(|drawn| same(live, drawn)) {
-        true => None,
-        false => Some(wanted),
     }
 }
 

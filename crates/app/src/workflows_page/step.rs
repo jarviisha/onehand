@@ -484,10 +484,7 @@ pub(super) fn step_panel(
                     div()
                         .v_flex()
                         .gap_2()
-                        .child(onehand_ui::contained_scroll(
-                            ("step-prompt", i),
-                            text_area(&step.prompt, cx).disabled(shipped),
-                        ))
+                        .child(text_area(&step.prompt, cx).disabled(shipped))
                         .child(div().h_flex().justify_end().child(open_larger)),
                     cx,
                 ))
