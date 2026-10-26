@@ -24,10 +24,7 @@ a hex literal outside the ramp is a bug even when it looks right, as no theme sw
    start closed and open on demand. Beside the Workbench it keeps a minimum, times its zoom; too
    narrow for both, the Workbench takes the area under *← Conversation*, which steps it aside. Pages
    take the agent pane and put the docks away; a page opens over a session only when picked.
-2. **Give each boundary a purpose.** Separate with space first, then a line, then a fill, then a
-   shadow, taking each step only for a reason the one before cannot give (`docs/ui-patterns.md`,
-   *Separation*).
-3. **Content leads; navigation recedes.** Neutral surfaces carry the layout. Hue identifies a
+2. **Content leads; navigation recedes.** Neutral surfaces carry the layout. Hue identifies a
    state, a link, a label's kind or code in prose, never a decorative section background.
    The palette's blue also marks keyboard focus and the primary action, and in the dark
    palette the selected item's fill. Attention is earned: the signals that call for the person
@@ -37,15 +34,15 @@ a hex literal outside the ramp is a bug even when it looks right, as no theme sw
    control that switches it may carry a state's hue on its own mark while the mode is on, and
    nowhere else. All colours are theme tokens with
    legible contrast on their actual surfaces in both modes.
-4. **Mono for machines, sans for people.** Code, paths, terminal output and diffs use
+3. **Mono for machines, sans for people.** Code, paths, terminal output and diffs use
    `mono_font_family`. Anything a person wrote uses the default family.
-5. **Same role, same treatment.** Across app and feature crates, equivalent rows, headers and controls
+4. **Same role, same treatment.** Across app and feature crates, equivalent rows, headers and controls
    share size, spacing, corners and states. A valid token alone does not make a consistent view.
-6. **Say nothing twice.** If a fact is already on screen near what it describes, don't repeat it
+5. **Say nothing twice.** If a fact is already on screen near what it describes, don't repeat it
    in a badge, a status bar or a title.
-7. **Bounded, and say so.** Every list has a named cap, and when the cap cuts something off, the
+6. **Bounded, and say so.** Every list has a named cap, and when the cap cuts something off, the
    screen says how many were left out.
-8. **Calm and immediate.** What a person changes shows at once, and the work behind it follows.
+7. **Calm and immediate.** What a person changes shows at once, and the work behind it follows.
    Nothing moves for show: the one motion is a `Spinner` on work still running, beside what the
    library's own overlays and controls do (*Components*). `docs/ui-patterns.md` (*Immediate feedback*, *Motion*) holds how.
 

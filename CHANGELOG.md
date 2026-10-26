@@ -88,6 +88,7 @@ minor bump may break any of them.
   right-click *Paste* included. Shortcuts no longer lists *Paste text / attach image or file*:
   the composer takes the field's own `Ctrl+V`, and a key saved for it under `[keymap]` is dropped.
 - A line runs under the Workbench's strip, parting its modes from the strip a mode opens on.
+- A line runs down the rail's edge and the Workbench's, and the terminal's block is edged in one.
 
 ### Fixed
 

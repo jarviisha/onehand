@@ -540,11 +540,14 @@ impl Render for TerminalPanel {
                 // The grid inside is handed the same surface as its
                 // background, so a shell is the block rather than a plate
                 // laid on it. Clipped, or the strip's rule would run through
-                // the corners the radius cuts.
+                // the corners the radius cuts. Edged in the same line as the
+                // rail and the Workbench.
                 div()
                     .size_full()
                     .v_flex()
                     .rounded(cx.theme().radius)
+                    .border_1()
+                    .border_color(cx.theme().border)
                     .overflow_hidden()
                     .bg(crate::theme::dock_surface(cx))
                     .child(self.body(window, cx)),

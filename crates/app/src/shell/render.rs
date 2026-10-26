@@ -45,7 +45,15 @@ impl Render for Shell {
                         .size(px(self.window.workspace.layout.rail_w))
                         .size_range(px(PanelLayout::RAIL_MIN)..px(PanelLayout::RAIL_MAX))
                         .fixed()
-                        .child(rail),
+                        // A line down its edge, parting the chrome from what it
+                        // navigates.
+                        .child(
+                            div()
+                                .size_full()
+                                .border_r_1()
+                                .border_color(cx.theme().border)
+                                .child(rail),
+                        ),
                 )
                 .child(resizable_panel().child(dock))
                 // Called once, when a drag ends: the one thing that changes the

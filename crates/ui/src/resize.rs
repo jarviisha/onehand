@@ -1,8 +1,9 @@
 //! The app's splits and dock edges: a seam that draws nothing until it is held.
 //!
 //! Every seam a split or a dock edge sits on is already marked by the panels
-//! either side of it -- a change of surface, or a block on its own surface --
-//! so a resting line there would be a second edge beside the first. Pointing
+//! either side of it -- a line down the rail's or the Workbench's edge, or the
+//! terminal's edged block -- so a resting line there would be a second edge
+//! beside the first. Pointing
 //! at one draws nothing either: the cursor already says it can be dragged.
 //! Only while it is pressed or dragged is the seam the thing being looked at,
 //! and then it is one line in the focus colour, as a dragged panel's edge is.

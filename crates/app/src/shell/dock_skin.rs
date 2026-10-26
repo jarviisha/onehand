@@ -17,6 +17,7 @@ use gpui::{
     Styled as _, WeakEntity, Window, canvas, div, prelude::FluentBuilder as _,
 };
 use gpui_base::HandleEdge;
+use gpui_component::ActiveTheme as _;
 use gpui_component::dock::{
     DockArea, DockAreaRenderer, DockContext, DockEvent, DockPlacement, PanelId, TabGroupContext,
     TabGroupRenderer,
@@ -60,7 +61,7 @@ impl DockAreaRenderer for DockSkin {
         dock: &DockContext,
         content: AnyElement,
         _: &mut Window,
-        _: &mut App,
+        cx: &mut App,
     ) -> AnyElement {
         let placement = dock.placement();
         // One id per placement: the docks render under one stateful ancestor,
@@ -86,6 +87,10 @@ impl DockAreaRenderer for DockSkin {
             .flex()
             .size_full()
             .relative()
+            // A line along the side the Workbench meets the conversation.
+            .when(dock.is_open() && placement == DockPlacement::Right, |d| {
+                d.border_l_1().border_color(cx.theme().border)
+            })
             .child(content)
             .child(handle)
             .child(self.tracker(dock.clone()))
