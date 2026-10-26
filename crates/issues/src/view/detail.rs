@@ -118,7 +118,6 @@ pub(super) fn issue_view(
                 .min_w_0()
                 .items_center()
                 .gap_1()
-                .text_xs()
                 .text_color(muted)
                 .child(div().min_w_0().truncate().child(doing.project.clone()))
                 .child(Icon::new(IconName::ChevronRight).xsmall())
@@ -215,7 +214,8 @@ pub(super) fn issue_view(
         .items_center()
         .gap_1()
         .px_4()
-        .pt_3()
+        // A group's step from the head over it, wider than the head's own.
+        .pt_6()
         .children(tabs.iter().enumerate().map(|(i, tab)| {
             let (name, count) = match tab {
                 IssueTab::Description => ("Description", None),
@@ -393,7 +393,7 @@ fn activity(issue: &LocalIssue, cx: &mut Context<IssuesView>) -> AnyElement {
     div()
         .flex_none()
         .v_flex()
-        .gap_1()
+        .gap_2()
         .px_4()
         .py_3()
         .when(entries.is_empty(), |list| {
@@ -417,7 +417,7 @@ fn activity(issue: &LocalIssue, cx: &mut Context<IssuesView>) -> AnyElement {
                         .h_flex()
                         .items_start()
                         .gap_2()
-                        .text_xs()
+                        .text_size(onehand_ui::tokens::CHROME_TEXT)
                         .child(
                             div()
                                 .id(("issue-history-at", i))
@@ -503,11 +503,15 @@ fn conflict_view(issue: &LocalIssue, cx: &mut Context<IssuesView>) -> Option<Any
             .mt_3()
             .child(
                 div()
-                    .text_xs()
+                    .text_size(onehand_ui::tokens::CHROME_TEXT)
                     .text_color(ink)
                     .child(format!("Changed here and on {forge} since the last sync")),
             )
-            .children(lines.into_iter().map(|line| div().text_xs().child(line)))
+            .children(
+                lines
+                    .into_iter()
+                    .map(|line| div().text_size(onehand_ui::tokens::CHROME_TEXT).child(line)),
+            )
             .child(
                 div()
                     .h_flex()

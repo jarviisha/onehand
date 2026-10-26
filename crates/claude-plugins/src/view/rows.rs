@@ -510,7 +510,7 @@ impl PluginsView {
                         .w_full()
                         .min_w_0()
                         .overflow_hidden()
-                        .text_xs()
+                        .text_size(onehand_ui::tokens::CHROME_TEXT)
                         .text_color(muted)
                         .line_clamp(2)
                         .text_ellipsis()

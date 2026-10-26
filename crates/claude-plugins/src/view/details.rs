@@ -96,7 +96,7 @@ fn details(plugin: &Plugin, cx: &App) -> AnyElement {
         (!names.is_empty()).then(|| {
             div()
                 .v_flex()
-                .gap_1()
+                .gap_2()
                 .child(
                     div()
                         .text_xs()
@@ -115,7 +115,7 @@ fn details(plugin: &Plugin, cx: &App) -> AnyElement {
     let hooks = (!inventory.hooks.is_empty()).then(|| {
         div()
             .v_flex()
-            .gap_1p5()
+            .gap_2()
             .child(
                 div()
                     .text_xs()
