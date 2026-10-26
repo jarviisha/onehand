@@ -511,18 +511,6 @@ pub fn search_input(state: &Entity<InputState>, cx: &App) -> Input {
         .cleanable(true)
 }
 
-/// A box that scrolls on its own, kept from passing a wheel on to the scroll
-/// around it. A field of several lines scrolls itself and lets the wheel
-/// through once it reaches its first or last line, so the page under it
-/// moved on as the person reached the top of what they were reading. Held
-/// whether or not `inner` overflows: the library does not say.
-pub fn contained_scroll(id: impl Into<ElementId>, inner: impl IntoElement) -> gpui::Stateful<Div> {
-    div()
-        .id(id)
-        .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
-        .child(inner)
-}
-
 /// A field of several lines, on the corner and the surface [`text_input`]
 /// gives a field of one: the library draws a textarea on a fill of its own,
 /// and beside a single-line field in the same

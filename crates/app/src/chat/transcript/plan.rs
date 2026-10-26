@@ -78,7 +78,7 @@ pub(super) fn plan(
                             PlanStatus::Completed => (Some(IconName::Check), true),
                             PlanStatus::InProgress if busy => (None, false),
                             PlanStatus::InProgress => (Some(IconName::LoaderCircle), false),
-                            PlanStatus::Pending => (Some(IconName::Dash), false),
+                            PlanStatus::Pending => (Some(IconName::Minus), false),
                         };
                         let mark = match icon {
                             Some(icon) => Icon::new(icon)

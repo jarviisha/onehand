@@ -21,7 +21,6 @@ impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.apply_presentation(window, cx);
         self.apply_terminal_height(window, cx);
-        self.apply_rail_width(window, cx);
         self.sync_docks_open(cx);
         // A panel maximized in the app direction is the whole window: the rail
         // is not rendered at all rather than rendered at zero width, so
@@ -37,13 +36,15 @@ impl Render for Shell {
             Some(rail) => h_resizable("rail-split")
                 .with_state(&self.rail_split)
                 .child(
-                    // `flex_none`: the panel sets `flex_grow: 1` on itself, and
-                    // a rail that grows is a rail that takes whatever the dock
-                    // is not using -- which is most of the window.
+                    // `fixed`: the panel sets `flex_grow: 1` on itself, and a
+                    // rail that grows is a rail that takes whatever the dock is
+                    // not using -- which is most of the window. Fixed also keeps
+                    // it at the width dragged to when the window resizes, where
+                    // the split would scale it by the same share as the dock.
                     resizable_panel()
                         .size(px(self.window.workspace.layout.rail_w))
                         .size_range(px(PanelLayout::RAIL_MIN)..px(PanelLayout::RAIL_MAX))
-                        .flex_none()
+                        .fixed()
                         .child(rail),
                 )
                 .child(resizable_panel().child(dock))
@@ -53,7 +54,6 @@ impl Render for Shell {
                 .on_resize(
                     cx.listener(|shell: &mut Self, _: &Entity<ResizableState>, _, cx| {
                         shell.window.workspace.layout.rail_w = shell.rail_width(cx);
-                        shell.rail_drawn = None;
                         shell.save_workspace_soon(cx);
                     }),
                 )

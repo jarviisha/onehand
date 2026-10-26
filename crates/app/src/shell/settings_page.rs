@@ -306,11 +306,9 @@ impl Shell {
 /// the platform's app-wide value can still be its default while the desktop is
 /// being queried in the background.
 ///
-/// Two things have to be repaired afterwards. The theme carries the monospace
+/// One thing has to be repaired afterwards: the theme carries the monospace
 /// family, which the boot scan resolved against what is installed, and applying
-/// a mode re-applies a whole theme config over it. And a mode is global while a
-/// refresh is per window, so every other window would keep painting the old
-/// palette until something else happened to make it redraw.
+/// a mode re-applies a whole theme config over it.
 ///
 /// Telling the platform as well is what keeps a window's native border and
 /// title bar in step with a forced mode; it does nothing on Linux, and passing
