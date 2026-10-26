@@ -30,6 +30,12 @@ impl Workbench {
         // The shape of the conversation's header beside it, so the two bars
         // line up across the seam.
         onehand_ui::strip(cx)
+            // A line under it: most modes open on a strip of their own (the
+            // editor's files, a document's bar), and two strips stacked with
+            // nothing between them read as one bar twice as tall, the panel's
+            // modes mixed in with the mode's controls.
+            .border_b_1()
+            .border_color(cx.theme().border)
             // The way back to the conversation, while this panel has taken the
             // area because the window cannot hold the two side by side. A
             // maximized panel has its own way back at the other end.

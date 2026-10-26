@@ -87,6 +87,7 @@ minor bump may break any of them.
 - An image or file pasted into the composer is attached however the paste arrives, its field's
   right-click *Paste* included. Shortcuts no longer lists *Paste text / attach image or file*:
   the composer takes the field's own `Ctrl+V`, and a key saved for it under `[keymap]` is dropped.
+- A line runs under the Workbench's strip, parting its modes from the strip a mode opens on.
 
 ### Fixed
 

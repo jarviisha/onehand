@@ -162,9 +162,7 @@ A strip along the top of a region is `BAR_H` tall and padded `px_3`, its parts `
 at the chrome size (`strip`): what it names at the start, in full ink, its controls at the end as
 ghost buttons at their control sizes (`strip_control` for an icon alone). An icon-only control is named through `.named(..)`: its
 tooltip, and the same words as its accessible name.
-No line runs under a strip: it and what it heads are one surface, parted by space; the pane
-header over a list page is that page's, and draws its line (*List pages*). Keep identity
-at the leading edge and actions at the trailing edge in every equivalent strip; a control that
+Keep identity at the leading edge and actions at the trailing edge in every equivalent strip; a control that
 shows a region the strip's own panel hid may lead (the way back to the rail, a list's toggle).
 Filters belong below the region header with the content they filter. Reserve the action group's
 width while labels truncate; showing hover actions must not move the text beside them.

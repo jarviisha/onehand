@@ -12,10 +12,8 @@ use gpui_component::{ActiveTheme as _, Icon, Sizable as _, StyledExt as _};
 
 /// A strip: [`crate::tokens::BAR_H`] tall, inset `px_3`, its parts `gap_2`
 /// apart, lettered at the chrome size in the muted ink. What it names is
-/// written in full ink by the caller, first.
-///
-/// **No line under it.** A strip and what it heads are one surface; the space
-/// and the change from a row of controls to its content are what part them.
+/// written in full ink by the caller, first. It draws no line under it; a
+/// caller that needs one adds it.
 pub fn strip(cx: &App) -> Div {
     div()
         .h_flex()
