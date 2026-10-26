@@ -5,15 +5,16 @@
 
 Nearly every UI glyph comes from `gpui_component::IconName` instead — the enum
 naming the SVGs of `gpui-kit-assets`' default bundle, which the library's own
-components already draw from. Two kinds of thing live here instead:
+components already draw from. A glyph that bundle holds no equivalent of is
+picked by name from the kit's complete Lucide catalog in
+`crates/app/src/icons.rs`, with its reason beside it; nothing is fetched or
+checked in for it. Two kinds of thing live here instead:
 
 - a **brand mark**, which belongs to the product it stands for rather than to a
   general-purpose UI kit, and which no version of such a kit is going to start
   shipping;
-- a **missing shape**: a glyph the bundled set holds no equivalent of at all,
-  added one at a time with its reason written beside the manifest entry. A name
-  in `IconName` that merely reads oddly is not one of these — if the library
-  already draws the shape, the app draws it from there.
+- a **`-light` fork** of a shape the kit draws, rewritten to a lighter stroke
+  for the one place the app draws it oversized; `manifest.toml` names it.
 
 Run the following command after changing a mapping or a pinned version:
 
@@ -31,14 +32,14 @@ network; every SVG is committed.
 > UI glyphs, kept so that app icons did not depend on gpui-component's own
 > naming; the app now takes that dependency deliberately. A handful of
 > those 48 have since come back, one at a time and each because the bundled
-> set turned out to have no drawing of that shape at all — `manifest.toml`
-> carries the reason for every one.
+> set turned out to have no drawing of that shape at all; they are now picked
+> from the kit's catalog rather than checked in.
 
 ## Sources and licenses
 
 - [Lucide](https://github.com/lucide-icons/lucide), ISC — the same upstream the
-  bundled set is packaged from, so a missing shape taken from here matches its
-  neighbours' stroke weight exactly. See `licenses/LUCIDE.txt`.
+  bundled set is packaged from, so a fork taken from here matches its
+  neighbours' drawing exactly. See `licenses/LUCIDE.txt`.
 
 The bundled UI set now comes from `gpui-kit-assets` (Apache-2.0), which is
 a normal cargo dependency rather than a checked-in asset. It is Lucide

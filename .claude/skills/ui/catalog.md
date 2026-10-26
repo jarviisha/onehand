@@ -16,8 +16,8 @@ The app uses the library for: `Button` (always through `action`), `Input` (alway
 `DialogFooter` and `DialogClose`), `Notification` (`window.push_notification`), `PopupMenu` and
 `DropdownMenu` (through the menu builders below), `Popover`, `Scrollbar`, the resizable panels,
 `DockArea` (drawn by `crate::shell::dock_skin`), `Root` and `TextView`; gpui's own `list` draws the transcript. Icons are
-`gpui_component::IconName`; what that set lacks is `crate::icons` (synced through
-`assets/icons/manifest.toml`).
+`gpui_component::IconName`; what that set lacks is `crate::icons` (picked from the kit's Lucide
+catalog, or synced through `assets/icons/manifest.toml`).
 
 Draw none of these by hand: a `div` that looks like a button, a label, a key cap spelled in text.
 
