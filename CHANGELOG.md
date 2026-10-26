@@ -97,6 +97,9 @@ minor bump may break any of them.
 - The Issues tab and Plugins read less cramped: an issue's activity, its conflicts and what came
   before are set at the panel's text size and spaced further apart, as is a plugin's description
   and the lists in its details.
+- The Editor's tab bar and the Markdown reader's bar are a step lower than the Workbench's strip.
+  Editor tabs no longer shrink when crowded: the newest that fit stay, the current file among
+  them, and the older ones are in an *N more* menu after them.
 
 ### Fixed
 

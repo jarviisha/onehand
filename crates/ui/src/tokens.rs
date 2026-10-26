@@ -13,6 +13,12 @@ use gpui_component::ActiveTheme as _;
 /// a page's column heads, so bars side by side line up across the window.
 pub const BAR_H: Rems = rems(2.75);
 
+/// A mode's own bar, under the Workbench's strip: the editor's tabs, the
+/// reader's bar. A step under [`BAR_H`], so the second bar reads as the
+/// mode's rather than as the panel's a second time; its controls keep their
+/// size and stand on it with a little room.
+pub const MODE_BAR_H: Rems = rems(2.);
+
 /// A single-line list row: a rail row, a choice in the composer's popup. A
 /// Workbench tree takes [`TREE_ROW_H`] instead. A little over a control's height, so a
 /// long list of names reads as rows with air between them rather than a

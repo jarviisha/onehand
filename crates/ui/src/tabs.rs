@@ -1,10 +1,11 @@
 //! How a strip of tabs fits the width it is given.
 //!
 //! The rule a strip of tabs that must never scroll follows, the editor's files
-//! among them: a tab is at most [`TAB_MAX_W`] and truncates, the tabs share
-//! what room there is, and a strip that cannot give each tab [`TAB_MIN`]
-//! becomes one control naming the current tab and opening the others, so no
-//! tab is ever pushed out of reach.
+//! among them: a tab is as wide as its name, at most [`TAB_MAX_W`], and is
+//! never squeezed to make room. Where the tabs at their own widths do not all
+//! fit, the newest that do stay side by side, the current one always among
+//! them, and the older ones go into one menu after them, so no tab is ever
+//! pushed out of reach.
 
 use crate::Named as _;
 use crate::Quiet as _;
@@ -23,31 +24,82 @@ use std::rc::Rc;
 /// A tab never grows past this; a longer name truncates and says itself in
 /// full on hover.
 pub const TAB_MAX_W: Rems = rems(10.);
-/// Below this a tab's name is too short to tell one from another, so the strip
-/// gives up tabs for a select.
-const TAB_MIN_W: Rems = rems(5.);
+/// The room kept after the tabs for the menu of the ones left out: its count
+/// and its caret.
+const TAB_MORE_W: Rems = rems(4.5);
 
-/// How a strip is drawn.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum TabStrip {
-    /// Every tab side by side, each this wide at most.
-    Tabs(Rems),
-    /// One control naming the current tab and opening the others.
-    Select,
+/// Which tabs a strip draws side by side, in their order; the rest go into
+/// the menu after them.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TabStrip {
+    pub shown: Vec<usize>,
+    pub left_out: Vec<usize>,
 }
 
-/// Lay out `count` tabs, `gap` apart, in `avail`.
-pub fn tab_strip(count: usize, avail: Rems, gap: Rems) -> TabStrip {
-    if count == 0 {
-        return TabStrip::Tabs(TAB_MAX_W);
+/// Lay out tabs `widths` wide, `gap` apart, in `avail`, `active` the current
+/// one: every tab when all of them fit, otherwise the current one and then the
+/// newest, as many as fit beside the menu, and the older ones left out.
+pub fn tab_strip(widths: &[Rems], active: usize, avail: Rems, gap: Rems) -> TabStrip {
+    let count = widths.len();
+    let all = (0..count).collect::<Vec<_>>();
+    let total: f32 =
+        widths.iter().map(|w| w.0).sum::<f32>() + gap.0 * count.saturating_sub(1) as f32;
+    if total <= avail.0 {
+        return TabStrip {
+            shown: all,
+            left_out: Vec::new(),
+        };
     }
-    let gaps = gap.0 * (count - 1) as f32;
-    let each = ((avail.0 - gaps).max(0.) / count as f32).min(TAB_MAX_W.0);
-    if each < TAB_MIN_W.0 {
-        TabStrip::Select
-    } else {
-        TabStrip::Tabs(rems(each))
+    // The current file first, whatever room there is: it is never only in a
+    // menu.
+    let active = active.min(count - 1);
+    let mut shown = vec![active];
+    let mut used = widths[active].0 + gap.0 + TAB_MORE_W.0;
+    for i in (0..count).rev().filter(|&i| i != active) {
+        if used + widths[i].0 + gap.0 > avail.0 {
+            break;
+        }
+        used += widths[i].0 + gap.0;
+        shown.push(i);
     }
+    shown.sort_unstable();
+    let left_out = all.into_iter().filter(|i| !shown.contains(i)).collect();
+    TabStrip { shown, left_out }
+}
+
+/// Each tab's width as last laid out, by what it shows, so a tab not on the
+/// strip now is still known by the width it had there. One not drawn yet
+/// counts at [`TAB_MAX_W`].
+pub type TabWidths = Rc<std::cell::RefCell<std::collections::HashMap<SharedString, Rems>>>;
+
+/// The width of the tab known as `key`, or [`TAB_MAX_W`] when it has not been
+/// drawn yet.
+pub fn tab_width(widths: &TabWidths, key: &SharedString) -> Rems {
+    widths.borrow().get(key).copied().unwrap_or(TAB_MAX_W)
+}
+
+/// Measure the tab this is put in into `widths` under `key`, and redraw `view`
+/// when it changes. Put it in the tab, made `relative`.
+pub fn measure_tab<T: 'static>(
+    widths: TabWidths,
+    key: SharedString,
+    view: gpui::WeakEntity<T>,
+) -> impl gpui::IntoElement {
+    gpui::canvas(
+        move |bounds, window, cx| {
+            let width = rems(bounds.size.width / window.rem_size());
+            if widths.borrow_mut().insert(key.clone(), width) != Some(width) {
+                // Prepaint runs inside the view's own frame; notifying from it
+                // directly would update an entity already being updated.
+                cx.defer(move |cx| {
+                    let _ = view.update(cx, |_, cx| cx.notify());
+                });
+            }
+        },
+        |_, _: (), _, _| {},
+    )
+    .absolute()
+    .size_full()
 }
 
 /// A width a view measures of one of its boxes, as last laid out, and reads on
@@ -85,21 +137,14 @@ pub fn measure_width<T: 'static>(
     .size_full()
 }
 
-/// The most tabs a strip's select lists before it says how many it left out.
-const TAB_MENU_CAP: usize = 30;
+/// The most tabs the menu of those left out lists before it says how many
+/// more there are.
+pub const TAB_MENU_CAP: usize = 30;
 
-/// Which of `count` tabs a select lists: a run of at most [`TAB_MENU_CAP`]
-/// that always holds the `active` one, and how many it leaves out.
-pub fn tab_menu_rows(count: usize, active: usize) -> (std::ops::Range<usize>, usize) {
-    let shown = count.min(TAB_MENU_CAP);
-    let start = active.saturating_sub(shown / 2).min(count - shown);
-    (start..start + shown, count - shown)
-}
-
-/// The control a strip too narrow for its tabs becomes: a ghost button naming
-/// the current tab and the picker's caret, at a strip's size and capped like a
-/// tab, saying `hint` in full on hover. The caller hangs the menu of every tab
-/// on it.
+/// A strip's select of tabs too many for it (the Workbench's modes, when
+/// narrow): a ghost button naming the current tab and the picker's caret, at a
+/// strip's size and capped like a tab, saying `hint` in full on hover. The
+/// caller hangs the menu of every tab on it.
 pub fn tab_select(
     id: &'static str,
     label: gpui::SharedString,
@@ -113,6 +158,23 @@ pub fn tab_select(
         .tooltip(hint)
         .dropdown_caret(true)
         .child(gpui::div().min_w_0().truncate().child(label))
+}
+
+/// The control after the tabs that opens the ones left out: a ghost button
+/// counting them, with the picker's caret, at a strip's size. The caller
+/// hangs the menu on it.
+pub fn tab_more(
+    id: &'static str,
+    left_out: usize,
+    cx: &gpui::App,
+) -> gpui_component::button::Button {
+    crate::action(id)
+        .quiet(cx)
+        .short()
+        .flex_none()
+        .tooltip("The other open files")
+        .dropdown_caret(true)
+        .child(format!("{left_out} more"))
 }
 
 /// One tab: a flat label, the chosen one on the selected fill and in its ink,
@@ -167,36 +229,41 @@ pub fn tab_close(id: impl Into<ElementId>, hint: &'static str, cx: &App) -> Butt
 mod tests {
     use super::*;
 
-    #[test]
-    fn a_long_select_lists_a_capped_run_around_the_current_tab() {
-        assert_eq!(tab_menu_rows(3, 2), (0..3, 0));
-        assert_eq!(tab_menu_rows(100, 0), (0..TAB_MENU_CAP, 70));
-        assert_eq!(tab_menu_rows(100, 50), (35..65, 70));
-        assert_eq!(tab_menu_rows(100, 99), (70..100, 70));
-    }
-
-    fn strip(count: usize, avail: f32, gap: f32) -> TabStrip {
-        tab_strip(count, rems(avail), rems(gap))
+    fn strip(widths: &[f32], active: usize, avail: f32) -> TabStrip {
+        let widths: Vec<Rems> = widths.iter().map(|w| rems(*w)).collect();
+        tab_strip(&widths, active, rems(avail), rems(0.5))
     }
 
     #[test]
-    fn a_roomy_strip_draws_each_tab_at_its_cap() {
-        assert_eq!(strip(3, 60., 0.5), TabStrip::Tabs(TAB_MAX_W));
-        assert_eq!(strip(0, 0., 0.5), TabStrip::Tabs(TAB_MAX_W));
+    fn a_roomy_strip_draws_every_tab() {
+        let s = strip(&[5., 6., 10.], 0, 60.);
+        assert_eq!(s.shown, vec![0, 1, 2]);
+        assert!(s.left_out.is_empty());
+        assert!(strip(&[], 0, 0.).shown.is_empty());
+        // Exactly the three widths and two gaps.
+        assert_eq!(strip(&[5., 6., 10.], 0, 22.).shown.len(), 3);
     }
 
     #[test]
-    fn tabs_share_a_tighter_strip_and_truncate() {
-        assert_eq!(strip(4, 24., 0.), TabStrip::Tabs(rems(6.)));
-        assert_eq!(strip(2, 10., 0.), TabStrip::Tabs(TAB_MIN_W));
-        // The gaps between tabs come out of the room before it is shared.
-        assert_eq!(strip(4, 25.5, 0.5), TabStrip::Tabs(rems(6.)));
+    fn tabs_count_at_their_own_width_not_the_cap() {
+        // Six short tabs fit where six capped ones would not.
+        assert_eq!(strip(&[4.; 6], 5, 26.5).shown.len(), 6);
     }
 
     #[test]
-    fn a_strip_that_cannot_hold_its_tabs_becomes_a_select() {
-        assert_eq!(strip(5, 24., 0.), TabStrip::Select);
-        assert_eq!(strip(1, 4., 0.), TabStrip::Select);
-        assert_eq!(strip(4, 20.5, 0.5), TabStrip::Select);
+    fn a_tight_strip_keeps_the_newest_and_lists_the_older() {
+        // Room for the current tab, one more and the menu: 5 + 0.5 + 5 + 0.5 + 4.5.
+        let s = strip(&[5.; 5], 4, 15.5);
+        assert_eq!(s.shown, vec![3, 4]);
+        assert_eq!(s.left_out, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn the_current_tab_is_never_only_in_the_menu() {
+        let s = strip(&[5.; 5], 0, 15.5);
+        assert_eq!(s.shown, vec![0, 4]);
+        assert_eq!(s.left_out, vec![1, 2, 3]);
+        // Too narrow for any tab beside the menu: the current one still shows.
+        assert_eq!(strip(&[5.; 5], 2, 3.).shown, vec![2]);
     }
 }
