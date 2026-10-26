@@ -168,7 +168,10 @@ All in `onehand_ui::tokens` (`crates/ui/src/tokens.rs`), which the app names
 | Token | Value | What |
 |---|---|---|
 | `BAR_H` | 2.75rem | every strip along the top of a region |
-| `ROW_H` | 1.875rem | a list row |
+| `ROW_H` | 1.875rem | a list row (the rail, the composer's popup) |
+| `TREE_ROW_H` | 1.5rem | a Workbench tree's row pitch (Files, Markdown) |
+| `TREE_ROW_FILL` | 1.3125rem | a tree row's fill: 21px, odd so the name centres on a whole pixel |
+| `TREE_ROW_ABOVE`, `TREE_ROW_BELOW` | 0.0625rem, 0.125rem | the room over and under a tree row's fill; between two fills, their sum |
 | `CONTROL_H` | 1.5rem | a small control: `.short()`, and an icon-only `.small()` button |
 | `FIELD_H` | 1.875rem | the tallest control, a step over `.short()`: a page's head and form (`.tall()`); nothing stands taller |
 | `SCROLLBAR_THUMB`, `SCROLLBAR_THUMB_ACTIVE` | 4px, 6px | a scrollbar's thumb at rest, and hovered or dragged |
@@ -181,8 +184,8 @@ All in `onehand_ui::tokens` (`crates/ui/src/tokens.rs`), which the app names
 | `PAGE_PROSE` | 48rem | an editor, or one thing read in full |
 | `PAGE_WIDE` | 64rem | boxes side by side, a table |
 | `DIALOG_FORM` | 40rem | a dialog that starts a run, never wider than the window less its margins |
-| `ROW_INSET` | 0.75rem | where a tree row's content starts from a dock's edge (Files, Markdown) |
-| `ROW_GUTTER` | 0.25rem | how far a tree row's fill stands off the dock's edges, inside `ROW_INSET`, and off the rows beside it, inside `ROW_H` |
+| `ROW_INSET` | 1rem | where a tree row's content starts from a dock's edge (Files, Markdown), and a Workbench bar's words |
+| `ROW_GUTTER` | 0.5rem | how far a tree row's fill stands off the dock's side edges, inside `ROW_INSET` |
 | `TREE_INDENT` | 0.875rem | how far each level of a tree steps in |
 | `SCROLLBAR_W` | 16px | room held clear beside text the library's scrollbar scrolls (the transcript's boxes, the Markdown reader) |
 | `lift(cx)` | | the floating shadow |

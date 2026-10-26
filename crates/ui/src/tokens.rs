@@ -13,8 +13,8 @@ use gpui_component::ActiveTheme as _;
 /// a page's column heads, so bars side by side line up across the window.
 pub const BAR_H: Rems = rems(2.75);
 
-/// A single-line list row: a rail row, a file or a document in a tree, a
-/// choice in the composer's popup. A little over a control's height, so a
+/// A single-line list row: a rail row, a choice in the composer's popup. A
+/// Workbench tree takes [`TREE_ROW_H`] instead. A little over a control's height, so a
 /// long list of names reads as rows with air between them rather than a
 /// block of text, and every list in the window stands at one pitch.
 pub const ROW_H: Rems = rems(1.875);
@@ -47,13 +47,32 @@ pub const CORNER: usize = 4;
 /// Where a tree row's content starts from a dock's edge, and how far each
 /// level of the tree steps in: Files and Markdown share both, so their trees
 /// stand on one axis.
-pub const ROW_INSET: Rems = rems(0.75);
+/// The inset is also where a Workbench bar's words start, so a bar and the
+/// rows under it read down one edge.
+pub const ROW_INSET: Rems = rems(1.);
 pub const TREE_INDENT: Rems = rems(0.875);
 
-/// How far a tree row's fill stands off the dock's edges, so a hovered or
+/// How far a tree row's fill stands off the dock's side edges, so a hovered or
 /// picked row reads as a block inside the dock rather than a band across it.
 /// Inside [`ROW_INSET`], which leaves the words a row's own inset from the fill.
-pub const ROW_GUTTER: Rems = rems(0.25);
+pub const ROW_GUTTER: Rems = rems(0.5);
+
+/// A tree row's pitch (Files, Markdown): tighter than [`ROW_H`], since a tree
+/// is a long run of one-line names scanned down a narrow dock.
+pub const TREE_ROW_H: Rems = rems(1.5);
+
+/// A tree row's fill, an odd number of pixels at the base rem. The text
+/// system lays the baseline on a whole pixel, rounding down: at the chrome
+/// size an even fill loses most of a pixel and the name sits a pixel high in
+/// it, an odd one loses about a quarter. Only the base rem lands on whole
+/// pixels; under another zoom the name may still sit a pixel off.
+pub const TREE_ROW_FILL: Rems = rems(1.3125);
+
+/// The room over and under a tree row's fill. Rows stack, so every gap between
+/// two fills is the sum and no fill touches its neighbour; split one and two
+/// rather than in halves, which would land the fill's edges between pixels.
+pub const TREE_ROW_ABOVE: Rems = rems(0.0625);
+pub const TREE_ROW_BELOW: Rems = rems(0.125);
 
 /// The room held clear beside text the library's scrollbar scrolls, so the
 /// thumb never lies over the words. In pixels, as the library draws the thumb:
@@ -157,5 +176,28 @@ pub fn lift_alpha(dark: bool) -> f32 {
     match dark {
         true => 0.6,
         false => 0.14,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// At the base rem of 16px.
+    fn px(r: Rems) -> f32 {
+        r.0 * 16.
+    }
+
+    #[test]
+    fn tree_row_fill_is_odd_and_rows_stack_at_the_pitch() {
+        assert_eq!(px(TREE_ROW_FILL), 21.);
+        assert_eq!(px(TREE_ROW_ABOVE) + px(TREE_ROW_FILL) + px(TREE_ROW_BELOW), 24.);
+        assert_eq!(px(TREE_ROW_H), 24.);
+    }
+
+    #[test]
+    fn words_stand_inside_the_fill() {
+        assert_eq!(px(ROW_GUTTER), 8.);
+        assert_eq!(px(ROW_INSET), 16.);
     }
 }

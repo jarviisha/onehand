@@ -742,8 +742,9 @@ pub fn fold_toggle(id: impl Into<ElementId>, label: impl Into<SharedString>, ope
 }
 
 /// A tree's row, as Files and Markdown draw theirs: a list row at
-/// [`tokens::ROW_H`] a pitch, its fill [`tokens::ROW_GUTTER`] off both of the
-/// dock's edges and off the rows above and below, so a hovered fill never
+/// [`tokens::TREE_ROW_H`] a pitch, its fill [`tokens::ROW_GUTTER`] off both of
+/// the dock's side edges and [`tokens::TREE_ROW_ABOVE`] and
+/// [`tokens::TREE_ROW_BELOW`] off the rows around it, so a hovered fill never
 /// touches the picked one beside it; its content inset [`tokens::ROW_INSET`] and stepped in
 /// [`tokens::TREE_INDENT`] per level, the picked row on the selected fill.
 /// It stretches itself across the tree's column, less the gutter, rather than
@@ -763,9 +764,10 @@ pub fn tree_row(
         .gap_2()
         .self_stretch()
         .mx(tokens::ROW_GUTTER)
-        .my(gpui::rems(tokens::ROW_GUTTER.0 / 2.))
-        .min_h(gpui::rems(tokens::ROW_H.0 - tokens::ROW_GUTTER.0))
-        .h(gpui::rems(tokens::ROW_H.0 - tokens::ROW_GUTTER.0))
+        .mt(tokens::TREE_ROW_ABOVE)
+        .mb(tokens::TREE_ROW_BELOW)
+        .min_h(tokens::TREE_ROW_FILL)
+        .h(tokens::TREE_ROW_FILL)
         .text_size(crate::tokens::CHROME_TEXT)
         .pl(gpui::rems(
             tokens::ROW_INSET.0 - tokens::ROW_GUTTER.0 + depth as f32 * tokens::TREE_INDENT.0,
