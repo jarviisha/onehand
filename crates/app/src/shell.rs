@@ -21,6 +21,7 @@ mod cleanup;
 mod confirm;
 pub(crate) use confirm::{Confirm, confirm_on};
 mod dock_rules;
+mod dock_skin;
 mod docks;
 mod drafts;
 mod issue_work;

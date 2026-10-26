@@ -5,7 +5,8 @@ use crate::document::{RootDocs, list, reader};
 use gpui::{
     App, AppContext as _, Context, Entity, IntoElement, ParentElement, Render, Styled, Window, div,
 };
-use gpui_component::{ActiveTheme, IconName, StyledExt, h_resizable, resizable_panel};
+use gpui_component::{ActiveTheme, IconName, StyledExt, resizable_panel};
+use onehand_ui::h_resizable;
 use onehand_ui::{
     ListWidths, back_link, hint, list_detail, measure_width, status_ink, status_line,
 };

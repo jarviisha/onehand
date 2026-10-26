@@ -15,6 +15,7 @@ mod choice_mark;
 mod confirm;
 mod list_detail;
 mod menu;
+mod resize;
 mod row_actions;
 mod strip;
 mod tabs;
@@ -25,6 +26,7 @@ pub use confirm::{Confirm, confirm_on};
 pub use list_detail::{ListDetail, ListWidths, back_link, list_detail};
 pub use menu::{menu_below, menu_command, menu_item, menu_row, split_action};
 pub use onehand_core::worktree::removal::Process;
+pub use resize::{edge_handle, h_resizable, v_resizable};
 pub use row_actions::{HoverSlot, hover_slot};
 pub use strip::{strip, strip_control};
 pub use tabs::{

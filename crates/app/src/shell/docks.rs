@@ -580,6 +580,9 @@ pub(super) fn mount_terminal(
         cx,
     );
     area.set_dock_size(DockPlacement::Bottom, height, window, cx);
+    // Taken off screen by the key and the header's button alone: a drag
+    // past the floor would close it into a strip with nothing to reopen it.
+    area.set_dock_collapsible(DockPlacement::Bottom, false, window, cx);
 }
 
 /// Fill the area with the group holding panel `id` in `placement`. A zoom

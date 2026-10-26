@@ -24,7 +24,8 @@ use gpui::{
     AnyView, App, AppContext as _, Context, Entity, IntoElement, ParentElement, Render, Styled,
     Subscription, Window, div,
 };
-use gpui_component::{ActiveTheme, ResizableState, StyledExt, h_resizable, resizable_panel};
+use gpui_component::{ActiveTheme, ResizableState, StyledExt, resizable_panel};
+use onehand_ui::h_resizable;
 use onehand_ui::{ListWidths, Measured, list_detail, measure_width};
 
 /// Where the divider starts, and how far it can be dragged.

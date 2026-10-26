@@ -11,10 +11,11 @@ use crate::controls::{Quiet as _, Short as _};
 use crate::tokens::{CHROME_TEXT, LEADING};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, ClipboardItem, InteractiveElement as _, ParentElement, Rems, SharedString,
-    StatefulInteractiveElement as _, Styled, Window, div, relative, rems,
+    App, ClipboardItem, InteractiveElement as _, ParentElement, Rems, SharedString, Styled, Window,
+    div, relative, rems,
 };
 use gpui_component::button::ButtonVariants as _;
+use gpui_component::scroll::ScrollableElement as _;
 use gpui_component::text::{TableData, TextView};
 use gpui_component::{ActiveTheme, StyledExt as _, WindowExt as _};
 
@@ -56,13 +57,15 @@ pub(super) fn open(table: &TableData, window: &mut Window, cx: &mut App) {
                         div()
                             .id("table-view-scroll")
                             .max_h(TABLE_VIEW_MAX_H)
-                            .overflow_y_scroll()
                             // At the transcript's reading size: the renderer
                             // sizes each column by text measured at the size
                             // it inherits, and the table reads as it did.
                             .text_size(TEXT)
                             .line_height(relative(LEADING))
-                            .child(body),
+                            .child(body)
+                            // With a bar of its own, so it still scrolls when
+                            // the dialog body around it overflows too.
+                            .overflow_y_scrollbar(),
                     )
                     .when(held_back, |col| {
                         col.child(

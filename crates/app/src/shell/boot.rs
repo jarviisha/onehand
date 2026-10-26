@@ -17,8 +17,11 @@ use std::collections::HashMap;
 
 impl Shell {
     pub fn new(workspace: Workspace, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let dock = cx.new(|cx| DockArea::new("onehand", Some(1), window, cx));
         let chat = ChatPane::new(window, cx);
+        let dock = cx.new(|cx| {
+            let skin = super::dock_skin::DockSkin::new(chat.entity_id(), cx);
+            DockArea::new("onehand", Some(1), window, cx).with_renderer(skin)
+        });
         // One ear for the Issues views, the tab's and the page's: both speak
         // to this window's shell.
         let tell = Self::issues_tell(cx);
@@ -712,6 +715,7 @@ pub fn boot(cx: &mut App) {
                 .map(|cfg| Workspace::from_config(cfg, dir))
         });
 
+    super::render::KeyRelease::register(cx);
     open_or_focus(recent.unwrap_or_else(seed_workspace), cx);
 }
 
@@ -747,7 +751,10 @@ fn use_installed_mono(configured: Option<&str>, cx: &mut App) {
         .chain(std::iter::once(default.as_str()));
 
     if let Some(family) = onehand_core::config::resolve_monospace(preferred, &installed) {
-        gpui_component::Theme::global_mut(cx).mono_font_family = family.clone().into();
+        // Through `update`, so the layer under the library, where rendered
+        // Markdown reads its family, has it too.
+        let named = family.clone();
+        gpui_component::Theme::update(cx, |theme| theme.mono_font_family = named.into());
         cx.update_global::<Shared, _>(|shared, _| shared.mono_family = Some(family));
     }
 }

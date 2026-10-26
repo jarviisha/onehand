@@ -64,6 +64,9 @@ pub(super) fn open(
             .w(width)
             .p_4()
             .close_button(false)
+            // A press beside it would throw the prompt being written away
+            // without asking.
+            .overlay_closable(false)
             .child(
                 div()
                     .v_flex()
