@@ -580,14 +580,6 @@ pub const COMMANDS: &[Command] = &[
         "Composer suggestions (Enter also accepts)"
     ),
     command!(
-        "paste",
-        "Paste text / attach image or file",
-        ["ctrl-v"],
-        PasteHere,
-        "ChatComposerCard > Input",
-        "Composer"
-    ),
-    command!(
         "cycle_mode",
         "Next session mode",
         ["shift-tab"],

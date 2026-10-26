@@ -65,7 +65,6 @@ gpui::actions!(
         CompletionNext,
         CompletionPrev,
         CompletionAccept,
-        PasteHere,
         CycleMode,
         RunWorkflow,
         ShowTasks,
