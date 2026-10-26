@@ -60,7 +60,8 @@ minor bump may break any of them.
   on a project with a first prompt, starts a workflow on a brief or on one of a project's issues
   (off screen, waiting its turn as any task does), stops a task and opens a file in the Workbench.
   `list_issues` and `create_issue` read and write a project's own issues, never writing an open
-  title twice. The same tools reach a session's own agent when *Agent controls onehand* is on in the
+  title twice. `read_workflow` and `save_workflow` hand a workflow over as TOML and take it back,
+  checked as the editor's *Save* checks it; a shipped workflow is only copied. The same tools reach a session's own agent when *Agent controls onehand* is on in the
   composer's `+` menu, off by default; the status row says so while it is. No tool
   answers a card, a permission or an approval.
 - A workspace overview of sessions, projects and recent conversations as cards.

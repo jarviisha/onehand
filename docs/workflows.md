@@ -169,6 +169,11 @@ reads it with `store::read_blocking`; a file that does not read is refused in a 
 one that does opens in the form as a new workflow. Nothing is written until Save, which runs
 validation, the name check and `save_blocking`, so an import always gets a new id.
 
+An agent does the same through onehand's tools (see [control.md](control.md)): `read_workflow` gives
+a workflow's TOML, and `save_workflow` takes it back through `store::save_text_blocking`, the same
+parse, validation and name check, going over the person's own file that has its id, else into a
+new one.
+
 ### Validation
 
 `workflow::validate` is run on every keystroke of the form, before Save, and before a run starts.
