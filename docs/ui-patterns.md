@@ -49,25 +49,6 @@ instead (*Line rows*). Weight follows the role (`DESIGN.md`,
 *Type, space and shape*), never a row's urgency: what needs the person says so in its state's ink
 and a word.
 
-### Separation
-
-Separate with space, then a line, then a fill, then a shadow, taking each step only for a reason
-the one before cannot give:
-
-| Step | For | Not for |
-|---|---|---|
-| Space | sections, groups of rows, a heading from what it heads | |
-| Hairline | a table's edge, its rows and its head; rows in a box (`ruled`); groups space alone runs together (Settings). A box's edge is a step stronger, a control's edge (`input`) | framing a subsection, one field or one row |
-| Fill | a well, the bubble, hover and selection, a dock's surface | a section's background; a box that already has an edge |
-| Shadow | what floats over other content: dialogs, popovers, menus, over the transcript the composer card, the cards pinned above it, the to-bottom button, and on a list page the item floating over the list; the app's own through `lift`, the composer card through `composer_lift` | anything in the flow |
-
-A boundary is drawn once: no line along a change of surface, no edge doubled by a neighbour's.
-
-Where one of several items can be chosen (a list's rows, a switch's choices), no two of their
-fills touch and none touches the frame around them: a gap parts them, padding keeps them off the
-frame, so a hovered item beside the chosen one never runs into it as one band (*Lists*; `switch`
-pads its track `p_0p5` and parts its choices `gap_0p5`).
-
 ### Spacing and density
 
 | Relationship | Default |
@@ -282,7 +263,8 @@ frame of its own around the list, keeps those fills off that region's edges: a t
 `tokens::ROW_GUTTER`, any other list in a dock by its own padding, a list page by its inset. In a
 list where a row can be selected, two fills never touch: a hovered row beside the selected one
 stays parted from it, a tree's fills by `tokens::ROW_GUTTER` inside the row's pitch, any other
-list by a gap between its rows. A list nothing in it is ever selected (Plugins) may run its hover
+list by a gap between its rows; a switch's choices likewise (`switch` pads its track `p_0p5` and
+parts its choices `gap_0p5`). A list nothing in it is ever selected (Plugins) may run its hover
 fills together. Rows
 inside a box are the box's parts: their fills run to its edge, as the hairlines between them do. A row's own actions are ghost buttons at their control sizes, shown
 on hover, on the selected row, on keyboard focus and while their action runs. Every list has a named cap. Its last line, in meta

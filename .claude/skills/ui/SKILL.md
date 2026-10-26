@@ -14,7 +14,7 @@ touches, not the whole set:
 | A principle, the window's frame, the transcript | [DESIGN.md](../../../DESIGN.md) *Principles*, *Layout*, *Transcript* |
 | A colour, an ink, type, space, a corner, a line | DESIGN.md *Type, space and shape*, *Colour and state*; the token in [tokens.md](tokens.md) |
 | A control, its variant, its size, an icon | DESIGN.md *Components*, *Icons*; [UI patterns](../../../docs/ui-patterns.md) *Control sizes*; the builder in [catalog.md](catalog.md) |
-| A page, a panel, a list, a form, a dialog | UI patterns *Choose the container*, *Hierarchy*, *Separation*, *Spacing and density*, then its pattern; the screen to build from in catalog.md *Patterns* |
+| A page, a panel, a list, a form, a dialog | UI patterns *Choose the container*, *Hierarchy*, *Spacing and density*, then its pattern; the screen to build from in catalog.md *Patterns* |
 | Waiting, empty, failing, refusing, a toast, a removal, a key, focus, a word | UI patterns *Behaviour*; the wiring in catalog.md *Keys and focus* |
 
 tokens.md and catalog.md describe the code as it stands: a lookup, not permission to copy a
@@ -32,8 +32,8 @@ changing navigation.
    change (into `crates/ui` when a feature crate draws it too) and list it in catalog.md;
    never list one that is only proposed.
 3. **Pick the pattern** by what the content is, in the least decorated container that says each
-   relationship, keeping the boxes a feature requires, and build from its screen. Separate by the
-   ladder (UI patterns, *Separation*); never add a card, badge, icon or fill to look finished.
+   relationship, keeping the boxes a feature requires, and build from its screen. Never add a
+   card, badge, icon or fill to look finished.
 4. **Measure and bound it.** A split or a stack reads the container it is given, never the window.
    Every list has a named cap and says how many it left out. Text that can run long truncates or
    wraps as its neighbours do; content of several lines grows rather than shrinking its font.

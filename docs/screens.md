@@ -9,7 +9,7 @@ never cites this file.
 
 ## Rail
 
-App chrome outside the dock, so a layout restore cannot lose it. Top to bottom: the workspace bar
+App chrome outside the dock, so a layout restore cannot lose it, a hairline down its edge. Top to bottom: the workspace bar
 (letter tile, name, switcher, *Hide the rail*); the search over session titles and project names
 (`Ctrl+K` outside a terminal, showing a hidden rail) beside *New* (secondary, the rail's only filled button), which starts in the keyboard's
 project, else the one on screen, its caret picking *Start in* or *With agent*; *Overview*, *Tasks*
@@ -91,8 +91,9 @@ form; both are drawn as `docs/workflows.md` describes.
 
 ## Docks
 
-Bare panels on the dock surface with strips of their own, no library tab bars; the terminal is a
-block held off its neighbours by a gap, drawn no taller than leaves the conversation a readable
+Bare panels on the dock surface with strips of their own, no library tab bars; a hairline runs
+down the Workbench's edge beside the conversation. The terminal is a block edged in a hairline,
+held off its neighbours by a gap, drawn no taller than leaves the conversation a readable
 height (its dragged height kept).
 
 - Strips as tall as the header. The Workbench's: *← Conversation* while it has the area, the modes
