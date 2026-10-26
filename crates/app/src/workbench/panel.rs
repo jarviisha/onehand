@@ -433,7 +433,7 @@ impl Render for Workbench {
         } else {
             body
         };
-        div()
+        let panel = div()
             .size_full()
             .v_flex()
             .relative()
@@ -459,6 +459,7 @@ impl Render for Workbench {
             // is *for*.
             .key_context(showing.key_context)
             .child(strip)
-            .child(body)
+            .child(body);
+        crate::text_drag::region(crate::text_drag::Region::Workbench, panel, cx)
     }
 }

@@ -230,6 +230,8 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
   `config::resolve_monospace`). Never assume a name resolves.
 - **`mx_auto` does nothing in a `gpui::list` row**, which is its own layout root. Centre with
   `h_flex().justify_center()` around a `max_w` child.
+- **Text selection spans the window.** Wrap a region holding selectable text in
+  `text_drag::region`, or a drag crosses into it from its neighbours.
 - **Bare dock panels track their own focus.** Every panel here is a bare `DockItem::Panel`, so
   its `render` must call `track_focus`, or `contains_focused` lies and panel keys hit the wrong
   panel.

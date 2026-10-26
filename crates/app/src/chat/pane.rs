@@ -685,7 +685,7 @@ impl Render for ChatPane {
         let zoom = self.zoom;
         self.track_turn(window, cx);
         let body = self.body(window, cx);
-        div()
+        let pane = div()
             .size_full()
             .track_focus(&self.focus_handle)
             .key_context("Chat")
@@ -748,7 +748,8 @@ impl Render for ChatPane {
                     }
                 },
             ))
-            .child(zoom.scale(body))
+            .child(zoom.scale(body));
+        crate::text_drag::region(crate::text_drag::Region::Conversation, pane, cx)
     }
 }
 

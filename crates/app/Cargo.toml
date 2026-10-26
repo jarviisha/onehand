@@ -58,10 +58,9 @@ gpui-component = { git = "https://github.com/longbridge/gpui-component", rev = "
     "tree-sitter-html",
 ] }
 gpui-component-assets = { git = "https://github.com/longbridge/gpui-component", rev = "9e3a29dcbdebc318632bf68203f26c33e9f0e902" }
-# The layer under gpui-component, named here for exactly one thing: a resize
-# handle is painted by *that* layer rather than by the component library, so the
-# colour it draws itself in lives on a theme global gpui-component re-exports no
-# route to. Same git source and the same rev, so this is the crate already in
+# The layer under gpui-component, named here for two things it re-exports no
+# route to: the theme global a resize handle (painted by *that* layer) takes its
+# colour from, and the text-selection scope that keeps a drag in its region. Same git source and the same rev, so this is the crate already in
 # the graph rather than a second copy of it — moving one rev means moving both.
 gpui-base = { git = "https://github.com/longbridge/gpui-component", rev = "9e3a29dcbdebc318632bf68203f26c33e9f0e902" }
 
