@@ -31,7 +31,7 @@ pub use onehand_core::worktree::removal::Process;
 pub use prose::{no_code_label, unedged_code};
 pub use resize::{edge_handle, h_resizable, v_resizable};
 pub use row_actions::{HoverSlot, hover_slot};
-pub use strip::{strip, strip_control};
+pub use strip::{strip, strip_control, workbench_strip};
 pub use tabs::{
     Measured, TAB_MAX_W, TabStrip, measure_width, tab_chip, tab_close, tab_menu_rows, tab_select,
     tab_strip, unmeasured,
@@ -429,17 +429,23 @@ pub fn mark_slot(mark: impl IntoElement) -> Div {
         .child(mark)
 }
 
-/// An issue's label as a badge, on a tint of its kind's hue with that hue's
-/// ink: a label that asks for something is blue, an enhancement green, one
-/// about the code's structure violet, one about the documents yellow, an
-/// agent's report cyan; one that only files the issue stays neutral. Every
-/// list of issues draws its labels through this, so a label reads one way
-/// wherever it is.
+/// An issue's label as a badge, in its [`label_tint`]. Every badge of a label
+/// is drawn through this, so a label reads one way wherever it is.
 pub fn label_badge(label: impl Into<SharedString>, cx: &App) -> gpui_component::tag::Tag {
-    use onehand_core::issues::LabelKind;
     let label = label.into();
+    let kind = label_tint(&label, cx);
+    badge(label, kind).flex_none()
+}
+
+/// The tint of an issue's label by its kind: a label that asks for something
+/// is blue, an enhancement green, one about the code's structure violet, one
+/// about the documents yellow, an agent's report cyan; one that only files the
+/// issue stays neutral. A badge takes the whole tint; a label written inside a
+/// line of meta text takes only its ink, so both read the kind in one hue.
+pub fn label_tint(label: &str, cx: &App) -> Tint {
+    use onehand_core::issues::LabelKind;
     let theme = cx.theme();
-    let kind = match LabelKind::of(&label) {
+    match LabelKind::of(label) {
         LabelKind::Category => Tint {
             fill: theme.secondary,
             ink: theme.secondary_foreground,
@@ -449,8 +455,7 @@ pub fn label_badge(label: impl Into<SharedString>, cx: &App) -> gpui_component::
         LabelKind::Structure => tint(theme.magenta, cx),
         LabelKind::Docs => tint(theme.yellow, cx),
         LabelKind::Report => tint(theme.cyan, cx),
-    };
-    badge(label, kind).flex_none()
+    }
 }
 
 /// A small label on a fill, the shape every badge takes: the library's `Tag`
@@ -742,8 +747,9 @@ pub fn fold_toggle(id: impl Into<ElementId>, label: impl Into<SharedString>, ope
 }
 
 /// A tree's row, as Files and Markdown draw theirs: a list row at
-/// [`tokens::ROW_H`] a pitch, its fill [`tokens::ROW_GUTTER`] off both of the
-/// dock's edges and off the rows above and below, so a hovered fill never
+/// [`tokens::TREE_ROW_H`] a pitch, its fill [`tokens::ROW_GUTTER`] off both of
+/// the dock's side edges and [`tokens::TREE_ROW_ABOVE`] and
+/// [`tokens::TREE_ROW_BELOW`] off the rows around it, so a hovered fill never
 /// touches the picked one beside it; its content inset [`tokens::ROW_INSET`] and stepped in
 /// [`tokens::TREE_INDENT`] per level, the picked row on the selected fill.
 /// It stretches itself across the tree's column, less the gutter, rather than
@@ -763,9 +769,10 @@ pub fn tree_row(
         .gap_2()
         .self_stretch()
         .mx(tokens::ROW_GUTTER)
-        .my(gpui::rems(tokens::ROW_GUTTER.0 / 2.))
-        .min_h(gpui::rems(tokens::ROW_H.0 - tokens::ROW_GUTTER.0))
-        .h(gpui::rems(tokens::ROW_H.0 - tokens::ROW_GUTTER.0))
+        .mt(tokens::TREE_ROW_ABOVE)
+        .mb(tokens::TREE_ROW_BELOW)
+        .min_h(tokens::TREE_ROW_FILL)
+        .h(tokens::TREE_ROW_FILL)
         .text_size(crate::tokens::CHROME_TEXT)
         .pl(gpui::rems(
             tokens::ROW_INSET.0 - tokens::ROW_GUTTER.0 + depth as f32 * tokens::TREE_INDENT.0,

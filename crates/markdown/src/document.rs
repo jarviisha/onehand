@@ -304,7 +304,10 @@ pub(crate) fn reader(
         .h_full()
         .v_flex()
         .child(
-            onehand_ui::strip(cx)
+            onehand_ui::workbench_strip(cx)
+                // Where the reader's head ends and the document begins.
+                .border_b_1()
+                .border_color(cx.theme().border)
                 .child(lead)
                 // What the strip names: the document, in full ink.
                 .child(

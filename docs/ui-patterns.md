@@ -56,12 +56,12 @@ and a word.
 | Compact metadata or a tightly coupled mark and label | `gap_1` |
 | Icon and label in a row the app draws; adjacent controls; parts within a box | `gap_2` |
 | Row inset | `px_2` |
-| Strip inset; box padding | `px_3`; `p_3` |
+| Strip inset; box padding | `px_3`, inside the Workbench `tokens::ROW_INSET`; `p_3` |
 | A box whose body scrolls inside it (a pinned card) | `p_4`, a step more so the scrollbar's thumb has room beside the text |
 | Form fields | `gap_4` |
 | Page sections; page outer padding | `gap_6`; `px_8` `py_6` |
 | A list page's inset | `px_6` |
-| A tree row's inset; its fill off the dock's edges and its neighbours; its step per level | `tokens::ROW_INSET`; `tokens::ROW_GUTTER`; `tokens::TREE_INDENT` |
+| A tree row's inset; its fill off the dock's sides; its pitch, fill and room around the fill; its step per level | `tokens::ROW_INSET`; `tokens::ROW_GUTTER`; `tokens::TREE_ROW_H`, `TREE_ROW_FILL`, `TREE_ROW_ABOVE`/`BELOW`; `tokens::TREE_INDENT` |
 | A live grid (the terminal, Neovim) | `px_3` `py_2` |
 | Text beside the library's scrollbar | `tokens::SCROLLBAR_W` on the scrolling side, so the thumb never lies over words |
 
@@ -98,7 +98,8 @@ size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in ea
 | An icon leading a label the app draws: a row, a menu item | Icon | `.small()` |
 | A state's mark leading a row's label (a session's) | Icon | `.xsmall()`, a step under the label |
 | A mark inside a line of meta text | Icon | `.xsmall()` |
-| A badge | Tag | `.small()`, at its own height |
+| A badge: a tag standing on its own (a state, a count, *Default*) | Tag | `.small()`, at its own height |
+| A label inside a line of meta text (an issue row's) | text | its kind's ink (`label_tint`), the one part of the line that truncates; the row's quieter ink on the selected fill |
 | A checkbox, a switch | Checkbox, Switch | `.small()` beside chrome text, at the library's own geometry |
 | A single-line row; a row with a second line | drawn by the app | `ROW_H`; at least `ROW_H` |
 | A strip along the top of a region | `strip` (`onehand_ui`) | `BAR_H` |
@@ -147,6 +148,14 @@ Keep identity at the leading edge and actions at the trailing edge in every equi
 shows a region the strip's own panel hid may lead (the way back to the rail, a list's toggle).
 Filters belong below the region header with the content they filter. Reserve the action group's
 width while labels truncate; showing hover actions must not move the text beside them.
+
+Inside the Workbench a bar is a `workbench_strip`: padded `tokens::ROW_INSET` rather than `px_3`,
+so its words and the tree rows' names read down one edge. Each Workbench region draws one
+hairline (`border`) where its head ends and its content begins: under the Workbench's own strip,
+under a mode's head (the editor's tabs, the reader's bar, an issue's trail). Two bars stacked with
+no content between them are a stack to merge; until they are, only the lower bar draws the line
+over the content. The conversation's header and the terminal's strip draw no line and keep
+`px_3`.
 
 ### Cuts
 

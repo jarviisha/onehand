@@ -88,6 +88,11 @@ minor bump may break any of them.
   right-click *Paste* included. Shortcuts no longer lists *Paste text / attach image or file*:
   the composer takes the field's own `Ctrl+V`, and a key saved for it under `[keymap]` is dropped.
 - A line runs under the Workbench's strip, parting its modes from the strip a mode opens on.
+- The Workbench is lighter: Files and Markdown rows stand at a 24px pitch with the name centred,
+  rows and the Workbench's bars sit further in from the dock's edges, a line parts each region's
+  head from its content, an issue row writes its label in the label's ink instead of a badge (a
+  long label now shortens instead of running out of the row), and the editor's line numbers rest
+  in the muted ink.
 - A line runs down the rail's edge and the Workbench's, and the terminal's block is edged in one.
 
 ### Fixed

@@ -257,7 +257,10 @@ pub(crate) fn tab_strip<T: 'static>(
         }
     };
 
-    onehand_ui::strip(cx)
+    onehand_ui::workbench_strip(cx)
+        // Where the editor's head ends and the code begins.
+        .border_b_1()
+        .border_color(cx.theme().border)
         .child(lead)
         // The one part of the row that gives way, and the box the tabs are
         // laid out to: `flex_1` + `min_w_0`, so its width is what is left

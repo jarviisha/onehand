@@ -230,7 +230,7 @@ impl IssuesView {
             .gap_2()
             .w_full()
             .flex_none()
-            .px_3()
+            .px(onehand_ui::tokens::ROW_INSET)
             .py_2()
             .border_b_1()
             .border_color(faint_rule(cx))
@@ -302,29 +302,34 @@ impl IssuesView {
         let muted = cx.theme().muted_foreground;
 
         let view = cx.entity();
-        let choices = div().w_full().flex_none().px_3().py_2().child(switch(
-            "issues-showing",
-            &[
-                SharedString::from(format!("Open {open}")),
-                SharedString::from(format!("Closed {closed}")),
-            ],
-            match self.showing {
-                Showing::Open => 0,
-                Showing::Closed => 1,
-            },
-            ControlSize::Short,
-            move |picked, _, cx| {
-                view.update(cx, |view, cx| {
-                    view.showing = if *picked == 0 {
-                        Showing::Open
-                    } else {
-                        Showing::Closed
-                    };
-                    cx.notify();
-                })
-            },
-            cx,
-        ));
+        let choices = div()
+            .w_full()
+            .flex_none()
+            .px(onehand_ui::tokens::ROW_INSET)
+            .py_2()
+            .child(switch(
+                "issues-showing",
+                &[
+                    SharedString::from(format!("Open {open}")),
+                    SharedString::from(format!("Closed {closed}")),
+                ],
+                match self.showing {
+                    Showing::Open => 0,
+                    Showing::Closed => 1,
+                },
+                ControlSize::Short,
+                move |picked, _, cx| {
+                    view.update(cx, |view, cx| {
+                        view.showing = if *picked == 0 {
+                            Showing::Open
+                        } else {
+                            Showing::Closed
+                        };
+                        cx.notify();
+                    })
+                },
+                cx,
+            ));
 
         let cut = rows.len().saturating_sub(LIST_CAP);
         let empty = if issues.listed().is_empty() {
@@ -539,7 +544,7 @@ impl IssuesView {
             .gap_1()
             .w_full()
             .flex_none()
-            .px_3()
+            .px(onehand_ui::tokens::ROW_INSET)
             .py_1()
             .child(status)
             // *Sync now* stays where it is while a sync runs, spinning: a
@@ -617,15 +622,29 @@ impl IssuesView {
             .min_w_0()
             .text_xs()
             .text_color(muted)
-            .child(identity(issue, muted, cx))
+            .child(identity(issue, muted))
+            // The first label in its kind's ink, written rather than framed:
+            // in a line of meta a badge is the heaviest thing on the row. The
+            // one part of the line that gives way, so a long label shortens
+            // and the reference and the time stay whole.
             .when_some(issue.labels.first(), |meta, label| {
-                meta.child("·")
-                    .child(chip(label.clone(), cx))
+                meta.child(div().flex_none().child("·"))
+                    .child(
+                        div()
+                            .min_w_0()
+                            .truncate()
+                            .text_color(label_ink(label, selected, muted, cx))
+                            .child(label.clone()),
+                    )
                     .when(issue.labels.len() > 1, |meta| {
-                        meta.child(format!("+{}", issue.labels.len() - 1))
+                        meta.child(
+                            div()
+                                .flex_none()
+                                .child(format!("+{}", issue.labels.len() - 1)),
+                        )
                     })
             })
-            .child("·")
+            .child(div().flex_none().child("·"))
             .child(
                 div()
                     .flex_none()
@@ -634,11 +653,18 @@ impl IssuesView {
             // An issue waiting on a person is marked in words, in the warning
             // ink: it is the one row nothing will move until somebody opens it.
             .when(conflicted, |meta| {
-                meta.child("·")
-                    .child(div().text_color(status_ink(cx).warning).child("decide"))
+                meta.child(div().flex_none().child("·")).child(
+                    div()
+                        .flex_none()
+                        .text_color(status_ink(cx).warning)
+                        .child("decide"),
+                )
             })
             // One a live session is on, so it is not started a second time.
-            .when(working, |meta| meta.child("·").child("working"));
+            .when(working, |meta| {
+                meta.child(div().flex_none().child("·"))
+                    .child(div().flex_none().child("working"))
+            });
         // A selection is a fill and only a fill, the selected step the ramp
         // holds clear of the hover step: no bar or ring beside it.
         row_surface(selected, cx)
@@ -665,18 +691,29 @@ impl IssuesView {
     }
 }
 
-/// How an issue is named on screen: its forge's reference in `ink`, or a
-/// *Draft* tag for one that has not left onehand. Its number here is a key and
+/// How an issue is named on screen, in `ink`: its forge's reference, or the
+/// word *Draft* for one that has not left onehand. Its number here is a key and
 /// is never shown.
-fn identity(issue: &LocalIssue, ink: gpui::Hsla, cx: &App) -> AnyElement {
-    match issue.reference() {
-        Some(reference) => div()
-            .flex_none()
-            .text_xs()
-            .text_color(ink)
-            .child(reference.to_string())
-            .into_any_element(),
-        None => plain_tag("Draft".to_string(), cx).into_any_element(),
+fn identity(issue: &LocalIssue, ink: gpui::Hsla) -> AnyElement {
+    div()
+        .flex_none()
+        .text_xs()
+        .text_color(ink)
+        .child(match issue.reference() {
+            Some(reference) => reference.to_string(),
+            None => "Draft".to_string(),
+        })
+        .into_any_element()
+}
+
+/// The ink a label is written in inside a row's meta: its kind's, or the row's
+/// quieter ink for a neutral label and on the selected fill, where a hue
+/// picked against the reading surface is not held to that fill.
+fn label_ink(label: &str, selected: bool, muted: gpui::Hsla, cx: &App) -> gpui::Hsla {
+    let neutral = issues::LabelKind::of(label) == issues::LabelKind::Category;
+    match selected || neutral {
+        true => muted,
+        false => onehand_ui::label_tint(label, cx).ink,
     }
 }
 
