@@ -9,9 +9,10 @@
 # Nothing here is cached. A cache is a claim that an input has not changed, and
 # for the one build people actually download that claim is not worth making.
 #
-# There is no crates.io step and there cannot be: `gpui` is a git dependency
-# carrying no rev on purpose, and crates.io refuses a package with a git
-# dependency at all. A tagged tarball is the whole distribution channel.
+# There is no crates.io step: the app's crates depend on each other and on the
+# vendored terminal by path alone, and crates.io refuses a package with a path
+# dependency it cannot resolve. A tagged tarball is the whole distribution
+# channel.
 
 name: Release
 
@@ -101,10 +102,10 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      # `--locked` for the same reason every CI invocation carries it: `gpui` is
-      # a revless git dependency, so the lockfile is the only thing pinning it
-      # and a run that silently re-resolved would not be shipping the build this
-      # tag was tested as.
+      # `--locked` for the same reason every CI invocation carries it: the
+      # lockfile is the only thing pinning what sits under the UI stack, and a
+      # run that silently re-resolved would not be shipping the build this tag
+      # was tested as.
       - name: Build
         run: cargo build --release --locked
 

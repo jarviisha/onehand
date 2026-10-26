@@ -20,8 +20,8 @@ use gpui::{
     IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
     div,
 };
+use gpui_base::dock::{Panel, PanelEvent};
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::dock::{Panel, PanelControl, PanelEvent};
 use gpui_component::{ActiveTheme, IconName, StyledExt};
 use onehand_terminal_ui::{Program, PtyTab, TerminalThemeKey, spawn_pty, terminal_palette};
 use std::collections::HashMap;
@@ -469,26 +469,11 @@ impl TerminalPanel {
     }
 }
 
+/// The behaviour half of the dock's panel trait alone, as the conversation's
+/// is: the strip of shells is this panel's chrome, and the dock draws none.
 impl Panel for TerminalPanel {
     fn panel_name(&self) -> &'static str {
         "Terminal"
-    }
-
-    /// No content-only maximize, because there is no tab bar to put the
-    /// library's button on: this panel is mounted bare, the way the
-    /// conversation is.
-    ///
-    /// The *app* direction is a different question and has an answer — the key,
-    /// and a button in the strip below, which is this panel's own chrome rather
-    /// than a tab bar it does not have. Filling the frame and filling the dock
-    /// area are two controls, and only one of them needs somewhere the library
-    /// will draw it.
-    fn zoomable(&self, _: &App) -> Option<PanelControl> {
-        None
-    }
-
-    fn title(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        SharedString::from("Terminal")
     }
 }
 

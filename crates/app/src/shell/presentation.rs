@@ -107,13 +107,10 @@ impl Shell {
         if avail.0 <= 0. {
             return;
         }
-        let Some(right) = dock.right_dock().cloned() else {
+        let Some(size) = dock.dock_size(DockPlacement::Right) else {
             return;
         };
-        let (size, open) = {
-            let right = right.read(cx);
-            (right.size(), right.is_open())
-        };
+        let open = dock.is_dock_open(DockPlacement::Right);
         // Opened again by any other way in, the Workbench is no longer aside.
         if open {
             self.stepped_aside = false;
@@ -164,7 +161,9 @@ impl Shell {
         if let Presentation::Split(width) = next {
             let width = px(width.0 * rem);
             if size != width {
-                right.update(cx, |right, cx| right.set_size(width, window, cx));
+                self.dock.update(cx, |dock, cx| {
+                    dock.set_dock_size(DockPlacement::Right, width, window, cx)
+                });
             }
             self.workbench_drawn = Some(width);
         }
@@ -183,9 +182,9 @@ impl Shell {
                     workbench.update(cx, |panel, cx| panel.focus_active(window, cx));
                 });
             }
-            let workbench = self.workbench.clone();
+            let workbench = self.workbench.entity_id();
             self.dock.update(cx, |dock, cx| match focus_now {
-                true => dock.set_zoomed_in(workbench, window, cx),
+                true => super::docks::zoom_in(dock, DockPlacement::Right, workbench, window, cx),
                 false => dock.set_zoomed_out(window, cx),
             });
         }
@@ -203,7 +202,7 @@ impl Shell {
     /// dock reports that is not the one this last drew is a drag.
     pub(super) fn apply_terminal_height(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let dock = self.dock.read(cx);
-        let Some(bottom) = dock.bottom_dock().cloned() else {
+        let Some(size) = dock.dock_size(DockPlacement::Bottom) else {
             // Unmounted: the next mount starts from the height wanted.
             self.terminal_drawn = None;
             return;
@@ -214,7 +213,6 @@ impl Shell {
         if area.0 <= 0. || self.app_maximized.is_some() {
             return;
         }
-        let size = bottom.read(cx).size();
         // A drag past the conversation's minimum is drawn at the most the
         // rule allows, and kept as that, so the height wanted is one the
         // person saw.
@@ -227,7 +225,9 @@ impl Shell {
         let wanted = rems(self.window.workspace.layout.terminal_h / rem);
         let height = px(terminal_height(wanted, area).0 * rem);
         if size != height {
-            bottom.update(cx, |bottom, cx| bottom.set_size(height, window, cx));
+            self.dock.update(cx, |dock, cx| {
+                dock.set_dock_size(DockPlacement::Bottom, height, window, cx)
+            });
         }
         self.terminal_drawn = Some(height);
     }

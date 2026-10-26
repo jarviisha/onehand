@@ -132,7 +132,7 @@ fn sample_frames(handle: gpui::AnyWindowHandle, cx: &mut App) {
                             if let gpui::profiler::FrameEvent::Present(present) = event
                                 && present.window_id == handle.window_id()
                             {
-                                gpui_terminal::profiling::presented(present.presented_at.elapsed());
+                                gpui_terminal::profiling::presented(present.present_end.elapsed());
                             }
                         }
                     }

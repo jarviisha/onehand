@@ -17,7 +17,7 @@ use gpui::{
     App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement,
     IntoElement, ParentElement, Rems, Render, SharedString, Styled, Window, div, rems,
 };
-use gpui_component::dock::{Panel, PanelControl, PanelEvent};
+use gpui_base::dock::{Panel, PanelEvent};
 use gpui_component::input::InputEvent;
 use onehand_core::chat::Link;
 use std::collections::HashMap;
@@ -626,33 +626,15 @@ impl ChatPane {
     }
 }
 
+/// Only the behaviour half of the dock's panel trait: the dock here draws no
+/// tab bar, so the title, toolbar and menu the presentation half supplies
+/// would have nowhere to go. The conversation's name is the header's to say.
+///
+/// Left zoomable, as the trait has it: maximizing a panel is the dock zooming
+/// its group, and a group refuses a panel that says no.
 impl Panel for ChatPane {
     fn panel_name(&self) -> &'static str {
         "AgentPane"
-    }
-
-    /// Not zoomable, because the dock's zoom is a button on a tab bar this
-    /// panel no longer has.
-    ///
-    /// Little is lost: the dock zoom fills the frame *right of the rail*, and
-    /// the conversation is already the whole of that whenever both docks are
-    /// closed -- which is how the window opens. What it was actually for,
-    /// putting the docks away for a moment, is what the docks' own toggles do,
-    /// and the app-wide direction still has `Ctrl+Shift+K`.
-    fn zoomable(&self, _: &App) -> Option<PanelControl> {
-        None
-    }
-
-    /// The panel's name to the dock, which no longer draws it.
-    ///
-    /// Kept because the trait needs an answer and because the dock uses it for
-    /// drag payloads and menus; the title the user reads is the header's.
-    fn title(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        SharedString::from(
-            self.active_chat(cx)
-                .and_then(|chat| chat.conversation_title())
-                .unwrap_or_else(|| "Agent".to_string()),
-        )
     }
 }
 

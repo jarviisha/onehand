@@ -1,10 +1,10 @@
 //! The window's asset source: onehand's own icons layered over the ones
-//! gpui-component bundles.
+//! gpui-component's default bundle (`gpui-kit-assets`) carries.
 //!
-//! Both halves are needed. gpui-component's components reference `IconName` --
-//! and therefore `icons/…` -- in ~97 places internally (`select`'s chevron,
-//! `dock/tab_panel`'s ellipsis and panel toggles, dialog's close), so dropping
-//! the bundled set renders that chrome blank. onehand's own set is served under
+//! Both halves are needed. The library's components reference `IconName` --
+//! and therefore `icons/…` -- in over a hundred places internally (`select`'s
+//! chevron, a dialog's close, a toast's dismiss), so dropping the bundled set
+//! renders that chrome blank. onehand's own set is served under
 //! `onehand/icons/` so the two namespaces cannot collide even where they hold
 //! the same Lucide glyph.
 
@@ -18,11 +18,11 @@ impl AssetSource for Assets {
         if let Some(bytes) = crate::icons::embedded(path) {
             return Ok(Some(Cow::Borrowed(bytes)));
         }
-        gpui_component_assets::Assets.load(path)
+        gpui_kit_assets::Assets.load(path)
     }
 
     fn list(&self, path: &str) -> Result<Vec<SharedString>> {
-        let mut paths = gpui_component_assets::Assets.list(path)?;
+        let mut paths = gpui_kit_assets::Assets.list(path)?;
         paths.extend(
             crate::icons::all_paths()
                 .into_iter()

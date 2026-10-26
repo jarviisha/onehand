@@ -12,7 +12,7 @@ use gpui::{
     px,
 };
 use gpui_component::{
-    ActiveTheme as _, ResizableState, Root, StyledExt, h_resizable, resizable_panel,
+    ActiveTheme as _, ResizableState, StyledExt, WindowExt as _, h_resizable, resizable_panel,
 };
 use onehand_core::config::PanelLayout;
 
@@ -210,15 +210,11 @@ impl Render for Shell {
             ))
             .child(body);
 
-        // `Root` stores dialogs, sheets and notifications; it does not draw
-        // them. Its own `render` puts up the view, the tooltip overlay and the
-        // native-menu overlay and stops -- every layer below is the app's to
-        // mount, and until this existed `Dialog::trigger` opened a dialog into
-        // a list nobody read, so every dialog did nothing when clicked.
-        let sheet_layer = Root::render_sheet_layer(window, cx);
-        let dialog_layer = Root::render_dialog_layer(window, cx);
-        let notification_layer = Root::render_notification_layer(window, cx);
-        let layered = self.dialog_up() || sheet_layer.is_some() || dialog_layer.is_some();
+        // The library's own sheet, dialog and toast layers are mounted by
+        // `Root` itself, beside this view rather than inside it; all the shell
+        // needs is whether one of them is up.
+        let layered =
+            self.dialog_up() || window.has_active_sheet(cx) || window.has_active_dialog(cx);
         let tooltip_guard = crate::controls::tooltip_guard(layered, window, cx);
 
         div()
@@ -281,9 +277,6 @@ impl Render for Shell {
                     .is_some()
                     .then(|| crate::dialogs::run_workflow(self, window, cx)),
             )
-            .children(sheet_layer)
-            .children(dialog_layer)
-            .children(notification_layer)
     }
 }
 

@@ -18,12 +18,11 @@ description = "Terminal emulator component for gpui (vendored)"
 profiling = []
 
 [dependencies]
-# onehand patch: upstream takes `gpui` from crates.io. gpui-component takes it
-# from the Zed git repo *without* a rev, and cargo keys a git source by URL plus
-# rev -- so naming a rev here, or leaving this on crates.io, produces a second
-# `gpui` in the graph and "expected gpui::App, found App". Revless git is what
-# unifies them; Cargo.lock is the pin.
-gpui = { git = "https://github.com/zed-industries/zed" }
+# onehand patch: upstream takes `gpui` from crates.io. gpui-component takes the
+# `gpui-pre` snapshot at an exact version, and any other gpui here would be a
+# second one in the graph ("expected gpui::App, found App"), so this takes the
+# workspace's, which is gpui-component's.
+gpui.workspace = true
 alacritty_terminal = "0.25.1"
 portable-pty = "0.9"
 ropey = "1"

@@ -358,7 +358,7 @@ pub(super) fn apply_appearance(choice: Appearance, window: Option<&mut Window>, 
     // Base layer's copy of the theme from scratch, so anything written onto it
     // beforehand is thrown away. This is the single place a mode is applied, at
     // boot and on every change, which is what keeps one write enough.
-    gpui_base::Theme::global_mut(cx).resizable.handle = gpui::transparent_black();
+    gpui_base::Theme::global_mut(cx).resizable.handle = Some(gpui::transparent_black());
     // The code editor paints its line numbers on an opaque gutter, in the
     // field's own background when the syntax theme names none: the reading
     // surface, a dark band down a dock that is a step lighter. The only editor
@@ -366,7 +366,7 @@ pub(super) fn apply_appearance(choice: Appearance, window: Option<&mut Window>, 
     // surface. Written here for the reason the handle is.
     let theme = gpui_component::Theme::global_mut(cx);
     let mut highlight = (*theme.highlight_theme).clone();
-    highlight.style.editor_gutter_background = Some(theme.tiles);
+    highlight.style.editor_gutter_background = Some(theme.sidebar);
     theme.highlight_theme = std::sync::Arc::new(highlight);
     cx.refresh_windows();
 }

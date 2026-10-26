@@ -20,10 +20,10 @@
 
 use gpui::{
     App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement,
-    IntoElement, ParentElement, Pixels, Render, SharedString, Styled, Window, div,
+    IntoElement, ParentElement, Pixels, Render, Styled, Window, div,
 };
+use gpui_base::dock::{Panel, PanelEvent};
 use gpui_component::StyledExt;
-use gpui_component::dock::{Panel, PanelControl, PanelEvent};
 use onehand_core::gitstat::GitStatus;
 use onehand_workbench::{Ask, ModeId, Request, WorkbenchMode, WorkbenchModeSpec};
 use std::collections::HashMap;
@@ -362,24 +362,11 @@ impl Workbench {
     }
 }
 
+/// The behaviour half of the dock's panel trait alone, as the conversation's
+/// is: the mode strip is this panel's chrome, and the dock draws none.
 impl Panel for Workbench {
     fn panel_name(&self) -> &'static str {
         "Workbench"
-    }
-
-    /// No library maximize, because there is no tab bar to put it on: this
-    /// panel is mounted bare, the way the conversation and the terminal are.
-    ///
-    /// The tab group it used to keep drew a title bar over the mode strip --
-    /// one tab reading "Workbench" directly above four tabs naming the modes,
-    /// with the panel's controls stranded on the row that said the least. The
-    /// strip below is this panel's own chrome and is where they go.
-    fn zoomable(&self, _: &App) -> Option<PanelControl> {
-        None
-    }
-
-    fn title(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        SharedString::from("Workbench")
     }
 }
 

@@ -201,9 +201,9 @@ pub fn field(
 
 /// The surface a dock draws on: the palette's panel step, one off the reading
 /// surface the conversation sits on, so a dock reads as a surface of its own
-/// beside the conversation rather than as a card inset in it. The app
-/// writes that step into the theme slot read here, with its contrast tested
-/// beside the rest of its ramp.
+/// beside the conversation rather than as a card inset in it. The rail stands
+/// on the same step, so the app writes it into the sidebar slot read here,
+/// with its contrast tested beside the rest of its ramp.
 ///
 /// Here rather than in the app for the reason [`action`] is: the Neovim mode
 /// draws a terminal grid and has to hand it the surface it is sitting on, and
@@ -212,7 +212,7 @@ pub fn field(
 /// second copy of this answer is visible as a rectangle of the wrong shade
 /// behind a running program.
 pub fn dock_surface(cx: &App) -> Hsla {
-    cx.theme().tiles
+    cx.theme().sidebar
 }
 
 /// Status colours used as ink on the app's normal surfaces.

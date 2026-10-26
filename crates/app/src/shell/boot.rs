@@ -7,7 +7,7 @@ use crate::state::{OpenWindow, Shared, WorkspaceWindow};
 use crate::terminal::TerminalPanel;
 use crate::workbench::Workbench;
 use gpui::{App, AppContext, BorrowAppContext, Context, Focusable as _, Window, px};
-use gpui_component::dock::{DockArea, DockEvent, DockItem};
+use gpui_component::dock::{DockArea, DockEvent, DockLayout, DockPlacement};
 use gpui_component::input::{InputEvent, InputState};
 use gpui_component::{ResizableState, Root, WindowExt as _};
 use onehand_core::config::WorkspaceConfig;
@@ -17,10 +17,6 @@ use std::collections::HashMap;
 
 impl Shell {
     pub fn new(workspace: Workspace, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        // No panel style is set, because none of the three docks is a tab group
-        // -- each is a bare `DockItem::panel` drawing its own chrome, so the
-        // library's tab bar is never built and the style that would shape it is
-        // never read.
         let dock = cx.new(|cx| DockArea::new("onehand", Some(1), window, cx));
         let chat = ChatPane::new(window, cx);
         // One ear for the Issues views, the tab's and the page's: both speak
@@ -102,37 +98,31 @@ impl Shell {
         // root that is about to be on screen and no other.
         let seed_root = workspace.active_root().map(|root| root.path.clone());
         dock.update(cx, |area, cx| {
-            // Bare panels, not tab groups. `DockItem::tab` wraps its panel in a
-            // `TabPanel`, whose title bar draws a tab carrying the panel's
-            // title -- which for the conversation is the conversation's own
-            // name, printed a second time directly above the header that says
-            // it, and for the Workbench is the word "Workbench" printed over
-            // the strip naming its four modes. One tab that can never have a
-            // sibling is not a tab; it is a duplicate title with a chevron's
-            // worth of chrome around it.
-            //
-            // What those title bars were also carrying moves into each panel's
-            // own chrome, which is where the rest of its controls already live
-            // -- `ChatPane::header` and the Workbench's mode strip.
-            let center = DockItem::panel(std::sync::Arc::new(chat.clone()));
-            let workbench = DockItem::panel(std::sync::Arc::new(workbench.clone()));
-
-            area.set_center(center, window, cx);
-            area.set_right_dock(
-                workbench,
-                Some(px(saved.workbench_w)),
-                saved.workbench_open,
+            // Each region is a group of one panel, and the area draws no tab
+            // bar over any of them (see `crate::shell::dock_skin`): a single
+            // tab that can never have a sibling is not a tab but a duplicate
+            // title -- the conversation's name printed again above the header
+            // that says it, the word "Workbench" over the strip naming its
+            // modes. Each panel's own chrome carries its controls instead.
+            area.set_center(DockLayout::tabs().panel(chat.clone()), window, cx);
+            area.set_dock(
+                DockPlacement::Right,
+                DockLayout::tabs().panel(workbench.clone()),
                 window,
                 cx,
             );
+            area.set_dock_size(DockPlacement::Right, px(saved.workbench_w), window, cx);
+            // A new dock starts open.
+            if !saved.workbench_open {
+                area.toggle_dock(DockPlacement::Right, window, cx);
+            }
         });
         // The bottom dock is mounted only while the terminal is showing, so
         // there is nothing to set up here when it is not -- see
         // [`Shell::set_terminal_visible`].
         if saved.terminal_open {
-            let item = DockItem::panel(std::sync::Arc::new(terminal.clone()));
             dock.update(cx, |area, cx| {
-                area.set_bottom_dock(item, Some(px(saved.terminal_h)), true, window, cx);
+                super::docks::mount_terminal(area, &terminal, px(saved.terminal_h), window, cx);
             });
         }
 
