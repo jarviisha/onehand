@@ -96,10 +96,11 @@ down the Workbench's edge beside the conversation. The terminal is a block edged
 held off its neighbours by a gap, drawn no taller than leaves the conversation a readable
 height (its dragged height kept).
 
-- Strips as tall as the header. The Workbench's: *← Conversation* while it has the area, the modes
+- Strips as tall as the header, a mode's own bar under the Workbench's a step lower. The Workbench's: *← Conversation* while it has the area, the modes
   (Editor, Markdown, Issues, Plugins, Neovim; a select when narrow), maximize, hide. The terminal's:
-  shell tabs (each capped in width, scrolling, so none is left out), `+`, maximize, hide. Crowded
-  file tabs: a select.
+  shell tabs (each capped in width, scrolling, so none is left out), `+`, maximize, hide. File
+  tabs never shrink: the newest that fit stay, the current one among them, and the older ones
+  go into an *N more* menu after them.
 - A list beside its detail (files, documents, issues) only while the dock holds both; else one at a
   time, the detail under a link back naming the list. Picking shows it; going back keeps it. Files
   and Markdown draw one tree row (`tree_row`); the file or document open beside the tree is its

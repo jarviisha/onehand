@@ -44,8 +44,10 @@ pub(crate) struct EditorView {
     /// A file being read to open it, which the body says until it lands.
     opening: Option<PathBuf>,
     /// The width the strip leaves its tabs, in rems, as last laid out.
-    /// Infinite until measured, so the first frame draws tabs, not a select.
+    /// Infinite until measured, so the first frame draws every tab.
     tabs_w: onehand_ui::Measured,
+    /// Each tab's width as last drawn, so the strip knows how many fit.
+    tab_widths: onehand_ui::TabWidths,
     /// Whether the file tree beside the buffers is showing.
     ///
     /// Held here rather than on the split that draws the tree, because the
@@ -74,6 +76,7 @@ impl EditorView {
             saving: HashMap::new(),
             opening: None,
             tabs_w: onehand_ui::unmeasured(),
+            tab_widths: Default::default(),
             tree_shown: true,
             detail: false,
             alone: false,
@@ -535,7 +538,7 @@ impl Render for EditorView {
         let strip = tab_strip(
             root,
             buffers,
-            &self.tabs_w,
+            (&self.tabs_w, &self.tab_widths),
             cx.entity().downgrade(),
             match self.alone {
                 true => Lead::Back,

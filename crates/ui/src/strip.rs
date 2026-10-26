@@ -1,9 +1,10 @@
 //! The bar along the top of a region, and the control it carries.
 //!
-//! Every strip is one shape, so the conversation's header, the docks' strips
-//! and the bars inside a mode line up across a seam and read as one kind of
-//! thing: as tall as the header, its words at the chrome size, what it names
-//! at the start and its controls at the end.
+//! Every strip is one shape, so the conversation's header and the docks'
+//! strips line up across a seam and read as one kind of thing: as tall as the
+//! header, its words at the chrome size, what it names at the start and its
+//! controls at the end. A mode's own bar, under the Workbench's strip, is the
+//! one a step lower, so the two stacked do not read as the panel's twice.
 
 use crate::Quiet as _;
 use gpui::{App, Div, ElementId, Styled as _, div};
@@ -34,6 +35,12 @@ pub fn strip(cx: &App) -> Div {
 /// keep the plain one.
 pub fn workbench_strip(cx: &App) -> Div {
     strip(cx).px(crate::tokens::ROW_INSET)
+}
+
+/// A mode's own bar under the Workbench's strip: a [`workbench_strip`]
+/// [`crate::tokens::MODE_BAR_H`] tall.
+pub fn mode_strip(cx: &App) -> Div {
+    workbench_strip(cx).h(crate::tokens::MODE_BAR_H)
 }
 
 /// A strip's control: an icon with no words, a quiet ghost at a strip's size,

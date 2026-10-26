@@ -168,6 +168,7 @@ All in `onehand_ui::tokens` (`crates/ui/src/tokens.rs`), which the app names
 | Token | Value | What |
 |---|---|---|
 | `BAR_H` | 2.75rem | every strip along the top of a region |
+| `MODE_BAR_H` | 2rem | a mode's own bar under the Workbench's strip (the editor's tabs, the reader's bar) |
 | `ROW_H` | 1.875rem | a list row (the rail, the composer's popup) |
 | `TREE_ROW_H` | 1.5rem | a Workbench tree's row pitch (Files, Markdown) |
 | `TREE_ROW_FILL` | 1.3125rem | a tree row's fill: 21px, odd so the name centres on a whole pixel |

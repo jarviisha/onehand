@@ -111,6 +111,7 @@ size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in ea
 | A checkbox, a switch | Checkbox, Switch | `.small()` beside chrome text, at the library's own geometry |
 | A single-line row; a row with a second line | drawn by the app | `ROW_H`; at least `ROW_H` |
 | A strip along the top of a region | `strip` (`onehand_ui`) | `BAR_H` |
+| A mode's own bar under the Workbench's strip | `mode_strip` | `MODE_BAR_H` |
 
 - **`.tall()` is the ceiling.** No control stands taller than `FIELD_H`; a page gives a field
   room by its size, never by a larger control.
@@ -160,9 +161,10 @@ width while labels truncate; showing hover actions must not move the text beside
 Inside the Workbench a bar is a `workbench_strip`: padded `tokens::ROW_INSET` rather than `px_3`,
 so its words and the tree rows' names read down one edge. Each Workbench region draws one
 hairline (`border`) where its head ends and its content begins: under the Workbench's own strip,
-under a mode's head (the editor's tabs, the reader's bar, an issue's trail). Two bars stacked with
-no content between them are a stack to merge; until they are, only the lower bar draws the line
-over the content. The conversation's header and the terminal's strip draw no line and keep
+under a mode's head (the editor's tabs, the reader's bar, an issue's trail). A mode's own bar
+under the Workbench's strip is a `mode_strip`, `tokens::MODE_BAR_H` tall, a step under the strip
+over it so it reads as the mode's; where two bars stack, only the lower one draws the line over
+the content. The conversation's header and the terminal's strip draw no line and keep
 `px_3`.
 
 ### Cuts
