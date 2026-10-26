@@ -1,5 +1,6 @@
 use super::popup::{edge_scrolled, more_text, popup_header, popup_surface};
 use super::{Composer, ComposerEvent, Overlay};
+use crate::controls::Named as _;
 use crate::controls::Quiet as _;
 use crate::controls::Short as _;
 use crate::tokens::ROW_H;
@@ -248,7 +249,7 @@ impl Composer {
                             .secondary()
                             .xsmall()
                             .icon(Icon::new(IconName::Close))
-                            .tooltip("Remove this attachment")
+                            .named("Remove this attachment")
                             .on_click(cx.listener(move |composer: &mut Self, _, _, cx| {
                                 cx.stop_propagation();
                                 composer.unstage(id, cx);
@@ -387,7 +388,7 @@ impl Composer {
                             .quiet_icon(false, cx)
                             .small()
                             .icon(Icon::new(IconName::Close))
-                            .tooltip("Remove this attachment")
+                            .named("Remove this attachment")
                             .on_click(cx.listener(move |composer: &mut Self, _, _, cx| {
                                 cx.stop_propagation();
                                 composer.unstage(id, cx);

@@ -10,6 +10,7 @@ use gpui::{
 use gpui_component::menu::{PopupMenu, PopupMenuItem};
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Disableable as _, Icon, IconName, Sizable as _, StyledExt};
+use onehand_ui::Named as _;
 use onehand_ui::Quiet as _;
 use onehand_ui::Short as _;
 use onehand_ui::{Refuses as _, action, menu_below, menu_item, menu_row, status_ink};
@@ -67,7 +68,7 @@ impl PluginsView {
         .quiet_icon(false, cx)
         .small()
         .icon(Icon::new(IconName::Ellipsis))
-        .tooltip("Where it is on, and removing it")
+        .named("Where it is on, and removing it")
         .refuses(busy.then_some(ONE_AT_A_TIME));
         let menu = self.row_menu(plugin, trigger, cx);
 
@@ -553,7 +554,7 @@ impl PluginsView {
         .small()
         .quiet_icon(false, cx)
         .icon(Icon::new(IconName::ChevronDown))
-        .tooltip("Install for…")
+        .named("Install for…")
         .refuses(busy.then_some(ONE_AT_A_TIME));
         let (id, view) = (plugin.id.clone(), cx.entity());
         let menu = menu_below(

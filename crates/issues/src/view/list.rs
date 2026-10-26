@@ -14,6 +14,7 @@ use gpui_component::tag::Tag;
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::issues::{self, Issues, LocalIssue};
+use onehand_ui::Named as _;
 use onehand_ui::Quiet as _;
 use onehand_ui::Short as _;
 use onehand_ui::search_input;
@@ -269,7 +270,7 @@ impl IssuesView {
                             .when(!drafting, |button| button.primary())
                             .small()
                             .icon(Icon::new(IconName::Plus))
-                            .tooltip("New issue")
+                            .named("New issue")
                             .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
                                 view.open_form(None, window, cx)
                             })),
@@ -558,7 +559,7 @@ impl IssuesView {
                             .quiet_icon(false, cx)
                             .icon(Icon::new(IconName::Redo))
                             .loading(syncing)
-                            .tooltip("Sync now")
+                            .named("Sync now")
                     }
                     .on_click(cx.listener(|view, _: &ClickEvent, _, cx| view.sync(true, cx))),
                 )
@@ -568,7 +569,7 @@ impl IssuesView {
                     .small()
                     .quiet_icon(false, cx)
                     .icon(Icon::new(IconName::Pause))
-                    .tooltip("Pause auto-sync; links to issues are kept")
+                    .named("Pause auto-sync; links to issues are kept")
                     .on_click(
                         cx.listener(|view, _: &ClickEvent, _, cx| view.set_syncing(false, cx)),
                     )
@@ -577,7 +578,7 @@ impl IssuesView {
                     .small()
                     .quiet_icon(false, cx)
                     .icon(Icon::new(IconName::Play))
-                    .tooltip(if paused {
+                    .named(if paused {
                         format!("Resume auto-sync with {name}")
                     } else {
                         format!(

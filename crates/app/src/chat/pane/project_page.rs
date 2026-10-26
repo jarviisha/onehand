@@ -2,6 +2,7 @@ use super::header::Archives;
 use super::page_parts::{page_card, page_head, ruled};
 use super::{ChatPane, ChatPaneEvent, ProjectFacts, rel_time};
 use crate::chat::conversation::Conversation;
+use crate::controls::Named as _;
 use crate::controls::Quiet as _;
 use crate::controls::Short as _;
 use crate::controls::text_input;
@@ -650,7 +651,7 @@ fn new_session(cx: &mut Context<ChatPane>) -> gpui::AnyElement {
         crate::controls::action("project-new-session-agent")
             .primary()
             .tall()
-            .tooltip("Start a session with another agent"),
+            .named("Start a session with another agent"),
         cx.theme().background,
         gpui::Anchor::TopRight,
         move |mut menu, _, _| {

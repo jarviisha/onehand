@@ -6,6 +6,7 @@ use gpui::{
     App, AppContext as _, Context, Entity, IntoElement, ParentElement, Render, Styled, Window, div,
 };
 use gpui_component::{ActiveTheme, IconName, StyledExt, resizable_panel};
+use onehand_ui::Named as _;
 use onehand_ui::h_resizable;
 use onehand_ui::{
     ListWidths, back_link, hint, list_detail, measure_width, status_ink, status_line,
@@ -421,7 +422,7 @@ impl MarkdownView {
                 false,
                 cx,
             )
-            .tooltip(match self.list_shown {
+            .named(match self.list_shown {
                 true => "Hide the document list",
                 false => "Show the document list",
             })

@@ -13,6 +13,7 @@
 //! PTY/grid ownership is shared with the Neovim crate through
 //! `onehand-terminal-ui`.
 
+use crate::controls::Named as _;
 use crate::controls::Short as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -660,7 +661,7 @@ impl TerminalPanel {
                     // to be pressed.
                     .child(
                         onehand_ui::strip_control("add-shell", IconName::Plus, false, cx)
-                            .tooltip("New shell in this project")
+                            .named("New shell in this project")
                             .on_click(cx.listener(|panel: &mut Self, _, window, cx| {
                                 panel.open_shell(window, cx);
                             })),
@@ -679,7 +680,7 @@ impl TerminalPanel {
                             false,
                             cx,
                         )
-                        .tooltip_with_action(
+                        .named_with_action(
                             match full {
                                 true => "Back to the dock",
                                 false => "Fill the window",
@@ -697,7 +698,7 @@ impl TerminalPanel {
                     // ignores `text_color`.
                     .child(
                         onehand_ui::strip_control("hide-terminal", IconName::Minus, false, cx)
-                            .tooltip_with_action(
+                            .named_with_action(
                                 "Hide the terminal",
                                 &crate::shell::ToggleTerminal,
                                 None,

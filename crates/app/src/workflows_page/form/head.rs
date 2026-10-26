@@ -4,6 +4,7 @@
 
 use super::super::pick::{CardActs, Pick};
 use super::super::{WorkflowDraft, WorkflowsPage, WorkflowsPageEvent, click};
+use crate::controls::Named as _;
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
 use gpui::{
@@ -163,7 +164,7 @@ pub(in crate::workflows_page) fn editor_head(
             .tall()
             .quiet_icon(false, cx)
             .icon(IconName::Ellipsis)
-            .tooltip("More"),
+            .named("More"),
         cx,
     ));
     // *Cancel*, then *Save*, the head's primary, at its end: what the

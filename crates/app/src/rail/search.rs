@@ -94,6 +94,8 @@ pub(super) fn sessions_header(
                 .quiet_icon(filter != Filter::ByProject, cx)
                 .small()
                 .icon(Icon::new(crate::icons::Icon::ListFilter))
+                // Named for what it is; the tooltip says what it holds now.
+                .accessibility_label("Filter sessions")
                 .tooltip(format!("Showing: {}", filter.label()))
                 .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, _, _| {
                     Filter::ALL.iter().fold(menu, |menu, f| {

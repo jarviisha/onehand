@@ -6,6 +6,7 @@
 use super::form::{more_menu, run_menu};
 use super::pick::{self, Pick};
 use super::{WorkflowsPage, click};
+use crate::controls::Named as _;
 use crate::controls::Quiet as _;
 use crate::controls::Short as _;
 use gpui::prelude::FluentBuilder as _;
@@ -91,7 +92,7 @@ fn head(handle: &Entity<WorkflowsPage>, query: &Entity<InputState>, cx: &App) ->
                 .tall()
                 .quiet_icon(false, cx)
                 .icon(IconName::Ellipsis)
-                .tooltip("More"),
+                .named("More"),
             move |menu, _, _| {
                 let handle = handle.clone();
                 menu.item(crate::controls::menu_item("Import…").on_click(
@@ -155,7 +156,7 @@ fn card(
             .short()
             .quiet_icon(false, cx)
             .icon(IconName::Ellipsis)
-            .tooltip("More"),
+            .named("More"),
         cx,
     );
     let body = match &entry.template {

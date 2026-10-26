@@ -2,6 +2,7 @@
 //! maximize and hide fixed at the end, outside anything that gives way.
 
 use super::{Workbench, WorkbenchEvent};
+use crate::controls::Named as _;
 use crate::controls::Quiet as _;
 use crate::controls::Short as _;
 use gpui::prelude::FluentBuilder as _;
@@ -70,7 +71,7 @@ impl Workbench {
                     false,
                     cx,
                 )
-                .tooltip_with_action(
+                .named_with_action(
                     match full {
                         true => "Back to the dock",
                         false => "Fill the window",
@@ -91,7 +92,7 @@ impl Workbench {
             // ignores `text_color` and comes out invisible on a dark panel.
             .child(
                 onehand_ui::strip_control("hide-workbench", IconName::Minus, false, cx)
-                    .tooltip_with_action(
+                    .named_with_action(
                         "Hide the Workbench",
                         &crate::shell::ToggleWorkbenchVisibility,
                         None,

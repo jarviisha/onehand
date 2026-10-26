@@ -14,6 +14,7 @@ use gpui::{
 use gpui_component::input::{Editor, EditorState};
 use gpui_component::{ActiveTheme, IconName, StyledExt};
 use onehand_core::editor::{RootEditors, SaveOutcome};
+use onehand_ui::Named as _;
 use onehand_ui::{Measured, TabStrip, menu_below, menu_row, tab_strip as tab_strip_rule};
 use std::collections::HashMap;
 use std::path::Path;
@@ -159,7 +160,7 @@ pub(crate) fn tab_strip<T: 'static>(
                 false => (IconName::PanelLeftOpen, "Show the file tree"),
             };
             onehand_ui::strip_control("toggle-file-tree", icon, false, cx)
-                .tooltip(hint)
+                .named(hint)
                 .on_click(on_toggle_tree)
                 .into_any_element()
         }
@@ -275,7 +276,7 @@ pub(crate) fn tab_strip<T: 'static>(
         .when(!files.is_empty(), |strip| {
             strip.child(
                 onehand_ui::strip_control("close-all-files", IconName::Close, false, cx)
-                    .tooltip("Close all files")
+                    .named("Close all files")
                     .on_click(on_close_all),
             )
         })

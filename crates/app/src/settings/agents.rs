@@ -1,4 +1,5 @@
 use super::{APP, about, field, list_row, page_head, section};
+use crate::controls::Named as _;
 use crate::controls::Refuses as _;
 use crate::controls::Short as _;
 use crate::controls::text_input;
@@ -207,7 +208,7 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
                         // mark: it reads as swapping this agent for another one
                         // rather than as opening it in the form below.
                         .icon(Icon::new(crate::icons::Icon::SquarePen))
-                        .tooltip("Edit")
+                        .named("Edit")
                         .on_click({
                             let shell = shell.clone();
                             move |_: &ClickEvent, window: &mut Window, cx: &mut App| {

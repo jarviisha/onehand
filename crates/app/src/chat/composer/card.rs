@@ -3,6 +3,7 @@ use super::presentation::{effort_action, fast_action, fast_toggle, mode_action, 
 use super::rows::OPTION_MAX_W;
 use super::{Composer, ComposerEvent, Overlay};
 use crate::chat::session::ChatSession;
+use crate::controls::Named as _;
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
 use crate::controls::Short as _;
@@ -73,6 +74,11 @@ impl Composer {
             let session = session.clone();
             chip("add", add_open, cx)
                 .child(Icon::new(crate::icons::Icon::PlusLight).small())
+                // Named whether or not its menu is open; the tooltip only
+                // stands down over the menu.
+                .accessibility_label(
+                    "Attach a file, mention one, run a slash command or a workflow",
+                )
                 .when(!add_open, |chip| {
                     chip.tooltip("Attach a file, mention one, run a slash command or a workflow")
                 })
@@ -237,7 +243,7 @@ impl Composer {
                     .quiet_icon(false, cx)
                     .small()
                     .icon(bolt(toggle.on, cx))
-                    .tooltip(match toggle.on {
+                    .named(match toggle.on {
                         true => "Fast mode is on",
                         false => "Fast mode is off",
                     })
@@ -254,6 +260,7 @@ impl Composer {
             chip("fast-selector", open, cx)
                 .child(bolt(pick.lit, cx))
                 .dropdown_caret(true)
+                .accessibility_label(pick.label.clone())
                 .when(!open, |chip| chip.tooltip(pick.label))
                 .on_click(cx.listener(move |composer: &mut Self, _, window, cx| {
                     composer.toggle_picker(Overlay::Fast, &session, window, cx);
@@ -504,7 +511,10 @@ fn send_controls(
         true => control("send").small().secondary(),
         false => control("send").primary().small(),
     }
-    .icon(Icon::new(crate::icons::Icon::ArrowUpLight));
+    .icon(Icon::new(crate::icons::Icon::ArrowUpLight))
+    // Named apart from its tooltip, which teaches the keys, and kept while it
+    // refuses, which only says why.
+    .accessibility_label("Send");
     match blocked {
         // No pointer over a button that refuses: the cursor is a promise a
         // press will do something, and this one is here to say it will not.

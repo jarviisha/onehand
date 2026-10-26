@@ -6,6 +6,7 @@
 //! becomes one control naming the current tab and opening the others, so no
 //! tab is ever pushed out of reach.
 
+use crate::Named as _;
 use crate::Quiet as _;
 use crate::Short as _;
 use gpui::prelude::FluentBuilder as _;
@@ -159,7 +160,7 @@ pub fn tab_close(id: impl Into<ElementId>, hint: &'static str, cx: &App) -> Butt
         .small()
         .flex_none()
         .icon(Icon::new(IconName::Close))
-        .tooltip(hint)
+        .named(hint)
 }
 
 #[cfg(test)]

@@ -1,4 +1,5 @@
 use super::row::{MAX_LABEL, ellipsize, faded};
+use crate::controls::Named as _;
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
 use crate::controls::Short as _;
@@ -68,7 +69,7 @@ pub(super) fn workspace_bar(
                 .quiet_icon(false, cx)
                 .small()
                 .icon(Icon::new(IconName::ChevronsUpDown))
-                .tooltip("Other workspaces, and opening or starting one")
+                .named("Other workspaces, and opening or starting one")
                 .dropdown_menu_with_anchor(
                     Anchor::TopLeft,
                     workspace_menu(current, recents, cx.entity().downgrade()),
@@ -79,7 +80,7 @@ pub(super) fn workspace_bar(
                 .quiet_icon(false, cx)
                 .small()
                 .icon(Icon::new(IconName::PanelLeftClose))
-                .tooltip_with_action("Hide the rail", &crate::shell::ToggleRail, None)
+                .named_with_action("Hide the rail", &crate::shell::ToggleRail, None)
                 .on_click(
                     cx.listener(|shell: &mut Shell, _, window, cx| shell.toggle_rail(window, cx)),
                 ),
@@ -263,7 +264,7 @@ pub(super) fn new_button(
         crate::controls::action("new-session-target")
             .secondary()
             .small()
-            .tooltip("Start a session in another project, or with another agent"),
+            .named("Start a session in another project, or with another agent"),
         cx.theme().sidebar,
         Anchor::TopRight,
         move |menu, window, cx| build(menu, window, cx),

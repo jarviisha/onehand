@@ -1,4 +1,5 @@
 use super::{ChatPane, ChatPaneEvent, ProjectAction, ProjectFacts};
+use crate::controls::Named as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{App, Context, Entity, IntoElement, ParentElement, Rems, Styled, Window, div, rems};
 use gpui_component::menu::PopupMenuItem;
@@ -203,7 +204,7 @@ impl ChatPane {
                     // read as closing a panel, and a power mark read as
                     // quitting the whole app.
                     strip_control("close-session", crate::icons::Icon::LogOut, false, cx)
-                        .tooltip_with_action(
+                        .named_with_action(
                             "Close this session and its agent",
                             &crate::shell::CloseSession,
                             None,
@@ -254,7 +255,7 @@ impl ChatPane {
                     // Which way it will go this time is not said, since that
                     // needs a dock fact pushed down here and the panel on
                     // screen already answers it.
-                    .tooltip_with_action(
+                    .named_with_action(
                         "Show or hide the Workbench",
                         &crate::shell::ToggleWorkbenchVisibility,
                         None,
@@ -295,7 +296,7 @@ impl ChatPane {
                     // the Workbench's is: the panel on screen answers it, and
                     // saying it would need a second fact pushed down here to
                     // keep in step.
-                    .tooltip_with_action(
+                    .named_with_action(
                         if live {
                             "A command is running in a shell here — show or hide the terminal"
                         } else {
@@ -412,7 +413,7 @@ impl ChatPane {
         // the ask here is that the popup land under the dots that were
         // pressed.
         let trigger = strip_control("conversation-menu", IconName::EllipsisVertical, false, cx)
-            .tooltip(match project.is_some() {
+            .named(match project.is_some() {
                 true => "Everything done to this project",
                 false => "Everything done to this conversation",
             });
@@ -603,7 +604,7 @@ fn project_menu(
 /// The way back to a hidden rail.
 pub(super) fn show_rail(cx: &mut Context<ChatPane>) -> gpui_component::button::Button {
     strip_control("show-rail", IconName::PanelLeftOpen, false, cx)
-        .tooltip_with_action("Show the navigation rail", &crate::shell::ToggleRail, None)
+        .named_with_action("Show the navigation rail", &crate::shell::ToggleRail, None)
         .on_click(cx.listener(|_: &mut ChatPane, _, _, cx| {
             cx.emit(ChatPaneEvent::ShowRail);
         }))

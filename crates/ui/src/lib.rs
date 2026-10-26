@@ -149,6 +149,45 @@ impl Refuses for Button {
     }
 }
 
+/// An icon with no words named twice: in its tooltip, for the pointer, and as
+/// its accessible name, for a screen reader. The library names a button by its
+/// label, and an icon alone has none, so a tooltip by itself left the button
+/// announced as nothing. Every icon-only button says what it does through this,
+/// never a bare `tooltip`.
+///
+/// A refusal still shows its reason in the tooltip ([`Refuses`]) and keeps the
+/// name, which says what the button does rather than why it waits.
+pub trait Named: Sized {
+    /// The tooltip and the accessible name, one string.
+    fn named(self, name: impl Into<SharedString>) -> Self;
+
+    /// The same, with the key bound to `action` shown beside the tooltip.
+    fn named_with_action(
+        self,
+        name: impl Into<SharedString>,
+        action: &dyn gpui::Action,
+        context: Option<&str>,
+    ) -> Self;
+}
+
+impl Named for Button {
+    fn named(self, name: impl Into<SharedString>) -> Self {
+        let name = name.into();
+        self.accessibility_label(name.clone()).tooltip(name)
+    }
+
+    fn named_with_action(
+        self,
+        name: impl Into<SharedString>,
+        action: &dyn gpui::Action,
+        context: Option<&str>,
+    ) -> Self {
+        let name = name.into();
+        self.accessibility_label(name.clone())
+            .tooltip_with_action(name, action, context)
+    }
+}
+
 /// A sunk box of machine text: full width, the muted fill, the theme's corner,
 /// the mono family at [`tokens::CODE_TEXT`], clipped so a long line cannot push
 /// the column wider. The caller sets the padding, which differs by what is in it.

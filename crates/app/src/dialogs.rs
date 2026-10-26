@@ -3,6 +3,7 @@
 //!
 //! The component library owns overlays, focus traps and Escape handling.
 
+use crate::controls::Named as _;
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
 use crate::controls::Short as _;
@@ -79,7 +80,7 @@ pub(crate) fn title_row(name: impl Into<SharedString>, cx: &App) -> impl IntoEle
                         .small()
                         .quiet_icon(false, cx)
                         .icon(Icon::new(IconName::Close))
-                        .tooltip("Close"),
+                        .named("Close"),
                 ),
             ),
         )

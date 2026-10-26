@@ -1,6 +1,7 @@
 use super::fold_key;
 use super::metrics::{CARD_PAD, DETAIL_OPEN_H, FOLD_INDENT, TEXT_SM, TIGHT_GAP};
 use crate::chat::session::ChatSession;
+use crate::controls::Named as _;
 use crate::controls::Quiet as _;
 use crate::controls::Short as _;
 use crate::tokens::LEADING;
@@ -151,7 +152,7 @@ fn copy_control(id: impl Into<gpui::ElementId>, tip: &'static str, cx: &App) -> 
         .small()
         .flex_none()
         .icon(IconName::Copy)
-        .tooltip(tip)
+        .named(tip)
 }
 
 /// Copy `text`, which is already at hand.

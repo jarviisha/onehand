@@ -41,14 +41,11 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   folders above it.
 - **Dragging a rail row has no edge autoscroll**, and the keyboard's row in the rail is not
   scrolled into view. A project past the bottom of a full rail has to be scrolled to first.
-- **The header's icon buttons have no accessible names, the conversation menu's dots included.**
-  The library's `Button::accessibility_label` can now name an icon-only button, but nothing here
-  passes one yet. Every control on the row carries a tooltip instead. The menu used to be the name itself, drawn as a child so it could ellipsize, which was
-  the same gap in a worse place; moving the menu onto the vertical-dots mark made the name plain
-  prose and left one uniform row of tooltipped icon buttons. **The route out is the rail's
-  `row::labelled`**: a `Stateful<Div>` around the button implements gpui's
-  `StatefulInteractiveElement`, so `aria_label` reaches it and the button inside stays the
-  library's. Recorded rather than done here.
+- **A button whose words are its children is announced as nothing.** The library names a button by
+  its `.label` alone, so the composer's model, effort, mode and branch chips, `tab_select`'s tabs,
+  an ask card's *Skip* and the rail's auto-run pill read on screen and say nothing to a screen
+  reader. Icon-only buttons are named through `named`; these need an `accessibility_label` with
+  the words they draw, or a label in place of their children.
 - **A session's age on the rail starts again at every launch.** It counts from when the session
   took its present state, and that moment is kept in memory only: an archive records when a
   conversation last changed, not when it last changed state.

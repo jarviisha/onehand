@@ -6,6 +6,7 @@ use super::row::{
     labelled, menu_button, meta_control, on_hover, row_control, row_inks, row_surfaces,
 };
 use crate::chat::pane::SessionSignal;
+use crate::controls::Named as _;
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -363,7 +364,7 @@ fn actions(
 ) -> impl IntoElement + use<> {
     let (root, session, uid, signal) = (item.root, item.session, item.uid, item.signal);
     let button = |id: &'static str, icon: Icon, tip: &'static str, cx: &App| {
-        meta_control((id, uid), icon, cx).tooltip(tip)
+        meta_control((id, uid), icon, cx).named(tip)
     };
     covering(div().id(("session-actions", uid)), group)
         .h_flex()
