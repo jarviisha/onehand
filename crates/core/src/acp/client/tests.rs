@@ -1211,13 +1211,12 @@ async fn a_session_started_without_a_name_is_a_failed_start() {
 }
 
 #[test]
-fn init_advertises_async_tasks_only() {
+fn init_advertises_subagent_sessions() {
     let caps = &super::wire::init_params()["clientCapabilities"];
     assert_eq!(
-        caps["_meta"]["jetbrains"]["air"],
-        serde_json::json!({"version": 1, "capabilities": ["asyncTasks"]})
+        caps["_meta"]["jetbrains"]["air"]["capabilities"],
+        serde_json::json!(["asyncTasks", "nativeSubagentSessions"])
     );
-    assert!(caps.get("subagents").is_none());
 }
 
 #[tokio::test]
@@ -1281,6 +1280,93 @@ async fn usage_and_background_updates_become_events() {
             }
             AcpEvent::Background(_) => background = true,
             _ => {}
+        }
+    }
+}
+
+async fn update_from(agent: &mut Agent, session: Option<&str>, update: serde_json::Value) {
+    let mut params = json!({ "update": update });
+    if let Some(s) = session {
+        params["sessionId"] = json!(s);
+    }
+    agent
+        .say(json!({ "jsonrpc": "2.0", "method": "session/update", "params": params }))
+        .await;
+}
+
+async fn next_chunk(events: &mut tokio::sync::mpsc::UnboundedReceiver<AcpEvent>) -> AcpEvent {
+    loop {
+        let e = events.recv().await.expect("the stream ended early");
+        if matches!(e, AcpEvent::AgentChunk(_) | AcpEvent::InChild { .. }) {
+            return e;
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_child_update_is_wrapped() {
+    let (mut agent, mut events) = client();
+    let root = agent.handshake().await;
+    connected(&mut events).await;
+    let chunk = json!({"sessionUpdate":"agent_message_chunk",
+        "content":{"type":"text","text":"hi"}});
+    update_from(&mut agent, Some("c1"), chunk.clone()).await;
+    match next_chunk(&mut events).await {
+        AcpEvent::InChild { child, event } => {
+            assert_eq!(child, "c1");
+            assert!(matches!(*event, AcpEvent::AgentChunk(ref s) if s == "hi"));
+        }
+        other => panic!("{other:?}"),
+    }
+    update_from(&mut agent, Some(&root), chunk.clone()).await;
+    assert!(matches!(
+        next_chunk(&mut events).await,
+        AcpEvent::AgentChunk(_)
+    ));
+    update_from(&mut agent, None, chunk).await;
+    assert!(matches!(
+        next_chunk(&mut events).await,
+        AcpEvent::AgentChunk(_)
+    ));
+}
+
+#[tokio::test]
+async fn a_childs_permission_names_the_child() {
+    let (mut agent, mut events) = client();
+    let root = agent.handshake().await;
+    connected(&mut events).await;
+    for (id, session, want) in [(1, "c1", Some("c1")), (2, root.as_str(), None)] {
+        agent
+            .say(
+                json!({ "jsonrpc": "2.0", "id": id, "method": "session/request_permission",
+                "params": { "sessionId": session,
+                    "toolCall": { "toolCallId": "tc", "title": "Run" },
+                    "options": [{ "optionId": "a", "name": "Allow", "kind": "allow_once" }] } }),
+            )
+            .await;
+        assert_eq!(parked(&mut events).await.child.as_deref(), want);
+    }
+}
+
+#[tokio::test]
+async fn a_childs_question_names_the_child() {
+    let (mut agent, mut events) = client();
+    let root = agent.handshake().await;
+    connected(&mut events).await;
+    for (id, session, want) in [(1, "c1", Some("c1")), (2, root.as_str(), None)] {
+        agent
+            .say(
+                json!({ "jsonrpc": "2.0", "id": id, "method": "elicitation/create",
+                "params": { "sessionId": session, "message": "pick",
+                    "requestedSchema": { "type": "object", "properties": {
+                        "question_0": { "type": "string", "enum": ["a", "b"] } } } } }),
+            )
+            .await;
+        loop {
+            if let AcpEvent::Elicitation(e) = events.recv().await.expect("ended") {
+                assert_eq!(e.child.as_deref(), want);
+                break;
+            }
         }
     }
 }

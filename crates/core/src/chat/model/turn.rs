@@ -167,7 +167,7 @@ impl Chat {
     /// here rather than in either one.
     pub fn cancel_turn(&mut self) {
         self.cancelled = true;
-        self.cancel_pending_permissions();
+        self.cancel_pending_permissions(false);
         if let Some(tx) = &self.tx {
             let _ = tx.send(AcpRequest::Cancel);
         }
@@ -197,31 +197,39 @@ impl Chat {
     /// than one saying it is unclear. This is the same answer
     /// `cancel_pending_permissions` gives a dangling card one line above.
     pub(super) fn settle_running_steps(&mut self) {
-        for item in &mut self.items {
-            if let ChatItem::Tool(tool) = item {
-                if !matches!(
-                    tool.call.status,
-                    ToolStatus::Pending | ToolStatus::InProgress
-                ) {
-                    continue;
-                }
-                tool.call.status = ToolStatus::Failed;
-                // Timed here for the same reason a settling update is: this is
-                // the moment the step stopped, and a step that never settles
-                // has no duration at all.
-                if tool.elapsed_secs.is_none() {
-                    tool.elapsed_secs =
-                        Some(tool.started.map(|s| s.elapsed().as_secs()).unwrap_or(0));
-                }
-                // The same seed a failure arriving as an update leaves, so a
-                // reader can see what the step had said before it stopped.
-                tool.fold.get_or_insert(true);
-            }
-        }
+        super::apply::settle_steps(&mut self.items);
     }
 
-    pub(crate) fn cancel_pending_permissions(&mut self) {
-        for it in &mut self.items {
+    ///
+    /// `spare_working` leaves alone a request whose asker is a subagent still
+    /// working: at a turn's end that is a background subagent, which outlives
+    /// the turn and still waits for the answer. A Stop or a lost link spares
+    /// nothing.
+    pub(crate) fn cancel_pending_permissions(&mut self, spare_working: bool) {
+        let asker_works = |child: &Option<String>| {
+            child
+                .as_deref()
+                .and_then(|id| self.subagent(id))
+                .is_some_and(|card| card.state == super::SubagentState::Working)
+        };
+        let spared: Vec<usize> = match spare_working {
+            true => self
+                .items
+                .iter()
+                .enumerate()
+                .filter(|(_, it)| match it {
+                    ChatItem::Permission(p) => asker_works(&p.req.child),
+                    ChatItem::Ask(a) => asker_works(&a.req.child),
+                    _ => false,
+                })
+                .map(|(at, _)| at)
+                .collect(),
+            false => Vec::new(),
+        };
+        for (at, it) in self.items.iter_mut().enumerate() {
+            if spared.contains(&at) {
+                continue;
+            }
             match it {
                 ChatItem::Permission(p) if p.resolved.is_none() => {
                     if let Some(tx) = &self.tx {

@@ -176,6 +176,7 @@ impl List {
                     since: row.since,
                     age: row.since.elapsed().as_secs() / 60,
                     background: row.background,
+                    subagents: row.subagents,
                     in_turn: row.in_turn,
                 }
             })

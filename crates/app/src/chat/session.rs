@@ -272,6 +272,11 @@ pub struct ChatSession {
     /// shows -- taken once when the row opens rather than on every frame it is
     /// drawn. See `toggle_file`.
     file_open: HashMap<(TranscriptItemId, String), Vec<onehand_core::diff::Row>>,
+    /// Subagent cards the reader opened, by the subagent's id.
+    ///
+    /// **Kept across a renumbering**, unlike the folds above: an id names one
+    /// subagent wherever its card sits, so it cannot land on another.
+    subagent_open: HashSet<String>,
     /// The chat's numbering the folds above were keyed under.
     numbering: u64,
     /// The event pump.
@@ -365,6 +370,7 @@ impl ChatSession {
                 section_open: HashSet::new(),
                 turn_open: HashMap::new(),
                 file_open: HashMap::new(),
+                subagent_open: HashSet::new(),
                 numbering: 0,
                 _quiet_save: None,
                 _pump: cx.spawn(async move |session, cx| {
@@ -494,6 +500,19 @@ impl ChatSession {
     pub fn toggle_turn(&mut self, anchor: TranscriptItemId, default: bool) {
         let now = self.turn_is_open(anchor, default);
         self.turn_open.insert(anchor, !now);
+        self.chat.fold_changed();
+    }
+
+    /// Whether the subagent card `id` shows every step it took.
+    pub fn subagent_is_open(&self, id: &str) -> bool {
+        self.subagent_open.contains(id)
+    }
+
+    /// Open or close the subagent card `id`.
+    pub fn toggle_subagent(&mut self, id: &str) {
+        if !self.subagent_open.remove(id) {
+            self.subagent_open.insert(id.to_string());
+        }
         self.chat.fold_changed();
     }
 
@@ -669,13 +688,10 @@ impl ChatSession {
         // only the text actually going into a widget.
         let mut live: HashSet<MdId> = HashSet::new();
         let mut edits: Vec<(MdId, Edit)> = Vec::new();
-        for md in self
-            .chat
-            .history
-            .iter()
-            .chain(self.chat.items.iter())
-            .filter_map(source_of)
-        {
+        let mut sources = Vec::new();
+        sources_of(&self.chat.history, &mut sources);
+        sources_of(&self.chat.items, &mut sources);
+        for md in sources {
             live.insert(md.id);
             let edit = match self.md.get(&md.id) {
                 Some((parsed, _)) if md.source.len() > *parsed => {
@@ -737,12 +753,21 @@ impl ChatSession {
     }
 }
 
-/// The markdown a transcript item carries, if it carries any.
-fn source_of(item: &ChatItem) -> Option<&Md> {
-    match item {
-        ChatItem::Agent(md) => Some(md),
-        ChatItem::Thought(th) => Some(&th.md),
-        _ => None,
+/// The markdown the transcript items carry, a subagent card's own included:
+/// the card draws its prose as the transcript does.
+fn sources_of<'a>(items: &'a [ChatItem], out: &mut Vec<&'a Md>) {
+    for item in items {
+        match item {
+            ChatItem::Agent(md) => out.push(md),
+            ChatItem::Thought(th) => out.push(&th.md),
+            ChatItem::Subagent(card) => sources_of(&card.items, out),
+            ChatItem::User(_)
+            | ChatItem::Tool(_)
+            | ChatItem::Plan(_)
+            | ChatItem::Permission(_)
+            | ChatItem::Ask(_)
+            | ChatItem::Notice { .. } => {}
+        }
     }
 }
 

@@ -161,10 +161,12 @@ fn permission(resolved: Option<&str>) -> ChatItem {
             rpc_id: Default::default(),
             tool_call_id: None,
             kind: ToolKind::Execute,
+            child: None,
             title: "Run `rm -rf build`?".to_string(),
             options: Vec::new(),
         },
         resolved: resolved.map(str::to_string),
+        asker: None,
         expanded: false,
     })
 }
@@ -618,4 +620,45 @@ fn opening_a_settled_thought_replans_it_as_a_block() {
     chat.toggle_thought(thought);
     viewport.replan(&chat, chat.folds(), |_, open| open, |_, d| d);
     assert_eq!(kind(&viewport), Some(RunKind::Block));
+}
+
+/// A subagent card grows and folds in place, wherever it sits: its run is
+/// measured again on every change while it works, once more as it ends, and
+/// on a fold toggled after that, but not when only the parent moves on.
+#[test]
+fn a_subagent_card_is_measured_again_where_it_is() {
+    use onehand_core::chat::{SubagentItem, SubagentState};
+    let mut chat = chat();
+    chat.items.insert(
+        1,
+        ChatItem::Subagent(SubagentItem {
+            id: "child".into(),
+            name: "Read the tests".into(),
+            task: None,
+            state: SubagentState::Working,
+            items: Vec::new(),
+        }),
+    );
+    let mut viewport = Viewport::default();
+    // 0: answer · 1: the card · 2: the cluster of reads.
+    viewport.replan(&chat, 0, |_, open| open, |_, default| default);
+    assert_eq!(viewport.card_remeasure, [1]);
+    let _ = viewport.list_state(false, ROOM);
+    assert!(viewport.card_remeasure.is_empty(), "told, and cleared");
+
+    let ChatItem::Subagent(card) = &mut chat.items[1] else {
+        unreachable!()
+    };
+    card.state = SubagentState::Completed;
+    chat.items.push(read("Read src/c.rs"));
+    viewport.replan(&chat, 0, |_, open| open, |_, default| default);
+    assert_eq!(viewport.card_remeasure, [1], "once more as it ends");
+    let _ = viewport.list_state(false, ROOM);
+
+    chat.items.push(ChatItem::Agent(Md::parse("done")));
+    viewport.replan(&chat, 0, |_, open| open, |_, default| default);
+    assert!(viewport.card_remeasure.is_empty(), "an ended card rests");
+
+    viewport.replan(&chat, 1, |_, open| open, |_, default| default);
+    assert_eq!(viewport.card_remeasure, [1], "a fold may have been its");
 }

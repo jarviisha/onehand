@@ -32,6 +32,8 @@ pub struct PermItem {
     pub req: PermissionRequest,
     /// The chosen option's name once answered (buttons then disable).
     pub resolved: Option<String>,
+    /// The subagent that asks, by name; `None` when it is the agent itself.
+    pub asker: Option<String>,
     /// Whether the record an answered permission leaves is open to the whole
     /// command and where it ran.
     ///
@@ -68,6 +70,8 @@ impl PermItem {
 /// card of option buttons, plus the answer the user is building up.
 pub struct AskItem {
     pub req: Elicitation,
+    /// The subagent that asks, by name; `None` when it is the agent itself.
+    pub asker: Option<String>,
     /// Per field, the picked choice indices. A single-select keeps at most one.
     pub picked: Vec<Vec<usize>>,
     /// Per field, the typed free-text answer (its "Other" box, or the field
@@ -126,6 +130,7 @@ impl AskItem {
         let n = req.fields.len();
         Self {
             req,
+            asker: None,
             picked: vec![Vec::new(); n],
             custom: vec![String::new(); n],
             resolved: None,
@@ -759,6 +764,8 @@ pub enum ChatItem {
     Permission(PermItem),
     /// A question from the agent with its choice buttons.
     Ask(AskItem),
+    /// A subagent the agent started, with the steps it took.
+    Subagent(super::subagent::SubagentItem),
     /// A line the session says about itself: a remark, or a failure, with
     /// whatever machine text the agent attached to it.
     Notice {

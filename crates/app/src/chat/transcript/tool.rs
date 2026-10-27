@@ -94,6 +94,30 @@ pub(super) fn tool(
         }
     };
 
+    let row = step_row(t, &presented, &root, ("tool", fold_key(target)).into(), cx)
+        .fold(detail.is_some().then_some(open));
+
+    div()
+        .v_flex()
+        .w_full()
+        .min_w_0()
+        .child(activity_row(row, toggle, cx))
+        .children(
+            open.then_some(())
+                .and(detail)
+                .map(|detail| detail_well(detail_frame(session, t, target, detail, cx))),
+        )
+}
+
+/// A tool step's row as it stands, with nothing to open: what was done, to
+/// what, and what came of it. A subagent's card draws its steps with it too.
+pub(super) fn step_row(
+    t: &ToolItem,
+    presented: &activity::Presentation,
+    root: &Path,
+    id: gpui::ElementId,
+    cx: &App,
+) -> ActivityRow {
     let (added, removed) = t
         .diff_summary
         .iter()
@@ -105,7 +129,7 @@ pub(super) fn tool(
             160,
         ))),
         _ if presented.subject.trim().is_empty() => None,
-        _ => Some(Object::path(path_for_display(&root, &presented.subject))),
+        _ => Some(Object::path(path_for_display(root, &presented.subject))),
     };
 
     // **The code where there is one, the word where there is not.** Only a
@@ -132,27 +156,16 @@ pub(super) fn tool(
         .into_any_element();
 
     let mut row = ActivityRow::new(
-        ("tool", fold_key(target)).into(),
+        id,
         RowMark::of(t.call.status),
         kind_icon(t.call.kind),
         presented.action,
     )
     .object(object)
-    .meta(Some(meta))
-    .fold(detail.is_some().then_some(open));
+    .meta(Some(meta));
     // A file that is gone strikes its own name out.
     row.struck = t.call.kind == ToolKind::Delete;
-
-    div()
-        .v_flex()
-        .w_full()
-        .min_w_0()
-        .child(activity_row(row, toggle, cx))
-        .children(
-            open.then_some(())
-                .and(detail)
-                .map(|detail| detail_well(detail_frame(session, t, target, detail, cx))),
-        )
+    row
 }
 
 /// What a step opens into, chosen by what the step is.

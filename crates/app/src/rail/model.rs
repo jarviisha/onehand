@@ -54,6 +54,8 @@ pub(super) struct Item {
     pub(super) age: u64,
     /// Work the agent runs on beyond its turn, still alive.
     pub(super) background: usize,
+    /// Subagents the session has working, nested ones included.
+    pub(super) subagents: usize,
     /// A turn is open, which is what Stop ends; background work outlives it.
     pub(super) in_turn: bool,
 }
@@ -84,10 +86,12 @@ pub(super) fn age_label(minutes: u64) -> String {
 
 /// The line under a session's title, in one order for every state:
 /// `state · who · age`, where who is the agent, or the project in a flat list.
-/// Live background work is counted after the state, and only when there is some.
+/// Live background work and working subagents are counted after the state, and
+/// only when there are some.
 pub(super) fn meta(
     signal: Option<SessionSignal>,
     background: usize,
+    subagents: usize,
     who: &str,
     age: u64,
 ) -> String {
@@ -96,10 +100,15 @@ pub(super) fn meta(
         Some(SessionSignal::AwaitingUser) => format!("waiting {age}"),
         _ => age,
     };
-    let state = match background {
-        0 => word(signal).to_string(),
-        n => format!("{} · {n} in background", word(signal)),
-    };
+    let mut state = word(signal).to_string();
+    if background > 0 {
+        state += &format!(" · {background} in background");
+    }
+    match subagents {
+        0 => {}
+        1 => state += " · 1 subagent",
+        n => state += &format!(" · {n} subagents"),
+    }
     format!("{state} · {who} · {age}")
 }
 

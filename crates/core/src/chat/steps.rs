@@ -641,10 +641,7 @@ pub fn turn_changes(items: &[&ChatItem]) -> Option<TurnChanges> {
     use crate::acp::ToolContent;
 
     let mut files: Vec<FileChange> = Vec::new();
-    for item in items {
-        let ChatItem::Tool(tool) = item else {
-            continue;
-        };
+    for tool in tools_within(items) {
         // **An edit that failed did not happen.** The diff on a failed call is
         // what the agent proposed, not what is on disk, and counting it puts a
         // file in a list headed "what this turn wrote" that the turn did not
@@ -710,6 +707,27 @@ pub fn turn_changes(items: &[&ChatItem]) -> Option<TurnChanges> {
     })
 }
 
+/// Every step in `items` in order, a subagent's own steps included: a file a
+/// subagent wrote is one the turn wrote.
+fn tools_within<'a>(items: &[&'a ChatItem]) -> Vec<&'a crate::chat::model::ToolItem> {
+    fn walk<'a>(item: &'a ChatItem, out: &mut Vec<&'a crate::chat::model::ToolItem>) {
+        match item {
+            ChatItem::Tool(tool) => out.push(tool),
+            ChatItem::Subagent(card) => card.items.iter().for_each(|inner| walk(inner, out)),
+            ChatItem::User(_)
+            | ChatItem::Agent(_)
+            | ChatItem::Thought(_)
+            | ChatItem::Plan(_)
+            | ChatItem::Notice { .. }
+            | ChatItem::Permission(_)
+            | ChatItem::Ask(_) => {}
+        }
+    }
+    let mut out = Vec::new();
+    items.iter().for_each(|item| walk(item, &mut out));
+    out
+}
+
 /// The turn's net diff for one file: what it looked like before the turn's
 /// first edit against what it looks like after the last.
 ///
@@ -727,10 +745,7 @@ pub fn turn_file_diff(items: &[&ChatItem], path: &str) -> Vec<crate::diff::Row> 
     let mut before: Option<&str> = None;
     let mut after = "";
     let mut seen = false;
-    for item in items {
-        let ChatItem::Tool(tool) = item else {
-            continue;
-        };
+    for tool in tools_within(items) {
         // Same rule as the counts: a failed edit is not part of what the turn
         // did to this file.
         if tool.call.status == crate::acp::ToolStatus::Failed {

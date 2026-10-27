@@ -97,6 +97,24 @@ fn a_failed_edit_is_not_counted_as_written() {
     assert!(turn_file_diff(&items, "src/gone.rs").is_empty());
 }
 
+/// A file a subagent wrote is one the turn wrote.
+#[test]
+fn a_subagents_edit_is_counted_as_written() {
+    let card = ChatItem::Subagent(crate::chat::model::SubagentItem {
+        id: "c1".into(),
+        name: "Fixer".into(),
+        task: None,
+        state: crate::chat::model::SubagentState::Completed,
+        items: vec![wrote("inner", &[("src/sub.rs", "a\n", "b\n")])],
+    });
+    let items = [card];
+    let items: Vec<&ChatItem> = items.iter().collect();
+
+    let changes = turn_changes(&items).expect("the subagent wrote a file");
+    assert_eq!(changes.files[0].path, "src/sub.rs");
+    assert!(!turn_file_diff(&items, "src/sub.rs").is_empty());
+}
+
 /// A turn that only read files has nothing to summarise.
 #[test]
 fn a_turn_that_wrote_nothing_has_no_summary() {

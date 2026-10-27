@@ -164,10 +164,10 @@ impl Chat {
         })
     }
 
-    /// Whether the agent is running: a turn is open, or work it started runs
-    /// on after its turn.
+    /// Whether the agent is running: a turn is open, or work or a subagent it
+    /// started runs on after its turn.
     pub fn running(&self) -> bool {
-        self.busy || !self.background.is_empty()
+        self.busy || !self.background.is_empty() || self.subagents_working() > 0
     }
 
     /// Whether the transcript holds something not yet on disk that is safe to
@@ -183,7 +183,7 @@ impl Chat {
             && !self.busy
             && !self.rewrite
             && !matches!(self.replay, Replay::Partial(_))
-            && self.persisted < self.history.len() + self.items.len()
+            && self.persisted < self.saveable_len()
             && !self.items.iter().any(|item| {
                 matches!(item, ChatItem::Tool(tool)
                     if matches!(tool.call.status, ToolStatus::Pending | ToolStatus::InProgress))
@@ -237,9 +237,11 @@ impl Chat {
         }
     }
 
-    /// Forget the background work and the meters: the adapter that reported
-    /// them is gone and will never end them.
+    /// Forget the background work and the meters, and interrupt the working
+    /// subagents: the adapter that reported them is gone and will never end
+    /// them.
     pub(super) fn forget_activity(&mut self) {
+        self.interrupt_subagents();
         self.background.clear();
         self.context = None;
         self.limits.clear();

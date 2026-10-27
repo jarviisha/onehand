@@ -21,5 +21,5 @@ pub use types::{
     AcpEvent, AcpRequest, Attachment, BackgroundReport, ConfigChoice, ConfigOption, ElicitChoice,
     ElicitField, ElicitKind, ElicitOutcome, ElicitValue, Elicitation, LimitStatus, Mode,
     PermissionOption, PermissionRequest, PermissionWeight, PlanEntry, PlanStatus, RateLimit, ReqTx,
-    SlashCommand, ToolCall, ToolCallUpdate, ToolContent, ToolKind, ToolStatus, Usage,
+    SlashCommand, SubagentEnd, ToolCall, ToolCallUpdate, ToolContent, ToolKind, ToolStatus, Usage,
 };

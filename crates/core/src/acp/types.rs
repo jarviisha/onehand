@@ -366,6 +366,15 @@ impl PermissionRequest {
     }
 }
 
+/// How a subagent's session ended, as the adapter reports it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SubagentEnd {
+    Completed,
+    Failed,
+    Cancelled,
+    Disconnected,
+}
+
 /// A parked permission request awaiting a user choice. `rpc_id` is the raw
 /// JSON-RPC id the worker must echo back in its response.
 #[derive(Debug, Clone)]
@@ -382,6 +391,8 @@ pub struct PermissionRequest {
     pub kind: ToolKind,
     pub title: String,
     pub options: Vec<PermissionOption>,
+    /// The subagent session that asks, when it is not the root session.
+    pub child: Option<String>,
 }
 
 // ── Elicitation (the agent *asking a question*, not asking permission) ───────
@@ -499,6 +510,8 @@ pub struct Elicitation {
     /// The prompt line above the fields.
     pub message: String,
     pub fields: Vec<ElicitField>,
+    /// The subagent session that asks, when it is not the root session.
+    pub child: Option<String>,
 }
 
 /// One answer value in the response `content` map.
@@ -545,6 +558,16 @@ pub enum AcpEvent {
     Usage(Usage),
     /// Background work started or ended.
     Background(BackgroundReport),
+    /// A subagent started in a session of its own.
+    SubagentSpawned {
+        id: String,
+        name: String,
+        task: String,
+    },
+    /// A subagent's session ended.
+    SubagentEnded { id: String, end: SubagentEnd },
+    /// An event from a subagent's session, not the root's.
+    InChild { child: String, event: Box<AcpEvent> },
     /// The adapter refused to stop a background item (it may have just ended).
     StopRefused { why: String },
     /// The agent is asking permission; parked until the user chooses.
@@ -642,6 +665,7 @@ mod tests {
             tool_call_id: None,
             kind: ToolKind::Other,
             title: String::new(),
+            child: None,
             options: kinds
                 .iter()
                 .map(|kind| PermissionOption {

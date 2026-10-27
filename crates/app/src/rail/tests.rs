@@ -26,6 +26,7 @@ fn seed() -> Vec<Item> {
         since: since(age),
         age,
         background: 0,
+        subagents: 0,
         in_turn: false,
     };
     vec![
@@ -113,27 +114,47 @@ fn attention_counts_input_failures_and_lost_agents() {
 #[test]
 fn the_meta_line_keeps_one_order() {
     use SessionSignal::*;
-    assert_eq!(meta(Some(Busy), 0, "claude", 1), "Running · claude · 1m");
+    assert_eq!(meta(Some(Busy), 0, 0, "claude", 1), "Running · claude · 1m");
     assert_eq!(
-        meta(Some(AwaitingUser), 0, "claude", 4),
+        meta(Some(AwaitingUser), 0, 0, "claude", 4),
         "Needs input · claude · waiting 4m"
     );
-    assert_eq!(meta(Some(Failed), 0, "codex", 25), "Failed · codex · 25m");
     assert_eq!(
-        meta(Some(Lost), 0, "codex", 0),
+        meta(Some(Failed), 0, 0, "codex", 25),
+        "Failed · codex · 25m"
+    );
+    assert_eq!(
+        meta(Some(Lost), 0, 0, "codex", 0),
         "Disconnected · codex · now"
     );
-    assert_eq!(meta(None, 0, "claude", 2 * 60 * 24), "Idle · claude · 2d");
+    assert_eq!(
+        meta(None, 0, 0, "claude", 2 * 60 * 24),
+        "Idle · claude · 2d"
+    );
 }
 
 #[test]
 fn meta_counts_background_work() {
     use SessionSignal::*;
     assert_eq!(
-        meta(Some(Busy), 2, "Claude Code", 1),
+        meta(Some(Busy), 2, 0, "Claude Code", 1),
         "Running · 2 in background · Claude Code · 1m"
     );
-    assert_eq!(meta(Some(Busy), 0, "claude", 1), "Running · claude · 1m");
+    assert_eq!(meta(Some(Busy), 0, 0, "claude", 1), "Running · claude · 1m");
+}
+
+#[test]
+fn meta_counts_subagents() {
+    use SessionSignal::*;
+    assert_eq!(
+        meta(Some(Busy), 0, 2, "Claude Code", 1),
+        "Running · 2 subagents · Claude Code · 1m"
+    );
+    assert_eq!(
+        meta(Some(Busy), 1, 1, "Claude Code", 1),
+        "Running · 1 in background · 1 subagent · Claude Code · 1m"
+    );
+    assert_eq!(meta(Some(Busy), 0, 0, "claude", 1), "Running · claude · 1m");
 }
 
 #[test]
@@ -291,6 +312,7 @@ fn a_group_past_the_cap_says_how_many_more_until_shown_whole() {
             since: since(0),
             age: 0,
             background: 0,
+            subagents: 0,
             in_turn: false,
         })
         .collect();

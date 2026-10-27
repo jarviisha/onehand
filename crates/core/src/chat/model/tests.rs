@@ -784,6 +784,7 @@ fn ask_item() -> AskItem {
     AskItem::new(Elicitation {
         rpc_id: serde_json::json!(1),
         tool_call_id: None,
+        child: None,
         message: "pick".into(),
         fields: vec![
             crate::acp::ElicitField {
@@ -1451,6 +1452,7 @@ fn a_question_waits_for_an_answer_and_a_permission_for_approval() {
     chat.items.push(ChatItem::Permission(PermItem {
         req: permission("cargo test"),
         resolved: None,
+        asker: None,
         expanded: false,
     }));
     assert_eq!(
@@ -1466,6 +1468,7 @@ fn permission(title: &str) -> PermissionRequest {
         rpc_id: serde_json::Value::from(7),
         tool_call_id: None,
         kind: crate::acp::ToolKind::Execute,
+        child: None,
         title: title.into(),
         options: vec![
             PermissionOption {
@@ -1582,6 +1585,7 @@ fn cancelling_resolves_parked_permissions_first() {
     chat.items.push(ChatItem::Permission(PermItem {
         req: permission("rm -rf build"),
         resolved: None,
+        asker: None,
         expanded: false,
     }));
 
@@ -1609,6 +1613,7 @@ fn answering_a_permission_replies_and_records_the_choice() {
     chat.items.push(ChatItem::Permission(PermItem {
         req: permission("rm -rf build"),
         resolved: None,
+        asker: None,
         expanded: false,
     }));
 
@@ -1641,6 +1646,7 @@ fn copying_a_collapsed_command_takes_all_of_it() {
     let item = PermItem {
         req: permission(&script),
         resolved: None,
+        asker: None,
         expanded: false,
     };
 
@@ -1650,6 +1656,7 @@ fn copying_a_collapsed_command_takes_all_of_it() {
     let one = PermItem {
         req: permission(&long_line),
         resolved: None,
+        asker: None,
         expanded: false,
     };
     assert_eq!(one.command(), long_line);
@@ -1663,6 +1670,7 @@ fn opening_a_command_block_survives_in_the_item() {
     chat.items.push(ChatItem::Permission(PermItem {
         req: permission(&"echo\n".repeat(20)),
         resolved: None,
+        asker: None,
         expanded: false,
     }));
 
@@ -1681,6 +1689,7 @@ fn answering_twice_sends_only_once() {
     chat.items.push(ChatItem::Permission(PermItem {
         req: permission("rm -rf build"),
         resolved: None,
+        asker: None,
         expanded: false,
     }));
 
@@ -2691,4 +2700,29 @@ fn a_form_answered_only_with_none_counts_one_answer() {
         }
         _ => panic!("the form is gone"),
     }
+}
+
+/// Claude's adapter drops the spawning call but still sends bare updates for
+/// its id: those draw nothing, while an update with a title still does.
+#[test]
+fn an_update_with_nothing_to_read_for_an_unknown_id_draws_no_card() {
+    let mut chat = Chat::new(1, PathBuf::from("/tmp/p"), "Claude Code".to_string(), None);
+    let update = |title: Option<&str>| {
+        AcpEvent::ToolUpdate(crate::acp::ToolCallUpdate {
+            id: "toolu_1".into(),
+            title: title.map(String::from),
+            description: None,
+            status: Some(ToolStatus::InProgress),
+            content: None,
+        })
+    };
+    chat.apply(update(None));
+    chat.apply(update(Some("")));
+    chat.apply(AcpEvent::TurnEnded {
+        stop_reason: String::new(),
+    });
+    assert!(chat.items.is_empty());
+
+    chat.apply(update(Some("Run it")));
+    assert!(matches!(&chat.items[..], [ChatItem::Tool(t)] if t.call.title == "Run it"));
 }

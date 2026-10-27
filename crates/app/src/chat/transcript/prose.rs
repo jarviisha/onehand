@@ -65,7 +65,7 @@ pub(super) fn agent(
 /// Falls back to the raw source rather than rendering nothing: a block the
 /// cache has not seen is a bug, but a *silent* one would be a transcript with
 /// a hole in it.
-fn md_view(
+pub(super) fn md_view(
     session: &Entity<ChatSession>,
     md: &Md,
     window: &Window,

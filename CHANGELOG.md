@@ -115,9 +115,15 @@ minor bump may break any of them.
   pressing one stops it without stopping the turn. Under the composer, a meter says how full the
   context is, and for Claude Code another says how close the account is to its 5-hour or weekly
   limit. Copilot sends none of this and shows none of it.
+- Claude Code and Codex sessions draw each subagent as a card in the transcript, where the agent
+  handed work off: its name and state, the first line of its task, and, while it works, its latest
+  3 steps. Once it ends it folds to its state and step count, opened by a press. Its permission
+  requests and questions pin above the composer under its name, and the rail counts the subagents
+  a session has working. A session closed mid-subagent keeps the card as interrupted.
 
 ### Fixed
 
+- A subagent's steps are no longer mixed into the agent's own: each is kept in the subagent's card.
 - A session whose agent still runs work in the background reads *Running* on the rail, not idle.
 - What an agent writes after its turn has ended, when background work reports back, is saved to
   disk; before, it waited for the next turn's end and was lost if onehand closed first.

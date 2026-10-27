@@ -486,3 +486,34 @@ fn a_pending_rewrite_is_not_work_between_turns() {
     assert!(!chat.unsaved_between_turns());
     chat.store = None;
 }
+
+/// A card still working is not something to save between turns: the save
+/// would write nothing, so the gate does not ask for one.
+#[test]
+fn a_working_card_alone_is_not_unsaved() {
+    let mut chat = Chat::new(
+        1,
+        PathBuf::from("/r"),
+        "Claude".into(),
+        Some(PathBuf::from("/store")),
+    );
+    chat.session_id = Some("sid-1".into());
+    chat.link = Link::Connected;
+    chat.items.push(ChatItem::User(UserMsg::text("go")));
+    assert!(chat.flush().is_some());
+    chat.apply(AcpEvent::SubagentSpawned {
+        id: "c1".into(),
+        name: "explore".into(),
+        task: "look".into(),
+    });
+    chat.apply(AcpEvent::AgentChunk("after the card".into()));
+    assert!(!chat.unsaved_between_turns(), "nothing before the card");
+    assert!(chat.flush().is_none(), "and a save writes nothing");
+    chat.apply(AcpEvent::SubagentEnded {
+        id: "c1".into(),
+        end: crate::acp::SubagentEnd::Completed,
+    });
+    assert!(chat.unsaved_between_turns(), "the ended card is");
+    // Never written: the store is a path nobody owns.
+    chat.store = None;
+}

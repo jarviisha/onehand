@@ -11,7 +11,12 @@ use crate::chat::model::{Chat, ChatItem};
 pub fn export_markdown(chat: &Chat) -> String {
     let mut out = String::new();
     out.push_str("# onehand conversation\n\n");
-    for item in chat.history.iter().chain(chat.items.iter()) {
+    push_items(&mut out, chat, chat.history.iter().chain(chat.items.iter()));
+    out
+}
+
+fn push_items<'a>(out: &mut String, chat: &Chat, items: impl Iterator<Item = &'a ChatItem>) {
+    for item in items {
         match item {
             ChatItem::User(u) => {
                 out.push_str("## You\n\n");
@@ -40,9 +45,9 @@ pub fn export_markdown(chat: &Chat) -> String {
                 ));
                 for c in &tc.content {
                     match c {
-                        ToolContent::Text(t) => push_fenced(&mut out, "", t),
+                        ToolContent::Text(t) => push_fenced(out, "", t),
                         ToolContent::Diff { path, new, .. } => {
-                            push_fenced(&mut out, "diff", &format!("# {path}\n{new}"))
+                            push_fenced(out, "diff", &format!("# {path}\n{new}"))
                         }
                         ToolContent::Terminal(id) => {
                             let o = chat
@@ -50,7 +55,7 @@ pub fn export_markdown(chat: &Chat) -> String {
                                 .get(id)
                                 .map(|v| v.output.as_str())
                                 .unwrap_or("");
-                            push_fenced(&mut out, "", o)
+                            push_fenced(out, "", o)
                         }
                         ToolContent::Image(_) => out.push_str("_(image)_\n\n"),
                     }
@@ -71,6 +76,25 @@ pub fn export_markdown(chat: &Chat) -> String {
                 out.push_str(&format!("_{text}_\n\n"));
             }
             ChatItem::Permission(_) => {}
+            // Its steps as a quote under it, so a nested card nests deeper.
+            ChatItem::Subagent(card) => {
+                out.push_str(&format!(
+                    "**Subagent: {}** ({})\n\n",
+                    card.name,
+                    card.state.as_str()
+                ));
+                if let Some(task) = &card.task {
+                    out.push_str(&format!("_{task}_\n\n"));
+                }
+                let mut inner = String::new();
+                push_items(&mut inner, chat, card.items.iter());
+                for line in inner.trim_end().lines() {
+                    out.push_str(if line.is_empty() { ">" } else { "> " });
+                    out.push_str(line);
+                    out.push('\n');
+                }
+                out.push('\n');
+            }
             // Only an answered question is worth exporting — the prompt plus
             // what the user picked, as a one-line Q&A.
             ChatItem::Ask(a) => {
@@ -80,7 +104,6 @@ pub fn export_markdown(chat: &Chat) -> String {
             }
         }
     }
-    out
 }
 
 /// Append `body` as a fenced code block whose fence is longer than any
@@ -152,5 +175,29 @@ mod tests {
         let first = out.find("asked first").expect("history is exported");
         let second = out.find("asked second").expect("live items are exported");
         assert!(first < second, "history comes first");
+    }
+
+    /// A card is its name and how it ended, with its steps under it.
+    #[test]
+    fn markdown_export_lists_a_card() {
+        use crate::chat::model::{Md, SubagentItem, SubagentState};
+        let mut chat = Chat::default();
+        chat.items = vec![ChatItem::Subagent(SubagentItem {
+            id: "c1".into(),
+            name: "explore".into(),
+            task: Some("find the loader".into()),
+            state: SubagentState::Failed,
+            items: vec![ChatItem::Agent(Md::parse("looked in src"))],
+        })];
+        let out = export_markdown(&chat);
+        assert!(
+            out.contains("**Subagent: explore** (failed)"),
+            "got {out:?}"
+        );
+        assert!(out.contains("find the loader"), "got {out:?}");
+        assert!(
+            out.contains("> ## Agent\n>\n> looked in src"),
+            "got {out:?}"
+        );
     }
 }

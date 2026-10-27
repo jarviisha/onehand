@@ -157,6 +157,8 @@ pub struct RailSession {
     pub since: std::time::Instant,
     /// How many of the agent's background items are alive.
     pub background: usize,
+    /// How many subagents are working, nested ones included.
+    pub subagents: usize,
     /// Whether a turn is open, as opposed to only background work running.
     pub in_turn: bool,
 }

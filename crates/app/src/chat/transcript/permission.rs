@@ -153,7 +153,12 @@ pub(in crate::chat) fn permission(
             Some(
                 Icon::new(IconName::TriangleAlert).text_color(crate::theme::status_ink(cx).warning),
             ),
-            "Permission required",
+            // A subagent's request says whose it is: the agent itself is the
+            // one asking otherwise.
+            match &p.asker {
+                Some(asker) => format!("{asker} asks permission"),
+                None => "Permission required".to_string(),
+            },
             // The only word the protocol offers about *what* is asked for,
             // opposite the heading where the question card keeps its count.
             kind.map(SharedString::from),

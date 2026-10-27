@@ -214,6 +214,10 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   when a Claude Code agent was set up as it opened; one added later brings it to the next window.
   The Workbench builds its modes once per window, and nothing in it removes or adds one after.
 - **Agent activity is partial.** Copilot shows no context, limit or background work, and Codex no
-  limit meter, because their adapters do not report them. A subagent appears in neither the
-  background list nor the conversation's tree: the client does not advertise the capability that
-  would move its output to child sessions, which it does not read.
+  limit meter, because their adapters do not report them. A subagent shows as a card in the
+  transcript and in the rail's count, not in the background list, and one cannot be stopped or
+  prompted on its own. Copilot shows no subagent cards.
+- **A background subagent that never ends holds later turns out of the saved transcript.** A card
+  is written only once it has ended, and the file is only ever added to, so every turn after a
+  card still working waits for it. They are written when the session closes, the card as
+  interrupted; a crash before that loses them.

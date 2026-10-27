@@ -26,6 +26,7 @@ mod permission;
 mod plan;
 mod prose;
 mod strip;
+mod subagent;
 mod table_view;
 mod tool;
 mod user;
@@ -166,6 +167,7 @@ pub fn item(
         ChatItem::Plan(p) => plan(session, p, target, cx).into_any_element(),
         ChatItem::Permission(p) => permission(session, p, target, room.well, cx).into_any_element(),
         ChatItem::Ask(a) => ask(session, a, target, cx).into_any_element(),
+        ChatItem::Subagent(card) => subagent::subagent(session, card, window, cx),
         ChatItem::Notice {
             text,
             level,

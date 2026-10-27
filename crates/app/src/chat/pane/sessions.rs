@@ -623,15 +623,15 @@ impl ChatPane {
         )
     }
 
-    /// How many background items `uid`'s agent has alive, and whether a turn
-    /// is open -- the half of running that Stop ends.
-    pub fn activity(&self, uid: u64, cx: &App) -> (usize, bool) {
+    /// How many background items `uid`'s agent has alive, how many subagents
+    /// work, and whether a turn is open -- the half of running that Stop ends.
+    pub fn activity(&self, uid: u64, cx: &App) -> (usize, usize, bool) {
         self.conversations
             .get(&uid)
             .and_then(|conv| conv.session())
-            .map_or((0, false), |session| {
+            .map_or((0, 0, false), |session| {
                 let chat = &session.read(cx).chat;
-                (chat.background().len(), chat.busy)
+                (chat.background().len(), chat.subagents_working(), chat.busy)
             })
     }
 

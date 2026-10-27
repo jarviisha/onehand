@@ -55,7 +55,10 @@ pub(in crate::chat) fn ask(
     pinned_card(live, cx)
         .child(card_head(
             None,
-            a.req.message.clone(),
+            match &a.asker {
+                Some(asker) => format!("{asker} asks: {}", a.req.message),
+                None => a.req.message.clone(),
+            },
             counter.map(Into::into),
             cx,
         ))
