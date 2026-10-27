@@ -183,7 +183,7 @@ impl Chat {
             && !self.busy
             && !self.rewrite
             && !matches!(self.replay, Replay::Partial(_))
-            && self.persisted < self.history.len() + self.items.len()
+            && self.persisted < self.saveable_len()
             && !self.items.iter().any(|item| {
                 matches!(item, ChatItem::Tool(tool)
                     if matches!(tool.call.status, ToolStatus::Pending | ToolStatus::InProgress))

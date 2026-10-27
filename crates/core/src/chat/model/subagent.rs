@@ -21,6 +21,19 @@ pub enum SubagentState {
     Interrupted,
 }
 
+impl SubagentState {
+    /// The state as one lowercase word, as it is saved and exported.
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Working => "working",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+            Self::Interrupted => "interrupted",
+        }
+    }
+}
+
 /// One subagent and the steps it took.
 pub struct SubagentItem {
     pub id: String,
@@ -135,6 +148,17 @@ impl Chat {
             SubagentEnd::Disconnected => SubagentState::Interrupted,
         });
         true
+    }
+
+    /// How much of history ⧺ items can be written now: up to the first card
+    /// with anything still working in it. The file is only ever added to, so
+    /// a card written before it ends would stay half a card for ever; it and
+    /// everything after it wait until it has ended.
+    pub(super) fn saveable_len(&self) -> usize {
+        let all = self.history.iter().chain(self.items.iter());
+        all.clone()
+            .position(|item| working(std::slice::from_ref(item)) > 0)
+            .unwrap_or(all.count())
     }
 
     /// Every card still working is interrupted: the adapter that would end

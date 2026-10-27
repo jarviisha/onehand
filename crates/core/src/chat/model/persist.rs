@@ -31,7 +31,7 @@ impl Chat {
         if matches!(self.replay, Replay::Partial(_)) {
             return None;
         }
-        let total = self.history.len() + self.items.len();
+        let total = self.saveable_len();
         let from = if self.rewrite { 0 } else { self.persisted };
         if from >= total {
             return None;
@@ -39,7 +39,13 @@ impl Chat {
 
         let mut lines = Vec::new();
         let mut blobs = Vec::new();
-        for item in self.history.iter().chain(self.items.iter()).skip(from) {
+        for item in self
+            .history
+            .iter()
+            .chain(self.items.iter())
+            .take(total)
+            .skip(from)
+        {
             if let Some((line, mut carried)) = store::line_of(self, item) {
                 lines.push(line);
                 blobs.append(&mut carried);
@@ -122,6 +128,9 @@ impl Chat {
     /// covers the same conversation every turn and does report, so a standing
     /// condition has already been said out loud long before this runs.
     pub fn save_blocking(&mut self) {
+        // The adapter goes with the chat, so a card still working never ends;
+        // held back, it and everything after it would never be written.
+        self.interrupt_subagents();
         if let Some(write) = self.flush() {
             if let Err(e) = store::commit(&write) {
                 eprintln!("onehand: conversation not archived: {e}");

@@ -33,7 +33,10 @@
 
 use crate::acp::{PlanEntry, PlanStatus, ToolCall, ToolContent, ToolKind, ToolStatus};
 use crate::attachment::{AttachmentDelivery, AttachmentKind, AttachmentSnapshot};
-use crate::chat::model::{Chat, ChatItem, Md, NoticeLevel, PlanItem, Thought, ToolItem, UserMsg};
+use crate::chat::model::{
+    Chat, ChatItem, Md, NoticeLevel, PlanItem, SubagentItem, SubagentState, Thought, ToolItem,
+    UserMsg,
+};
 use crate::config::config_dir;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -233,6 +236,16 @@ enum Line {
         level: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         detail: Option<String>,
+    },
+    /// A subagent's card, its steps inside it. Written only once it has
+    /// ended: the file is never rewritten, so a card still working stays out.
+    Subagent {
+        id: String,
+        name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        task: Option<String>,
+        state: String,
+        items: Vec<Line>,
     },
 }
 
@@ -575,6 +588,26 @@ fn restore_line(dir: &Path, line: &Line) -> ChatItem {
             level: legacy_failed(text, NoticeLevel::parse(level)),
             detail: detail.clone(),
         },
+        Line::Subagent {
+            id,
+            name,
+            task,
+            state,
+            items,
+        } => ChatItem::Subagent(SubagentItem {
+            id: id.clone(),
+            name: name.clone(),
+            task: task.clone(),
+            // Saved working means the session closed under it: nothing will
+            // ever end it now.
+            state: match state.as_str() {
+                "completed" => SubagentState::Completed,
+                "failed" => SubagentState::Failed,
+                "cancelled" => SubagentState::Cancelled,
+                _ => SubagentState::Interrupted,
+            },
+            items: items.iter().map(|line| restore_line(dir, line)).collect(),
+        }),
         Line::Tool {
             id,
             title,
@@ -667,7 +700,15 @@ pub(crate) type Blob = (String, Arc<Vec<u8>>);
 /// buttons that answer a request nothing is waiting on.
 pub(crate) fn line_of(chat: &Chat, item: &ChatItem) -> Option<(String, Vec<Blob>)> {
     let mut blobs = Vec::new();
-    let line = match item {
+    let line = to_line(chat, item, &mut blobs)?;
+    // Compact, never pretty: this is a line, and a line broken across lines is
+    // no longer one.
+    let text = serde_json::to_string(&line).ok()?;
+    Some((text, blobs))
+}
+
+fn to_line(chat: &Chat, item: &ChatItem, blobs: &mut Vec<Blob>) -> Option<Line> {
+    Some(match item {
         ChatItem::User(u) => Line::User {
             text: u.text.clone(),
             attachments: u
@@ -729,19 +770,24 @@ pub(crate) fn line_of(chat: &Chat, item: &ChatItem) -> Option<(String, Vec<Blob>
                 .call
                 .content
                 .iter()
-                .map(|c| content_of(chat, c, &mut blobs))
+                .map(|c| content_of(chat, c, blobs))
                 .collect(),
             secs: t.elapsed_secs,
             exit: t.exit_code,
         },
+        ChatItem::Subagent(card) => Line::Subagent {
+            id: card.id.clone(),
+            name: card.name.clone(),
+            task: card.task.clone(),
+            state: card.state.as_str().to_string(),
+            items: card
+                .items
+                .iter()
+                .filter_map(|item| to_line(chat, item, blobs))
+                .collect(),
+        },
         ChatItem::Permission(_) | ChatItem::Ask(_) => return None,
-        // Not written yet.
-        ChatItem::Subagent(_) => return None,
-    };
-    // Compact, never pretty: this is a line, and a line broken across lines is
-    // no longer one.
-    let text = serde_json::to_string(&line).ok()?;
-    Some((text, blobs))
+    })
 }
 
 fn content_of(chat: &Chat, content: &ToolContent, blobs: &mut Vec<Blob>) -> StoredContent {
