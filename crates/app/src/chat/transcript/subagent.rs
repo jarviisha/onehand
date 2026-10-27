@@ -55,8 +55,13 @@ pub(super) fn subagent(
     // Before the shown steps: the way into the rest while folded, a count
     // once opened (a working card's oldest past the cap). After: an ended
     // card's newest past the cap.
-    let before = shown.start;
-    let after = steps - shown.end;
+    // An empty selection (a folded ended card) has nothing before or after:
+    // its head already says the count.
+    let (before, after) = if shown.is_empty() {
+        (0, 0)
+    } else {
+        (shown.start, steps - shown.end)
+    };
     let root = session.read(cx).chat.root.clone();
     let rows: Vec<gpui::AnyElement> = shown
         .clone()
@@ -132,7 +137,7 @@ fn shown(steps: usize, open: bool, working: bool) -> std::ops::Range<usize> {
         (true, true) => steps.saturating_sub(SUBAGENT_STEP_CAP)..steps,
         (true, false) => 0..steps.min(SUBAGENT_STEP_CAP),
         (false, true) => steps.saturating_sub(SUBAGENT_LIVE_STEPS)..steps,
-        (false, false) => steps..steps,
+        (false, false) => 0..0,
     }
 }
 
@@ -251,7 +256,7 @@ mod tests {
         assert_eq!(shown(2, false, true), 0..2);
         assert_eq!(shown(10, false, true), 10 - LIVE..10);
         // Folded and ended: none.
-        assert_eq!(shown(10, false, false), 10..10);
+        assert!(shown(10, false, false).is_empty());
         // Opened, under the cap: everything either way.
         assert_eq!(shown(10, true, true), 0..10);
         assert_eq!(shown(10, true, false), 0..10);
