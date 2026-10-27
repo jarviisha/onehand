@@ -14,13 +14,19 @@ use gpui::{
     StatefulInteractiveElement, Styled, Window, div, relative, rems,
 };
 use gpui_component::button::{Button, ButtonVariants as _};
+use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, Sizable as _, StyledExt};
 use onehand_core::attachment::AttachmentSource;
+use onehand_core::chat::{Level, Meter};
 
 /// The ring a file dragged over the card draws, in pixels as a hairline is. A
 /// shadow rather than a border, so the card does not shift by its width while
 /// the file is held over it.
 const DROP_RING_PX: f32 = 1.;
+/// A meter's bar: long enough to read a quarter from a half, thin enough to
+/// stay a mark beside the words.
+const METER_BAR_W: Rems = rems(3.);
+const METER_BAR_H: Rems = rems(0.25);
 /// Below this the strip under the card takes two lines, the branch over the
 /// mode, rather than one squeezing the other. Measured on the stack, not the
 /// window.
@@ -318,7 +324,16 @@ impl Composer {
         });
         let branch = branch.map(|chip| self.opens_menu(Overlay::Branch, chip));
         let control = control_chip(session, cx);
-        if branch.is_none() && mode.is_none() && control.is_none() {
+        let meters: Vec<_> = {
+            let chat = &session.read(cx).chat;
+            [chat.context_meter(), chat.limit_meter()]
+        }
+        .into_iter()
+        .flatten()
+        .enumerate()
+        .map(|(i, meter)| meter_view(i, meter, cx))
+        .collect();
+        if branch.is_none() && mode.is_none() && control.is_none() && meters.is_empty() {
             return None;
         }
         let strip = match narrow {
@@ -340,7 +355,8 @@ impl Composer {
                         .gap_2()
                         .min_w_0()
                         .children(control)
-                        .children(mode),
+                        .children(mode)
+                        .children(meters),
                 ),
         )
     }
@@ -408,6 +424,43 @@ fn control_chip(
                 cx.notify();
             })),
     )
+}
+
+/// One meter of the strip: its name, a short bar in the inset step and the
+/// percent. Calm in the meta ink, warning and danger in their status inks; a
+/// meter with no percent keeps the name in its level's ink and draws no bar.
+fn meter_view(index: usize, meter: Meter, cx: &App) -> impl IntoElement + use<> {
+    let ink = match meter.level {
+        Level::Calm => crate::theme::meta_ink(cx),
+        Level::Warning => crate::theme::status_ink(cx).warning,
+        Level::Danger => crate::theme::status_ink(cx).danger,
+    };
+    let tip = SharedString::from(meter.tip);
+    div()
+        .id(("meter", index))
+        .h_flex()
+        .items_center()
+        .gap_1p5()
+        .flex_none()
+        .text_xs()
+        .text_color(ink)
+        .child(meter.label)
+        .children(meter.percent.map(|percent| {
+            div()
+                .w(METER_BAR_W)
+                .h(METER_BAR_H)
+                .rounded_full()
+                .overflow_hidden()
+                .bg(crate::theme::inset(cx))
+                .child(
+                    div()
+                        .h_full()
+                        .w(relative(f32::from(percent) / 100.))
+                        .bg(ink),
+                )
+        }))
+        .children(meter.percent.map(|percent| format!("{percent}%")))
+        .tooltip(move |window, cx| Tooltip::new(tip.clone()).build(window, cx))
 }
 
 /// Fast mode's mark: the muted ink at rest, the warning ink while fast.
