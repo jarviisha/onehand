@@ -2701,3 +2701,28 @@ fn a_form_answered_only_with_none_counts_one_answer() {
         _ => panic!("the form is gone"),
     }
 }
+
+/// Claude's adapter drops the spawning call but still sends bare updates for
+/// its id: those draw nothing, while an update with a title still does.
+#[test]
+fn an_update_with_nothing_to_read_for_an_unknown_id_draws_no_card() {
+    let mut chat = Chat::new(1, PathBuf::from("/tmp/p"), "Claude Code".to_string(), None);
+    let update = |title: Option<&str>| {
+        AcpEvent::ToolUpdate(crate::acp::ToolCallUpdate {
+            id: "toolu_1".into(),
+            title: title.map(String::from),
+            description: None,
+            status: Some(ToolStatus::InProgress),
+            content: None,
+        })
+    };
+    chat.apply(update(None));
+    chat.apply(update(Some("")));
+    chat.apply(AcpEvent::TurnEnded {
+        stop_reason: String::new(),
+    });
+    assert!(chat.items.is_empty());
+
+    chat.apply(update(Some("Run it")));
+    assert!(matches!(&chat.items[..], [ChatItem::Tool(t)] if t.call.title == "Run it"));
+}

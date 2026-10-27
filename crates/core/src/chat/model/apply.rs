@@ -599,7 +599,10 @@ pub(super) fn tool_call(items: &mut Vec<ChatItem>, tc: ToolCall) {
 /// update with no matching card (it raced ahead of its `tool_call`, or
 /// the adapter sends update-only calls) materializes one instead of being
 /// dropped — a silently-vanished `Failed` would read as "the turn did
-/// nothing".
+/// nothing". Only when it carries a title or content a person can read:
+/// Claude's adapter drops the spawning `Agent` call from the parent yet
+/// still sends bare updates for its id, which would otherwise draw an
+/// empty "Used tool" row that later turns failed.
 pub(super) fn tool_update(items: &mut Vec<ChatItem>, tu: ToolCallUpdate) {
     for item in items.iter_mut().rev() {
         if let ChatItem::Tool(t) = item {
@@ -650,6 +653,11 @@ pub(super) fn tool_update(items: &mut Vec<ChatItem>, tu: ToolCallUpdate) {
                 return;
             }
         }
+    }
+    let readable = tu.title.as_deref().is_some_and(|t| !t.is_empty())
+        || tu.content.as_ref().is_some_and(|c| !c.is_empty());
+    if !readable {
+        return;
     }
     items.push(ChatItem::Tool(ToolItem::new(ToolCall {
         id: tu.id,
