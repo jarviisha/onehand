@@ -36,6 +36,7 @@ mod runs;
 mod sessions;
 mod step_strip;
 pub(crate) mod tasks_page;
+mod titles;
 mod workspace_page;
 pub use events::{ChatPaneEvent, ProjectAction, Restart, SessionSignal};
 use header::Archives;
