@@ -1209,3 +1209,13 @@ async fn a_session_started_without_a_name_is_a_failed_start() {
     assert!(drained.is_ok(), "the start never ended");
     assert!(matches!(&last, Some(AcpEvent::Disconnected(_))), "{last:?}");
 }
+
+#[test]
+fn init_advertises_async_tasks_only() {
+    let caps = &super::wire::init_params()["clientCapabilities"];
+    assert_eq!(
+        caps["_meta"]["jetbrains"]["air"],
+        serde_json::json!({"version": 1, "capabilities": ["asyncTasks"]})
+    );
+    assert!(caps.get("subagents").is_none());
+}

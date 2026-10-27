@@ -453,6 +453,8 @@ impl Conn {
                             parse::Update::Commands(c) => AcpEvent::AvailableCommands(c),
                             parse::Update::ModeChanged(m) => AcpEvent::ModeChanged(m),
                             parse::Update::ConfigOptions(c) => AcpEvent::ConfigOptions(c),
+                            parse::Update::Usage(u) => AcpEvent::Usage(u),
+                            parse::Update::Background(b) => AcpEvent::Background(b),
                         };
                         let _ = self.output.send(ev).await;
                     }

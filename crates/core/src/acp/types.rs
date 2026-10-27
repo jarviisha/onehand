@@ -102,6 +102,52 @@ impl std::fmt::Display for ConfigChoice {
     }
 }
 
+// ── Usage and background work ───────────────────────────────────────────────
+
+/// How full the agent's context is, with the account's rate limit when the
+/// adapter reports one.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Usage {
+    pub used: u64,
+    pub size: u64,
+    pub limit: Option<RateLimit>,
+    /// The report closes a cycle the agent ran by itself (a background task
+    /// finishing), not one a person's prompt started.
+    pub cycle_end: bool,
+}
+
+/// The account's rate limit as the adapter last reported it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RateLimit {
+    pub status: LimitStatus,
+    /// Fraction used; the adapter may omit it, and it can pass 1.
+    pub utilization: Option<f32>,
+    /// Unix seconds when the window resets.
+    pub resets_at: Option<u64>,
+    /// The window's name, such as `five_hour`.
+    pub kind: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LimitStatus {
+    Allowed,
+    Warning,
+    Rejected,
+}
+
+/// A change in the agent's background work.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BackgroundReport {
+    Spawned {
+        id: String,
+        name: String,
+        kind: String,
+    },
+    Ended {
+        id: String,
+    },
+}
+
 // ── Plan (ACP `plan` update — Claude Code's TodoWrite) ──────────────────────
 
 /// One entry of the agent's plan/checklist.
@@ -490,6 +536,10 @@ pub enum AcpEvent {
     /// The agent (re)published its plan/checklist (Claude Code's TodoWrite) —
     /// the full entry list each time.
     Plan(Vec<PlanEntry>),
+    /// The context fill, and the rate limit when reported.
+    Usage(Usage),
+    /// Background work started or ended.
+    Background(BackgroundReport),
     /// The agent is asking permission; parked until the user chooses.
     Permission(PermissionRequest),
     /// The agent is asking a *question* (`AskUserQuestion` / an MCP form);

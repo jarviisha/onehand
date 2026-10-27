@@ -4,14 +4,14 @@
 //! content streams; tool calls, plans, commands and selectors arrive in Phase 3.
 
 use crate::acp::types::{
-    ConfigChoice, ConfigOption, PlanEntry, PlanStatus, SlashCommand, ToolCall, ToolCallUpdate,
-    ToolContent, ToolKind, ToolStatus,
+    BackgroundReport, ConfigChoice, ConfigOption, LimitStatus, PlanEntry, PlanStatus, RateLimit,
+    SlashCommand, ToolCall, ToolCallUpdate, ToolContent, ToolKind, ToolStatus, Usage,
 };
 use serde_json::Value;
 use std::sync::Arc;
 
 /// A single parsed effect of a `session/update`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Update {
     /// A chunk of the agent's reply text (markdown).
     Agent(String),
@@ -33,6 +33,10 @@ pub enum Update {
     ModeChanged(String),
     /// The session's config options (model/effort/agent) were (re)published.
     ConfigOptions(Vec<ConfigOption>),
+    /// Context fill and rate limit.
+    Usage(Usage),
+    /// Background work started or ended.
+    Background(BackgroundReport),
 }
 
 /// Whether a user chunk is the adapter's own marker for a turn the person cut
@@ -73,8 +77,79 @@ pub(crate) fn parse_session_update(update: &Value) -> Vec<Update> {
         "config_option_update" => vec![Update::ConfigOptions(parse_config_options(
             update.get("configOptions"),
         ))],
+        "usage_update" => parse_usage(update).map(Update::Usage).into_iter().collect(),
+        "async_task_spawned" => {
+            let text = |k: &str| update.get(k).and_then(Value::as_str);
+            let (Some(id), kind) = (text("asyncTaskId"), text("taskType").unwrap_or_default())
+            else {
+                return Vec::new();
+            };
+            let name = text("name").or(text("description")).unwrap_or(kind);
+            vec![Update::Background(BackgroundReport::Spawned {
+                id: id.into(),
+                name: name.into(),
+                kind: kind.into(),
+            })]
+        }
+        "async_task_state_update" => {
+            let ended = matches!(
+                update.get("state").and_then(Value::as_str),
+                Some("completed" | "failed" | "stopped")
+            );
+            update
+                .get("asyncTaskId")
+                .and_then(Value::as_str)
+                .filter(|_| ended)
+                .map(|id| {
+                    vec![Update::Background(BackgroundReport::Ended {
+                        id: id.into(),
+                    })]
+                })
+                .unwrap_or_default()
+        }
+        // Progress ticks carry nothing the list shows.
+        "async_task_progress" => Vec::new(),
         _ => Vec::new(),
     }
+}
+
+fn parse_usage(u: &Value) -> Option<Usage> {
+    let used = u.get("used").and_then(Value::as_u64)?;
+    let size = u.get("size").and_then(Value::as_u64)?;
+    let meta = u.get("_meta");
+    let limit = meta.and_then(|m| m.get("_claude/rateLimit")).and_then(|r| {
+        let status = match r.get("status").and_then(Value::as_str)? {
+            "allowed" => LimitStatus::Allowed,
+            "allowed_warning" => LimitStatus::Warning,
+            "rejected" => LimitStatus::Rejected,
+            _ => return None,
+        };
+        Some(RateLimit {
+            status,
+            utilization: r
+                .get("utilization")
+                .and_then(Value::as_f64)
+                .map(|f| f as f32),
+            resets_at: r.get("resetsAt").and_then(Value::as_u64),
+            kind: r
+                .get("rateLimitType")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+        })
+    });
+    // A person's own turn ends with its prompt's answer; any other origin is
+    // the agent waking itself.
+    let cycle_end = meta
+        .and_then(|m| m.get("_claude/origin"))
+        .and_then(|o| o.get("kind"))
+        .and_then(Value::as_str)
+        .is_some_and(|k| k != "human");
+    Some(Usage {
+        used,
+        size,
+        limit,
+        cycle_end,
+    })
 }
 
 /// Parse a `configOptions` array (from `session/new` or `config_option_update`)
@@ -750,5 +825,105 @@ mod tests {
         };
         assert_eq!(opts.len(), 1);
         assert_eq!(opts[0].current.as_deref(), Some("sonnet"));
+    }
+
+    fn parsed(v: Value) -> Vec<Update> {
+        parse_session_update(&v)
+    }
+
+    fn usage(limit: Option<RateLimit>, cycle_end: bool) -> Update {
+        Update::Usage(Usage {
+            used: 84000,
+            size: 200000,
+            limit,
+            cycle_end,
+        })
+    }
+
+    #[test]
+    fn usage_update_reads_used_and_size() {
+        let u = json!({"sessionUpdate":"usage_update","used":84000,"size":200000});
+        assert_eq!(parsed(u), vec![usage(None, false)]);
+    }
+
+    #[test]
+    fn usage_update_reads_claude_rate_limit() {
+        let u = json!({"sessionUpdate":"usage_update","used":84000,"size":200000,
+            "_meta":{"_claude/rateLimit":{"status":"allowed_warning","utilization":0.78,
+            "resetsAt":1793100000u64,"rateLimitType":"five_hour"}}});
+        let limit = RateLimit {
+            status: LimitStatus::Warning,
+            utilization: Some(0.78),
+            resets_at: Some(1793100000),
+            kind: Some("five_hour".into()),
+        };
+        assert_eq!(parsed(u), vec![usage(Some(limit), false)]);
+        let odd = json!({"sessionUpdate":"usage_update","used":84000,"size":200000,
+            "_meta":{"_claude/rateLimit":{"status":"weird"}}});
+        assert_eq!(parsed(odd), vec![usage(None, false)]);
+    }
+
+    #[test]
+    fn usage_update_marks_a_cycle_end_by_origin() {
+        let with = |origin: Value| {
+            json!({"sessionUpdate":"usage_update","used":84000,"size":200000,
+                "_meta":{"_claude/origin": origin}})
+        };
+        assert_eq!(
+            parsed(with(json!({"kind":"task-notification"}))),
+            vec![usage(None, true)]
+        );
+        assert_eq!(
+            parsed(with(json!({"kind":"human"}))),
+            vec![usage(None, false)]
+        );
+    }
+
+    #[test]
+    fn usage_update_without_numbers_is_dropped() {
+        assert!(parsed(json!({"sessionUpdate":"usage_update","size":5})).is_empty());
+        assert!(parsed(json!({"sessionUpdate":"usage_update","used":5})).is_empty());
+    }
+
+    #[test]
+    fn async_task_spawned_reads_name_and_kind() {
+        let spawned = |name: &str| {
+            Update::Background(BackgroundReport::Spawned {
+                id: "t1".into(),
+                name: name.into(),
+                kind: "shell".into(),
+            })
+        };
+        let u = json!({"sessionUpdate":"async_task_spawned","asyncTaskId":"t1",
+            "name":"npm run dev","taskType":"shell"});
+        assert_eq!(parsed(u), vec![spawned("npm run dev")]);
+        let u = json!({"sessionUpdate":"async_task_spawned","asyncTaskId":"t1",
+            "description":"dev server","taskType":"shell"});
+        assert_eq!(parsed(u), vec![spawned("dev server")]);
+        let u = json!({"sessionUpdate":"async_task_spawned","asyncTaskId":"t1","taskType":"shell"});
+        assert_eq!(parsed(u), vec![spawned("shell")]);
+    }
+
+    #[test]
+    fn async_task_terminal_states_end_it() {
+        let state = |s: &str| {
+            parsed(json!({"sessionUpdate":"async_task_state_update","asyncTaskId":"t1","state":s}))
+        };
+        for s in ["completed", "failed", "stopped"] {
+            assert_eq!(
+                state(s),
+                vec![Update::Background(BackgroundReport::Ended {
+                    id: "t1".into()
+                })]
+            );
+        }
+        assert!(state("running").is_empty());
+        assert!(state("mystery").is_empty());
+    }
+
+    #[test]
+    fn async_task_progress_is_ignored() {
+        let u = json!({"sessionUpdate":"async_task_progress","asyncTaskId":"t1"});
+        assert!(parsed(u).is_empty());
     }
 }

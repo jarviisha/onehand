@@ -281,6 +281,8 @@ impl Chat {
                 self.finalize_thought();
                 self.apply_plan(entries);
             }
+            // Read by the activity strip once the chat keeps it.
+            AcpEvent::Usage(_) | AcpEvent::Background(_) => {}
             AcpEvent::Permission(mut req) => {
                 self.consume_replay();
                 self.finalize_thought();
