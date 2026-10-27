@@ -228,7 +228,7 @@ pub(super) fn session_row(
     let (name_ink, meta_ink) = row_inks(chosen, cx);
     let group = SharedString::from(format!("rail-session-{uid}"));
     let title = SharedString::from(item.title.clone());
-    let facts = SharedString::from(meta(signal, item.background, who, item.age));
+    let facts = SharedString::from(meta(signal, item.background, item.subagents, who, item.age));
     // The state's word leads the line, so its ink runs over its own bytes.
     let words = StyledText::new(facts.clone()).with_highlights(word_ink(signal, cx).map(|ink| {
         let color = HighlightStyle {
