@@ -30,8 +30,9 @@ folds it (not during a search); the rest of the row shows the project's last ses
 which then fills the row. `+` and `⋯` show on hover and on the keyboard's row, right-click opens the
 same menu. A session row, indented under its project: its state mark, title and `⋯` (on hover, on
 the keyboard's row, always on the one shown), and under them `state · agent · age` (*waiting Nm*
-while it needs input, a card or its run's approval, the state's word in its ink while it waits on the person), over which the
-pointer and the keyboard's row lay *Stop* (running), *Send the last prompt again* (failed) and
+while it needs input, a card or its run's approval, the state's word in its ink while it waits on the person;
+*Running · N in background · agent · age* while background work outlives the turn, which keeps the session running), over which the
+pointer and the keyboard's row lay *Stop* (only while a turn is in flight, not for background work alone), *Send the last prompt again* (failed) and
 *Close*; the keyboard's row lays them on any session but the one shown, whose conversation already
 holds *Stop* and the way back, so a row the keys only pass through stays still. The other filters
 are flat, the project in place of the agent. A group lists six sessions, then *N more*; an open
@@ -78,7 +79,10 @@ is ever added to it (a refusal is Send's tooltip, a failure a toast). The field,
 *Fast* (its bolt alone, in the warning ink while fast: a toggle with no caret when its choices
 read as on and off; else a picker with a caret, the value in force on its tooltip), the model and
 effort chips, then *Send*, or *Stop* (solid danger,
-worded) and *Queue* over a draft. Under it the branch and the mode, stacked when narrow; while the
+worded) and *Queue* over a draft. Under it the branch and the mode, stacked when narrow, then at
+the strip's end the *Context* and limit meters (a percent and a thin bar, the tip saying
+`84k of 200k tokens` or when the limit resets; warning ink from 80%, danger when refused), on a row of
+their own once the strip stacks, and absent for an agent that reports neither; while the
 session's agent may use onehand's tools, *Controls onehand* stands before the mode, its bot mark
 in the warning ink, and pressing it switches that off. The `+` menu ends on *Agent controls
 onehand* under a heading of its own, *This session*, checked while on, and not offered in an
