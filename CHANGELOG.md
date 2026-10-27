@@ -110,9 +110,17 @@ minor bump may break any of them.
 - Every text field and search sits on a fill of its own with no edge until it takes focus; the
   composer is unchanged.
 - Menus are lettered at the size of the chrome around them, a step smaller than before.
+- Claude Code and Codex sessions show the work their agent left running in the background: an
+  *N in background* button in the agent pane's header lists each item with how long it has run, and
+  pressing one stops it without stopping the turn. Under the composer, a meter says how full the
+  context is, and for Claude Code another says how close the account is to its 5-hour or weekly
+  limit. Copilot sends none of this and shows none of it.
 
 ### Fixed
 
+- A session whose agent still runs work in the background reads *Running* on the rail, not idle.
+- What an agent writes after its turn has ended, when background work reports back, is saved to
+  disk; before, it waited for the next turn's end and was lost if onehand closed first.
 - The *More* and *Refresh* buttons on the Workflows, Issues and schedule pages, and a step
   setting's remove, are drawn whole; they had shrunk to a dot or a sliver.
 - A question card's long choice wraps clear of its Alt key instead of running under it.
