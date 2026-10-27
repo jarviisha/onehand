@@ -3,7 +3,6 @@
 use super::title_row;
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
-use crate::controls::Short as _;
 use crate::controls::text_area;
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
@@ -19,6 +18,7 @@ use onehand_core::issues::template;
 use onehand_core::preflight::{About, Finding};
 use onehand_core::unattended::{self as core, IssueRow, Tracker};
 use onehand_core::workflow::Template;
+use onehand_ui::Tall as _;
 
 /// A project's open issues, and the form that starts a run on the one chosen.
 ///
@@ -129,7 +129,7 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
                 .child(div().flex_1())
                 .child(
                     crate::controls::action("cancel-pick")
-                        .short()
+                        .tall()
                         .quiet(cx)
                         .label("Cancel")
                         .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
@@ -138,7 +138,7 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
                 )
                 .child({
                     let run = crate::controls::action("run-pick")
-                        .short()
+                        .tall()
                         .primary()
                         .label("Run");
                     match refusal {
@@ -189,6 +189,7 @@ fn start_form(
         "pick-workflow",
         picked,
         Some("By the issue's labels"),
+        onehand_ui::ControlSize::Tall,
         move |id, _, cx| shell.update(cx, |shell, cx| shell.pick_issue_workflow(id, cx)),
         cx,
     );
@@ -326,6 +327,7 @@ pub(crate) fn issue_workflow_menu<F>(
     id: &'static str,
     picked: Option<&str>,
     any: Option<&'static str>,
+    size: onehand_ui::ControlSize,
     on_pick: F,
     cx: &App,
 ) -> impl IntoElement + use<F>
@@ -348,12 +350,12 @@ where
     };
     let picked = picked.map(str::to_string);
     let on_pick = std::rc::Rc::new(on_pick);
-    // A form's picker: at a form's height, and filled whatever it holds. It
+    // A form's picker: at its form's height, and filled whatever it holds. It
     // stands alone at its field's edge, where a ghost's padding would set its
     // words in from the text above it.
     crate::controls::menu_below(
         id,
-        onehand_ui::picker((id, 0usize), name, true, onehand_ui::ControlSize::Short, cx),
+        onehand_ui::picker((id, 0usize), name, true, size, cx),
         move |mut menu, _, _| {
             if let Some(any) = any {
                 let on_pick = on_pick.clone();

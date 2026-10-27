@@ -4,6 +4,7 @@
 use super::*;
 use crate::controls::Short as _;
 use crate::controls::text_input;
+use onehand_ui::Tall as _;
 
 pub struct Editor {
     editing: Option<usize>,
@@ -104,7 +105,7 @@ fn typed_keys(value: &str) -> Vec<String> {
 
 impl Render for Editor {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        use crate::settings::{APP, field, list_row, page_head, section};
+        use crate::settings::{APP, field, list_row, list_rows, page_head, section};
 
         let overrides = Shared::global(cx).keymap.clone();
         let muted = cx.theme().muted_foreground;
@@ -126,7 +127,12 @@ impl Render for Editor {
                 // The page and its nav stay: the command is named by a line,
                 // not a title the size of a page's.
                 .child(page_head("Edit the keys of a command", APP, cx))
-                .child(div().text_base().font_semibold().child(command.label))
+                .child(
+                    div()
+                        .text_size(crate::tokens::CHROME_TEXT)
+                        .font_semibold()
+                        .child(command.label),
+                )
                 .child(
                     section(None, None, cx)
                         .child(field(
@@ -136,7 +142,7 @@ impl Render for Editor {
                                  unassign; Enter saves, Escape cancels"
                                     .into_any_element(),
                             ),
-                            text_input(&self.input, cx).short(),
+                            text_input(&self.input, cx).tall(),
                             cx,
                         ))
                         .child(
@@ -150,20 +156,19 @@ impl Render for Editor {
                                 .child("by default"),
                         )
                         .children(
-                            self.error.as_ref().map(|error| {
-                                div().text_xs().text_color(danger).child(error.clone())
-                            }),
+                            self.error
+                                .as_ref()
+                                .map(|error| problem(error.clone(), danger, cx)),
                         )
                         .child(
-                            // The same order the agent form keeps: the action
-                            // first, under the field it acts on.
+                            // The action first, under the field it acts on.
                             div()
                                 .h_flex()
                                 .gap_2()
                                 .child(
                                     // Secondary: Settings holds no primary.
                                     crate::controls::action("save-shortcut")
-                                        .short()
+                                        .tall()
                                         .label("Save")
                                         .secondary()
                                         .on_click(cx.listener(move |editor, _, window, cx| {
@@ -172,7 +177,7 @@ impl Render for Editor {
                                 )
                                 .child(
                                     crate::controls::action("cancel-shortcut")
-                                        .short()
+                                        .tall()
                                         .secondary()
                                         .label("Cancel")
                                         .on_click(cx.listener(|editor, _, window, cx| {
@@ -239,25 +244,27 @@ impl Render for Editor {
                 cx,
             ))
             .children(cx.global::<LoadWarning>().0.as_ref().map(|error| {
-                div().text_xs().text_color(danger).child(format!(
-                    "Loaded defaults because the saved keymap is invalid: {error}"
-                ))
+                problem(
+                    format!("Loaded defaults because the saved keymap is invalid: {error}"),
+                    danger,
+                    cx,
+                )
             }))
             .children(
                 self.error
                     .as_ref()
-                    .map(|error| div().text_xs().text_color(danger).child(error.clone())),
+                    .map(|error| problem(error.clone(), danger, cx)),
             )
-            .child(section(Some("Window"), None, cx).children(window_rows))
+            .child(section(Some("Window"), None, cx).child(list_rows(window_rows, cx)))
             .child(
                 section(
                     Some("Rail"),
                     Some("While the rail's list has the keyboard".into()),
                     cx,
                 )
-                .children(rail_rows),
+                .child(list_rows(rail_rows, cx)),
             )
-            .child(section(Some("Composer"), None, cx).children(composer_rows))
+            .child(section(Some("Composer"), None, cx).child(list_rows(composer_rows, cx)))
             .child(
                 section(
                     Some("Terminal"),
@@ -267,16 +274,23 @@ impl Render for Editor {
                     ),
                     cx,
                 )
-                .child(list_row(
-                    "Copy / paste",
-                    None,
-                    keys(["ctrl-shift-c", "ctrl-shift-v"], "", cx),
-                    cx,
-                ))
-                .child(list_row(
-                    "Focus traversal",
-                    Some("Go to the program in the terminal instead".into_any_element()),
-                    keys(["tab", "shift-tab"], "", cx),
+                .child(list_rows(
+                    [
+                        list_row(
+                            "Copy / paste",
+                            None,
+                            keys(["ctrl-shift-c", "ctrl-shift-v"], "", cx),
+                            cx,
+                        )
+                        .into_any_element(),
+                        list_row(
+                            "Focus traversal",
+                            Some("Go to the program in the terminal instead".into_any_element()),
+                            keys(["tab", "shift-tab"], "", cx),
+                            cx,
+                        )
+                        .into_any_element(),
+                    ],
                     cx,
                 )),
             )
@@ -304,4 +318,15 @@ fn keys<'a>(
             .into_any_element();
     }
     div().h_flex().gap_1().children(caps).into_any_element()
+}
+
+/// A problem with the keymap, in a box on the danger tint led by the warning
+/// mark, so it reads as something to answer rather than as one more line.
+fn problem(text: String, danger: gpui::Hsla, cx: &App) -> gpui::AnyElement {
+    crate::chat::pane::page_parts::notice_box(
+        gpui_component::IconName::TriangleAlert,
+        danger,
+        vec![text],
+        cx,
+    )
 }

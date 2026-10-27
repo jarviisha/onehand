@@ -182,9 +182,10 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   button (inside a line of meta text a label is written in its kind's ink instead, unframed), its words `py_1` off its edges, its edge halfway from its fill to its ink (`badge_edge`), and a dot or a status mark is `rounded_full` too. The library's small parts keep its half
   corner (*Components*). A part joined to its container's edge takes its corner there.
 - **Lines** part regions and are a 1px `border`. A **mark** says where the person is, not where
-  a region ends: the one under an open tab is 2px, as a stroke a step heavier than a line. The line under a page's top
-  and a list page's lines across the pane are a step fainter (`faint_rule`), so a page's top ends
-  on one line whatever its column and the edge-to-edge list reads as one surface. A
+  a region ends: the one under an open tab is 2px, as a stroke a step heavier than a line. The line under a page's top,
+  a list page's lines across the pane and the line between Settings' groups are a step fainter
+  (`faint_rule`), so a page's top ends on one line whatever its column, the edge-to-edge list reads
+  as one surface, and a group's heading, not its line, says where it starts. A
   box's edge is a step stronger, a control's edge (`input`): in Dark Modern the hairline sits too
   near the page's fill to group anything.
 
@@ -333,9 +334,10 @@ draws on (a radio's or a checkbox's ring on the selected step), `choice_mark` dr
 sizes disagree across components (its default button letters at the body size beside a field
 at `.text_sm()`), so a control takes one of two heights. On a page, where there is room and
 the person reads and types what a control holds, it takes `.tall()`: a page's head and a page's
-form, its fields, pickers and buttons alike, so a field's words stand at its title's size. In
-dense chrome (the rail, a dock, a strip, a filter bar, a dialog, a row, a box's title row, the
-composer) it takes `.short()`, so it never outweighs what it acts on. An icon alone is square at
+form, its fields, pickers and buttons alike, so a field's words stand at its title's size; a
+dialog holding a form at `DIALOG_FORM` is that room too. In dense chrome (the rail, a dock, a
+strip, a filter bar, a dialog that asks one thing, a row, a box's title row, the composer) it takes
+`.short()`, so it never outweighs what it acts on. An icon alone is square at
 its row's height: `.small()` beside `.short()` peers, `.tall()` beside tall ones. `.tall()`
 (`FIELD_H`) is the ceiling: no control stands taller. Never the library's default.
 **What a small object holds scales with the object.** Inside a fixed object smaller than a row of

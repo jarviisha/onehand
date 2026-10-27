@@ -95,18 +95,45 @@ pub(crate) fn foot_bar(
 ) -> AnyElement {
     // Across the page's foot, on its kind's tint, so it reads as one standing
     // condition of the whole form rather than of the column it sits in.
+    tinted_lines(icon, base, lines, cx)
+        .flex_none()
+        .w_full()
+        .px_8()
+        .py_3()
+        .into_any_element()
+}
+
+/// What stands in a page's body, above the thing it is about: the foot
+/// bar's tint, mark and lines in a box of their own, at a box's corner.
+pub(crate) fn notice_box(
+    icon: gpui_component::IconName,
+    base: gpui::Hsla,
+    lines: Vec<String>,
+    cx: &App,
+) -> AnyElement {
+    tinted_lines(icon, base, lines, cx)
+        .w_full()
+        .px_3()
+        .py_2()
+        .rounded(cx.theme().radius)
+        .into_any_element()
+}
+
+/// Lines on the tint of `base`, `icon` slotted on the first.
+fn tinted_lines(
+    icon: gpui_component::IconName,
+    base: gpui::Hsla,
+    lines: Vec<String>,
+    cx: &App,
+) -> Div {
     let tint = onehand_ui::tint(base, cx);
-    // One line's height, set on the bar and on the mark's slot, so the mark
+    // One line's height, set on the box and on the mark's slot, so the mark
     // stands centred on the first line however many follow it.
     let line = gpui::rems(crate::tokens::CHROME_TEXT.0 * crate::tokens::LEADING);
     div()
-        .flex_none()
-        .w_full()
         .h_flex()
         .items_start()
         .gap_2()
-        .px_8()
-        .py_3()
         .text_size(crate::tokens::CHROME_TEXT)
         .line_height(line)
         .bg(tint.fill)
@@ -124,5 +151,4 @@ pub(crate) fn foot_bar(
                 .min_w_0()
                 .children(lines.into_iter().map(|line| div().child(line))),
         )
-        .into_any_element()
 }

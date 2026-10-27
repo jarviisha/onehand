@@ -941,12 +941,15 @@ pub fn switch(
 /// same edged track, padded and parted as a switch's, its [`choice`]s
 /// wrapping onto further lines in a narrow container. The edge is what
 /// makes a row of loose words read as one setting; stacked settings stand
-/// apart as boxes rather than running into one paragraph.
+/// apart as boxes rather than running into one paragraph. The track holds
+/// its choices and no more: run on past the last, it is an empty stretch
+/// that reads as room for one still to come.
 pub fn choice_track(choices: impl IntoIterator<Item = impl IntoElement>, cx: &App) -> Div {
     div()
         .h_flex()
         .flex_wrap()
-        .w_full()
+        .self_start()
+        .max_w_full()
         .rounded(cx.theme().radius)
         .border_1()
         .border_color(cx.theme().input)

@@ -99,7 +99,8 @@ size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in ea
 | A page's head and the row under it: its actions, its search, a split action's both halves | Button, Input | `.tall()` |
 | An icon-only button in a page's head or a page's form | Button | `.tall_icon()`, square at `FIELD_H` |
 | A page's form: its fields, its pickers, its switch and its buttons | Button, Input | `.tall()` |
-| A dialog's fields and footer; a filter bar's choices and pickers, and a dock's search | Button, Input | `.short()` |
+| A form in a dialog at `DIALOG_FORM` (the agent form, the workflow launcher, the issue picker): its fields, its pickers and its footer | Button, Input | `.tall()` |
+| A dialog that asks one thing (a rename, a worktree): its fields and footer; a filter bar's choices and pickers, and a dock's search | Button, Input | `.short()` |
 | Every other button with words: a strip's, a box's, a row's, a secondary action inside dense content (a line of meta text, a transcript block, a chip), a tab, a fold toggle, a pinned card's answers | Button | `.short()`, under a row, so the controls never outweigh what they act on |
 | Every other icon-only button: a strip's, a row's, a copy control, the composer's send | Button | `.small()`, square at `CONTROL_H`, so an icon alone is as tall as a worded peer beside it |
 | A field in a strip or the rail | Input | `.short()`, as tall as the buttons beside it |
@@ -191,12 +192,13 @@ and its density, never its head:
 
 ### The top of a page
 
-A workspace-wide page (the overview, Tasks, Issues, Workflows, Schedules) keeps its top in place
-while the rest scrolls under it (`page_top`): the head, then, where the page has them, a row of its
-search and its filters. The top is inset `px_8`, close under the pane's header (`pt_2`), its parts
-`gap_6` apart, in the same column as the body under it (the whole pane on a list page); under it a
-`faint_rule` line runs the pane's whole width, drawn always, so every page's top ends on one line
-whatever the width of its column.
+A workspace-wide page (the overview, Tasks, Issues, Workflows, Schedules) and Settings keep their
+top in place while the rest scrolls under it (`page_top`): the head, then, where the page has them,
+a row of its search and its filters. The top is inset `px_8`, close under the pane's header
+(`pt_2`), its parts `gap_6` apart, in the same column as the body under it (the whole pane on a
+list page, and on Settings, whose name starts on its nav column's edge); under it a `faint_rule`
+line runs the pane's whole width, drawn always, so every page's top ends on one line whatever the
+width of its column.
 
 - **The head.** Its actions are `.tall()`, at one height; its icon-only ghost buttons
   (*Refresh*) stand before its creating action. The creating action (*New session*, Workflows'
@@ -303,7 +305,8 @@ list a search or a filter narrows says how many it shows of how many there are (
 M*). A table is rows split by hairlines, each with one under it, under a head row in
 meta text on the page's own surface, its rows square `row`s at the row inset.
 Rows in a box are parted by a hairline (`ruled`), drawn on a wrapper of the row's own so its
-focus ring moves nothing. A row's trailing facts reach the box's edge; where a row has them, its
+focus ring moves nothing; so are a Settings group's list rows (`list_rows`), whose group stands in
+no box. A row's trailing facts reach the box's edge; where a row has them, its
 hover actions are laid over them, hiding them while they show, rather than holding a slot beside
 them. A row without trailing facts keeps its actions in a held slot. Keep metadata and actions in
 stable trailing slots. Multi-line row variants align their primary
@@ -336,8 +339,9 @@ leaving the freed width empty; its scroll spans the detail, the scrollbar on the
 
 Each input is a `field`: its title in chrome text, an optional hint under it in meta text, `gap_2`
 to the control. Fields stand `gap_4` apart. An input is built with `text_input`, at a control's
-corner and the size of the place it stands in: `.tall()` in a page's form, `.short()` in a
-dialog; its buttons, pickers and switch take the same. Problems stand above the submit button in the danger
+corner and the size of the place it stands in: `.tall()` in a page's form and in a dialog at
+`DIALOG_FORM`, `.short()` in a dialog that asks one thing; its buttons, pickers and switch take the
+same. Problems stand above the submit button in the danger
 ink; in a page's form, in one box on the danger tint's fill led by the warning mark, each a
 sentence. A page form whose submit stands in the page's head (the workflow editor, whose columns
 leave no one place above it) sets them instead in a bar along the page's foot, the page's whole
@@ -353,7 +357,9 @@ A dialog is the library's `Dialog` at its own width, titled through `title_row`,
 named in its tooltip, over a backdrop that dims the window. Its fields are `field`s, `gap_4`
 apart; what blocks it stands above the footer in the danger ink. Its footer (`footer_row`) sits
 on the right: the dismissing button first, then the one primary action or the danger word, at
-`.short()`. A third action (*Use the automatic title*, *Put it somewhere else…*) stands at the
+its fields' size. The size follows the dialog: one that asks one thing (a rename, a worktree)
+stands at its own width with `.short()` controls; one that holds a form (the agent form, the
+workflow launcher, the issue picker) stands at `DIALOG_FORM` with `.tall()` ones. A third action (*Use the automatic title*, *Put it somewhere else…*) stands at the
 footer's start, apart from the two that close it, on the secondary fill, as it starts its line. It opens with focus on its first field and
 closes on Esc. A question without fields (a retry, *Answer the review*, a removal) is an alert
 dialog, as the confirmation below is, never a dialog of its own; a start that fails is said once,

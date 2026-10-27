@@ -2,7 +2,7 @@ use super::Shell;
 use super::confirm::Confirm;
 use crate::settings::{AgentCheck, AgentDraft, DraftShift, SettingsPage};
 use crate::state::Shared;
-use gpui::{App, BorrowAppContext, Context, Entity, Window, WindowAppearance};
+use gpui::{App, BorrowAppContext, Context, Entity, Focusable as _, Window, WindowAppearance};
 use gpui_component::{Theme, ThemeMode};
 use onehand_core::config::{AgentEdit, AgentSpec, Appearance};
 
@@ -23,10 +23,9 @@ impl Shell {
     /// keyboard on its nav. The docks go aside as for every page.
     ///
     /// **A page, so nothing guards leaving it.** What it holds saves as it
-    /// changes, and the two drafts (an agent being written, a shortcut being
-    /// edited) are the shell's, kept until their own *Save* or *Cancel*: leave
-    /// by a session, a page, a key or a dock and come back, and they are as
-    /// they were.
+    /// changes; the agent form is a dialog, so the page is not left while it
+    /// is open, and a shortcut being edited is the shell's, kept until its own
+    /// *Save* or *Cancel*: leave and come back, and it is as it was.
     pub fn open_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.held_commands.clear();
         self.docks_aside(window, cx);
@@ -59,15 +58,28 @@ impl Shell {
         cx.notify();
     }
 
-    pub fn edit_agent(&mut self, idx: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(spec) = Shared::global(cx).agents.get(idx).cloned() else {
-            return;
-        };
-        self.agent_draft.load(idx, &spec, window, cx);
+    /// Open the agent form on agent `idx`, or empty for a new one.
+    pub fn open_agent_form(
+        &mut self,
+        idx: Option<usize>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let spec = idx.and_then(|idx| Shared::global(cx).agents.get(idx).cloned());
+        self.remember_focus(window, cx);
+        match (idx, spec) {
+            (Some(idx), Some(spec)) => self.agent_draft.load(idx, &spec, window, cx),
+            (Some(_), None) => return,
+            (None, _) => self.agent_draft.clear(window, cx),
+        }
+        self.agent_form = true;
+        self.agent_draft.name.focus_handle(cx).focus(window, cx);
         cx.notify();
     }
 
-    pub fn clear_agent_draft(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    /// Put the agent form away, its fields with it.
+    pub fn close_agent_form(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.agent_form = false;
         self.agent_draft.clear(window, cx);
         cx.notify();
     }
@@ -125,7 +137,7 @@ impl Shell {
             // The fields go too, not just the index: left filled under a button
             // that now reads "Add", the form offers to recreate the agent the
             // user has just deleted.
-            DraftShift::Clear => self.agent_draft.clear(window, cx),
+            DraftShift::Clear => self.close_agent_form(window, cx),
             DraftShift::MoveTo(editing) => self.agent_draft.editing = Some(editing),
         }
         self.persist_agents(AgentEdit::Remove(spec), window, cx);
@@ -218,7 +230,7 @@ impl Shell {
             .agent_draft
             .editing
             .and_then(|idx| Shared::global(cx).agents.get(idx).cloned());
-        self.agent_draft.clear(window, cx);
+        self.close_agent_form(window, cx);
         self.persist_agents(AgentEdit::Put { old, new: spec }, window, cx);
         cx.notify();
     }

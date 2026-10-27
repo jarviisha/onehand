@@ -17,6 +17,7 @@ use onehand_core::config::{AgentSpec, Preset};
 mod agents;
 mod pages;
 use agents::agents_page;
+pub(crate) use agents::kind_about;
 pub use agents::{AgentCheck, check_key, draft_after_promote};
 use pages::{appearance_page, connections_page, workspace_page};
 
@@ -213,7 +214,7 @@ pub(crate) fn about(text: &'static str) -> Option<AnyElement> {
 
 /// A page's head: what the page governs, as a badge, and one line saying what
 /// it is about. No title: the nav row beside it names the page, and the
-/// pane's header names Settings.
+/// head over the nav names Settings.
 ///
 /// **The scope is said on every page, in the same place.** What is in here
 /// belongs to different reaches -- the app as a whole, or the one workspace
@@ -243,6 +244,7 @@ pub(crate) fn page_head(
                 .min_w_0()
                 .text_xs()
                 .text_color(cx.theme().muted_foreground)
+                .text_color(onehand_ui::meta_ink(cx))
                 .child(about),
         )
 }
@@ -268,12 +270,17 @@ pub(crate) fn section(title: Option<&'static str>, about: Option<SharedString>, 
             group
                 .pt_6()
                 .border_t_1()
-                .border_color(cx.theme().border)
+                .border_color(onehand_ui::faint_rule(cx))
                 .child(
                     div()
                         .v_flex()
                         .gap_1()
-                        .child(div().text_base().font_semibold().child(title))
+                        .child(
+                            div()
+                                .text_size(crate::tokens::CHROME_TEXT)
+                                .font_semibold()
+                                .child(title),
+                        )
                         .when_some(about, |head, about| {
                             head.child(div().text_xs().text_color(muted).child(about))
                         }),
@@ -326,6 +333,16 @@ pub(crate) fn list_row(
                 .gap_2()
                 .child(control),
         )
+}
+
+/// A run of [`list_row`]s, a hairline between each two, as a page's box parts
+/// its rows: the entries of one list read as one list, not as loose lines.
+pub(crate) fn list_rows(rows: impl IntoIterator<Item = AnyElement>, cx: &App) -> Div {
+    crate::chat::pane::page_parts::ruled(
+        rows.into_iter()
+            .map(|row| div().py_2().child(row).into_any_element()),
+        cx,
+    )
 }
 
 /// Which page Settings is showing.
@@ -469,7 +486,6 @@ fn settings(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     let handle = handle.clone();
     let current = handle.read(cx).settings_page();
     let focus = handle.read(cx).settings_focus();
-    let muted = cx.theme().muted_foreground;
     let nav = SettingsPage::ALL
         .into_iter()
         .map(|page| nav_row(page, current, &handle, cx).into_any_element())
@@ -488,60 +504,84 @@ fn settings(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         // screen.
         .key_context("Settings")
         .size_full()
-        .h_flex()
-        .items_start()
+        .v_flex()
+        // Named in its own head, as every other page is, the pane's header
+        // above it left bare. The head runs the pane's width, so its name
+        // starts on the nav's edge.
+        .child(crate::chat::pane::page_parts::page_top(
+            None,
+            [
+                crate::chat::pane::page_parts::page_head("Settings", None, Vec::new(), cx)
+                    .into_any_element(),
+            ],
+            cx,
+        ))
         .child(
             div()
-                .id("settings-nav")
-                // The keyboard lands here when Settings opens. The handle is
-                // the shell's because this is rebuilt every frame -- one made
-                // here would be a new handle each time.
-                .track_focus(&focus)
-                .v_flex()
-                .gap_0p5()
-                .flex_none()
-                .w(NAV_W)
-                .h_full()
-                .px_8()
-                .py_6()
-                .pr_0()
-                .children(nav)
-                // The build, at the foot of the nav: it is about the app
-                // rather than about any one page.
-                .child(div().flex_1())
-                .child(
-                    div()
-                        .px_2()
-                        .text_xs()
-                        .text_color(muted)
-                        .child(format!("onehand {}", env!("CARGO_PKG_VERSION"))),
-                ),
-        )
-        .child(
-            // The page scrolls, not the frame: the nav has to stay reachable
-            // from the bottom of a long page, and the keymap is longer than
-            // any window.
-            div()
-                .id("settings-page")
                 .flex_1()
-                .min_w_0()
-                .h_full()
-                .overflow_y_scroll()
-                .px_8()
-                .py_6()
-                .child(
-                    // A reading measure, so a wide window does not stretch a
-                    // field across it, centred in whatever room is left.
-                    div().h_flex().justify_center().w_full().child(
-                        div()
-                            .v_flex()
-                            .w_full()
-                            .max_w(crate::tokens::PAGE_PROSE)
-                            .child(page),
-                    ),
-                ),
+                .min_h_0()
+                .h_flex()
+                .items_start()
+                .child(settings_nav(nav, &focus, cx))
+                .child(settings_body(page)),
         )
         .into_any_element()
+}
+
+/// The nav column: a row per page, and the build at its foot.
+fn settings_nav(nav: Vec<AnyElement>, focus: &gpui::FocusHandle, cx: &App) -> impl IntoElement {
+    let muted = cx.theme().muted_foreground;
+    div()
+        .id("settings-nav")
+        // The keyboard lands here when Settings opens. The handle is
+        // the shell's because this is rebuilt every frame -- one made
+        // here would be a new handle each time.
+        .track_focus(focus)
+        .v_flex()
+        .gap_0p5()
+        .flex_none()
+        .w(NAV_W)
+        .h_full()
+        .px_8()
+        .py_6()
+        .pr_0()
+        .children(nav)
+        // The build, at the foot of the nav: it is about the app
+        // rather than about any one page.
+        .child(div().flex_1())
+        .child(
+            div()
+                .px_2()
+                .text_xs()
+                .text_color(muted)
+                .child(format!("onehand {}", env!("CARGO_PKG_VERSION"))),
+        )
+}
+
+/// The page beside the nav.
+fn settings_body(page: AnyElement) -> impl IntoElement {
+    // The page scrolls, not the frame: the nav has to stay reachable
+    // from the bottom of a long page, and the keymap is longer than
+    // any window.
+    div()
+        .id("settings-page")
+        .flex_1()
+        .min_w_0()
+        .h_full()
+        .overflow_y_scroll()
+        .px_8()
+        .py_6()
+        .child(
+            // A reading measure, so a wide window does not stretch a
+            // field across it, centred in whatever room is left.
+            div().h_flex().justify_center().w_full().child(
+                div()
+                    .v_flex()
+                    .w_full()
+                    .max_w(crate::tokens::PAGE_PROSE)
+                    .child(page),
+            ),
+        )
 }
 
 #[cfg(test)]

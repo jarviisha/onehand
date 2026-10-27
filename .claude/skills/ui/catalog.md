@@ -51,8 +51,8 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | A setting turned on or off | `toggle(id, on)`: the library's `Switch` at `.small()`, with no focus ring a pointer press would leave | `crates/ui/src/toggle.rs` |
 | A split, or a dock's edge | `h_resizable`, `v_resizable`, `edge_handle`: nothing drawn at rest or under the pointer, one `ring` line while held | `crates/ui/src/resize.rs` |
 | Rendered Markdown | `no_code_label(view)` on every `TextView`; `unedged_code()` as the style of one with none of its own (a code block is a well, no edge) | `crates/ui/src/prose.rs` |
-| A choice between a few views, every one the same width | `switch` (a `choice` per view at `flex_1`, padded `p_0p5` and parted `gap_0p5` in one edged track, at one `ControlSize`) | `crates/ui/src/lib.rs` |
-| One of more choices than a switch holds, each at its own width (a setting's values) | `choice_track` (`choice`s in the switch's edged track, padded `p_0p5` and parted `gap_0p5`, wrapping) | `crates/ui/src/lib.rs` |
+| A choice between a few views, or a dialog form's few kinds, every one the same width | `switch` (a `choice` per view at `flex_1`, padded `p_0p5` and parted `gap_0p5` in one edged track, at one `ControlSize`) | `crates/ui/src/lib.rs` |
+| One of more choices than a switch holds, each at its own width (a setting's values) | `choice_track` (`choice`s in the switch's edged track, padded `p_0p5` and parted `gap_0p5`, as wide as its choices, wrapping) | `crates/ui/src/lib.rs` |
 | An agent's setting picked from what it offers (a mode, a model, an effort): a first choice leaving it to what runs, the values, one not offered marked | `setting_row(id, none_label, offered, current, strict, refused, pick, cx)` (a `choice_track`, capped, *N more*) | `crates/app/src/controls/setting_row.rs` |
 | Tabs that fit their strip, the older ones in a menu | `tab_strip` (the newest that fit at their own widths, the current one among them), `measure_tab` and `tab_width` (each tab's width as last drawn, `TabWidths`), `tab_chip`, `tab_close`, `tab_more` (*N more*, with the picker's caret, opening those left out, `TAB_MENU_CAP` listed), `tab_select` (the Workbench's modes when narrow), `measure_width` | `crates/ui/src/tabs.rs` |
 | A list beside its detail, or one at a time | `list_detail`, `ListWidths`, `back_link` | `crates/ui/src/list_detail.rs` |
@@ -65,10 +65,11 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | A change shown at once and saved in the order made, a failure one toast | `OrderedWriter`, `Saving` and `Saves`, as `ChatPane::save_title` uses them; `saves::write_config` for `onehand.toml`, `Shell::save_change` for the workspace file | `crates/core/src/saving.rs`; `crates/app/src/chat/pane/sessions.rs`, `crates/app/src/saves.rs`, `crates/app/src/shell/storage.rs` |
 | A dialog's title row | `title_row` | `crates/app/src/dialogs.rs` |
 | A form field | `field` (its line about the setting in meta text) | `crates/ui/src/lib.rs`, re-exported by `crates/app/src/settings.rs` |
-| A Settings group, a Settings row | `section`, `list_row` | `crates/app/src/settings.rs` |
+| A Settings group, a Settings row, a group's rows parted by hairlines | `section`, `list_row`, `list_rows` | `crates/app/src/settings.rs` |
 | A page's head, and the top it stays in over what scrolls | `page_head(title, facts, actions, cx)`, `page_top(width, parts, cx)` | `crates/ui/src/page.rs`, re-exported by `crates/app/src/chat/pane/page_parts.rs` |
 | A page's box and title row, a list section (a box too), rows parted by hairlines, two boxes to a row | `page_card`, `card_title`, `ruled(rows, cx)`, `pair` | `crates/app/src/chat/pane/page_parts.rs` |
 | A page form's problems, or that it is only read, along the page's foot | `foot_bar(icon, base, lines, cx)` (the tint of `base`, the mark slotted on the first line) | `crates/app/src/chat/pane/page_parts.rs` |
+| A page form's problems in its body, above what they are about | `notice_box(icon, base, lines, cx)`: `foot_bar`'s tint, mark and lines in a box at a box's corner | `crates/app/src/chat/pane/page_parts.rs` |
 | A dialog's footer (a third action at its start) | `footer_row` | `crates/app/src/dialogs.rs` |
 | A run dialog's sections parted by hairlines; a preflight finding with its state's mark | `sections`, `finding_line` | `crates/app/src/dialogs.rs` |
 | A Settings sub-page's scope line | `page_head` | `crates/app/src/settings.rs` |
