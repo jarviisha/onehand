@@ -138,8 +138,8 @@ struct AskForm<'a> {
     idx: usize,
     /// The question the strip has open, and the one every row below it answers.
     active: usize,
-    /// A one-question single-select: it answers on the click and carries no
-    /// footer to hunt for.
+    /// A one-question single-select: it answers on the click, so its footer
+    /// carries Skip alone until an answer is typed.
     quick: bool,
 }
 
@@ -390,11 +390,25 @@ impl AskForm<'_> {
         )
     }
 
+    /// Whether the open question's typed answer holds any words.
+    fn typed(&self) -> bool {
+        self.a
+            .custom
+            .get(self.active)
+            .is_some_and(|c| !c.trim().is_empty())
+    }
+
     /// What closes the card: Skip, then the forward button. Each label carries
     /// the pinned key that works from anywhere, Skip's tooltip the card's own
     /// key; the numbers are on the rows.
+    ///
+    /// **Skip is on every card, the quick one too.** Without it a question the
+    /// person would rather not answer left Stop, which ends the whole turn, as
+    /// the only way out. The quick card's forward button waits for typed words,
+    /// as a click on a choice already answers it.
     fn footer(&self, cx: &App) -> gpui::Div {
-        let (session, idx, active, quick) = (self.session, self.idx, self.active, self.quick);
+        let (session, idx, active) = (self.session, self.idx, self.active);
+        let forward = !self.quick || self.typed();
         // The forward button is about *this* question: a form is walked through
         // one at a time, so arming Submit off an answer three tabs back would
         // offer to send while the question on screen is blank.
@@ -402,7 +416,7 @@ impl AskForm<'_> {
         let last = self.a.is_last(active);
 
         card_foot(cx)
-            .children((!quick).then(|| {
+            .child(
                 crate::controls::action(("ask-skip", idx))
                     .quiet(cx)
                     .short()
@@ -417,39 +431,41 @@ impl AskForm<'_> {
                         move |_, window: &mut Window, cx: &mut App| {
                             ask_skip(&session, idx, active, window, cx);
                         }
-                    })
-            }))
-            .child(
-                crate::controls::action(("ask-submit", idx))
-                    .primary()
-                    .short()
-                    // Nothing is picked yet: refusing, and the pointer would
-                    // promise otherwise.
-                    .refuses((!can_advance).then_some("Pick or type an answer first"))
-                    .child(
-                        div()
-                            .h_flex()
-                            .items_center()
-                            .gap_1()
-                            .child(match last {
-                                true => "Submit",
-                                false => "Next",
-                            })
-                            .when(!last, |label| {
-                                label.child(Icon::new(IconName::ArrowRight).xsmall())
-                            })
-                            .children(
-                                super::key_label(&super::PinnedNext, cx)
-                                    .map(|key| div().pl_1().child(key)),
-                            ),
-                    )
-                    .on_click({
-                        let session = session.clone();
-                        move |_, _, cx: &mut App| {
-                            ask_advance(&session, idx, active, cx);
-                        }
                     }),
             )
+            .when(forward, |foot| {
+                foot.child(
+                    crate::controls::action(("ask-submit", idx))
+                        .primary()
+                        .short()
+                        // Nothing is picked yet: refusing, and the pointer would
+                        // promise otherwise.
+                        .refuses((!can_advance).then_some("Pick or type an answer first"))
+                        .child(
+                            div()
+                                .h_flex()
+                                .items_center()
+                                .gap_1()
+                                .child(match last {
+                                    true => "Submit",
+                                    false => "Next",
+                                })
+                                .when(!last, |label| {
+                                    label.child(Icon::new(IconName::ArrowRight).xsmall())
+                                })
+                                .children(
+                                    super::key_label(&super::PinnedNext, cx)
+                                        .map(|key| div().pl_1().child(key)),
+                                ),
+                        )
+                        .on_click({
+                            let session = session.clone();
+                            move |_, _, cx: &mut App| {
+                                ask_advance(&session, idx, active, cx);
+                            }
+                        }),
+                )
+            })
     }
 
     /// The card's own key handling, hung on the focus handle it was built with.
@@ -517,9 +533,7 @@ impl AskForm<'_> {
             .on_action({
                 let session = session.clone();
                 move |_: &super::QuestionSkip, window, cx| {
-                    if !quick {
-                        ask_skip(&session, idx, active, window, cx);
-                    }
+                    ask_skip(&session, idx, active, window, cx);
                 }
             })
             // A number jumps to the row carrying it, the typed answer's box
@@ -584,8 +598,7 @@ pub(in crate::chat) fn advance_pinned(session: &Entity<ChatSession>, cx: &mut Ap
     }
 }
 
-/// The pinned question's Skip, from anywhere in the conversation; a quick
-/// card carries no Skip, so the key does nothing there either.
+/// The pinned question's Skip, from anywhere in the conversation.
 pub(in crate::chat) fn skip_pinned(
     session: &Entity<ChatSession>,
     window: &mut Window,
@@ -594,10 +607,8 @@ pub(in crate::chat) fn skip_pinned(
     let Some((idx, item)) = pinned_question(session, cx) else {
         return;
     };
-    let (active, quick) = (item.active_field(), item.is_quick());
-    if !quick {
-        ask_skip(session, idx, active, window, cx);
-    }
+    let active = item.active_field();
+    ask_skip(session, idx, active, window, cx);
 }
 
 /// The question card: the strip of questions, the open one's choices, the box
@@ -623,16 +634,6 @@ fn ask_form(
     };
     let multi_field = a.req.fields.len() > 1;
     let rows = form.choice_rows(cx);
-    // The quick card commits on a click and deliberately carries no footer to
-    // hunt for -- but typing is not a click, so the footer appears the moment
-    // there are words with no other way out. Skip is not added with it:
-    // refusing the whole question is a thing that card has never offered, and
-    // writing an answer is not the moment to start.
-    let typed = a
-        .custom
-        .get(form.active)
-        .is_some_and(|c| !c.trim().is_empty());
-
     let custom = form.custom_row(cx);
     let has_custom = custom.is_some();
     let body = card
@@ -672,9 +673,7 @@ fn ask_form(
                 .border_color(cx.theme().border)
                 .child(row)
         }))
-        .when(!form.quick || typed, |card| {
-            card.child(form.footer(cx).when(has_custom, |foot| foot.border_t_0()))
-        });
+        .child(form.footer(cx).when(has_custom, |foot| foot.border_t_0()));
 
     // No handle means no card on screen to hold the keys -- the boxes and the
     // handle are built in the same pass, so this is only ever the frame a

@@ -510,7 +510,9 @@ danger tint.
   and only that button carries the key); a question's Alt+Enter on, Alt+S skip.
   A question's forward answer (*Next*, *Submit* on the last) refuses until the question showing
   has an answer. On a multi-select none is an answer: moving on with nothing picked sends an empty
-  list, where *Skip* sends no answer for it.
+  list, where *Skip* sends no answer for it. A card asking one pick-one question answers on the
+  pick, so its footer holds *Skip* alone, and *Submit* beside it once an answer is typed; every
+  question card carries *Skip*, so passing on one never takes *Stop*.
 
 ### Words
 

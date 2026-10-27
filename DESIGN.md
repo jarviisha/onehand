@@ -132,7 +132,8 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   choices' well with its `Kbd`: an edgeless field two lines tall at rest that grows as it is
   written (Shift+Enter a newline), ringed while the keys are on it. Each answer in a pinned card's footer shows its key beside its words, always in
   sight, as that key reaches the card from anywhere in the conversation.
-  The card holds the one primary while it shows.
+  The card holds the one primary while it shows. A question card always ends on *Skip*; one
+  asking a single pick-one question answers on the pick, its primary only for a typed answer.
 
 ## Type, space and shape
 
