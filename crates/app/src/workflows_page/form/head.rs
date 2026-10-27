@@ -14,6 +14,7 @@ use gpui::{
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::{IconName, StyledExt};
 use onehand_ui::Tall as _;
+use onehand_ui::TallIcon as _;
 use std::path::{Path, PathBuf};
 
 /// *Run…*: which project to start the workflow of id `workflow` on, the
@@ -161,7 +162,7 @@ pub(in crate::workflows_page) fn editor_head(
         },
         "workflow-more",
         crate::controls::action("workflow-more-trigger")
-            .tall()
+            .tall_icon()
             .quiet_icon(false, cx)
             .icon(IconName::Ellipsis)
             .named("More"),

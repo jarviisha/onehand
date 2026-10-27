@@ -96,7 +96,8 @@ size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in ea
 
 | Role | Component | Size |
 |---|---|---|
-| A page's head and the row under it: its actions, its icon-only actions, its search, a split action's both halves | Button, Input | `.tall()` |
+| A page's head and the row under it: its actions, its search, a split action's both halves | Button, Input | `.tall()` |
+| An icon-only button in a page's head or a page's form | Button | `.tall_icon()`, square at `FIELD_H` |
 | A page's form: its fields, its pickers, its switch and its buttons | Button, Input | `.tall()` |
 | A dialog's fields and footer; a filter bar's choices and pickers, and a dock's search | Button, Input | `.short()` |
 | Every other button with words: a strip's, a box's, a row's, a secondary action inside dense content (a line of meta text, a transcript block, a chip), a tab, a fold toggle, a pinned card's answers | Button | `.short()`, under a row, so the controls never outweigh what they act on |

@@ -19,6 +19,7 @@ use gpui_component::input::InputState;
 use gpui_component::{ActiveTheme, IconName, StyledExt};
 use onehand_core::workflow::{self as core, StepKind};
 use onehand_ui::Tall as _;
+use onehand_ui::TallIcon as _;
 use std::path::PathBuf;
 
 /// The least a card takes before the row holds one fewer: as wide as a
@@ -90,7 +91,7 @@ pub(super) fn head(
         crate::controls::menu_below(
             "workflows-more",
             crate::controls::action("workflows-more-trigger")
-                .tall()
+                .tall_icon()
                 .quiet_icon(false, cx)
                 .icon(IconName::Ellipsis)
                 .named("More"),

@@ -12,7 +12,7 @@ use gpui::{
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme as _, IconName, StyledExt as _};
-use onehand_ui::{ControlSize, Tall as _};
+use onehand_ui::{ControlSize, Tall as _, TallIcon as _};
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -77,7 +77,7 @@ pub(super) fn head(
             crate::controls::menu_below(
                 "schedule-more",
                 crate::controls::action("schedule-more-trigger")
-                    .tall()
+                    .tall_icon()
                     .quiet_icon(false, cx)
                     .icon(IconName::Ellipsis)
                     .named("More"),

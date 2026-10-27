@@ -17,6 +17,7 @@ use onehand_ui::Named as _;
 use onehand_ui::Quiet as _;
 use onehand_ui::Short as _;
 use onehand_ui::Tall as _;
+use onehand_ui::TallIcon as _;
 use onehand_ui::page_search;
 use onehand_ui::{
     AppIcon, ControlSize, action, badge, choice, menu_below, menu_item, picker, status_ink, tint,
@@ -235,7 +236,7 @@ impl IssuesView {
                     .aria_label("Refresh")
                     .child(
                         action("issues-page-refresh")
-                            .tall()
+                            .tall_icon()
                             .quiet_icon(false, cx)
                             .icon(Icon::new(AppIcon::Refresh))
                             .loading(pr_reading)

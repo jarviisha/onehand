@@ -664,6 +664,23 @@ impl Tall for Button {
     }
 }
 
+/// An icon alone at [`Tall`]'s height: square at [`tokens::FIELD_H`], with
+/// no padding of its own.
+///
+/// Not [`Tall`] on an icon: the library sizes an icon alone by a box of its
+/// own, and `Tall`'s padding, meant for words, taken inside that box left
+/// the icon a few pixels wide.
+pub trait TallIcon {
+    /// Square at [`tokens::FIELD_H`].
+    fn tall_icon(self) -> Self;
+}
+
+impl TallIcon for Button {
+    fn tall_icon(self) -> Self {
+        self.small().size(tokens::FIELD_H).px_0()
+    }
+}
+
 impl Tall for Input {
     fn tall(self) -> Self {
         // `Styled::h` by name: the field's own `h` sets a multi-line field's
