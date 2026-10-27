@@ -561,9 +561,9 @@ impl PluginsView {
             SharedString::from(format!("plugin-install-menu-{}", plugin.id)),
             caret,
             move |menu, _, _| {
-                Scope::ALL
-                    .into_iter()
-                    .fold(menu.label("Install for"), |menu, at| {
+                Scope::ALL.into_iter().fold(
+                    menu.item(onehand_ui::menu_label("Install for")),
+                    |menu, at| {
                         let (id, view) = (id.clone(), view.clone());
                         menu.item(menu_item(at.reach()).checked(at == scope).on_click(
                             move |_, _, cx: &mut App| {
@@ -580,7 +580,8 @@ impl PluginsView {
                                 })
                             },
                         ))
-                    })
+                    },
+                )
             },
         );
         div()

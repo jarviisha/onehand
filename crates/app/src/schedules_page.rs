@@ -13,7 +13,7 @@ mod when;
 
 gpui::actions!(schedules_page, [CloseScheduleForm]);
 
-use crate::chat::pane::page_parts::{page_card, page_head, ruled};
+use crate::chat::pane::page_parts::{page_card, page_head, page_top, ruled};
 use crate::controls::Refuses as _;
 use crate::state::Shared;
 use draft::ScheduleDraft;
@@ -394,38 +394,53 @@ impl Render for SchedulesPage {
             .id("schedules-page")
             .track_focus(&self.focus_handle)
             .size_full()
-            .overflow_y_scroll()
-            .px_8()
-            .py_6()
-            .child(
-                div().h_flex().w_full().justify_center().child(
+            .v_flex()
+            .text_size(crate::tokens::CHROME_TEXT)
+            // The head and the filter at the row's end stay put; the box
+            // scrolls under them.
+            .child(page_top(
+                Some(crate::tokens::PAGE_WIDE),
+                [
+                    page_head(
+                        "Schedules",
+                        facts.map(IntoElement::into_any_element),
+                        vec![
+                            crate::controls::action("new-schedule")
+                                .tall()
+                                .primary()
+                                .label("New schedule")
+                                .refuses(self.projects.is_empty().then_some("Add a project first"))
+                                .on_click(cx.listener(|page: &mut Self, _, window, cx| {
+                                    page.new_schedule(window, cx)
+                                }))
+                                .into_any_element(),
+                        ],
+                        cx,
+                    )
+                    .into_any_element(),
                     div()
-                        .v_flex()
-                        .gap_6()
-                        .w_full()
-                        .max_w(crate::tokens::PAGE_PROSE)
-                        .text_size(crate::tokens::CHROME_TEXT)
-                        .child(page_head(
-                            "Schedules",
-                            facts.map(IntoElement::into_any_element),
-                            vec![
-                                crate::controls::action("new-schedule")
-                                    .tall()
-                                    .primary()
-                                    .label("New schedule")
-                                    .refuses(
-                                        self.projects.is_empty().then_some("Add a project first"),
-                                    )
-                                    .on_click(cx.listener(|page: &mut Self, _, window, cx| {
-                                        page.new_schedule(window, cx)
-                                    }))
-                                    .into_any_element(),
-                            ],
-                            cx,
-                        ))
-                        .child(div().h_flex().child(self.filter_picker(cx)))
-                        .child(list),
-                ),
+                        .h_flex()
+                        .justify_end()
+                        .child(self.filter_picker(cx))
+                        .into_any_element(),
+                ],
+                cx,
+            ))
+            .child(
+                div()
+                    .id("schedules-list")
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .px_8()
+                    .py_6()
+                    .child(
+                        div()
+                            .h_flex()
+                            .w_full()
+                            .justify_center()
+                            .child(div().w_full().max_w(crate::tokens::PAGE_WIDE).child(list)),
+                    ),
             )
             .into_any_element()
     }

@@ -12,9 +12,9 @@ the rule, not just the question. For prose-only work, use the contract path in `
 2. A same-role component or screen named and compared for height, text axis, ink, icon size and
    slot, spacing, corner and states, and a shared change checked in its callers across app and
    feature crates (`DESIGN.md`, *Principles*)?
-3. Each page a column page or a list page by what it holds, its filters in the shared order,
-   and each group in the container its role takes (`docs/ui-patterns.md`, *Pages*, *Filter bars*,
-   *Choose the container*)?
+3. Each page a column page or a list page by what it holds, its head and filters in its top in
+   the shared order, and each group in the container its role takes (`docs/ui-patterns.md`,
+   *Pages*, *The top of a page*, *Filter bars*, *Choose the container*)?
 4. Every state the component can be in drawn, the combined ones (selected and hovered, selected
    and focused) kept apart, and a transition (a page switch, a back link, a dock hiding) keeping
    the state the contract keeps (`SKILL.md`, *States*)?

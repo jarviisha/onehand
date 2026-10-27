@@ -254,7 +254,9 @@ pub(crate) fn tab_strip<T: 'static>(
                 }
                 let unlisted = rows.len().saturating_sub(TAB_MENU_CAP);
                 if unlisted > 0 {
-                    menu = menu.label(format!("{unlisted} more files not listed"));
+                    menu = menu.item(onehand_ui::menu_label(format!(
+                        "{unlisted} more files not listed"
+                    )));
                 }
                 menu
             },

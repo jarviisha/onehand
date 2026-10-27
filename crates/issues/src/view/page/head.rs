@@ -1,12 +1,12 @@
-//! The page's head — the open and closed choices, *Refresh* and *New issue*
-//! — the filter bar under it, and what the list cannot vouch for. The page's
-//! name is the pane's header's, as every page's is.
+//! The page's head — its name, *Refresh* and *New issue* — the
+//! row of search, open or closed and filters under it, and what the list
+//! cannot vouch for.
 
 use super::IssuesView;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, InteractiveElement as _, IntoElement,
-    ParentElement, Rems, SharedString, StatefulInteractiveElement as _, Styled, Window, div, rems,
+    ParentElement, SharedString, StatefulInteractiveElement as _, Styled, Window, div,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::InputState;
@@ -17,7 +17,8 @@ use onehand_ui::Named as _;
 use onehand_ui::Quiet as _;
 use onehand_ui::Short as _;
 use onehand_ui::Tall as _;
-use onehand_ui::search_input;
+use onehand_ui::TallIcon as _;
+use onehand_ui::page_search;
 use onehand_ui::{
     AppIcon, ControlSize, action, badge, choice, menu_below, menu_item, picker, status_ink, tint,
 };
@@ -26,19 +27,12 @@ use std::path::PathBuf;
 /// How many labels the label filter offers.
 const LABELS_SHOWN: usize = 100;
 
-/// The narrowest the search gets before the toolbar wraps: room for a
-/// title's few words or a `#number`.
-const SEARCH_W: Rems = rems(18.);
-
-/// The widest the search gets: past it the row's free width opens between the
-/// search and the filters, which keep to the row's end.
-const SEARCH_MAX: Rems = rems(28.);
-
 impl IssuesView {
-    /// The page's head over the list: the search, then *Refresh* and *New
-    /// issue* at the row's end; under it, at a form's height, open or closed,
-    /// each with its count on its corner, and at the row's end the progress,
-    /// project and label filters, wrapping when narrow.
+    /// The page's head over the list, its name with *Refresh* and *New
+    /// issue* at its end; and the row under it:
+    /// the search, open or closed, each with its count on its corner, and at
+    /// the row's end the progress, project and label filters, wrapping when
+    /// narrow.
     pub(super) fn page_head(
         &self,
         listed: &Listed<'_>,
@@ -47,7 +41,7 @@ impl IssuesView {
         labels: Vec<String>,
         query: &Entity<InputState>,
         cx: &mut Context<Self>,
-    ) -> AnyElement {
+    ) -> (AnyElement, AnyElement) {
         let progress = {
             let picked = filters.progress;
             let view = cx.entity();
@@ -160,7 +154,9 @@ impl IssuesView {
                         );
                     }
                     if left_out > 0 {
-                        menu = menu.label(format!("… {left_out} more labels not shown"));
+                        menu = menu.item(onehand_ui::menu_label(format!(
+                            "… {left_out} more labels not shown"
+                        )));
                     }
                     menu
                 },
@@ -225,27 +221,12 @@ impl IssuesView {
                     )
                 })
         };
-        let well = cx.theme().muted;
-        // The search leads the head at its height, growing up to its widest;
-        // the way to read again and *New issue* on the secondary fill end the
-        // row. The page holds no primary, so what floats over the list never
-        // has one to outweigh.
-        let header = div()
+        // The head names the page, its counts being on the open and closed
+        // choices under it; the way to read again and *New issue* end it.
+        let actions = div()
             .h_flex()
             .items_center()
             .gap_2()
-            .child(
-                div()
-                    .flex_basis(SEARCH_MAX)
-                    .min_w(SEARCH_W)
-                    .max_w(SEARCH_MAX)
-                    // No edge: the well's fill marks it off the page, and an
-                    // edge in that fill is left for focus to turn the ring ink.
-                    .child(search_input(query, cx).tall().bg(well).border_color(well)),
-            )
-            // The search keeps its widest and gives way only when the row
-            // runs short; what it leaves falls here, before the actions.
-            .child(div().flex_1())
             // Named for assistive technology in a box of its own: the
             // library's button takes a name only from a text label.
             .child(
@@ -255,7 +236,7 @@ impl IssuesView {
                     .aria_label("Refresh")
                     .child(
                         action("issues-page-refresh")
-                            .tall()
+                            .tall_icon()
                             .quiet_icon(false, cx)
                             .icon(Icon::new(AppIcon::Refresh))
                             .loading(pr_reading)
@@ -297,20 +278,23 @@ impl IssuesView {
                         view.clear_narrowing(window, cx)
                     }))
             });
-        // Open or closed leads the row under it, the choices `gap_6` apart so
-        // a count off one's corner keeps clear of the next; the filters keep
-        // to the row's end, and wrap under the choices when narrow.
+        // The search leads the row under the head, then open or closed, the
+        // choices `gap_6` apart so a count off one's corner keeps clear of the
+        // next; the filters keep to the row's end, and the row wraps when
+        // narrow.
         let filters = div()
             .h_flex()
             .flex_wrap()
             .items_center()
-            .justify_between()
             .gap_2()
+            .child(page_search(query, cx))
+            .child(div().flex_1())
             .child(
                 div()
                     .h_flex()
                     .items_center()
                     .gap_6()
+                    .pr_4()
                     .child(choose(false, "Open", listed.open, cx))
                     .child(choose(true, "Closed", listed.closed, cx)),
             )
@@ -327,15 +311,11 @@ impl IssuesView {
                     .children(label)
                     .children(clear),
             );
-        // Apart by a page section's gap rather than a row's: the search and
-        // the way to start an issue are one group, what narrows the list
-        // another, and a count over a choice's corner needs the room.
-        div()
-            .v_flex()
-            .gap_6()
-            .child(header)
-            .child(filters)
-            .into_any_element()
+        (
+            onehand_ui::page_head("Issues", None, vec![actions.into_any_element()], cx)
+                .into_any_element(),
+            filters.into_any_element(),
+        )
     }
 
     /// What the list cannot vouch for: the projects whose pull requests

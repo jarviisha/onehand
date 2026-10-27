@@ -26,9 +26,10 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | Need | Use | Where |
 |---|---|---|
 | Any button | `action` (sets the pointer and the theme's corner) | `crates/app/src/controls.rs` (the app), `crates/ui/src/lib.rs` (a feature crate) |
-| Any text field | `text_input(&state, cx)` (sets the theme's corner, on no fill of its own) | `crates/app/src/controls.rs` (the app), `crates/ui/src/lib.rs` (a feature crate) |
-| A search field | `search_input(&state, cx)`: a `text_input` with the search mark and the clear button; the caller sizes it and sinks it into its place's fill (`.bg(..)`, the edge in that fill) | `crates/ui/src/lib.rs`, re-exported by `crates/app/src/controls.rs` |
-| A field of several lines | `text_area(&state, cx)`: the library's `Textarea` on a field's corner and surface | `crates/ui/src/lib.rs`, re-exported by `crates/app/src/controls.rs` |
+| Any text field | `text_input(&state, cx)` (sets the theme's corner, on `field_fill` with no edge at rest) | `crates/app/src/controls.rs` (the app), `crates/ui/src/lib.rs` (a feature crate) |
+| A search field | `search_input(&state, cx)`: a `text_input` with the search mark and the clear button; the caller sizes it. A page's search is `page_search(&state, cx)`: `.tall()`, its width between its least and its cap | `crates/ui/src/lib.rs`, re-exported by `crates/app/src/controls.rs` |
+| A field of several lines | `text_area(&state, cx)`: the library's `Textarea` on a field's corner and fill; the composer's and a pinned card's typed answer take `appearance(false)` and an explicit `.bg(cx.theme().transparent)`, since the fill is set apart from the library's appearance and their card or well is the field | `crates/ui/src/lib.rs`, re-exported by `crates/app/src/controls.rs` |
+| An icon alone at a page head's or a page form's scale | `.tall_icon()` (the `TallIcon` trait): square at `FIELD_H`, no padding; `.tall()` on an icon alone squeezes it to a few pixels | `crates/ui/src/lib.rs` |
 | A control at a dialog's, a form's or a page filter bar's scale | `.short()` (the `Short` trait, for a button or a field; re-exported by `crates/app/src/controls.rs`) | `crates/ui/src/lib.rs` |
 | An icon-only button's name | `.named(name)` or `.named_with_action(name, action, context)`: the tooltip and the accessible name in one call (the `Named` trait, re-exported by `crates/app/src/controls.rs`) | `crates/ui/src/lib.rs` |
 | A ghost button | `.quiet(cx)`; an icon with no words `.quiet_icon(on, cx)`, muted at rest and in its fill's ink when hovered or `on` (the `Quiet` trait, re-exported by `crates/app/src/controls.rs`) | `crates/ui/src/lib.rs` |
@@ -43,7 +44,7 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | A picker's trigger | `picker(id, label, set, size, cx)`: a ghost in the muted ink naming what it picks, on the secondary fill once set (in a form, whatever it holds), with the caret | `crates/ui/src/lib.rs` |
 | A list or table row's surface | `row(picked, cx)`: `ROW_H`, `px_2`, the hover and picked fills with their inks; the caller lays it out. | `crates/ui/src/lib.rs` |
 | A tree's row (Files, Markdown) | `tree_row(id, depth, picked, cx)`: a `row` at `TREE_ROW_H` a pitch, its fill `TREE_ROW_FILL` tall and `ROW_GUTTER` off the dock's side edges, its content at `ROW_INSET` and `TREE_INDENT` per level; the caller adds the mark slot, the name and one trailing slot | `crates/ui/src/lib.rs` |
-| A menu, its rows, a menu under its control | `menu_item`, `menu_row`, `menu_below`; `menu_command(label, action)` for a row that runs a keymap command and shows its key | `crates/ui/src/menu.rs` |
+| A menu, its rows, a menu under its control | `menu_item`, `menu_row`, `menu_below`; `menu_command(label, action)` for a row that runs a keymap command and shows its key; `menu_still` for a row that refuses or is only read, `menu_label` for a group's heading or what the menu leaves out (never the library's `label`, `PopupMenuItem::new` or bare `element`, which letter a step larger); every row's words at `CHROME_TEXT` | `crates/ui/src/menu.rs` |
 | An action joined to a menu of its alternatives (*New* and its caret) | `split_action(id, main, caret, surface, anchor, build)`: both halves built by the caller through `action` at their role's size and one variant, joined with square inner corners and parted by a seam in `surface`, the fill under it, the caret's menu opened below it | `crates/ui/src/menu.rs` |
 | A strip along the top of a region, and its icon control | `strip(cx)`, `strip_control(id, icon, on, cx)`; a bar inside the Workbench `workbench_strip(cx)`, inset `ROW_INSET`; a mode's own bar under it `mode_strip(cx)`, `MODE_BAR_H` tall | `crates/ui/src/strip.rs` |
 | One of a few choices, the taken one filled (filter chips) | `choice` (a `quiet` ghost button, `selected` when taken, at the `ControlSize` its role takes) | `crates/ui/src/lib.rs` |
@@ -65,7 +66,8 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | A dialog's title row | `title_row` | `crates/app/src/dialogs.rs` |
 | A form field | `field` (its line about the setting in meta text) | `crates/ui/src/lib.rs`, re-exported by `crates/app/src/settings.rs` |
 | A Settings group, a Settings row | `section`, `list_row` | `crates/app/src/settings.rs` |
-| A page's head, its box and title row, a list section (a box too), rows parted by hairlines, two boxes to a row | `page_head(title, facts, actions, cx)`, `page_card`, `card_title`, `ruled(rows, cx)`, `pair` | `crates/app/src/chat/pane/page_parts.rs` |
+| A page's head, and the top it stays in over what scrolls | `page_head(title, facts, actions, cx)`, `page_top(width, parts, cx)` | `crates/ui/src/page.rs`, re-exported by `crates/app/src/chat/pane/page_parts.rs` |
+| A page's box and title row, a list section (a box too), rows parted by hairlines, two boxes to a row | `page_card`, `card_title`, `ruled(rows, cx)`, `pair` | `crates/app/src/chat/pane/page_parts.rs` |
 | A page form's problems, or that it is only read, along the page's foot | `foot_bar(icon, base, lines, cx)` (the tint of `base`, the mark slotted on the first line) | `crates/app/src/chat/pane/page_parts.rs` |
 | A dialog's footer (a third action at its start) | `footer_row` | `crates/app/src/dialogs.rs` |
 | A run dialog's sections parted by hairlines; a preflight finding with its state's mark | `sections`, `finding_line` | `crates/app/src/dialogs.rs` |
@@ -111,7 +113,7 @@ need migrating itself.
 |---|---|---|
 | Fields, boxes or one thing read in full, in the agent pane | Column page | `tasks_frame` in `crates/app/src/chat/pane/tasks_page.rs` |
 | One long list to scan, filter and pick from, in the agent pane | List page | the Issues page, `crates/issues/src/view/page.rs` |
-| The filters under a page's head | Filter bar | `crates/issues/src/view/page/head.rs` |
+| The top of a page: its head, then its search and filters | The top of a page, Filter bar | `crates/issues/src/view/page/head.rs`; `tasks_frame` for a top with no search |
 | Related fields or a subsection | Plain section | `section` in `crates/app/src/settings.rs` |
 | The facts about one thing on a page | Box | `card_box` (`onehand_ui`); `page_card`, `card_title` and `pair` in `crates/app/src/chat/pane/page_parts.rs` |
 | A bar along the top of a region | Strip | `strip` and `strip_control` (`onehand_ui`) |

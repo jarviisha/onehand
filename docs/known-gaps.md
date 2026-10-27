@@ -13,8 +13,8 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   hold them at are `HUE_INK` and those of `the_focus_ring_shows_on_every_surface` in
   `crates/app/src/theme.rs`. Fixing them means changing VS Code's own values, which this palette
   does not do.
-- **Settings still stands at the old page treatment.** The overview, Tasks, Workflows and a
-  project's page name themselves in their head, group in boxes and give their forms `.tall()`
+- **Settings still stands at the old page treatment.** The overview, Tasks, Issues, Workflows,
+  Schedules and a project's page name themselves in their head, group in boxes and give their forms `.tall()`
   fields; Settings keeps its name in the header, its groups as plain sections parted by
   hairlines, and its fields and buttons at `.short()`. Moving it means a head per sub-page and
   every Settings field and button resized together, so one page does not hold both sizes.
@@ -26,14 +26,13 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   most. The Markdown renderer picks each heading level's weight itself, and its style lets a caller
   size a level but not weigh one; the Markdown mode and an issue's description both draw through it.
   Changing it means a patch to the renderer.
-- **Two search fields still draw an edge.** A search field sinks into the fill of its place with
-  no edge, as the rail's and the Issues page's do, but `search_input` itself still draws the
-  edge a form's field has, and each caller sinks it by hand. The Plugins mode's filter and the
-  Issues tab's search keep the edge. Fixing it means moving the sinking into `search_input`,
-  which then needs the fill of its place from each caller.
 - **Some window behaviour has no automated test**: Settings' drafts kept across leaving the page,
   a failed write said once, and the keyboard handed back when a dialog closes. Each needs a window
   to run in, and the app runs no GPUI test harness; they are checked by hand.
+- **A submenu's row is lettered a step larger.** The library draws it itself, past `menu_row`,
+  at its own size, so *Change scope* in the Plugins mode's ⋯ stands a step over the rows around
+  it. Fixing it means submenus of the app's own. For the same reason a group's heading in a menu
+  stands as tall as a row: the library sets that height on every row drawn as an element.
 - **A refused menu row cannot say why.** The library's menu row takes no tooltip, so a row that
   refuses (*Move up* on a workflow's first step) is drawn refusing without its reason, which its
   place has to say.

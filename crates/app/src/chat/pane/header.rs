@@ -2,7 +2,6 @@ use super::{ChatPane, ChatPaneEvent, ProjectAction, ProjectFacts};
 use crate::controls::Named as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{App, Context, Entity, IntoElement, ParentElement, Rems, Styled, Window, div, rems};
-use gpui_component::menu::PopupMenuItem;
 use gpui_component::{ActiveTheme, IconName, StyledExt};
 use onehand_core::chat::{Chat, ConvMeta};
 use onehand_ui::strip_control;
@@ -85,12 +84,12 @@ impl ChatPane {
         let chat = self.active_chat(cx);
         let title = chat.and_then(Chat::conversation_title).unwrap_or_else(|| {
             match &self.page {
-                Some(super::Page::Issues(_)) => "Issues".to_string(),
                 Some(super::Page::Settings(_)) => "Settings".to_string(),
                 // These pages, and a project's page, name themselves in their
                 // own head at its title size.
                 Some(
                     super::Page::Workspace(_)
+                    | super::Page::Issues(_)
                     | super::Page::Tasks(_)
                     | super::Page::Workflows(_)
                     | super::Page::Schedules(_),
@@ -122,13 +121,6 @@ impl ChatPane {
             // conversation shows, the name stands as far off the pane's edge as
             // the page's body does, so the two start on one line.
             .when(self.page.is_some() || !live, |header| header.px_8())
-            // The one exception: the Issues page lists under a line the
-            // pane's whole width, since its list runs edge to edge too and the
-            // head is what the list scrolls under.
-            .when(
-                matches!(self.page, Some(super::Page::Issues(_))),
-                |header| header.border_b_1().border_color(onehand_ui::faint_rule(cx)),
-            )
             // **No rule under it.** A hairline is an edge between two surfaces,
             // and there are not two here: the header and the transcript are one
             // reading surface, and what separates them is that one is a row of
@@ -365,13 +357,10 @@ impl ChatPane {
             .child(title);
         if !live && project.is_none() {
             // A page that draws no head of its own (Settings) is named here at
-            // the size a page's title takes. The Issues page keeps the strip's
-            // chrome size instead: its line under the header makes the header
-            // a bar over the list, not a heading.
-            let issues = matches!(self.page, Some(super::Page::Issues(_)));
+            // the size a page's title takes.
             return div()
                 .min_w_0()
-                .when(self.page.is_some() && !issues, |title| title.text_xl())
+                .when(self.page.is_some(), |title| title.text_xl())
                 .child(name)
                 .into_any_element();
         }
@@ -460,7 +449,9 @@ impl ChatPane {
                         // opened twice to be believed is a worse warning than an
                         // item that will not go.
                         match busy {
-                            true => PopupMenuItem::new("Resume in this session…"),
+                            true => crate::controls::menu_still(|_, _| {
+                                div().child("Resume in this session…")
+                            }),
                             false => crate::controls::menu_item("Resume in this session…"),
                         }
                         .disabled(busy)
@@ -492,7 +483,7 @@ impl ChatPane {
                             // keeps the library's own cursor, since a pointer over
                             // it would promise a press that does nothing.
                             match archive.is_none() {
-                                true => PopupMenuItem::element(row),
+                                true => crate::controls::menu_still(row),
                                 false => crate::controls::menu_row(row),
                             }
                         }

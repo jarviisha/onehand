@@ -6,6 +6,7 @@ use crate::controls::Refuses as _;
 use crate::controls::Short as _;
 use crate::task::Row;
 use crate::tokens::PAGE_WIDE;
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, Window, div,
@@ -124,7 +125,7 @@ impl ChatPane {
         });
         if let Some((detail, task, row)) = opened {
             let body = task_detail(detail, &task, row, page, cx);
-            return self.tasks_frame(body, crate::tokens::PAGE_PROSE, cx);
+            return self.tasks_frame(Vec::new(), body, crate::tokens::PAGE_PROSE, cx);
         }
 
         let filter_name = page
@@ -216,20 +217,29 @@ impl ChatPane {
         }));
 
         // The head names the page and holds no action, the page having none;
-        // then a filter bar over the cards, which hold the counts. The cards
-        // two by two while the column holds two.
-        let body = vec![
+        // then the filter at the row's end, the two kept over the cards,
+        // which hold the counts. The cards two by two while the column holds
+        // two.
+        let top = vec![
             page_head("Tasks", None, Vec::new(), cx).into_any_element(),
-            div().h_flex().child(filter).into_any_element(),
+            div()
+                .h_flex()
+                .justify_end()
+                .child(filter)
+                .into_any_element(),
+        ];
+        let body = vec![
             pair(attention, running).into_any_element(),
             pair(queued, finished).into_any_element(),
         ];
-        self.tasks_frame(body, PAGE_WIDE, cx)
+        self.tasks_frame(top, body, PAGE_WIDE, cx)
     }
 
-    /// The page around `body`: its header, then one scrolled column.
+    /// The page around `body`: its header, `top` kept in place when there is
+    /// one, then one scrolled column.
     fn tasks_frame(
         &self,
+        top: Vec<gpui::AnyElement>,
         body: Vec<gpui::AnyElement>,
         width: gpui::Rems,
         cx: &mut Context<Self>,
@@ -243,6 +253,9 @@ impl ChatPane {
             .size_full()
             .v_flex()
             .child(self.header(cx))
+            .when(!top.is_empty(), |page| {
+                page.child(super::page_parts::page_top(Some(width), top, cx))
+            })
             .child(
                 div()
                     .id("tasks-page")

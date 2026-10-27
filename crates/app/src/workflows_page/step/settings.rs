@@ -18,6 +18,7 @@ use gpui::{
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme, Icon, IconName, StyledExt};
 use onehand_ui::Tall as _;
+use onehand_ui::TallIcon as _;
 use std::path::Path;
 use std::rc::Rc;
 
@@ -243,7 +244,7 @@ fn typed_options(
         let remove = {
             let handle = handle.clone();
             crate::controls::action(SharedString::from(format!("step-option-remove-{i}-{row}")))
-                .tall()
+                .tall_icon()
                 .quiet_icon(false, cx)
                 .icon(Icon::new(IconName::Close))
                 .named("Remove this option")

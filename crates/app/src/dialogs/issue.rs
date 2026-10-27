@@ -378,7 +378,9 @@ where
                 );
             }
             if left_out > 0 {
-                menu = menu.label(format!("{left_out} more workflows not shown"));
+                menu = menu.item(crate::controls::menu_label(format!(
+                    "{left_out} more workflows not shown"
+                )));
             }
             menu
         },

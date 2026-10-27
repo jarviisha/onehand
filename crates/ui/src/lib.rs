@@ -15,6 +15,7 @@ mod choice_mark;
 mod confirm;
 mod list_detail;
 mod menu;
+mod page;
 mod prose;
 mod resize;
 mod row_actions;
@@ -26,8 +27,11 @@ pub mod tokens;
 pub use choice_mark::choice_mark;
 pub use confirm::{Confirm, confirm_on};
 pub use list_detail::{ListDetail, ListWidths, back_link, list_detail};
-pub use menu::{menu_below, menu_command, menu_item, menu_row, split_action};
+pub use menu::{
+    menu_below, menu_command, menu_item, menu_label, menu_row, menu_still, split_action,
+};
 pub use onehand_core::worktree::removal::Process;
+pub use page::{page_head, page_search, page_top};
 pub use prose::{no_code_label, unedged_code};
 pub use resize::{edge_handle, h_resizable, v_resizable};
 pub use row_actions::{HoverSlot, hover_slot};
@@ -81,24 +85,36 @@ pub fn action(id: impl Into<ElementId>) -> Button {
         .rounded(ButtonRounded::Medium)
 }
 
-/// A text field at the theme's corner, on no fill of its own: the corner
+/// How much of the well's own fill a field's fill keeps.
+const FIELD_FILL: f32 = 0.94;
+
+/// A field's fill: the well, a step further toward the ink. The well alone sits
+/// level with a floating panel's fill in the light palette, and a field on it
+/// vanished; a step past it stands off the page, a floating panel and a well
+/// alike, in both palettes by one rule.
+fn field_fill(cx: &App) -> Hsla {
+    cx.theme()
+        .muted
+        .mix_oklab(cx.theme().foreground, FIELD_FILL)
+}
+
+/// A text field at the theme's corner, on a fill with no edge: the corner
 /// [`action`] gives a button, so a field and the button beside it are one
-/// shape, and the surface it sits on, so its edge alone marks it. The library
-/// draws a field on a fill it derives from the control edge rather than from
-/// where the field sits.
+/// shape, and the fill alone marks it off the surface it sits on.
 ///
 /// **Focus is the edge alone.** The library marks a focused field twice: its
 /// edge turns the ring ink, and a ring is drawn round it, outside its bounds.
 /// The field clips what lies outside itself, which takes the ring away and
-/// leaves the edge. A field drawn with no edge at rest keeps one, in the
-/// surface's own colour, so the edge still has somewhere to show.
+/// leaves the edge. At rest the edge is drawn clear, so it still has
+/// somewhere to show.
 ///
 /// Here rather than in the app for the reason [`action`] is: a feature crate draws
 /// fields too, and one wrapper is one place for the corner to hold.
 pub fn text_input(state: &Entity<InputState>, cx: &App) -> Input {
     Input::new(state)
         .rounded(cx.theme().radius)
-        .bg(cx.theme().transparent)
+        .bg(field_fill(cx))
+        .border_color(cx.theme().transparent)
         .overflow_hidden()
 }
 
@@ -555,14 +571,15 @@ pub fn search_input(state: &Entity<InputState>, cx: &App) -> Input {
         .cleanable(true)
 }
 
-/// A field of several lines, on the corner and the surface [`text_input`]
+/// A field of several lines, on the corner and the fill [`text_input`]
 /// gives a field of one: the library draws a textarea on a fill of its own,
-/// and beside a single-line field in the same
-/// form the two read as different controls.
+/// and beside a single-line field in the same form the two read as different
+/// controls.
 pub fn text_area(state: &Entity<TextareaState>, cx: &App) -> Textarea {
     Textarea::new(state)
         .rounded(cx.theme().radius)
-        .bg(cx.theme().transparent)
+        .bg(field_fill(cx))
+        .border_color(cx.theme().transparent)
         .overflow_hidden()
 }
 
@@ -644,6 +661,23 @@ impl Tall for Button {
             .h(tokens::FIELD_H)
             .min_w(tokens::FIELD_H)
             .px_3()
+    }
+}
+
+/// An icon alone at [`Tall`]'s height: square at [`tokens::FIELD_H`], with
+/// no padding of its own.
+///
+/// Not [`Tall`] on an icon: the library sizes an icon alone by a box of its
+/// own, and `Tall`'s padding, meant for words, taken inside that box left
+/// the icon a few pixels wide.
+pub trait TallIcon {
+    /// Square at [`tokens::FIELD_H`].
+    fn tall_icon(self) -> Self;
+}
+
+impl TallIcon for Button {
+    fn tall_icon(self) -> Self {
+        self.small().size(tokens::FIELD_H).px_0()
     }
 }
 

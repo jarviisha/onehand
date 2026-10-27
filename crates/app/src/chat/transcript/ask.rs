@@ -233,11 +233,14 @@ impl AskForm<'_> {
                 let destructive = choice.is_destructive();
                 // At the leading of a sentence read once, so a choice of one
                 // line sits inside the field's height below it.
+                // Wrapping: the button holds its content on one line, and a
+                // long description ran on under the key and off the row.
                 let mut words = div()
                     .v_flex()
                     .gap_0p5()
                     .flex_1()
                     .min_w_0()
+                    .whitespace_normal()
                     .line_height(relative(LEADING_TIGHT))
                     .child(
                         div()
@@ -373,10 +376,12 @@ impl AskForm<'_> {
                     false => cx.theme().transparent,
                 })
                 .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .child(text_area(&state, cx).appearance(false)),
+                    div().flex_1().min_w_0().child(
+                        // On the well's own fill: the well is the field.
+                        text_area(&state, cx)
+                            .appearance(false)
+                            .bg(cx.theme().transparent),
+                    ),
                 )
                 .children(key),
         )

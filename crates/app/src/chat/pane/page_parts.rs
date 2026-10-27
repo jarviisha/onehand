@@ -31,49 +31,9 @@ pub(crate) fn page_card(
     card_box(cx).child(card_title(title, count, control, cx))
 }
 
-/// A page's head, in its body: the page's name at the title size, a line of
-/// facts under it in the middle ink, and its actions at the end, each at the
-/// head's size. The pane's header above it carries only chrome.
-pub(crate) fn page_head(
-    title: impl Into<SharedString>,
-    facts: Option<AnyElement>,
-    actions: Vec<AnyElement>,
-    cx: &App,
-) -> Div {
-    div()
-        .h_flex()
-        .items_center()
-        .gap_4()
-        .w_full()
-        .child(
-            div()
-                .v_flex()
-                .gap_1()
-                .flex_1()
-                .min_w_0()
-                .child(
-                    div()
-                        .truncate()
-                        .text_xl()
-                        .font_semibold()
-                        .child(title.into()),
-                )
-                .children(facts.map(|facts| {
-                    div()
-                        .text_xs()
-                        .text_color(crate::theme::meta_ink(cx))
-                        .child(facts)
-                })),
-        )
-        .child(
-            div()
-                .flex_none()
-                .h_flex()
-                .items_center()
-                .gap_2()
-                .children(actions),
-        )
-}
+/// A page's head and the part that stays put over what scrolls, the UI
+/// crate's so the Issues page starts as these pages do.
+pub(crate) use onehand_ui::{page_head, page_search, page_top};
 
 /// Rows in a box, a hairline between each two: the line on a wrapper of the
 /// row's own, so a row's focus ring moves nothing.

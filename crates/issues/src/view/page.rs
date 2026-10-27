@@ -1,10 +1,10 @@
 //! The Issues page: the issues of every project of the workspace in one
 //! list, and the one picked floating over it, drawn in full.
 //!
-//! The list takes the pane's whole width, under the open and closed choices,
-//! the page's actions and its filters, an issue a row on one line, and a line
-//! at the foot says how many it shows over a line the pane's whole width, as
-//! the one the pane's header draws over the page. The issue picked floats
+//! The list takes the pane's whole width, under the page's head and its row
+//! of search, open or closed and filters, kept in place over a line the
+//! pane's whole width; an issue is a row on one line, and a line at the foot
+//! says how many it shows over a line as wide. The issue picked floats
 //! over the list's right side in a panel of its own (`panel`), which never moves the list: closing it
 //! finds every row where it was. Nothing is open when the page is first
 //! shown.
@@ -274,7 +274,7 @@ impl IssuesView {
         self.roots.get(self.root.as_deref()?)?.selected
     }
 
-    /// The page: the toolbar over the list, and the issue picked floating
+    /// The page: its top over the list, and the issue picked floating
     /// over the list while it is open.
     pub(super) fn page_body(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         if self.storage.is_none() {
@@ -328,7 +328,7 @@ impl IssuesView {
             .text_size(onehand_ui::tokens::CHROME_TEXT)
             .child(top)
             .child(
-                // The panel is placed on the list's area, under the toolbar,
+                // The panel is placed on the list's area, under the top,
                 // so the filters stay in reach while an issue is open.
                 div()
                     .id("issues-page-area")
@@ -363,8 +363,9 @@ impl IssuesView {
         self.key(root, number)
     }
 
-    /// The list: the toolbar, what the reading says and the tabs, then,
-    /// apart, the rows, which the panel floats over, and the line at the foot.
+    /// The list: the top (the head, the row of search, choices and filters,
+    /// and what the reading says), then, apart, the rows, which the panel
+    /// floats over, and the line at the foot.
     fn page_list(
         &mut self,
         projects: &[(PathBuf, SharedString)],
@@ -444,7 +445,7 @@ impl IssuesView {
             .collect();
 
         let reading = items.is_empty() && self.reading_issues(projects, cx);
-        let toolbar = self.page_head(&listed, &filters, projects, labels, &query, cx);
+        let (head, filter_row) = self.page_head(&listed, &filters, projects, labels, &query, cx);
         let notices = self.page_notices(&listed, projects, cx);
         let muted = cx.theme().muted_foreground;
         let empty = if reading {
@@ -506,18 +507,16 @@ impl IssuesView {
         let line =
             |text: String| column(div().px_2().py_2().text_xs().text_color(muted).child(text));
 
-        // A line the pane's whole width under the filters, as under the header
-        // and over the foot: the list scrolls under it.
-        let top = div()
-            .flex_none()
-            .px_6()
-            .py_3()
-            .border_b_1()
-            .border_color(rule)
-            .child(column(
-                div().v_flex().gap_2().child(toolbar).children(notices),
-            ))
+        // The head and the filters stay put over a line the pane's whole
+        // width, as every page with filters keeps them; the list scrolls
+        // under it.
+        let filters_and_notices = div()
+            .v_flex()
+            .gap_2()
+            .child(filter_row)
+            .children(notices)
             .into_any_element();
+        let top = onehand_ui::page_top(None, [head, filters_and_notices], cx).into_any_element();
         let rows = div()
             .id("issues-page-list")
             .size_full()

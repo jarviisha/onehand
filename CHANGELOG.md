@@ -101,9 +101,19 @@ minor bump may break any of them.
 - The Editor's tab bar and the Markdown reader's bar are a step lower than the Workbench's strip.
   Editor tabs no longer shrink when crowded: the newest that fit stay, the current file among
   them, and the older ones are in an *N more* menu after them.
+- The overview, Tasks, Issues, Workflows and Schedules start alike: the page's name in large type
+  at the top, then its search and filters, the two staying in place over a line while the rest
+  scrolls. Issues still spans the whole pane; the others share one column width, Schedules
+  widened to it.
+- Every text field and search sits on a fill of its own with no edge until it takes focus; the
+  composer is unchanged.
+- Menus are lettered at the size of the chrome around them, a step smaller than before.
 
 ### Fixed
 
+- The *More* and *Refresh* buttons on the Workflows, Issues and schedule pages, and a step
+  setting's remove, are drawn whole; they had shrunk to a dot or a sliver.
+- A question card's long choice wraps clear of its Alt key instead of running under it.
 - A wide Markdown table in an answer keeps its columns readable and scrolls sideways inside the
   column instead of squeezing every column to fit. Under every table, Copy takes it as Markdown and
   *Open* shows it whole in a dialog as wide as the window allows.

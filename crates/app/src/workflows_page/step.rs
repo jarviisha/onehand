@@ -555,7 +555,7 @@ pub(super) fn step_panel(
                             );
                         }
                         if choices.is_empty() {
-                            menu = menu.label("No earlier step fits");
+                            menu = menu.item(crate::controls::menu_label("No earlier step fits"));
                         }
                         menu
                     },

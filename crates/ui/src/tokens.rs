@@ -125,8 +125,8 @@ pub const PAGE_NARROW: Rems = rems(35.);
 /// no wider, or a line runs too long to find the start of the next.
 pub const PAGE_PROSE: Rems = rems(48.);
 
-/// The widest a workspace-wide page grows (the overview, Tasks, the Issues
-/// list): room for two cards side by side, or a row's facts in columns,
+/// The widest a workspace-wide page grows (the overview, Tasks, Workflows'
+/// cards, Schedules): room for two cards side by side, or a row's facts in columns,
 /// without lines too long to read. One figure, so moving between the pages
 /// does not move the column.
 pub const PAGE_WIDE: Rems = rems(64.);
