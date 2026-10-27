@@ -135,6 +135,13 @@ minor bump may break any of them.
 - A session whose agent still runs work in the background reads *Running* on the rail, not idle.
 - What an agent writes after its turn has ended, when background work reports back, is saved to
   disk; before, it waited for the next turn's end and was lost if onehand closed first.
+- A password on a running command's line no longer shows on the line under a live turn; the
+  block above it already masked it.
+- A question card asking one pick-one question carries *Skip* (and Alt+S, Esc), so passing on it
+  no longer takes *Stop*, which ended the whole turn.
+- A turn that failed closes on *Failed after Ns* instead of *Processed in Ns*.
+- Commands that ran side by side are timed once: a stretch of them no longer reads longer than
+  the turn it ran in.
 - The *More* and *Refresh* buttons on the Workflows, Issues and schedule pages, and a step
   setting's remove, are drawn whole; they had shrunk to a dot or a sliver.
 - A question card's long choice wraps clear of its Alt key instead of running under it.
