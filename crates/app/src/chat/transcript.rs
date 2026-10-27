@@ -166,6 +166,8 @@ pub fn item(
         ChatItem::Plan(p) => plan(session, p, target, cx).into_any_element(),
         ChatItem::Permission(p) => permission(session, p, target, room.well, cx).into_any_element(),
         ChatItem::Ask(a) => ask(session, a, target, cx).into_any_element(),
+        // Not drawn yet.
+        ChatItem::Subagent(_) => div().into_any_element(),
         ChatItem::Notice {
             text,
             level,

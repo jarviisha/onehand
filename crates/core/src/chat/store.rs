@@ -735,6 +735,8 @@ pub(crate) fn line_of(chat: &Chat, item: &ChatItem) -> Option<(String, Vec<Blob>
             exit: t.exit_code,
         },
         ChatItem::Permission(_) | ChatItem::Ask(_) => return None,
+        // Not written yet.
+        ChatItem::Subagent(_) => return None,
     };
     // Compact, never pretty: this is a line, and a line broken across lines is
     // no longer one.

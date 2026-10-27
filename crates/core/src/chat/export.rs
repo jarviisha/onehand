@@ -71,6 +71,8 @@ pub fn export_markdown(chat: &Chat) -> String {
                 out.push_str(&format!("_{text}_\n\n"));
             }
             ChatItem::Permission(_) => {}
+            // Not exported yet.
+            ChatItem::Subagent(_) => {}
             // Only an answered question is worth exporting — the prompt plus
             // what the user picked, as a one-line Q&A.
             ChatItem::Ask(a) => {

@@ -166,6 +166,7 @@ fn permission(resolved: Option<&str>) -> ChatItem {
             options: Vec::new(),
         },
         resolved: resolved.map(str::to_string),
+        asker: None,
         expanded: false,
     })
 }

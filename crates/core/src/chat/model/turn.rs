@@ -197,27 +197,7 @@ impl Chat {
     /// than one saying it is unclear. This is the same answer
     /// `cancel_pending_permissions` gives a dangling card one line above.
     pub(super) fn settle_running_steps(&mut self) {
-        for item in &mut self.items {
-            if let ChatItem::Tool(tool) = item {
-                if !matches!(
-                    tool.call.status,
-                    ToolStatus::Pending | ToolStatus::InProgress
-                ) {
-                    continue;
-                }
-                tool.call.status = ToolStatus::Failed;
-                // Timed here for the same reason a settling update is: this is
-                // the moment the step stopped, and a step that never settles
-                // has no duration at all.
-                if tool.elapsed_secs.is_none() {
-                    tool.elapsed_secs =
-                        Some(tool.started.map(|s| s.elapsed().as_secs()).unwrap_or(0));
-                }
-                // The same seed a failure arriving as an update leaves, so a
-                // reader can see what the step had said before it stopped.
-                tool.fold.get_or_insert(true);
-            }
-        }
+        super::apply::settle_steps(&mut self.items);
     }
 
     pub(crate) fn cancel_pending_permissions(&mut self) {

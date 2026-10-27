@@ -1452,6 +1452,7 @@ fn a_question_waits_for_an_answer_and_a_permission_for_approval() {
     chat.items.push(ChatItem::Permission(PermItem {
         req: permission("cargo test"),
         resolved: None,
+        asker: None,
         expanded: false,
     }));
     assert_eq!(
@@ -1584,6 +1585,7 @@ fn cancelling_resolves_parked_permissions_first() {
     chat.items.push(ChatItem::Permission(PermItem {
         req: permission("rm -rf build"),
         resolved: None,
+        asker: None,
         expanded: false,
     }));
 
@@ -1611,6 +1613,7 @@ fn answering_a_permission_replies_and_records_the_choice() {
     chat.items.push(ChatItem::Permission(PermItem {
         req: permission("rm -rf build"),
         resolved: None,
+        asker: None,
         expanded: false,
     }));
 
@@ -1643,6 +1646,7 @@ fn copying_a_collapsed_command_takes_all_of_it() {
     let item = PermItem {
         req: permission(&script),
         resolved: None,
+        asker: None,
         expanded: false,
     };
 
@@ -1652,6 +1656,7 @@ fn copying_a_collapsed_command_takes_all_of_it() {
     let one = PermItem {
         req: permission(&long_line),
         resolved: None,
+        asker: None,
         expanded: false,
     };
     assert_eq!(one.command(), long_line);
@@ -1665,6 +1670,7 @@ fn opening_a_command_block_survives_in_the_item() {
     chat.items.push(ChatItem::Permission(PermItem {
         req: permission(&"echo\n".repeat(20)),
         resolved: None,
+        asker: None,
         expanded: false,
     }));
 
@@ -1683,6 +1689,7 @@ fn answering_twice_sends_only_once() {
     chat.items.push(ChatItem::Permission(PermItem {
         req: permission("rm -rf build"),
         resolved: None,
+        asker: None,
         expanded: false,
     }));
 

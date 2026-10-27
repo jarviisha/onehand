@@ -50,6 +50,7 @@ fn is_activity(item: &ChatItem) -> bool {
         | ChatItem::Plan(_)
         | ChatItem::Permission(_)
         | ChatItem::Ask(_)
+        | ChatItem::Subagent(_)
         | ChatItem::Notice { .. } => false,
     }
 }

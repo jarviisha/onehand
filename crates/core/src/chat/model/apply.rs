@@ -142,7 +142,8 @@ impl Chat {
         // parsed — every answer in it rendering as its own markdown source.
         let before = self.revision;
         // Session-metadata events (handshake, mode/command advertisements,
-        // usage and background reports) aren't conversation activity;
+        // usage and background reports) aren't conversation activity, and a
+        // subagent's event is only when it lands in a card (see its arm);
         // anything else refreshes the rail's relative-time label — "now"
         // while a session works, aging once quiet.
         let metadata = matches!(
@@ -268,45 +269,29 @@ impl Chat {
             AcpEvent::ToolCall(tc) => {
                 self.consume_replay();
                 self.finalize_thought();
-                // A call announced again under an id already on screen is the
-                // same step, said over: it updates its card rather than
-                // drawing a second one.
-                let known = self.items.iter_mut().rev().find_map(|item| match item {
-                    ChatItem::Tool(t) if t.call.id == tc.id => Some(t),
-                    _ => None,
-                });
-                if let Some(card) = known {
-                    card.call.kind = tc.kind;
-                    self.apply_tool_update(ToolCallUpdate {
-                        id: tc.id,
-                        status: Some(tc.status),
-                        title: Some(tc.title),
-                        description: tc.description,
-                        content: Some(tc.content),
-                    });
-                } else {
-                    let mut item = ToolItem::new(tc);
-                    // The same rule for a step that arrives already failed,
-                    // which is how an adapter reports one it never started.
-                    item.fold = (item.call.status == ToolStatus::Failed).then_some(true);
-                    self.items.push(ChatItem::Tool(item));
-                }
+                tool_call(&mut self.items, tc);
             }
             AcpEvent::ToolUpdate(tu) => {
                 self.consume_replay();
-                self.apply_tool_update(tu);
+                tool_update(&mut self.items, tu);
             }
             AcpEvent::Plan(entries) => {
                 self.consume_replay();
                 self.finalize_thought();
-                self.apply_plan(entries);
+                plan(&mut self.items, entries);
             }
             AcpEvent::Usage(usage) => self.apply_usage(usage),
             AcpEvent::Background(report) => self.apply_background(report),
-            // Filled in with the subagent card.
-            AcpEvent::SubagentSpawned { .. }
+            // Changes the transcript only when it lands in a card, so the
+            // stamp and the revision wait for that answer.
+            event @ (AcpEvent::SubagentSpawned { .. }
             | AcpEvent::SubagentEnded { .. }
-            | AcpEvent::InChild { .. } => {}
+            | AcpEvent::InChild { .. }) => {
+                if self.apply_subagent(event) {
+                    self.last_activity = Some(store::now_secs());
+                    self.touch();
+                }
+            }
             AcpEvent::StopRefused { why } => stop_refused = Some(why),
             AcpEvent::Permission(mut req) => {
                 self.consume_replay();
@@ -314,7 +299,11 @@ impl Chat {
                 // One adapter puts the command in the request's own title,
                 // another a generic label such as "Run command"; the call the
                 // request names carries the command either way.
-                let named = self.items.iter().rev().find_map(|item| match item {
+                // A subagent's request names a call in its own card.
+                let card = req.child.as_deref().and_then(|id| self.subagent(id));
+                let asker = card.map(|card| card.name.clone());
+                let steps = card.map_or(&self.items, |card| &card.items);
+                let named = steps.iter().rev().find_map(|item| match item {
                     ChatItem::Tool(t) if Some(&t.call.id) == req.tool_call_id.as_ref() => {
                         Some(t.call.title.trim())
                     }
@@ -326,13 +315,19 @@ impl Chat {
                 self.items.push(ChatItem::Permission(PermItem {
                     req,
                     resolved: None,
+                    asker,
                     expanded: false,
                 }))
             }
             AcpEvent::Elicitation(req) => {
                 self.consume_replay();
                 self.finalize_thought();
-                self.items.push(ChatItem::Ask(AskItem::new(req)))
+                let asker = req.child.as_deref().and_then(|id| self.subagent(id));
+                let asker = asker.map(|card| card.name.clone());
+                self.items.push(ChatItem::Ask(AskItem {
+                    asker,
+                    ..AskItem::new(req)
+                }))
             }
             AcpEvent::AvailableCommands(c) => self.commands = c,
             AcpEvent::Modes { current, available } => {
@@ -490,90 +485,6 @@ impl Chat {
         }
     }
 
-    /// Merge a `tool_call_update` into the matching tool card (by id). An
-    /// update with no matching card (it raced ahead of its `tool_call`, or
-    /// the adapter sends update-only calls) materializes one instead of being
-    /// dropped — a silently-vanished `Failed` would read as "the turn did
-    /// nothing".
-    fn apply_tool_update(&mut self, tu: ToolCallUpdate) {
-        for item in self.items.iter_mut().rev() {
-            if let ChatItem::Tool(t) = item {
-                if t.call.id == tu.id {
-                    if let Some(status) = tu.status {
-                        // Settling is the moment the duration exists, and it is
-                        // stamped once: a later update to the same card -- of
-                        // which there are several, since content arrives after
-                        // the status does -- must not restart the clock.
-                        if !matches!(status, ToolStatus::Pending | ToolStatus::InProgress)
-                            && t.elapsed_secs.is_none()
-                        {
-                            t.elapsed_secs =
-                                Some(t.started.map(|s| s.elapsed().as_secs()).unwrap_or(0));
-                        }
-                        // **A failure opens itself, and can still be shut.**
-                        // The one thing a reader needs from a settled step is
-                        // whether it worked, and for the one that did not the
-                        // next question is always the same -- what did it say?
-                        // -- so making them ask is a click charged for the case
-                        // that already went badly.
-                        //
-                        // Seeded into the fold the user owns rather than
-                        // OR-ed into `is_open`, which is where this was first
-                        // written and is a trap: a terminal status that forces
-                        // the row open forces it open *for ever*, so the
-                        // control that shuts it does nothing and the one state
-                        // that most wants a way out is the one with none.
-                        // Running gets away with the OR because it stops being
-                        // true on its own.
-                        if status == ToolStatus::Failed && t.call.status != ToolStatus::Failed {
-                            t.fold.get_or_insert(true);
-                        }
-                        t.call.status = status;
-                    }
-                    if let Some(title) = tu.title {
-                        t.call.title = title;
-                    }
-                    if let Some(description) = tu.description {
-                        t.call.description = Some(description);
-                    }
-                    if let Some(content) = tu.content {
-                        if !content.is_empty() {
-                            t.call.content = content;
-                            t.refresh_diffs();
-                        }
-                    }
-                    return;
-                }
-            }
-        }
-        self.items.push(ChatItem::Tool(ToolItem::new(ToolCall {
-            id: tu.id,
-            title: tu.title.unwrap_or_default(),
-            description: tu.description,
-            kind: crate::acp::ToolKind::Other,
-            status: tu.status.unwrap_or(ToolStatus::InProgress),
-            content: tu.content.unwrap_or_default(),
-        })));
-    }
-
-    /// Fold a `plan` update into the transcript: the agent republishes the
-    /// full checklist on every change, so the current turn's plan card is
-    /// replaced in place (its fold survives); a new turn gets its own card.
-    fn apply_plan(&mut self, entries: Vec<PlanEntry>) {
-        let turn_start = self
-            .items
-            .iter()
-            .rposition(|i| matches!(i, ChatItem::User(_)))
-            .map(|p| p + 1)
-            .unwrap_or(0);
-        for item in self.items[turn_start..].iter_mut() {
-            if let ChatItem::Plan(p) = item {
-                p.entries = entries;
-                return;
-            }
-        }
-        self.items.push(ChatItem::Plan(PlanItem::new(entries)));
-    }
     /// Flatten every exited terminal into the tool card that references it
     /// (replacing the live `Terminal(id)` with the captured output + an exit
     /// footer) and drop it from the live `terminals` map. Called at turn end so
@@ -651,12 +562,7 @@ impl Chat {
 
     /// Stamp the trailing thought's duration once non-thought content follows it.
     fn finalize_thought(&mut self) {
-        if let Some(ChatItem::Thought(th)) = self.items.last_mut() {
-            if th.elapsed_secs.is_none() {
-                let secs = th.started.map(|s| s.elapsed().as_secs()).unwrap_or(0);
-                th.elapsed_secs = Some(secs);
-            }
-        }
+        seal_thought(&mut self.items);
     }
 
     fn push_user_chunk(&mut self, s: &str) {
@@ -665,6 +571,153 @@ impl Chat {
             _ => self.items.push(ChatItem::User(UserMsg::text(s))),
         }
         self.user_chunk_open = true;
+    }
+}
+
+/// Stamp the trailing thought of `items` with its duration.
+pub(super) fn seal_thought(items: &mut [ChatItem]) {
+    if let Some(ChatItem::Thought(th)) = items.last_mut() {
+        if th.elapsed_secs.is_none() {
+            let secs = th.started.map(|s| s.elapsed().as_secs()).unwrap_or(0);
+            th.elapsed_secs = Some(secs);
+        }
+    }
+}
+
+/// Draw a tool call, or update its card when the id is already on screen.
+pub(super) fn tool_call(items: &mut Vec<ChatItem>, tc: ToolCall) {
+    // A call announced again under an id already on screen is the same step,
+    // said over: it updates its card rather than drawing a second one.
+    let known = items.iter_mut().rev().find_map(|item| match item {
+        ChatItem::Tool(t) if t.call.id == tc.id => Some(t),
+        _ => None,
+    });
+    if let Some(card) = known {
+        card.call.kind = tc.kind;
+        tool_update(
+            items,
+            ToolCallUpdate {
+                id: tc.id,
+                status: Some(tc.status),
+                title: Some(tc.title),
+                description: tc.description,
+                content: Some(tc.content),
+            },
+        );
+    } else {
+        let mut item = ToolItem::new(tc);
+        // The same rule for a step that arrives already failed, which is how
+        // an adapter reports one it never started.
+        item.fold = (item.call.status == ToolStatus::Failed).then_some(true);
+        items.push(ChatItem::Tool(item));
+    }
+}
+
+/// Merge a `tool_call_update` into the matching tool card (by id). An
+/// update with no matching card (it raced ahead of its `tool_call`, or
+/// the adapter sends update-only calls) materializes one instead of being
+/// dropped — a silently-vanished `Failed` would read as "the turn did
+/// nothing".
+pub(super) fn tool_update(items: &mut Vec<ChatItem>, tu: ToolCallUpdate) {
+    for item in items.iter_mut().rev() {
+        if let ChatItem::Tool(t) = item {
+            if t.call.id == tu.id {
+                if let Some(status) = tu.status {
+                    // Settling is the moment the duration exists, and it is
+                    // stamped once: a later update to the same card -- of
+                    // which there are several, since content arrives after
+                    // the status does -- must not restart the clock.
+                    if !matches!(status, ToolStatus::Pending | ToolStatus::InProgress)
+                        && t.elapsed_secs.is_none()
+                    {
+                        t.elapsed_secs =
+                            Some(t.started.map(|s| s.elapsed().as_secs()).unwrap_or(0));
+                    }
+                    // **A failure opens itself, and can still be shut.**
+                    // The one thing a reader needs from a settled step is
+                    // whether it worked, and for the one that did not the
+                    // next question is always the same -- what did it say?
+                    // -- so making them ask is a click charged for the case
+                    // that already went badly.
+                    //
+                    // Seeded into the fold the user owns rather than
+                    // OR-ed into `is_open`, which is where this was first
+                    // written and is a trap: a terminal status that forces
+                    // the row open forces it open *for ever*, so the
+                    // control that shuts it does nothing and the one state
+                    // that most wants a way out is the one with none.
+                    // Running gets away with the OR because it stops being
+                    // true on its own.
+                    if status == ToolStatus::Failed && t.call.status != ToolStatus::Failed {
+                        t.fold.get_or_insert(true);
+                    }
+                    t.call.status = status;
+                }
+                if let Some(title) = tu.title {
+                    t.call.title = title;
+                }
+                if let Some(description) = tu.description {
+                    t.call.description = Some(description);
+                }
+                if let Some(content) = tu.content {
+                    if !content.is_empty() {
+                        t.call.content = content;
+                        t.refresh_diffs();
+                    }
+                }
+                return;
+            }
+        }
+    }
+    items.push(ChatItem::Tool(ToolItem::new(ToolCall {
+        id: tu.id,
+        title: tu.title.unwrap_or_default(),
+        description: tu.description,
+        kind: crate::acp::ToolKind::Other,
+        status: tu.status.unwrap_or(ToolStatus::InProgress),
+        content: tu.content.unwrap_or_default(),
+    })));
+}
+
+/// Fold a `plan` update into the transcript: the agent republishes the
+/// full checklist on every change, so the current turn's plan card is
+/// replaced in place (its fold survives); a new turn gets its own card.
+pub(super) fn plan(items: &mut Vec<ChatItem>, entries: Vec<PlanEntry>) {
+    let turn_start = items
+        .iter()
+        .rposition(|i| matches!(i, ChatItem::User(_)))
+        .map(|p| p + 1)
+        .unwrap_or(0);
+    for item in items[turn_start..].iter_mut() {
+        if let ChatItem::Plan(p) = item {
+            p.entries = entries;
+            return;
+        }
+    }
+    items.push(ChatItem::Plan(PlanItem::new(entries)));
+}
+
+/// Fail every step still running in `items`: nothing will settle it now.
+pub(super) fn settle_steps(items: &mut [ChatItem]) {
+    for item in items {
+        if let ChatItem::Tool(tool) = item {
+            if !matches!(
+                tool.call.status,
+                ToolStatus::Pending | ToolStatus::InProgress
+            ) {
+                continue;
+            }
+            tool.call.status = ToolStatus::Failed;
+            // Timed here for the same reason a settling update is: this is
+            // the moment the step stopped, and a step that never settles
+            // has no duration at all.
+            if tool.elapsed_secs.is_none() {
+                tool.elapsed_secs = Some(tool.started.map(|s| s.elapsed().as_secs()).unwrap_or(0));
+            }
+            // The same seed a failure arriving as an update leaves, so a
+            // reader can see what the step had said before it stopped.
+            tool.fold.get_or_insert(true);
+        }
     }
 }
 

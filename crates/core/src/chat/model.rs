@@ -16,6 +16,7 @@ mod background;
 mod items;
 mod meta;
 mod persist;
+mod subagent;
 mod turn;
 pub use apply::{ApplyOutcome, Away, UserAsk};
 pub use background::{BackgroundItem, Level, Meter};
@@ -26,6 +27,7 @@ pub use items::{
 };
 pub(crate) use meta::summarize_title;
 pub use meta::{Selector, SelectorChoice, MODE_SELECTOR};
+pub use subagent::{SubagentItem, SubagentState};
 pub use turn::{QueuedPrompt, SubmitBlock};
 
 /// Where a conversation's adapter is in its life.
