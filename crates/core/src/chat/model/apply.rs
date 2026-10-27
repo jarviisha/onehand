@@ -37,6 +37,11 @@ pub struct ApplyOutcome {
     /// The agent refused a pick, put back to what it last confirmed: why,
     /// to be said once.
     pub pick_refused: Option<String>,
+    /// A usage report closed a cycle the agent ran by itself, between turns:
+    /// a safe moment to save what it wrote.
+    pub cycle_ended: bool,
+    /// The adapter would not stop a background item: why, to be said once.
+    pub stop_refused: Option<String>,
 }
 
 /// What an agent parked in front of the user, and what to call it.
@@ -136,8 +141,8 @@ impl Chat {
         // unchanged, that conversation would be drawn from blocks nobody had
         // parsed — every answer in it rendering as its own markdown source.
         let before = self.revision;
-        // Session-metadata events (handshake, mode/command advertisements)
-        // aren't conversation activity; anything else refreshes the rail's
+        // Session-metadata events (handshake, mode/command advertisements,
+        // usage and background reports) aren't conversation activity; anything else refreshes the rail's
         // relative-time label — "now" while a session works, aging once quiet.
         let metadata = matches!(
             &event,
@@ -147,6 +152,9 @@ impl Chat {
                 | AcpEvent::ModeChanged(_)
                 | AcpEvent::ConfigOptions(_)
                 | AcpEvent::Connected { .. }
+                | AcpEvent::Usage(_)
+                | AcpEvent::Background(_)
+                | AcpEvent::StopRefused { .. }
         );
         let event_at = (!metadata).then(store::now_secs);
         if let Some(event_at) = event_at {
@@ -163,6 +171,8 @@ impl Chat {
         // client declines those where they arrive rather than parking them.
         let offer_changed = matches!(event, AcpEvent::Modes { .. } | AcpEvent::ConfigOptions(_));
         let mut pick_refused = None;
+        let mut stop_refused = None;
+        let cycle_ended = matches!(&event, AcpEvent::Usage(usage) if usage.cycle_end);
         let asked_user = match event {
             AcpEvent::Permission(_) => Some(UserAsk::Permission),
             AcpEvent::Elicitation(_) => Some(UserAsk::Question),
@@ -181,7 +191,10 @@ impl Chat {
             | AcpEvent::Modes { .. }
             | AcpEvent::ModeChanged(_)
             | AcpEvent::ConfigOptions(_)
-            | AcpEvent::Connected { .. } => {}
+            | AcpEvent::Connected { .. }
+            | AcpEvent::Usage(_)
+            | AcpEvent::Background(_)
+            | AcpEvent::StopRefused { .. } => {}
             _ => self.user_chunk_open = false,
         }
         match event {
@@ -281,8 +294,9 @@ impl Chat {
                 self.finalize_thought();
                 self.apply_plan(entries);
             }
-            // Read by the activity strip once the chat keeps it.
-            AcpEvent::Usage(_) | AcpEvent::Background(_) | AcpEvent::StopRefused { .. } => {}
+            AcpEvent::Usage(usage) => self.apply_usage(usage),
+            AcpEvent::Background(report) => self.apply_background(report),
+            AcpEvent::StopRefused { why } => stop_refused = Some(why),
             AcpEvent::Permission(mut req) => {
                 self.consume_replay();
                 self.finalize_thought();
@@ -422,6 +436,7 @@ impl Chat {
                 // offering buttons whose rpc ids died with the connection.
                 self.cancel_pending_permissions();
                 self.settle_lost_link();
+                self.forget_activity();
                 // No key in the words: the front end names the one its keymap
                 // binds, which the person may have changed.
                 let text = self
@@ -438,6 +453,8 @@ impl Chat {
             asked_user,
             offer_changed,
             pick_refused,
+            cycle_ended,
+            stop_refused,
         }
     }
 
@@ -601,8 +618,14 @@ impl Chat {
     }
 
     fn push_agent(&mut self, s: &str) {
+        // A block already on disk is never added to: the file is only
+        // appended to, so text that lands after it was written (the agent
+        // writing between turns) goes in a block of its own.
+        let written = !self.rewrite
+            && !matches!(self.replay, Replay::Partial(_))
+            && self.persisted >= self.history.len() + self.items.len();
         match self.items.last_mut() {
-            Some(ChatItem::Agent(md)) => md.push(s),
+            Some(ChatItem::Agent(md)) if !written => md.push(s),
             _ => self.items.push(ChatItem::Agent(Md::parse(s))),
         }
     }
