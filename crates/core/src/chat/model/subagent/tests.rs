@@ -243,6 +243,34 @@ fn a_replay_adds_no_cards() {
     assert_eq!(chat.subagents_working(), 0);
 }
 
+#[test]
+fn a_longer_replay_keeps_the_files_cards() {
+    let mut saved = SubagentItem::new("c1".into(), "Reader".into(), "Read");
+    saved.state = SubagentState::Completed;
+    let mut chat = chat();
+    chat.resume_from(crate::chat::store::ConversationSnapshot {
+        session_id: "sid-1".into(),
+        title: None,
+        updated: 1,
+        prefs: crate::chat::store::Prefs::default(),
+        items: vec![
+            ChatItem::User(UserMsg::text("message 0")),
+            ChatItem::Subagent(saved),
+        ],
+        written: 2,
+        complete: true,
+    });
+    for i in 0..3 {
+        chat.apply(AcpEvent::UserChunk(format!("message {i}")));
+        chat.apply(AcpEvent::AgentChunk("answer".into()));
+    }
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    chat.apply(AcpEvent::Connected { tx, resumed: true });
+
+    assert_eq!(card(&chat.history, "c1").state, SubagentState::Completed);
+    assert!(chat.flush().is_none_or(|write| !write.rewrite));
+}
+
 fn permission(child: Option<&str>) -> PermissionRequest {
     PermissionRequest {
         rpc_id: serde_json::Value::from(7),

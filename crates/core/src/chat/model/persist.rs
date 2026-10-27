@@ -196,7 +196,8 @@ impl Chat {
     /// Close the replay window, putting the adopted copy back if the replay
     /// came up short of it.
     ///
-    /// Short is the only case that restores. A replay that delivered at least as
+    /// Short is the case that restores, and so is a copy holding a subagent's
+    /// card, which no replay carries. Otherwise a replay that delivered at least as
     /// much *is* the better record — it is the agent's own, and it can be longer
     /// than the file when a previous run died between the last save and the end
     /// of a turn. Locally-minted notices are not part of the count and are kept
@@ -221,7 +222,10 @@ impl Chat {
             .iter()
             .filter(|it| !matches!(it, ChatItem::Notice { .. }))
             .count();
-        if replayed < stash.len() || self.bounded {
+        // A replay never holds a subagent's card (its end is not part of it),
+        // so a file that has one keeps its copy however long the replay ran.
+        let has_card = stash.iter().any(|it| matches!(it, ChatItem::Subagent(_)));
+        if replayed < stash.len() || self.bounded || has_card {
             self.persisted = stash.len();
             self.history = stash;
             self.items
