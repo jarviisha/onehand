@@ -614,7 +614,7 @@ impl RowMark {
     /// The glyph at the head of a row: the kind of work it was, or a spinner
     /// in the accent while it runs. How a settled step ended is said in words
     /// at the row's end, so the glyph only ever says what the work was.
-    pub(super) fn draw(self, kind: SharedString, cx: &App) -> gpui::AnyElement {
+    fn draw(self, kind: SharedString, cx: &App) -> gpui::AnyElement {
         match self {
             Self::Running => Spinner::new().xsmall().color(accent(cx)).into_any_element(),
             Self::Waiting | Self::Done | Self::Recovered | Self::Failed | Self::Refused => {

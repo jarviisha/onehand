@@ -1,5 +1,6 @@
-//! A subagent's card: one box where the agent handed work off, its head the
-//! subagent's name and how it ended, its body the steps it took.
+//! A subagent's card: a fold block, bare like the transcript's others, where
+//! the agent handed work off; its line the subagent's name and how it ended,
+//! what it holds the steps it took, inset under it.
 //!
 //! **Its steps are drawn as rows that open into nothing.** A step's own fold
 //! lives on the item in core and is addressed by its place in the transcript,
@@ -8,14 +9,14 @@
 //! subagent's words its prose, parsed by the same cache as the agent's.
 
 use super::metrics::{FOLD_INDENT, TEXT_SM};
-use super::parts::{ActivityRow, Object, RowMark, activity_row, chevron_slot, show_more};
+use super::parts::{ActivityRow, Object, RowMark, activity_row, fold_line, show_more};
 use super::prose::md_view;
 use super::tool::step_row;
 use crate::chat::session::ChatSession;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, ClickEvent, ElementId, Entity, InteractiveElement, IntoElement, ParentElement,
-    SharedString, StatefulInteractiveElement, Styled, Window, div,
+    App, ClickEvent, ElementId, Entity, IntoElement, ParentElement, SharedString,
+    StatefulInteractiveElement, Styled, Window, div,
 };
 use gpui_component::{ActiveTheme, IconName, IconNamed as _, StyledExt};
 use onehand_core::acp::PlanStatus;
@@ -50,15 +51,12 @@ pub(super) fn subagent(
         }
     };
 
-    // Opened: every step up to the cap. Working: the newest few. Ended and
-    // folded: none, the head says how many there were.
-    let shown = match (open, working) {
-        (true, _) => 0..steps.min(SUBAGENT_STEP_CAP),
-        (false, true) => steps.saturating_sub(SUBAGENT_LIVE_STEPS)..steps,
-        (false, false) => steps..steps,
-    };
-    let earlier = shown.start;
-    let more = steps - shown.end;
+    let shown = shown(steps, open, working);
+    // Before the shown steps: the way into the rest while folded, a count
+    // once opened (a working card's oldest past the cap). After: an ended
+    // card's newest past the cap.
+    let before = shown.start;
+    let after = steps - shown.end;
     let root = session.read(cx).chat.root.clone();
     let rows: Vec<gpui::AnyElement> = shown
         .clone()
@@ -70,9 +68,20 @@ pub(super) fn subagent(
             step(session, &card.items[ix], id, &root, window, cx)
         })
         .collect();
+    let more = |n: usize| {
+        div()
+            .text_xs()
+            .text_color(cx.theme().muted_foreground)
+            .child(format!("{n} more"))
+    };
 
-    onehand_ui::card_box(cx)
+    // A fold block like the transcript's others, bare: the line, then what
+    // it holds inset under it.
+    div()
+        .v_flex()
         .w_full()
+        .min_w_0()
+        .gap_2()
         .child(head(card, open, steps, toggle.clone(), cx))
         // The task says what the name cannot; a folded card that has ended is
         // the one line its head is.
@@ -86,42 +95,49 @@ pub(super) fn subagent(
                 .text_color(crate::theme::meta_ink(cx))
                 .child(task.clone())
         }))
-        .when(!rows.is_empty() || earlier > 0 || more > 0, |card_box| {
-            card_box.child(
+        .when(!rows.is_empty() || before > 0 || after > 0, |block| {
+            block.child(
                 div()
                     .v_flex()
                     .w_full()
                     .min_w_0()
                     .pl(FOLD_INDENT)
                     .gap_2()
-                    .when(earlier > 0, |body| {
+                    .when(before > 0 && !open, |body| {
                         body.child(
                             div().h_flex().child(
                                 show_more(
                                     ElementId::Name(format!("subagent-earlier-{}", card.id).into()),
-                                    counted(earlier, "earlier step", "earlier steps"),
+                                    counted(before, "earlier step", "earlier steps"),
                                     cx,
                                 )
                                 .on_click(toggle),
                             ),
                         )
                     })
+                    .when(before > 0 && open, |body| body.child(more(before)))
                     .children(rows)
-                    .when(more > 0, |body| {
-                        body.child(
-                            div()
-                                .text_xs()
-                                .text_color(cx.theme().muted_foreground)
-                                .child(format!("{more} more")),
-                        )
-                    }),
+                    .when(after > 0, |body| body.child(more(after))),
             )
         })
         .into_any_element()
 }
 
-/// The card's head, which is also what opens and folds it: the arrow, the
-/// mark (a spinner while it works), the name, and once it has ended the word
+/// Which of a card's `steps` show. Folded and working: the newest few.
+/// Folded and ended: none, the head says how many. Opened: up to the cap,
+/// the newest while it works (that is where it is) and the first once it has
+/// ended (read from the start).
+fn shown(steps: usize, open: bool, working: bool) -> std::ops::Range<usize> {
+    match (open, working) {
+        (true, true) => steps.saturating_sub(SUBAGENT_STEP_CAP)..steps,
+        (true, false) => 0..steps.min(SUBAGENT_STEP_CAP),
+        (false, true) => steps.saturating_sub(SUBAGENT_LIVE_STEPS)..steps,
+        (false, false) => steps..steps,
+    }
+}
+
+/// The card's head, a fold line that opens and folds it: the arrow (a
+/// spinner while it works), the name, and once it has ended the word
 /// for how, with the count of its steps while it is folded.
 fn head(
     card: &SubagentItem,
@@ -131,57 +147,37 @@ fn head(
     cx: &App,
 ) -> impl IntoElement {
     let muted = cx.theme().muted_foreground;
-    let lit = cx.theme().foreground;
-    let (mark, word) = match card.state {
-        SubagentState::Working => (RowMark::Running, None),
-        SubagentState::Completed => (RowMark::Done, Some(("done", muted))),
-        SubagentState::Failed => (
-            RowMark::Done,
-            Some(("failed", crate::theme::status_ink(cx).danger)),
-        ),
-        // Neither failed: one was stopped, the other's end was never seen.
-        SubagentState::Cancelled => (
-            RowMark::Done,
-            Some(("cancelled", crate::theme::meta_ink(cx))),
-        ),
-        SubagentState::Interrupted => (
-            RowMark::Done,
-            Some(("interrupted", crate::theme::meta_ink(cx))),
-        ),
+    let word = match card.state {
+        SubagentState::Working => None,
+        SubagentState::Failed => Some(("failed", crate::theme::status_ink(cx).danger)),
+        // Neither cancelled nor interrupted failed: one was stopped, the
+        // other's end was never seen.
+        SubagentState::Completed => Some(("done", muted)),
+        SubagentState::Cancelled => Some(("cancelled", muted)),
+        SubagentState::Interrupted => Some(("interrupted", muted)),
     };
-    div()
-        .id(ElementId::Name(format!("subagent-{}", card.id).into()))
-        .h_flex()
-        .items_center()
-        .gap_2()
-        .w_full()
-        .min_w_0()
-        .cursor_pointer()
-        .text_size(TEXT_SM)
-        .text_color(muted)
-        // Ink, and no plate, as every row of the transcript answers.
-        .hover(move |row| row.text_color(lit))
-        .on_click(toggle)
-        .child(chevron_slot(Some(open)))
-        .child(mark.draw(IconName::Bot.path(), cx))
-        .child(
-            div()
-                .min_w_0()
-                .truncate()
-                .text_color(lit)
-                .child(card.name.clone()),
-        )
-        .children(word.map(|(word, ink)| {
-            div()
-                .flex_none()
-                .h_flex()
-                .gap_2()
-                .whitespace_nowrap()
-                .child(div().text_color(ink).child(word))
-                .when(!open, |line| {
-                    line.child("·").child(counted(steps, "step", "steps"))
-                })
-        }))
+    fold_line(
+        ElementId::Name(format!("subagent-{}", card.id).into()),
+        open,
+        card.state == SubagentState::Working,
+        cx,
+    )
+    .w_full()
+    .on_click(toggle)
+    // In the line's own ink, lit with it under the pointer, as every fold
+    // line's words are.
+    .child(div().min_w_0().truncate().child(card.name.clone()))
+    .children(word.map(|(word, ink)| {
+        div()
+            .flex_none()
+            .h_flex()
+            .gap_2()
+            .whitespace_nowrap()
+            .child(div().text_color(ink).child(word))
+            .when(!open, |line| {
+                line.child("·").child(counted(steps, "step", "steps"))
+            })
+    }))
 }
 
 /// One of a card's steps, as the transcript draws it; `None` for what a
@@ -242,5 +238,25 @@ fn counted(n: usize, one: &str, many: &str) -> String {
     match n {
         1 => format!("1 {one}"),
         n => format!("{n} {many}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SUBAGENT_LIVE_STEPS as LIVE, SUBAGENT_STEP_CAP as CAP, shown};
+
+    #[test]
+    fn a_card_shows_the_steps_its_state_and_fold_call_for() {
+        // Folded and working: the newest few, all of them under that.
+        assert_eq!(shown(2, false, true), 0..2);
+        assert_eq!(shown(10, false, true), 10 - LIVE..10);
+        // Folded and ended: none.
+        assert_eq!(shown(10, false, false), 10..10);
+        // Opened, under the cap: everything either way.
+        assert_eq!(shown(10, true, true), 0..10);
+        assert_eq!(shown(10, true, false), 0..10);
+        // Opened, over the cap: the newest while working, the first once ended.
+        assert_eq!(shown(CAP + 5, true, true), 5..CAP + 5);
+        assert_eq!(shown(CAP + 5, true, false), 0..CAP);
     }
 }
