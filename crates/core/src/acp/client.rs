@@ -146,6 +146,8 @@ enum Pending {
         group: String,
         value: String,
     },
+    /// A background item asked to stop; only a refusal is reported.
+    StopBackground,
 }
 
 async fn run(
@@ -351,6 +353,13 @@ impl Conn {
                     };
                     let params = json!({ "sessionId": sid, "configId": config_id, "value": value });
                     self.send("session/set_config_option", params, pending)
+                        .await?;
+                }
+            }
+            AcpRequest::StopBackground { id } => {
+                if let Some(sid) = self.session_id.clone() {
+                    let params = json!({ "sessionId": sid, "asyncTaskId": id });
+                    self.send("_session/async_task/stop", params, Pending::StopBackground)
                         .await?;
                 }
             }
@@ -605,6 +614,12 @@ impl Conn {
                         None => AcpEvent::PickConfirmed { group, value },
                     };
                     let _ = self.output.send(event).await;
+                }
+                Some(Pending::StopBackground) => {
+                    if let Some(err) = msg.get("error") {
+                        let why = in_words(err).0;
+                        let _ = self.output.send(AcpEvent::StopRefused { why }).await;
+                    }
                 }
                 Some(Pending::PromptTurn) => {
                     if let Some(err) = msg.get("error") {

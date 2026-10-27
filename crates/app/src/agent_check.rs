@@ -106,6 +106,7 @@ fn check(ask: &Ask, cx: &mut App) {
                     | AcpEvent::Plan(_)
                     | AcpEvent::Usage(_)
                     | AcpEvent::Background(_)
+                    | AcpEvent::StopRefused { .. }
                     | AcpEvent::Permission(_)
                     | AcpEvent::Elicitation(_)
                     | AcpEvent::AvailableCommands(_)

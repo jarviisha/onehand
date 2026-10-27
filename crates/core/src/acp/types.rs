@@ -42,6 +42,8 @@ pub enum AcpRequest {
     SetMode(String),
     /// Set a config option (e.g. model) via `session/set_config_option`.
     SetConfigOption { config_id: String, value: String },
+    /// Stop one background item, leaving the turn alone.
+    StopBackground { id: String },
 }
 
 /// A slash command advertised by the agent (`available_commands_update`).
@@ -540,6 +542,8 @@ pub enum AcpEvent {
     Usage(Usage),
     /// Background work started or ended.
     Background(BackgroundReport),
+    /// The adapter refused to stop a background item (it may have just ended).
+    StopRefused { why: String },
     /// The agent is asking permission; parked until the user chooses.
     Permission(PermissionRequest),
     /// The agent is asking a *question* (`AskUserQuestion` / an MCP form);

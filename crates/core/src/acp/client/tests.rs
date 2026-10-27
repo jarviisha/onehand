@@ -1219,3 +1219,68 @@ fn init_advertises_async_tasks_only() {
     );
     assert!(caps.get("subagents").is_none());
 }
+
+#[tokio::test]
+async fn stop_background_sends_the_adapter_method() {
+    let (mut agent, mut events) = client();
+    let sid = agent.handshake().await;
+    let tx = connected(&mut events).await;
+    tx.send(AcpRequest::StopBackground { id: "t1".into() })
+        .expect("the client is still serving");
+    let sent = agent.heard().await;
+    assert_eq!(sent["method"], "_session/async_task/stop", "{sent:#}");
+    assert_eq!(
+        sent["params"],
+        json!({ "sessionId": sid, "asyncTaskId": "t1" })
+    );
+}
+
+/// A stop that arrives after the item ended is refused by the adapter; the
+/// person is told, and the list follows the adapter's state reports.
+#[tokio::test]
+async fn a_refused_stop_says_why() {
+    let (mut agent, mut events) = client();
+    agent.handshake().await;
+    let tx = connected(&mut events).await;
+    tx.send(AcpRequest::StopBackground { id: "t1".into() })
+        .expect("the client is still serving");
+    let sent = agent.heard().await;
+    agent
+        .say(json!({ "jsonrpc": "2.0", "id": sent["id"],
+            "error": { "code": -32602, "message": "no such task" } }))
+        .await;
+    while let Some(event) = events.recv().await {
+        if let AcpEvent::StopRefused { why } = event {
+            assert_eq!(why, "no such task");
+            return;
+        }
+    }
+    panic!("the refusal never reached the caller");
+}
+
+#[tokio::test]
+async fn usage_and_background_updates_become_events() {
+    let (mut agent, mut events) = client();
+    let sid = agent.handshake().await;
+    connected(&mut events).await;
+    for update in [
+        json!({"sessionUpdate":"usage_update","used":10,"size":100}),
+        json!({"sessionUpdate":"async_task_spawned","asyncTaskId":"t1","name":"dev","taskType":"shell"}),
+    ] {
+        agent
+            .say(json!({ "jsonrpc": "2.0", "method": "session/update",
+                "params": { "sessionId": sid, "update": update } }))
+            .await;
+    }
+    let (mut usage, mut background) = (false, false);
+    while !(usage && background) {
+        match events.recv().await.expect("the stream ended early") {
+            AcpEvent::Usage(u) => {
+                assert_eq!((u.used, u.size), (10, 100));
+                usage = true;
+            }
+            AcpEvent::Background(_) => background = true,
+            _ => {}
+        }
+    }
+}
