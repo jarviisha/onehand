@@ -60,9 +60,11 @@ impl SubagentItem {
         }
     }
 
-    /// Stop the card: whatever still runs inside it will never be settled.
+    /// Stop the card: whatever still runs inside it, a nested card included,
+    /// will never be settled.
     fn close(&mut self, state: SubagentState) {
         self.state = state;
+        interrupt(&mut self.items);
         seal_thought(&mut self.items);
         settle_steps(&mut self.items);
     }
@@ -164,6 +166,8 @@ impl Chat {
     /// Every card still working is interrupted: the adapter that would end
     /// them is gone.
     pub(super) fn interrupt_subagents(&mut self) {
+        // History too: a restart carries a working card over into it.
+        interrupt(&mut self.history);
         interrupt(&mut self.items);
     }
 }

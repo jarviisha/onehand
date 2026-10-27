@@ -147,6 +147,9 @@ impl Chat {
     /// replacement continues the same file rather than starting one.
     pub fn take_snapshot(&mut self) -> Option<ConversationSnapshot> {
         let session_id = self.session_id.clone()?;
+        // The adapter that would end a working card is the one being
+        // replaced; carried over working, it would hold every save back.
+        self.interrupt_subagents();
         // Whatever is known to be whole. Mid-replay that is the copy that was
         // adopted, not the re-delivery that has not finished arriving.
         let items = match std::mem::replace(&mut self.replay, Replay::Settled) {

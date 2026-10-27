@@ -772,3 +772,59 @@ fn a_card_working_at_close_is_kept_interrupted() {
     assert_eq!(card.state, SubagentState::Interrupted);
     let _ = std::fs::remove_dir_all(&store);
 }
+
+/// A restart carries a working card into history; the adapter that would
+/// end it is the one replaced, so it goes over interrupted and the next
+/// save writes it, and what follows it.
+#[test]
+fn a_card_working_at_a_restart_is_written_interrupted() {
+    let store = scratch("card-at-restart");
+    let mut chat = chat_in(&store, "s1");
+    chat.push_user("look around".into(), Vec::new());
+    save(&mut chat);
+    chat.items
+        .push(subagent("c1", SubagentState::Working, Vec::new()));
+    chat.items.push(ChatItem::Agent(Md::parse("meanwhile")));
+    let snapshot = chat.take_snapshot().unwrap();
+
+    let mut next = chat_in(&store, "s1");
+    next.load_history(snapshot.items, snapshot.session_id, snapshot.written);
+    let write = next.flush().expect("the card and what follows it");
+    assert_eq!(write.lines.len(), 2, "{:?}", write.lines);
+    assert!(write.lines[0].contains("\"state\":\"interrupted\""));
+    assert!(write.lines[1].contains("meanwhile"));
+    let _ = std::fs::remove_dir_all(&store);
+}
+
+/// A card that ends ends whatever still works inside it: a nested card
+/// that never reports its end would otherwise hold the parent, and all
+/// after it, out of the file.
+#[test]
+fn an_ended_card_interrupts_its_nested_cards() {
+    use crate::acp::{AcpEvent, SubagentEnd};
+    let store = scratch("card-nested-end");
+    let mut chat = chat_in(&store, "s1");
+    chat.push_user("look around".into(), Vec::new());
+    chat.items.push(subagent(
+        "c1",
+        SubagentState::Working,
+        vec![subagent("c2", SubagentState::Working, Vec::new())],
+    ));
+    assert_eq!(chat.subagents_working(), 2);
+    chat.apply(AcpEvent::SubagentEnded {
+        id: "c1".into(),
+        end: SubagentEnd::Completed,
+    });
+    assert_eq!(chat.subagents_working(), 0);
+    let ChatItem::Subagent(card) = &chat.items[1] else {
+        panic!("the card");
+    };
+    let ChatItem::Subagent(nested) = &card.items[0] else {
+        panic!("the nested card");
+    };
+    assert_eq!(card.state, SubagentState::Completed);
+    assert_eq!(nested.state, SubagentState::Interrupted);
+    let write = chat.flush().unwrap();
+    assert_eq!(write.lines.len(), 2, "the parent is written");
+    let _ = std::fs::remove_dir_all(&store);
+}
