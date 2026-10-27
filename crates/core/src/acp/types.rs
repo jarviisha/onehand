@@ -116,6 +116,9 @@ pub struct Usage {
     /// The report closes a cycle the agent ran by itself (a background task
     /// finishing), not one a person's prompt started.
     pub cycle_end: bool,
+    /// The report says which cycle it closes at all, a person's or the
+    /// agent's own: an adapter that does says when its own work settles.
+    pub marks_cycles: bool,
 }
 
 /// The account's rate limit as the adapter last reported it.

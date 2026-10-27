@@ -139,8 +139,8 @@ fn parse_usage(u: &Value) -> Option<Usage> {
     });
     // A person's own turn ends with its prompt's answer; any other origin is
     // the agent waking itself.
-    let cycle_end = meta
-        .and_then(|m| m.get("_claude/origin"))
+    let origin = meta.and_then(|m| m.get("_claude/origin"));
+    let cycle_end = origin
         .and_then(|o| o.get("kind"))
         .and_then(Value::as_str)
         .is_some_and(|k| k != "human");
@@ -149,6 +149,7 @@ fn parse_usage(u: &Value) -> Option<Usage> {
         size,
         limit,
         cycle_end,
+        marks_cycles: origin.is_some(),
     })
 }
 
@@ -837,6 +838,7 @@ mod tests {
             size: 200000,
             limit,
             cycle_end,
+            marks_cycles: false,
         })
     }
 
@@ -869,14 +871,18 @@ mod tests {
             json!({"sessionUpdate":"usage_update","used":84000,"size":200000,
                 "_meta":{"_claude/origin": origin}})
         };
+        let marked = |cycle_end| match usage(None, cycle_end) {
+            Update::Usage(u) => vec![Update::Usage(Usage {
+                marks_cycles: true,
+                ..u
+            })],
+            _ => unreachable!(),
+        };
         assert_eq!(
             parsed(with(json!({"kind":"task-notification"}))),
-            vec![usage(None, true)]
+            marked(true)
         );
-        assert_eq!(
-            parsed(with(json!({"kind":"human"}))),
-            vec![usage(None, false)]
-        );
+        assert_eq!(parsed(with(json!({"kind":"human"}))), marked(false));
     }
 
     #[test]

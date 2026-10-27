@@ -215,6 +215,7 @@ impl Chat {
         self.busy = false;
         self.link = super::Link::Lost;
         self.settle_lost_link();
+        self.forget_activity();
     }
 
     /// The first thing the user said, capped — what names a conversation in the

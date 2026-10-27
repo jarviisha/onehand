@@ -5,7 +5,7 @@
 //! cleared when the adapter goes away, since nothing would ever end them.
 
 use super::items::ChatItem;
-use super::{Chat, Replay};
+use super::{ApplyOutcome, Chat, Link, Replay};
 use crate::acp::{AcpRequest, BackgroundReport, LimitStatus, RateLimit, ToolStatus, Usage};
 use std::time::Instant;
 
@@ -84,6 +84,14 @@ fn limit_percent(limit: &RateLimit) -> Option<u8> {
         .map(|u| (u * 100.0).round().clamp(0.0, 100.0) as u8)
 }
 
+fn status_level(limit: &RateLimit) -> Level {
+    match limit.status {
+        LimitStatus::Allowed => Level::Calm,
+        LimitStatus::Warning => Level::Warning,
+        LimitStatus::Rejected => Level::Danger,
+    }
+}
+
 fn limit_line(limit: &RateLimit) -> String {
     let mut line = limit_name(limit.kind.as_deref());
     if let Some(percent) = limit_percent(limit) {
@@ -128,18 +136,16 @@ impl Chat {
         })
     }
 
-    /// The fullest limit reported, with every one seen in its tip.
+    /// The worst limit reported, then the fullest, with every one seen in
+    /// its tip. A blocked limit that gives no figure still wins over a calm
+    /// one that does.
     pub fn limit_meter(&self) -> Option<Meter> {
         let shown = self
             .limits
             .iter()
-            .max_by_key(|limit| limit_percent(limit))?;
+            .max_by_key(|limit| (status_level(limit), limit_percent(limit)))?;
         let percent = limit_percent(shown);
-        let status = match shown.status {
-            LimitStatus::Allowed => Level::Calm,
-            LimitStatus::Warning => Level::Warning,
-            LimitStatus::Rejected => Level::Danger,
-        };
+        let status = status_level(shown);
         Some(Meter {
             label: limit_label(shown.kind.as_deref()).into(),
             percent,
@@ -153,22 +159,47 @@ impl Chat {
         })
     }
 
+    /// Whether the agent is running: a turn is open, or work it started runs
+    /// on after its turn.
+    pub fn running(&self) -> bool {
+        self.busy || !self.background.is_empty()
+    }
+
     /// Whether the transcript holds something not yet on disk that is safe to
-    /// write now, between turns: no turn running, no step still in flight,
-    /// and no replay half-delivered. A line written early is frozen on disk,
-    /// so anything still moving waits.
+    /// write now, between turns: the adapter still live, no turn running, no
+    /// step or thought still in flight, and no replay half-delivered. A line
+    /// written early is frozen on disk, so anything still moving waits.
     ///
     /// Not while a rewrite is pending either: that is a resume settling, and
-    /// the file being replaced is not new work between turns.
+    /// the file being replaced is not new work between turns. Nor once the
+    /// adapter is gone: its failure line is the turn's end to say, not work.
     pub fn unsaved_between_turns(&self) -> bool {
-        !self.busy
+        self.link == Link::Connected
+            && !self.busy
             && !self.rewrite
             && !matches!(self.replay, Replay::Partial(_))
             && self.persisted < self.history.len() + self.items.len()
             && !self.items.iter().any(|item| {
                 matches!(item, ChatItem::Tool(tool)
                     if matches!(tool.call.status, ToolStatus::Pending | ToolStatus::InProgress))
+                    || matches!(item, ChatItem::Thought(thought) if thought.is_running())
             })
+    }
+
+    /// Whether the event just applied, with `outcome`, is the agent writing
+    /// between turns and so starts (or restarts) the wait for a quiet spell
+    /// before it is saved.
+    ///
+    /// Only for an adapter that never says its own work has settled; one that
+    /// does is saved at that word. A turn's end is saved by the turn, and a
+    /// report that changed no transcript, or a line onehand wrote itself, is
+    /// not the agent writing.
+    pub fn starts_quiet_save(&self, outcome: &ApplyOutcome) -> bool {
+        outcome.transcript_changed
+            && !outcome.turn_ended
+            && !self.busy
+            && !self.cycles_marked
+            && self.link == Link::Connected
     }
 
     pub(super) fn apply_background(&mut self, report: BackgroundReport) {
@@ -191,6 +222,7 @@ impl Chat {
     }
 
     pub(super) fn apply_usage(&mut self, usage: Usage) {
+        self.cycles_marked |= usage.marks_cycles;
         self.context = Some((usage.used, usage.size));
         if let Some(limit) = usage.limit {
             match self.limits.iter_mut().find(|seen| seen.kind == limit.kind) {

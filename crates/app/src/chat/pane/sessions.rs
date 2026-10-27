@@ -191,12 +191,7 @@ impl ChatPane {
                 match event {
                     // Work the agent did between turns is saved and said as a
                     // turn's is.
-                    ChatEvent::CycleEnded => {
-                        Self::archive_detached(uid, &session, cx);
-                        pane.turn_ended_detached(uid, &agent, &root_label, cx);
-                        pane.refresh_archives(cx);
-                    }
-                    ChatEvent::TurnEnded => {
+                    ChatEvent::CycleEnded | ChatEvent::TurnEnded => {
                         Self::archive_detached(uid, &session, cx);
                         pane.turn_ended_detached(uid, &agent, &root_label, cx);
                         // The turn that just ended is what wrote the archive, so
@@ -623,8 +618,7 @@ impl ChatPane {
             chat.link,
             chat.failed(),
             chat.awaiting_permission() || crate::task::waits_on_person(uid, cx),
-            // Background work is the agent still running after its turn.
-            chat.busy || !chat.background().is_empty(),
+            chat.running(),
             conv.unseen,
         )
     }

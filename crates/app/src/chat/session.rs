@@ -282,7 +282,7 @@ pub struct ChatSession {
     /// child (see [`crate::acp::AcpRuntime::connect`]). Nothing else has to
     /// remember to shut an agent down.
     _pump: Task<()>,
-    /// The quiet-save timer, restarted by everything the agent sends between
+    /// The quiet-save timer, restarted by everything the agent writes between
     /// turns; replacing it restarts it, dropping it cancels it.
     _quiet_save: Option<Task<()>>,
 }
@@ -380,6 +380,7 @@ impl ChatSession {
                             // so what it reads then is as it was at that event.
                             let mut next = Some(first);
                             let mut changed = false;
+                            let mut quiet = false;
                             let mut taken = 0;
                             while let Some(event) = next.take() {
                                 taken += 1;
@@ -388,10 +389,13 @@ impl ChatSession {
                                 // of "did the turn settle" is one copy too many.
                                 let outcome = session.chat.apply(event);
                                 changed |= outcome.transcript_changed;
+                                quiet |= session.chat.starts_quiet_save(&outcome);
                                 cx.emit(ChatEvent::Appended);
                                 // A cycle ending inside a person's turn is that
-                                // turn's, and the turn's end saves it.
-                                let cycle_ended = outcome.cycle_ended && !session.chat.busy;
+                                // turn's, and the turn's end saves it; one that
+                                // wrote nothing, or nothing settled, says nothing.
+                                let cycle_ended =
+                                    outcome.cycle_ended && session.chat.unsaved_between_turns();
                                 let told = outcome.turn_ended
                                     || cycle_ended
                                     || outcome.asked_user.is_some()
@@ -428,7 +432,11 @@ impl ChatSession {
                             if changed {
                                 session.sync_md(cx);
                             }
-                            session._quiet_save = (!session.chat.busy).then(|| quiet_save(cx));
+                            if session.chat.busy {
+                                session._quiet_save = None;
+                            } else if quiet {
+                                session._quiet_save = Some(quiet_save(cx));
+                            }
                             cx.notify();
                         });
                         // The entity is gone (session closed, window closed): stop
@@ -441,6 +449,7 @@ impl ChatSession {
                     // The stream ended, which only this loop knows.
                     let _ = session.update(cx, |session: &mut Self, cx| {
                         session.chat.stream_ended();
+                        session._quiet_save = None;
                         cx.emit(ChatEvent::Disconnected);
                         cx.notify();
                     });

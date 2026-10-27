@@ -21,6 +21,7 @@ fn usage(used: u64, size: u64) -> AcpEvent {
         size,
         limit: None,
         cycle_end: false,
+        marks_cycles: false,
     })
 }
 
@@ -35,6 +36,7 @@ fn limit(kind: Option<&str>, utilization: Option<f32>, status: LimitStatus) -> A
             kind: kind.map(str::to_string),
         }),
         cycle_end: false,
+        marks_cycles: false,
     })
 }
 
@@ -221,6 +223,7 @@ fn limit_tip_names_each_kind_and_its_reset() {
             kind: Some("seven_day_opus".into()),
         }),
         cycle_end: false,
+        marks_cycles: false,
     }));
     chat.apply(limit(
         Some("seven_day_sonnet"),
@@ -271,6 +274,7 @@ fn a_cycle_end_is_reported() {
         size: 10,
         limit: None,
         cycle_end: true,
+        marks_cycles: true,
     }));
     assert!(outcome.cycle_ended);
     assert!(!chat.apply(usage(1, 10)).cycle_ended);
@@ -295,6 +299,7 @@ fn unsaved_between_turns_waits_for_a_settled_tail() {
         Some(PathBuf::from("/store")),
     );
     chat.session_id = Some("sid-1".into());
+    chat.link = Link::Connected;
     chat.items.push(ChatItem::User(UserMsg::text("go")));
     chat.busy = true;
     chat.apply(AcpEvent::AgentChunk("done".into()));
@@ -326,6 +331,126 @@ fn unsaved_between_turns_waits_for_a_settled_tail() {
     );
     // Never written: the store is a path nobody owns.
     chat.store = None;
+}
+
+/// A chat whose turn is over and written, the adapter still live.
+fn settled_chat() -> Chat {
+    let mut chat = Chat::new(
+        1,
+        PathBuf::from("/r"),
+        "Codex".into(),
+        Some(PathBuf::from("/store")),
+    );
+    chat.session_id = Some("sid-1".into());
+    chat.link = Link::Connected;
+    chat.items.push(ChatItem::User(UserMsg::text("go")));
+    chat.busy = true;
+    chat.apply(AcpEvent::AgentChunk("done".into()));
+    chat.apply(AcpEvent::TurnEnded {
+        stop_reason: "end_turn".into(),
+    });
+    assert!(chat.flush().is_some());
+    // Never written: the store is a path nobody owns.
+    chat.store = None;
+    chat
+}
+
+#[test]
+fn a_lost_adapter_leaves_nothing_to_save_between_turns() {
+    let mut chat = settled_chat();
+    chat.apply(AcpEvent::AgentChunk("a task finished".into()));
+    assert!(chat.unsaved_between_turns());
+    chat.apply(AcpEvent::Disconnected(String::new()));
+    assert!(
+        !chat.unsaved_between_turns(),
+        "the failure line is not work between turns"
+    );
+}
+
+#[test]
+fn a_thought_still_streaming_waits() {
+    let mut chat = settled_chat();
+    chat.apply(AcpEvent::ThoughtChunk("thinking".into()));
+    assert!(!chat.unsaved_between_turns());
+    chat.apply(AcpEvent::AgentChunk("so".into()));
+    assert!(chat.unsaved_between_turns(), "text after it settles it");
+}
+
+#[test]
+fn only_agent_writing_between_turns_starts_a_quiet_save() {
+    let mut chat = settled_chat();
+    let outcome = chat.apply(usage(1, 10));
+    assert!(!chat.starts_quiet_save(&outcome), "a report is not writing");
+    // onehand's own line goes in without the reducer.
+    chat.items.push(ChatItem::notice("run note".to_string()));
+    let outcome = chat.apply(spawned("t1"));
+    assert!(!chat.starts_quiet_save(&outcome));
+
+    let outcome = chat.apply(AcpEvent::AgentChunk("a task finished".into()));
+    assert!(chat.starts_quiet_save(&outcome));
+
+    chat.busy = true;
+    let outcome = chat.apply(AcpEvent::AgentChunk("more".into()));
+    assert!(!chat.starts_quiet_save(&outcome), "a turn saves its own");
+    let outcome = chat.apply(AcpEvent::TurnEnded {
+        stop_reason: "end_turn".into(),
+    });
+    assert!(!chat.starts_quiet_save(&outcome), "nor at its end");
+
+    let outcome = chat.apply(AcpEvent::Disconnected(String::new()));
+    assert!(
+        !chat.starts_quiet_save(&outcome),
+        "nor once the adapter is gone"
+    );
+}
+
+#[test]
+fn an_adapter_that_marks_its_cycles_gets_no_quiet_save() {
+    let mut chat = settled_chat();
+    chat.apply(AcpEvent::Usage(Usage {
+        used: 1,
+        size: 10,
+        limit: None,
+        cycle_end: false,
+        marks_cycles: true,
+    }));
+    let outcome = chat.apply(AcpEvent::AgentChunk("a task finished".into()));
+    assert!(outcome.transcript_changed);
+    assert!(!chat.starts_quiet_save(&outcome));
+}
+
+#[test]
+fn background_work_is_running() {
+    let mut chat = Chat::default();
+    assert!(!chat.running());
+    chat.apply(spawned("t1"));
+    assert!(chat.running(), "work outliving its turn");
+    chat.apply(ended("t1"));
+    assert!(!chat.running());
+    chat.busy = true;
+    assert!(chat.running(), "a turn open");
+}
+
+#[test]
+fn a_stream_ending_forgets_the_activity() {
+    let mut chat = Chat::default();
+    chat.apply(spawned("t1"));
+    chat.apply(limit(Some("five_hour"), Some(0.5), LimitStatus::Allowed));
+    chat.stream_ended();
+    assert!(chat.background().is_empty());
+    assert_eq!(chat.context_meter(), None);
+    assert_eq!(chat.limit_meter(), None);
+}
+
+#[test]
+fn a_rejected_limit_without_a_figure_is_shown() {
+    let mut chat = Chat::default();
+    chat.apply(limit(Some("five_hour"), Some(0.3), LimitStatus::Allowed));
+    chat.apply(limit(Some("seven_day"), None, LimitStatus::Rejected));
+    let meter = chat.limit_meter().unwrap();
+    assert_eq!(meter.label, "Weekly limit");
+    assert_eq!(meter.level, Level::Danger);
+    assert_eq!(meter.percent, None);
 }
 
 #[test]
