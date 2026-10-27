@@ -512,6 +512,20 @@ pub struct TurnAnswer {
     /// Wall-clock duration from prompt submission to `TurnEnded`. Legacy and
     /// replayed turns without timestamps leave this absent.
     pub elapsed_secs: Option<u64>,
+    /// Whether the turn ended on a failure, its `Failed` notice inside it.
+    pub failed: bool,
+}
+
+impl TurnAnswer {
+    /// The words beside the turn's Copy: how long it took, said as a failure
+    /// where it ended on one, so a failed turn never reads as done.
+    pub fn closing_line(&self) -> Option<String> {
+        let took = crate::duration(self.elapsed_secs?);
+        Some(match self.failed {
+            true => format!("Failed after {took}"),
+            false => format!("Processed in {took}"),
+        })
+    }
 }
 
 /// Add/remove counts between two line sequences. Small and medium payloads use

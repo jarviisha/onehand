@@ -102,7 +102,8 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
 - **Folding blocks open from one line**, the chevron first: what runs is open until done, the
   plan stays open, and a reader's fold wins. Long output folds and is capped, an opened cluster
   too, each saying what it holds back. Wells are filled with no edge, their text at
-  `CODE_TEXT`. A finished turn ends on Copy (its closing paragraph) and how long it took.
+  `CODE_TEXT`. A finished turn ends on Copy (its closing paragraph) and how long it took, said as
+  *Failed after …* where the turn ended on a failure.
 - **Its rows are lines, not list rows**: a fold line or an activity row is as tall as its text,
   answers the pointer by raising its ink rather than with a fill, leads with an `.xsmall()` mark
   in one slot (a spinner while it runs, so nothing moves as it settles), and takes no focus. A

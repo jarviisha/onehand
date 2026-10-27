@@ -384,6 +384,32 @@ fn turn_answer_combines_a_turn_and_marks_the_last_block() {
     assert!(chat.turn_answer(TranscriptItemId::Live(2)).is_none());
 }
 
+#[test]
+fn a_failed_turn_closes_on_its_failure_not_on_processed() {
+    let mut chat = Chat::default();
+    let mut user = UserMsg::text("hi");
+    user.sent_at = Some(100);
+    user.completed_at = Some(117);
+    chat.items.push(ChatItem::User(user));
+    chat.items
+        .push(ChatItem::Agent(Md::parse("done, or so it said")));
+    let answer = |chat: &Chat| chat.turn_answer(TranscriptItemId::Live(1)).unwrap();
+    assert_eq!(
+        answer(&chat).closing_line().as_deref(),
+        Some("Processed in 17s")
+    );
+
+    chat.items.push(ChatItem::failure(
+        "needs a login",
+        NoticeLevel::Failed,
+        None,
+    ));
+    assert_eq!(
+        answer(&chat).closing_line().as_deref(),
+        Some("Failed after 17s")
+    );
+}
+
 /// The card carries its hunks, and a later report of the same tool call
 /// replaces them. The view draws what is here and computes nothing: an edit
 /// script is quadratic in the worst case, and a redraw happens for every
