@@ -201,6 +201,13 @@ fn a_rejected_limit_without_utilization_has_no_percent() {
 }
 
 #[test]
+fn a_calm_limit_without_a_figure_says_nothing() {
+    let mut chat = Chat::default();
+    chat.apply(limit(Some("five_hour"), None, LimitStatus::Allowed));
+    assert_eq!(chat.limit_meter(), None);
+}
+
+#[test]
 fn limit_meter_shows_the_fullest_kind() {
     let mut chat = Chat::default();
     chat.apply(limit(Some("five_hour"), Some(0.78), LimitStatus::Allowed));

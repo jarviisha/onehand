@@ -320,7 +320,11 @@ impl ChatPane {
         let menu = crate::controls::menu_below(
             ("background-menu-popup", key),
             trigger,
-            move |menu, _, cx| {
+            move |menu, window, cx| {
+                // A menu sizes to the least its rows can shrink to, and a
+                // name that clips shrinks to nothing: without a floor the
+                // menu read `sleep…` with the window's width to spare.
+                let menu = menu.min_w(BACKGROUND_MENU_MIN_W.to_pixels(window.rem_size()));
                 let muted = cx.theme().muted_foreground;
                 let menu = rows.iter().fold(menu, |menu, (id, name, aside)| {
                     let (row_id, label, name, aside) = (
@@ -711,6 +715,10 @@ fn project_menu(
 /// How many background items the header's menu lists before it says how many
 /// it left out. An agent rarely runs more than a few; this bounds a runaway.
 const BACKGROUND_MENU_CAP: usize = 12;
+
+/// The header's background menu at its narrowest: room for a command line's
+/// worth of name beside its kind, age and Stop. A longer one still clips.
+const BACKGROUND_MENU_MIN_W: Rems = rems(28.);
 
 /// How long a background item has run, in whole minutes: `now` under one.
 fn ran_for(elapsed: std::time::Duration) -> String {

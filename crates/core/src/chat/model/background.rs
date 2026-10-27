@@ -146,6 +146,11 @@ impl Chat {
             .max_by_key(|limit| (status_level(limit), limit_percent(limit)))?;
         let percent = limit_percent(shown);
         let status = status_level(shown);
+        // A limit with no figure and nothing wrong has nothing to say: its
+        // name alone under the composer reads as a meter that failed to draw.
+        if percent.is_none() && status == Level::Calm {
+            return None;
+        }
         Some(Meter {
             label: limit_label(shown.kind.as_deref()).into(),
             percent,

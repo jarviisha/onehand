@@ -82,7 +82,8 @@ effort chips, then *Send*, or *Stop* (solid danger,
 worded) and *Queue* over a draft. Under it the branch and the mode, stacked when narrow, then at
 the strip's end the *Context* and limit meters (a percent and a thin bar, the tip saying
 `84k of 200k tokens` or when the limit resets; warning ink from 80%, danger when refused), on a row of
-their own once the strip stacks, and absent for an agent that reports neither; while the
+their own once the strip stacks, and absent for an agent that reports neither (the limit's
+also while it is reported with no figure and nothing wrong); while the
 session's agent may use onehand's tools, *Controls onehand* stands before the mode, its bot mark
 in the warning ink, and pressing it switches that off. The `+` menu ends on *Agent controls
 onehand* under a heading of its own, *This session*, checked while on, and not offered in an
