@@ -7,6 +7,7 @@
 
 use crate::acp::{ToolContent, ToolKind};
 use crate::chat::model::{ChatItem, ToolItem};
+use crate::chat::redact;
 
 /// The first line of `s`, trimmed and clipped to `max` characters.
 ///
@@ -120,7 +121,18 @@ pub struct Presentation {
     pub kind: ActivityKind,
 }
 
+/// How a tool call reads on a line: its verb, its subject and its kind.
+///
+/// **The subject comes back with its secrets masked**, so no caller can put a
+/// password on screen by forgetting to: the running line under a live turn did,
+/// while the block above it masked the same command.
 pub fn presentation(tool: &ToolItem) -> Presentation {
+    let mut shown = classify(tool);
+    shown.subject = redact(&shown.subject);
+    shown
+}
+
+fn classify(tool: &ToolItem) -> Presentation {
     let call = &tool.call;
     match call.kind {
         ToolKind::Read => present(
@@ -498,7 +510,26 @@ fn quoted_argument_span(line: &str) -> Option<(String, usize)> {
 
 #[cfg(test)]
 mod tests {
-    use super::{execute_presentation, short_path, strip_redundant_prefix, ActivityKind};
+    use super::{
+        execute_presentation, presentation, short_path, strip_redundant_prefix, ActivityKind,
+    };
+    use crate::acp::{ToolCall, ToolKind, ToolStatus};
+    use crate::chat::model::ToolItem;
+
+    #[test]
+    fn a_running_command_never_shows_its_password() {
+        let tool = ToolItem::new(ToolCall {
+            id: "1".into(),
+            title: "sqlcmd -S 10.0.0.5 -U sa -P 'Hunter2!' -Q \"SELECT 1\"".into(),
+            description: None,
+            kind: ToolKind::Execute,
+            status: ToolStatus::InProgress,
+            content: Vec::new(),
+        });
+        let subject = presentation(&tool).subject;
+        assert!(!subject.contains("Hunter2"), "{subject}");
+        assert!(subject.contains("10.0.0.5"), "{subject}");
+    }
 
     #[test]
     fn a_path_keeps_the_end_that_identifies_it() {

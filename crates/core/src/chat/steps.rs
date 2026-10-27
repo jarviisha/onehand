@@ -379,7 +379,7 @@ fn running_part(item: &ChatItem) -> SummaryPart {
     // context, so dropping it leaves `Running test` where `Running dotnet
     // test` was wanted.
     let subject = match item {
-        ChatItem::Tool(tool) => redact(&activity::presentation(tool).subject),
+        ChatItem::Tool(tool) => activity::presentation(tool).subject,
         _ => String::new(),
     };
     let subject = match item {
