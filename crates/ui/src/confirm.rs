@@ -17,7 +17,7 @@ use gpui::Styled as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{App, Context, Entity, ParentElement as _, SharedString, Window};
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::dialog::{DialogClose, DialogFooter};
+use gpui_component::dialog::DialogFooter;
 use gpui_component::{ActiveTheme as _, StyledExt as _, WindowExt as _};
 use std::rc::Rc;
 
@@ -81,16 +81,19 @@ pub fn confirm_on<T: 'static>(
                 )
             })
             // Ours rather than the library's default pair: the library
-            // draws its own with the arrow cursor.
+            // draws its own with the arrow cursor. *Keep* closes the dialog
+            // itself rather than through `DialogClose`, whose box takes the
+            // whole footer and so stood it apart from the act beside it.
             .footer(
                 DialogFooter::new()
                     .child(
-                        DialogClose::new().child(
-                            action(SharedString::from(format!("{}-keep", ask.id)))
-                                .short()
-                                .quiet(cx)
-                                .label("Keep"),
-                        ),
+                        action(SharedString::from(format!("{}-keep", ask.id)))
+                            .short()
+                            .quiet(cx)
+                            .label("Keep")
+                            .on_click(|_, window: &mut Window, cx: &mut App| {
+                                window.close_dialog(cx);
+                            }),
                     )
                     .child(go),
             )

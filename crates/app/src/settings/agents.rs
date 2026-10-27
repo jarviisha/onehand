@@ -1,8 +1,6 @@
-use super::{APP, about, field, list_row, page_head, section};
+use super::{APP, list_row, list_rows, page_head, section};
 use crate::controls::Named as _;
-use crate::controls::Refuses as _;
 use crate::controls::Short as _;
-use crate::controls::text_input;
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -12,6 +10,7 @@ use gpui::{
 use gpui_component::button::ButtonVariants;
 use gpui_component::{ActiveTheme, Icon, Sizable as _, StyledExt};
 use onehand_core::config::{AgentSpec, Preset, Runs};
+use onehand_ui::Tall as _;
 
 /// What a row's code line says an agent runs: a built-in agent's adapter, or
 /// its own program when it speaks the protocol itself, or a declared agent's
@@ -51,7 +50,7 @@ pub(super) fn runs_line(spec: &AgentSpec) -> String {
 
 /// What the *Kind* field says of the choice made: how a built-in agent
 /// runs, or what any other agent has to be.
-fn kind_about(kind: Option<Preset>) -> SharedString {
+pub(crate) fn kind_about(kind: Option<Preset>) -> SharedString {
     let Some(preset) = kind else {
         return "Any other agent that speaks the Agent Client Protocol".into();
     };
@@ -206,13 +205,15 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
                         .secondary()
                         // Not the bundled `replace`, which is a find-and-replace
                         // mark: it reads as swapping this agent for another one
-                        // rather than as opening it in the form below.
+                        // rather than as opening it in the form.
                         .icon(Icon::new(crate::icons::Icon::SquarePen))
                         .named("Edit")
                         .on_click({
                             let shell = shell.clone();
                             move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
-                                shell.update(cx, |shell, cx| shell.edit_agent(idx, window, cx));
+                                shell.update(cx, |shell, cx| {
+                                    shell.open_agent_form(Some(idx), window, cx)
+                                });
                             }
                         }),
                 )
@@ -274,21 +275,11 @@ pub fn draft_after_promote(editing: Option<usize>, promoted: usize) -> Option<us
     })
 }
 
-/// The agent page: the global agent menu a new session spawns from, and the
-/// form that adds to it.
+/// The agent page: the global agent menu a new session spawns from, and
+/// the way into the form that adds to it.
 pub(super) fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     let shell = handle.read(cx);
     let specs = shell.agents(cx).to_vec();
-    let draft = shell.agent_draft();
-    let (name, command, args, env) = (
-        draft.name.clone(),
-        draft.command.clone(),
-        draft.args.clone(),
-        draft.env.clone(),
-    );
-    let refusal = draft.to_spec(cx).err();
-    let editing = draft.editing.is_some();
-    let kind = draft.kind;
 
     let more = specs.len().saturating_sub(super::pages::LIST_SHOWN);
     let rows = specs
@@ -297,7 +288,7 @@ pub(super) fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         .enumerate()
         .map(|(i, spec)| agent_row(handle, i, spec, cx).into_any_element())
         .collect::<Vec<_>>();
-    let (clear, save) = (handle.clone(), handle.clone());
+    let add = handle.clone();
 
     // A built-in agent installed here with no entry of its own, offered rather
     // than added behind the person's back: a list someone set up is theirs.
@@ -330,7 +321,7 @@ pub(super) fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
 
     let list = section(None, None, cx)
         .gap_3()
-        .children(rows)
+        .when(!rows.is_empty(), |list| list.child(list_rows(rows, cx)))
         .children(offered)
         .when(more > 0, |list| {
             list.child(
@@ -347,103 +338,18 @@ pub(super) fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                     .text_color(cx.theme().muted_foreground)
                     .child("No agents yet"),
             )
-        });
-    let form = section(
-        Some(if editing {
-            "Edit agent"
-        } else {
-            "Add an agent"
-        }),
-        None,
-        cx,
-    )
-    .child(field(
-        "Kind",
-        Some(kind_about(kind).into_any_element()),
-        onehand_ui::choice_track(
-            Preset::ALL
-                .into_iter()
-                .map(|preset| (Some(preset), preset.info().shown_name))
-                .chain([(None, "Another agent")])
-                .enumerate()
-                .map(|(n, (choice, label))| {
-                    let shell = handle.clone();
-                    onehand_ui::choice(
-                        ("agent-kind", n),
-                        label,
-                        kind == choice,
-                        // At the height of the form's fields beside it.
-                        onehand_ui::ControlSize::Short,
-                        cx,
-                    )
-                    .on_click(
-                        move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
-                            shell.update(cx, |shell, cx| shell.set_agent_kind(choice, window, cx));
-                        },
-                    )
-                }),
-            cx,
-        ),
-        cx,
-    ))
-    .child(field(
-        "Name",
-        about("What the New session menu calls it"),
-        text_input(&name, cx).short(),
-        cx,
-    ))
-    .when(kind.is_none(), |form| {
-        form.child(field(
-            "Command",
-            about(
-                "The program to run; it has to speak the Agent Client Protocol over standard \
-                 input and output",
-            ),
-            text_input(&command, cx).short(),
-            cx,
-        ))
-        .child(field(
-            "Arguments",
-            about("Separated by spaces; quote one that holds a space"),
-            text_input(&args, cx).short(),
-            cx,
-        ))
-    })
-    .child(field(
-        "Environment",
-        about(
-            "Variables set for this agent, as NAME=value; a second account sets its config \
-             directory here",
-        ),
-        text_input(&env, cx).short(),
-        cx,
-    ))
-    .child(
-        div()
-            .h_flex()
-            .gap_2()
-            .child(
-                crate::controls::action("save-agent")
-                    .short()
+        })
+        .child(
+            div().h_flex().child(
+                crate::controls::action("add-agent")
+                    .tall()
                     .secondary()
-                    // Refused, saying why, until the agent could be started.
-                    .refuses(refusal)
-                    .label(if editing { "Save" } else { "Add" })
+                    .label("Add agent…")
                     .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
-                        save.update(cx, |shell, cx| shell.save_agent_draft(window, cx));
-                    }),
-            )
-            .child(
-                crate::controls::action("clear-agent")
-                    .short()
-                    .secondary()
-                    .label(if editing { "Cancel edit" } else { "Clear" })
-                    .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
-                        clear.update(cx, |shell, cx| shell.clear_agent_draft(window, cx));
+                        add.update(cx, |shell, cx| shell.open_agent_form(None, window, cx));
                     }),
             ),
-    );
-
+        );
     div()
         .v_flex()
         .gap_6()
@@ -454,6 +360,5 @@ pub(super) fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
             cx,
         ))
         .child(list)
-        .child(form)
         .into_any_element()
 }

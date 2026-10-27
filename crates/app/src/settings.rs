@@ -17,6 +17,7 @@ use onehand_core::config::{AgentSpec, Preset};
 mod agents;
 mod pages;
 use agents::agents_page;
+pub(crate) use agents::kind_about;
 pub use agents::{AgentCheck, check_key, draft_after_promote};
 use pages::{appearance_page, connections_page, workspace_page};
 
@@ -213,7 +214,7 @@ pub(crate) fn about(text: &'static str) -> Option<AnyElement> {
 
 /// A page's head: what the page governs, as a badge, and one line saying what
 /// it is about. No title: the nav row beside it names the page, and the
-/// pane's header names Settings.
+/// head over the nav names Settings.
 ///
 /// **The scope is said on every page, in the same place.** What is in here
 /// belongs to different reaches -- the app as a whole, or the one workspace
@@ -243,6 +244,7 @@ pub(crate) fn page_head(
                 .min_w_0()
                 .text_xs()
                 .text_color(cx.theme().muted_foreground)
+                .text_color(onehand_ui::meta_ink(cx))
                 .child(about),
         )
 }
@@ -257,27 +259,47 @@ pub(crate) const APP: &str = "App";
 /// way a document separates sections. A group with no title is the page's
 /// first, sitting directly under the page's own head, and takes no rule --
 /// a line between a heading and the first thing it heads divides what belongs
-/// together.
+/// together; a first group with a title is a [`lead_section`].
 pub(crate) fn section(title: Option<&'static str>, about: Option<SharedString>, cx: &App) -> Div {
-    let muted = cx.theme().muted_foreground;
+    let group = div().v_flex().gap_4().w_full();
+    match title {
+        Some(title) => group
+            .pt_6()
+            .border_t_1()
+            .border_color(onehand_ui::faint_rule(cx))
+            .child(group_head(title, about, cx)),
+        None => group,
+    }
+}
+
+/// The page's first group when it has a title of its own: its heading, and
+/// no rule, which would part it from the page's head it sits under.
+pub(crate) fn lead_section(title: &'static str, about: Option<SharedString>, cx: &App) -> Div {
     div()
         .v_flex()
         .gap_4()
         .w_full()
-        .when_some(title, |group, title| {
-            group
-                .pt_6()
-                .border_t_1()
-                .border_color(cx.theme().border)
-                .child(
-                    div()
-                        .v_flex()
-                        .gap_1()
-                        .child(div().text_base().font_semibold().child(title))
-                        .when_some(about, |head, about| {
-                            head.child(div().text_xs().text_color(muted).child(about))
-                        }),
-                )
+        .child(group_head(title, about, cx))
+}
+
+/// A group's heading, and its line about itself under it.
+fn group_head(title: &'static str, about: Option<SharedString>, cx: &App) -> Div {
+    div()
+        .v_flex()
+        .gap_1()
+        .child(
+            div()
+                .text_size(crate::tokens::CHROME_TEXT)
+                .font_semibold()
+                .child(title),
+        )
+        .when_some(about, |head, about| {
+            head.child(
+                div()
+                    .text_xs()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(about),
+            )
         })
 }
 
@@ -288,6 +310,11 @@ pub(crate) use onehand_ui::field;
 /// One entry in a list: what it is on the left, what can be done to it on the
 /// right. For things of which there are many -- agents, commands -- where the
 /// stacked [`field`] would make every entry three lines tall.
+///
+/// **Its controls go under it before its words give way.** The words keep
+/// [`LIST_ROW_WORDS`] at the least; where the row cannot hold that beside
+/// its controls, the controls wrap to a line of their own, at its end, rather
+/// than squeeze a command line down to a few letters a line.
 pub(crate) fn list_row(
     title: impl Into<SharedString>,
     about: Option<AnyElement>,
@@ -296,8 +323,8 @@ pub(crate) fn list_row(
 ) -> Div {
     div()
         .h_flex()
+        .flex_wrap()
         .items_center()
-        .justify_between()
         .gap_2()
         .w_full()
         .child(
@@ -305,7 +332,7 @@ pub(crate) fn list_row(
                 .v_flex()
                 .gap_0p5()
                 .flex_1()
-                .min_w_0()
+                .min_w(LIST_ROW_WORDS)
                 .child(
                     div()
                         .text_size(crate::tokens::CHROME_TEXT)
@@ -321,11 +348,26 @@ pub(crate) fn list_row(
         .child(
             div()
                 .flex_none()
+                .ml_auto()
                 .h_flex()
                 .items_center()
                 .gap_2()
                 .child(control),
         )
+}
+
+/// The least a [`list_row`]'s words keep beside its controls: a name and a
+/// command line read in words, not letters.
+const LIST_ROW_WORDS: gpui::Rems = gpui::rems(12.);
+
+/// A run of [`list_row`]s, a hairline between each two, as a page's box parts
+/// its rows: the entries of one list read as one list, not as loose lines.
+pub(crate) fn list_rows(rows: impl IntoIterator<Item = AnyElement>, cx: &App) -> Div {
+    crate::chat::pane::page_parts::ruled(
+        rows.into_iter()
+            .map(|row| div().py_2().child(row).into_any_element()),
+        cx,
+    )
 }
 
 /// Which page Settings is showing.
@@ -469,7 +511,6 @@ fn settings(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     let handle = handle.clone();
     let current = handle.read(cx).settings_page();
     let focus = handle.read(cx).settings_focus();
-    let muted = cx.theme().muted_foreground;
     let nav = SettingsPage::ALL
         .into_iter()
         .map(|page| nav_row(page, current, &handle, cx).into_any_element())
@@ -488,60 +529,84 @@ fn settings(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         // screen.
         .key_context("Settings")
         .size_full()
-        .h_flex()
-        .items_start()
+        .v_flex()
+        // Named in its own head, as every other page is, the pane's header
+        // above it left bare. The head runs the pane's width, so its name
+        // starts on the nav's edge.
+        .child(crate::chat::pane::page_parts::page_top(
+            None,
+            [
+                crate::chat::pane::page_parts::page_head("Settings", None, Vec::new(), cx)
+                    .into_any_element(),
+            ],
+            cx,
+        ))
         .child(
             div()
-                .id("settings-nav")
-                // The keyboard lands here when Settings opens. The handle is
-                // the shell's because this is rebuilt every frame -- one made
-                // here would be a new handle each time.
-                .track_focus(&focus)
-                .v_flex()
-                .gap_0p5()
-                .flex_none()
-                .w(NAV_W)
-                .h_full()
-                .px_8()
-                .py_6()
-                .pr_0()
-                .children(nav)
-                // The build, at the foot of the nav: it is about the app
-                // rather than about any one page.
-                .child(div().flex_1())
-                .child(
-                    div()
-                        .px_2()
-                        .text_xs()
-                        .text_color(muted)
-                        .child(format!("onehand {}", env!("CARGO_PKG_VERSION"))),
-                ),
-        )
-        .child(
-            // The page scrolls, not the frame: the nav has to stay reachable
-            // from the bottom of a long page, and the keymap is longer than
-            // any window.
-            div()
-                .id("settings-page")
                 .flex_1()
-                .min_w_0()
-                .h_full()
-                .overflow_y_scroll()
-                .px_8()
-                .py_6()
-                .child(
-                    // A reading measure, so a wide window does not stretch a
-                    // field across it, centred in whatever room is left.
-                    div().h_flex().justify_center().w_full().child(
-                        div()
-                            .v_flex()
-                            .w_full()
-                            .max_w(crate::tokens::PAGE_PROSE)
-                            .child(page),
-                    ),
-                ),
+                .min_h_0()
+                .h_flex()
+                .items_start()
+                .child(settings_nav(nav, &focus, cx))
+                .child(settings_body(page)),
         )
         .into_any_element()
+}
+
+/// The nav column: a row per page, and the build at its foot.
+fn settings_nav(nav: Vec<AnyElement>, focus: &gpui::FocusHandle, cx: &App) -> impl IntoElement {
+    let muted = cx.theme().muted_foreground;
+    div()
+        .id("settings-nav")
+        // The keyboard lands here when Settings opens. The handle is
+        // the shell's because this is rebuilt every frame -- one made
+        // here would be a new handle each time.
+        .track_focus(focus)
+        .v_flex()
+        .gap_0p5()
+        .flex_none()
+        .w(NAV_W)
+        .h_full()
+        .px_8()
+        .py_6()
+        .pr_0()
+        .children(nav)
+        // The build, at the foot of the nav: it is about the app
+        // rather than about any one page.
+        .child(div().flex_1())
+        .child(
+            div()
+                .px_2()
+                .text_xs()
+                .text_color(muted)
+                .child(format!("onehand {}", env!("CARGO_PKG_VERSION"))),
+        )
+}
+
+/// The page beside the nav.
+fn settings_body(page: AnyElement) -> impl IntoElement {
+    // The page scrolls, not the frame: the nav has to stay reachable
+    // from the bottom of a long page, and the keymap is longer than
+    // any window.
+    div()
+        .id("settings-page")
+        .flex_1()
+        .min_w_0()
+        .h_full()
+        .overflow_y_scroll()
+        .px_8()
+        .py_6()
+        .child(
+            // A reading measure, so a wide window does not stretch a
+            // field across it, centred in whatever room is left.
+            div().h_flex().justify_center().w_full().child(
+                div()
+                    .v_flex()
+                    .w_full()
+                    .max_w(crate::tokens::PAGE_PROSE)
+                    .child(page),
+            ),
+        )
 }
 
 #[cfg(test)]

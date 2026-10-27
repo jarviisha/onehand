@@ -1,5 +1,5 @@
 //! The modal windows: the conversation rename, the worktree split, the branch
-//! rename, the issue picker and the workflow launcher.
+//! rename, the issue picker, the workflow launcher and the agent form.
 //!
 //! The component library owns overlays, focus traps and Escape handling.
 
@@ -18,9 +18,13 @@ use gpui::{
 use gpui_component::button::ButtonVariants;
 use gpui_component::dialog::{Dialog, DialogClose, DialogTitle};
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use onehand_ui::Tall as _;
 
+mod agent;
 mod branch;
 mod issue;
+
+pub use agent::agent_form;
 
 pub use branch::{new_worktree, rename_branch};
 
@@ -253,7 +257,7 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
                     "workflow-template-trigger",
                     picker_name.clone(),
                     true,
-                    onehand_ui::ControlSize::Short,
+                    onehand_ui::ControlSize::Tall,
                     cx,
                 ),
                 move |mut menu, _, _| {
@@ -318,7 +322,7 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
                                             .child(field(
                                                 "Title",
                                                 None,
-                                                text_input(&title, cx).short(),
+                                                text_input(&title, cx).tall(),
                                                 cx,
                                             ))
                                             .child(field(
@@ -364,7 +368,7 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
                 .child(div().flex_1())
                 .child(
                     crate::controls::action("cancel-workflow")
-                        .short()
+                        .tall()
                         .quiet(cx)
                         .label("Cancel")
                         .refuses(busy.then_some(STARTING))
@@ -374,7 +378,7 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
                 )
                 .child({
                     let run = crate::controls::action("run-workflow")
-                        .short()
+                        .tall()
                         .primary()
                         .label("Run")
                         .loading(busy);
@@ -420,7 +424,7 @@ fn form_room(window: &Window) -> (gpui::Pixels, gpui::Pixels) {
     (margin, room)
 }
 
-/// How wide a dialog that starts a run stands: [`crate::tokens::DIALOG_FORM`],
+/// How wide a dialog that holds a form stands: [`crate::tokens::DIALOG_FORM`],
 /// or the window less its margin on each side when that is narrower, since the
 /// library centres a dialog by its width and never shrinks it.
 fn form_width(window: &Window) -> gpui::Pixels {

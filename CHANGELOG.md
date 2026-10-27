@@ -68,6 +68,8 @@ minor bump may break any of them.
 - A Plugins mode in the Workbench manages Claude Code's plugins per project and globally.
 - Settings is one paged modal: Appearance, Workspace, Agents (with a default agent and a test),
   Connections, Workflows and Shortcuts. Shortcuts are edited there and persisted under `[keymap]`.
+- An agent is added and edited in Settings ▸ Agents through a dialog, opened by *Add agent…* or a
+  row's edit mark, rather than in a form under the list.
 - The transcript reads the agent's work as one line per stretch, and a turn ends on the files it
   changed. The composer is one surface above the conversation.
 - The rail keeps the user's order, splits into two lists, and fades a name that runs out of room.

@@ -22,18 +22,25 @@ pub(super) fn when_section(
     draft: &ScheduleDraft,
     cx: &App,
 ) -> AnyElement {
-    let kinds = WhenKind::ALL.iter().enumerate().map(|(n, kind)| {
-        let kind = *kind;
-        onehand_ui::choice(
-            ("schedule-when", n),
-            kind.label(),
-            draft.when == kind,
-            ControlSize::Tall,
-            cx,
-        )
-        .on_click({
+    // Every kind at one width across the form, as the two choices under it
+    // are, so the section's rows end on one edge.
+    let labels = WhenKind::ALL
+        .iter()
+        .map(|kind| SharedString::from(kind.label()))
+        .collect::<Vec<_>>();
+    let active = WhenKind::ALL
+        .iter()
+        .position(|kind| *kind == draft.when)
+        .unwrap_or(0);
+    let kinds = onehand_ui::switch(
+        "schedule-when",
+        &labels,
+        active,
+        ControlSize::Tall,
+        {
             let handle = handle.clone();
-            move |_, window: &mut Window, cx: &mut App| {
+            move |at: &usize, window, cx| {
+                let kind = WhenKind::ALL[*at];
                 handle.update(cx, |page, cx| {
                     if let Some(d) = page.draft.as_mut() {
                         // The expression field starts from what the quick
@@ -49,8 +56,9 @@ pub(super) fn when_section(
                     cx.notify();
                 })
             }
-        })
-    });
+        },
+        cx,
+    );
     let input = |state| text_input(state, cx).tall();
     let fields: AnyElement = match draft.when {
         WhenKind::EveryHours => div()
@@ -178,7 +186,7 @@ pub(super) fn when_section(
     );
 
     section(Some("When"), None, cx)
-        .child(onehand_ui::choice_track(kinds, cx))
+        .child(kinds)
         .child(fields)
         .child(said)
         .child(field(
@@ -191,7 +199,9 @@ pub(super) fn when_section(
         .into_any_element()
 }
 
-/// The day a weekly time falls on, one of seven.
+/// The day a weekly time falls on, one of seven, each at its own width:
+/// split evenly over the half of the row it shares with *At*, a day's name
+/// would not fit its share.
 fn weekday_track(handle: &Entity<SchedulesPage>, draft: &ScheduleDraft, cx: &App) -> AnyElement {
     let days = DAYS.iter().enumerate().map(|(n, day)| {
         let handle = handle.clone();

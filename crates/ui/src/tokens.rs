@@ -131,10 +131,11 @@ pub const PAGE_PROSE: Rems = rems(48.);
 /// does not move the column.
 pub const PAGE_WIDE: Rems = rems(64.);
 
-/// How wide a dialog that starts a run stands: it says what the workflow
-/// does, where it works and what blocks it before its fields, and at the
-/// library's own width that reads as a narrow column of wrapped lines.
-/// A dialog of a field or two keeps the library's width.
+/// How wide a dialog that holds a form stands, its controls at a page
+/// form's height: one that starts a run says what the workflow does, where
+/// it works and what blocks it before its fields, and at the library's own
+/// width that reads as a narrow column of wrapped lines. A dialog that asks
+/// one thing keeps the library's width and its controls short.
 pub const DIALOG_FORM: Rems = rems(40.);
 
 /// The shadow a surface takes when it floats over another surface.

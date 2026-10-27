@@ -274,6 +274,12 @@ impl Render for Shell {
                     .is_some()
                     .then(|| crate::dialogs::run_workflow(self, window, cx)),
             )
+            // And the agent form, opened from Settings' rows, rebuilt every
+            // frame.
+            .children(
+                self.agent_form
+                    .then(|| crate::dialogs::agent_form(self, window, cx)),
+            )
     }
 }
 
@@ -338,6 +344,7 @@ impl Shell {
             || self.branch_draft.is_some()
             || self.issue_picker.is_some()
             || self.workflow_launcher.is_some()
+            || self.agent_form
     }
 
     /// Note what holds the keyboard as one of the shell's own dialogs opens.

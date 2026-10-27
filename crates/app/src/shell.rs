@@ -206,6 +206,8 @@ pub struct Shell {
     rail_split: Entity<ResizableState>,
     /// The agent add/edit form.
     agent_draft: AgentDraft,
+    /// Whether the agent form is open over the page.
+    agent_form: bool,
     /// Each project's check command field, by root, made as its project
     /// page comes up.
     check_inputs: HashMap<PathBuf, Entity<InputState>>,

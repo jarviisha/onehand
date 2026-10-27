@@ -84,11 +84,11 @@ impl ChatPane {
         let chat = self.active_chat(cx);
         let title = chat.and_then(Chat::conversation_title).unwrap_or_else(|| {
             match &self.page {
-                Some(super::Page::Settings(_)) => "Settings".to_string(),
                 // These pages, and a project's page, name themselves in their
                 // own head at its title size.
                 Some(
-                    super::Page::Workspace(_)
+                    super::Page::Settings(_)
+                    | super::Page::Workspace(_)
                     | super::Page::Issues(_)
                     | super::Page::Tasks(_)
                     | super::Page::Workflows(_)

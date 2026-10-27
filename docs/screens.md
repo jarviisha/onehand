@@ -52,9 +52,8 @@ weight; a dots menu (*Rename…*, *Export as Markdown…*; *Resume in this sessi
 and *Restart the agent*; *Delete conversation* in the danger tint, refused until the first turn
 ends); a spacer; past conversations and *Close session* (only while a session shows); the terminal,
 an accent dot on it while its dock is closed over a shell running a command; last, the Workbench.
-The two dock buttons are filled while their dock is open. On Settings it reads the
-page's name; on the overview, Tasks, Issues, Workflows and Schedules, which name themselves in
-their head, it carries no name; none of these has a dots menu or dock buttons. As the pane narrows, the name gives way
+The two dock buttons are filled while their dock is open. On the overview, Tasks, Issues,
+Workflows, Schedules and Settings, which name themselves in their head, it carries no name; none of these has a dots menu or dock buttons. As the pane narrows, the name gives way
 first, down to a minimum. Without a session it carries no name, the page naming the project, but
 keeps the project's dots menu, holding the project's actions but *New session* and *Open
 terminal*, which the page and the header already offer.
@@ -233,12 +232,15 @@ height (its dragged height kept).
 
 ## Settings
 
-Settings is a page: a nav column with Appearance, Workspace, Agents, Connections and Shortcuts (rows
-as the rail's page rows), and beside it the sub-page, untitled (its nav row names it), opening on
-its scope as a badge and a hint, its groups split by hairlines with semibold headings, not boxes.
-Every button there is secondary: Settings holds no primary. Under the Agents page's rows, each
-built-in agent installed on the machine with no entry of its own gets a line, *<agent> is on this
-machine*, with *Add* at its end; the first row carries the *Default* badge. An entry naming a preset
+Settings is a page named in its own head, as the workspace pages are, over a nav column with
+Appearance, Workspace, Agents, Connections and Shortcuts (rows as the rail's page rows), and beside
+it the sub-page, untitled (its nav row names it), opening on its scope as a badge and a hint, its
+groups split by hairlines with semibold headings, not boxes. Every button there is secondary:
+Settings holds no primary. Under the Agents page's rows, each built-in agent installed on the
+machine with no entry of its own gets a line, *<agent> is on this machine*, with *Add* at its end,
+then *Add agent…*; the first row carries the *Default* badge. *Add agent…* and a row's edit mark
+open the agent form as a dialog (*Kind*, *Name*, *Command* and *Arguments* for another agent,
+*Environment*; *Cancel*, then *Add* or *Save*), which a close drops. An entry naming a preset
 this build does not know shows its `preset` line, *Not supported by this build of onehand* under it,
 and only *Delete…*. The Connections page lists each connector and who it acts as, then an *Outside
 control* group: what a program may and may never do, the socket's path in mono, and one switch.

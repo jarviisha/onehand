@@ -483,6 +483,7 @@ impl Shell {
             rail_hidden: false,
             rail_split: cx.new(|_| ResizableState::default()),
             agent_draft: AgentDraft::new(window, cx),
+            agent_form: false,
             settings_page: SettingsPage::default(),
             settings_focus: cx.focus_handle(),
             keymap_editor: cx.new(|cx| crate::keymap::Editor::new(window, cx)),
