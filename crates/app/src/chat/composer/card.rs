@@ -324,7 +324,7 @@ impl Composer {
         });
         let branch = branch.map(|chip| self.opens_menu(Overlay::Branch, chip));
         let control = control_chip(session, cx);
-        let meters: Vec<_> = {
+        let mut meters: Vec<_> = {
             let chat = &session.read(cx).chat;
             [chat.context_meter(), chat.limit_meter()]
         }
@@ -356,8 +356,21 @@ impl Composer {
                         .min_w_0()
                         .children(control)
                         .children(mode)
-                        .children(meters),
-                ),
+                        .when(!narrow, |row| row.children(meters.drain(..))),
+                )
+                // Narrow: their own row in the stack, wrapping rather than
+                // overflowing the dock.
+                .when(narrow && !meters.is_empty(), |strip| {
+                    strip.child(
+                        div()
+                            .h_flex()
+                            .flex_wrap()
+                            .items_center()
+                            .gap_x_2()
+                            .max_w_full()
+                            .children(meters.drain(..)),
+                    )
+                }),
         )
     }
 }
@@ -449,7 +462,7 @@ fn meter_view(index: usize, meter: Meter, cx: &App) -> impl IntoElement + use<> 
             div()
                 .w(METER_BAR_W)
                 .h(METER_BAR_H)
-                .rounded_full()
+                .rounded(cx.theme().radius)
                 .overflow_hidden()
                 .bg(crate::theme::inset(cx))
                 .child(
