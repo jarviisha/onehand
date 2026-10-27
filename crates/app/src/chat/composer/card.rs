@@ -14,6 +14,7 @@ use gpui::{
     StatefulInteractiveElement, Styled, Window, div, relative, rems,
 };
 use gpui_component::button::{Button, ButtonVariants as _};
+use gpui_component::progress::ProgressCircle;
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, Sizable as _, StyledExt};
 use onehand_core::attachment::AttachmentSource;
@@ -23,10 +24,6 @@ use onehand_core::chat::{Level, Meter};
 /// shadow rather than a border, so the card does not shift by its width while
 /// the file is held over it.
 const DROP_RING_PX: f32 = 1.;
-/// A meter's bar: long enough to read a quarter from a half, thin enough to
-/// stay a mark beside the words.
-const METER_BAR_W: Rems = rems(3.);
-const METER_BAR_H: Rems = rems(0.25);
 /// Below this the strip under the card takes two lines, the branch over the
 /// mode, rather than one squeezing the other. Measured on the stack, not the
 /// window.
@@ -324,7 +321,7 @@ impl Composer {
         });
         let branch = branch.map(|chip| self.opens_menu(Overlay::Branch, chip));
         let control = control_chip(session, cx);
-        let mut meters: Vec<_> = {
+        let meters: Vec<_> = {
             let chat = &session.read(cx).chat;
             [chat.context_meter(), chat.limit_meter()]
         }
@@ -355,22 +352,11 @@ impl Composer {
                         .gap_2()
                         .min_w_0()
                         .children(control)
-                        .children(mode)
-                        .when(!narrow, |row| row.children(meters.drain(..))),
-                )
-                // Narrow: their own row in the stack, wrapping rather than
-                // overflowing the dock.
-                .when(narrow && !meters.is_empty(), |strip| {
-                    strip.child(
-                        div()
-                            .h_flex()
-                            .flex_wrap()
-                            .items_center()
-                            .gap_x_2()
-                            .max_w_full()
-                            .children(meters.drain(..)),
-                    )
-                }),
+                        // Left of the mode: standing state about the session
+                        // beside the one setting it runs under.
+                        .children(meters)
+                        .children(mode),
+                ),
         )
     }
 }
@@ -439,9 +425,10 @@ fn control_chip(
     )
 }
 
-/// One meter of the strip: its name, a short bar in the inset step and the
-/// percent. Calm in the meta ink, warning and danger in their status inks; a
-/// meter with no percent keeps the name in its level's ink and draws no bar.
+/// One meter of the strip: a ring filled to its percent, and the percent.
+/// Calm in the meta ink, warning and danger in their status inks. Its name
+/// and numbers are on the tooltip, so the strip carries no words for it; a
+/// meter with no percent is a full ring in its level's ink.
 fn meter_view(index: usize, meter: Meter, cx: &App) -> impl IntoElement + use<> {
     let ink = match meter.level {
         Level::Calm => crate::theme::meta_ink(cx),
@@ -449,29 +436,20 @@ fn meter_view(index: usize, meter: Meter, cx: &App) -> impl IntoElement + use<> 
         Level::Danger => crate::theme::status_ink(cx).danger,
     };
     let tip = SharedString::from(meter.tip);
+    let ring = ProgressCircle::new(("meter-ring", index))
+        .small()
+        .color(ink)
+        .value(meter.percent.map_or(100., f32::from))
+        .accessibility_label(meter.label);
     div()
         .id(("meter", index))
         .h_flex()
         .items_center()
-        .gap_1p5()
+        .gap_1()
         .flex_none()
         .text_xs()
         .text_color(ink)
-        .child(meter.label)
-        .children(meter.percent.map(|percent| {
-            div()
-                .w(METER_BAR_W)
-                .h(METER_BAR_H)
-                .rounded(cx.theme().radius)
-                .overflow_hidden()
-                .bg(crate::theme::inset(cx))
-                .child(
-                    div()
-                        .h_full()
-                        .w(relative(f32::from(percent) / 100.))
-                        .bg(ink),
-                )
-        }))
+        .child(ring)
         .children(meter.percent.map(|percent| format!("{percent}%")))
         .tooltip(move |window, cx| Tooltip::new(tip.clone()).build(window, cx))
 }

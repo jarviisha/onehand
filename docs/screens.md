@@ -79,11 +79,12 @@ is ever added to it (a refusal is Send's tooltip, a failure a toast). The field,
 *Fast* (its bolt alone, in the warning ink while fast: a toggle with no caret when its choices
 read as on and off; else a picker with a caret, the value in force on its tooltip), the model and
 effort chips, then *Send*, or *Stop* (solid danger,
-worded) and *Queue* over a draft. Under it the branch and the mode, stacked when narrow, then at
-the strip's end the *Context* and limit meters (a percent and a thin bar, the tip saying
-`84k of 200k tokens` or when the limit resets; warning ink from 80%, danger when refused), on a row of
-their own once the strip stacks, and absent for an agent that reports neither (the limit's
-also while it is reported with no figure and nothing wrong); while the
+worded) and *Queue* over a draft. Under it the branch and the mode, stacked when narrow; just
+left of the mode the context and limit meters, each a ring filled to its percent and the percent,
+with no name (the tip says `Context: 84k of 200k tokens`, or each limit and when it resets; warning
+ink from 80%, danger when refused, a full ring when a refused limit has no figure), absent for an
+agent that reports neither (the limit's also while it is reported with no figure and nothing
+wrong); while the
 session's agent may use onehand's tools, *Controls onehand* stands before the mode, its bot mark
 in the warning ink, and pressing it switches that off. The `+` menu ends on *Agent controls
 onehand* under a heading of its own, *This session*, checked while on, and not offered in an

@@ -132,7 +132,7 @@ impl Chat {
             label: "Context".into(),
             percent: Some(percent),
             level: level_of(percent),
-            tip: format!("{} of {} tokens", tokens(used), tokens(size)),
+            tip: format!("Context: {} of {} tokens", tokens(used), tokens(size)),
         })
     }
 

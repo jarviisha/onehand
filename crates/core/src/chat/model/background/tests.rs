@@ -148,13 +148,13 @@ fn context_meter_rounds_and_clamps() {
             label: "Context".into(),
             percent: Some(42),
             level: Level::Calm,
-            tip: "84k of 200k tokens".into(),
+            tip: "Context: 84k of 200k tokens".into(),
         })
     );
     chat.apply(usage(250, 200));
     let meter = chat.context_meter().unwrap();
     assert_eq!((meter.percent, meter.level), (Some(100), Level::Warning));
-    assert_eq!(meter.tip, "250 of 200 tokens");
+    assert_eq!(meter.tip, "Context: 250 of 200 tokens");
     chat.apply(usage(5, 0));
     assert_eq!(chat.context_meter(), None);
 }
