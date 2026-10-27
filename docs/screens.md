@@ -30,8 +30,9 @@ folds it (not during a search); the rest of the row shows the project's last ses
 which then fills the row. `+` and `⋯` show on hover and on the keyboard's row, right-click opens the
 same menu. A session row, indented under its project: its state mark, title and `⋯` (on hover, on
 the keyboard's row, always on the one shown), and under them `state · agent · age` (*waiting Nm*
-while it needs input, a card or its run's approval, the state's word in its ink while it waits on the person), over which the
-pointer and the keyboard's row lay *Stop* (running), *Send the last prompt again* (failed) and
+while it needs input, a card or its run's approval, the state's word in its ink while it waits on the person;
+*Running · N in background · agent · age* while background work outlives the turn, which keeps the session running), over which the
+pointer and the keyboard's row lay *Stop* (only while a turn is in flight, not for background work alone), *Send the last prompt again* (failed) and
 *Close*; the keyboard's row lays them on any session but the one shown, whose conversation already
 holds *Stop* and the way back, so a row the keys only pass through stays still. The other filters
 are flat, the project in place of the agent. A group lists six sessions, then *N more*; an open
@@ -50,8 +51,11 @@ surface.
 Left to right: the show-rail button (only while the rail is hidden); the conversation's name, medium
 weight; a dots menu (*Rename…*, *Export as Markdown…*; *Resume in this session…*, refused mid-turn,
 and *Restart the agent*; *Delete conversation* in the danger tint, refused until the first turn
-ends); a spacer; past conversations and *Close session* (only while a session shows); the terminal,
-an accent dot on it while its dock is closed over a shell running a command; last, the Workbench.
+ends); a spacer; *N in background* (only while the session's agent has work running in the
+background: a menu of each item's name, its kind and how long it has run, each row stopping that
+one item and never the turn, 12 listed and then *N more*); past conversations and *Close session*
+(only while a session shows); the terminal, an accent dot on it while its dock is closed over a
+shell running a command; last, the Workbench.
 The two dock buttons are filled while their dock is open. On the overview, Tasks, Issues,
 Workflows, Schedules and Settings, which name themselves in their head, it carries no name; none of these has a dots menu or dock buttons. As the pane narrows, the name gives way
 first, down to a minimum. Without a session it carries no name, the page naming the project, but
@@ -75,7 +79,12 @@ is ever added to it (a refusal is Send's tooltip, a failure a toast). The field,
 *Fast* (its bolt alone, in the warning ink while fast: a toggle with no caret when its choices
 read as on and off; else a picker with a caret, the value in force on its tooltip), the model and
 effort chips, then *Send*, or *Stop* (solid danger,
-worded) and *Queue* over a draft. Under it the branch and the mode, stacked when narrow; while the
+worded) and *Queue* over a draft. Under it the branch and the mode, stacked when narrow; just
+left of the mode the context and limit meters, each a ring filled to its percent and the percent,
+with no name (the tip says `Context: 84k of 200k tokens`, or each limit and when it resets; warning
+ink from 80%, danger when refused, a full ring when a refused limit has no figure), absent for an
+agent that reports neither (the limit's also while it is reported with no figure and nothing
+wrong); while the
 session's agent may use onehand's tools, *Controls onehand* stands before the mode, its bot mark
 in the warning ink, and pressing it switches that off. The `+` menu ends on *Agent controls
 onehand* under a heading of its own, *This session*, checked while on, and not offered in an

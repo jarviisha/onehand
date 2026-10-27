@@ -146,6 +146,8 @@ enum Pending {
         group: String,
         value: String,
     },
+    /// A background item asked to stop; only a refusal is reported.
+    StopBackground,
 }
 
 async fn run(
@@ -354,6 +356,13 @@ impl Conn {
                         .await?;
                 }
             }
+            AcpRequest::StopBackground { id } => {
+                if let Some(sid) = self.session_id.clone() {
+                    let params = json!({ "sessionId": sid, "asyncTaskId": id });
+                    self.send("_session/async_task/stop", params, Pending::StopBackground)
+                        .await?;
+                }
+            }
             AcpRequest::Cancel => {
                 if let Some(sid) = &self.session_id {
                     let params = json!({ "sessionId": sid });
@@ -453,6 +462,8 @@ impl Conn {
                             parse::Update::Commands(c) => AcpEvent::AvailableCommands(c),
                             parse::Update::ModeChanged(m) => AcpEvent::ModeChanged(m),
                             parse::Update::ConfigOptions(c) => AcpEvent::ConfigOptions(c),
+                            parse::Update::Usage(u) => AcpEvent::Usage(u),
+                            parse::Update::Background(b) => AcpEvent::Background(b),
                         };
                         let _ = self.output.send(ev).await;
                     }
@@ -603,6 +614,12 @@ impl Conn {
                         None => AcpEvent::PickConfirmed { group, value },
                     };
                     let _ = self.output.send(event).await;
+                }
+                Some(Pending::StopBackground) => {
+                    if let Some(err) = msg.get("error") {
+                        let why = in_words(err).0;
+                        let _ = self.output.send(AcpEvent::StopRefused { why }).await;
+                    }
                 }
                 Some(Pending::PromptTurn) => {
                     if let Some(err) = msg.get("error") {

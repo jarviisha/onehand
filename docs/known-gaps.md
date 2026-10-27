@@ -213,3 +213,7 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
 - **The Plugins mode comes with the window, not with the agent list.** A window offers Plugins
   when a Claude Code agent was set up as it opened; one added later brings it to the next window.
   The Workbench builds its modes once per window, and nothing in it removes or adds one after.
+- **Agent activity is partial.** Copilot shows no context, limit or background work, and Codex no
+  limit meter, because their adapters do not report them. A subagent appears in neither the
+  background list nor the conversation's tree: the client does not advertise the capability that
+  would move its output to child sessions, which it does not read.

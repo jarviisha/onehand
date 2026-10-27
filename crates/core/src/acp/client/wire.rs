@@ -27,7 +27,10 @@ pub(super) fn init_params() -> Value {
             // `{}` is the whole capability ("we can render a form"); we answer the
             // request in `handle_message` and, for a form we can't render, decline
             // immediately rather than park it forever.
-            "elicitation": { "form": {} }
+            "elicitation": { "form": {} },
+            // Only `asyncTasks`: the subagent capability moves a subagent's
+            // output to child sessions, which this client does not read.
+            "_meta": { "jetbrains": { "air": { "version": 1, "capabilities": ["asyncTasks"] } } }
         }
     })
 }

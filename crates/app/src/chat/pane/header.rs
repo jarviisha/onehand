@@ -1,7 +1,10 @@
 use super::{ChatPane, ChatPaneEvent, ProjectAction, ProjectFacts};
-use crate::controls::Named as _;
+use crate::controls::{Named as _, Quiet as _, Short as _};
 use gpui::prelude::FluentBuilder as _;
-use gpui::{App, Context, Entity, IntoElement, ParentElement, Rems, Styled, Window, div, rems};
+use gpui::{
+    App, Context, Entity, InteractiveElement as _, IntoElement, ParentElement, Rems,
+    StatefulInteractiveElement as _, Styled, Window, div, rems,
+};
 use gpui_component::{ActiveTheme, IconName, StyledExt};
 use onehand_core::chat::{Chat, ConvMeta};
 use onehand_ui::strip_control;
@@ -172,6 +175,12 @@ impl ChatPane {
                     .child(self.title_control(title, busy, archive, cx)),
             )
             .child(div().flex_1())
+            // Absent while the agent runs nothing on its own, so a quiet
+            // session carries no extra chrome; it reads outward with history,
+            // both being about this session.
+            .when_some(self.background_control(cx), |header, control| {
+                header.child(control)
+            })
             // Only while a session is showing, and for a reason worth stating:
             // this is the same list the project page draws, and that page is
             // exactly what the centre of the window shows when there is no
@@ -257,6 +266,117 @@ impl ChatPane {
                     })),
                 )
             })
+    }
+
+    /// What the agent left running in the background, and a way to stop each.
+    ///
+    /// `None` without a session or with nothing running, so an agent that
+    /// never reports background work shows no button at all.
+    ///
+    /// **Each row *is* its Stop.** A menu row is one press target and the
+    /// library's menu walks rows, not controls inside them, so a Stop button
+    /// nested in a row would be out of the keyboard's reach. The row says
+    /// *Stop* at its end and is named `Stop <name>` for assistive technology.
+    /// It asks the adapter to stop that one item and never cancels the turn;
+    /// the list follows the adapter's reports, and a refusal comes back as a
+    /// toast.
+    ///
+    /// The rows close over the session entity rather than the pane, and the
+    /// menu is keyed by the session, so a menu left open across a session
+    /// switch neither survives it nor stops another session's work.
+    fn background_control(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        let session = self.session()?;
+        let key = self.active.unwrap_or_default();
+        // A menu open on another session went with that session's frame.
+        if self.background_menu.get().is_some_and(|open| open != key) {
+            self.background_menu.set(None);
+        }
+        let items = session.read(cx).chat.background();
+        // Kept while its menu is open: the menu holds focus, and dropping its
+        // trigger mid-open would leave focus on nothing. Closing the menu
+        // hands focus back to where it was, and the button goes after.
+        if items.is_empty() && self.background_menu.get() != Some(key) {
+            return None;
+        }
+        let count = items.len();
+        let rows: Vec<(String, String, String)> = items
+            .iter()
+            .take(BACKGROUND_MENU_CAP)
+            .map(|item| {
+                let aside = format!("{} · {}", item.kind, ran_for(item.started.elapsed()));
+                (item.id.clone(), item.name.clone(), aside)
+            })
+            .collect();
+        let hidden = count.saturating_sub(BACKGROUND_MENU_CAP);
+        let pane = self.handle.clone();
+
+        // Worded, so a ghost at a strip's worded size rather than the
+        // icon-only `strip_control`: the count is the whole message.
+        let trigger = crate::controls::action(("background", key))
+            .quiet(cx)
+            .short()
+            .label(format!("{count} in background"))
+            .tooltip("Work the agent left running in the background");
+        let menu = crate::controls::menu_below(
+            ("background-menu-popup", key),
+            trigger,
+            move |menu, window, cx| {
+                // A menu sizes to the least its rows can shrink to, and a
+                // name that clips shrinks to nothing: without a floor the
+                // menu read `sleep…` with the window's width to spare.
+                let menu = menu.min_w(BACKGROUND_MENU_MIN_W.to_pixels(window.rem_size()));
+                let muted = cx.theme().muted_foreground;
+                let menu = rows.iter().fold(menu, |menu, (id, name, aside)| {
+                    let (row_id, label, name, aside) = (
+                        gpui::SharedString::from(format!("background-stop-{id}")),
+                        gpui::SharedString::from(format!("Stop {name}")),
+                        name.clone(),
+                        aside.clone(),
+                    );
+                    let (session, id) = (session.clone(), id.clone());
+                    menu.item(
+                        crate::controls::menu_row(move |_, _| {
+                            div()
+                                .id(gpui::ElementId::Name(row_id.clone()))
+                                .aria_label(label.clone())
+                                .h_flex()
+                                .items_center()
+                                .gap_3()
+                                .w_full()
+                                .child(div().flex_1().min_w_0().truncate().child(name.clone()))
+                                .child(
+                                    div()
+                                        .flex_none()
+                                        .text_xs()
+                                        .text_color(muted)
+                                        .child(aside.clone()),
+                                )
+                                .child(div().flex_none().child("Stop"))
+                        })
+                        .on_click(move |_, _, cx: &mut App| {
+                            session.update(cx, |session, _| session.chat.stop_background(&id));
+                        }),
+                    )
+                });
+                // Said rather than left as a list that simply stops.
+                match hidden {
+                    0 => menu,
+                    n => menu
+                        .separator()
+                        .item(crate::controls::menu_label(format!("{n} more"))),
+                }
+            },
+        )
+        // Right-aligned: the button sits near the row's right end, and a menu
+        // hanging rightwards from it would open off the window's edge.
+        .anchor(gpui::Anchor::TopRight)
+        .on_open_change(move |open, _, cx| {
+            _ = pane.update(cx, |pane, cx| {
+                pane.background_menu.set(open.then_some(key));
+                cx.notify();
+            });
+        });
+        Some(div().flex_none().child(menu).into_any_element())
     }
 
     /// The way to the terminal, and whether a command is running in it.
@@ -592,6 +712,22 @@ fn project_menu(
     }
 }
 
+/// How many background items the header's menu lists before it says how many
+/// it left out. An agent rarely runs more than a few; this bounds a runaway.
+const BACKGROUND_MENU_CAP: usize = 12;
+
+/// The header's background menu at its narrowest: room for a command line's
+/// worth of name beside its kind, age and Stop. A longer one still clips.
+const BACKGROUND_MENU_MIN_W: Rems = rems(28.);
+
+/// How long a background item has run, in whole minutes: `now` under one.
+fn ran_for(elapsed: std::time::Duration) -> String {
+    match elapsed.as_secs() / 60 {
+        0 => "now".to_string(),
+        m => format!("{m}m"),
+    }
+}
+
 /// The way back to a hidden rail.
 pub(super) fn show_rail(cx: &mut Context<ChatPane>) -> gpui_component::button::Button {
     strip_control("show-rail", IconName::PanelLeftOpen, false, cx)
@@ -599,4 +735,17 @@ pub(super) fn show_rail(cx: &mut Context<ChatPane>) -> gpui_component::button::B
         .on_click(cx.listener(|_: &mut ChatPane, _, _, cx| {
             cx.emit(ChatPaneEvent::ShowRail);
         }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ran_for;
+    use std::time::Duration;
+
+    #[test]
+    fn ran_for_counts_whole_minutes_and_says_now_under_one() {
+        assert_eq!(ran_for(Duration::from_secs(59)), "now");
+        assert_eq!(ran_for(Duration::from_secs(60)), "1m");
+        assert_eq!(ran_for(Duration::from_secs(4 * 60 + 59)), "4m");
+    }
 }

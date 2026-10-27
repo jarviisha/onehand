@@ -486,6 +486,62 @@ let promptId = null;
 let pending = null;
 let turn = 0;
 
+// Background work and the meters are only reported to a client that asked for
+// them in `initialize`, as a real adapter does.
+let asyncTasks = false;
+let bgSeq = 0;
+let bgEnds = [];
+
+// The item outlives the turn on its own timer, started when the turn ends: the
+// queue is cleared by the next prompt or a cancel, and it is meant to run past both.
+function backgroundEnd() {
+  for (const asyncTaskId of bgEnds.splice(0)) {
+    setTimeout(() => {
+      update({ sessionUpdate: 'async_task_state_update', asyncTaskId, state: 'completed' });
+      update({
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: '\nThe watcher finished while you were away.' },
+      });
+      update({
+        sessionUpdate: 'usage_update',
+        used: 86000,
+        size: 200000,
+        _meta: { '_claude/origin': { kind: 'task-notification' } },
+      });
+    }, 8000 * (pace || 0.1));
+  }
+}
+
+function backgroundStart() {
+  if (!asyncTasks) return;
+  bgSeq += 1;
+  const asyncTaskId = `bg-${bgSeq}`;
+  beat(BEAT, () =>
+    update({
+      sessionUpdate: 'async_task_spawned',
+      asyncTaskId,
+      taskType: 'shell',
+      name: 'npm run watch',
+    }),
+  );
+  beat(BEAT, () =>
+    update({
+      sessionUpdate: 'usage_update',
+      used: 84000,
+      size: 200000,
+      _meta: {
+        '_claude/rateLimit': {
+          status: 'allowed_warning',
+          utilization: 0.82,
+          resetsAt: Math.floor(Date.now() / 1000) + 3600,
+          rateLimitType: 'five_hour',
+        },
+      },
+    }),
+  );
+  bgEnds.push(asyncTaskId);
+}
+
 const step = {
   // Everything that needs no answer, in the order a real turn would produce it.
   // Prose between some of the runs and not others, deliberately: a block is
@@ -506,6 +562,7 @@ const step = {
     scene.other();
     scene.plan();
     scene.inFlight();
+    backgroundStart();
     beat(BEAT * 2, () => step.permission());
     play();
   },
@@ -694,6 +751,7 @@ const step = {
     // else is to not break every one.
     const ending = turn % 2 === 0;
     const id = promptId;
+    backgroundEnd();
     beat(BEAT, () => {
       if (ending) {
         send({
@@ -723,6 +781,9 @@ rl.on('line', (line) => {
 
   switch (m.method) {
     case 'initialize':
+      asyncTasks = !!m.params?.clientCapabilities?._meta?.jetbrains?.air?.capabilities?.includes(
+        'asyncTasks',
+      );
       return send({
         jsonrpc: '2.0',
         id: m.id,

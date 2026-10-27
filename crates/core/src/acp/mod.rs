@@ -18,8 +18,8 @@ pub use client::{base64_encode, connect, SessionOpts};
 pub use parse::base64_decode;
 pub use roles::{Role, Switch};
 pub use types::{
-    AcpEvent, AcpRequest, Attachment, ConfigChoice, ConfigOption, ElicitChoice, ElicitField,
-    ElicitKind, ElicitOutcome, ElicitValue, Elicitation, Mode, PermissionOption, PermissionRequest,
-    PermissionWeight, PlanEntry, PlanStatus, ReqTx, SlashCommand, ToolCall, ToolCallUpdate,
-    ToolContent, ToolKind, ToolStatus,
+    AcpEvent, AcpRequest, Attachment, BackgroundReport, ConfigChoice, ConfigOption, ElicitChoice,
+    ElicitField, ElicitKind, ElicitOutcome, ElicitValue, Elicitation, LimitStatus, Mode,
+    PermissionOption, PermissionRequest, PermissionWeight, PlanEntry, PlanStatus, RateLimit, ReqTx,
+    SlashCommand, ToolCall, ToolCallUpdate, ToolContent, ToolKind, ToolStatus, Usage,
 };

@@ -104,6 +104,9 @@ fn check(ask: &Ask, cx: &mut App) {
                     | AcpEvent::ToolCall(_)
                     | AcpEvent::ToolUpdate(_)
                     | AcpEvent::Plan(_)
+                    | AcpEvent::Usage(_)
+                    | AcpEvent::Background(_)
+                    | AcpEvent::StopRefused { .. }
                     | AcpEvent::Permission(_)
                     | AcpEvent::Elicitation(_)
                     | AcpEvent::AvailableCommands(_)

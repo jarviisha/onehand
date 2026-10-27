@@ -143,6 +143,11 @@ declared agent sending either gets the same card.
 
 ## Known differences
 
+- **What each shows of the agent's activity.** Claude Code: the context meter, the limit meter
+  (five-hour or weekly) and its background work, and may stop one item. Codex: context and
+  background work, no limit meter. Copilot, and a declared agent that reports none of it: nothing,
+  with no empty meter or button.
+
 - **Codex has no plan block.** It has no plan tool in its default mode and writes its steps as
   text. With `collaboration_mode = plan` it writes the plan as text, then asks *Implement this
   plan?* as a permission request.

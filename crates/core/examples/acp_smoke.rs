@@ -78,6 +78,9 @@ async fn main() {
             }
             AcpEvent::ThoughtChunk(s) => eprintln!("[think] {s}"),
             AcpEvent::UserChunk(_) => {}
+            AcpEvent::Usage(u) => eprintln!("== USAGE {u:?} =="),
+            AcpEvent::Background(b) => eprintln!("== BACKGROUND {b:?} =="),
+            AcpEvent::StopRefused { .. } => {}
             AcpEvent::Interrupted => eprintln!("== INTERRUPTED =="),
             AcpEvent::ToolCall(tc) => {
                 eprintln!("== TOOL {:?} [{:?}] {} ==", tc.kind, tc.status, tc.title);

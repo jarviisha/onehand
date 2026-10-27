@@ -14,8 +14,11 @@ use gpui::{
     StatefulInteractiveElement, Styled, Window, div, relative, rems,
 };
 use gpui_component::button::{Button, ButtonVariants as _};
+use gpui_component::progress::ProgressCircle;
+use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, Sizable as _, StyledExt};
 use onehand_core::attachment::AttachmentSource;
+use onehand_core::chat::{Level, Meter};
 
 /// The ring a file dragged over the card draws, in pixels as a hairline is. A
 /// shadow rather than a border, so the card does not shift by its width while
@@ -318,7 +321,16 @@ impl Composer {
         });
         let branch = branch.map(|chip| self.opens_menu(Overlay::Branch, chip));
         let control = control_chip(session, cx);
-        if branch.is_none() && mode.is_none() && control.is_none() {
+        let meters: Vec<_> = {
+            let chat = &session.read(cx).chat;
+            [chat.context_meter(), chat.limit_meter()]
+        }
+        .into_iter()
+        .flatten()
+        .enumerate()
+        .map(|(i, meter)| meter_view(i, meter, cx))
+        .collect();
+        if branch.is_none() && mode.is_none() && control.is_none() && meters.is_empty() {
             return None;
         }
         let strip = match narrow {
@@ -340,6 +352,9 @@ impl Composer {
                         .gap_2()
                         .min_w_0()
                         .children(control)
+                        // Left of the mode: standing state about the session
+                        // beside the one setting it runs under.
+                        .children(meters)
                         .children(mode),
                 ),
         )
@@ -408,6 +423,35 @@ fn control_chip(
                 cx.notify();
             })),
     )
+}
+
+/// One meter of the strip: a ring filled to its percent, and the percent.
+/// Calm in the meta ink, warning and danger in their status inks. Its name
+/// and numbers are on the tooltip, so the strip carries no words for it; a
+/// meter with no percent is a full ring in its level's ink.
+fn meter_view(index: usize, meter: Meter, cx: &App) -> impl IntoElement + use<> {
+    let ink = match meter.level {
+        Level::Calm => crate::theme::meta_ink(cx),
+        Level::Warning => crate::theme::status_ink(cx).warning,
+        Level::Danger => crate::theme::status_ink(cx).danger,
+    };
+    let tip = SharedString::from(meter.tip);
+    let ring = ProgressCircle::new(("meter-ring", index))
+        .small()
+        .color(ink)
+        .value(meter.percent.map_or(100., f32::from))
+        .accessibility_label(meter.label);
+    div()
+        .id(("meter", index))
+        .h_flex()
+        .items_center()
+        .gap_1()
+        .flex_none()
+        .text_xs()
+        .text_color(ink)
+        .child(ring)
+        .children(meter.percent.map(|percent| format!("{percent}%")))
+        .tooltip(move |window, cx| Tooltip::new(tip.clone()).build(window, cx))
 }
 
 /// Fast mode's mark: the muted ink at rest, the warning ink while fast.

@@ -199,6 +199,10 @@ impl Shell {
                         crate::toast::failed("Changing the agent's setting", why),
                         cx,
                     ),
+                    E::StopRefused(why) => window.push_notification(
+                        crate::toast::failed("Stopping the background item", why),
+                        cx,
+                    ),
                     E::RenameFailed(why) => window
                         .push_notification(crate::toast::failed("Renaming the session", why), cx),
                     E::ConversationNotDeleted(why) => window.push_notification(

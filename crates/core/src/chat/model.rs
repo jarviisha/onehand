@@ -12,11 +12,13 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 mod apply;
+mod background;
 mod items;
 mod meta;
 mod persist;
 mod turn;
 pub use apply::{ApplyOutcome, Away, UserAsk};
+pub use background::{BackgroundItem, Level, Meter};
 pub(crate) use items::line_change_counts;
 pub use items::{
     AskItem, AskRow, ChatItem, Md, MdId, NoticeLevel, PermItem, PlanItem, Thought, ToolItem,
@@ -189,6 +191,17 @@ pub struct Chat {
     /// Files staged with 📎 to send with the next prompt.
     /// Live terminals (ACP terminal extension), keyed by terminalId.
     pub terminals: HashMap<String, TermView>,
+
+    // ── what runs beside the turns ──
+    /// The agent's live background work, oldest first, by its own reports.
+    background: Vec<background::BackgroundItem>,
+    /// The latest context report: tokens used, and the window's size.
+    context: Option<(u64, u64)>,
+    /// The latest rate-limit report of each kind, in the order first seen.
+    limits: Vec<crate::acp::RateLimit>,
+    /// The adapter has said which cycle a report closes, so it says when its
+    /// own work between turns settles and no quiet spell has to guess.
+    cycles_marked: bool,
     /// How many times the transcript has changed, counting from zero.
     ///
     /// A front end derives expensive things from a transcript -- a run layout,

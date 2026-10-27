@@ -17,6 +17,11 @@ _Avoid_: repo (a project can be a folder inside one), root
 One conversation with one agent on one project, carried over the Agent Client Protocol.
 _Avoid_: chat, thread, tab
 
+**Background work**:
+What an agent started that runs on after its turn ends: a background command. The session stays
+running while it lives, and it can be stopped one item at a time without stopping the turn.
+_Avoid_: task, job, process
+
 **Card**:
 A permission or a question an agent parked in its session, waiting for a person to answer.
 _Avoid_: prompt, dialog, popup

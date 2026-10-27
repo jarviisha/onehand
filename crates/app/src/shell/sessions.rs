@@ -27,10 +27,13 @@ impl Shell {
             .iter()
             .find(|(at, row)| *at == uid && row.signal == signal)
             .map_or_else(std::time::Instant::now, |(_, row)| row.since);
+        let (background, in_turn) = pane.activity(uid, cx);
         RailSession {
             signal,
             title: pane.title_for(uid, cx).map(SharedString::from),
             since,
+            background,
+            in_turn,
         }
     }
 

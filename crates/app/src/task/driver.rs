@@ -97,7 +97,8 @@ pub(crate) fn start(
             ChatEvent::AwaitingUser(_) => Input::AwaitingUser,
             ChatEvent::Disconnected => Input::Disconnected,
             ChatEvent::PickRefused(why) => Input::PickRefused(why.clone()),
-            ChatEvent::OpenFile(_) => return,
+            // Between-turn work and a refused stop move no run.
+            ChatEvent::OpenFile(_) | ChatEvent::CycleEnded | ChatEvent::StopRefused(_) => return,
         };
         feed(&id, input, cx);
     });

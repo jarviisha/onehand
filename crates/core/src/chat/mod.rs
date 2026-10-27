@@ -20,9 +20,10 @@ pub use activity::{
 pub use attention::{Attention, Presence, SessionSignal, Telling};
 pub use export::export_markdown;
 pub use model::{
-    ApplyOutcome, AskItem, AskRow, Away, Chat, ChatItem, Link, Md, MdId, NoticeLevel, PermItem,
-    PlanItem, QueuedPrompt, Selector, SelectorChoice, SubmitBlock, TermView, Thought, ToolItem,
-    TranscriptItemId, TurnAnswer, UserAsk, UserMsg, MAX_TERM_BYTES, MODE_SELECTOR,
+    ApplyOutcome, AskItem, AskRow, Away, BackgroundItem, Chat, ChatItem, Level, Link, Md, MdId,
+    Meter, NoticeLevel, PermItem, PlanItem, QueuedPrompt, Selector, SelectorChoice, SubmitBlock,
+    TermView, Thought, ToolItem, TranscriptItemId, TurnAnswer, UserAsk, UserMsg, MAX_TERM_BYTES,
+    MODE_SELECTOR,
 };
 pub use steps::cluster::{clusters, section_summary, Cluster};
 pub use steps::{

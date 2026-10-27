@@ -25,6 +25,8 @@ fn seed() -> Vec<Item> {
         signal,
         since: since(age),
         age,
+        background: 0,
+        in_turn: false,
     };
     vec![
         s(0, 0, 1, "Inspect dashboard", Some(AwaitingUser), 4),
@@ -111,14 +113,27 @@ fn attention_counts_input_failures_and_lost_agents() {
 #[test]
 fn the_meta_line_keeps_one_order() {
     use SessionSignal::*;
-    assert_eq!(meta(Some(Busy), "claude", 1), "Running · claude · 1m");
+    assert_eq!(meta(Some(Busy), 0, "claude", 1), "Running · claude · 1m");
     assert_eq!(
-        meta(Some(AwaitingUser), "claude", 4),
+        meta(Some(AwaitingUser), 0, "claude", 4),
         "Needs input · claude · waiting 4m"
     );
-    assert_eq!(meta(Some(Failed), "codex", 25), "Failed · codex · 25m");
-    assert_eq!(meta(Some(Lost), "codex", 0), "Disconnected · codex · now");
-    assert_eq!(meta(None, "claude", 2 * 60 * 24), "Idle · claude · 2d");
+    assert_eq!(meta(Some(Failed), 0, "codex", 25), "Failed · codex · 25m");
+    assert_eq!(
+        meta(Some(Lost), 0, "codex", 0),
+        "Disconnected · codex · now"
+    );
+    assert_eq!(meta(None, 0, "claude", 2 * 60 * 24), "Idle · claude · 2d");
+}
+
+#[test]
+fn meta_counts_background_work() {
+    use SessionSignal::*;
+    assert_eq!(
+        meta(Some(Busy), 2, "Claude Code", 1),
+        "Running · 2 in background · Claude Code · 1m"
+    );
+    assert_eq!(meta(Some(Busy), 0, "claude", 1), "Running · claude · 1m");
 }
 
 #[test]
@@ -275,6 +290,8 @@ fn a_group_past_the_cap_says_how_many_more_until_shown_whole() {
             signal: None,
             since: since(0),
             age: 0,
+            background: 0,
+            in_turn: false,
         })
         .collect();
     let capped = rows(&many, &shape(Filter::ByProject, "", &|_| true, &|_| false));
