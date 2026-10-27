@@ -1,4 +1,7 @@
 use super::*;
+use crate::acp::{ToolCall, ToolContent, ToolKind, ToolStatus};
+use crate::chat::model::{Chat, Md, SubagentItem, SubagentState, ToolItem};
+use std::sync::Arc;
 
 /// One conversation's metadata, read back off disk.
 ///
