@@ -238,6 +238,15 @@ pub struct Viewport {
     /// late on a transcript that also loses rows -- a blocking card leaves the
     /// list while it waits for an answer and comes back once it has one.
     newest_prompt: Option<TranscriptItemId>,
+    /// The runs holding a working subagent card at the last replan.
+    working_cards: Vec<usize>,
+    /// Runs holding a subagent card to measure again on the next frame.
+    ///
+    /// **A card changes height in place, anywhere in the transcript**: its
+    /// steps arrive while the parent's own blocks follow it, it folds when it
+    /// ends, and it opens on a press. Its run draws the same to the plan all
+    /// the while, so nothing else would tell the list.
+    card_remeasure: Vec<usize>,
 }
 
 /// Everything the run layout is a function of.
@@ -295,6 +304,7 @@ impl Viewport {
         if self.planned == Some(key) {
             return;
         }
+        let refold = self.planned.is_some_and(|was| was.folds != folds);
         // Whether this session has ever been laid out. A transcript adopted
         // from an archive arrives whole, and its last question is not a
         // question just asked: opening a conversation belongs at its end.
@@ -382,6 +392,16 @@ impl Viewport {
             .unwrap_or_else(|| self.plan.len().min(plan.len()));
         self.changed_from = self.changed_from.min(diverged);
         self.plan = plan;
+
+        // A card that ends is measured once more, folded, so the runs working
+        // last time are taken too; a fold toggled may have been a card's.
+        let working = plan::card_runs(chat, &self.plan, false);
+        self.card_remeasure.extend(match refold {
+            true => plan::card_runs(chat, &self.plan, true),
+            false => working.clone(),
+        });
+        self.card_remeasure
+            .extend(std::mem::replace(&mut self.working_cards, working));
 
         let newest = self
             .plan
@@ -665,6 +685,9 @@ impl Viewport {
         // streaming answer frozen at its first chunk's height.
         if busy && count > 0 {
             state.remeasure_items(count.saturating_sub(2)..count);
+        }
+        for ix in self.card_remeasure.drain(..).filter(|ix| *ix < count) {
+            state.remeasure_items(ix..ix + 1);
         }
         let state = state.clone();
 

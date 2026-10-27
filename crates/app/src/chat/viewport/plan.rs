@@ -198,6 +198,21 @@ pub(super) fn single_kind(item: &ChatItem) -> RunKind {
     }
 }
 
+/// The runs holding a subagent card: every one when `all`, else only those
+/// with the card still working.
+pub(super) fn card_runs(chat: &Chat, plan: &[RunPlan], all: bool) -> Vec<usize> {
+    plan.iter()
+        .enumerate()
+        .filter(|(_, run)| {
+            run.members.iter().any(|t| {
+                matches!(item(chat, *t), Some(ChatItem::Subagent(card))
+                    if all || card.state == onehand_core::chat::SubagentState::Working)
+            })
+        })
+        .map(|(ix, _)| ix)
+        .collect()
+}
+
 /// The item an id addresses.
 ///
 /// A direct index into whichever of the two collections the id names. It used
