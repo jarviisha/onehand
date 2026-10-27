@@ -96,9 +96,9 @@ size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in ea
 
 | Role | Component | Size |
 |---|---|---|
-| A page's head: a list page's search, icon-only actions and creating action; a column page's actions, a split action's both halves | Button, Input | `.tall()` |
+| A page's head and the row under it: its actions, its icon-only actions, its search, a split action's both halves | Button, Input | `.tall()` |
 | A page's form: its fields, its pickers, its switch and its buttons | Button, Input | `.tall()` |
-| A dialog's fields and footer; a page's filter bar: its search and pickers | Button, Input | `.short()` |
+| A dialog's fields and footer; a filter bar's choices and pickers, and a dock's search | Button, Input | `.short()` |
 | Every other button with words: a strip's, a box's, a row's, a secondary action inside dense content (a line of meta text, a transcript block, a chip), a tab, a fold toggle, a pinned card's answers | Button | `.short()`, under a row, so the controls never outweigh what they act on |
 | Every other icon-only button: a strip's, a row's, a copy control, the composer's send | Button | `.small()`, square at `CONTROL_H`, so an icon alone is as tall as a worded peer beside it |
 | A field in a strip or the rail | Input | `.short()`, as tall as the buttons beside it |
@@ -177,19 +177,40 @@ Nothing else is drawn see-through.
 
 ### Pages
 
-A page takes the agent pane. A column page names itself in its head, in the body (`page_head`):
-its name at the title size, a line of facts under it in the middle ink, its actions at the end;
-the pane's header above it then carries chrome alone. A list page keeps its name in the header,
-a bar over the list (*List pages*). A box's heading identifies its own content. A page is one of two kinds, chosen by
-what it holds, and the kind decides its width, its density and its head:
+A page takes the agent pane. Every page names itself in its head, in the body (`page_head`): its
+name at the title size, a line of facts under it in the middle ink where it has facts to give, its
+actions at the end; the pane's header above it carries chrome alone. A box's heading identifies its
+own content. A page is one of two kinds, chosen by what it holds, and the kind decides its width
+and its density, never its head:
 
 - a **column page** holds fields, boxes or one thing read in full (a project's page, the
-  overview, Tasks, a task, Settings, Workflows' grid of cards); a workflow opened from it takes
-  a page of three columns of its own;
+  overview, Tasks, Schedules, a task, Settings, Workflows' grid of cards); a workflow opened from
+  it takes a page of three columns of its own;
 - a **list page** holds one long list to scan, filter and pick from (Issues).
 
-A page with a filter bar keeps its head, filters and a table's column names in place while its
-content scrolls under them, so the filters stay in reach beside what they filter.
+### The top of a page
+
+A workspace-wide page (the overview, Tasks, Issues, Workflows, Schedules) keeps its top in place
+while the rest scrolls under it (`page_top`): the head, then, where the page has them, a row of its
+search and its filters. The top is inset `px_8`, close under the pane's header (`pt_2`), its parts
+`gap_6` apart, in the same column as the body under it (the whole pane on a list page); under it a
+`faint_rule` line runs the pane's whole width, drawn always, so every page's top ends on one line
+whatever the width of its column.
+
+- **The head.** Its actions are `.tall()`, at one height; its icon-only ghost buttons
+  (*Refresh*) stand before its creating action. The creating action (*New session*, Workflows'
+  *New*, *New schedule*, *New issue*) is the view's one primary, stepping down to `secondary`
+  while a form it opened, or an item floating over the list, is open and holds it. A page that
+  only sets values (Settings) holds no primary, every button on it secondary, and parts its many
+  peer groups by hairlines with semibold headings, as space alone would run them together.
+- **The row under it.** The search first (`page_search`: `.tall()`, as wide as its cap and
+  narrower only when the row runs short), then the filter bar's choices and filters (*Filter
+  bars*), kept to the row's end; the row wraps when narrow. A page with filters and no search
+  keeps them at the row's end all the same.
+- A table's column names, where a page has them, stay in the top too.
+
+A page reached from one of these (a task, a schedule's form, a project's page) scrolls as one
+column under its trail back.
 
 ### Column pages
 
@@ -198,30 +219,19 @@ ends, its sections `gap_6` apart, as wide as one of these:
 
 - `PAGE_NARROW`: one column of fields or rows;
 - `PAGE_PROSE`: an editor, or one thing read in full (a workflow, an issue, a task, a project);
-- `PAGE_WIDE`: boxes side by side (the overview, Tasks).
+- `PAGE_WIDE`: boxes side by side, or a workspace-wide list in a box (the overview, Tasks,
+  Workflows' cards, Schedules).
 
 The pane header is inset `px_8`, as the body is. A page holding sections of its own (Settings)
-puts their nav column at its start. Its head's actions are `.tall()`, at one height; its creating action
-(*New session*, Workflows' *New*) is the view's one primary, stepping down to `secondary` while a
-form it opened is open and holds it. A page that only sets values (Settings) holds no primary,
-every button on it secondary, and parts its many peer groups by hairlines with semibold
-headings, as space alone would run them together. Reuse the same column width for the same kind of page.
+puts their nav column at its start. Reuse the same column width for the same kind of page.
 
 ### List pages
 
-The list takes the pane's whole width, a whole list scanned at a glance:
+The list takes the pane's whole width, a whole list scanned at a glance; its top is every page's.
 
-- **Edges.** Inset `px_6`, its rows' fills on that edge and their words on the header's. The pane
-  header, the filter bar and the foot are each parted from the list by a `faint_rule` line the
-  pane's whole width, so the edge-to-edge list reads as one surface; over that line the page's
-  name stays at the strip's chrome size, a bar over the list rather than a heading.
-- **The head**: the search first, `.tall()`, with no edge on the well's `muted` fill (an edge in
-  that fill is left for focus), as wide as its cap and narrower only when the row runs short; at
-  the end its icon-only ghost buttons (*Refresh*) and its creating action, `.tall()`
-  (*New issue*); `gap_6` over the filter bar, a group apart. The creating action is the page's
-  one primary, stepping down to `secondary` while an item or a form floats over the list, which
-  holds it then.
-- **The filter bar** under it (*Filter bars*).
+- **Edges.** Inset `px_6`, its rows' fills on that edge and their words on the top's `px_8`. The
+  top and the foot are each parted from the list by a `faint_rule` line the pane's whole width, so
+  the edge-to-edge list reads as one surface.
 - **Rows** on one line at `.text_xs()`, no lines between them: the name and the column read down
   the list (the age) in `font_medium`, carried by weight and ink rather than size; the rest at the
   regular weight. Trailing slots drop, least needed first, where the pane is too narrow to leave
@@ -237,8 +247,8 @@ The list takes the pane's whole width, a whole list scanned at a glance:
 
 ### Filter bars
 
-Whatever filters its content draws its filters in one order. On a page they stand under its head
-at `.short()`, as below. In a dock, which is dense chrome with no head, the bar leads with its
+Whatever filters its content draws its filters in one order. On a page they stand in the row under
+its head, after the search, at `.short()`, as below. In a dock, which is dense chrome with no head, the bar leads with its
 search and takes the same order, all at `.short()` (the Plugins mode's marketplaces as choices). A
 dock's bar that stands over a list and its detail both (the Issues tab) leaves the choices out:
 they split the list, so they stand over its rows, under the bar's line.
@@ -248,7 +258,7 @@ they split the list, so they stand over its rows, under the bar's line.
   state hung from its top-right corner, its lower-left corner `2` in from that point each way,
   over the button's inset and above its words, the choices `gap_6` apart so a count keeps clear
   of the next;
-- the filters, kept to the row's end, wrapping under the choices when narrow. Each is a
+- the filters, kept to the row's end after the choices, wrapping under them when narrow. Each is a
   `.short()` `picker` with its caret, its label naming what it is set to: a ghost in the muted
   ink while it is where it starts, on the secondary fill in that fill's ink once it narrows the
   content;
@@ -476,7 +486,7 @@ danger tint.
   pointer moves from where it was pressed, so none stands over the menu it opened. What a row's
   hover actions lie over shows no tooltip while the pointer is on them.
 - **Keyboard focus shows the ring**, only when the keyboard moved it there. A field shows focus by
-  its edge alone, turned the `ring` ink; a search field, edgeless at rest, gains one while focused.
+  its edge alone, turned the `ring` ink: edgeless at rest, it gains one while focused.
 - A dialog, a popup or a floating panel opens with focus on its first field, or on its primary
   action when it has none. A panel floating beside the list it was picked from (the Issues
   page's issue) leaves focus on the list, so ↑ and ↓ keep stepping it. Each closes on Esc, asking first when a form in it holds unsaved

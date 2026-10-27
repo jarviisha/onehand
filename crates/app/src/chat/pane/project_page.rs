@@ -655,7 +655,7 @@ fn new_session(cx: &mut Context<ChatPane>) -> gpui::AnyElement {
         cx.theme().background,
         gpui::Anchor::TopRight,
         move |mut menu, _, _| {
-            menu = menu.label("With agent");
+            menu = menu.item(crate::controls::menu_label("With agent"));
             for name in &agents {
                 let (name, pane) = (name.clone(), pane.clone());
                 menu = menu.item(crate::controls::menu_item(name.clone()).on_click(

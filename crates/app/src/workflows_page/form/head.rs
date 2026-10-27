@@ -33,7 +33,7 @@ pub(in crate::workflows_page) fn run_menu(
     }
     let (handle, choices, workflow) = (handle.clone(), choices.to_vec(), workflow.to_string());
     crate::controls::menu_below(id, trigger, move |mut menu, _, _| {
-        menu = menu.label("Run on");
+        menu = menu.item(crate::controls::menu_label("Run on"));
         for (root, label) in &choices {
             let (handle, root, workflow) = (handle.clone(), root.clone(), workflow.clone());
             menu = menu.item(crate::controls::menu_item(label.clone()).on_click(
@@ -46,7 +46,7 @@ pub(in crate::workflows_page) fn run_menu(
             ));
         }
         if choices.is_empty() {
-            menu = menu.label("Add a project first");
+            menu = menu.item(crate::controls::menu_label("Add a project first"));
         }
         menu
     })

@@ -460,7 +460,9 @@ impl IssuesView {
                         );
                     }
                     if left_out > 0 {
-                        menu = menu.label(format!("… {left_out} more labels not shown"));
+                        menu = menu.item(onehand_ui::menu_label(format!(
+                            "… {left_out} more labels not shown"
+                        )));
                     }
                     menu
                 },

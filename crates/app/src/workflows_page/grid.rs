@@ -35,9 +35,6 @@ const CARD_GAP: Rems = rems(1.);
 const MARK_W: Rems = rems(1.);
 const MARK_H: Rems = rems(0.375);
 
-/// The widest the search stands in the head.
-const SEARCH_MAX: Rems = rems(20.);
-
 /// How many cards a row of a grid `width` wide holds: as many as fit at
 /// [`CARD_MIN`] with [`CARD_GAP`] between them, from one to [`MAX_COLUMNS`].
 pub(super) fn grid_columns(width: Rems) -> usize {
@@ -77,8 +74,12 @@ fn tone_ink(tone: Tone, cx: &App) -> gpui::Hsla {
 }
 
 /// The page's head: its name over how many there are, *New*, its one
-/// primary, and a ⋯ holding *Import…*; then the search.
-fn head(handle: &Entity<WorkflowsPage>, query: &Entity<InputState>, cx: &App) -> AnyElement {
+/// primary, and a ⋯ holding *Import…*; then the row the search leads.
+pub(super) fn head(
+    handle: &Entity<WorkflowsPage>,
+    query: &Entity<InputState>,
+    cx: &App,
+) -> [AnyElement; 2] {
     let count = crate::workflow::templates(cx).len();
     let facts = match count {
         1 => "1 workflow".to_string(),
@@ -103,10 +104,8 @@ fn head(handle: &Entity<WorkflowsPage>, query: &Entity<InputState>, cx: &App) ->
             },
         )
     };
-    div()
-        .v_flex()
-        .gap_4()
-        .child(crate::chat::pane::page_parts::page_head(
+    [
+        crate::chat::pane::page_parts::page_head(
             "Workflows",
             Some(facts.into_any_element()),
             vec![
@@ -122,14 +121,13 @@ fn head(handle: &Entity<WorkflowsPage>, query: &Entity<InputState>, cx: &App) ->
                 more.into_any_element(),
             ],
             cx,
-        ))
-        .child(
-            div()
-                .w_full()
-                .max_w(SEARCH_MAX)
-                .child(crate::controls::search_input(query, cx).tall()),
         )
-        .into_any_element()
+        .into_any_element(),
+        div()
+            .h_flex()
+            .child(crate::chat::pane::page_parts::page_search(query, cx))
+            .into_any_element(),
+    ]
 }
 
 /// One workflow's card, the `i`th the page shows: pressed on its body it
@@ -338,7 +336,6 @@ pub(super) fn grid_page(
         .v_flex()
         .gap_6()
         .w_full()
-        .child(head(handle, query, cx))
         .when(!own.is_empty(), |page| page.child(slot("Yours", own)))
         .when(!shipped.is_empty(), |page| {
             page.child(slot("Built in", shipped))

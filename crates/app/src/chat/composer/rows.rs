@@ -57,7 +57,8 @@ pub(super) fn popup_row(id: impl Into<gpui::ElementId>, highlighted: bool, cx: &
         // library letters a button from its `Size`, on the box holding the
         // words and so closer to them than anything the call site sets, and
         // with no size named that is a full 1rem -- so these rows were reading
-        // a step larger than the line right here asks for.
+        // a step larger than the line right here asks for. The name, a
+        // step under the library's small size, is set on its own box below.
         .small()
         .h_flex()
         .gap_2()
@@ -143,6 +144,7 @@ pub(super) fn candidate_row(id: usize, row: Row, highlighted: bool, cx: &App) ->
                 .flex_none()
                 .w(NAME_COLUMN)
                 .overflow_hidden()
+                .text_size(crate::tokens::CHROME_TEXT)
                 .child(marked(&row.label, row.label_span, name_ink, None)),
         )
         // **The detail is set against the row's right edge, so every detail in
@@ -258,7 +260,13 @@ pub(super) fn choice_row(id: usize, row: Row, highlighted: bool, cx: &App) -> Bu
         .h(ROW_H)
         // A glyph leading the name takes the name's ink, in a slot of its own.
         .children(row.mark.map(|mark| mark_slot(mark.small())))
-        .child(div().min_w_0().truncate().child(row.label))
+        .child(
+            div()
+                .min_w_0()
+                .truncate()
+                .text_size(crate::tokens::CHROME_TEXT)
+                .child(row.label),
+        )
         .child(
             div()
                 .flex_1()

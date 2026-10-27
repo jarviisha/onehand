@@ -140,7 +140,7 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
 | Meta, hints, counts, a small label | `.text_xs()`, in `muted_foreground` when it is meta |
 | A caption inside a small object (an attachment's plate) | `MICRO_TEXT` (11px), a step under the meta size |
 | Machine text | `CODE_TEXT`, in `mono_font_family` |
-| Chrome: a panel's rows, boxes, forms and strips | `CHROME_TEXT` (13px), a step under the reading size |
+| Chrome: a panel's rows, boxes, forms and strips, a menu's rows | `CHROME_TEXT` (13px), a step under the reading size |
 | A control's words (`.short()`) | `.text_xs()` |
 | Reading text: the transcript, the composer's field, a document | `.text_sm()`, on the reading leading; the transcript's `TEXT` |
 | The transcript's record: activity, thoughts, notices, a card's question | a step under the reading size, the transcript's `TEXT_SM` (13px) |
@@ -182,8 +182,9 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   button (inside a line of meta text a label is written in its kind's ink instead, unframed), its words `py_1` off its edges, its edge halfway from its fill to its ink (`badge_edge`), and a dot or a status mark is `rounded_full` too. The library's small parts keep its half
   corner (*Components*). A part joined to its container's edge takes its corner there.
 - **Lines** part regions and are a 1px `border`. A **mark** says where the person is, not where
-  a region ends: the one under an open tab is 2px, as a stroke a step heavier than a line. A list page's lines across
-  the pane are a step fainter (`faint_rule`), so the edge-to-edge list reads as one surface. A
+  a region ends: the one under an open tab is 2px, as a stroke a step heavier than a line. The line under a page's top
+  and a list page's lines across the pane are a step fainter (`faint_rule`), so a page's top ends
+  on one line whatever its column and the edge-to-edge list reads as one surface. A
   box's edge is a step stronger, a control's edge (`input`): in Dark Modern the hairline sits too
   near the page's fill to group anything.
 
@@ -210,7 +211,8 @@ colour is the value of a VS Code key, and a colour read anywhere but through a t
 | the rail's hovered row (`sidebar_accent`) | `list.inactiveSelectionBackground` |
 | every hairline (`border`), the window's edge | `panel.border`, `titleBar.border` |
 | floating surfaces (`popover`) | `editorWidget.background` |
-| the composer card, an edgeless field (`theme::raised`, `theme::inset`) | `input.background` |
+| the composer card, the rail's search (`theme::raised`, `theme::inset`) | `input.background` |
+| a field's fill (`field_fill`) | mixed: `muted` a step toward `foreground`, so it stands off the page, a floating surface and a well alike |
 | a control's edge, a box's edge (`input`) | `input.border` |
 | a secondary button at rest, pointed at, its word | `button.secondaryBackground` (dark: `input.background`, as Dark Modern's is transparent), `button.secondaryHoverBackground`, `button.secondaryForeground` |
 | the open tab's word | `tab.activeForeground` |
@@ -259,8 +261,8 @@ and the ramp's tests hold each at what it reaches.
   own pair, `sidebar_accent` and `rail_chosen`, as a fill is a step from the surface under it), one step on a ghost button (`control_fill`, between a
   row's hover and its selected step). A secondary button rests on a fill of its own and takes
   its pointed-at step under the pointer; the selected step is a chosen row's. Keyboard
-  focus on a control is the ring. A field is marked by its edge, so its focus is that edge turned
-  the `ring` ink, and an edgeless one gains it while focused; the composer, the input surface,
+  focus on a control is the ring. A field is marked by its fill and has no edge at rest, so its focus
+  is an edge in the `ring` ink; the composer, the input surface,
   shows focus by its caret (*Components*).
 - At most one primary in a view; a view needs none (the Settings page has none). Where layers
   stack, what waits on the person holds it while it shows (a floating issue, an open form, a
@@ -276,17 +278,17 @@ and the ramp's tests hold each at what it reaches.
 Reuse gpui-component before building anything: `Root`, `DockArea`, `Sidebar`, `Dialog`, `Switch`,
 `InputState`, `Editor`, `TextView`, plus gpui's own `list` for the transcript. Controls go through
 the UI crate's builders, which set the pointer cursor and the one corner (`radius`): buttons through
-`action`; fields through `text_input`, `search_input` and `text_area`. A field comes in two kinds:
-an **edged field**, in a form or a dialog, on no fill of its own; and a **search field** (the
-search mark, the clear button), with no edge, sunk into the fill of the place it sits (the
-rail's on `theme::inset`, a list page's on the well's `muted`), since it heads what it searches
-rather than standing among fields. A button names its variant by role: `primary`
+`action`; fields through `text_input`, `search_input` and `text_area`. **Every field has a fill
+and no edge**: a field in a form, a dialog or a page's top and a search alike stand on
+`field_fill`, a step past the well, so one shape reads as a field wherever it sits; a search adds
+the search mark and the clear button. The rail's search keeps the rail's own fill
+(`theme::inset`), and the composer's field is its card's. A button names its variant by role: `primary`
 the main action, `secondary` an alternative beside it, a set picker's trigger (an unset one is a ghost, through
 `picker`; a form's picker is set whatever it holds), every Settings button and the rail's *New*
 (the one filled control in that chrome, as starting a session is what the rail is opened for),
 `choice` in a pick-one row, `danger` as below, and ghost (`.quiet(cx)`, whose hover
 is the control fill) the rest. **No button draws an edge** (no default variant, no `outline()`): a
-field is the one control marked by its edge, or, searching, by its sunk fill. A control that refuses says so
+field is marked by its fill, and its edge is focus alone. A control that refuses says so
 and why (`.refuses(why)`, the reason its tooltip) and goes back to the arrow.
 
 **A ghost never starts a line alone.** Without a fill, a ghost's padding sets its words in from

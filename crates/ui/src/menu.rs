@@ -49,8 +49,25 @@ pub fn menu_row<E: IntoElement>(
             .mx(-MENU_INSET)
             .px(MENU_INSET)
             .cursor_pointer()
+            // At the chrome size, as the rows and controls around the menu
+            // are: the library letters every row a step larger.
+            .text_size(crate::tokens::CHROME_TEXT)
             .child(render(window, cx))
     })
+}
+
+/// A menu row that does not act now: a refusal, or a line that is only
+/// read. At the size [`menu_row`] letters its words, and with the library's
+/// own cursor, since a pointer over it would promise a press.
+pub fn menu_still<E: IntoElement>(
+    render: impl Fn(&mut Window, &mut App) -> E + 'static,
+) -> PopupMenuItem {
+    PopupMenuItem::element(move |window, cx| {
+        div()
+            .text_size(crate::tokens::CHROME_TEXT)
+            .child(render(window, cx))
+    })
+    .disabled(true)
 }
 
 /// A plain worded menu row that does something.
@@ -60,6 +77,14 @@ pub fn menu_row<E: IntoElement>(
 pub fn menu_item(label: impl Into<SharedString>) -> PopupMenuItem {
     let label = label.into();
     menu_row(move |_, _| div().child(label.clone()))
+}
+
+/// A line in a menu that heads a group or says what the menu leaves out:
+/// read, never pressed, at the size the menu's rows take. The library's own
+/// label letters a step larger, over the rows it heads.
+pub fn menu_label(label: impl Into<SharedString>) -> PopupMenuItem {
+    let label = label.into();
+    menu_still(move |_, _| div().child(label.clone()))
 }
 
 /// A worded menu row that runs what a keymap command runs, showing that

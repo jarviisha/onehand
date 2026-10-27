@@ -52,9 +52,9 @@ weight; a dots menu (*Rename…*, *Export as Markdown…*; *Resume in this sessi
 and *Restart the agent*; *Delete conversation* in the danger tint, refused until the first turn
 ends); a spacer; past conversations and *Close session* (only while a session shows); the terminal,
 an accent dot on it while its dock is closed over a shell running a command; last, the Workbench.
-The two dock buttons are filled while their dock is open. On Issues and Settings it reads the
-page's name; on the overview, Tasks and Workflows, which name themselves in their head, it carries
-no name; none of these has a dots menu or dock buttons. As the pane narrows, the name gives way
+The two dock buttons are filled while their dock is open. On Settings it reads the
+page's name; on the overview, Tasks, Issues, Workflows and Schedules, which name themselves in
+their head, it carries no name; none of these has a dots menu or dock buttons. As the pane narrows, the name gives way
 first, down to a minimum. Without a session it carries no name, the page naming the project, but
 keeps the project's dots menu, holding the project's actions but *New session* and *Open
 terminal*, which the page and the header already offer.
@@ -149,9 +149,9 @@ height (its dragged height kept).
   on you* (runs waiting for an answer or an approval, and sessions waiting, failed, finished or
   lost) and *Working*, then *Projects* as a grid of tiles (not drawn without projects), then the
   boxes *Recent conversations* and *Open issues* (its project picker kept while the page is left).
-  The page scrolls as one.
-- *Schedules*: a head (*Schedules*, with how many are on and off), a filter bar (the project
-  picker, as Tasks'), then one box, *Schedules*, with its count: a row per schedule as a task's
+  The head stays in place; the boxes scroll under it as one.
+- *Schedules*: a head (*Schedules*, with how many are on and off), the project picker at the end
+  of the row under it, as Tasks', the two kept in place; then one box, *Schedules*, with its count: a row per schedule as a task's
   row, parted by hairlines, its name over when it runs (in words where a quick choice says it,
   else the expression; one that does not parse in the warning ink), its project and when it runs
   next (or *off*), then what its last look said in the warning ink; its switch at the row's end,
@@ -172,16 +172,18 @@ height (its dragged height kept).
   the fields each takes, the expression in the code face and the next three times, or why it does
   not parse in the warning ink; *When it was missed* and *When the last run is still going*, each
   a switch). Problems in a bar along the page's foot, none on a new form nobody has changed.
-- *Tasks*: a head (*Tasks*), a filter bar (the project picker), then four boxes two by two,
+- *Tasks*: a head (*Tasks*), the project picker at the end of the row under it, the two kept in
+  place; then four boxes two by two,
   *Needs attention*, *Running*, *Queued*, *Finished*, each with a count, an empty line and a cap,
   its rows parted by hairlines. A row is the title
   over workflow, step or outcome and project, with ghost actions by state (*Open session*, *Stop*,
   *Resume*, *Retry…*, *Dismiss*) shown on hover, kept under *Needs attention*; its text opens the
   task's detail, a page of its own at the prose width: a trail, the title, then *Awaiting approval*,
   *Way out* and the runs as plain sections.
-- *Issues*, a list page (`docs/ui-patterns.md`, *List pages*): a head (the search, then *Refresh*
-  and *New issue*, its primary, at the end); a filter bar (*Open* and *Closed* as choices, each its
-  count in a badge on its corner, then pickers for progress, project and label and *Clear filters*);
+- *Issues*, a list page (`docs/ui-patterns.md`, *List pages*): a head (*Issues*, then *Refresh*
+  and *New issue*, its primary, at the end); the row under it (the search, then *Open* and
+  *Closed* as choices, each its count in a badge on its corner, then pickers for progress, project
+  and label and *Clear filters* at the row's end), the two kept in place;
   a row is its state mark (open in the success ink, closed in the closed ink), reference, title,
   priority and note, then its labels, project and age in slots at the end, the labels and project
   dropped first; *Showing N of M open issues* at the foot. *Reading the issues…* until the first
@@ -190,7 +192,8 @@ height (its dragged height kept).
   draws it.
 - *Workflows*: a column page as wide as boxes side by side, holding the workflows as cards. Its
   head reads *Workflows*, how many under it, *New*, its one primary, and a ⋯ holding *Import…*;
-  under it a search, matching a workflow's name and description, kept while the page is left.
+  under it a search, matching a workflow's name and description, kept while the page is left; the
+  two kept in place, the cards scrolling under them.
   The cards stand under *Yours* (the person's own) and *Built in* (the shipped), four to a row
   while the page holds them and fewer as it narrows, down to one. A card is a box: the
   workflow's name, its description cut at two lines, a short mark per step in its kind's ink (an

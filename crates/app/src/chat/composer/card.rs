@@ -176,15 +176,24 @@ impl Composer {
                             composer.commit(&take_row, window, cx);
                         },
                     ))
-                    .child(text_area(&self.state, cx).appearance(false).on_paste({
-                        let composer = cx.entity().downgrade();
-                        move |item, window, cx| {
-                            let handle = window.window_handle();
-                            composer
-                                .update(cx, |composer, cx| composer.attach_pasted(item, handle, cx))
-                                .unwrap_or(false)
-                        }
-                    })),
+                    // On the card's own fill: the card is the field, so the
+                    // text area draws no fill of its own.
+                    .child(
+                        text_area(&self.state, cx)
+                            .appearance(false)
+                            .bg(cx.theme().transparent)
+                            .on_paste({
+                                let composer = cx.entity().downgrade();
+                                move |item, window, cx| {
+                                    let handle = window.window_handle();
+                                    composer
+                                        .update(cx, |composer, cx| {
+                                            composer.attach_pasted(item, handle, cx)
+                                        })
+                                        .unwrap_or(false)
+                                }
+                            }),
+                    ),
             )
             .child(
                 div()

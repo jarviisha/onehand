@@ -193,31 +193,42 @@ impl Render for WorkflowsPage {
         } else if let Some(view) = unreadable {
             editor::unreadable(&handle, view, cx)
         } else {
-            // A column page under the floating header: the grid as wide as
-            // boxes side by side are, centred, its scroll the page's.
+            // A column page under the floating header: its head and search
+            // kept in place under the header's room, the grid as wide as
+            // boxes side by side are, centred, scrolling under them.
             // The page's width less its `px_8` gutters, up to the column's.
             let grid_width = gpui::rems((self.width.get().0 - 4.).min(crate::tokens::PAGE_WIDE.0));
             div()
-                .id("workflows-grid")
                 .size_full()
-                .overflow_y_scroll()
+                .v_flex()
+                .child(div().flex_none().h(crate::tokens::BAR_H))
+                .child(crate::chat::pane::page_parts::page_top(
+                    Some(crate::tokens::PAGE_WIDE),
+                    grid::head(&handle, &query, cx),
+                    cx,
+                ))
                 .child(
                     div()
-                        .h_flex()
-                        .justify_center()
+                        .id("workflows-grid")
+                        .flex_1()
+                        .min_h_0()
+                        .overflow_y_scroll()
                         .px_8()
-                        .pt(crate::tokens::BAR_H)
-                        .pb_6()
-                        .child(div().w_full().max_w(crate::tokens::PAGE_WIDE).pt_3().child(
-                            grid::grid_page(
-                                &handle,
-                                &query,
-                                &self.cards,
-                                &self.run_choices(),
-                                grid_width,
-                                cx,
+                        .py_6()
+                        .child(
+                            div().h_flex().justify_center().child(
+                                div().w_full().max_w(crate::tokens::PAGE_WIDE).child(
+                                    grid::grid_page(
+                                        &handle,
+                                        &query,
+                                        &self.cards,
+                                        &self.run_choices(),
+                                        grid_width,
+                                        cx,
+                                    ),
+                                ),
                             ),
-                        )),
+                        ),
                 )
                 .into_any_element()
         };

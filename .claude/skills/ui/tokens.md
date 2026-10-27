@@ -36,12 +36,13 @@ Helpers:
 | `dock_surface(cx)` | the Workbench's and the terminal's surface | `crates/ui/src/lib.rs` |
 | `badge_edge(tint)` | a badge's edge: halfway from its `Tint`'s fill to its ink | `crates/ui/src/lib.rs` |
 | `control_fill(cx)` | a ghost control's fill hovered, pressed or chosen; between `list_hover` and `accent` | `crates/ui/src/lib.rs` |
-| `faint_rule(cx)` | a hairline a step fainter, halfway to the surface: the lines across the pane parting a list page's list from its header, filter bar and foot | `crates/ui/src/lib.rs` |
+| `faint_rule(cx)` | a hairline a step fainter, halfway to the surface: the line under a page's top, and a list page's line over its foot | `crates/ui/src/lib.rs` |
+| `field_fill(cx)` (private) | every field's fill: `muted` a step toward `foreground`; drawn by `text_input` and `text_area` | `crates/ui/src/lib.rs` |
 | `meta_ink(cx)` | the middle ink: a detail beside a name, between prose and muted | `crates/ui/src/lib.rs`; the app says `crate::theme::meta_ink` |
 | `middle_ink(full, meta)` | the same step under another full ink: on a fill, under that fill's paired ink | `crates/ui/src/lib.rs` |
 | `hue_ink(base, cx)` | a hue tempered for ink: code inside prose | `crates/app/src/theme.rs` |
 | `raised(cx)` | the composer card's fill | `crates/app/src/theme.rs` |
-| `inset(cx)` | a field with no edge on the rail: its search; a badge in the rail | `crates/app/src/theme.rs` |
+| `inset(cx)` | the rail's search; a badge in the rail | `crates/app/src/theme.rs` |
 | `rail_chosen(cx)` | the rail's chosen row | `crates/app/src/theme.rs` |
 | `floating_well(cx)` | a well on a floating card: the command a pinned permission asks to run | `crates/app/src/theme.rs` |
 

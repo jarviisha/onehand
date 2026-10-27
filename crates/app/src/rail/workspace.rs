@@ -10,7 +10,7 @@ use gpui::{
     StatefulInteractiveElement, Styled, WeakEntity, Window, div,
 };
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::menu::{DropdownMenu as _, PopupMenu, PopupMenuItem};
+use gpui_component::menu::{DropdownMenu as _, PopupMenu};
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 
@@ -136,7 +136,7 @@ fn workspace_menu(
         // No heading over nothing: a workspace that has never been bound
         // has no recents, and the two actions below stand on their own.
         if !recents.is_empty() {
-            menu = menu.label("Workspaces");
+            menu = menu.item(crate::controls::menu_label("Workspaces"));
         }
         for (dir, name) in &recents {
             let is_current = current.as_deref() == Some(dir.as_path());
@@ -167,7 +167,7 @@ fn workspace_menu(
             };
             menu = menu.item(
                 match is_current {
-                    true => PopupMenuItem::element(row),
+                    true => crate::controls::menu_still(row),
                     false => crate::controls::menu_row(row),
                 }
                 .checked(is_current)
@@ -281,7 +281,7 @@ fn new_session_menu(
     shell: WeakEntity<Shell>,
 ) -> impl Fn(PopupMenu, &mut Window, &mut App) -> PopupMenu + use<> {
     move |menu, _, _cx: &mut App| {
-        let mut menu = menu.label("Start in");
+        let mut menu = menu.item(crate::controls::menu_label("Start in"));
         for (idx, label) in &projects {
             let (idx, label, to) = (*idx, label.clone(), shell.clone());
             menu = menu.item(
@@ -298,7 +298,9 @@ fn new_session_menu(
         let Some(root) = target.or(projects.first().map(|(idx, _)| *idx)) else {
             return menu;
         };
-        menu = menu.separator().label("With agent");
+        menu = menu
+            .separator()
+            .item(crate::controls::menu_label("With agent"));
         for (i, name) in agents.iter().enumerate() {
             let (name, to) = (name.clone(), shell.clone());
             menu = menu.item(crate::controls::menu_item(name).on_click(

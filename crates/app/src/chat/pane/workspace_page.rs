@@ -1,4 +1,4 @@
-use super::page_parts::{card_box, card_title, page_card, page_head, pair, ruled};
+use super::page_parts::{card_box, card_title, page_card, page_head, page_top, pair, ruled};
 use super::project_page::count_of;
 use super::{ChatPane, ChatPaneEvent, Page, SessionSignal, rel_time};
 use crate::tokens::PAGE_WIDE;
@@ -803,14 +803,20 @@ impl ChatPane {
         div()
             .size_full()
             .v_flex()
-            // The header stays for the way back to a hidden rail, and names the
-            // page; the dock controls on it are left off here.
+            // The header stays for the way back to a hidden rail; the page
+            // names itself in its head, and the dock controls are left off.
             .child(self.header(cx))
+            // The head stays put over a line, as every page's does.
+            .child(page_top(
+                Some(PAGE_WIDE),
+                [page_head("Overview", None, Vec::new(), cx).into_any_element()],
+                cx,
+            ))
             .child(
-                // **The page scrolls as one, from the top.** Cards that fill in
-                // as their reads land would move a centred page every time one
-                // arrived, and a single scroll keeps every card reachable however
-                // tall the page grows.
+                // **The cards scroll as one, from the top.** Cards that fill
+                // in as their reads land would move a centred page every time
+                // one arrived, and a single scroll keeps every card reachable
+                // however tall the page grows.
                 div()
                     .id("workspace-page")
                     .flex_1()
@@ -826,7 +832,6 @@ impl ChatPane {
                                 .w_full()
                                 .max_w(PAGE_WIDE)
                                 .text_size(crate::tokens::CHROME_TEXT)
-                                .child(page_head("Overview", None, Vec::new(), cx))
                                 .child(pair(waiting, working))
                                 .children(projects)
                                 .child(pair(recent, issues)),

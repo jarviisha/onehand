@@ -5,7 +5,7 @@ use super::{ChatPane, ChatPaneEvent, rel_time};
 use crate::chat::conversation::{Conversation, SessionPhase};
 use crate::controls::Named as _;
 use gpui::{App, Context, IntoElement, ParentElement, SharedString, Styled, Window, div};
-use gpui_component::menu::{DropdownMenu as _, PopupMenuItem};
+use gpui_component::menu::DropdownMenu as _;
 use gpui_component::{ActiveTheme, IconName, StyledExt};
 use std::path::PathBuf;
 
@@ -140,12 +140,9 @@ impl ChatPane {
                 // built and drawn with no way to reach them.
                 let menu = menu.scrollable(true);
                 let menu = match standing.clone() {
-                    Some(line) => menu.item(
-                        PopupMenuItem::element(move |_, _| {
-                            div().text_color(muted).child(line.clone())
-                        })
-                        .disabled(true),
-                    ),
+                    Some(line) => menu.item(crate::controls::menu_still(move |_, _| {
+                        div().text_color(muted).child(line.clone())
+                    })),
                     None => menu,
                 };
                 let menu = rows.iter().fold(menu, |menu, row| {
@@ -170,7 +167,7 @@ impl ChatPane {
                         // Already open keeps the library's own cursor with its
                         // refusal, so the pointer stays a promise a row can
                         // keep.
-                        true => menu.item(PopupMenuItem::element(draw).disabled(true)),
+                        true => menu.item(crate::controls::menu_still(draw)),
                         false => {
                             let item = crate::controls::menu_row(draw);
                             let (start, agent, dir) =
@@ -190,15 +187,14 @@ impl ChatPane {
                 // cut nobody is told about reads as archives that were lost.
                 match hidden {
                     0 => menu,
-                    n => menu.separator().item(
-                        PopupMenuItem::element(move |_, _| {
+                    n => menu
+                        .separator()
+                        .item(crate::controls::menu_still(move |_, _| {
                             div()
                                 .text_xs()
                                 .text_color(muted)
                                 .child(format!("{n} older, not shown"))
-                        })
-                        .disabled(true),
-                    ),
+                        })),
                 }
             })
     }
