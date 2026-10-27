@@ -52,6 +52,10 @@ pub(super) struct Item {
     pub(super) since: std::time::Instant,
     /// Whole minutes since then, as the row says it.
     pub(super) age: u64,
+    /// Work the agent runs on beyond its turn, still alive.
+    pub(super) background: usize,
+    /// A turn is open, which is what Stop ends; background work outlives it.
+    pub(super) in_turn: bool,
 }
 
 /// A session waits on the person: an answer, or a turn or an agent that broke.
@@ -80,13 +84,23 @@ pub(super) fn age_label(minutes: u64) -> String {
 
 /// The line under a session's title, in one order for every state:
 /// `state · who · age`, where who is the agent, or the project in a flat list.
-pub(super) fn meta(signal: Option<SessionSignal>, who: &str, age: u64) -> String {
+/// Live background work is counted after the state, and only when there is some.
+pub(super) fn meta(
+    signal: Option<SessionSignal>,
+    background: usize,
+    who: &str,
+    age: u64,
+) -> String {
     let age = age_label(age);
     let age = match signal {
         Some(SessionSignal::AwaitingUser) => format!("waiting {age}"),
         _ => age,
     };
-    format!("{} · {who} · {age}", word(signal))
+    let state = match background {
+        0 => word(signal).to_string(),
+        n => format!("{} · {n} in background", word(signal)),
+    };
+    format!("{state} · {who} · {age}")
 }
 
 /// The sessions a filter and a query keep, as indices into `items`, in the

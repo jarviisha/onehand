@@ -228,7 +228,7 @@ pub(super) fn session_row(
     let (name_ink, meta_ink) = row_inks(chosen, cx);
     let group = SharedString::from(format!("rail-session-{uid}"));
     let title = SharedString::from(item.title.clone());
-    let facts = SharedString::from(meta(signal, who, item.age));
+    let facts = SharedString::from(meta(signal, item.background, who, item.age));
     // The state's word leads the line, so its ink runs over its own bytes.
     let words = StyledText::new(facts.clone()).with_highlights(word_ink(signal, cx).map(|ink| {
         let color = HighlightStyle {
@@ -375,7 +375,7 @@ fn actions(
         .bg(rest)
         .when(!keyed, |d| d.invisible())
         .group_hover(group.clone(), move |s| s.visible().bg(hovered))
-        .when(signal == Some(SessionSignal::Busy), |d| {
+        .when(signal == Some(SessionSignal::Busy) && item.in_turn, |d| {
             d.child(labelled(
                 ("session-stop-name", uid),
                 "Stop the turn",

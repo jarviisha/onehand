@@ -155,6 +155,10 @@ pub struct RailSession {
     /// When the session took its signal, which the row says as an age. In
     /// memory only: a launch starts every clock again.
     pub since: std::time::Instant,
+    /// How many of the agent's background items are alive.
+    pub background: usize,
+    /// Whether a turn is open, as opposed to only background work running.
+    pub in_turn: bool,
 }
 
 /// Which panel a panel-scoped command addresses.

@@ -189,6 +189,13 @@ impl ChatPane {
             &session,
             move |pane: &mut Self, session, event: &ChatEvent, cx| {
                 match event {
+                    // Work the agent did between turns is saved and said as a
+                    // turn's is.
+                    ChatEvent::CycleEnded => {
+                        Self::archive_detached(uid, &session, cx);
+                        pane.turn_ended_detached(uid, &agent, &root_label, cx);
+                        pane.refresh_archives(cx);
+                    }
                     ChatEvent::TurnEnded => {
                         Self::archive_detached(uid, &session, cx);
                         pane.turn_ended_detached(uid, &agent, &root_label, cx);
@@ -236,6 +243,9 @@ impl ChatPane {
                     ChatEvent::PickRefused(why) => {
                         cx.emit(ChatPaneEvent::PickRefused(why.clone()));
                         cx.notify();
+                    }
+                    ChatEvent::StopRefused(why) => {
+                        cx.emit(ChatPaneEvent::StopRefused(why.clone()));
                     }
                 }
                 cx.notify();
@@ -613,9 +623,22 @@ impl ChatPane {
             chat.link,
             chat.failed(),
             chat.awaiting_permission() || crate::task::waits_on_person(uid, cx),
-            chat.busy,
+            // Background work is the agent still running after its turn.
+            chat.busy || !chat.background().is_empty(),
             conv.unseen,
         )
+    }
+
+    /// How many background items `uid`'s agent has alive, and whether a turn
+    /// is open -- the half of running that Stop ends.
+    pub fn activity(&self, uid: u64, cx: &App) -> (usize, bool) {
+        self.conversations
+            .get(&uid)
+            .and_then(|conv| conv.session())
+            .map_or((0, false), |session| {
+                let chat = &session.read(cx).chat;
+                (chat.background().len(), chat.busy)
+            })
     }
 
     /// What the conversation on `uid` is called, once it has earned a name.

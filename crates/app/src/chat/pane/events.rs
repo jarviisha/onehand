@@ -166,6 +166,8 @@ pub enum ChatPaneEvent {
     RenameFailed(String),
     /// The agent refused a pick, put back to what it last confirmed: why.
     PickRefused(String),
+    /// The adapter would not stop a background item: why.
+    StopRefused(String),
     /// Open issue `number` of the project at `root` — a row of the workspace
     /// page. Selecting a project and opening the Workbench are both the
     /// shell's.

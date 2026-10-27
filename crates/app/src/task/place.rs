@@ -194,7 +194,12 @@ pub(super) fn ended(
             use crate::chat::session::ChatEvent as E;
             match event {
                 E::TurnEnded | E::Disconnected => on_event(cx),
-                E::Appended | E::AwaitingUser(_) | E::OpenFile(_) | E::PickRefused(_) => {}
+                E::Appended
+                | E::AwaitingUser(_)
+                | E::OpenFile(_)
+                | E::PickRefused(_)
+                | E::CycleEnded
+                | E::StopRefused(_) => {}
             }
         },
     );
