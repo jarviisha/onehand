@@ -2,8 +2,9 @@
 //! pointer, and a menu that opens below its trigger.
 
 use gpui::{
-    Action, Anchor, App, Context, DismissEvent, ElementId, Entity, Focusable as _, IntoElement,
-    ParentElement as _, SharedString, Styled as _, Window, div, px,
+    Action, Anchor, App, Context, DismissEvent, ElementId, Entity, Focusable as _,
+    InteractiveElement as _, IntoElement, ParentElement as _, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Window, div, px,
 };
 use gpui_component::StyledExt as _;
 use gpui_component::button::Button;
@@ -76,15 +77,27 @@ pub fn menu_still<E: IntoElement>(
 /// [`menu_row`] is for the rows that draw something other than a line of text.
 pub fn menu_item(label: impl Into<SharedString>) -> PopupMenuItem {
     let label = label.into();
-    menu_row(move |_, _| div().child(label.clone()))
+    menu_row(move |_, _| said(&label).child(label.clone()))
+}
+
+/// The box a worded row's words stand in, named for assistive technology.
+///
+/// The library names its own rows by their label, but a row drawn as an
+/// element has none to give, so a menu of the app's rows read as nameless
+/// items; the words' box carries the name instead.
+fn said(label: &SharedString) -> gpui::Stateful<gpui::Div> {
+    div()
+        .id(ElementId::Name(label.clone()))
+        .aria_label(label.clone())
 }
 
 /// A line in a menu that heads a group or says what the menu leaves out:
 /// read, never pressed, at the size the menu's rows take. The library's own
-/// label letters a step larger, over the rows it heads.
+/// label letters a step larger, over the rows it heads. It stands as tall as
+/// a row, which the library sets for every row drawn as an element.
 pub fn menu_label(label: impl Into<SharedString>) -> PopupMenuItem {
     let label = label.into();
-    menu_still(move |_, _| div().child(label.clone()))
+    menu_still(move |_, _| said(&label).child(label.clone()))
 }
 
 /// A worded menu row that runs what a keymap command runs, showing that
@@ -102,7 +115,7 @@ pub fn menu_command(label: impl Into<SharedString>, action: Box<dyn Action>) -> 
             .items_center()
             .w_full()
             .gap_3()
-            .child(div().flex_1().child(label.clone()))
+            .child(said(&label).flex_1().child(label.clone()))
             .children(Kbd::binding_for_action(action.as_ref(), None, window))
     })
 }

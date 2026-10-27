@@ -31,7 +31,8 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   to run in, and the app runs no GPUI test harness; they are checked by hand.
 - **A submenu's row is lettered a step larger.** The library draws it itself, past `menu_row`,
   at its own size, so *Change scope* in the Plugins mode's ⋯ stands a step over the rows around
-  it. Fixing it means submenus of the app's own.
+  it. Fixing it means submenus of the app's own. For the same reason a group's heading in a menu
+  stands as tall as a row: the library sets that height on every row drawn as an element.
 - **A refused menu row cannot say why.** The library's menu row takes no tooltip, so a row that
   refuses (*Move up* on a workflow's first step) is drawn refusing without its reason, which its
   place has to say.
