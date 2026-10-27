@@ -1296,9 +1296,9 @@ async fn update_from(agent: &mut Agent, session: Option<&str>, update: serde_jso
 
 async fn next_chunk(events: &mut tokio::sync::mpsc::UnboundedReceiver<AcpEvent>) -> AcpEvent {
     loop {
-        match events.recv().await.expect("the stream ended early") {
-            e @ (AcpEvent::AgentChunk(_) | AcpEvent::InChild { .. }) => return e,
-            _ => {}
+        let e = events.recv().await.expect("the stream ended early");
+        if matches!(e, AcpEvent::AgentChunk(_) | AcpEvent::InChild { .. }) {
+            return e;
         }
     }
 }

@@ -516,26 +516,7 @@ impl Chat {
                 None => "\n[exited]".to_string(),
             };
             let flat = format!("{}{footer}", view.output);
-            for item in self.items.iter_mut() {
-                if let ChatItem::Tool(t) = item {
-                    let mut ours = false;
-                    for c in t.call.content.iter_mut() {
-                        if matches!(c, ToolContent::Terminal(tid) if *tid == id) {
-                            *c = ToolContent::Text(flat.clone());
-                            ours = true;
-                        }
-                    }
-                    // **Kept off the text on the way past.** This is the one
-                    // moment the exit status and the step it belongs to are
-                    // both in hand: after it the terminal is gone and the code
-                    // is a line inside a string, which the row would have to
-                    // parse back out -- and a number recovered by parsing is a
-                    // number that is wrong the first time the wording changes.
-                    if ours {
-                        t.exit_code = view.exit_code;
-                    }
-                }
-            }
+            flatten_terminal(&mut self.items, &id, &flat, view.exit_code);
         }
     }
 
@@ -717,6 +698,41 @@ pub(super) fn settle_steps(items: &mut [ChatItem]) {
             // The same seed a failure arriving as an update leaves, so a
             // reader can see what the step had said before it stopped.
             tool.fold.get_or_insert(true);
+        }
+    }
+}
+
+/// Put a finished terminal's text in place of every live reference to it in
+/// `items`, steps inside subagent cards included.
+fn flatten_terminal(items: &mut [ChatItem], id: &str, flat: &str, exit_code: Option<i32>) {
+    for item in items {
+        match item {
+            ChatItem::Tool(t) => {
+                let mut ours = false;
+                for c in t.call.content.iter_mut() {
+                    if matches!(c, ToolContent::Terminal(tid) if tid == id) {
+                        *c = ToolContent::Text(flat.to_string());
+                        ours = true;
+                    }
+                }
+                // **Kept off the text on the way past.** This is the one
+                // moment the exit status and the step it belongs to are both
+                // in hand: after it the terminal is gone and the code is a
+                // line inside a string, which the row would have to parse
+                // back out -- and a number recovered by parsing is a number
+                // that is wrong the first time the wording changes.
+                if ours {
+                    t.exit_code = exit_code;
+                }
+            }
+            ChatItem::Subagent(card) => flatten_terminal(&mut card.items, id, flat, exit_code),
+            ChatItem::User(_)
+            | ChatItem::Agent(_)
+            | ChatItem::Thought(_)
+            | ChatItem::Plan(_)
+            | ChatItem::Permission(_)
+            | ChatItem::Ask(_)
+            | ChatItem::Notice { .. } => {}
         }
     }
 }

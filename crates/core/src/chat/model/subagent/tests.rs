@@ -142,7 +142,7 @@ fn an_end_stops_the_count() {
         (SubagentEnd::Cancelled, SubagentState::Cancelled),
         (SubagentEnd::Disconnected, SubagentState::Interrupted),
     ] {
-        let mut chat = super::super::Chat::new(1, PathBuf::from("/r"), "C".into(), None);
+        let mut chat = Chat::new(1, PathBuf::from("/r"), "C".into(), None);
         chat.apply(spawn("c", "N", "T"));
         chat.apply(ended("c", end));
         assert_eq!(card(&chat.items, "c").state, state);
@@ -296,4 +296,55 @@ fn a_childs_permission_carries_the_askers_name() {
             None
         ]
     );
+}
+
+fn terminal_run(chat: &mut Chat) {
+    chat.apply(spawn("c1", "Builder", "Build"));
+    chat.apply(inside(
+        "c1",
+        AcpEvent::ToolCall(ToolCall {
+            id: "t1".into(),
+            title: "cargo build".into(),
+            description: None,
+            kind: ToolKind::Execute,
+            status: ToolStatus::InProgress,
+            content: vec![crate::acp::ToolContent::Terminal("term1".into())],
+        }),
+    ));
+    chat.apply(AcpEvent::TerminalOutput {
+        terminal_id: "term1".into(),
+        chunk: "hello".into(),
+    });
+}
+
+fn card_tool_output(chat: &Chat) -> (String, Option<i32>) {
+    match &card(&chat.items, "c1").items[0] {
+        ChatItem::Tool(t) => match &t.call.content[0] {
+            crate::acp::ToolContent::Text(text) => (text.clone(), t.exit_code),
+            _ => panic!("the terminal was not flattened into the card's step"),
+        },
+        _ => panic!("the card holds the step"),
+    }
+}
+
+#[test]
+fn a_terminal_inside_a_card_keeps_its_output() {
+    let mut chat = chat();
+    terminal_run(&mut chat);
+    chat.apply(AcpEvent::TerminalExit {
+        terminal_id: "term1".into(),
+        exit_code: Some(0),
+    });
+    chat.apply(AcpEvent::TurnEnded {
+        stop_reason: "end_turn".into(),
+    });
+    let (text, code) = card_tool_output(&chat);
+    assert!(text.starts_with("hello"), "{text}");
+    assert_eq!(code, Some(0));
+
+    let mut chat = Chat::new(1, PathBuf::from("/r"), "C".into(), None);
+    terminal_run(&mut chat);
+    chat.apply(AcpEvent::Disconnected("gone".into()));
+    let (text, _) = card_tool_output(&chat);
+    assert!(text.starts_with("hello"), "{text}");
 }
