@@ -111,6 +111,9 @@ minor bump may break any of them.
 
 ### Fixed
 
+- The *More* and *Refresh* buttons on the Workflows, Issues and schedule pages, and a step
+  setting's remove, are drawn whole; they had shrunk to a dot or a sliver.
+- A question card's long choice wraps clear of its Alt key instead of running under it.
 - A wide Markdown table in an answer keeps its columns readable and scrolls sideways inside the
   column instead of squeezing every column to fit. Under every table, Copy takes it as Markdown and
   *Open* shows it whole in a dialog as wide as the window allows.
