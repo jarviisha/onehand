@@ -144,14 +144,14 @@ fn context_meter_rounds_and_clamps() {
         chat.context_meter(),
         Some(Meter {
             label: "Context".into(),
-            percent: 42,
+            percent: Some(42),
             level: Level::Calm,
             tip: "84k of 200k tokens".into(),
         })
     );
     chat.apply(usage(250, 200));
     let meter = chat.context_meter().unwrap();
-    assert_eq!((meter.percent, meter.level), (100, Level::Warning));
+    assert_eq!((meter.percent, meter.level), (Some(100), Level::Warning));
     assert_eq!(meter.tip, "250 of 200 tokens");
     chat.apply(usage(5, 0));
     assert_eq!(chat.context_meter(), None);
@@ -171,7 +171,7 @@ fn limit_meter_follows_status_when_worse() {
     let mut chat = Chat::default();
     chat.apply(limit(Some("five_hour"), Some(0.30), LimitStatus::Rejected));
     let meter = chat.limit_meter().unwrap();
-    assert_eq!((meter.percent, meter.level), (30, Level::Danger));
+    assert_eq!((meter.percent, meter.level), (Some(30), Level::Danger));
     chat.apply(limit(Some("five_hour"), Some(0.30), LimitStatus::Warning));
     assert_eq!(chat.limit_meter().unwrap().level, Level::Warning);
     chat.apply(limit(Some("five_hour"), Some(0.90), LimitStatus::Allowed));
@@ -182,10 +182,19 @@ fn limit_meter_follows_status_when_worse() {
 fn limit_meter_clamps_and_survives_missing_utilization() {
     let mut chat = Chat::default();
     chat.apply(limit(Some("five_hour"), Some(1.4), LimitStatus::Rejected));
-    assert_eq!(chat.limit_meter().unwrap().percent, 100);
+    assert_eq!(chat.limit_meter().unwrap().percent, Some(100));
     chat.apply(limit(Some("five_hour"), None, LimitStatus::Warning));
     let meter = chat.limit_meter().unwrap();
-    assert_eq!((meter.percent, meter.level), (0, Level::Warning));
+    assert_eq!((meter.percent, meter.level), (None, Level::Warning));
+    assert_eq!(meter.tip, "5-hour limit");
+}
+
+#[test]
+fn a_rejected_limit_without_utilization_has_no_percent() {
+    let mut chat = Chat::default();
+    chat.apply(limit(Some("five_hour"), None, LimitStatus::Rejected));
+    let meter = chat.limit_meter().unwrap();
+    assert_eq!((meter.percent, meter.level), (None, Level::Danger));
     assert_eq!(meter.tip, "5-hour limit");
 }
 
@@ -195,7 +204,7 @@ fn limit_meter_shows_the_fullest_kind() {
     chat.apply(limit(Some("five_hour"), Some(0.78), LimitStatus::Allowed));
     chat.apply(limit(Some("seven_day"), Some(0.40), LimitStatus::Allowed));
     let meter = chat.limit_meter().unwrap();
-    assert_eq!(meter.percent, 78);
+    assert_eq!(meter.percent, Some(78));
     assert_eq!(meter.tip, "5-hour limit 78%\nWeekly limit 40%");
 }
 
@@ -316,5 +325,32 @@ fn unsaved_between_turns_waits_for_a_settled_tail() {
         "a step still in flight waits"
     );
     // Never written: the store is a path nobody owns.
+    chat.store = None;
+}
+
+#[test]
+fn a_pending_rewrite_is_not_work_between_turns() {
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut chat = Chat::new(
+        1,
+        PathBuf::from("/r"),
+        "Claude".into(),
+        Some(PathBuf::from("/store")),
+    );
+    chat.resume_from(crate::chat::store::ConversationSnapshot {
+        session_id: "sid-1".into(),
+        title: None,
+        updated: 1,
+        prefs: crate::chat::store::Prefs::default(),
+        items: vec![ChatItem::User(UserMsg::text("message 0"))],
+        written: 1,
+        complete: true,
+    });
+    chat.apply(AcpEvent::UserChunk("message 0".into()));
+    chat.apply(AcpEvent::AgentChunk("answer".into()));
+    chat.apply(AcpEvent::Connected { tx, resumed: true });
+    assert!(chat.rewrite, "the replay settled into a rewrite");
+    assert!(!chat.busy);
+    assert!(!chat.unsaved_between_turns());
     chat.store = None;
 }

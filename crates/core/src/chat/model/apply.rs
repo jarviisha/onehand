@@ -142,8 +142,9 @@ impl Chat {
         // parsed — every answer in it rendering as its own markdown source.
         let before = self.revision;
         // Session-metadata events (handshake, mode/command advertisements,
-        // usage and background reports) aren't conversation activity; anything else refreshes the rail's
-        // relative-time label — "now" while a session works, aging once quiet.
+        // usage and background reports) aren't conversation activity;
+        // anything else refreshes the rail's relative-time label — "now"
+        // while a session works, aging once quiet.
         let metadata = matches!(
             &event,
             AcpEvent::SessionId(_)

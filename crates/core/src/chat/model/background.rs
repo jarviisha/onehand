@@ -30,7 +30,9 @@ pub enum Level {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Meter {
     pub label: String,
-    pub percent: u8,
+    /// `None` when no report said how full it is; the level still follows
+    /// what the adapter's status says.
+    pub percent: Option<u8>,
     pub level: Level,
     pub tip: String,
 }
@@ -120,7 +122,7 @@ impl Chat {
         let percent = (used.saturating_mul(100) / size).min(100) as u8;
         Some(Meter {
             label: "Context".into(),
-            percent,
+            percent: Some(percent),
             level: level_of(percent),
             tip: format!("{} of {} tokens", tokens(used), tokens(size)),
         })
@@ -132,7 +134,7 @@ impl Chat {
             .limits
             .iter()
             .max_by_key(|limit| limit_percent(limit))?;
-        let percent = limit_percent(shown).unwrap_or(0);
+        let percent = limit_percent(shown);
         let status = match shown.status {
             LimitStatus::Allowed => Level::Calm,
             LimitStatus::Warning => Level::Warning,
@@ -141,7 +143,7 @@ impl Chat {
         Some(Meter {
             label: limit_label(shown.kind.as_deref()).into(),
             percent,
-            level: level_of(percent).max(status),
+            level: percent.map_or(Level::Calm, level_of).max(status),
             tip: self
                 .limits
                 .iter()
@@ -155,8 +157,12 @@ impl Chat {
     /// write now, between turns: no turn running, no step still in flight,
     /// and no replay half-delivered. A line written early is frozen on disk,
     /// so anything still moving waits.
+    ///
+    /// Not while a rewrite is pending either: that is a resume settling, and
+    /// the file being replaced is not new work between turns.
     pub fn unsaved_between_turns(&self) -> bool {
         !self.busy
+            && !self.rewrite
             && !matches!(self.replay, Replay::Partial(_))
             && self.persisted < self.history.len() + self.items.len()
             && !self.items.iter().any(|item| {
