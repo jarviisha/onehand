@@ -105,7 +105,7 @@ fn typed_keys(value: &str) -> Vec<String> {
 
 impl Render for Editor {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        use crate::settings::{APP, field, list_row, list_rows, page_head, section};
+        use crate::settings::{APP, field, lead_section, list_row, list_rows, page_head, section};
 
         let overrides = Shared::global(cx).keymap.clone();
         let muted = cx.theme().muted_foreground;
@@ -255,7 +255,7 @@ impl Render for Editor {
                     .as_ref()
                     .map(|error| problem(error.clone(), danger, cx)),
             )
-            .child(section(Some("Window"), None, cx).child(list_rows(window_rows, cx)))
+            .child(lead_section("Window", None, cx).child(list_rows(window_rows, cx)))
             .child(
                 section(
                     Some("Rail"),

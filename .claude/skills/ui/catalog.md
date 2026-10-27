@@ -65,7 +65,7 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | A change shown at once and saved in the order made, a failure one toast | `OrderedWriter`, `Saving` and `Saves`, as `ChatPane::save_title` uses them; `saves::write_config` for `onehand.toml`, `Shell::save_change` for the workspace file | `crates/core/src/saving.rs`; `crates/app/src/chat/pane/sessions.rs`, `crates/app/src/saves.rs`, `crates/app/src/shell/storage.rs` |
 | A dialog's title row | `title_row` | `crates/app/src/dialogs.rs` |
 | A form field | `field` (its line about the setting in meta text) | `crates/ui/src/lib.rs`, re-exported by `crates/app/src/settings.rs` |
-| A Settings group, a Settings row, a group's rows parted by hairlines | `section`, `list_row`, `list_rows` | `crates/app/src/settings.rs` |
+| A Settings group (a first one with a title: `lead_section`, no rule), a Settings row (its controls wrap under its words when narrow), a group's rows parted by hairlines | `section`, `lead_section`, `list_row`, `list_rows` | `crates/app/src/settings.rs` |
 | A page's head, and the top it stays in over what scrolls | `page_head(title, facts, actions, cx)`, `page_top(width, parts, cx)` | `crates/ui/src/page.rs`, re-exported by `crates/app/src/chat/pane/page_parts.rs` |
 | A page's box and title row, a list section (a box too), rows parted by hairlines, two boxes to a row | `page_card`, `card_title`, `ruled(rows, cx)`, `pair` | `crates/app/src/chat/pane/page_parts.rs` |
 | A page form's problems, or that it is only read, along the page's foot | `foot_bar(icon, base, lines, cx)` (the tint of `base`, the mark slotted on the first line) | `crates/app/src/chat/pane/page_parts.rs` |

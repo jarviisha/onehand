@@ -259,32 +259,47 @@ pub(crate) const APP: &str = "App";
 /// way a document separates sections. A group with no title is the page's
 /// first, sitting directly under the page's own head, and takes no rule --
 /// a line between a heading and the first thing it heads divides what belongs
-/// together.
+/// together; a first group with a title is a [`lead_section`].
 pub(crate) fn section(title: Option<&'static str>, about: Option<SharedString>, cx: &App) -> Div {
-    let muted = cx.theme().muted_foreground;
+    let group = div().v_flex().gap_4().w_full();
+    match title {
+        Some(title) => group
+            .pt_6()
+            .border_t_1()
+            .border_color(onehand_ui::faint_rule(cx))
+            .child(group_head(title, about, cx)),
+        None => group,
+    }
+}
+
+/// The page's first group when it has a title of its own: its heading, and
+/// no rule, which would part it from the page's head it sits under.
+pub(crate) fn lead_section(title: &'static str, about: Option<SharedString>, cx: &App) -> Div {
     div()
         .v_flex()
         .gap_4()
         .w_full()
-        .when_some(title, |group, title| {
-            group
-                .pt_6()
-                .border_t_1()
-                .border_color(onehand_ui::faint_rule(cx))
-                .child(
-                    div()
-                        .v_flex()
-                        .gap_1()
-                        .child(
-                            div()
-                                .text_size(crate::tokens::CHROME_TEXT)
-                                .font_semibold()
-                                .child(title),
-                        )
-                        .when_some(about, |head, about| {
-                            head.child(div().text_xs().text_color(muted).child(about))
-                        }),
-                )
+        .child(group_head(title, about, cx))
+}
+
+/// A group's heading, and its line about itself under it.
+fn group_head(title: &'static str, about: Option<SharedString>, cx: &App) -> Div {
+    div()
+        .v_flex()
+        .gap_1()
+        .child(
+            div()
+                .text_size(crate::tokens::CHROME_TEXT)
+                .font_semibold()
+                .child(title),
+        )
+        .when_some(about, |head, about| {
+            head.child(
+                div()
+                    .text_xs()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(about),
+            )
         })
 }
 
@@ -295,6 +310,11 @@ pub(crate) use onehand_ui::field;
 /// One entry in a list: what it is on the left, what can be done to it on the
 /// right. For things of which there are many -- agents, commands -- where the
 /// stacked [`field`] would make every entry three lines tall.
+///
+/// **Its controls go under it before its words give way.** The words keep
+/// [`LIST_ROW_WORDS`] at the least; where the row cannot hold that beside
+/// its controls, the controls wrap to a line of their own, at its end, rather
+/// than squeeze a command line down to a few letters a line.
 pub(crate) fn list_row(
     title: impl Into<SharedString>,
     about: Option<AnyElement>,
@@ -303,8 +323,8 @@ pub(crate) fn list_row(
 ) -> Div {
     div()
         .h_flex()
+        .flex_wrap()
         .items_center()
-        .justify_between()
         .gap_2()
         .w_full()
         .child(
@@ -312,7 +332,7 @@ pub(crate) fn list_row(
                 .v_flex()
                 .gap_0p5()
                 .flex_1()
-                .min_w_0()
+                .min_w(LIST_ROW_WORDS)
                 .child(
                     div()
                         .text_size(crate::tokens::CHROME_TEXT)
@@ -328,12 +348,17 @@ pub(crate) fn list_row(
         .child(
             div()
                 .flex_none()
+                .ml_auto()
                 .h_flex()
                 .items_center()
                 .gap_2()
                 .child(control),
         )
 }
+
+/// The least a [`list_row`]'s words keep beside its controls: a name and a
+/// command line read in words, not letters.
+const LIST_ROW_WORDS: gpui::Rems = gpui::rems(12.);
 
 /// A run of [`list_row`]s, a hairline between each two, as a page's box parts
 /// its rows: the entries of one list read as one list, not as loose lines.
