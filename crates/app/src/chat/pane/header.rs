@@ -286,8 +286,16 @@ impl ChatPane {
     /// switch neither survives it nor stops another session's work.
     fn background_control(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         let session = self.session()?;
+        let key = self.active.unwrap_or_default();
+        // A menu open on another session went with that session's frame.
+        if self.background_menu.get().is_some_and(|open| open != key) {
+            self.background_menu.set(None);
+        }
         let items = session.read(cx).chat.background();
-        if items.is_empty() {
+        // Kept while its menu is open: the menu holds focus, and dropping its
+        // trigger mid-open would leave focus on nothing. Closing the menu
+        // hands focus back to where it was, and the button goes after.
+        if items.is_empty() && self.background_menu.get() != Some(key) {
             return None;
         }
         let count = items.len();
@@ -300,7 +308,7 @@ impl ChatPane {
             })
             .collect();
         let hidden = count.saturating_sub(BACKGROUND_MENU_CAP);
-        let key = self.active.unwrap_or_default();
+        let pane = self.handle.clone();
 
         // Worded, so a ghost at a strip's worded size rather than the
         // icon-only `strip_control`: the count is the whole message.
@@ -315,7 +323,8 @@ impl ChatPane {
             move |menu, _, cx| {
                 let muted = cx.theme().muted_foreground;
                 let menu = rows.iter().fold(menu, |menu, (id, name, aside)| {
-                    let (label, name, aside) = (
+                    let (row_id, label, name, aside) = (
+                        gpui::SharedString::from(format!("background-stop-{id}")),
                         gpui::SharedString::from(format!("Stop {name}")),
                         name.clone(),
                         aside.clone(),
@@ -324,7 +333,7 @@ impl ChatPane {
                     menu.item(
                         crate::controls::menu_row(move |_, _| {
                             div()
-                                .id(gpui::ElementId::Name(label.clone()))
+                                .id(gpui::ElementId::Name(row_id.clone()))
                                 .aria_label(label.clone())
                                 .h_flex()
                                 .items_center()
@@ -356,7 +365,13 @@ impl ChatPane {
         )
         // Right-aligned: the button sits near the row's right end, and a menu
         // hanging rightwards from it would open off the window's edge.
-        .anchor(gpui::Anchor::TopRight);
+        .anchor(gpui::Anchor::TopRight)
+        .on_open_change(move |open, _, cx| {
+            _ = pane.update(cx, |pane, cx| {
+                pane.background_menu.set(open.then_some(key));
+                cx.notify();
+            });
+        });
         Some(div().flex_none().child(menu).into_any_element())
     }
 

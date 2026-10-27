@@ -299,6 +299,10 @@ pub struct ChatPane {
     /// Pushed for the same reason, and read in the panel's toolbar: the rail is
     /// the window's chrome and a dock panel has no handle on the window.
     rail_hidden: bool,
+    /// The session whose background menu is open, so its button stays drawn
+    /// while its menu holds focus even after the last item ended: a trigger
+    /// that leaves the frame with its menu takes focus with it, and the keymap.
+    background_menu: std::cell::Cell<Option<u64>>,
     /// Whether the active project has a shell alive in the terminal dock.
     ///
     /// Pushed by the shell, like the flag above and for the same reason: the
@@ -434,6 +438,7 @@ impl ChatPane {
                 archives: None,
                 pending_resume: None,
                 rail_hidden: false,
+                background_menu: std::cell::Cell::new(None),
                 terminal_live: false,
                 docks_open: DocksOpen::default(),
                 git: None,
