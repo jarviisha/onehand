@@ -400,7 +400,8 @@ impl Chat {
                 // A turn that ends with unanswered permission cards (a
                 // cancelled turn, or an adapter that moved on) resolves them
                 // as cancelled — protocol-correct, and the buttons disable.
-                self.cancel_pending_permissions();
+                // A background subagent's request outlives the turn.
+                self.cancel_pending_permissions(true);
                 self.settle_running_steps();
                 // Fold finished terminals into their cards so the `terminals` map
                 // only ever holds live ones (the turn is over → no more updates).
@@ -440,7 +441,7 @@ impl Chat {
                 self.busy = false;
                 // No live adapter to answer — but the cards must not keep
                 // offering buttons whose rpc ids died with the connection.
-                self.cancel_pending_permissions();
+                self.cancel_pending_permissions(false);
                 self.settle_lost_link();
                 self.forget_activity();
                 // No key in the words: the front end names the one its keymap

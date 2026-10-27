@@ -326,6 +326,53 @@ fn a_childs_permission_carries_the_askers_name() {
     );
 }
 
+/// Each parked request's `resolved`, in order.
+fn resolutions(chat: &Chat) -> Vec<Option<&str>> {
+    chat.items
+        .iter()
+        .filter_map(|item| match item {
+            ChatItem::Permission(p) => Some(p.resolved.as_deref()),
+            ChatItem::Ask(a) => Some(a.resolved.as_deref()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn parked_requests() -> Chat {
+    let mut chat = chat();
+    chat.apply(spawn("c1", "Watcher", "Watch"));
+    chat.apply(spawn("c2", "Reader", "Read"));
+    chat.apply(ended("c2", SubagentEnd::Completed));
+    chat.apply(AcpEvent::Permission(permission(Some("c1"))));
+    chat.apply(AcpEvent::Elicitation(question(Some("c1"))));
+    chat.apply(AcpEvent::Permission(permission(Some("c2"))));
+    chat.apply(AcpEvent::Permission(permission(None)));
+    chat
+}
+
+#[test]
+fn a_turn_end_spares_a_working_subagents_requests() {
+    let mut chat = parked_requests();
+    chat.apply(AcpEvent::TurnEnded {
+        stop_reason: "end_turn".into(),
+    });
+    assert_eq!(
+        resolutions(&chat),
+        vec![None, None, Some("Cancelled"), Some("Cancelled")]
+    );
+}
+
+#[test]
+fn a_stop_or_a_lost_link_cancels_every_request() {
+    let mut chat = parked_requests();
+    chat.cancel_turn();
+    assert!(resolutions(&chat).iter().all(|r| *r == Some("Cancelled")));
+
+    let mut chat = parked_requests();
+    chat.apply(AcpEvent::Disconnected("gone".into()));
+    assert!(resolutions(&chat).iter().all(|r| *r == Some("Cancelled")));
+}
+
 fn terminal_run(chat: &mut Chat) {
     chat.apply(spawn("c1", "Builder", "Build"));
     chat.apply(inside(
