@@ -30,8 +30,9 @@ folds it (not during a search); the rest of the row shows the project's last ses
 which then fills the row. `+` and `⋯` show on hover and on the keyboard's row, right-click opens the
 same menu. A session row, indented under its project: its state mark, title and `⋯` (on hover, on
 the keyboard's row, always on the one shown), and under them `state · agent · age` (*waiting Nm*
-while it needs input, a card or its run's approval, the state's word in its ink while it waits on the person;
-*Running · N in background · M subagents · agent · age* while background work outlives the turn or a subagent works, which keeps the session running), over which the
+while it needs input, a card or its run's approval, the state's word in its ink while it waits on the
+person; *Running · N in background · M subagents · agent · age* while background work outlives the
+turn or a subagent works, which keeps the session running), over which the
 pointer and the keyboard's row lay *Stop* (only while a turn is in flight, not for background work alone), *Send the last prompt again* (failed) and
 *Close*; the keyboard's row lays them on any session but the one shown, whose conversation already
 holds *Stop* and the way back, so a row the keys only pass through stays still. The other filters
@@ -62,6 +63,18 @@ first, down to a minimum. Without a session it carries no name, the page naming 
 keeps the project's dots menu, holding the project's actions but *New session* and *Open
 terminal*, which the page and the header already offer.
 
+## Subagent card
+
+Where the agent hands work to a subagent, the transcript draws a bare fold block: no edge, no box.
+Its head is a fold line with a state mark, the subagent's name and its state word (*done*,
+*failed*, *cancelled*, *interrupted*; a spinner while it works), and under it the first line of its
+task in the meta ink, the body inset. While it works the card shows its latest 3 steps behind
+*N earlier steps*; once it ends it folds to `<state> · N steps`, opened by a press, capped at 200
+steps with *N more*. Steps inside are compact rows that do not open. A subagent of a subagent nests
+one inset deeper. *interrupted* (an end never seen, or the adapter lost) and *cancelled* read in the
+muted ink, *failed* in the danger ink. A card reaches the saved transcript whole, once it has ended;
+one left working when the session closes is kept as *interrupted*.
+
 ## Step strip
 
 Under the header, only while a run drives the session on screen: the workflow's name muted, each
@@ -90,7 +103,8 @@ in the warning ink, and pressing it switches that off. The `+` menu ends on *Age
 onehand* under a heading of its own, *This session*, checked while on, and not offered in an
 unattended run's session. Each chip's
 menu opens just above it, without its tooltip. Above the card: one pinned permission or question,
-the oldest (a subagent's is titled *<name> asks permission* or *<name> asks: <question>*), with how many more wait; then one surface on the card's fill and lift holding a
+the oldest (a subagent's is titled `<name> asks permission` or `<name> asks: <question>`), with
+how many more wait; then one surface on the card's fill and lift holding a
 reconnect and the queue as lines, then the staged files as one row of plates (a picture's preview,
 pressed to open it whole in a dialog; a text file opening in the Workbench), faded where cut beside
 *Show all N*. A picture attached to a sent prompt opens the same way. *Run a workflow…* (the `+` menu, the
