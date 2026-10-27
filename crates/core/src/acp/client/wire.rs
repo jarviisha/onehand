@@ -28,9 +28,11 @@ pub(super) fn init_params() -> Value {
             // request in `handle_message` and, for a form we can't render, decline
             // immediately rather than park it forever.
             "elicitation": { "form": {} },
-            // Only `asyncTasks`: the subagent capability moves a subagent's
-            // output to child sessions, which this client does not read.
-            "_meta": { "jetbrains": { "air": { "version": 1, "capabilities": ["asyncTasks"] } } }
+            // `asyncTasks` for background work; `nativeSubagentSessions` moves a
+            // subagent's output to child sessions of its own, which `handle_message`
+            // routes by `sessionId` so the chat can draw each as a card.
+            "_meta": { "jetbrains": { "air": { "version": 1,
+                "capabilities": ["asyncTasks", "nativeSubagentSessions"] } } }
         }
     })
 }

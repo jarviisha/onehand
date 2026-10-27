@@ -784,6 +784,7 @@ fn ask_item() -> AskItem {
     AskItem::new(Elicitation {
         rpc_id: serde_json::json!(1),
         tool_call_id: None,
+        child: None,
         message: "pick".into(),
         fields: vec![
             crate::acp::ElicitField {
@@ -1466,6 +1467,7 @@ fn permission(title: &str) -> PermissionRequest {
         rpc_id: serde_json::Value::from(7),
         tool_call_id: None,
         kind: crate::acp::ToolKind::Execute,
+        child: None,
         title: title.into(),
         options: vec![
             PermissionOption {

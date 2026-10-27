@@ -80,6 +80,9 @@ async fn main() {
             AcpEvent::UserChunk(_) => {}
             AcpEvent::Usage(u) => eprintln!("== USAGE {u:?} =="),
             AcpEvent::Background(b) => eprintln!("== BACKGROUND {b:?} =="),
+            e @ (AcpEvent::SubagentSpawned { .. }
+            | AcpEvent::SubagentEnded { .. }
+            | AcpEvent::InChild { .. }) => eprintln!("== SUBAGENT {e:?} =="),
             AcpEvent::StopRefused { .. } => {}
             AcpEvent::Interrupted => eprintln!("== INTERRUPTED =="),
             AcpEvent::ToolCall(tc) => {

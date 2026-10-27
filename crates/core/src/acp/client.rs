@@ -388,6 +388,17 @@ impl Conn {
         Ok(())
     }
 
+    /// The subagent session a message belongs to: its `sessionId` when that is
+    /// not the root's. A missing id, or one seen before the root is known, is
+    /// the root.
+    fn child_of(&self, params: &Value) -> Option<String> {
+        let sid = params.get("sessionId").and_then(Value::as_str)?;
+        match &self.session_id {
+            Some(root) if root != sid => Some(sid.to_string()),
+            _ => None,
+        }
+    }
+
     /// Dispatch one incoming JSON-RPC message: a response to one of our requests, a
     /// reverse request from the agent, or a notification.
     async fn handle_message(&mut self, msg: Value) -> Result<(), String> {
@@ -399,10 +410,9 @@ impl Conn {
             // Permission is *parked*: surface it to the UI and answer later when the
             // user clicks (permission buttons). No response written now.
             if method == "session/request_permission" {
-                let _ = self
-                    .output
-                    .send(AcpEvent::Permission(parse_permission(id.clone(), &params)))
-                    .await;
+                let mut req = parse_permission(id.clone(), &params);
+                req.child = self.child_of(&params);
+                let _ = self.output.send(AcpEvent::Permission(req)).await;
                 return Ok(());
             }
 
@@ -413,7 +423,8 @@ impl Conn {
             // the turn on a card the user can never fill in.
             if method == "elicitation/create" {
                 match parse_elicitation(id.clone(), &params) {
-                    Some(e) => {
+                    Some(mut e) => {
+                        e.child = self.child_of(&params);
                         let _ = self.output.send(AcpEvent::Elicitation(e)).await;
                     }
                     None => {
@@ -450,6 +461,7 @@ impl Conn {
         if let Some(method) = msg.get("method").and_then(Value::as_str) {
             if method == "session/update" {
                 if let Some(update) = msg.get("params").and_then(|p| p.get("update")) {
+                    let child = self.child_of(msg.get("params").unwrap_or(&Value::Null));
                     for u in parse::parse_session_update(update) {
                         let ev = match u {
                             parse::Update::Agent(s) => AcpEvent::AgentChunk(s),
@@ -464,6 +476,19 @@ impl Conn {
                             parse::Update::ConfigOptions(c) => AcpEvent::ConfigOptions(c),
                             parse::Update::Usage(u) => AcpEvent::Usage(u),
                             parse::Update::Background(b) => AcpEvent::Background(b),
+                            parse::Update::SubagentSpawned { id, name, task } => {
+                                AcpEvent::SubagentSpawned { id, name, task }
+                            }
+                            parse::Update::SubagentEnded { id, end } => {
+                                AcpEvent::SubagentEnded { id, end }
+                            }
+                        };
+                        let ev = match &child {
+                            Some(child) => AcpEvent::InChild {
+                                child: child.clone(),
+                                event: Box::new(ev),
+                            },
+                            None => ev,
                         };
                         let _ = self.output.send(ev).await;
                     }

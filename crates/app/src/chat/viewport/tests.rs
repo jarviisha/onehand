@@ -161,6 +161,7 @@ fn permission(resolved: Option<&str>) -> ChatItem {
             rpc_id: Default::default(),
             tool_call_id: None,
             kind: ToolKind::Execute,
+            child: None,
             title: "Run `rm -rf build`?".to_string(),
             options: Vec::new(),
         },

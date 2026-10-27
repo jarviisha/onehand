@@ -5,7 +5,7 @@
 
 use crate::acp::types::{
     BackgroundReport, ConfigChoice, ConfigOption, LimitStatus, PlanEntry, PlanStatus, RateLimit,
-    SlashCommand, ToolCall, ToolCallUpdate, ToolContent, ToolKind, ToolStatus, Usage,
+    SlashCommand, SubagentEnd, ToolCall, ToolCallUpdate, ToolContent, ToolKind, ToolStatus, Usage,
 };
 use serde_json::Value;
 use std::sync::Arc;
@@ -37,6 +37,14 @@ pub enum Update {
     Usage(Usage),
     /// Background work started or ended.
     Background(BackgroundReport),
+    /// A subagent started in a session of its own.
+    SubagentSpawned {
+        id: String,
+        name: String,
+        task: String,
+    },
+    /// A subagent's session ended.
+    SubagentEnded { id: String, end: SubagentEnd },
 }
 
 /// Whether a user chunk is the adapter's own marker for a turn the person cut
@@ -106,6 +114,32 @@ pub(crate) fn parse_session_update(update: &Value) -> Vec<Update> {
                     })]
                 })
                 .unwrap_or_default()
+        }
+        "subagent_spawned" => {
+            let text = |k: &str| update.get(k).and_then(Value::as_str);
+            text("subagentSessionId")
+                .map(|id| Update::SubagentSpawned {
+                    id: id.into(),
+                    name: text("name").unwrap_or_default().into(),
+                    task: text("task").unwrap_or_default().into(),
+                })
+                .into_iter()
+                .collect()
+        }
+        "subagent_state_update" => {
+            let end = match update.get("state").and_then(Value::as_str) {
+                Some("completed") => SubagentEnd::Completed,
+                Some("failed") => SubagentEnd::Failed,
+                Some("cancelled") => SubagentEnd::Cancelled,
+                Some("disconnected") => SubagentEnd::Disconnected,
+                _ => return Vec::new(),
+            };
+            update
+                .get("subagentSessionId")
+                .and_then(Value::as_str)
+                .map(|id| Update::SubagentEnded { id: id.into(), end })
+                .into_iter()
+                .collect()
         }
         // Progress ticks carry nothing the list shows.
         "async_task_progress" => Vec::new(),
@@ -931,5 +965,42 @@ mod tests {
     fn async_task_progress_is_ignored() {
         let u = json!({"sessionUpdate":"async_task_progress","asyncTaskId":"t1"});
         assert!(parsed(u).is_empty());
+    }
+
+    #[test]
+    fn subagent_spawned_reads_id_name_task() {
+        let update = json!({"sessionUpdate":"subagent_spawned","subagentSessionId":"c1",
+            "name":"Read the auth tests","task":"Read tests/auth and report","capabilities":{}});
+        assert_eq!(
+            parse_session_update(&update),
+            vec![Update::SubagentSpawned {
+                id: "c1".into(),
+                name: "Read the auth tests".into(),
+                task: "Read tests/auth and report".into(),
+            }]
+        );
+    }
+
+    #[test]
+    fn subagent_state_update_maps_each_end() {
+        let state = |s: &str| {
+            parse_session_update(&json!({"sessionUpdate":"subagent_state_update",
+                "subagentSessionId":"c1","state":s}))
+        };
+        for (s, end) in [
+            ("completed", SubagentEnd::Completed),
+            ("failed", SubagentEnd::Failed),
+            ("cancelled", SubagentEnd::Cancelled),
+            ("disconnected", SubagentEnd::Disconnected),
+        ] {
+            assert_eq!(
+                state(s),
+                vec![Update::SubagentEnded {
+                    id: "c1".into(),
+                    end
+                }]
+            );
+        }
+        assert!(state("running").is_empty());
     }
 }

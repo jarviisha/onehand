@@ -56,6 +56,7 @@ pub(super) fn parse_permission(rpc_id: Value, params: &Value) -> PermissionReque
         kind,
         title,
         options,
+        child: None,
     }
 }
 
@@ -129,6 +130,7 @@ pub(super) fn parse_elicitation(rpc_id: Value, params: &Value) -> Option<Elicita
         tool_call_id: str_field(params, "toolCallId"),
         message: str_field(params, "message").unwrap_or_else(|| "The agent is asking".into()),
         fields,
+        child: None,
     })
 }
 

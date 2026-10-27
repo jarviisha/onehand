@@ -155,6 +155,9 @@ impl Chat {
                 | AcpEvent::Connected { .. }
                 | AcpEvent::Usage(_)
                 | AcpEvent::Background(_)
+                | AcpEvent::SubagentSpawned { .. }
+                | AcpEvent::SubagentEnded { .. }
+                | AcpEvent::InChild { .. }
                 | AcpEvent::StopRefused { .. }
         );
         let event_at = (!metadata).then(store::now_secs);
@@ -195,6 +198,9 @@ impl Chat {
             | AcpEvent::Connected { .. }
             | AcpEvent::Usage(_)
             | AcpEvent::Background(_)
+            | AcpEvent::SubagentSpawned { .. }
+            | AcpEvent::SubagentEnded { .. }
+            | AcpEvent::InChild { .. }
             | AcpEvent::StopRefused { .. } => {}
             _ => self.user_chunk_open = false,
         }
@@ -297,6 +303,10 @@ impl Chat {
             }
             AcpEvent::Usage(usage) => self.apply_usage(usage),
             AcpEvent::Background(report) => self.apply_background(report),
+            // Filled in with the subagent card.
+            AcpEvent::SubagentSpawned { .. }
+            | AcpEvent::SubagentEnded { .. }
+            | AcpEvent::InChild { .. } => {}
             AcpEvent::StopRefused { why } => stop_refused = Some(why),
             AcpEvent::Permission(mut req) => {
                 self.consume_replay();
