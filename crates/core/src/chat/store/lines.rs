@@ -68,6 +68,9 @@ pub(super) enum Line {
         secs: Option<u64>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         exit: Option<i32>,
+        /// When it settled, in epoch seconds; absent the same way.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        at: Option<u64>,
     },
     Plan {
         entries: Vec<StoredPlanEntry>,
@@ -205,6 +208,7 @@ pub(super) fn restore_line(dir: &Path, line: &Line) -> ChatItem {
             content,
             secs,
             exit,
+            at,
         } => {
             // A step saved while it ran (a session closed mid-turn) is not
             // running now: nothing will ever settle it, so it comes back
@@ -222,6 +226,7 @@ pub(super) fn restore_line(dir: &Path, line: &Line) -> ChatItem {
                 content: content.iter().map(|c| restore_content(dir, c)).collect(),
             });
             item.elapsed_secs = *secs;
+            item.settled_at = *at;
             item.exit_code = *exit;
             ChatItem::Tool(item)
         }
@@ -363,6 +368,7 @@ fn to_line(chat: &Chat, item: &ChatItem, blobs: &mut Vec<Blob>) -> Option<Line> 
                 .collect(),
             secs: t.elapsed_secs,
             exit: t.exit_code,
+            at: t.settled_at,
         },
         ChatItem::Subagent(card) => Line::Subagent {
             id: card.id.clone(),

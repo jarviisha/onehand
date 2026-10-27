@@ -270,10 +270,13 @@ pub struct ClusterSummary {
     pub removed: usize,
     /// How long the whole stretch of work took, where anything reported it.
     ///
-    /// **A sum of what settled, not a clock.** Every step stamps its own
-    /// duration once, when it settles, so this is arithmetic over facts that
-    /// have stopped changing — where a live total would be a number the line
-    /// re-reads on every frame and never comes to rest on.
+    /// **Arithmetic over what settled, not a clock.** Every step stamps its
+    /// duration and its end once, when it settles, so this is a number that
+    /// comes to rest, where a live total would be re-read on every frame.
+    ///
+    /// **From the first start to the last end**, so steps that ran side by
+    /// side count once. A stretch holding a step saved before ends were kept
+    /// falls back to the sum of durations, the most that can be said of it.
     pub seconds: u64,
 }
 
@@ -414,7 +417,9 @@ pub fn cluster_summary(members: &[&ChatItem]) -> ClusterSummary {
     let mut errors = 0;
     let mut added = 0;
     let mut removed = 0;
-    let mut seconds = 0;
+    let mut summed = 0;
+    // The earliest start and latest end, while every settled step has an end.
+    let mut span: Option<Option<(u64, u64)>> = Some(None);
     let mut running = None;
 
     for item in members {
@@ -430,7 +435,16 @@ pub fn cluster_summary(members: &[&ChatItem]) -> ClusterSummary {
                 added += plus;
                 removed += minus;
             }
-            seconds += tool.elapsed_secs.unwrap_or(0);
+            if let Some(secs) = tool.elapsed_secs {
+                summed += secs;
+                span = match (span, tool.settled_at) {
+                    (Some(None), Some(end)) => Some(Some((end.saturating_sub(secs), end))),
+                    (Some(Some((first, last))), Some(end)) => {
+                        Some(Some((first.min(end.saturating_sub(secs)), last.max(end))))
+                    }
+                    _ => None,
+                };
+            }
             // A step in flight has not been done yet, so it is not counted
             // among the things that have.
             if matches!(
@@ -504,7 +518,10 @@ pub fn cluster_summary(members: &[&ChatItem]) -> ClusterSummary {
         errors,
         added,
         removed,
-        seconds,
+        seconds: match span {
+            Some(Some((first, last))) => last - first,
+            Some(None) | None => summed,
+        },
     }
 }
 

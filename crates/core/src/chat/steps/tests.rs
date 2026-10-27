@@ -389,3 +389,31 @@ fn a_run_is_read_by_how_it_ended() {
         Outcome::Running
     );
 }
+
+/// A settled step that took `secs` and ended at `end`, or whose end was never
+/// kept (`None`, a step from an older archive).
+fn timed(title: &str, secs: u64, end: Option<u64>) -> ChatItem {
+    let ChatItem::Tool(mut tool) = run(title, ToolStatus::Completed) else {
+        unreachable!()
+    };
+    tool.elapsed_secs = Some(secs);
+    tool.settled_at = end;
+    ChatItem::Tool(tool)
+}
+
+#[test]
+fn steps_that_ran_side_by_side_are_timed_once() {
+    // Two commands held through the same 50-second wait, a second apart.
+    let build = timed("cargo build", 50, Some(1_050));
+    let test = timed("cargo test", 50, Some(1_051));
+    assert_eq!(cluster_summary(&[&build, &test]).seconds, 51);
+
+    // One after the other, the span is still the whole stretch.
+    let first = timed("cargo build", 10, Some(1_010));
+    let second = timed("cargo test", 5, Some(1_015));
+    assert_eq!(cluster_summary(&[&first, &second]).seconds, 15);
+
+    // A step from before ends were kept: the sum is all that can be said.
+    let old = timed("cargo test", 50, None);
+    assert_eq!(cluster_summary(&[&build, &old]).seconds, 100);
+}
