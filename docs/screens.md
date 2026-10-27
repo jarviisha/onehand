@@ -31,7 +31,7 @@ which then fills the row. `+` and `⋯` show on hover and on the keyboard's row,
 same menu. A session row, indented under its project: its state mark, title and `⋯` (on hover, on
 the keyboard's row, always on the one shown), and under them `state · agent · age` (*waiting Nm*
 while it needs input, a card or its run's approval, the state's word in its ink while it waits on the person;
-*Running · N in background · agent · age* while background work outlives the turn, which keeps the session running), over which the
+*Running · N in background · M subagents · agent · age* while background work outlives the turn or a subagent works, which keeps the session running), over which the
 pointer and the keyboard's row lay *Stop* (only while a turn is in flight, not for background work alone), *Send the last prompt again* (failed) and
 *Close*; the keyboard's row lays them on any session but the one shown, whose conversation already
 holds *Stop* and the way back, so a row the keys only pass through stays still. The other filters
@@ -90,7 +90,7 @@ in the warning ink, and pressing it switches that off. The `+` menu ends on *Age
 onehand* under a heading of its own, *This session*, checked while on, and not offered in an
 unattended run's session. Each chip's
 menu opens just above it, without its tooltip. Above the card: one pinned permission or question,
-the oldest, with how many more wait; then one surface on the card's fill and lift holding a
+the oldest (a subagent's is titled *<name> asks permission* or *<name> asks: <question>*), with how many more wait; then one surface on the card's fill and lift holding a
 reconnect and the queue as lines, then the staged files as one row of plates (a picture's preview,
 pressed to open it whole in a dialog; a text file opening in the Workbench), faded where cut beside
 *Show all N*. A picture attached to a sent prompt opens the same way. *Run a workflow…* (the `+` menu, the

@@ -492,6 +492,71 @@ let asyncTasks = false;
 let bgSeq = 0;
 let bgEnds = [];
 
+// Subagents are only played to a client that advertised them, as a real adapter
+// does. The child's updates and its request carry the child's own session id.
+let subagents = false;
+let childOpen = null;
+const CHILD_ASK = 903;
+
+const childUpdate = (sessionId, u) =>
+  send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: u } });
+
+function endChild(state = 'completed') {
+  if (!childOpen) return;
+  const subagentSessionId = childOpen;
+  childOpen = null;
+  update({ sessionUpdate: 'subagent_state_update', subagentSessionId, state });
+}
+
+// Spawned early in the turn; it ends only once its permission is answered, so
+// the card is seen working, asking, and settling.
+function subagentStart() {
+  if (!subagents) return;
+  const id = `${SESSION}-child-${turn}`;
+  beat(BEAT, () => {
+    childOpen = id;
+    update({
+      sessionUpdate: 'subagent_spawned',
+      subagentSessionId: id,
+      name: 'Explorer',
+      task: 'Find where the cache is read\nand list the callers',
+    });
+  });
+  beat(BEAT, () =>
+    childUpdate(id, {
+      sessionUpdate: 'agent_message_chunk',
+      content: { type: 'text', text: 'Looking through the crate.' },
+    }),
+  );
+  beat(BEAT, () =>
+    childUpdate(id, {
+      sessionUpdate: 'tool_call',
+      toolCallId: `${id}-1`,
+      kind: 'search',
+      title: 'Search the cache',
+      status: 'pending',
+    }),
+  );
+  beat(BEAT, () =>
+    childUpdate(id, { sessionUpdate: 'tool_call_update', toolCallId: `${id}-1`, status: 'completed' }),
+  );
+  beat(BEAT, () =>
+    send({
+      jsonrpc: '2.0',
+      id: CHILD_ASK,
+      method: 'session/request_permission',
+      params: {
+        sessionId: id,
+        toolCall: { toolCallId: `${id}-2`, kind: 'execute', title: 'cargo test cache' },
+        options: [
+          { optionId: 'allow', name: 'Allow once', kind: 'allow_once' },
+          { optionId: 'deny', name: 'Deny', kind: 'reject_once' },
+        ],
+      },
+    }),
+  );
+}
+
 // The item outlives the turn on its own timer, started when the turn ends: the
 // queue is cleared by the next prompt or a cancel, and it is meant to run past both.
 function backgroundEnd() {
@@ -550,6 +615,7 @@ const step = {
   // them have to come out as two.
   tools() {
     turn += 1;
+    subagentStart();
     scene.prose();
     scene.explored();
     scene.ranClean();
@@ -738,6 +804,7 @@ const step = {
   // the closing paragraph goes under the lot.
   done() {
     pending = null;
+    endChild();
     scene.land();
     prose(
       '\nThat is the whole of it: every activity a run can be made of, every ' +
@@ -783,6 +850,9 @@ rl.on('line', (line) => {
     case 'initialize':
       asyncTasks = !!m.params?.clientCapabilities?._meta?.jetbrains?.air?.capabilities?.includes(
         'asyncTasks',
+      );
+      subagents = !!m.params?.clientCapabilities?._meta?.jetbrains?.air?.capabilities?.includes(
+        'nativeSubagentSessions',
       );
       return send({
         jsonrpc: '2.0',
@@ -848,6 +918,7 @@ rl.on('line', (line) => {
   // A reply to something parked. Which one it was decides where the turn picks
   // up, because the client answers these out of the agent's control.
   if (m.result || m.error) {
+    if (m.id === CHILD_ASK) return endChild();
     if (m.id === 900 && pending === 'permission') return step.question();
     if (m.id === 901 && pending === 'question') return step.questions();
     if (m.id === 902 && pending === 'questions') return step.done();
