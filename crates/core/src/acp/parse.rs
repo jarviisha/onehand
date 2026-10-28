@@ -13,8 +13,12 @@ use std::sync::Arc;
 /// A single parsed effect of a `session/update`.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Update {
-    /// A chunk of the agent's reply text (markdown).
-    Agent(String),
+    /// A chunk of the agent's reply text (markdown), and the message it is
+    /// part of when the agent names one.
+    Agent {
+        text: String,
+        message: Option<String>,
+    },
     /// A chunk of the agent's reasoning.
     Thought(String),
     /// A chunk echoed from the user (resume replay).
@@ -64,7 +68,16 @@ pub(crate) fn parse_session_update(update: &Value) -> Vec<Update> {
         .unwrap_or_default();
     let text = || extract_text(update.get("content"));
     match kind {
-        "agent_message_chunk" => text().map(Update::Agent).into_iter().collect(),
+        "agent_message_chunk" => text()
+            .map(|text| Update::Agent {
+                text,
+                message: update
+                    .get("messageId")
+                    .and_then(Value::as_str)
+                    .map(String::from),
+            })
+            .into_iter()
+            .collect(),
         "agent_thought_chunk" => text().map(Update::Thought).into_iter().collect(),
         "user_message_chunk" => text()
             .map(|chunk| match is_interruption(&chunk) {
@@ -550,7 +563,26 @@ mod tests {
         });
         assert_eq!(
             parse_session_update(&u),
-            vec![Update::Agent("Hello".into())]
+            vec![Update::Agent {
+                text: "Hello".into(),
+                message: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn agent_chunk_keeps_its_message_id() {
+        let u = json!({
+            "sessionUpdate": "agent_message_chunk",
+            "messageId": "msg_1",
+            "content": { "type": "text", "text": "hi" }
+        });
+        assert_eq!(
+            parse_session_update(&u),
+            vec![Update::Agent {
+                text: "hi".into(),
+                message: Some("msg_1".into())
+            }]
         );
     }
 
@@ -566,7 +598,10 @@ mod tests {
         });
         assert_eq!(
             parse_session_update(&u),
-            vec![Update::Agent("Hello world".into())]
+            vec![Update::Agent {
+                text: "Hello world".into(),
+                message: None,
+            }]
         );
     }
 

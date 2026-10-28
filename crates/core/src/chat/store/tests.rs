@@ -106,7 +106,10 @@ fn a_replay_is_not_written_a_second_time() {
     let dir = conv_dir(&store, "s1");
     let mut first = chat_in(&store, "s1");
     first.push_user("what does this do".into(), Vec::new());
-    first.apply(AcpEvent::AgentChunk("it does this".into()));
+    first.apply(AcpEvent::AgentChunk {
+        text: "it does this".into(),
+        message: None,
+    });
     save(&mut first);
     assert_eq!(load(&dir).unwrap().items.len(), 2);
 
@@ -114,7 +117,10 @@ fn a_replay_is_not_written_a_second_time() {
     let mut next = chat_in(&store, "s1");
     next.resume_from(load(&dir).unwrap());
     next.apply(AcpEvent::UserChunk("what does this do".into()));
-    next.apply(AcpEvent::AgentChunk("it does this".into()));
+    next.apply(AcpEvent::AgentChunk {
+        text: "it does this".into(),
+        message: None,
+    });
     // Nothing is written while the replay is arriving.
     assert!(next.flush().is_none());
 
@@ -830,4 +836,42 @@ fn an_ended_card_interrupts_its_nested_cards() {
     let write = chat.flush().unwrap();
     assert_eq!(write.lines.len(), 2, "the parent is written");
     let _ = std::fs::remove_dir_all(&store);
+}
+
+#[test]
+fn agent_message_id_round_trips() {
+    let store = scratch("message-id");
+    let mut chat = chat_in(&store, "s1");
+    chat.push_user("go".into(), Vec::new());
+    let mut md = Md::parse("answer");
+    md.message = Some("m1".into());
+    chat.items.push(ChatItem::Agent(md));
+    save(&mut chat);
+
+    let dir = conv_dir(&store, "s1");
+    let file = std::fs::read_to_string(dir.join("items.jsonl")).unwrap();
+    assert!(file.contains(r#""message_id":"m1""#));
+    let back = load(&dir).unwrap();
+    let Some(ChatItem::Agent(md)) = back.items.get(1) else {
+        panic!("the answer comes back");
+    };
+    assert_eq!(md.message.as_deref(), Some("m1"));
+}
+
+#[test]
+fn an_old_agent_line_reads_without_an_id() {
+    let store = scratch("old-agent-line");
+    let mut chat = chat_in(&store, "s1");
+    chat.push_user("go".into(), Vec::new());
+    chat.items.push(ChatItem::Agent(Md::parse("answer")));
+    save(&mut chat);
+
+    let dir = conv_dir(&store, "s1");
+    let file = std::fs::read_to_string(dir.join("items.jsonl")).unwrap();
+    assert!(!file.contains("message_id"));
+    let back = load(&dir).unwrap();
+    let Some(ChatItem::Agent(md)) = back.items.get(1) else {
+        panic!("the answer comes back");
+    };
+    assert_eq!(md.message, None);
 }

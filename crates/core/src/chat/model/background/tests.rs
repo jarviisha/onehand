@@ -309,7 +309,10 @@ fn unsaved_between_turns_waits_for_a_settled_tail() {
     chat.link = Link::Connected;
     chat.items.push(ChatItem::User(UserMsg::text("go")));
     chat.busy = true;
-    chat.apply(AcpEvent::AgentChunk("done".into()));
+    chat.apply(AcpEvent::AgentChunk {
+        text: "done".into(),
+        message: None,
+    });
     assert!(!chat.unsaved_between_turns(), "not while busy");
     chat.apply(AcpEvent::TurnEnded {
         stop_reason: "end_turn".into(),
@@ -317,7 +320,10 @@ fn unsaved_between_turns_waits_for_a_settled_tail() {
     assert!(chat.flush().is_some());
     assert!(!chat.unsaved_between_turns(), "everything is written");
 
-    chat.apply(AcpEvent::AgentChunk("a task finished".into()));
+    chat.apply(AcpEvent::AgentChunk {
+        text: "a task finished".into(),
+        message: None,
+    });
     assert!(chat.unsaved_between_turns());
     assert!(
         matches!(chat.items.last(), Some(ChatItem::Agent(md)) if md.source == "a task finished"),
@@ -352,7 +358,10 @@ fn settled_chat() -> Chat {
     chat.link = Link::Connected;
     chat.items.push(ChatItem::User(UserMsg::text("go")));
     chat.busy = true;
-    chat.apply(AcpEvent::AgentChunk("done".into()));
+    chat.apply(AcpEvent::AgentChunk {
+        text: "done".into(),
+        message: None,
+    });
     chat.apply(AcpEvent::TurnEnded {
         stop_reason: "end_turn".into(),
     });
@@ -365,7 +374,10 @@ fn settled_chat() -> Chat {
 #[test]
 fn a_lost_adapter_leaves_nothing_to_save_between_turns() {
     let mut chat = settled_chat();
-    chat.apply(AcpEvent::AgentChunk("a task finished".into()));
+    chat.apply(AcpEvent::AgentChunk {
+        text: "a task finished".into(),
+        message: None,
+    });
     assert!(chat.unsaved_between_turns());
     chat.apply(AcpEvent::Disconnected(String::new()));
     assert!(
@@ -379,7 +391,10 @@ fn a_thought_still_streaming_waits() {
     let mut chat = settled_chat();
     chat.apply(AcpEvent::ThoughtChunk("thinking".into()));
     assert!(!chat.unsaved_between_turns());
-    chat.apply(AcpEvent::AgentChunk("so".into()));
+    chat.apply(AcpEvent::AgentChunk {
+        text: "so".into(),
+        message: None,
+    });
     assert!(chat.unsaved_between_turns(), "text after it settles it");
 }
 
@@ -393,11 +408,17 @@ fn only_agent_writing_between_turns_starts_a_quiet_save() {
     let outcome = chat.apply(spawned("t1"));
     assert!(!chat.starts_quiet_save(&outcome));
 
-    let outcome = chat.apply(AcpEvent::AgentChunk("a task finished".into()));
+    let outcome = chat.apply(AcpEvent::AgentChunk {
+        text: "a task finished".into(),
+        message: None,
+    });
     assert!(chat.starts_quiet_save(&outcome));
 
     chat.busy = true;
-    let outcome = chat.apply(AcpEvent::AgentChunk("more".into()));
+    let outcome = chat.apply(AcpEvent::AgentChunk {
+        text: "more".into(),
+        message: None,
+    });
     assert!(!chat.starts_quiet_save(&outcome), "a turn saves its own");
     let outcome = chat.apply(AcpEvent::TurnEnded {
         stop_reason: "end_turn".into(),
@@ -421,7 +442,10 @@ fn an_adapter_that_marks_its_cycles_gets_no_quiet_save() {
         cycle_end: false,
         marks_cycles: true,
     }));
-    let outcome = chat.apply(AcpEvent::AgentChunk("a task finished".into()));
+    let outcome = chat.apply(AcpEvent::AgentChunk {
+        text: "a task finished".into(),
+        message: None,
+    });
     assert!(outcome.transcript_changed);
     assert!(!chat.starts_quiet_save(&outcome));
 }
@@ -479,7 +503,10 @@ fn a_pending_rewrite_is_not_work_between_turns() {
         complete: true,
     });
     chat.apply(AcpEvent::UserChunk("message 0".into()));
-    chat.apply(AcpEvent::AgentChunk("answer".into()));
+    chat.apply(AcpEvent::AgentChunk {
+        text: "answer".into(),
+        message: None,
+    });
     chat.apply(AcpEvent::Connected { tx, resumed: true });
     assert!(chat.rewrite, "the replay settled into a rewrite");
     assert!(!chat.busy);
@@ -506,7 +533,10 @@ fn a_working_card_alone_is_not_unsaved() {
         name: "explore".into(),
         task: "look".into(),
     });
-    chat.apply(AcpEvent::AgentChunk("after the card".into()));
+    chat.apply(AcpEvent::AgentChunk {
+        text: "after the card".into(),
+        message: None,
+    });
     assert!(!chat.unsaved_between_turns(), "nothing before the card");
     assert!(chat.flush().is_none(), "and a save writes nothing");
     chat.apply(AcpEvent::SubagentEnded {

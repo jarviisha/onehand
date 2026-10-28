@@ -92,8 +92,20 @@ fn a_spawn_adds_a_working_card() {
 fn child_steps_land_in_their_card() {
     let mut chat = chat();
     chat.apply(spawn("c1", "Reader", "Read"));
-    chat.apply(inside("c1", AcpEvent::AgentChunk("a".into())));
-    chat.apply(inside("c1", AcpEvent::AgentChunk("b".into())));
+    chat.apply(inside(
+        "c1",
+        AcpEvent::AgentChunk {
+            text: "a".into(),
+            message: None,
+        },
+    ));
+    chat.apply(inside(
+        "c1",
+        AcpEvent::AgentChunk {
+            text: "b".into(),
+            message: None,
+        },
+    ));
     chat.apply(inside("c1", call("t1")));
     chat.apply(inside("c1", done("t1")));
     assert_eq!(
@@ -113,7 +125,13 @@ fn a_nested_spawn_nests() {
     let mut chat = chat();
     chat.apply(spawn("c1", "Outer", "Outer task"));
     chat.apply(inside("c1", spawn("c2", "Inner", "Inner task")));
-    chat.apply(inside("c2", AcpEvent::AgentChunk("x".into())));
+    chat.apply(inside(
+        "c2",
+        AcpEvent::AgentChunk {
+            text: "x".into(),
+            message: None,
+        },
+    ));
     let inner = card(&card(&chat.items, "c1").items, "c2");
     assert_eq!(inner.items.len(), 1);
     assert_eq!(agent_text(&inner.items[0]), Some("x"));
@@ -154,12 +172,24 @@ fn unknown_or_ended_children_are_dropped() {
     let mut chat = chat();
     chat.apply(spawn("c1", "Reader", "Read"));
     let before = chat.revision();
-    let outcome = chat.apply(inside("nope", AcpEvent::AgentChunk("lost".into())));
+    let outcome = chat.apply(inside(
+        "nope",
+        AcpEvent::AgentChunk {
+            text: "lost".into(),
+            message: None,
+        },
+    ));
     assert!(!outcome.transcript_changed);
     assert_eq!(chat.revision(), before);
     chat.apply(ended("c1", SubagentEnd::Completed));
     let before = chat.revision();
-    chat.apply(inside("c1", AcpEvent::AgentChunk("late".into())));
+    chat.apply(inside(
+        "c1",
+        AcpEvent::AgentChunk {
+            text: "late".into(),
+            message: None,
+        },
+    ));
     chat.apply(ended("c1", SubagentEnd::Failed));
     assert_eq!(chat.revision(), before);
     let c1 = card(&chat.items, "c1");
@@ -229,14 +259,26 @@ fn a_replay_adds_no_cards() {
     });
     // Armed: nothing replayed yet.
     chat.apply(spawn("c1", "Reader", "Read"));
-    chat.apply(inside("c1", AcpEvent::AgentChunk("a".into())));
+    chat.apply(inside(
+        "c1",
+        AcpEvent::AgentChunk {
+            text: "a".into(),
+            message: None,
+        },
+    ));
     chat.apply(ended("c1", SubagentEnd::Completed));
     assert!(chat.items.is_empty());
     // Partial: the replay has begun.
     chat.apply(AcpEvent::UserChunk("message 0".into()));
     let before = chat.revision();
     chat.apply(spawn("c2", "Reader", "Read"));
-    chat.apply(inside("c2", AcpEvent::AgentChunk("a".into())));
+    chat.apply(inside(
+        "c2",
+        AcpEvent::AgentChunk {
+            text: "a".into(),
+            message: None,
+        },
+    ));
     chat.apply(ended("c2", SubagentEnd::Completed));
     assert_eq!(chat.revision(), before);
     assert_eq!(chat.items.len(), 1);
@@ -262,7 +304,10 @@ fn a_longer_replay_keeps_the_files_cards() {
     });
     for i in 0..3 {
         chat.apply(AcpEvent::UserChunk(format!("message {i}")));
-        chat.apply(AcpEvent::AgentChunk("answer".into()));
+        chat.apply(AcpEvent::AgentChunk {
+            text: "answer".into(),
+            message: None,
+        });
     }
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
     chat.apply(AcpEvent::Connected { tx, resumed: true });

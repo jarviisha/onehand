@@ -162,7 +162,10 @@ fn what_runs_starts_open_and_the_plan_always_does() {
         _ => panic!(),
     };
     assert_eq!(thinking(&chat), (true, true), "a live thought is open");
-    chat.apply(AcpEvent::AgentChunk("done".into()));
+    chat.apply(AcpEvent::AgentChunk {
+        text: "done".into(),
+        message: None,
+    });
     assert_eq!(thinking(&chat), (false, false), "and closes once done");
     chat.toggle_thought(TranscriptItemId::Live(1));
     assert_eq!(thinking(&chat), (false, true), "the user's open wins");
@@ -197,7 +200,10 @@ fn the_closing_paragraph_is_the_last_one() {
     );
     let mut chat = Chat::default();
     chat.push_user("go".into(), Vec::new());
-    chat.apply(AcpEvent::AgentChunk("First.\n\nThen this.".into()));
+    chat.apply(AcpEvent::AgentChunk {
+        text: "First.\n\nThen this.".into(),
+        message: None,
+    });
     assert_eq!(chat.turn_closing(TranscriptItemId::Live(1)), "Then this.");
 }
 
@@ -573,7 +579,10 @@ fn user_prompt_keeps_unreplayed_history() {
     assert!(!write.rewrite);
 
     let mut chat = resumed_chat(1);
-    chat.apply(AcpEvent::AgentChunk("replayed".into()));
+    chat.apply(AcpEvent::AgentChunk {
+        text: "replayed".into(),
+        message: None,
+    });
     assert!(chat.history.is_empty(), "a real replay still drops history");
 }
 
@@ -611,7 +620,10 @@ fn resumed_chat(n: usize) -> Chat {
 #[test]
 fn an_interrupted_replay_is_never_written() {
     let mut chat = resumed_chat(3);
-    chat.apply(AcpEvent::AgentChunk("first replayed answer".into()));
+    chat.apply(AcpEvent::AgentChunk {
+        text: "first replayed answer".into(),
+        message: None,
+    });
     // On screen the adopted copy is gone, exactly as before.
     assert!(chat.history.is_empty());
     assert!(chat.flush().is_none(), "and nothing is written from it");
@@ -633,7 +645,10 @@ fn an_interrupted_replay_is_never_written() {
 fn a_short_replay_loses_to_the_file_even_when_the_load_succeeded() {
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
     let mut chat = resumed_chat(4);
-    chat.apply(AcpEvent::AgentChunk("a summary of all that".into()));
+    chat.apply(AcpEvent::AgentChunk {
+        text: "a summary of all that".into(),
+        message: None,
+    });
     chat.apply(AcpEvent::Connected { tx, resumed: true });
 
     assert_eq!(chat.history.len(), 4, "the conversation is back on screen");
@@ -647,7 +662,10 @@ fn a_completed_replay_rewrites_the_file_with_what_was_replayed() {
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
     let mut chat = resumed_chat(2);
     chat.apply(AcpEvent::UserChunk("message 0".into()));
-    chat.apply(AcpEvent::AgentChunk("answer".into()));
+    chat.apply(AcpEvent::AgentChunk {
+        text: "answer".into(),
+        message: None,
+    });
     chat.apply(AcpEvent::Connected { tx, resumed: true });
 
     assert!(chat.history.is_empty());
@@ -696,7 +714,10 @@ fn a_replay_that_delivered_more_is_kept() {
     let mut chat = resumed_chat(2);
     for i in 0..3 {
         chat.apply(AcpEvent::UserChunk(format!("message {i}")));
-        chat.apply(AcpEvent::AgentChunk("answer".into()));
+        chat.apply(AcpEvent::AgentChunk {
+            text: "answer".into(),
+            message: None,
+        });
     }
     chat.push_user("carry on".into(), Vec::new());
 
@@ -714,7 +735,10 @@ fn a_bounded_transcript_never_rewrites_the_file() {
     chat.bounded = true;
     for i in 0..3 {
         chat.apply(AcpEvent::UserChunk(format!("message {i}")));
-        chat.apply(AcpEvent::AgentChunk("answer".into()));
+        chat.apply(AcpEvent::AgentChunk {
+            text: "answer".into(),
+            message: None,
+        });
     }
     chat.push_user("carry on".into(), Vec::new());
 
@@ -762,7 +786,10 @@ fn replayed_user_messages_split_across_intervening_content() {
         1
     );
     // …but a second prompt after agent content is its own bubble.
-    chat.apply(AcpEvent::AgentChunk("reply".into()));
+    chat.apply(AcpEvent::AgentChunk {
+        text: "reply".into(),
+        message: None,
+    });
     chat.apply(AcpEvent::UserChunk("second prompt".into()));
     assert_eq!(
         chat.items
@@ -1099,7 +1126,10 @@ fn a_user_chunk_from_the_agent_is_not_a_prompt_sent() {
     assert_eq!(chat.prompts_sent, 0);
     assert!(chat.submit("first", &[]));
     assert_eq!(chat.prompts_sent, 1);
-    chat.apply(AcpEvent::AgentChunk("working".into()));
+    chat.apply(AcpEvent::AgentChunk {
+        text: "working".into(),
+        message: None,
+    });
     chat.apply(AcpEvent::UserChunk("echoed by the adapter".into()));
     assert_eq!(
         chat.items
@@ -1865,10 +1895,16 @@ fn session_metadata_does_not_touch_the_transcript() {
 #[test]
 fn streaming_into_one_block_still_counts_as_a_change() {
     let (mut chat, _rx) = chat_with_tx();
-    chat.apply(AcpEvent::AgentChunk("half ".into()));
+    chat.apply(AcpEvent::AgentChunk {
+        text: "half ".into(),
+        message: None,
+    });
     let (after_first, len) = (chat.revision(), chat.items.len());
 
-    let outcome = chat.apply(AcpEvent::AgentChunk("an answer".into()));
+    let outcome = chat.apply(AcpEvent::AgentChunk {
+        text: "an answer".into(),
+        message: None,
+    });
 
     assert!(outcome.transcript_changed);
     assert_eq!(chat.items.len(), len, "still one answer block");
@@ -2000,7 +2036,10 @@ fn the_turn_ending_is_reported_once() {
     let (mut chat, _rx) = chat_with_tx();
     assert!(
         !chat
-            .apply(AcpEvent::AgentChunk("working".into()))
+            .apply(AcpEvent::AgentChunk {
+                text: "working".into(),
+                message: None,
+            })
             .turn_ended
     );
 
@@ -2024,7 +2063,10 @@ fn the_turn_ending_is_reported_once() {
 fn an_ask_is_reported_once_and_says_which_kind_it_was() {
     let (mut chat, _rx) = chat_with_tx();
     assert!(chat
-        .apply(AcpEvent::AgentChunk("working".into()))
+        .apply(AcpEvent::AgentChunk {
+            text: "working".into(),
+            message: None,
+        })
         .asked_user
         .is_none());
 
@@ -2033,7 +2075,10 @@ fn an_ask_is_reported_once_and_says_which_kind_it_was() {
 
     // The card is still up, so the transcript still reads as waiting --
     // and the next event must not announce it a second time.
-    let after = chat.apply(AcpEvent::AgentChunk("still here".into()));
+    let after = chat.apply(AcpEvent::AgentChunk {
+        text: "still here".into(),
+        message: None,
+    });
     assert!(chat.awaiting_permission());
     assert!(after.asked_user.is_none());
 
@@ -2077,7 +2122,14 @@ fn a_turn_that_said_nothing_answers_nothing_rather_than_the_turn_before() {
 #[test]
 fn the_modes_an_agent_offers_are_reported_when_it_says_them() {
     let (mut chat, _rx) = chat_with_tx();
-    assert!(!chat.apply(AcpEvent::AgentChunk("hi".into())).offer_changed);
+    assert!(
+        !chat
+            .apply(AcpEvent::AgentChunk {
+                text: "hi".into(),
+                message: None,
+            })
+            .offer_changed
+    );
     let offered = chat.apply(AcpEvent::Modes {
         current: Some("default".into()),
         available: vec![crate::acp::Mode {
@@ -2227,7 +2279,10 @@ fn a_failed_turn_survives_a_replay_that_replaces_the_file() {
     });
     assert!(chat.failed());
     chat.apply(AcpEvent::UserChunk("go".into()));
-    chat.apply(AcpEvent::AgentChunk("half an answer".into()));
+    chat.apply(AcpEvent::AgentChunk {
+        text: "half an answer".into(),
+        message: None,
+    });
     chat.apply(AcpEvent::Connected { tx, resumed: true });
 
     assert!(chat.history.is_empty(), "the replay won");
@@ -2725,4 +2780,25 @@ fn an_update_with_nothing_to_read_for_an_unknown_id_draws_no_card() {
 
     chat.apply(update(Some("Run it")));
     assert!(matches!(&chat.items[..], [ChatItem::Tool(t)] if t.call.title == "Run it"));
+}
+
+/// A fork names the agent message it cuts after, so a block merged from
+/// several chunks answers for the latest of them, and a chunk that names
+/// none takes nothing away.
+#[test]
+fn a_merged_answer_keeps_its_latest_id() {
+    let mut chat = Chat::default();
+    chat.push_user("go".into(), Vec::new());
+    let chunk = |text: &str, message: Option<&str>| AcpEvent::AgentChunk {
+        text: text.into(),
+        message: message.map(String::from),
+    };
+    chat.apply(chunk("a", Some("m1")));
+    chat.apply(chunk("b", Some("m2")));
+    chat.apply(chunk("c", None));
+    let [ChatItem::User(_), ChatItem::Agent(md)] = chat.items.as_slice() else {
+        panic!("one prompt and one answer block");
+    };
+    assert_eq!(md.source, "abc");
+    assert_eq!(md.message.as_deref(), Some("m2"));
 }

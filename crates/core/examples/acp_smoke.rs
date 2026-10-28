@@ -72,7 +72,7 @@ async fn main() {
                 tx_keep = Some(tx);
             }
             AcpEvent::SessionId(id) => eprintln!("== SESSION {id} =="),
-            AcpEvent::AgentChunk(s) => {
+            AcpEvent::AgentChunk { text: s, .. } => {
                 print!("{s}");
                 std::io::stdout().flush().ok();
             }

@@ -1297,7 +1297,7 @@ async fn update_from(agent: &mut Agent, session: Option<&str>, update: serde_jso
 async fn next_chunk(events: &mut tokio::sync::mpsc::UnboundedReceiver<AcpEvent>) -> AcpEvent {
     loop {
         let e = events.recv().await.expect("the stream ended early");
-        if matches!(e, AcpEvent::AgentChunk(_) | AcpEvent::InChild { .. }) {
+        if matches!(e, AcpEvent::AgentChunk { .. } | AcpEvent::InChild { .. }) {
             return e;
         }
     }
@@ -1314,19 +1314,19 @@ async fn a_child_update_is_wrapped() {
     match next_chunk(&mut events).await {
         AcpEvent::InChild { child, event } => {
             assert_eq!(child, "c1");
-            assert!(matches!(*event, AcpEvent::AgentChunk(ref s) if s == "hi"));
+            assert!(matches!(*event, AcpEvent::AgentChunk { ref text, .. } if text == "hi"));
         }
         other => panic!("{other:?}"),
     }
     update_from(&mut agent, Some(&root), chunk.clone()).await;
     assert!(matches!(
         next_chunk(&mut events).await,
-        AcpEvent::AgentChunk(_)
+        AcpEvent::AgentChunk { .. }
     ));
     update_from(&mut agent, None, chunk).await;
     assert!(matches!(
         next_chunk(&mut events).await,
-        AcpEvent::AgentChunk(_)
+        AcpEvent::AgentChunk { .. }
     ));
 }
 

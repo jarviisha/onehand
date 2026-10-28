@@ -464,7 +464,9 @@ impl Conn {
                     let child = self.child_of(msg.get("params").unwrap_or(&Value::Null));
                     for u in parse::parse_session_update(update) {
                         let ev = match u {
-                            parse::Update::Agent(s) => AcpEvent::AgentChunk(s),
+                            parse::Update::Agent { text, message } => {
+                                AcpEvent::AgentChunk { text, message }
+                            }
                             parse::Update::Thought(s) => AcpEvent::ThoughtChunk(s),
                             parse::Update::User(s) => AcpEvent::UserChunk(s),
                             parse::Update::Interrupted => AcpEvent::Interrupted,

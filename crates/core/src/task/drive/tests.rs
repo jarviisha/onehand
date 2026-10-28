@@ -107,7 +107,10 @@ impl Rig {
 
     /// The agent answers the turn under way with `text`.
     fn turn_ends(&mut self, text: &str) -> Vec<Effect> {
-        self.chat.apply(AcpEvent::AgentChunk(text.into()));
+        self.chat.apply(AcpEvent::AgentChunk {
+            text: text.into(),
+            message: None,
+        });
         self.chat.apply(AcpEvent::TurnEnded {
             stop_reason: "end_turn".into(),
         });
@@ -610,7 +613,10 @@ fn a_turn_read_judges_the_answer_since_the_prompt() {
 #[test]
 fn a_chunk_is_heeded_only_when_it_can_move_the_run() {
     let mut rig = in_turn();
-    rig.chat.apply(AcpEvent::AgentChunk("thinking".into()));
+    rig.chat.apply(AcpEvent::AgentChunk {
+        text: "thinking".into(),
+        message: None,
+    });
     assert!(!rig.drive.heeds_appended(&rig.chat), "a reply streaming in");
     let mut taken = at_approval();
     assert!(taken.chat.submit("my own words", &[]));

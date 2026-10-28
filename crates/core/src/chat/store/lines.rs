@@ -42,6 +42,8 @@ pub(super) enum Line {
     },
     Agent {
         text: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        message_id: Option<String>,
     },
     Thought {
         text: String,
@@ -145,7 +147,11 @@ pub(super) fn restore_line(dir: &Path, line: &Line) -> ChatItem {
             sent_at: *sent_at,
             completed_at: *completed_at,
         }),
-        Line::Agent { text } => ChatItem::Agent(Md::parse(text)),
+        Line::Agent { text, message_id } => {
+            let mut md = Md::parse(text);
+            md.message = message_id.clone();
+            ChatItem::Agent(md)
+        }
         Line::Thought { text, secs } => ChatItem::Thought(Thought {
             md: Md::parse(text),
             started: None,
@@ -318,6 +324,7 @@ fn to_line(chat: &Chat, item: &ChatItem, blobs: &mut Vec<Blob>) -> Option<Line> 
         },
         ChatItem::Agent(md) => Line::Agent {
             text: md.source.clone(),
+            message_id: md.message.clone(),
         },
         ChatItem::Thought(th) => Line::Thought {
             text: th.md.source.clone(),
