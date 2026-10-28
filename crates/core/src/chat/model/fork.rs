@@ -11,7 +11,8 @@
 use super::{Chat, ChatItem, Replay, TranscriptItemId};
 use crate::acp::client::FORK_FAILED;
 use crate::attachment::AttachmentSnapshot;
-use crate::chat::store::{ConversationSnapshot, Prefs};
+use crate::chat::store::Prefs;
+use std::path::Path;
 
 /// Where a prompt forks from, and what the fork starts with.
 #[derive(Debug, Clone)]
@@ -25,7 +26,7 @@ pub struct ForkPoint {
     /// The prompt's attachments, staged with its text.
     pub attachments: Vec<AttachmentSnapshot>,
     /// The fork's name until it is renamed.
-    pub title: String,
+    pub(crate) title: String,
 }
 
 /// What a fork's transcript starts as: the original's, cut at the point.
@@ -107,10 +108,12 @@ impl Chat {
     }
 }
 
-/// The original's saved transcript cut just after the agent message `point`
-/// names; `None` when the saved transcript does not hold it. Blocking only in
-/// that the snapshot was read from disk.
-pub fn fork_seed(snapshot: ConversationSnapshot, point: &ForkPoint) -> Option<ForkSeed> {
+/// The original's saved transcript, in `store`, cut just after the agent
+/// message `point` names; `None` when the saved transcript does not hold it.
+/// Blocking: it reads the transcript.
+pub fn fork_seed(store: &Path, point: &ForkPoint) -> Option<ForkSeed> {
+    let snapshot =
+        crate::chat::store::load_whole(&crate::chat::store::conv_dir(store, &point.from))?;
     let mut items = snapshot.items;
     let end = items.iter().position(|item| {
         matches!(item, ChatItem::Agent(md) if md.message.as_deref() == Some(point.message.as_str()))

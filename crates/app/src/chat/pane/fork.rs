@@ -4,9 +4,7 @@
 use super::{ChatPane, ChatPaneEvent};
 use crate::chat::composer::Draft;
 use gpui::Context;
-use onehand_core::chat::{
-    ForkSeed, TranscriptItemId, conv_dir, conversations_dir, fork_seed, load,
-};
+use onehand_core::chat::{ForkSeed, TranscriptItemId, conversations_dir, fork_seed};
 
 /// A fork read and ready, waiting for the session the shell mints for it.
 pub(crate) struct StagedFork {
@@ -42,8 +40,7 @@ impl ChatPane {
             let staged = cx
                 .background_executor()
                 .spawn(async move {
-                    let saved = load(&conv_dir(&conversations_dir(), &point.from))?;
-                    let seed = fork_seed(saved, &point)?;
+                    let seed = fork_seed(&conversations_dir(), &point)?;
                     Some(StagedFork {
                         uid: None,
                         draft: Draft::staged(point.text, &point.attachments),

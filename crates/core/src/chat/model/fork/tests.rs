@@ -169,7 +169,7 @@ fn the_seed_ends_on_the_answer() {
         ],
     );
     let point = chat.fork_point(TranscriptItemId::Live(2)).unwrap();
-    let seed = fork_seed(load(&conv_dir(&store, "orig")).unwrap(), &point).unwrap();
+    let seed = fork_seed(&store, &point).unwrap();
     assert!(matches!(
         seed.items.as_slice(),
         [ChatItem::User(u), ChatItem::Agent(md)] if u.text == "one" && md.source == "a"
@@ -177,7 +177,7 @@ fn the_seed_ends_on_the_answer() {
 
     let mut unknown = point;
     unknown.message = "nope".into();
-    assert!(fork_seed(load(&conv_dir(&store, "orig")).unwrap(), &unknown).is_none());
+    assert!(fork_seed(&store, &unknown).is_none());
     let _ = std::fs::remove_dir_all(&store);
 }
 
@@ -189,7 +189,7 @@ fn an_adopted_fork_writes_itself_whole() {
         vec![prompt("one"), answer("a", Some("m1")), prompt("two")],
     );
     let point = chat.fork_point(TranscriptItemId::Live(2)).unwrap();
-    let seed = fork_seed(load(&conv_dir(&store, "orig")).unwrap(), &point).unwrap();
+    let seed = fork_seed(&store, &point).unwrap();
 
     let mut fork = Chat::new(2, PathBuf::from("/r"), "Claude".into(), Some(store.clone()));
     fork.adopt_fork(seed);
@@ -228,7 +228,7 @@ fn fork_seed_survives_the_original_being_deleted() {
         vec![prompt("one"), shot, answer("a", Some("m1")), prompt("two")],
     );
     let point = chat.fork_point(TranscriptItemId::Live(3)).unwrap();
-    let seed = fork_seed(load(&conv_dir(&store, "orig")).unwrap(), &point).unwrap();
+    let seed = fork_seed(&store, &point).unwrap();
     let mut fork = Chat::new(2, PathBuf::from("/r"), "Claude".into(), Some(store.clone()));
     fork.adopt_fork(seed);
     fork.apply(AcpEvent::SessionId("f1".into()));
@@ -250,7 +250,7 @@ fn adopted_fork(name: &str) -> Chat {
         vec![prompt("one"), answer("a", Some("m1")), prompt("two")],
     );
     let point = chat.fork_point(TranscriptItemId::Live(2)).unwrap();
-    let seed = fork_seed(load(&conv_dir(&store, "orig")).unwrap(), &point).unwrap();
+    let seed = fork_seed(&store, &point).unwrap();
     let _ = std::fs::remove_dir_all(&store);
     let mut fork = Chat::default();
     fork.adopt_fork(seed);
@@ -285,4 +285,30 @@ fn an_opened_fork_that_drops_is_no_failed_fork() {
     let mut chat = chat_of(vec![prompt("one")]);
     chat.apply(AcpEvent::Disconnected("gone".into()));
     assert_eq!(chat.fork_failure(), None);
+}
+
+/// A conversation longer than a resume reads back still forks whole: the
+/// fork's copy is written from the seed, so a seed cut to the tail would be a
+/// fork missing its beginning for good.
+#[test]
+fn a_long_conversation_forks_whole() {
+    let store = scratch("long");
+    let turns = crate::chat::store::MAX_RESTORED_ITEMS;
+    let mut items = Vec::new();
+    for n in 0..turns {
+        items.push(prompt(&format!("ask {n}")));
+        items.push(answer("ok", Some(&format!("m{n}"))));
+    }
+    items.push(prompt("last"));
+    let chat = saved(&store, items);
+    // Near the start, past what a resume would read back.
+    let early = chat.fork_point(TranscriptItemId::Live(4)).unwrap();
+    let seed = fork_seed(&store, &early).unwrap();
+    assert_eq!(seed.items.len(), 4);
+    // Near the end: everything before it, and no note that some is missing.
+    let late = chat.fork_point(TranscriptItemId::Live(2 * turns)).unwrap();
+    let seed = fork_seed(&store, &late).unwrap();
+    assert_eq!(seed.items.len(), 2 * turns);
+    assert!(matches!(&seed.items[0], ChatItem::User(u) if u.text == "ask 0"));
+    let _ = std::fs::remove_dir_all(&store);
 }
