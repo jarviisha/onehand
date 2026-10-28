@@ -150,6 +150,9 @@ declared agent sending either gets the same card.
 - **Subagents.** Claude Code and Codex send them, and each shows in the transcript as a card where
   the agent handed work off; Copilot sends none and shows none. A card is saved whole once it has
   ended, and one closed mid-subagent is kept as *interrupted*.
+- **Forking.** Claude Code and Codex offer *Fork from here* on a prompt; the fork names the agent
+  message just before it. Claude Code saves the fork and onehand loads it; Codex opens it in
+  answering. Copilot does not fork and offers no action.
 
 - **Codex has no plan block.** It has no plan tool in its default mode and writes its steps as
   text. With `collaboration_mode = plan` it writes the plan as text, then asks *Implement this

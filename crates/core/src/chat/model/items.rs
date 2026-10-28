@@ -446,6 +446,9 @@ pub struct Md {
     /// it, so neither an index nor an address will do.
     pub id: MdId,
     pub source: String,
+    /// The agent's id for the message this block holds, when it named one.
+    /// A block merged from several chunks keeps the latest.
+    pub(crate) message: Option<String>,
 }
 
 impl Md {
@@ -453,6 +456,7 @@ impl Md {
         Self {
             id: MdId::next(),
             source: s.to_string(),
+            message: None,
         }
     }
     pub(crate) fn push(&mut self, s: &str) {

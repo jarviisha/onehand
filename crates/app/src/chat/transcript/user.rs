@@ -3,14 +3,15 @@ use super::metrics::{
     BUBBLE_MAX, BUBBLE_TAIL_GAP, HAIR_GAP, STACK_GAP, THUMB_H, THUMB_W, TIGHT_GAP, USER_BUBBLE_MAX,
     USER_BUBBLE_MAX_NARROW,
 };
-use super::parts::copy_button;
+use super::parts::{copy_button, fork_button};
+use crate::chat::session::ChatSession;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, InteractiveElement, IntoElement, ParentElement, RenderOnce, SharedString,
+    App, Entity, InteractiveElement, IntoElement, ParentElement, RenderOnce, SharedString,
     StatefulInteractiveElement, Styled, StyledImage as _, Window, div, relative,
 };
 use gpui_component::{ActiveTheme, StyledExt};
-use onehand_core::chat::UserMsg;
+use onehand_core::chat::{TranscriptItemId, UserMsg};
 
 /// Attachment rows drawn under a prompt before the rest are counted.
 const MAX_ATTACHMENT_ROWS: usize = 8;
@@ -33,7 +34,14 @@ const MAX_ATTACHMENT_ROWS: usize = 8;
 /// message. Both keep the right edge, because the edge is what says whose they
 /// are, and the files come first — they were handed over before the question
 /// was asked about them.
-pub(super) fn user(u: &UserMsg, uid: usize, room: Room, cx: &App) -> impl IntoElement + use<> {
+/// `fork` is the session and the prompt's place, when it can be forked from.
+pub(super) fn user(
+    u: &UserMsg,
+    uid: usize,
+    room: Room,
+    fork: Option<(Entity<ChatSession>, TranscriptItemId)>,
+    cx: &App,
+) -> impl IntoElement + use<> {
     let over = u.attachments.len().saturating_sub(MAX_ATTACHMENT_ROWS);
     let share = match room.narrow {
         true => USER_BUBBLE_MAX_NARROW,
@@ -91,11 +99,13 @@ pub(super) fn user(u: &UserMsg, uid: usize, room: Room, cx: &App) -> impl IntoEl
             key: uid,
             text: u.text.clone().into(),
             share,
+            fork,
         }))
 }
 
-/// The bubble and the copy control under it, which shows while the message is
-/// pointed at and while the control holds the keyboard's focus.
+/// The bubble and the controls under it, copy and, where the prompt can be
+/// forked from, fork: shown while the message is pointed at and while either
+/// holds the keyboard's focus.
 ///
 /// **An element of its own, because it has to remember what the frame does
 /// not**: whether the message is pointed at, which is keyed state, and keyed
@@ -109,6 +119,7 @@ struct Prompt {
     key: usize,
     text: SharedString,
     share: f32,
+    fork: Option<(Entity<ChatSession>, TranscriptItemId)>,
 }
 
 impl RenderOnce for Prompt {
@@ -119,13 +130,16 @@ impl RenderOnce for Prompt {
         // id under the element that holds it: a control reached by the keyboard
         // shows without the pointer.
         let copy_id = ("prompt-copy", key);
-        let focus = window.with_id(("prompt", key), |window| {
-            window
-                .use_keyed_state(copy_id, cx, |_, cx| cx.focus_handle())
-                .read(cx)
-                .clone()
+        let fork_id = ("prompt-fork", key);
+        let [focus, fork_focus] = [copy_id, fork_id].map(|id| {
+            window.with_id(("prompt", key), |window| {
+                window
+                    .use_keyed_state(id, cx, |_, cx| cx.focus_handle())
+                    .read(cx)
+                    .clone()
+            })
         });
-        let shown = *hovered.read(cx) || focus.is_focused(window);
+        let shown = *hovered.read(cx) || focus.is_focused(window) || fork_focus.is_focused(window);
 
         div()
             .id(("prompt", key))
@@ -154,8 +168,17 @@ impl RenderOnce for Prompt {
                     .child(prompt_text(&self.text, cx)),
             )
             .child(
-                copy_button(copy_id, self.text.clone(), "Copy the prompt", cx)
-                    .when(!shown, |copy| copy.text_color(cx.theme().transparent)),
+                div()
+                    .h_flex()
+                    .items_center()
+                    .child(
+                        copy_button(copy_id, self.text.clone(), "Copy the prompt", cx)
+                            .when(!shown, |copy| copy.text_color(cx.theme().transparent)),
+                    )
+                    .children(self.fork.map(|(session, target)| {
+                        fork_button(fork_id, &session, target, cx)
+                            .when(!shown, |fork| fork.text_color(cx.theme().transparent))
+                    })),
             )
     }
 }

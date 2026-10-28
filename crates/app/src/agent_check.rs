@@ -97,7 +97,7 @@ fn check(ask: &Ask, cx: &mut App) {
                     // Nothing else is asked of an agent that is never
                     // prompted; whatever it says before it comes up is let go.
                     AcpEvent::SessionId(_)
-                    | AcpEvent::AgentChunk(_)
+                    | AcpEvent::AgentChunk { .. }
                     | AcpEvent::ThoughtChunk(_)
                     | AcpEvent::UserChunk(_)
                     | AcpEvent::Interrupted

@@ -14,7 +14,7 @@ mod roles;
 pub mod terminal;
 pub mod types;
 
-pub use client::{base64_encode, connect, SessionOpts};
+pub use client::{base64_encode, connect, Opening, SessionOpts};
 pub use parse::base64_decode;
 pub use roles::{Role, Switch};
 pub use types::{

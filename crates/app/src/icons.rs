@@ -126,6 +126,11 @@ icons! {
         // git-adjacent drawing is the GitHub brand mark, which names a website
         // rather than the operation.
         GitBranch,
+        // A prompt's *Fork from here*, which carries the conversation on in a
+        // new session from that point and leaves the original as it is. The
+        // branch mark above already means cutting a project onto a branch of
+        // its own; the fork mark is the conversation splitting in two.
+        GitFork,
         // Staging a file onto the prompt being written. The bundled set holds
         // no clip, pin or paperclip of any kind; the nearest thing it draws is
         // `inbox`, a tray that says mail has arrived — the opposite direction

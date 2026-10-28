@@ -63,6 +63,17 @@ first, down to a minimum. Without a session it carries no name, the page naming 
 keeps the project's dots menu, holding the project's actions but *New session* and *Open
 terminal*, which the page and the header already offer.
 
+## A prompt's controls
+
+Under each of the person's prompts, shown while it is pointed at or one of them holds focus: copy,
+then *Fork from here* for an agent that forks (Claude Code, Codex). Fork is absent on the first
+prompt, after a turn that did not end on an answer whose id is kept (a tool step, an interruption,
+a failure, a conversation saved before this build), and while the agent has not said it forks.
+Pressing it opens a new session on the same project and agent, beside the original on the rail and
+on screen at once, named *Fork: <title>*, its transcript the original's up to just before that
+prompt and the prompt's text and attachments in its composer. The original stays as it was; files
+are not rolled back. A fork that cannot open is a toast saying why, and its session goes.
+
 ## Subagent card
 
 Where the agent hands work to a subagent, the transcript draws a bare fold block: no edge, no box.

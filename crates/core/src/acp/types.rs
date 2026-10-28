@@ -538,11 +538,21 @@ pub enum ElicitOutcome {
 pub enum AcpEvent {
     /// Handshake complete and a session exists. Carries the request channel so
     /// the UI can start sending prompts.
-    Connected { tx: ReqTx, resumed: bool },
+    Connected {
+        tx: ReqTx,
+        resumed: bool,
+        /// Whether the agent forks sessions.
+        forkable: bool,
+    },
     /// The agent's ACP session id (used to name the persisted transcript).
     SessionId(String),
-    /// A streamed chunk of the agent's reply (markdown).
-    AgentChunk(String),
+    /// A streamed chunk of the agent's reply (markdown), and the id of the
+    /// message it belongs to when the agent names one: a fork names that id
+    /// as the point it cuts after.
+    AgentChunk {
+        text: String,
+        message: Option<String>,
+    },
     /// A streamed chunk of the agent's reasoning (the `think`/discovery stream).
     ThoughtChunk(String),
     /// A streamed chunk echoed as the user's message (seen on resume replay).

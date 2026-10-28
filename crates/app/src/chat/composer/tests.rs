@@ -1,6 +1,6 @@
 use super::complete::TriggerSpot;
 use super::complete::trigger_spot;
-use super::{Draft, highlight};
+use super::{Draft, end_of, highlight};
 use onehand_core::attachment::{AttachmentSource, StagedAttachment};
 use std::path::PathBuf;
 
@@ -124,4 +124,38 @@ fn an_attachment_alone_is_not_an_empty_draft() {
     };
     assert!(!draft.is_empty());
     assert!(Draft::default().is_empty());
+}
+
+#[test]
+fn fork_draft_skips_missing_attachments() {
+    let dir = std::env::temp_dir().join(format!("onehand-fork-draft-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let kept = dir.join("notes.md");
+    std::fs::write(&kept, "notes").unwrap();
+    let snapshot = |path: PathBuf| onehand_core::attachment::AttachmentSnapshot {
+        name: path.file_name().unwrap().to_string_lossy().into_owned(),
+        path,
+        bytes: None,
+        kind: onehand_core::attachment::AttachmentKind::File,
+        delivery: onehand_core::attachment::AttachmentDelivery::ResourceLink,
+    };
+    let draft = Draft::staged(
+        "two".into(),
+        &[snapshot(kept.clone()), snapshot(dir.join("gone.png"))],
+    );
+    assert_eq!(draft.text, "two");
+    assert_eq!(draft.attachments.len(), 1);
+    assert_eq!(draft.attachments[0].path, kept);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A draft put back leaves the caret after its last character, so typing
+/// carries on from where it was written; columns count characters.
+#[test]
+fn a_restored_draft_ends_where_it_was_written() {
+    let at = |line, character| gpui_component::input::Position { line, character };
+    assert_eq!(end_of(""), at(0, 0));
+    assert_eq!(end_of("second fast"), at(0, 11));
+    assert_eq!(end_of("one\nhai đây"), at(1, 7));
+    assert_eq!(end_of("trailing\n"), at(1, 0));
 }

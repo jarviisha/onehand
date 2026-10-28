@@ -28,7 +28,7 @@ use super::session::ChatSession;
 use gpui::{App, AppContext, Context, Entity, IntoElement, Render, Subscription, Window, div};
 use gpui::{Bounds, Pixels};
 use gpui_component::input::{InputEvent, TextareaState};
-use onehand_core::attachment::StagedAttachment;
+use onehand_core::attachment::{AttachmentSnapshot, AttachmentSource, StagedAttachment};
 use onehand_core::completion::ActiveTrigger;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -95,6 +95,27 @@ impl Draft {
     /// Nothing typed and nothing staged, so there is nothing to set aside.
     pub fn is_empty(&self) -> bool {
         self.text.is_empty() && self.attachments.is_empty()
+    }
+    /// A sent prompt put back to send again: its text, and those of its
+    /// attachments still on disk. Blocking: it looks at each file.
+    pub fn staged(text: String, attachments: &[AttachmentSnapshot]) -> Self {
+        Self {
+            text,
+            attachments: attachments
+                .iter()
+                .filter(|a| a.path.exists())
+                .map(|a| StagedAttachment::inspect(a.path.clone(), AttachmentSource::Picker))
+                .collect(),
+        }
+    }
+}
+
+/// Where `text` ends, as the line and the character column a caret takes.
+fn end_of(text: &str) -> gpui_component::input::Position {
+    let last = text.rsplit('\n').next().unwrap_or_default();
+    gpui_component::input::Position {
+        line: text.matches('\n').count() as u32,
+        character: last.chars().count() as u32,
     }
 }
 
@@ -283,10 +304,15 @@ impl Composer {
         draft
     }
 
-    /// Put a set-aside draft back.
+    /// Put a set-aside draft back, the caret after its last character.
     pub fn restore_draft(&mut self, draft: Draft, window: &mut Window, cx: &mut Context<Self>) {
-        self.state
-            .update(cx, |state, cx| state.set_value(&draft.text, window, cx));
+        let end = end_of(&draft.text);
+        self.state.update(cx, |state, cx| {
+            state.set_value(&draft.text, window, cx);
+            // Setting a value puts the caret back at the start, which would
+            // have the next word typed in front of what was written.
+            state.set_cursor_position(end, window, cx);
+        });
         self.attachments = draft.attachments;
         cx.notify();
     }

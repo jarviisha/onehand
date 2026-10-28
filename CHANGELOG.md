@@ -120,9 +120,17 @@ minor bump may break any of them.
   3 steps. Once it ends it folds to its state and step count, opened by a press. Its permission
   requests and questions pin above the composer under its name, and the rail counts the subagents
   a session has working. A session closed mid-subagent keeps the card as interrupted.
+- Claude Code and Codex sessions offer *Fork from here* under a prompt: a new session on the same
+  project, its history the conversation's up to just before that prompt and the prompt in its
+  composer to send again or rewrite. The original conversation is left as it is, and files are not
+  rolled back.
 
 ### Fixed
 
+- A session shown for the first time takes the keyboard in its composer once it connects,
+  instead of leaving typing to go nowhere until the composer is clicked.
+- A draft put back in the composer, on switching back to a session or in a fork, keeps the caret
+  after its last character.
 - A subagent's steps are no longer mixed into the agent's own: each is kept in the subagent's card.
 - A session whose agent still runs work in the background reads *Running* on the rail, not idle.
 - What an agent writes after its turn has ended, when background work reports back, is saved to

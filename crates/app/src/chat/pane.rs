@@ -26,6 +26,7 @@ use std::path::PathBuf;
 mod body;
 mod bridge;
 mod events;
+mod fork;
 mod header;
 mod history;
 mod overlay;
@@ -294,6 +295,8 @@ pub struct ChatPane {
     /// Taken on use, so a conversation picked once cannot be resumed again by a
     /// later switch back to that session.
     pending_resume: Option<(u64, PathBuf)>,
+    /// A fork read off disk, waiting for the session the shell mints for it.
+    pending_fork: Option<fork::StagedFork>,
     /// Whether the window's rail is hidden, so this pane can offer the way
     /// back.
     ///
@@ -438,6 +441,7 @@ impl ChatPane {
                 page: None,
                 archives: None,
                 pending_resume: None,
+                pending_fork: None,
                 rail_hidden: false,
                 background_menu: std::cell::Cell::new(None),
                 terminal_live: false,
@@ -754,6 +758,18 @@ pub use onehand_core::rel_time;
 /// costs reads as data loss.
 fn waits_alone(link: Link, was_live: bool) -> bool {
     link == Link::Connecting && !was_live
+}
+
+/// Whether the composer takes the keyboard as it first appears.
+///
+/// A session shown for the first time is given the composer's focus while the
+/// pane draws nothing but the wait, so the composer is not in the frame: the
+/// keyboard falls back to the pane's own handle, and stays there once the
+/// composer arrives unless something hands it over. Only a first connect, and
+/// only a keyboard parked on the pane: one the person moved elsewhere
+/// meanwhile (the Workbench, a terminal) is theirs.
+fn caret_to_composer(link: Link, was_live: bool, parked_on_pane: bool) -> bool {
+    link == Link::Connected && !was_live && parked_on_pane
 }
 
 /// Whether showing `next` means putting down whatever the pane was showing.

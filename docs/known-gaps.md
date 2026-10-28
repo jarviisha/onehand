@@ -36,6 +36,11 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
 - **A refused menu row cannot say why.** The library's menu row takes no tooltip, so a row that
   refuses (*Move up* on a workflow's first step) is drawn refusing without its reason, which its
   place has to say.
+- **A fork splits the conversation, not the files.** What the agent changed after the point stays
+  on disk. Only a prompt forks: not an answer, a tool step or a subagent card, and there is no
+  switching between branches inside one conversation. A prompt of attachments only has no
+  controls under it, so no fork; a conversation saved before message ids were kept offers none.
+  Copilot does not fork.
 - **The Workbench's file tree has no search.** A file in a closed folder is reached by opening the
   folders above it.
 - **Dragging a rail row has no edge autoscroll**, and the keyboard's row in the rail is not

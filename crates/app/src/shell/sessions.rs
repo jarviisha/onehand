@@ -4,6 +4,7 @@ use crate::state::Shared;
 use gpui::{App, BorrowAppContext, Context, SharedString, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::dock::DockPlacement;
+use onehand_core::config::AgentSpec;
 use onehand_core::gitstat;
 use std::path::PathBuf;
 
@@ -247,7 +248,7 @@ impl Shell {
     }
 
     /// Close session `uid` and its agent, no question asked.
-    fn end_session(&mut self, uid: u64, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn end_session(&mut self, uid: u64, window: &mut Window, cx: &mut Context<Self>) {
         if !self.drop_session(uid, cx) {
             return;
         }
@@ -522,6 +523,25 @@ impl Shell {
         self.spawn_session(idx, resume, window, cx)
     }
 
+    /// Add a session running `spec` on the active root, not yet shown, and
+    /// hand back its uid.
+    pub(super) fn mint_session(
+        &mut self,
+        spec: AgentSpec,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<u64> {
+        let uid = cx.update_global::<Shared, _>(|shared, _| shared.next_uid());
+        if self.window.workspace.add_session(spec, uid).is_none() {
+            window.push_notification(
+                crate::toast::warning("Add a project before starting a session"),
+                cx,
+            );
+            return None;
+        }
+        Some(uid)
+    }
+
     /// Mint a session on the active root and show it, resuming `archive` if one
     /// was named.
     ///
@@ -543,14 +563,7 @@ impl Shell {
             );
             return None;
         };
-        let uid = cx.update_global::<Shared, _>(|shared, _| shared.next_uid());
-        if self.window.workspace.add_session(spec, uid).is_none() {
-            window.push_notification(
-                crate::toast::warning("Add a project before starting a session"),
-                cx,
-            );
-            return None;
-        }
+        let uid = self.mint_session(spec, window, cx)?;
         if let Some(archive) = archive {
             self.chat
                 .update(cx, |pane, _| pane.resume_next(uid, archive));

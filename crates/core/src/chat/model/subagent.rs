@@ -112,7 +112,7 @@ impl Chat {
             },
             AcpEvent::Connected { .. }
             | AcpEvent::SessionId(_)
-            | AcpEvent::AgentChunk(_)
+            | AcpEvent::AgentChunk { .. }
             | AcpEvent::ThoughtChunk(_)
             | AcpEvent::UserChunk(_)
             | AcpEvent::ToolCall(_)
@@ -223,7 +223,7 @@ fn interrupt(items: &mut [ChatItem]) {
 /// the session, which the parent already shows.
 fn step(items: &mut Vec<ChatItem>, event: AcpEvent) -> bool {
     match event {
-        AcpEvent::AgentChunk(s) => {
+        AcpEvent::AgentChunk { text: s, .. } => {
             seal_thought(items);
             match items.last_mut() {
                 Some(ChatItem::Agent(md)) => md.push(&s),

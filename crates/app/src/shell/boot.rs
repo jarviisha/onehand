@@ -209,6 +209,16 @@ impl Shell {
                         crate::toast::failed("Deleting the conversation", why),
                         cx,
                     ),
+                    E::Fork { root, spec } => shell.fork_session(root, spec.clone(), window, cx),
+                    E::ForkFailed { uid, why } => {
+                        if let Some(uid) = uid {
+                            shell.end_session(*uid, window, cx);
+                        }
+                        window.push_notification(
+                            crate::toast::failed("Forking the conversation", why),
+                            cx,
+                        );
+                    }
                     E::OpenIssue { root, number } => shell.open_issue(root, *number, window, cx),
                     E::ShowSession { uid, window: at } => {
                         shell.show_session_in(*uid, *at, window, cx)

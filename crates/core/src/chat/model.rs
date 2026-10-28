@@ -13,6 +13,7 @@ use std::path::PathBuf;
 
 mod apply;
 mod background;
+mod fork;
 mod items;
 mod meta;
 mod persist;
@@ -20,6 +21,7 @@ mod subagent;
 mod turn;
 pub use apply::{ApplyOutcome, Away, UserAsk};
 pub use background::{BackgroundItem, Level, Meter};
+pub use fork::{fork_seed, ForkPoint, ForkSeed};
 pub(crate) use items::line_change_counts;
 pub use items::{
     AskItem, AskRow, ChatItem, Md, MdId, NoticeLevel, PermItem, PlanItem, Thought, ToolItem,
@@ -97,6 +99,13 @@ pub struct Chat {
     /// delivers agent content.
     pub history: Vec<ChatItem>,
     pub session_id: Option<String>,
+    /// Whether the agent serving this conversation forks sessions, as its
+    /// last handshake said.
+    pub(crate) forkable: bool,
+    /// Started as a fork that has not opened yet.
+    forking: bool,
+    /// Why this conversation's fork never opened.
+    fork_failed: Option<String>,
     /// The session's root + agent name, for the persisted metadata.
     pub root: PathBuf,
     pub agent: String,

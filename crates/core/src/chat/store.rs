@@ -59,7 +59,7 @@ const MAX_BLOB_BYTES: u64 = 4 * 1024 * 1024;
 /// The most transcript items a conversation comes back with.
 ///
 /// Taken from the **end**, because the end is the part being continued.
-const MAX_RESTORED_ITEMS: usize = 2000;
+pub(crate) const MAX_RESTORED_ITEMS: usize = 2000;
 
 mod lines;
 mod write;
@@ -381,6 +381,18 @@ fn list_where(store: &Path, keep: impl Fn(&str, &str) -> bool) -> Vec<(String, C
 
 /// Read a conversation, ready to render. Blocking.
 pub fn load(dir: &Path) -> Option<ConversationSnapshot> {
+    read(dir, MAX_RESTORED_ITEMS)
+}
+
+/// Read a conversation whole, however long. Blocking. For a fork, whose copy
+/// is written from what was read: cut to the tail, it would lose its
+/// beginning for good.
+pub(crate) fn load_whole(dir: &Path) -> Option<ConversationSnapshot> {
+    read(dir, usize::MAX)
+}
+
+/// Read a conversation, keeping at most its last `cap` items.
+fn read(dir: &Path, cap: usize) -> Option<ConversationSnapshot> {
     // The transcript is not opened at all until the metadata has parsed and
     // matched, so a format this build does not know is refused whole rather
     // than read under the wrong schema.
@@ -401,8 +413,8 @@ pub fn load(dir: &Path) -> Option<ConversationSnapshot> {
         })
         .collect();
 
-    let bounded = parsed.len() > MAX_RESTORED_ITEMS;
-    let tail = parsed.len().saturating_sub(MAX_RESTORED_ITEMS);
+    let bounded = parsed.len() > cap;
+    let tail = parsed.len().saturating_sub(cap);
     let mut items: Vec<ChatItem> = Vec::with_capacity(parsed.len() - tail + 1);
     if bounded {
         items.push(ChatItem::notice(

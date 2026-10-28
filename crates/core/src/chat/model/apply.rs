@@ -206,8 +206,14 @@ impl Chat {
             _ => self.user_chunk_open = false,
         }
         match event {
-            AcpEvent::Connected { tx, resumed } => {
+            AcpEvent::Connected {
+                tx,
+                resumed,
+                forkable,
+            } => {
                 self.tx = Some(tx);
+                self.forkable = forkable;
+                self.forking = false;
                 self.link = Link::Connected;
                 self.resumed = resumed;
                 // The replay window was armed in `load_history`; this is where it
@@ -246,10 +252,10 @@ impl Chat {
                 }
             }
             AcpEvent::SessionId(id) => self.session_id = Some(id),
-            AcpEvent::AgentChunk(s) => {
+            AcpEvent::AgentChunk { text, message } => {
                 self.consume_replay();
                 self.finalize_thought();
-                self.push_agent(&s);
+                self.push_agent(&text, message);
             }
             AcpEvent::ThoughtChunk(s) => {
                 self.consume_replay();
@@ -432,6 +438,9 @@ impl Chat {
                 self.items.push(ChatItem::failure(text, level, detail));
             }
             AcpEvent::Disconnected(e) => {
+                if std::mem::take(&mut self.forking) {
+                    self.fork_failed = Some(e.clone());
+                }
                 // A thought cut off with the adapter is over, not still running.
                 self.finalize_thought();
                 self.tx = None;
@@ -521,16 +530,22 @@ impl Chat {
         }
     }
 
-    fn push_agent(&mut self, s: &str) {
+    fn push_agent(&mut self, s: &str, message: Option<String>) {
         // A block already on disk is never added to: the file is only
         // appended to, so text that lands after it was written (the agent
         // writing between turns) goes in a block of its own.
         let written = !self.rewrite
             && !matches!(self.replay, Replay::Partial(_))
             && self.persisted >= self.history.len() + self.items.len();
-        match self.items.last_mut() {
-            Some(ChatItem::Agent(md)) if !written => md.push(s),
-            _ => self.items.push(ChatItem::Agent(Md::parse(s))),
+        if written || !matches!(self.items.last(), Some(ChatItem::Agent(_))) {
+            self.items.push(ChatItem::Agent(Md::parse("")));
+        }
+        let Some(ChatItem::Agent(md)) = self.items.last_mut() else {
+            unreachable!("the transcript ends on an answer block");
+        };
+        md.push(s);
+        if message.is_some() {
+            md.message = message;
         }
     }
 

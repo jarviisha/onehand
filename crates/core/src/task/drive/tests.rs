@@ -52,7 +52,11 @@ fn connected() -> (
 ) {
     let (tx, rx): (ReqTx, _) = tokio::sync::mpsc::unbounded_channel();
     let mut chat = Chat::default();
-    chat.apply(AcpEvent::Connected { tx, resumed: false });
+    chat.apply(AcpEvent::Connected {
+        tx,
+        resumed: false,
+        forkable: false,
+    });
     (chat, rx)
 }
 
@@ -107,7 +111,10 @@ impl Rig {
 
     /// The agent answers the turn under way with `text`.
     fn turn_ends(&mut self, text: &str) -> Vec<Effect> {
-        self.chat.apply(AcpEvent::AgentChunk(text.into()));
+        self.chat.apply(AcpEvent::AgentChunk {
+            text: text.into(),
+            message: None,
+        });
         self.chat.apply(AcpEvent::TurnEnded {
             stop_reason: "end_turn".into(),
         });
@@ -357,7 +364,11 @@ fn a_prompt_waits_for_the_agent_to_come_up() {
     assert!(!submitted(&fx), "not up yet");
     let (tx, rx): (ReqTx, _) = tokio::sync::mpsc::unbounded_channel();
     rig._rx = rx;
-    rig.chat.apply(AcpEvent::Connected { tx, resumed: false });
+    rig.chat.apply(AcpEvent::Connected {
+        tx,
+        resumed: false,
+        forkable: false,
+    });
     let fx = rig.on(Input::Appended);
     assert!(submitted(&fx), "{fx:?}");
     assert!(has(&fx, |e| matches!(e, Effect::CameUp)));
@@ -610,7 +621,10 @@ fn a_turn_read_judges_the_answer_since_the_prompt() {
 #[test]
 fn a_chunk_is_heeded_only_when_it_can_move_the_run() {
     let mut rig = in_turn();
-    rig.chat.apply(AcpEvent::AgentChunk("thinking".into()));
+    rig.chat.apply(AcpEvent::AgentChunk {
+        text: "thinking".into(),
+        message: None,
+    });
     assert!(!rig.drive.heeds_appended(&rig.chat), "a reply streaming in");
     let mut taken = at_approval();
     assert!(taken.chat.submit("my own words", &[]));
@@ -627,9 +641,11 @@ fn a_chunk_is_heeded_only_when_it_can_move_the_run() {
     assert!(!waiting.drive.heeds_appended(&waiting.chat), "not up yet");
     let (tx, rx): (ReqTx, _) = tokio::sync::mpsc::unbounded_channel();
     waiting._rx = rx;
-    waiting
-        .chat
-        .apply(AcpEvent::Connected { tx, resumed: false });
+    waiting.chat.apply(AcpEvent::Connected {
+        tx,
+        resumed: false,
+        forkable: false,
+    });
     assert!(
         waiting.drive.heeds_appended(&waiting.chat),
         "the held prompt can go"

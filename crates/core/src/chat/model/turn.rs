@@ -258,7 +258,7 @@ impl Chat {
     }
 
     /// The item list a toggle targets: live items or the read-only history.
-    fn list(&self, target: TranscriptItemId) -> &[ChatItem] {
+    pub(super) fn list(&self, target: TranscriptItemId) -> &[ChatItem] {
         match target {
             TranscriptItemId::History(_) => &self.history,
             TranscriptItemId::Live(_) => &self.items,
