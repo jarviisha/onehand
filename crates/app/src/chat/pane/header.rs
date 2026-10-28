@@ -85,21 +85,29 @@ impl ChatPane {
     /// to the conversation the name beside them is.
     fn header_row(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let chat = self.active_chat(cx);
-        let title = chat.and_then(Chat::conversation_title).unwrap_or_else(|| {
-            match &self.page {
-                // These pages, and a project's page, name themselves in their
-                // own head at its title size.
-                Some(
-                    super::Page::Settings(_)
-                    | super::Page::Workspace(_)
-                    | super::Page::Issues(_)
-                    | super::Page::Tasks(_)
-                    | super::Page::Workflows(_)
-                    | super::Page::Schedules(_),
-                )
-                | None => String::new(),
-            }
-        });
+        // Unnamed until its first prompt, a conversation is called by the
+        // agent that runs it, as its row on the rail is.
+        let agent = chat
+            .and(self.active_conversation())
+            .map(|conv| conv.spec.name.clone());
+        let title = chat
+            .and_then(Chat::conversation_title)
+            .or(agent)
+            .unwrap_or_else(|| {
+                match &self.page {
+                    // These pages, and a project's page, name themselves in their
+                    // own head at its title size.
+                    Some(
+                        super::Page::Settings(_)
+                        | super::Page::Workspace(_)
+                        | super::Page::Issues(_)
+                        | super::Page::Tasks(_)
+                        | super::Page::Workflows(_)
+                        | super::Page::Schedules(_),
+                    )
+                    | None => String::new(),
+                }
+            });
         let busy = chat.is_some_and(|chat| chat.busy);
         // A conversation the agent has not named yet has no directory to remove:
         // nothing is written until the first turn ends. The menu says so by

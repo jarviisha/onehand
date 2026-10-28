@@ -20,7 +20,8 @@ use onehand_ui::Tall as _;
 use onehand_ui::TallIcon as _;
 use onehand_ui::page_search;
 use onehand_ui::{
-    AppIcon, ControlSize, action, badge, choice, menu_below, menu_item, picker, status_ink, tint,
+    AppIcon, ControlSize, action, badge, choice, menu_below, menu_item, neutral_tint, picker,
+    status_ink, tint,
 };
 use std::path::PathBuf;
 
@@ -55,7 +56,7 @@ impl IssuesView {
                         picked => picked.label(),
                     },
                     picked != Progress::All,
-                    ControlSize::Short,
+                    ControlSize::Tall,
                     cx,
                 ),
                 move |mut menu, _, _| {
@@ -92,7 +93,7 @@ impl IssuesView {
                     "issues-page-project-trigger",
                     name,
                     picked.is_some(),
-                    ControlSize::Short,
+                    ControlSize::Tall,
                     cx,
                 ),
                 move |menu, _, _| {
@@ -129,7 +130,7 @@ impl IssuesView {
                     "issues-page-label-trigger",
                     picked.clone().unwrap_or_else(|| "Label".to_string()),
                     picked.is_some(),
-                    ControlSize::Short,
+                    ControlSize::Tall,
                     cx,
                 ),
                 move |menu, window, _| {
@@ -189,7 +190,7 @@ impl IssuesView {
                     ("issues-page-showing", usize::from(pick)),
                     name,
                     pick == filters.closed,
-                    ControlSize::Short,
+                    ControlSize::Tall,
                     cx,
                 )
                 .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
@@ -211,9 +212,15 @@ impl IssuesView {
                             div().absolute().left_neg_2().bottom_neg_2().child(
                                 // A notch slimmer than a badge in a row, as a
                                 // count on a corner is.
+                                // None at all takes no hue: a count of
+                                // nothing has nothing to draw the eye to.
                                 badge(
                                     count.to_string(),
-                                    if pick { closed_tint } else { open_tint },
+                                    match (count, pick) {
+                                        (0, _) => neutral_tint(cx),
+                                        (_, true) => closed_tint,
+                                        (_, false) => open_tint,
+                                    },
                                 )
                                 .py_0p5(),
                             ),
@@ -271,7 +278,7 @@ impl IssuesView {
         let clear =
             narrowed.then(|| {
                 action("issues-page-clear-filters")
-                    .short()
+                    .tall()
                     .quiet(cx)
                     .label("Clear filters")
                     .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {

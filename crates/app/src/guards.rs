@@ -380,6 +380,36 @@ mod tests {
         }
     }
 
+    /// Text clamped to some lines ends on an ellipsis. gpui's `line_clamp`
+    /// alone stops the text at the last line's edge, mid-word, with nothing
+    /// to say more was there; the ellipsis comes only with a text overflow.
+    ///
+    /// Reads the three lines on each side of each `.line_clamp(` for any
+    /// `.text_ellipsis` or `.text_overflow(`. An overflow set further along
+    /// the chain is not seen.
+    #[test]
+    fn clamped_text_ends_on_an_ellipsis() {
+        for (path, source) in ui_sources() {
+            if path.ends_with("guards.rs") {
+                continue;
+            }
+            let lines: Vec<&str> = source.lines().collect();
+            for (i, line) in lines.iter().enumerate() {
+                if !line.contains(".line_clamp(") {
+                    continue;
+                }
+                let near = &lines[i.saturating_sub(3)..(i + 4).min(lines.len())];
+                assert!(
+                    near.iter()
+                        .any(|l| l.contains(".text_ellipsis") || l.contains(".text_overflow(")),
+                    "{path}:{}: `.line_clamp(` without `.text_ellipsis()` cuts the text \
+                     mid-word with no mark that it was cut",
+                    i + 1
+                );
+            }
+        }
+    }
+
     /// Every document in the repository is written in English.
     ///
     /// These files are the binding contracts, they are read alongside source

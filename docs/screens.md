@@ -130,7 +130,8 @@ held off its neighbours by a gap, drawn no taller than leaves the conversation a
 height (its dragged height kept).
 
 - Strips as tall as the header, a mode's own bar under the Workbench's a step lower. The Workbench's: *← Conversation* while it has the area, the modes
-  (Editor, Markdown, Issues, Plugins, Neovim; a select when narrow), maximize, hide. The terminal's:
+  (Editor, Markdown, Issues, Plugins only where a Claude Code agent is set up when the window
+  opens, Neovim; a select when narrow), maximize, hide. The terminal's:
   shell tabs (each capped in width, scrolling, so none is left out), `+`, maximize, hide. File
   tabs never shrink: the newest that fit stay, the current one among them, and the older ones
   go into an *N more* menu after them.

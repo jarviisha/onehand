@@ -691,15 +691,17 @@ impl ChatPane {
             .collect();
         // A section, not a box: a list read down the page, which the boxes
         // above set apart from the rest.
-        let recent = page_card("Recent conversations", None, None, cx).child(match page.recent {
-            None => div().child(muted_line("Reading past conversations…".to_string())),
-            Some(_) => list(
-                recent,
-                PAGE_RECENT,
-                "older",
-                "No past conversations to pick up",
-            ),
-        });
+        let recent_n = page.recent.is_some().then_some(recent.len());
+        let recent =
+            page_card("Recent conversations", recent_n, None, cx).child(match page.recent {
+                None => div().child(muted_line("Reading past conversations…".to_string())),
+                Some(_) => list(
+                    recent,
+                    PAGE_RECENT,
+                    "older",
+                    "No past conversations to pick up",
+                ),
+            });
 
         let unbound = !page.projects.is_empty()
             && page.projects.iter().all(|project| project.issues.is_none());
