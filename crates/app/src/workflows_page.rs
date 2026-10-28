@@ -206,7 +206,7 @@ impl Render for WorkflowsPage {
                 .size_full()
                 .v_flex()
                 .child(div().flex_none().h(crate::tokens::BAR_H))
-                .child(crate::chat::pane::page_parts::page_top(
+                .child(crate::page_parts::page_top(
                     Some(crate::tokens::PAGE_WIDE),
                     grid::head(&handle, &query, cx),
                     cx,

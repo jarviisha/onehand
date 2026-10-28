@@ -30,7 +30,6 @@ mod fork;
 mod header;
 mod history;
 mod overlay;
-pub(crate) mod page_parts;
 mod project_page;
 mod resume_picker;
 mod runs;
@@ -44,8 +43,6 @@ use header::Archives;
 use project_page::EmptyProject;
 pub use tasks_page::CloseTaskDetail;
 use tasks_page::TasksPage;
-pub(crate) use workspace_page::ALL_PROJECTS;
-pub use workspace_page::PageProject;
 use workspace_page::WorkspacePage;
 
 /// A page drawn in place of a conversation, about more than one project.

@@ -67,10 +67,10 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | A dialog's title row | `title_row` | `crates/app/src/dialogs.rs` |
 | A form field | `field` (its line about the setting in meta text) | `crates/ui/src/lib.rs`, re-exported by `crates/app/src/settings.rs` |
 | A Settings group (a first one with a title: `lead_section`, no rule), a Settings row (its controls wrap under its words when narrow), a group's rows parted by hairlines | `section`, `lead_section`, `list_row`, `list_rows` | `crates/app/src/settings.rs` |
-| A page's head, and the top it stays in over what scrolls | `page_head(title, facts, actions, cx)`, `page_top(width, parts, cx)` | `crates/ui/src/page.rs`, re-exported by `crates/app/src/chat/pane/page_parts.rs` |
-| A page's box and title row, a list section (a box too), rows parted by hairlines, two boxes to a row | `page_card`, `card_title`, `ruled(rows, cx)`, `pair` | `crates/app/src/chat/pane/page_parts.rs` |
-| A page form's problems, or that it is only read, along the page's foot | `foot_bar(icon, base, lines, cx)` (the tint of `base`, the mark slotted on the first line) | `crates/app/src/chat/pane/page_parts.rs` |
-| A page form's problems in its body, above what they are about | `notice_box(icon, base, lines, cx)`: `foot_bar`'s tint, mark and lines in a box at a box's corner | `crates/app/src/chat/pane/page_parts.rs` |
+| A page's head, and the top it stays in over what scrolls | `page_head(title, facts, actions, cx)`, `page_top(width, parts, cx)` | `crates/ui/src/page.rs`, re-exported by `crates/app/src/page_parts.rs` |
+| A page's box and title row, a list section (a box too), rows parted by hairlines, two boxes to a row | `page_card`, `card_title`, `ruled(rows, cx)`, `pair` | `crates/app/src/page_parts.rs` |
+| A page form's problems, or that it is only read, along the page's foot | `foot_bar(icon, base, lines, cx)` (the tint of `base`, the mark slotted on the first line) | `crates/app/src/page_parts.rs` |
+| A page form's problems in its body, above what they are about | `notice_box(icon, base, lines, cx)`: `foot_bar`'s tint, mark and lines in a box at a box's corner | `crates/app/src/page_parts.rs` |
 | A dialog's footer (a third action at its start) | `footer_row` | `crates/app/src/dialogs.rs` |
 | A run dialog's sections parted by hairlines; a preflight finding with its state's mark | `sections`, `finding_line` | `crates/app/src/dialogs.rs` |
 | A Settings sub-page's scope line | `page_head` | `crates/app/src/settings.rs` |
@@ -117,7 +117,7 @@ need migrating itself.
 | One long list to scan, filter and pick from, in the agent pane | List page | the Issues page, `crates/issues/src/view/page.rs` |
 | The top of a page: its head, then its search and filters | The top of a page, Filter bar | `crates/issues/src/view/page/head.rs`; `tasks_frame` for a top with no search |
 | Related fields or a subsection | Plain section | `section` in `crates/app/src/settings.rs` |
-| The facts about one thing on a page | Box | `card_box` (`onehand_ui`); `page_card`, `card_title` and `pair` in `crates/app/src/chat/pane/page_parts.rs` |
+| The facts about one thing on a page | Box | `card_box` (`onehand_ui`); `page_card`, `card_title` and `pair` in `crates/app/src/page_parts.rs` |
 | A bar along the top of a region | Strip | `strip` and `strip_control` (`onehand_ui`) |
 | Rows to pick from | List | the Files tree, `crates/files/src/view.rs` |
 | Items opened one at a time, each with its own actions | Grid of boxes | `grid_page` in `crates/app/src/workflows_page/grid.rs` |

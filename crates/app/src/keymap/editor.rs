@@ -330,7 +330,7 @@ fn keys<'a>(
 /// A problem with the keymap, in a box on the danger tint led by the warning
 /// mark, so it reads as something to answer rather than as one more line.
 fn problem(text: String, danger: gpui::Hsla, cx: &App) -> gpui::AnyElement {
-    crate::chat::pane::page_parts::notice_box(
+    crate::page_parts::notice_box(
         gpui_component::IconName::TriangleAlert,
         danger,
         vec![text],

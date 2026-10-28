@@ -106,7 +106,7 @@ pub(super) fn head(
         )
     };
     [
-        crate::chat::pane::page_parts::page_head(
+        crate::page_parts::page_head(
             "Workflows",
             Some(facts.into_any_element()),
             vec![
@@ -126,7 +126,7 @@ pub(super) fn head(
         .into_any_element(),
         div()
             .h_flex()
-            .child(crate::chat::pane::page_parts::page_search(query, cx))
+            .child(crate::page_parts::page_search(query, cx))
             .into_any_element(),
     ]
 }

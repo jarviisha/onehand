@@ -1,11 +1,11 @@
 use super::header::Archives;
-use super::page_parts::{page_card, page_head, ruled};
 use super::{ChatPane, ChatPaneEvent, ProjectFacts, rel_time};
 use crate::chat::conversation::Conversation;
 use crate::controls::Named as _;
 use crate::controls::Quiet as _;
 use crate::controls::Short as _;
 use crate::controls::text_input;
+use crate::page_parts::{page_card, page_head, ruled};
 use crate::tokens::PAGE_PROSE;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{

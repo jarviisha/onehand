@@ -124,7 +124,7 @@ pub(super) fn head(
             })
             .into_any_element()
     });
-    crate::chat::pane::page_parts::page_head(
+    crate::page_parts::page_head(
         title,
         (!facts.is_empty()).then(|| facts.join(" · ").into_any_element()),
         actions,

@@ -716,7 +716,7 @@ impl Shell {
     }
 
     /// Every project as the workspace page lists it, in rail order.
-    pub(super) fn page_projects(&self) -> Vec<crate::chat::pane::PageProject> {
+    pub(super) fn page_projects(&self) -> Vec<crate::page_parts::PageProject> {
         let workspace = &self.window.workspace;
         workspace
             .display_order()
@@ -725,7 +725,7 @@ impl Shell {
             // A run's own worktree is not a project anybody chose, and its
             // issues are the project's it was cut from.
             .filter(|root| !root.transient)
-            .map(|root| crate::chat::pane::PageProject {
+            .map(|root| crate::page_parts::PageProject {
                 label: SharedString::from(root.label.clone()),
                 root: root.path.clone(),
                 sessions: root

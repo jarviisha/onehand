@@ -1,9 +1,9 @@
-use super::page_parts::{page_card, page_head, pair, ruled};
-use super::workspace_page::{ALL_PROJECTS, PageProject};
 use super::{ChatPane, ChatPaneEvent, Page};
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
 use crate::controls::Short as _;
+use crate::page_parts::{ALL_PROJECTS, PageProject};
+use crate::page_parts::{page_card, page_head, pair, ruled};
 use crate::task::Row;
 use crate::tokens::PAGE_WIDE;
 use gpui::prelude::FluentBuilder as _;
@@ -254,7 +254,7 @@ impl ChatPane {
             .v_flex()
             .child(self.header(cx))
             .when(!top.is_empty(), |page| {
-                page.child(super::page_parts::page_top(Some(width), top, cx))
+                page.child(crate::page_parts::page_top(Some(width), top, cx))
             })
             .child(
                 div()
