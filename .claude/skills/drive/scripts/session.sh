@@ -125,7 +125,9 @@ start_app() {
 }
 
 case ${1:-} in
-    up) seed; build_pointer; start_sway; hold_keyboard; stop app.pid; start_app "${2:-}" ;;
+    # A fresh keyboard here too, for `restart`'s reason below: `up` over a
+    # running session would otherwise start the app on the held one.
+    up) seed; build_pointer; start_sway; stop app.pid; drop_keyboard; hold_keyboard; start_app "${2:-}" ;;
     restart)
         stop app.pid
         rm -rf "$root/home/tasks" "$root/home/conversations"

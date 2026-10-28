@@ -23,7 +23,8 @@ The scripts are in `scripts/` beside this file; run them from anywhere. `DRIVE_R
      and two agents, *Mock Work* and *Mock UI*;
    - builds the virtual pointer;
    - starts sway;
-   - holds a virtual keyboard for the whole session, so the window counts as active;
+   - holds a virtual keyboard for the whole session, so the window counts as active, made
+     afresh on every `up`, since an app started on a held one can panic;
    - starts the app and waits for its window.
 
    Done when it returns 0. A non-zero exit prints the app's or sway's log tail.
