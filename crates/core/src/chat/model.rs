@@ -206,6 +206,8 @@ pub struct Chat {
     // ── what runs beside the turns ──
     /// The agent's live background work, oldest first, by its own reports.
     background: Vec<background::BackgroundItem>,
+    /// Background items a person asked to stop, until they end.
+    stop_asked: Vec<String>,
     /// The latest context report: tokens used, and the window's size.
     context: Option<(u64, u64)>,
     /// The latest rate-limit report of each kind, in the order first seen.

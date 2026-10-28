@@ -194,6 +194,7 @@ impl Chat {
             &event,
             AcpEvent::Background(_) | AcpEvent::SubagentEnded { .. } | AcpEvent::InChild { .. }
         ) && self.works_aside();
+        let mut asked_end = false;
         let asked_user = match event {
             AcpEvent::Permission(_) => Some(UserAsk::Permission),
             AcpEvent::Elicitation(_) => Some(UserAsk::Question),
@@ -303,7 +304,7 @@ impl Chat {
                 plan(&mut self.items, entries);
             }
             AcpEvent::Usage(usage) => self.apply_usage(usage),
-            AcpEvent::Background(report) => self.apply_background(report),
+            AcpEvent::Background(report) => asked_end = self.apply_background(report),
             // Changes the transcript only when it lands in a card, so the
             // stamp and the revision wait for that answer.
             event @ (AcpEvent::SubagentSpawned { .. }
@@ -479,7 +480,7 @@ impl Chat {
             }
         }
 
-        self.follow_own_cycle(wrote, aside_was, turn_ended || cycle_ended);
+        self.follow_own_cycle(wrote, aside_was && !asked_end, turn_ended || cycle_ended);
 
         ApplyOutcome {
             transcript_changed: self.revision != before,

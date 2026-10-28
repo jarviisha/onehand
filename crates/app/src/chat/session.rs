@@ -308,18 +308,26 @@ pub(crate) fn note(session: &Entity<ChatSession>, text: String, cx: &mut App) {
 }
 
 /// Wait out `quiet`, then save what the agent wrote between turns if any of
-/// it is still unsaved and settled, and end the cycle it ran by itself.
-fn quiet_save(quiet: Duration, cx: &mut Context<ChatSession>) -> Task<()> {
+/// it is still unsaved and settled, and end the cycle it ran by itself. A
+/// cycle a step still in flight holds is looked at again after its wait.
+fn quiet_save(mut quiet: Duration, cx: &mut Context<ChatSession>) -> Task<()> {
     cx.spawn(async move |session, cx| {
-        cx.background_executor().timer(quiet).await;
-        let _ = session.update(cx, |session: &mut ChatSession, cx| {
-            if session.chat.unsaved_between_turns() {
-                cx.emit(ChatEvent::CycleEnded);
+        loop {
+            cx.background_executor().timer(quiet).await;
+            let again = session.update(cx, |session: &mut ChatSession, cx| {
+                if session.chat.unsaved_between_turns() {
+                    cx.emit(ChatEvent::CycleEnded);
+                }
+                if session.chat.quiet_spell() {
+                    cx.notify();
+                }
+                session.chat.own_cycle_wait()
+            });
+            match again {
+                Ok(Some(wait)) => quiet = wait,
+                _ => return,
             }
-            if session.chat.quiet_spell() {
-                cx.notify();
-            }
-        });
+        }
     })
 }
 

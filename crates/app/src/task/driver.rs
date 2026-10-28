@@ -109,8 +109,9 @@ pub(crate) fn start(
     // only a parked card, or work a turn left running, has anything to learn
     // from one.
     let id = task.clone();
-    let answered = cx.observe(session, move |_, cx| {
-        if read(&id, cx, |d| d.drive.heeds_notified()).unwrap_or(false) {
+    let answered = cx.observe(session, move |session, cx| {
+        let chat = &session.read(cx).chat;
+        if read(&id, cx, |d| d.drive.heeds_notified(chat)).unwrap_or(false) {
             feed(&id, Input::Notified, cx);
         }
     });

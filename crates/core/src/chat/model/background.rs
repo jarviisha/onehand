@@ -141,6 +141,7 @@ impl Chat {
     pub fn stop_background(&mut self, id: &str) {
         if let Some(tx) = &self.tx {
             let _ = tx.send(AcpRequest::StopBackground { id: id.to_string() });
+            self.stop_asked.push(id.to_string());
         }
     }
 
@@ -190,7 +191,17 @@ impl Chat {
     /// Whether the agent is running: a turn is open, work or a subagent it
     /// started runs on after its turn, or it is at work by itself.
     pub fn running(&self) -> bool {
-        self.busy || self.works_aside() || self.own_cycle != OwnCycle::None
+        self.running_since(None)
+    }
+
+    /// [`Self::running`], counting only background work started at `since` or
+    /// later; all of it with no `since`.
+    pub fn running_since(&self, since: Option<Instant>) -> bool {
+        let fresh = |item: &BackgroundItem| since.is_none_or(|since| item.started >= since);
+        self.busy
+            || self.background.iter().any(fresh)
+            || self.subagents_working() > 0
+            || self.own_cycle != OwnCycle::None
     }
 
     /// Whether work or a subagent the agent started runs beside its turns.
@@ -228,7 +239,8 @@ impl Chat {
     /// `wrote`, work beside the turns ran before it (`aside_was`), and it
     /// `closed` a turn or a cycle.
     pub(super) fn follow_own_cycle(&mut self, wrote: bool, aside_was: bool, closed: bool) {
-        self.own_cycle = if closed || self.busy || self.link != Link::Connected {
+        let replaying = matches!(self.replay, Replay::Partial(_)) || self.rewrite;
+        self.own_cycle = if closed || self.busy || self.link != Link::Connected || replaying {
             // A turn's own running covers what it writes, and nothing comes
             // from an adapter that is gone, or still replaying a resume.
             OwnCycle::None
@@ -284,11 +296,13 @@ impl Chat {
             && self.link == Link::Connected
     }
 
-    pub(super) fn apply_background(&mut self, report: BackgroundReport) {
+    /// Whether the report ended an item a person asked to stop: nothing the
+    /// agent will answer.
+    pub(super) fn apply_background(&mut self, report: BackgroundReport) -> bool {
         match report {
             BackgroundReport::Spawned { id, name, kind } => {
                 if self.background.iter().any(|item| item.id == id) {
-                    return;
+                    return false;
                 }
                 let kind = if kind.is_empty() { "task".into() } else { kind };
                 let name = if name.is_empty() { kind.clone() } else { name };
@@ -298,8 +312,14 @@ impl Chat {
                     kind,
                     started: Instant::now(),
                 });
+                false
             }
-            BackgroundReport::Ended { id } => self.background.retain(|item| item.id != id),
+            BackgroundReport::Ended { id } => {
+                self.background.retain(|item| item.id != id);
+                let asked = self.stop_asked.contains(&id);
+                self.stop_asked.retain(|asked| *asked != id);
+                asked
+            }
         }
     }
 
@@ -320,6 +340,7 @@ impl Chat {
     pub(super) fn forget_activity(&mut self) {
         self.interrupt_subagents();
         self.background.clear();
+        self.stop_asked.clear();
         self.context = None;
         self.limits.clear();
     }

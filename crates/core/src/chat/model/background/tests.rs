@@ -659,3 +659,52 @@ fn no_own_cycle_inside_a_turn_in_a_replay_or_after_the_adapter() {
     assert!(!chat.running());
     chat.store = None;
 }
+
+#[test]
+fn a_step_in_flight_keeps_the_cycle_to_look_at_again() {
+    let mut chat = settled_chat();
+    chat.apply(AcpEvent::ToolCall(ToolCall {
+        id: "c9".into(),
+        title: "Bash".into(),
+        kind: ToolKind::Execute,
+        status: ToolStatus::InProgress,
+        content: Vec::new(),
+        description: None,
+    }));
+    assert!(!chat.quiet_spell());
+    assert_eq!(chat.own_cycle_wait(), Some(QUIET), "a wait to look again");
+    chat.store = None;
+}
+
+#[test]
+fn a_replay_after_the_answer_is_not_the_agent_at_work() {
+    let mut chat = settled_chat();
+    chat.replay = Replay::Partial(Vec::new());
+    chat.apply(chunk("replayed"));
+    assert!(!chat.running());
+    chat.store = None;
+}
+
+#[test]
+fn an_item_a_person_stopped_expects_no_answer() {
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut chat = settled_chat();
+    chat.tx = Some(tx);
+    chat.apply(spawned("t1"));
+    chat.stop_background("t1");
+    chat.apply(ended("t1"));
+    assert!(!chat.running());
+    chat.store = None;
+}
+
+#[test]
+fn running_since_leaves_out_older_background_work() {
+    let mut chat = settled_chat();
+    chat.apply(spawned("server"));
+    let since = Instant::now();
+    assert!(chat.running());
+    assert!(!chat.running_since(Some(since)));
+    chat.apply(spawned("build"));
+    assert!(chat.running_since(Some(since)));
+    chat.store = None;
+}

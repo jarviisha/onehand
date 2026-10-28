@@ -75,6 +75,9 @@ pub struct Drive {
     /// How many transcript items there were when the run's last prompt went:
     /// the turn's answer is what the agent said after that.
     answer_from: usize,
+    /// When the run's last prompt went: background work started before it is
+    /// not the step's to wait for.
+    sent_at: Option<Instant>,
     /// The turn's answer, kept while its work is read.
     answer: Option<String>,
     /// A prompt waiting for the agent to come up.
@@ -138,6 +141,7 @@ impl Drive {
             waiting: None,
             sent: 0,
             answer_from: 0,
+            sent_at: None,
             answer: None,
             pending: None,
             up: false,
@@ -187,10 +191,18 @@ impl Drive {
         self.card
     }
 
-    /// Whether [`Input::Notified`] could move the run: a card may have been
-    /// answered, or the work a turn left running may have ended.
-    pub fn heeds_notified(&self) -> bool {
-        self.card || self.after_work
+    /// Whether [`Input::Notified`] could move the run, read without moving
+    /// it: a card may have been answered, or the work the step's turn left
+    /// running has ended.
+    pub fn heeds_notified(&self, chat: &Chat) -> bool {
+        self.card || (self.after_work && !self.step_at_work(chat))
+    }
+
+    /// Whether the agent still works on the step: background work started
+    /// since its prompt, a subagent, or its own answer to them. A server an
+    /// earlier step left running is not this step's to wait for.
+    fn step_at_work(&self, chat: &Chat) -> bool {
+        chat.running_since(self.sent_at)
     }
 
     /// Stop was asked for, and waits on a command or forge call to land.
@@ -237,7 +249,8 @@ impl Drive {
                     self.budget.resume(now);
                     fx.push(Effect::Answered);
                 }
-                if let Some(chat) = chat.filter(|chat| self.after_work && !chat.running()) {
+                if let Some(chat) = chat.filter(|chat| self.after_work && !self.step_at_work(chat))
+                {
                     self.after_work = false;
                     if self.run.awaiting_turn() && self.held.is_none() {
                         self.after_turn(chat, &mut fx);
@@ -374,7 +387,7 @@ impl Drive {
             }
             // What the agent left running is part of the step: a build in the
             // background, a subagent, and what it says once they are done.
-            Input::TurnEnded if judge_turn && chat.running() => self.after_work = true,
+            Input::TurnEnded if judge_turn && self.step_at_work(chat) => self.after_work = true,
             Input::TurnEnded if judge_turn => self.after_turn(chat, fx),
             Input::TurnEnded => {}
             // A person answers the card; the clock waits for them.
@@ -678,6 +691,7 @@ impl Drive {
         };
         self.sent += 1;
         self.answer_from = chat.items.len();
+        self.sent_at = Some(now);
         fx.push(Effect::Submit(text));
     }
 
