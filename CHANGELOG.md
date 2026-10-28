@@ -135,6 +135,10 @@ minor bump may break any of them.
 - A session whose agent still runs work in the background reads *Running* on the rail, not idle.
 - What an agent writes after its turn has ended, when background work reports back, is saved to
   disk; before, it waited for the next turn's end and was lost if onehand closed first.
+- A session reads *Running* while its agent answers, by itself, the background work it waited on,
+  and from the moment that work ends; before, it read idle and stayed so while the agent wrote.
+- A workflow step whose turn leaves background work or a subagent running is judged once that work
+  and the agent's answer to it are done, not at the turn's end.
 - A password on a running command's line no longer shows on the line under a live turn; the
   block above it already masked it.
 - A question card asking one pick-one question carries *Skip* (and Alt+S, Esc), so passing on it
