@@ -4,8 +4,9 @@
 //! content streams; tool calls, plans, commands and selectors arrive in Phase 3.
 
 use crate::acp::types::{
-    BackgroundReport, ConfigChoice, ConfigOption, LimitStatus, PlanEntry, PlanStatus, RateLimit,
-    SlashCommand, SubagentEnd, ToolCall, ToolCallUpdate, ToolContent, ToolKind, ToolStatus, Usage,
+    BackgroundEnd, BackgroundReport, ConfigChoice, ConfigOption, LimitStatus, PlanEntry,
+    PlanStatus, RateLimit, SlashCommand, SubagentEnd, ToolCall, ToolCallUpdate, ToolContent,
+    ToolKind, ToolStatus, Usage,
 };
 use serde_json::Value;
 use std::sync::Arc;
@@ -113,17 +114,19 @@ pub(crate) fn parse_session_update(update: &Value) -> Vec<Update> {
             })]
         }
         "async_task_state_update" => {
-            let ended = matches!(
-                update.get("state").and_then(Value::as_str),
-                Some("completed" | "failed" | "stopped")
-            );
+            let end = match update.get("state").and_then(Value::as_str) {
+                Some("completed") => BackgroundEnd::Completed,
+                Some("failed") => BackgroundEnd::Failed,
+                Some("stopped") => BackgroundEnd::Stopped,
+                _ => return Vec::new(),
+            };
             update
                 .get("asyncTaskId")
                 .and_then(Value::as_str)
-                .filter(|_| ended)
                 .map(|id| {
                     vec![Update::Background(BackgroundReport::Ended {
                         id: id.into(),
+                        end,
                     })]
                 })
                 .unwrap_or_default()
@@ -984,11 +987,16 @@ mod tests {
         let state = |s: &str| {
             parsed(json!({"sessionUpdate":"async_task_state_update","asyncTaskId":"t1","state":s}))
         };
-        for s in ["completed", "failed", "stopped"] {
+        for (s, end) in [
+            ("completed", BackgroundEnd::Completed),
+            ("failed", BackgroundEnd::Failed),
+            ("stopped", BackgroundEnd::Stopped),
+        ] {
             assert_eq!(
                 state(s),
                 vec![Update::Background(BackgroundReport::Ended {
-                    id: "t1".into()
+                    id: "t1".into(),
+                    end,
                 })]
             );
         }

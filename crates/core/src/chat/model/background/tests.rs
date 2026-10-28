@@ -12,7 +12,22 @@ fn spawned(id: &str) -> AcpEvent {
 }
 
 fn ended(id: &str) -> AcpEvent {
-    AcpEvent::Background(BackgroundReport::Ended { id: id.into() })
+    ended_as(id, BackgroundEnd::Completed)
+}
+
+fn ended_as(id: &str, end: BackgroundEnd) -> AcpEvent {
+    AcpEvent::Background(BackgroundReport::Ended { id: id.into(), end })
+}
+
+/// The transcript's notices, with their levels.
+fn lines(chat: &Chat) -> Vec<(String, NoticeLevel)> {
+    chat.items
+        .iter()
+        .filter_map(|item| match item {
+            ChatItem::Notice { text, level, .. } => Some((text.clone(), *level)),
+            _ => None,
+        })
+        .collect()
 }
 
 fn usage(used: u64, size: u64) -> AcpEvent {
@@ -550,4 +565,120 @@ fn a_working_card_alone_is_not_unsaved() {
     assert!(chat.unsaved_between_turns(), "the ended card is");
     // Never written: the store is a path nobody owns.
     chat.store = None;
+}
+
+#[test]
+fn an_item_that_ends_leaves_a_line() {
+    let mut chat = Chat::default();
+    chat.apply(spawned("t1"));
+    let outcome = chat.apply(ended("t1"));
+    assert!(outcome.transcript_changed);
+    assert_eq!(
+        lines(&chat),
+        vec![(
+            "Background work finished after 0s: build t1".into(),
+            NoticeLevel::Info
+        )]
+    );
+}
+
+#[test]
+fn a_failed_item_is_loud_and_a_stopped_one_quiet() {
+    let mut chat = Chat::default();
+    chat.apply(spawned("t1"));
+    chat.apply(spawned("t2"));
+    chat.apply(ended_as("t1", BackgroundEnd::Failed));
+    chat.apply(ended_as("t2", BackgroundEnd::Stopped));
+    assert_eq!(
+        lines(&chat),
+        vec![
+            (
+                "Background work failed after 0s: build t1".into(),
+                NoticeLevel::Error
+            ),
+            (
+                "Background work stopped after 0s: build t2".into(),
+                NoticeLevel::Info
+            ),
+        ]
+    );
+}
+
+#[test]
+fn a_name_that_repeats_the_kind_is_said_once() {
+    let mut chat = Chat::default();
+    chat.apply(AcpEvent::Background(BackgroundReport::Spawned {
+        id: "t1".into(),
+        name: String::new(),
+        kind: "shell".into(),
+    }));
+    chat.apply(ended("t1"));
+    assert_eq!(lines(&chat)[0].0, "Background work finished after 0s");
+}
+
+#[test]
+fn an_end_for_an_unknown_item_leaves_no_line() {
+    let mut chat = Chat::default();
+    assert!(!chat.apply(ended("nobody")).transcript_changed);
+    assert!(chat.items.is_empty());
+}
+
+#[test]
+fn a_lost_adapter_says_each_item_was_interrupted() {
+    let mut chat = Chat::default();
+    chat.apply(spawned("t1"));
+    chat.apply(AcpEvent::Disconnected("adapter exited".into()));
+    let said = lines(&chat);
+    assert_eq!(said[0].0, "Background work interrupted after 0s: build t1");
+    assert_eq!(said.len(), 2, "then the failure");
+    chat.stream_ended();
+    assert_eq!(lines(&chat).len(), 2, "said once");
+}
+
+#[test]
+fn a_stream_ending_says_each_item_was_interrupted() {
+    let mut chat = Chat::default();
+    chat.apply(spawned("t1"));
+    let before = chat.revision;
+    chat.stream_ended();
+    assert_ne!(chat.revision, before);
+    assert_eq!(lines(&chat).len(), 1);
+}
+
+#[test]
+fn an_end_between_turns_is_saved() {
+    let mut chat = settled_chat();
+    chat.apply(spawned("t1"));
+    let outcome = chat.apply(ended("t1"));
+    assert!(chat.starts_quiet_save(&outcome));
+    assert!(chat.unsaved_between_turns());
+}
+
+#[test]
+fn an_end_seals_the_thought_before_it() {
+    let mut chat = Chat::default();
+    chat.apply(spawned("t1"));
+    chat.apply(AcpEvent::ThoughtChunk("thinking".into()));
+    chat.apply(ended("t1"));
+    assert!(matches!(&chat.items[0], ChatItem::Thought(t) if !t.is_running()));
+}
+
+#[test]
+fn a_restart_carries_each_item_over_as_interrupted() {
+    let mut chat = settled_chat();
+    chat.apply(spawned("t1"));
+    let snapshot = chat.take_snapshot().unwrap();
+    assert!(matches!(
+        snapshot.items.last(),
+        Some(ChatItem::Notice { text, .. }) if text == "Background work interrupted after 0s: build t1"
+    ));
+}
+
+#[test]
+fn an_end_a_resume_replays_leaves_no_line() {
+    let mut chat = Chat::default();
+    chat.apply(spawned("t1"));
+    chat.replay = Replay::Armed;
+    chat.apply(ended("t1"));
+    assert!(chat.items.is_empty());
 }
