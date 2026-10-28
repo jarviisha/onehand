@@ -152,6 +152,10 @@ minor bump may break any of them.
   on *Open* or *Closed* no longer takes its state's colour.
 - A conversation's header names its agent before the first prompt, as the rail does; *Recent
   conversations* counts what it holds; boxes stand evenly apart whether two to a row or stacked.
+- Settings ▸ Shortcuts names each command in a plain sentence (*Show or hide the rail*), and says
+  where a group's commands work once, on the group, rather than on every row.
+- Config keys and a project's path are set in the monospace face, and the new-issue form says what
+  it is for once.
 - The *More* and *Refresh* buttons on the Workflows, Issues and schedule pages, and a step
   setting's remove, are drawn whole; they had shrunk to a dot or a sliver.
 - A question card's long choice wraps clear of its Alt key instead of running under it.

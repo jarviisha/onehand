@@ -8,70 +8,60 @@ pub const COMMANDS: &[Command] = &[
     command!("settings", "Open Settings", ["ctrl-,"], OpenSettings),
     command!(
         "toggle_rail",
-        "Show / hide navigation rail",
+        "Show or hide the rail",
         ["ctrl-shift-b"],
         ToggleRail
     ),
     command!(
         "toggle_workbench",
-        "Show / hide Workbench (previous mode)",
+        "Show or hide the Workbench, on its last mode",
         ["ctrl-shift-j"],
         ToggleWorkbenchVisibility
     ),
-    command!(
-        "editor",
-        "Open / focus Editor",
-        ["ctrl-shift-e"],
-        ToggleWorkbench
-    ),
+    command!("editor", "Open Editor", ["ctrl-shift-e"], ToggleWorkbench),
     command!(
         "markdown",
-        "Open / focus Markdown",
+        "Open Markdown",
         ["ctrl-shift-m"],
         ToggleMarkdown
     ),
-    command!(
-        "neovim",
-        "Open / focus Neovim",
-        ["ctrl-shift-n"],
-        OpenNeovim
-    ),
+    command!("neovim", "Open Neovim", ["ctrl-shift-n"], OpenNeovim),
     // Unshifted on purpose: gpui names a key by the keysym the layout produces
     // with the modifiers applied, so shift over the backtick arrives as
     // `ctrl-~` and a `ctrl-shift-`` binding never matches anything.
     command!(
         "terminal",
-        "Show / hide terminal",
+        "Show or hide the terminal",
         ["ctrl-`"],
         ToggleTerminal
     ),
     command!(
         "composer",
-        "Focus composer",
+        "Go to the composer",
         ["ctrl-shift-a"],
         FocusComposer
     ),
     command!(
         NEW_SESSION,
-        "New session (default agent, current project)",
+        "New session with the default agent, in this project",
         ["ctrl-shift-o"],
         NewSession
     ),
     command!(
         RESTART,
-        "Restart agent (confirm again mid-turn)",
+        "Restart the agent; mid-turn, press again to confirm",
         ["ctrl-shift-r"],
         RestartSession
     ),
     command!(
         CLOSE_SESSION,
-        "Close session (confirm again mid-turn)",
+        "Close the session; mid-turn, press again to confirm",
         ["ctrl-shift-w"],
         CloseSession
     ),
     command!(
         "run_workflow",
-        "Run a workflow on the current project",
+        "Run a workflow on this project",
         [],
         RunWorkflow
     ),
@@ -84,13 +74,13 @@ pub const COMMANDS: &[Command] = &[
     ),
     command!(
         "maximize",
-        "Maximize focused panel / restore",
+        "Maximize or restore the focused panel",
         ["ctrl-shift-k"],
         ToggleMaximize
     ),
     command!(
         "save",
-        "Save open file",
+        "Save the open file",
         ["ctrl-s"],
         SaveFile,
         "Shell && !Terminal && !Dialog && !Settings",
@@ -98,20 +88,25 @@ pub const COMMANDS: &[Command] = &[
     ),
     command!(
         "zoom_in",
-        "Zoom focused panel in",
+        "Zoom the focused panel in",
         ["ctrl-=", "ctrl-+"],
         ZoomIn
     ),
-    command!("zoom_out", "Zoom focused panel out", ["ctrl--"], ZoomOut),
+    command!(
+        "zoom_out",
+        "Zoom the focused panel out",
+        ["ctrl--"],
+        ZoomOut
+    ),
     command!(
         "zoom_reset",
-        "Reset focused panel zoom",
+        "Reset the focused panel's zoom",
         ["ctrl-0"],
         ZoomReset
     ),
     command!(
         "next_session",
-        "Next session (most recent first)",
+        "Next session, most recent first",
         ["ctrl-tab"],
         NextSession
     ),
@@ -205,7 +200,7 @@ pub const COMMANDS: &[Command] = &[
         ["enter"],
         crate::rail::RailOpen,
         "Rail && !Input",
-        "Rail list"
+        super::RAIL_SCOPE
     ),
     command!(
         "rail_up",
@@ -213,7 +208,7 @@ pub const COMMANDS: &[Command] = &[
         ["up"],
         crate::rail::RailUp,
         "Rail && !Input",
-        "Rail list"
+        super::RAIL_SCOPE
     ),
     command!(
         "rail_down",
@@ -221,7 +216,7 @@ pub const COMMANDS: &[Command] = &[
         ["down"],
         crate::rail::RailDown,
         "Rail && !Input",
-        "Rail list"
+        super::RAIL_SCOPE
     ),
     command!(
         "rail_fold",
@@ -229,7 +224,7 @@ pub const COMMANDS: &[Command] = &[
         ["left"],
         crate::rail::RailFold,
         "Rail && !Input",
-        "Rail list"
+        super::RAIL_SCOPE
     ),
     command!(
         "rail_unfold",
@@ -237,7 +232,7 @@ pub const COMMANDS: &[Command] = &[
         ["right"],
         crate::rail::RailUnfold,
         "Rail && !Input",
-        "Rail list"
+        super::RAIL_SCOPE
     ),
     command!(
         "issues_up",

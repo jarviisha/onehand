@@ -498,10 +498,23 @@ fn slots_field(handle: &Entity<Shell>, slots: Slots, cx: &App) -> AnyElement {
     let starting = (slots.starting > 0).then(|| format!("{} starting", slots.starting));
     field(
         "Slots",
-        about(
-            "Issue runs working or queued, across every window, against unattended.at_once; \
-             a run waiting on a person holds none, and is counted against \
-             unattended.waiting when that is set",
+        // The caps are named by their keys in the config file, which are
+        // machine text and stand in its face, under the sentence.
+        Some(
+            div()
+                .v_flex()
+                .gap_0p5()
+                .child(
+                    "Issue runs working or queued, across every window, against the cap on runs \
+                     at once; a run waiting on a person holds none, and counts against the cap \
+                     on waiting runs when one is set; both set in the config file as",
+                )
+                .child(
+                    div()
+                        .font_family(cx.theme().mono_font_family.clone())
+                        .child("unattended.at_once · unattended.waiting"),
+                )
+                .into_any_element(),
         ),
         div()
             .v_flex()
