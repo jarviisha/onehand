@@ -97,6 +97,9 @@ pub struct Chat {
     /// delivers agent content.
     pub history: Vec<ChatItem>,
     pub session_id: Option<String>,
+    /// Whether the agent serving this conversation forks sessions, as its
+    /// last handshake said.
+    pub(crate) forkable: bool,
     /// The session's root + agent name, for the persisted metadata.
     pub root: PathBuf,
     pub agent: String,

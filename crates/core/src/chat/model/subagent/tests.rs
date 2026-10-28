@@ -310,7 +310,11 @@ fn a_longer_replay_keeps_the_files_cards() {
         });
     }
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-    chat.apply(AcpEvent::Connected { tx, resumed: true });
+    chat.apply(AcpEvent::Connected {
+        tx,
+        resumed: true,
+        forkable: false,
+    });
 
     assert_eq!(card(&chat.history, "c1").state, SubagentState::Completed);
     assert!(chat.flush().is_none_or(|write| !write.rewrite));

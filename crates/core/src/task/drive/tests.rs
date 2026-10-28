@@ -52,7 +52,11 @@ fn connected() -> (
 ) {
     let (tx, rx): (ReqTx, _) = tokio::sync::mpsc::unbounded_channel();
     let mut chat = Chat::default();
-    chat.apply(AcpEvent::Connected { tx, resumed: false });
+    chat.apply(AcpEvent::Connected {
+        tx,
+        resumed: false,
+        forkable: false,
+    });
     (chat, rx)
 }
 
@@ -360,7 +364,11 @@ fn a_prompt_waits_for_the_agent_to_come_up() {
     assert!(!submitted(&fx), "not up yet");
     let (tx, rx): (ReqTx, _) = tokio::sync::mpsc::unbounded_channel();
     rig._rx = rx;
-    rig.chat.apply(AcpEvent::Connected { tx, resumed: false });
+    rig.chat.apply(AcpEvent::Connected {
+        tx,
+        resumed: false,
+        forkable: false,
+    });
     let fx = rig.on(Input::Appended);
     assert!(submitted(&fx), "{fx:?}");
     assert!(has(&fx, |e| matches!(e, Effect::CameUp)));
@@ -633,9 +641,11 @@ fn a_chunk_is_heeded_only_when_it_can_move_the_run() {
     assert!(!waiting.drive.heeds_appended(&waiting.chat), "not up yet");
     let (tx, rx): (ReqTx, _) = tokio::sync::mpsc::unbounded_channel();
     waiting._rx = rx;
-    waiting
-        .chat
-        .apply(AcpEvent::Connected { tx, resumed: false });
+    waiting.chat.apply(AcpEvent::Connected {
+        tx,
+        resumed: false,
+        forkable: false,
+    });
     assert!(
         waiting.drive.heeds_appended(&waiting.chat),
         "the held prompt can go"

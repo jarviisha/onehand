@@ -120,7 +120,7 @@ impl AcpRuntime {
             return;
         }
         let token = crate::control::Token::mint();
-        let events = self.start(spec, cwd.clone(), None, token.servers());
+        let events = self.start(spec, cwd.clone(), acp::Opening::Fresh, token.servers());
         *self.warm.borrow_mut() = Some(Warm {
             spec: nameless(spec),
             cwd,
@@ -155,13 +155,13 @@ impl AcpRuntime {
         &self,
         spec: &AgentSpec,
         cwd: PathBuf,
-        resume: Option<String>,
+        opening: acp::Opening,
     ) -> (mpsc::Receiver<AcpEvent>, Instant, crate::control::Token) {
-        // A resume names a conversation, and the parked adapter has already
-        // been through `session/new` on a fresh one -- it is the wrong process
-        // to hand this caller, so it stays parked for whoever wants a new
+        // A resume or a fork names a conversation, and the parked adapter has
+        // already been through `session/new` on a fresh one -- it is the wrong
+        // process to hand this caller, so it stays parked for whoever wants a new
         // conversation instead.
-        if resume.is_none()
+        if opening == acp::Opening::Fresh
             && let Some(warm) = self
                 .warm
                 .borrow_mut()
@@ -170,7 +170,7 @@ impl AcpRuntime {
             return (warm.events, warm.started, warm.token);
         }
         let token = crate::control::Token::mint();
-        let events = self.start(spec, cwd, resume, token.servers());
+        let events = self.start(spec, cwd, opening, token.servers());
         (events, Instant::now(), token)
     }
 
@@ -179,7 +179,7 @@ impl AcpRuntime {
     /// take the spare a session is about to claim.
     pub fn probe(&self, spec: &AgentSpec, cwd: PathBuf) -> mpsc::Receiver<AcpEvent> {
         // No session will hold it, so its agent is given no way to onehand.
-        self.start(spec, cwd, None, Vec::new())
+        self.start(spec, cwd, acp::Opening::Fresh, Vec::new())
     }
 
     /// Spawn an adapter and forward its events, with no reference to the parked
@@ -188,7 +188,7 @@ impl AcpRuntime {
         &self,
         spec: &AgentSpec,
         cwd: PathBuf,
-        resume: Option<String>,
+        opening: acp::Opening,
         mcp_servers: Vec<serde_json::Value>,
     ) -> mpsc::Receiver<AcpEvent> {
         let (mut tx, rx) = mpsc::channel(EVENT_BUFFER);
@@ -206,7 +206,7 @@ impl AcpRuntime {
             };
             let opts = acp::SessionOpts {
                 cwd,
-                resume,
+                opening,
                 mcp_servers,
             };
             let stream = acp::connect(launch, opts);

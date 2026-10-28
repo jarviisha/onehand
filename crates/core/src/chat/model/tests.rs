@@ -649,7 +649,11 @@ fn a_short_replay_loses_to_the_file_even_when_the_load_succeeded() {
         text: "a summary of all that".into(),
         message: None,
     });
-    chat.apply(AcpEvent::Connected { tx, resumed: true });
+    chat.apply(AcpEvent::Connected {
+        tx,
+        resumed: true,
+        forkable: false,
+    });
 
     assert_eq!(chat.history.len(), 4, "the conversation is back on screen");
     assert!(chat.flush().is_none(), "and the file is left as it was");
@@ -666,7 +670,11 @@ fn a_completed_replay_rewrites_the_file_with_what_was_replayed() {
         text: "answer".into(),
         message: None,
     });
-    chat.apply(AcpEvent::Connected { tx, resumed: true });
+    chat.apply(AcpEvent::Connected {
+        tx,
+        resumed: true,
+        forkable: false,
+    });
 
     assert!(chat.history.is_empty());
     assert!(!chat.replay_pending());
@@ -691,7 +699,11 @@ fn a_failed_resume_puts_the_conversation_back() {
         text: "session/load failed".into(),
         detail: None,
     });
-    chat.apply(AcpEvent::Connected { tx, resumed: false });
+    chat.apply(AcpEvent::Connected {
+        tx,
+        resumed: false,
+        forkable: false,
+    });
 
     assert_eq!(chat.history.len(), 3, "the conversation is back on screen");
     assert_eq!(
@@ -1844,6 +1856,7 @@ fn fresh_session_fallback_drops_armed_prefs_unused() {
     chat.apply(AcpEvent::Connected {
         tx: chat.tx.clone().unwrap(),
         resumed: false,
+        forkable: false,
     });
     assert!(rx.try_recv().is_err());
     assert!(chat.pending_mode.is_none());
@@ -1865,6 +1878,7 @@ fn link_separates_coming_up_from_gone() {
     chat.apply(AcpEvent::Connected {
         tx: chat.tx.clone().unwrap(),
         resumed: false,
+        forkable: false,
     });
     assert_eq!(chat.link, Link::Connected);
 
@@ -2283,7 +2297,11 @@ fn a_failed_turn_survives_a_replay_that_replaces_the_file() {
         text: "half an answer".into(),
         message: None,
     });
-    chat.apply(AcpEvent::Connected { tx, resumed: true });
+    chat.apply(AcpEvent::Connected {
+        tx,
+        resumed: true,
+        forkable: false,
+    });
 
     assert!(chat.history.is_empty(), "the replay won");
     assert!(chat.failed(), "and the failure came with it");
@@ -2426,7 +2444,11 @@ fn a_refused_pick_goes_back_to_what_the_agent_last_confirmed() {
 fn an_older_refused_pick_leaves_a_newer_one_shown() {
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
     let mut chat = Chat::default();
-    chat.apply(AcpEvent::Connected { tx, resumed: false });
+    chat.apply(AcpEvent::Connected {
+        tx,
+        resumed: false,
+        forkable: false,
+    });
     chat.apply(AcpEvent::ModeChanged("default".into()));
     let refused = |chat: &mut Chat| {
         chat.apply(AcpEvent::PickRefused {

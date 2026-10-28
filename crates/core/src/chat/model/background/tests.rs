@@ -507,7 +507,11 @@ fn a_pending_rewrite_is_not_work_between_turns() {
         text: "answer".into(),
         message: None,
     });
-    chat.apply(AcpEvent::Connected { tx, resumed: true });
+    chat.apply(AcpEvent::Connected {
+        tx,
+        resumed: true,
+        forkable: false,
+    });
     assert!(chat.rewrite, "the replay settled into a rewrite");
     assert!(!chat.busy);
     assert!(!chat.unsaved_between_turns());

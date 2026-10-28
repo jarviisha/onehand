@@ -324,10 +324,10 @@ impl ChatSession {
         uid: u64,
         root: PathBuf,
         spec: &AgentSpec,
-        resume: Option<String>,
+        opening: onehand_core::acp::Opening,
         cx: &mut App,
     ) -> Entity<Self> {
-        let (events, started, token) = Shared::global(cx).acp.connect(spec, root.clone(), resume);
+        let (events, started, token) = Shared::global(cx).acp.connect(spec, root.clone(), opening);
         token.claim(uid);
         let seen = spec.clone();
 

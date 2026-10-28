@@ -206,8 +206,13 @@ impl Chat {
             _ => self.user_chunk_open = false,
         }
         match event {
-            AcpEvent::Connected { tx, resumed } => {
+            AcpEvent::Connected {
+                tx,
+                resumed,
+                forkable,
+            } => {
                 self.tx = Some(tx);
+                self.forkable = forkable;
                 self.link = Link::Connected;
                 self.resumed = resumed;
                 // The replay window was armed in `load_history`; this is where it

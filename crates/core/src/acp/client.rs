@@ -48,6 +48,7 @@ mod transport;
 mod wire;
 
 use forms::*;
+use handshake::is_replay;
 use transport::*;
 pub use wire::base64_encode;
 use wire::*;
@@ -64,10 +65,22 @@ const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(90);
 pub struct SessionOpts {
     /// The directory the agent works in, and the session's `cwd`.
     pub cwd: PathBuf,
-    /// The session to load rather than start, when there is one to resume.
-    pub resume: Option<String>,
+    /// Which session it is: a fresh one, one to resume, or a fork of another.
+    pub opening: Opening,
     /// The MCP servers the session is given, as ACP's `mcpServers` entries.
     pub mcp_servers: Vec<Value>,
+}
+
+/// How a session is opened.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Opening {
+    /// A fresh conversation.
+    Fresh,
+    /// The saved conversation with this id, loaded.
+    Resume(String),
+    /// A new conversation holding session `from`'s history up to and including
+    /// its agent message `message`. It fails rather than land anywhere else.
+    Fork { from: String, message: String },
 }
 
 /// Start the agent `launch` describes, with its variables set over what it
@@ -140,7 +153,11 @@ fn connect_over_result(
 enum Pending {
     Init,
     NewSession,
-    LoadSession,
+    /// The session with this id, loaded: a resume, or a fork once forked.
+    LoadSession {
+        sid: String,
+    },
+    Fork,
     PromptTurn,
     /// A mode or a config option asked for: its group and the value.
     Pick {
@@ -183,6 +200,8 @@ async fn run(
         ready: false,
         session_id: None,
         images: false,
+        forkable: false,
+        muted: false,
         auth_advice: None,
         opts,
         req_tx,
@@ -302,6 +321,11 @@ struct Conn {
     images: bool,
     /// How the agent says it is logged in, for when it answers that it is not.
     auth_advice: Option<String>,
+    /// Whether the agent said it forks sessions.
+    forkable: bool,
+    /// A fork's history is being loaded: the transcript already shows it, so
+    /// the conversation the agent replays meanwhile is not said again.
+    muted: bool,
     opts: SessionOpts,
     req_tx: super::types::ReqTx,
     output: EventTx<AcpEvent>,
@@ -455,6 +479,9 @@ impl Conn {
                 if let Some(update) = msg.get("params").and_then(|p| p.get("update")) {
                     let child = self.child_of(msg.get("params").unwrap_or(&Value::Null));
                     for u in parse::parse_session_update(update) {
+                        if self.muted && is_replay(&u) {
+                            continue;
+                        }
                         let ev = match u {
                             parse::Update::Agent { text, message } => {
                                 AcpEvent::AgentChunk { text, message }
@@ -496,7 +523,8 @@ impl Conn {
             match self.pending.remove(&id) {
                 Some(Pending::Init) => self.answer_init(&msg).await?,
                 Some(Pending::NewSession) => self.answer_new(&msg).await?,
-                Some(Pending::LoadSession) => self.answer_load(&msg).await?,
+                Some(Pending::LoadSession { sid }) => self.answer_load(&msg, sid).await?,
+                Some(Pending::Fork) => self.answer_fork(&msg).await?,
                 // The agent's answer to a pick is its confirmation or its
                 // refusal: what is shown follows it.
                 Some(Pending::Pick { group, value }) => {

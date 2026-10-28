@@ -54,7 +54,7 @@ async fn main() {
         launch,
         onehand_core::acp::SessionOpts {
             cwd,
-            resume: None,
+            opening: onehand_core::acp::Opening::Fresh,
             mcp_servers: Vec::new(),
         },
     );
@@ -63,7 +63,7 @@ async fn main() {
 
     while let Some(event) = stream.next().await {
         match event {
-            AcpEvent::Connected { tx, resumed } => {
+            AcpEvent::Connected { tx, resumed, .. } => {
                 eprintln!("== CONNECTED (resumed={resumed}) ==");
                 let _ = tx.send(AcpRequest::Prompt {
                     text: prompt.clone(),

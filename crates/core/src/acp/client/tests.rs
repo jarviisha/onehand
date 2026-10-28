@@ -3,7 +3,7 @@ use super::{
     parse_elicitation, LastWords, SessionOpts, Transport, ADAPTER_GRACE, STDERR_LINE_CAP,
     STDERR_TAIL_LINES,
 };
-use crate::acp::{AcpEvent, AcpRequest, ElicitKind, ElicitOutcome, ElicitValue};
+use crate::acp::{AcpEvent, AcpRequest, ElicitKind, ElicitOutcome, ElicitValue, Opening};
 use futures::StreamExt as _;
 use serde_json::{json, Value};
 use std::path::PathBuf;
@@ -16,14 +16,14 @@ fn connect(
     args: Vec<String>,
     env: Vec<(String, String)>,
     cwd: PathBuf,
-    resume: Option<String>,
+    opening: Opening,
 ) -> impl futures::Stream<Item = AcpEvent> {
     let launch = crate::config::Launch { command, args, env };
     super::connect(
         launch,
         SessionOpts {
             cwd,
-            resume,
+            opening,
             mcp_servers: Vec::new(),
         },
     )
@@ -89,13 +89,11 @@ impl Agent {
 /// the client to make any progress at all — driving it here is what lets the
 /// test body read and write the agent's side as a conversation.
 fn client() -> (Agent, tokio::sync::mpsc::UnboundedReceiver<AcpEvent>) {
-    client_resuming(None)
+    client_opening(Opening::Fresh)
 }
 
-/// [`client`], resuming the session `resume` names.
-fn client_resuming(
-    resume: Option<String>,
-) -> (Agent, tokio::sync::mpsc::UnboundedReceiver<AcpEvent>) {
+/// [`client`], opening its session the way `opening` says.
+fn client_opening(opening: Opening) -> (Agent, tokio::sync::mpsc::UnboundedReceiver<AcpEvent>) {
     let (transport, agent) = Transport::scripted();
     let (read, out) = tokio::io::split(agent);
     let (tx, events) = tokio::sync::mpsc::unbounded_channel();
@@ -104,7 +102,7 @@ fn client_resuming(
             transport,
             SessionOpts {
                 cwd: PathBuf::from("/tmp"),
-                resume,
+                opening,
                 mcp_servers: vec![json!({"name": "onehand"})],
             },
         );
@@ -573,7 +571,7 @@ async fn a_child_that_dies_before_speaking_carries_its_stderr_into_the_failure()
             ],
             Vec::new(),
             std::env::temp_dir(),
-            None,
+            Opening::Fresh,
         ));
         let mut last = None;
         while let Some(event) = events.next().await {
@@ -602,7 +600,7 @@ async fn a_line_that_is_not_utf8_does_not_stop_the_drain() {
         ],
         Vec::new(),
         std::env::temp_dir(),
-        None,
+        Opening::Fresh,
     ));
     let mut last = None;
     while let Some(event) = events.next().await {
@@ -691,7 +689,7 @@ async fn a_failed_turn_is_said_in_the_agents_words() {
 /// on to a fresh session rather than giving up.
 #[tokio::test]
 async fn a_refused_resume_is_said_in_the_agents_words() {
-    let (mut agent, mut events) = client_resuming(Some("s-old".into()));
+    let (mut agent, mut events) = client_opening(Opening::Resume("s-old".into()));
     let hello = agent.heard().await;
     agent
         .say(json!({
@@ -773,7 +771,7 @@ async fn the_adapter_is_started_with_its_environment() {
         vec!["-c".into(), "echo seen-$ONEHAND_PROBE >&2".into()],
         vec![("ONEHAND_PROBE".into(), "42".into())],
         std::env::temp_dir(),
-        None,
+        Opening::Fresh,
     );
     futures::pin_mut!(stream);
     let mut said = None;
@@ -994,7 +992,7 @@ async fn the_last_answer_before_an_exit_is_not_lost() {
             transport,
             SessionOpts {
                 cwd: PathBuf::from("/tmp"),
-                resume: None,
+                opening: Opening::Fresh,
                 mcp_servers: Vec::new(),
             },
         );
@@ -1369,4 +1367,246 @@ async fn a_childs_question_names_the_child() {
             }
         }
     }
+}
+
+/// Every event the client says up to and including the one that settles the
+/// handshake: `Connected` or `Disconnected`.
+async fn until_settled(
+    events: &mut tokio::sync::mpsc::UnboundedReceiver<AcpEvent>,
+) -> Vec<AcpEvent> {
+    let mut said = Vec::new();
+    while let Some(event) = events.recv().await {
+        let settled = matches!(
+            event,
+            AcpEvent::Connected { .. } | AcpEvent::Disconnected(_)
+        );
+        said.push(event);
+        if settled {
+            return said;
+        }
+    }
+    panic!("the stream ended before the handshake settled: {said:?}");
+}
+
+/// Answer `initialize`, offering forking when `fork` says so.
+async fn hello_forking(agent: &mut Agent, fork: bool) {
+    let hello = agent.heard().await;
+    assert_eq!(hello["method"], "initialize");
+    let capabilities = match fork {
+        true => json!({ "sessionCapabilities": { "fork": {} } }),
+        false => json!({}),
+    };
+    agent
+        .say(json!({"jsonrpc": "2.0", "id": hello["id"],
+            "result": { "protocolVersion": 1, "agentCapabilities": capabilities }}))
+        .await;
+}
+
+/// The client wrote nothing more and closed its pipe.
+async fn wrote_nothing_more(agent: &mut Agent) {
+    let next = tokio::time::timeout(std::time::Duration::from_secs(5), agent.lines.next_line())
+        .await
+        .expect("the client closes its pipe");
+    assert!(matches!(next, Ok(None)), "the client wrote {next:?}");
+}
+
+fn fork_of_m1() -> Opening {
+    Opening::Fork {
+        from: "orig".into(),
+        message: "m1".into(),
+    }
+}
+
+#[tokio::test]
+async fn init_reads_the_fork_capability() {
+    for offered in [true, false] {
+        let (mut agent, mut events) = client();
+        hello_forking(&mut agent, offered).await;
+        let new = agent.heard().await;
+        agent
+            .say(json!({"jsonrpc": "2.0", "id": new["id"], "result": { "sessionId": "s1" }}))
+            .await;
+        let said = until_settled(&mut events).await;
+        assert!(
+            matches!(said.last(), Some(AcpEvent::Connected { forkable, .. }) if *forkable == offered),
+            "{said:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn fork_request_names_the_session_and_the_message() {
+    let (mut agent, _events) = client_opening(fork_of_m1());
+    hello_forking(&mut agent, true).await;
+    let fork = agent.heard().await;
+    assert_eq!(fork["method"], "session/fork");
+    assert_eq!(
+        fork["params"],
+        json!({
+            "sessionId": "orig",
+            "cwd": "/tmp",
+            "mcpServers": [{"name": "onehand"}],
+            "_meta": { "jetbrains": { "air": { "fork": { "version": 1, "messageId": "m1" } } } }
+        })
+    );
+}
+
+#[tokio::test]
+async fn a_claude_fork_is_loaded() {
+    let (mut agent, mut events) = client_opening(fork_of_m1());
+    hello_forking(&mut agent, true).await;
+    let fork = agent.heard().await;
+    agent
+        .say(json!({"jsonrpc": "2.0", "id": fork["id"], "result": { "sessionId": "f1" }}))
+        .await;
+    let load = agent.heard().await;
+    assert_eq!(load["method"], "session/load");
+    assert_eq!(load["params"]["sessionId"], "f1");
+    agent
+        .say(json!({"jsonrpc": "2.0", "id": load["id"], "result": {}}))
+        .await;
+    let said = until_settled(&mut events).await;
+    assert!(
+        matches!(
+            said.as_slice(),
+            [
+                AcpEvent::SessionId(sid),
+                AcpEvent::Connected { resumed: true, forkable: true, .. }
+            ] if sid == "f1"
+        ),
+        "{said:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_codex_fork_is_already_open() {
+    let (mut agent, mut events) = client_opening(fork_of_m1());
+    hello_forking(&mut agent, true).await;
+    let fork = agent.heard().await;
+    agent
+        .say(json!({"jsonrpc": "2.0", "id": fork["id"], "result": {
+            "sessionId": "f1",
+            "modes": { "currentModeId": "ask", "availableModes": [{ "id": "ask", "name": "Ask" }] },
+            "configOptions": [{ "id": "model", "name": "Model", "type": "select",
+                "currentValue": "a", "options": [{ "value": "a", "name": "A" }] }]
+        }}))
+        .await;
+    let said = until_settled(&mut events).await;
+    assert!(
+        matches!(
+            said.as_slice(),
+            [
+                AcpEvent::SessionId(sid),
+                AcpEvent::Modes { .. },
+                AcpEvent::ConfigOptions(_),
+                AcpEvent::Connected { resumed: true, .. }
+            ] if sid == "f1"
+        ),
+        "{said:?}"
+    );
+}
+
+#[tokio::test]
+async fn fork_mutes_the_replay_but_not_commands() {
+    let (mut agent, mut events) = client_opening(fork_of_m1());
+    hello_forking(&mut agent, true).await;
+    let fork = agent.heard().await;
+    agent
+        .say(json!({"jsonrpc": "2.0", "id": fork["id"], "result": { "sessionId": "f1" }}))
+        .await;
+    let load = agent.heard().await;
+    let update = |update: Value| {
+        json!({"jsonrpc": "2.0", "method": "session/update",
+            "params": { "sessionId": "f1", "update": update }})
+    };
+    agent
+        .say(update(json!({"sessionUpdate": "agent_message_chunk",
+            "messageId": "m0", "content": { "type": "text", "text": "old" }})))
+        .await;
+    agent
+        .say(update(
+            json!({"sessionUpdate": "tool_call", "toolCallId": "t0",
+            "title": "Read", "kind": "read", "status": "completed"}),
+        ))
+        .await;
+    agent
+        .say(update(json!({"sessionUpdate": "available_commands_update",
+            "availableCommands": [{ "name": "compact", "description": "Compact" }]})))
+        .await;
+    agent
+        .say(json!({"jsonrpc": "2.0", "id": load["id"], "result": {}}))
+        .await;
+    let said = until_settled(&mut events).await;
+    assert!(
+        !said
+            .iter()
+            .any(|e| matches!(e, AcpEvent::AgentChunk { .. } | AcpEvent::ToolCall(_))),
+        "{said:?}"
+    );
+    assert!(
+        said.iter()
+            .any(|e| matches!(e, AcpEvent::AvailableCommands(_))),
+        "{said:?}"
+    );
+    agent
+        .say(update(json!({"sessionUpdate": "agent_message_chunk",
+            "content": { "type": "text", "text": "new" }})))
+        .await;
+    assert!(matches!(
+        next_chunk(&mut events).await,
+        AcpEvent::AgentChunk { ref text, .. } if text == "new"
+    ));
+}
+
+/// What a failed fork says, and that it said nothing of a session first.
+fn failed_as_a_fork(said: &[AcpEvent], why: &str) {
+    assert!(
+        !said.iter().any(|e| matches!(e, AcpEvent::SessionId(_))),
+        "{said:?}"
+    );
+    match said.last() {
+        Some(AcpEvent::Disconnected(text)) => assert!(
+            text.starts_with(&format!("Could not fork the conversation: {why}")),
+            "{text}"
+        ),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn fork_refused_fails_the_session() {
+    let (mut agent, mut events) = client_opening(fork_of_m1());
+    hello_forking(&mut agent, true).await;
+    let fork = agent.heard().await;
+    agent
+        .say(json!({"jsonrpc": "2.0", "id": fork["id"],
+            "error": { "code": -32603, "message": "no such session" }}))
+        .await;
+    failed_as_a_fork(&until_settled(&mut events).await, "no such session");
+    wrote_nothing_more(&mut agent).await;
+}
+
+#[tokio::test]
+async fn fork_load_failure_never_starts_fresh() {
+    let (mut agent, mut events) = client_opening(fork_of_m1());
+    hello_forking(&mut agent, true).await;
+    let fork = agent.heard().await;
+    agent
+        .say(json!({"jsonrpc": "2.0", "id": fork["id"], "result": { "sessionId": "f1" }}))
+        .await;
+    let load = agent.heard().await;
+    agent
+        .say(json!({"jsonrpc": "2.0", "id": load["id"],
+            "error": { "code": -32603, "message": "no such file" }}))
+        .await;
+    failed_as_a_fork(&until_settled(&mut events).await, "no such file");
+    wrote_nothing_more(&mut agent).await;
+}
+
+#[tokio::test]
+async fn fork_without_the_capability_fails() {
+    let (mut agent, mut events) = client_opening(fork_of_m1());
+    hello_forking(&mut agent, false).await;
+    failed_as_a_fork(&until_settled(&mut events).await, "this agent cannot fork");
+    wrote_nothing_more(&mut agent).await;
 }

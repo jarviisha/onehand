@@ -33,17 +33,68 @@ impl Conn {
             .and_then(|p| p.get("image"))
             .and_then(Value::as_bool)
             .unwrap_or(false);
-        match (load_supported, self.opts.resume.clone()) {
-            (true, Some(prev)) => {
+        self.forkable = capabilities
+            .and_then(|c| c.get("sessionCapabilities"))
+            .and_then(|s| s.get("fork"))
+            .is_some_and(Value::is_object);
+        match self.opts.opening.clone() {
+            Opening::Resume(prev) if load_supported => self.load(prev).await,
+            Opening::Fresh | Opening::Resume(_) => self.new_session().await,
+            Opening::Fork { .. } if !self.forkable => Err(not_forked("this agent cannot fork")),
+            Opening::Fork { from, message } => {
                 let params = json!({
-                    "sessionId": prev,
+                    "sessionId": from,
                     "cwd": self.opts.cwd.display().to_string(),
                     "mcpServers": self.opts.mcp_servers,
+                    "_meta": { "jetbrains": { "air": { "fork": {
+                        "version": 1,
+                        "messageId": message,
+                    } } } },
                 });
-                self.send("session/load", params, Pending::LoadSession)
-                    .await
+                self.send("session/fork", params, Pending::Fork).await
             }
-            _ => self.new_session().await,
+        }
+    }
+
+    /// Load the saved session `sid`.
+    async fn load(&mut self, sid: String) -> Result<(), String> {
+        let params = json!({
+            "sessionId": sid,
+            "cwd": self.opts.cwd.display().to_string(),
+            "mcpServers": self.opts.mcp_servers,
+        });
+        self.send("session/load", params, Pending::LoadSession { sid })
+            .await
+    }
+
+    /// `session/fork` answered with the new session's id. An agent that opened
+    /// it in answering says what it offers, as `session/new` does; one that
+    /// only saved it has it loaded.
+    pub(super) async fn answer_fork(&mut self, msg: &Value) -> Result<(), String> {
+        if let Some(err) = msg.get("error") {
+            eprintln!("[acp] session/fork failed: {err}");
+            return Err(not_forked(&in_words(err).0));
+        }
+        let result = msg.get("result");
+        let Some(sid) = result
+            .and_then(|r| r.get("sessionId"))
+            .and_then(Value::as_str)
+            .filter(|sid| !sid.is_empty())
+            .map(String::from)
+        else {
+            return Err(not_forked("the agent named no session"));
+        };
+        let open =
+            result.is_some_and(|r| r.get("modes").is_some() || r.get("configOptions").is_some());
+        match open {
+            true => {
+                self.opened(sid, result, true).await;
+                Ok(())
+            }
+            false => {
+                self.muted = true;
+                self.load(sid).await
+            }
         }
     }
 
@@ -74,8 +125,16 @@ impl Conn {
     }
 
     /// `session/load` answered.
-    pub(super) async fn answer_load(&mut self, msg: &Value) -> Result<(), String> {
+    pub(super) async fn answer_load(&mut self, msg: &Value, sid: String) -> Result<(), String> {
+        self.muted = false;
         if let Some(err) = msg.get("error") {
+            // A fork that cannot be loaded is not quietly swapped for a fresh
+            // conversation: that would land somewhere other than where it was
+            // asked to.
+            if matches!(self.opts.opening, Opening::Fork { .. }) {
+                eprintln!("[acp] loading the fork failed: {err}");
+                return Err(not_forked(&in_words(err).0));
+            }
             // A stale persisted session id (the adapter's store was
             // wiped or expired) must not brick the session — failing
             // here would refreeze the same id on every restart and
@@ -92,9 +151,7 @@ impl Conn {
                 .await;
             return self.new_session().await;
         }
-        if let Some(sid) = self.opts.resume.clone() {
-            self.opened(sid, msg.get("result"), true).await;
-        }
+        self.opened(sid, msg.get("result"), true).await;
         Ok(())
     }
 
@@ -118,8 +175,35 @@ impl Conn {
             .send(AcpEvent::Connected {
                 tx: self.req_tx.clone(),
                 resumed,
+                forkable: self.forkable,
             })
             .await;
         self.ready = true;
+    }
+}
+
+/// Why a fork did not open, as the session's failure says it.
+fn not_forked(why: &str) -> String {
+    format!("Could not fork the conversation: {why}")
+}
+
+/// Whether an update is part of the conversation itself, which a load replays,
+/// rather than news about the session.
+pub(super) fn is_replay(update: &parse::Update) -> bool {
+    match update {
+        parse::Update::Agent { .. }
+        | parse::Update::Thought(_)
+        | parse::Update::User(_)
+        | parse::Update::Interrupted
+        | parse::Update::ToolCall(_)
+        | parse::Update::ToolUpdate(_)
+        | parse::Update::Plan(_)
+        | parse::Update::Background(_)
+        | parse::Update::SubagentSpawned { .. }
+        | parse::Update::SubagentEnded { .. } => true,
+        parse::Update::Commands(_)
+        | parse::Update::ModeChanged(_)
+        | parse::Update::ConfigOptions(_)
+        | parse::Update::Usage(_) => false,
     }
 }

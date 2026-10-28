@@ -3,6 +3,7 @@ use super::{ChatPane, ChatPaneEvent, ProjectFacts, Restart, SessionSignal, switc
 use crate::chat::conversation::{Conversation, SessionPhase};
 use crate::chat::session::{ChatEvent, ChatSession};
 use gpui::{App, Context, Entity, Focusable, SharedString, Window};
+use onehand_core::acp::Opening;
 use onehand_core::chat::{Chat, ConvMeta};
 use onehand_core::config::AgentSpec;
 use std::collections::hash_map::Entry;
@@ -167,7 +168,10 @@ impl ChatPane {
             uid,
             root.clone(),
             &spec,
-            stored.as_ref().map(|s| s.session_id.clone()),
+            match &stored {
+                Some(stored) => Opening::Resume(stored.session_id.clone()),
+                None => Opening::Fresh,
+            },
             cx,
         );
         cx.emit(ChatPaneEvent::AgentStarted);
