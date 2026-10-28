@@ -31,7 +31,11 @@ The scripts are in `scripts/` beside this file; run them from anywhere. `DRIVE_R
 3. **Drive**, one action at a time, and look after each:
    - `scripts/drive.sh shot NAME` writes `$DRIVE_ROOT/NAME.png`. **Read the screenshot** before
      the next action, and take every coordinate from what is on it.
-   - `click X Y`, `move X Y` and `scroll X Y N` use output pixels.
+   - `click X Y`, `move X Y` and `scroll X Y N` use output pixels. The pointer is gone once each
+     returns, so nothing stays hovered.
+   - `hover X Y NAME [click]` rests the pointer there, pressing first with `click`, and writes the
+     screenshot while it rests: for a hover state or a tooltip, or one that should not show after
+     a press.
    - `type TEXT` types into the field that has focus; click the field first.
    - `key -k Escape` passes `wtype` arguments.
    - `drive.sh alive` after any action that could crash. It prints the panic and backtrace if the

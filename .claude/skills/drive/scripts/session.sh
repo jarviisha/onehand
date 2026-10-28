@@ -63,7 +63,7 @@ TOML
 }
 
 build_pointer() {
-    [ -x "$root/vpclick" ] && return 0
+    [ "$root/vpclick" -nt "$here/vpclick.c" ] && return 0
     wayland-scanner client-header "$here/virtual-pointer.xml" "$root/virtual-pointer.h"
     wayland-scanner private-code "$here/virtual-pointer.xml" "$root/virtual-pointer.c"
     gcc -O1 -I"$root" -o "$root/vpclick" "$here/vpclick.c" "$root/virtual-pointer.c" -lwayland-client
