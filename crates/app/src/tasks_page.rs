@@ -1,4 +1,8 @@
-use super::{ChatPane, ChatPaneEvent, Page};
+//! The Tasks page: every task of the window's projects, by what each needs,
+//! and one task opened in place of the cards. An entity of the window's,
+//! drawn by the chat pane, so what it is narrowed to outlives its leaving
+//! the screen.
+
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
 use crate::controls::Short as _;
@@ -8,8 +12,8 @@ use crate::task::Row;
 use crate::tokens::PAGE_WIDE;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, Window, div,
+    App, Context, EventEmitter, FocusHandle, InteractiveElement, IntoElement, ParentElement,
+    Render, SharedString, StatefulInteractiveElement, Styled, Window, div,
 };
 use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::task::{Group, Section};
@@ -21,19 +25,51 @@ use std::rc::Rc;
 const TASKS_SHOWN: usize = 50;
 
 mod detail;
-pub(super) use detail::TaskDetail;
+use detail::TaskDetail;
 use detail::task_detail;
 
 /// The page that lists every task of the window's projects, by what each
 /// needs: a person, its turn, its place, or nothing any more.
-pub(super) struct TasksPage {
+pub(crate) struct TasksPage {
     /// Every project in rail order.
-    pub(super) projects: Vec<PageProject>,
-    /// The project the page is narrowed to, or `None` for all of them.
-    pub(super) filter: Option<PathBuf>,
+    projects: Vec<PageProject>,
+    /// The project the page is narrowed to, or `None` for all of them. Kept
+    /// while the page is away, for its next showing.
+    filter: Option<PathBuf>,
     /// The task shown in place of the cards, if one is opened.
-    pub(super) open: Option<TaskDetail>,
+    open: Option<TaskDetail>,
+    /// Focused when the page shows, so Esc reaches the task detail: clicking
+    /// through the cards moves no focus, and a page that held none would hear
+    /// no key at all.
+    focus: FocusHandle,
 }
+
+/// What the Tasks page asks of the window, which owns tasks' sessions,
+/// retries and worktrees.
+pub(crate) enum TasksPageEvent {
+    /// Show session `uid`, in whichever window holds it.
+    ShowSession {
+        uid: u64,
+        window: gpui::AnyWindowHandle,
+    },
+    /// Resume the interrupted task `id`.
+    ResumeTask(String),
+    /// Let the ended task `id` go; it is kept as history.
+    DismissTask(String),
+    /// Run task `id` again, asking first where from.
+    RetryTask(String),
+    /// Run task `id` again with what Settings say now, asking first.
+    RetryTaskCurrent(String),
+    /// Answer the review on issue task `id`'s open pull request.
+    AnswerReview(String),
+    /// Remove task `id`'s worktree and branch after its pull request merged,
+    /// asking first.
+    RemoveWorktree(String),
+    /// Stop task `id`, queued or running.
+    StopTask(String),
+}
+
+impl EventEmitter<TasksPageEvent> for TasksPage {}
 
 // The Tasks page's key: the task open in place of the cards closed, the
 // cards back.
@@ -54,10 +90,20 @@ impl TasksPage {
     }
 }
 
-impl ChatPane {
-    /// Show the Tasks page, narrowed to `filter` when it is one of
-    /// `projects`. Leaves the shown session the way the workspace page does.
-    pub fn show_tasks(
+impl TasksPage {
+    pub(crate) fn new(cx: &mut Context<Self>) -> Self {
+        Self {
+            projects: Vec::new(),
+            filter: None,
+            open: None,
+            focus: cx.focus_handle(),
+        }
+    }
+
+    /// Come on screen over `projects`, narrowed to `filter` if one is asked
+    /// for, else to what was left narrowed last time, so long as it is one of
+    /// them; the cards, not a task.
+    pub(crate) fn show(
         &mut self,
         projects: Vec<PageProject>,
         filter: Option<PathBuf>,
@@ -66,36 +112,35 @@ impl ChatPane {
     ) {
         // A filter asked for (a project's page's line) wins; else the one left
         // when the page was last shown is kept.
-        let filter = filter
-            .or_else(|| self.tasks_filter.clone())
+        self.filter = filter
+            .or_else(|| self.filter.take())
             .filter(|only| projects.iter().any(|project| &project.root == only));
-        self.tasks_filter = filter.clone();
-        self.page = Some(Page::Tasks(TasksPage {
-            projects,
-            filter,
-            open: None,
-        }));
-        self.leave_shown_session(window, cx);
-        self.tasks_focus.clone().focus(window, cx);
-        self.active = None;
-        self.empty = None;
+        self.projects = projects;
+        self.open = None;
+        self.focus.clone().focus(window, cx);
+        cx.notify();
+    }
+
+    /// The window's projects changed: a filter on one gone lets go.
+    pub(crate) fn set_projects(&mut self, projects: Vec<PageProject>, cx: &mut Context<Self>) {
+        if let Some(only) = &self.filter
+            && !projects.iter().any(|project| &project.root == only)
+        {
+            self.filter = None;
+        }
+        self.projects = projects;
         cx.notify();
     }
 
     fn filter_tasks(&mut self, only: Option<PathBuf>, cx: &mut Context<Self>) {
-        self.tasks_filter = only.clone();
-        if let Some(Page::Tasks(page)) = self.page.as_mut() {
-            page.filter = only;
-            cx.notify();
-        }
+        self.filter = only;
+        cx.notify();
     }
 
     /// The Tasks page. Rows are read per frame, as the workspace page reads
     /// runs: a task moving already refreshes every window.
-    pub(super) fn tasks_page(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let Some(Page::Tasks(page)) = self.page.as_ref() else {
-            return div().into_any_element();
-        };
+    fn page(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let page = self;
         let muted = cx.theme().muted_foreground;
         let muted_line = |text: String| div().text_xs().text_color(muted).child(text);
         let roots: Vec<PathBuf> = match &page.filter {
@@ -140,7 +185,7 @@ impl ChatPane {
             page.filter.clone(),
             onehand_ui::ControlSize::Tall,
             move |only, cx| {
-                this.update(cx, |pane: &mut Self, cx| pane.filter_tasks(only, cx));
+                this.update(cx, |page: &mut Self, cx| page.filter_tasks(only, cx));
             },
             cx,
         );
@@ -223,13 +268,12 @@ impl ChatPane {
     ) -> gpui::AnyElement {
         div()
             .key_context("TasksPage")
-            .track_focus(&self.tasks_focus)
-            .on_action(cx.listener(|pane: &mut Self, _: &CloseTaskDetail, _, cx| {
-                pane.open_task(None, cx);
+            .track_focus(&self.focus)
+            .on_action(cx.listener(|page: &mut Self, _: &CloseTaskDetail, _, cx| {
+                page.open_task(None, cx);
             }))
             .size_full()
             .v_flex()
-            .child(self.header(cx))
             .when(!top.is_empty(), |page| {
                 page.child(crate::page_parts::page_top(Some(width), top, cx))
             })
@@ -257,6 +301,12 @@ impl ChatPane {
     }
 }
 
+impl Render for TasksPage {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.page(cx)
+    }
+}
+
 /// The muted line under a task's title: its workflow, where it is or how it
 /// ended, and its project.
 fn row_said(row: &Row, page: &TasksPage) -> String {
@@ -278,7 +328,7 @@ fn task_row(
     key: (&'static str, usize),
     row: Row,
     page: &TasksPage,
-    cx: &mut Context<ChatPane>,
+    cx: &mut Context<TasksPage>,
 ) -> gpui::AnyElement {
     let muted = cx.theme().muted_foreground;
     let said = row_said(&row, page);
@@ -299,7 +349,7 @@ fn task_row(
         .child(div().text_xs().text_color(muted).truncate().child(said))
         .cursor_pointer()
         .on_click(
-            cx.listener(move |pane: &mut ChatPane, _, _, cx| pane.open_task(Some(id.clone()), cx)),
+            cx.listener(move |page: &mut TasksPage, _, _, cx| page.open_task(Some(id.clone()), cx)),
         );
     onehand_ui::row(false, cx)
         .group(group.clone())
@@ -350,24 +400,24 @@ impl TaskAct {
     }
 
     /// What a press of it does, for a button or a menu row alike.
-    pub(super) fn press(self, row: &Row, cx: &Context<ChatPane>) -> Press {
+    pub(super) fn press(self, row: &Row, cx: &Context<TasksPage>) -> Press {
         let id = &row.id;
         match self {
             Self::OpenSession => {
                 let session = row.session;
-                let pane = cx.entity().downgrade();
+                let page = cx.entity().downgrade();
                 Rc::new(move |_, _, cx| {
                     if let Some((uid, window)) = session {
-                        let _ = pane.update(cx, |_, cx| {
-                            cx.emit(ChatPaneEvent::ShowSession { uid, window })
+                        let _ = page.update(cx, |_, cx| {
+                            cx.emit(TasksPageEvent::ShowSession { uid, window })
                         });
                     }
                 })
             }
-            Self::Stop => Rc::new(emit(id, cx, ChatPaneEvent::StopTask)),
-            Self::Resume => Rc::new(emit(id, cx, ChatPaneEvent::ResumeTask)),
-            Self::Retry => Rc::new(emit(id, cx, ChatPaneEvent::RetryTask)),
-            Self::Dismiss => Rc::new(emit(id, cx, ChatPaneEvent::DismissTask)),
+            Self::Stop => Rc::new(emit(id, cx, TasksPageEvent::StopTask)),
+            Self::Resume => Rc::new(emit(id, cx, TasksPageEvent::ResumeTask)),
+            Self::Retry => Rc::new(emit(id, cx, TasksPageEvent::RetryTask)),
+            Self::Dismiss => Rc::new(emit(id, cx, TasksPageEvent::DismissTask)),
         }
     }
 
@@ -376,7 +426,7 @@ impl TaskAct {
         self,
         key: &str,
         row: &Row,
-        cx: &Context<ChatPane>,
+        cx: &Context<TasksPage>,
     ) -> gpui_component::button::Button {
         let press = self.press(row, cx);
         let button = crate::controls::action(SharedString::from(format!("{key}-{}", self.label())))
@@ -428,7 +478,7 @@ pub(crate) fn task_acts(row: &Row, retry_finished: bool) -> Vec<TaskAct> {
 
 /// What can be done with the task `row` from a row, keyed by `key`: each a
 /// quiet button.
-fn row_actions(key: &str, row: &Row, cx: &mut Context<ChatPane>) -> Vec<gpui::AnyElement> {
+fn row_actions(key: &str, row: &Row, cx: &mut Context<TasksPage>) -> Vec<gpui::AnyElement> {
     task_acts(row, false)
         .into_iter()
         .map(|act| act.button(key, row, cx).quiet(cx).into_any_element())
@@ -439,7 +489,7 @@ fn row_actions(key: &str, row: &Row, cx: &mut Context<ChatPane>) -> Vec<gpui::An
 pub(super) fn open_session(
     id: &str,
     row: &Row,
-    cx: &mut Context<ChatPane>,
+    cx: &mut Context<TasksPage>,
 ) -> Option<gpui_component::button::Button> {
     row.session?;
     Some(TaskAct::OpenSession.button(id, row, cx).quiet(cx))
@@ -448,11 +498,11 @@ pub(super) fn open_session(
 /// A press that announces `event` about task `id`.
 pub(super) fn emit(
     id: &str,
-    cx: &Context<ChatPane>,
-    event: fn(String) -> ChatPaneEvent,
+    cx: &Context<TasksPage>,
+    event: fn(String) -> TasksPageEvent,
 ) -> impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + use<> {
-    let (id, pane) = (id.to_string(), cx.entity().downgrade());
+    let (id, page) = (id.to_string(), cx.entity().downgrade());
     move |_, _, cx| {
-        let _ = pane.update(cx, |_, cx| cx.emit(event(id.clone())));
+        let _ = page.update(cx, |_, cx| cx.emit(event(id.clone())));
     }
 }

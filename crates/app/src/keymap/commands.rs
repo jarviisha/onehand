@@ -510,7 +510,7 @@ pub const COMMANDS: &[Command] = &[
         "tasks_close",
         "Close the task, back to the cards",
         ["escape"],
-        crate::chat::pane::CloseTaskDetail,
+        crate::tasks_page::CloseTaskDetail,
         "TasksPage && !Dialog && !Input",
         "Tasks page"
     ),

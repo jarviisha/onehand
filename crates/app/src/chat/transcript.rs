@@ -106,13 +106,14 @@ pub struct QuestionPick {
 pub(in crate::chat) use image_view::open as show_image;
 use metrics::LINE_H;
 pub(in crate::chat) use metrics::{BLOCK_GAP, CONTENT_COLUMN, TEXT, TEXT_SM, TIGHT_GAP, TURN_GAP};
-pub(in crate::chat) use parts::{accent, line_counts};
+pub(in crate::chat) use parts::accent;
+pub(crate) use parts::line_counts;
 pub(in crate::chat) use permission::permission;
 use plan::plan;
 use prose::{agent, thought};
 pub(in crate::chat) use strip::turn_summary;
 pub use strip::{activity_group, cluster, section_group};
-pub(in crate::chat) use tool::diff_rows;
+pub(crate) use tool::diff_rows;
 use tool::tool;
 use user::user;
 pub(in crate::chat) use user::{opens, plate};

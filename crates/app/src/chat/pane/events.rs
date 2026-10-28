@@ -2,7 +2,6 @@
 //! and the events by which the pane asks its owner for what it cannot do.
 
 use gpui::SharedString;
-use onehand_core::task::Approval;
 use std::path::PathBuf;
 
 pub use onehand_core::chat::SessionSignal;
@@ -203,33 +202,8 @@ pub enum ChatPaneEvent {
         agent: SharedString,
         archive: PathBuf,
     },
-    /// A run waits for approval, and it is given for what was read, as the
-    /// approval names it: go on. Announced, because the run is the shell's and
-    /// what offers this only draws it.
-    ContinueWorkflow(Approval),
-    /// Send what that run waits on, as read, back with a `note` on what to
-    /// change.
-    ReviseWorkflow {
-        approval: Approval,
-        note: String,
-    },
     /// Stop the run on session `uid`.
     StopWorkflow(u64),
-    /// Resume the interrupted task `id` — a row of the Tasks page.
-    ResumeTask(String),
-    /// Let the ended task `id` go; it is kept as history.
-    DismissTask(String),
-    /// Run task `id` again, asking first where from.
-    RetryTask(String),
-    /// Run task `id` again with what Settings say now, asking first.
-    RetryTaskCurrent(String),
-    /// Answer the review on issue task `id`'s open pull request.
-    AnswerReview(String),
-    /// Remove task `id`'s worktree and branch after its pull request merged,
-    /// asking first.
-    RemoveWorktree(String),
-    /// Stop task `id`, queued or running.
-    StopTask(String),
     /// Show the Tasks page, narrowed to one project or not.
     ShowTasks(Option<PathBuf>),
     /// Show the Schedules page, narrowed to one project or not.

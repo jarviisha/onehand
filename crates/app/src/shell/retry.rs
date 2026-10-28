@@ -2,7 +2,8 @@
 //! says before it starts where the new run starts, what it carries over and
 //! what it keeps; *Retry with current settings* runs it with what Settings
 //! say now, and says first what changes and where that makes it start.
-//! Resume, judged first by the run's own setup, is here too.
+//! Resume, judged first by the run's own setup, is here too, and so is
+//! answering what the Tasks page asks of a task.
 
 use super::Shell;
 use crate::controls::Quiet as _;
@@ -617,4 +618,30 @@ fn retry_now(
             crate::task::request(id, window.window_handle(), cx);
         }
     });
+}
+
+impl Shell {
+    /// Answer what the Tasks page asked of a task.
+    pub(super) fn on_tasks_page(
+        &mut self,
+        event: &crate::tasks_page::TasksPageEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        use crate::tasks_page::TasksPageEvent as E;
+        match event {
+            E::ShowSession { uid, window: at } => self.show_session_in(*uid, *at, window, cx),
+            E::ResumeTask(id) => self.resume_task(id.clone(), window, cx),
+            E::DismissTask(id) => crate::task::dismiss(id, window, cx),
+            E::RetryTask(id) => self.begin_retry(id.clone(), window, cx),
+            E::RetryTaskCurrent(id) => self.begin_retry_current(id.clone(), window, cx),
+            E::AnswerReview(id) => self.answer_review(id.clone(), window, cx),
+            E::RemoveWorktree(id) => self.remove_worktree(id.clone(), window, cx),
+            E::StopTask(id) => {
+                let id = id.clone();
+                cx.defer(move |cx| crate::task::stop_task(&id, cx));
+            }
+        }
+        cx.notify();
+    }
 }

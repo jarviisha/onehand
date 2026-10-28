@@ -35,20 +35,19 @@ mod resume_picker;
 mod runs;
 mod sessions;
 mod step_strip;
-pub(crate) mod tasks_page;
 mod titles;
 mod workspace_page;
 pub use events::{ChatPaneEvent, ProjectAction, Restart, SessionSignal};
 use header::Archives;
 use project_page::EmptyProject;
-pub use tasks_page::CloseTaskDetail;
-use tasks_page::TasksPage;
 use workspace_page::WorkspacePage;
 
 /// A page drawn in place of a conversation, about more than one project.
 enum Page {
     Workspace(WorkspacePage),
-    Tasks(TasksPage),
+    /// The Tasks page, an entity of the window's, so its filter outlives
+    /// this.
+    Tasks(gpui::AnyView),
     /// The Issues crate's page, whose state is its own entity's and so
     /// outlives this.
     Issues(gpui::AnyView),
@@ -238,15 +237,9 @@ pub struct DocksOpen {
 
 pub struct ChatPane {
     focus_handle: FocusHandle,
-    /// Held by the Tasks page, and focused when it shows, so Esc reaches the
-    /// task detail: clicking through the cards moves no focus, and a page that
-    /// held none would hear no key at all.
-    tasks_focus: FocusHandle,
     /// The project the overview's issues are narrowed to, kept while the
     /// overview is left and shown again.
     workspace_filter: Option<std::path::PathBuf>,
-    /// The project the Tasks page is narrowed to, kept while it is left.
-    tasks_filter: Option<std::path::PathBuf>,
     /// Every session the user has opened, in whatever phase it has reached.
     ///
     /// One map, not six. What each session's phase means, and why the parallel
@@ -425,9 +418,7 @@ impl ChatPane {
 
             Self {
                 focus_handle: cx.focus_handle(),
-                tasks_focus: cx.focus_handle(),
                 workspace_filter: None,
-                tasks_filter: None,
                 conversations: HashMap::new(),
                 active: None,
                 composer,

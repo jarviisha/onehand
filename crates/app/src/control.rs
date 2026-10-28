@@ -544,7 +544,7 @@ fn perform_now(
             let lines = crate::task::rows(&roots, cx)
                 .iter()
                 .map(|row| {
-                    let next: Vec<_> = crate::chat::pane::tasks_page::task_acts(row, false)
+                    let next: Vec<_> = crate::tasks_page::task_acts(row, false)
                         .into_iter()
                         .map(|act| act.label())
                         .collect();

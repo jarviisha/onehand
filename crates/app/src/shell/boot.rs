@@ -51,6 +51,15 @@ impl Shell {
             },
         )
         .detach();
+        let tasks_page = cx.new(crate::tasks_page::TasksPage::new);
+        cx.subscribe_in(
+            &tasks_page,
+            window,
+            |shell: &mut Self, _, event: &crate::tasks_page::TasksPageEvent, window, cx| {
+                shell.on_tasks_page(event, window, cx)
+            },
+        )
+        .detach();
         // Closing the window over a workflow being written asks first, as
         // picking another one does: the edit is the page's, and goes with it.
         {
@@ -228,29 +237,9 @@ impl Shell {
                             shell.select_root(idx, window, cx);
                         }
                     }
-                    // Deferred: the run reaches into its session, which may
-                    // be what is announcing this.
-                    E::ContinueWorkflow(approval) => {
-                        let approval = approval.clone();
-                        cx.defer(move |cx| crate::task::approve(approval, cx));
-                    }
-                    E::ReviseWorkflow { approval, note } => {
-                        let (approval, note) = (approval.clone(), note.clone());
-                        cx.defer(move |cx| crate::task::revise(approval, note, cx));
-                    }
                     E::StopWorkflow(uid) => {
                         let uid = *uid;
                         cx.defer(move |cx| crate::task::stop(uid, cx));
-                    }
-                    E::ResumeTask(id) => shell.resume_task(id.clone(), window, cx),
-                    E::DismissTask(id) => crate::task::dismiss(id, window, cx),
-                    E::RetryTask(id) => shell.begin_retry(id.clone(), window, cx),
-                    E::RetryTaskCurrent(id) => shell.begin_retry_current(id.clone(), window, cx),
-                    E::AnswerReview(id) => shell.answer_review(id.clone(), window, cx),
-                    E::RemoveWorktree(id) => shell.remove_worktree(id.clone(), window, cx),
-                    E::StopTask(id) => {
-                        let id = id.clone();
-                        cx.defer(move |cx| crate::task::stop_task(&id, cx));
                     }
                     E::ShowTasks(filter) => shell.show_tasks(filter.clone(), window, cx),
                     E::ShowSchedules(only) => shell.show_schedules(only.clone(), window, cx),
@@ -529,6 +518,7 @@ impl Shell {
             issues_page,
             workflows_page,
             schedules_page: crate::schedules_page::SchedulesPage::new(cx),
+            tasks_page,
             terminal,
             _pending_save: None,
             saves: Default::default(),

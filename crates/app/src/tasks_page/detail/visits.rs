@@ -2,7 +2,7 @@
 //! opened, what it kept, printed and changed.
 
 use super::{
-    ChatPane, Dirs, FOLD_INDENT, TaskDetail, fold_row, mono_well, muted_line, rel_time, slot,
+    Dirs, FOLD_INDENT, TaskDetail, TasksPage, fold_row, mono_well, muted_line, rel_time, slot,
 };
 use gpui::{
     App, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
@@ -31,7 +31,7 @@ pub(super) fn timeline(
     detail: &TaskDetail,
     run: &Run,
     live: bool,
-    cx: &mut Context<ChatPane>,
+    cx: &mut Context<TasksPage>,
 ) -> Vec<gpui::AnyElement> {
     let muted = cx.theme().muted_foreground;
     let visits = run.visits();
@@ -86,8 +86,8 @@ pub(super) fn timeline(
                 open,
                 cx,
             )
-            .on_click(cx.listener(move |pane: &mut ChatPane, _, _, cx| {
-                pane.toggle_visit(key.clone(), pinned.clone(), dirs.clone(), cx)
+            .on_click(cx.listener(move |page: &mut TasksPage, _, _, cx| {
+                page.toggle_visit(key.clone(), pinned.clone(), dirs.clone(), cx)
             }))
             .child(div().flex_none().child(label))
             .child(
@@ -137,7 +137,7 @@ fn visit_body(
     run: &Run,
     visit: &Visit,
     live: bool,
-    cx: &mut Context<ChatPane>,
+    cx: &mut Context<TasksPage>,
 ) -> Vec<gpui::AnyElement> {
     let mut out = Vec::new();
     if let Some(ran) = &visit.command {
@@ -197,8 +197,8 @@ fn visit_body(
         // chevron's slot kept so its path starts where the others do.
         let line = match change.lines {
             Some(_) => fold_row(id, opened.is_some(), cx).on_click(cx.listener(
-                move |pane: &mut ChatPane, _, _, cx| {
-                    pane.toggle_file(key.clone(), dirs.clone(), cx)
+                move |page: &mut TasksPage, _, _, cx| {
+                    page.toggle_file(key.clone(), dirs.clone(), cx)
                 },
             )),
             None => onehand_ui::row(false, cx)
