@@ -30,15 +30,16 @@ impl Shell {
         self.held_commands.clear();
         self.docks_aside(window, cx);
         let view: gpui::AnyView = self.settings_view.clone().into();
-        self.chat
-            .update(cx, |pane, cx| pane.show_settings(view, window, cx));
+        self.chat.update(cx, |pane, cx| {
+            pane.show_page(crate::chat::pane::PageKind::Settings, view, window, cx)
+        });
         self.settings_focus.focus(window, cx);
         cx.notify();
     }
 
     /// Whether Settings is what the centre of the window shows.
     pub(crate) fn settings_shown(&self, cx: &App) -> bool {
-        self.chat.read(cx).showing_settings()
+        self.shown_page(cx) == Some(crate::chat::pane::PageKind::Settings)
     }
 
     pub fn settings_focus(&self) -> gpui::FocusHandle {

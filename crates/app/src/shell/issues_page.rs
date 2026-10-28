@@ -109,8 +109,9 @@ impl Shell {
         self.tell_issues_page_projects(cx);
         self.docks_aside(window, cx);
         let view = self.issues_page.view();
-        self.chat
-            .update(cx, |pane, cx| pane.show_issues(view, window, cx));
+        self.chat.update(cx, |pane, cx| {
+            pane.show_page(crate::chat::pane::PageKind::Issues, view, window, cx)
+        });
         self.issues_page.handle(&Request::Shown, cx);
         self.sync_agent_started(cx);
         cx.notify();
@@ -122,8 +123,9 @@ impl Shell {
         self.tell_workflows_page_projects(cx);
         self.docks_aside(window, cx);
         let view: gpui::AnyView = self.workflows_page.clone().into();
-        self.chat
-            .update(cx, |pane, cx| pane.show_workflows(view, window, cx));
+        self.chat.update(cx, |pane, cx| {
+            pane.show_page(crate::chat::pane::PageKind::Workflows, view, window, cx)
+        });
         self.sync_agent_started(cx);
         cx.notify();
     }
@@ -145,8 +147,9 @@ impl Shell {
             .update(cx, |page, cx| page.set_projects(projects, only, cx));
         self.docks_aside(window, cx);
         let view: gpui::AnyView = self.schedules_page.clone().into();
-        self.chat
-            .update(cx, |pane, cx| pane.show_schedules(view, window, cx));
+        self.chat.update(cx, |pane, cx| {
+            pane.show_page(crate::chat::pane::PageKind::Schedules, view, window, cx)
+        });
         // The page holds the keys while it shows, as Tasks does.
         self.schedules_page.focus_handle(cx).focus(window, cx);
         self.sync_agent_started(cx);
@@ -155,12 +158,12 @@ impl Shell {
 
     /// Whether the Schedules page is what the centre of the window shows.
     pub fn schedules_shown(&self, cx: &gpui::App) -> bool {
-        self.chat.read(cx).showing_schedules()
+        self.shown_page(cx) == Some(crate::chat::pane::PageKind::Schedules)
     }
 
     /// Whether the Workflows page is what the centre of the window shows.
     pub fn workflows_shown(&self, cx: &gpui::App) -> bool {
-        self.chat.read(cx).showing_workflows()
+        self.shown_page(cx) == Some(crate::chat::pane::PageKind::Workflows)
     }
 
     /// Tell the Workflows page which projects a run may start on, and which
@@ -195,7 +198,7 @@ impl Shell {
 
     /// Whether the Issues page is what the centre of the window shows.
     pub fn issues_shown(&self, cx: &gpui::App) -> bool {
-        self.chat.read(cx).showing_issues()
+        self.shown_page(cx) == Some(crate::chat::pane::PageKind::Issues)
     }
 
     /// Tell the page which projects the workspace has, in rail order.

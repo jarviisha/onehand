@@ -247,18 +247,8 @@ impl ChatPane {
         // Cleared here and set only on the one path that mounts a composer, so
         // every early return below leaves it false without having to say so.
         self.composer_drawn = false;
-        match &self.page {
-            Some(
-                super::Page::Workspace(view)
-                | super::Page::Issues(view)
-                | super::Page::Tasks(view)
-                | super::Page::Workflows(view)
-                | super::Page::Schedules(view)
-                | super::Page::Settings(view),
-            ) => {
-                return self.view_page(view.clone(), cx);
-            }
-            None => {}
+        if let Some(page) = &self.page {
+            return self.view_page(page.view.clone(), cx);
         }
         // A session choosing which conversation to resume has no transcript and
         // no composer yet: nothing is connected until the choice is made.

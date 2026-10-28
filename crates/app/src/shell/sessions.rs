@@ -664,8 +664,9 @@ impl Shell {
         let projects = self.page_projects();
         self.docks_aside(window, cx);
         let view: gpui::AnyView = self.workspace_page.clone().into();
-        self.chat
-            .update(cx, |pane, cx| pane.show_workspace(view, window, cx));
+        self.chat.update(cx, |pane, cx| {
+            pane.show_page(crate::chat::pane::PageKind::Workspace, view, window, cx)
+        });
         self.workspace_page
             .update(cx, |page, cx| page.show(projects, cx));
         // No session is showing now, so there is no running agent to be
@@ -685,8 +686,9 @@ impl Shell {
         let projects = self.page_projects();
         self.docks_aside(window, cx);
         let view: gpui::AnyView = self.tasks_page.clone().into();
-        self.chat
-            .update(cx, |pane, cx| pane.show_tasks(view, window, cx));
+        self.chat.update(cx, |pane, cx| {
+            pane.show_page(crate::chat::pane::PageKind::Tasks, view, window, cx)
+        });
         self.tasks_page
             .update(cx, |page, cx| page.show(projects, filter, window, cx));
         self.sync_agent_started(cx);
@@ -748,12 +750,17 @@ impl Shell {
     /// Whether the workspace page is what the centre of the window shows, for
     /// the rail row that leads to it.
     pub fn workspace_shown(&self, cx: &App) -> bool {
-        self.chat.read(cx).showing_workspace()
+        self.shown_page(cx) == Some(crate::chat::pane::PageKind::Workspace)
     }
 
     /// Whether the Tasks page is what the centre of the window shows.
     pub fn tasks_shown(&self, cx: &App) -> bool {
-        self.chat.read(cx).showing_tasks()
+        self.shown_page(cx) == Some(crate::chat::pane::PageKind::Tasks)
+    }
+
+    /// Which page the centre of the window shows, if any.
+    pub fn shown_page(&self, cx: &App) -> Option<crate::chat::pane::PageKind> {
+        self.chat.read(cx).shown_page()
     }
 
     /// Whether either page is what the centre of the window shows: no

@@ -6,144 +6,39 @@ use super::{ChatPane, Page};
 use gpui::{Context, IntoElement, ParentElement, Styled, Window, div};
 use gpui_component::StyledExt;
 
+/// Which page the pane shows in place of a conversation.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum PageKind {
+    /// The overview: what waits, what works, every project and its issues.
+    Workspace,
+    Tasks,
+    /// The Issues crate's page.
+    Issues,
+    Workflows,
+    Schedules,
+    Settings,
+}
+
 impl ChatPane {
-    /// Whether the workspace page is what the pane shows.
-    pub fn showing_workspace(&self) -> bool {
-        match self.page {
-            Some(Page::Workspace(_)) => true,
-            Some(
-                Page::Tasks(_)
-                | Page::Issues(_)
-                | Page::Workflows(_)
-                | Page::Schedules(_)
-                | Page::Settings(_),
-            )
-            | None => false,
-        }
+    /// Which page the pane shows, or `None` for a conversation.
+    pub fn shown_page(&self) -> Option<PageKind> {
+        self.page.as_ref().map(|page| page.kind)
     }
 
-    /// Whether the Tasks page is what the pane shows.
-    pub fn showing_tasks(&self) -> bool {
-        match self.page {
-            Some(Page::Tasks(_)) => true,
-            Some(
-                Page::Workspace(_)
-                | Page::Issues(_)
-                | Page::Workflows(_)
-                | Page::Schedules(_)
-                | Page::Settings(_),
-            )
-            | None => false,
-        }
-    }
-
-    /// Whether the Issues page is what the pane shows.
-    pub fn showing_issues(&self) -> bool {
-        match self.page {
-            Some(Page::Issues(_)) => true,
-            Some(
-                Page::Workspace(_)
-                | Page::Tasks(_)
-                | Page::Workflows(_)
-                | Page::Schedules(_)
-                | Page::Settings(_),
-            )
-            | None => false,
-        }
-    }
-
-    /// Whether the Workflows page is what the pane shows.
-    pub fn showing_workflows(&self) -> bool {
-        match self.page {
-            Some(Page::Workflows(_)) => true,
-            Some(
-                Page::Workspace(_)
-                | Page::Tasks(_)
-                | Page::Issues(_)
-                | Page::Schedules(_)
-                | Page::Settings(_),
-            )
-            | None => false,
-        }
-    }
-
-    /// Whether the Schedules page is what the pane shows.
-    pub fn showing_schedules(&self) -> bool {
-        match self.page {
-            Some(Page::Schedules(_)) => true,
-            Some(
-                Page::Workspace(_)
-                | Page::Tasks(_)
-                | Page::Issues(_)
-                | Page::Workflows(_)
-                | Page::Settings(_),
-            )
-            | None => false,
-        }
-    }
-
-    /// Show the Schedules page, `view`, as it was left, the way the
-    /// Workflows page is shown.
-    pub fn show_schedules(
-        &mut self,
-        view: gpui::AnyView,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.leave_issues_page(window, cx);
-        self.page = Some(Page::Schedules(view));
-        self.leave_shown_session(window, cx);
-        self.active = None;
-        self.empty = None;
-        cx.notify();
-    }
-
-    /// Whether Settings is what the pane shows.
-    pub fn showing_settings(&self) -> bool {
-        match self.page {
-            Some(Page::Settings(_)) => true,
-            Some(
-                Page::Workspace(_)
-                | Page::Tasks(_)
-                | Page::Issues(_)
-                | Page::Workflows(_)
-                | Page::Schedules(_),
-            )
-            | None => false,
-        }
-    }
-
-    /// Show Settings, `view`, on the page it was left on, its drafts as they
-    /// were left, the way the other pages that are views of their own are
-    /// shown.
-    pub fn show_settings(
-        &mut self,
-        view: gpui::AnyView,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        // Off another view page, a field there may hold the caret.
-        self.leave_issues_page(window, cx);
-        self.page = Some(Page::Settings(view));
-        self.leave_shown_session(window, cx);
-        self.active = None;
-        self.empty = None;
-        cx.notify();
-    }
-
-    /// Show the workspace page, `view`. Leaves the shown session the way
-    /// standing on a project does — the draft put down, the session left
+    /// Show page `kind`, `view`, as it was left. Leaves the shown session the
+    /// way standing on a project does — the draft put down, the session left
     /// running — since the page is somewhere else to be and not a session
     /// closing.
-    pub fn show_workspace(
+    pub fn show_page(
         &mut self,
+        kind: PageKind,
         view: gpui::AnyView,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // Off another view page, a field there may hold the caret.
-        self.leave_issues_page(window, cx);
-        self.page = Some(Page::Workspace(view));
+        // Off another page, a field there may hold the caret.
+        self.leave_page(window, cx);
+        self.page = Some(Page { kind, view });
         self.leave_shown_session(window, cx);
         self.active = None;
         self.empty = None;
@@ -159,51 +54,6 @@ impl ChatPane {
             .collect()
     }
 
-    /// Show the Tasks page, `view`, the way the Workflows page is shown.
-    pub fn show_tasks(&mut self, view: gpui::AnyView, window: &mut Window, cx: &mut Context<Self>) {
-        // Off another view page, a field there may hold the caret.
-        self.leave_issues_page(window, cx);
-        self.page = Some(Page::Tasks(view));
-        self.leave_shown_session(window, cx);
-        self.active = None;
-        self.empty = None;
-        cx.notify();
-    }
-
-    /// Show the Workflows page, `view`, as it was left, the way the Issues
-    /// page is shown.
-    pub fn show_workflows(
-        &mut self,
-        view: gpui::AnyView,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        // Off another view page, a field there may hold the caret.
-        self.leave_issues_page(window, cx);
-        self.page = Some(Page::Workflows(view));
-        self.leave_shown_session(window, cx);
-        self.active = None;
-        self.empty = None;
-        cx.notify();
-    }
-
-    /// Show the Issues page, `view`, as it was left. Leaves the shown session
-    /// the way the other pages do.
-    pub fn show_issues(
-        &mut self,
-        view: gpui::AnyView,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        // Off another view page, a field there may hold the caret.
-        self.leave_issues_page(window, cx);
-        self.page = Some(Page::Issues(view));
-        self.leave_shown_session(window, cx);
-        self.active = None;
-        self.empty = None;
-        cx.notify();
-    }
-
     /// A page, every one a view of its own, under the pane's header, which
     /// names it as it names every page.
     pub(super) fn view_page(
@@ -215,7 +65,7 @@ impl ChatPane {
         // so its header floats over the page rather than standing above it:
         // the strip draws no fill, and the page keeps its own content clear
         // of it.
-        if self.showing_workflows() {
+        if self.shown_page() == Some(PageKind::Workflows) {
             return div()
                 .relative()
                 .size_full()
@@ -238,16 +88,21 @@ impl ChatPane {
             .into_any_element()
     }
 
-    /// Take the caret back before a page that is a view of its own leaves
-    /// the frame: a field on it may hold it, and a caret in nothing answers
-    /// no key.
-    pub fn leave_issues_page(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.showing_issues()
-            || self.showing_workflows()
-            || self.showing_settings()
-            || self.showing_tasks()
-            || self.showing_schedules()
-        {
+    /// Take the caret back before a page leaves the frame: a field on it may
+    /// hold it, and a caret in nothing answers no key.
+    pub fn leave_page(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let holds_fields = match self.shown_page() {
+            Some(
+                PageKind::Tasks
+                | PageKind::Issues
+                | PageKind::Workflows
+                | PageKind::Schedules
+                | PageKind::Settings,
+            ) => true,
+            // The overview holds no field, and a conversation keeps its own.
+            Some(PageKind::Workspace) | None => false,
+        };
+        if holds_fields {
             self.focus_handle.clone().focus(window, cx);
         }
     }
