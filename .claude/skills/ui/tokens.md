@@ -31,15 +31,15 @@ Helpers:
 
 | Helper | Gives | Lives in |
 |---|---|---|
-| `status_ink(cx).danger`, `.warning`, `.success`, `.closed` | status text and marks; `closed` for what is over and settled (a closed issue) | `crates/ui/src/lib.rs`; the app says `crate::theme::status_ink` |
-| `tint(base, cx)` | a label's `Tint { fill, ink }` by its hue | `crates/ui/src/lib.rs` |
-| `dock_surface(cx)` | the Workbench's and the terminal's surface | `crates/ui/src/lib.rs` |
-| `badge_edge(tint)` | a badge's edge: halfway from its `Tint`'s fill to its ink | `crates/ui/src/lib.rs` |
-| `control_fill(cx)` | a ghost control's fill hovered, pressed or chosen; between `list_hover` and `accent` | `crates/ui/src/lib.rs` |
-| `faint_rule(cx)` | a hairline a step fainter, halfway to the surface: the line under a page's top, and a list page's line over its foot | `crates/ui/src/lib.rs` |
-| `field_fill(cx)` (private) | every field's fill: `muted` a step toward `foreground`; drawn by `text_input` and `text_area` | `crates/ui/src/lib.rs` |
-| `meta_ink(cx)` | the middle ink: a detail beside a name, between prose and muted | `crates/ui/src/lib.rs`; the app says `crate::theme::meta_ink` |
-| `middle_ink(full, meta)` | the same step under another full ink: on a fill, under that fill's paired ink | `crates/ui/src/lib.rs` |
+| `status_ink(cx).danger`, `.warning`, `.success`, `.closed` | status text and marks; `closed` for what is over and settled (a closed issue) | `crates/ui/src/ink.rs`; the app says `crate::theme::status_ink` |
+| `tint(base, cx)` | a label's `Tint { fill, ink }` by its hue | `crates/ui/src/ink.rs` |
+| `dock_surface(cx)` | the Workbench's and the terminal's surface | `crates/ui/src/surface.rs` |
+| `badge_edge(tint)` | a badge's edge: halfway from its `Tint`'s fill to its ink | `crates/ui/src/badge.rs` |
+| `control_fill(cx)` | a ghost control's fill hovered, pressed or chosen; between `list_hover` and `accent` | `crates/ui/src/ink.rs` |
+| `faint_rule(cx)` | a hairline a step fainter, halfway to the surface: the line under a page's top, and a list page's line over its foot | `crates/ui/src/ink.rs` |
+| `field_fill(cx)` (private) | every field's fill: `muted` a step toward `foreground`; drawn by `text_input` and `text_area` | `crates/ui/src/field.rs` |
+| `meta_ink(cx)` | the middle ink: a detail beside a name, between prose and muted | `crates/ui/src/ink.rs`; the app says `crate::theme::meta_ink` |
+| `middle_ink(full, meta)` | the same step under another full ink: on a fill, under that fill's paired ink | `crates/ui/src/ink.rs` |
 | `hue_ink(base, cx)` | a hue tempered for ink: code inside prose | `crates/app/src/theme.rs` |
 | `raised(cx)` | the composer card's fill | `crates/app/src/theme.rs` |
 | `inset(cx)` | the rail's search; a badge in the rail | `crates/app/src/theme.rs` |
@@ -142,7 +142,7 @@ Moving the library's rev means checking this table.
 
 An icon-only button is square at its height, and padding vertically equals its height less its
 words, halved: 4 at `.xsmall()`, 6 at `.short()`, 8 at `.tall()`. `.short()` is the extra small size given the small
-height and inset (`Short` in `crates/ui/src/lib.rs`), so its words and icon are the extra
+height and inset (`Short` in `crates/ui/src/control_size.rs`), so its words and icon are the extra
 small ones; a field keeps the small size and takes `.text_xs()`. `.tall()` is the small size
 given `FIELD_H` (`Tall`, beside it), so its words and icon stay the small ones. A builder that sizes the controls
 it makes (`choice`, `switch`, `picker`) takes one of them as a `ControlSize`.

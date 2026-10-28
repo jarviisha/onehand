@@ -704,7 +704,7 @@ mod tests {
             // than the app because a feature crate draws buttons too and
             // cannot reach into the binary hosting it -- and one wrapper is the
             // whole point, so there is exactly one file to exempt.
-            if path.ends_with("crates/ui/src/lib.rs") {
+            if path.ends_with("crates/ui/src/button.rs") {
                 continue;
             }
             for (n, line) in source.lines().enumerate() {
@@ -733,7 +733,7 @@ mod tests {
             format!("Textarea{}new(", "::"),
         ];
         for (path, source) in ui_sources() {
-            if path.ends_with("crates/ui/src/lib.rs") {
+            if path.ends_with("crates/ui/src/field.rs") {
                 continue;
             }
             for (n, line) in source.lines().enumerate() {
