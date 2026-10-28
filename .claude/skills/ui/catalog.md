@@ -33,6 +33,7 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | A control at a dialog's, a form's or a page filter bar's scale | `.short()` (the `Short` trait, for a button or a field; re-exported by `crates/app/src/controls.rs`) | `crates/ui/src/lib.rs` |
 | An icon-only button's name | `.named(name)` or `.named_with_action(name, action, context)`: the tooltip and the accessible name in one call (the `Named` trait, re-exported by `crates/app/src/controls.rs`) | `crates/ui/src/lib.rs` |
 | A ghost button | `.quiet(cx)`; an icon with no words `.quiet_icon(on, cx)`, muted at rest and in its fill's ink when hovered or `on` (the `Quiet` trait, re-exported by `crates/app/src/controls.rs`) | `crates/ui/src/lib.rs` |
+| A tooltip on anything that is not a library control | `.tooltip(tip(|window, cx| Tooltip::new(words).build(window, cx)))`: gpui's own tooltip, kept away while a press rests where it landed; a guard holds every builder written into `.tooltip(` to it | `crates/ui/src/tooltip.rs` |
 | A button that can refuse | `.refuses(why)`: refusing while `why` is `Some`, its reason the tooltip; called after the control's own tooltip (the `Refuses` trait, re-exported by `crates/app/src/controls.rs`) | `crates/ui/src/lib.rs` |
 | A small label, a badge | `badge(text, tint)`: the library's `Tag` at `.small()`, `rounded_full`, its words `py_1` off its edges, edged in `badge_edge`, in a `Tint`'s fill and ink (`tint(base, cx)` for a hue) | `crates/ui/src/lib.rs` |
 | A mark down a column (an icon, a state's mark, a dot) | `mark_slot(mark)`: one icon wide, centred, so marks share a line and labels an edge | `crates/ui/src/lib.rs` |
@@ -100,7 +101,7 @@ How a key and a focus are wired (the rules: UI patterns, *Keys and focus*):
   `&& !Dialog && !Input`. One key serves one command per region; `validate` refuses the rest.
 - A control bound to one shows its key through the library's lookup, so a rebound key shows:
   `.tooltip_with_action(tip, &action, None)` on a button, a `Tooltip::new(tip).action(&action,
-  None)` built in `.tooltip(…)` on anything else.
+  None)` built in `.tooltip(tip(…))` on anything else.
 - An element you draw that takes focus tracks it and rings for the keyboard only:
   `.track_focus(&handle).focus_visible(|s| s.border_color(cx.theme().ring))`. Esc in a field
   reaches the view as the library's `gpui_component::input::Escape` action.

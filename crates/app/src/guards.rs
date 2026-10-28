@@ -354,6 +354,32 @@ mod tests {
         }
     }
 
+    /// A `div`'s own tooltip is built through `onehand_ui::tip`, which keeps
+    /// it away while a press rests where it landed. gpui's native tooltip
+    /// shows one still waiting out its delay after the press, and the guard
+    /// over the library's tooltips never sees it; a builder written straight
+    /// into `.tooltip(` skips the one place that can stop it.
+    ///
+    /// Reads the argument's first token: a closure or a block is a builder
+    /// written in place. A builder held in a variable first, or returned by a
+    /// helper other than `tip`, is not caught.
+    #[test]
+    fn a_native_tooltip_goes_through_tip() {
+        for (path, source) in ui_sources() {
+            if path.ends_with("guards.rs") {
+                continue;
+            }
+            for (at, _) in source.match_indices(".tooltip(") {
+                let arg = source[at + ".tooltip(".len()..].trim_start();
+                assert!(
+                    !(arg.starts_with('|') || arg.starts_with("move |") || arg.starts_with('{')),
+                    "{path}: a tooltip builder written straight into `.tooltip(` at byte {at}; \
+                     wrap it in `onehand_ui::tip(..)` so a press keeps it away"
+                );
+            }
+        }
+    }
+
     /// Every document in the repository is written in English.
     ///
     /// These files are the binding contracts, they are read alongside source

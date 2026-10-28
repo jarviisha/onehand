@@ -92,7 +92,7 @@ pub(super) fn status_mark(
         move |window: &mut Window, cx: &mut App| Tooltip::new(label.clone()).build(window, cx);
     match covered_by {
         Some(row) => mark.tooltip(covered_tip(row, tip)),
-        None => mark.tooltip(tip),
+        None => mark.tooltip(onehand_ui::tip(tip)),
     }
 }
 
@@ -273,7 +273,9 @@ pub(super) fn session_row(
                 .child(status_mark(("status", uid).into(), signal, label, None, cx))
                 .child(
                     faded(("title", uid), title, group.clone(), rest, hovered)
-                        .tooltip(move |window, cx| Tooltip::new(tip.clone()).build(window, cx))
+                        .tooltip(onehand_ui::tip(move |window, cx| {
+                            Tooltip::new(tip.clone()).build(window, cx)
+                        }))
                         .text_color(name_ink),
                 )
                 .child(on_hover(

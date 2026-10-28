@@ -119,7 +119,9 @@ pub(super) fn issue_row(
         .min_w_0()
         .truncate()
         .font_medium()
-        .tooltip(move |window, cx| Tooltip::new(title.clone()).build(window, cx))
+        .tooltip(onehand_ui::tip(move |window, cx| {
+            Tooltip::new(title.clone()).build(window, cx)
+        }))
         .child(issue.title.clone());
     let priority = priority(&issue.body).map(|said| {
         let name = priority_name(&said).to_string();
@@ -129,7 +131,9 @@ pub(super) fn issue_row(
             .flex_none()
             .role(gpui::accesskit::Role::Image)
             .aria_label(said_name.clone())
-            .tooltip(move |window, cx| Tooltip::new(said_name.clone()).build(window, cx))
+            .tooltip(onehand_ui::tip(move |window, cx| {
+                Tooltip::new(said_name.clone()).build(window, cx)
+            }))
             .child(Icon::new(priority_icon(&said)).xsmall().text_color(muted))
     });
     // What is most worth reading after the title: where a row that stopped
@@ -166,7 +170,9 @@ pub(super) fn issue_row(
         .font_medium()
         .text_xs()
         .text_color(age_ink)
-        .tooltip(move |window, cx| Tooltip::new(moment(changed)).build(window, cx))
+        .tooltip(onehand_ui::tip(move |window, cx| {
+            Tooltip::new(moment(changed)).build(window, cx)
+        }))
         .child(onehand_core::age(onehand_core::issues::now(), changed));
 
     let more = issue.labels.len().saturating_sub(ROW_LABELS);
@@ -203,7 +209,9 @@ pub(super) fn issue_row(
                     .flex_none()
                     .text_xs()
                     .text_color(muted)
-                    .tooltip(move |window, cx| Tooltip::new(hidden.clone()).build(window, cx))
+                    .tooltip(onehand_ui::tip(move |window, cx| {
+                        Tooltip::new(hidden.clone()).build(window, cx)
+                    }))
                     .child(format!("+{more}")),
             )
         });

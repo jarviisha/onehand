@@ -187,9 +187,9 @@ pub(in crate::chat) fn permission(
                                 .text_xs()
                                 .text_color(crate::theme::meta_ink(cx))
                                 .child(format!("in {shown}"))
-                                .tooltip(move |window, cx| {
+                                .tooltip(onehand_ui::tip(move |window, cx| {
                                     Tooltip::new(full.clone()).build(window, cx)
-                                })
+                                }))
                         })))
                         .child(copy_button(
                             ("perm-copy", fold_key(target)),

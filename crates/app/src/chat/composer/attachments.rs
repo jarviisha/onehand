@@ -293,13 +293,13 @@ impl Composer {
                                     },
                                 )
                             }
-                            (None, None) => plate.tooltip(move |window, cx| {
+                            (None, None) => plate.tooltip(onehand_ui::tip(move |window, cx| {
                                 let tip = match unavailable {
                                     true => format!("{name} could not be read — remove it"),
                                     false => format!("{name}{size}"),
                                 };
                                 gpui_component::tooltip::Tooltip::new(tip).build(window, cx)
-                            }),
+                            })),
                         }
                         .into_any_element()
                     }),

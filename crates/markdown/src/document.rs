@@ -246,10 +246,10 @@ fn doc_row(
     // picked row, as the open file is the tree's. Indented by depth rather
     // than by nested containers, for the reason the file tree is.
     tree_row(("markdown-row", i), row.depth as usize, selected, cx)
-        .tooltip({
+        .tooltip(onehand_ui::tip({
             let name = row.name.clone();
             move |window, cx| Tooltip::new(name.clone()).build(window, cx)
-        })
+        }))
         .child(mark_slot(mark))
         .child(
             div()

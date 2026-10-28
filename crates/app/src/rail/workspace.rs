@@ -61,7 +61,9 @@ pub(super) fn workspace_bar(
                     faded("workspace-name", name, "workspace".into(), rail, rail)
                         .font_medium()
                         .text_color(cx.theme().foreground)
-                        .tooltip(move |window, cx| Tooltip::new(tip.clone()).build(window, cx)),
+                        .tooltip(onehand_ui::tip(move |window, cx| {
+                            Tooltip::new(tip.clone()).build(window, cx)
+                        })),
                 ),
         )
         .child(
