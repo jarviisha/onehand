@@ -154,8 +154,8 @@ impl IssuesView {
             .into_any_element()
     }
 
-    /// The panel's head: the project and reference of the issue, or what the
-    /// form is for, and *N of M* while the issue is a row on screen.
+    /// The panel's head: the project and reference of the issue, nothing over
+    /// a form, and *N of M* while the issue is a row on screen.
     fn panel_head(&self, cx: &App) -> (String, Option<String>) {
         let Some(page) = self.page.as_ref() else {
             return (String::new(), None);
@@ -164,8 +164,10 @@ impl IssuesView {
             return (String::new(), None);
         };
         let project = page.label_of(root).unwrap_or_default();
+        // The form's own first line says what it is for and where; the bar
+        // over it says nothing twice.
         if self.drafting() {
-            return (format!("{project} · new issue"), None);
+            return (String::new(), None);
         }
         let Some(number) = self.selected_number() else {
             return (project.to_string(), None);

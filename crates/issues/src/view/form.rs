@@ -86,7 +86,7 @@ impl IssuesView {
             }),
             labels: cx.new(|cx| {
                 InputState::new(window, cx)
-                    .placeholder("Labels, separated by commas")
+                    .placeholder("bug, docs")
                     .default_value(labels)
             }),
             body: cx.new(|cx| {

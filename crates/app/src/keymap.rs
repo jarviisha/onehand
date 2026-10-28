@@ -36,11 +36,16 @@ pub const RESTART: &str = "restart";
 pub const CLOSE_SESSION: &str = "close_session";
 pub const NEW_SESSION: &str = "new_session";
 
+/// Where a window command works, and a rail command: each said once, by its
+/// group on the Shortcuts page, rather than on every row.
+pub(crate) const WINDOW_SCOPE: &str = "Anywhere, the terminal included";
+pub(crate) const RAIL_SCOPE: &str = "Rail list";
+
 macro_rules! command {
     ($id:expr, $label:literal, [$($key:literal),*], $action:expr) => {
-        command!($id, $label, [$($key),*], $action, "Shell && !Dialog", "Application, including terminal")
+        command!($id, $label, [$($key),*], $action, "Shell && !Dialog", $crate::keymap::WINDOW_SCOPE)
     };
-    ($id:expr, $label:literal, [$($key:literal),*], $action:expr, $context:literal, $scope:literal) => {
+    ($id:expr, $label:literal, [$($key:literal),*], $action:expr, $context:literal, $scope:expr) => {
         Command { id: $id, label: $label, defaults: &[$($key),*],
             context: $context, scope: $scope, action: || Box::new($action) }
     };

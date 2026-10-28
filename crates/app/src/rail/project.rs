@@ -524,8 +524,22 @@ pub(super) fn project_row(
             .min_w(super::row::NAME_MIN_W)
             .tooltip(covered_tip(&key, move |window, cx| {
                 let hint = hint.clone();
-                Tooltip::element(move |_, _| div().v_flex().gap_0p5().children(hint.clone()))
-                    .build(window, cx)
+                // The path, last, is machine text and stands in its face.
+                Tooltip::element(move |_, cx: &mut App| {
+                    let (path, words) = hint
+                        .split_last()
+                        .map_or((None, &[][..]), |(p, w)| (Some(p), w));
+                    div()
+                        .v_flex()
+                        .gap_0p5()
+                        .children(words.iter().cloned())
+                        .children(path.map(|path| {
+                            div()
+                                .font_family(cx.theme().mono_font_family.clone())
+                                .child(path.clone())
+                        }))
+                })
+                .build(window, cx)
             })),
         )
         .child(

@@ -97,6 +97,25 @@ impl Editor {
     }
 }
 
+/// The groups the page lists commands in, by where they work.
+#[derive(Clone, Copy)]
+enum Group {
+    Window,
+    Rail,
+    Composer,
+}
+
+impl Group {
+    /// The scope the group's heading already says, which its rows leave out.
+    fn scope(self) -> Option<&'static str> {
+        match self {
+            Self::Window => Some(super::WINDOW_SCOPE),
+            Self::Rail => Some(super::RAIL_SCOPE),
+            Self::Composer => None,
+        }
+    }
+}
+
 /// The keys a shortcut field holds: alternatives separated by spaces, none at
 /// all when it is empty.
 fn typed_keys(value: &str) -> Vec<String> {
@@ -196,9 +215,17 @@ impl Render for Editor {
         let mut composer_rows = Vec::new();
         for (index, command) in COMMANDS.iter().enumerate() {
             let bound = command.keys(&overrides);
+            // Where a command works is said once, by its group, and on a row
+            // only where the row differs from it.
+            let group = match command.context {
+                context if context.starts_with("Shell") => Group::Window,
+                context if context.starts_with("Rail") => Group::Rail,
+                _ => Group::Composer,
+            };
+            let scope = (Some(command.scope) != group.scope()).then_some(command.scope);
             let row = list_row(
                 command.label,
-                Some(command.scope.into_any_element()),
+                scope.map(IntoElement::into_any_element),
                 div()
                     .h_flex()
                     .gap_2()
@@ -226,10 +253,10 @@ impl Render for Editor {
                 cx,
             )
             .into_any_element();
-            match command.context {
-                context if context.starts_with("Shell") => window_rows.push(row),
-                "Rail" => rail_rows.push(row),
-                _ => composer_rows.push(row),
+            match group {
+                Group::Window => window_rows.push(row),
+                Group::Rail => rail_rows.push(row),
+                Group::Composer => composer_rows.push(row),
             }
         }
 
@@ -255,7 +282,14 @@ impl Render for Editor {
                     .as_ref()
                     .map(|error| problem(error.clone(), danger, cx)),
             )
-            .child(lead_section("Window", None, cx).child(list_rows(window_rows, cx)))
+            .child(
+                lead_section(
+                    "Window",
+                    Some("Anywhere in the window, the terminal included".into()),
+                    cx,
+                )
+                .child(list_rows(window_rows, cx)),
+            )
             .child(
                 section(
                     Some("Rail"),
