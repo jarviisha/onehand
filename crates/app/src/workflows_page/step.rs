@@ -201,7 +201,9 @@ fn step_row(
                     .child(more),
             )
         });
-    let rail = cx.theme().border;
+    // In the ink of the box's own edge: a line to be followed from dot to
+    // dot, which the hairline ink left all but lost on the page.
+    let rail = cx.theme().input;
     let dot = {
         let (fill, edge, ink) = match row.open {
             true => (
