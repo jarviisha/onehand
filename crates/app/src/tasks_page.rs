@@ -437,9 +437,13 @@ impl TaskAct {
             Some(tip) => button.tooltip(tip),
             None => button,
         };
-        // A Resume the preflight finds blocked refuses, saying why.
+        // A Resume the preflight finds blocked refuses, saying why. Asked
+        // here, where a Resume is drawn, not for every row listed.
         let button = match self == Self::Resume {
-            true => button.refuses(row.resume_refused.clone()),
+            true => button.refuses(
+                crate::task::task(&row.id, cx)
+                    .and_then(|task| crate::task::resume_refused(&task, cx)),
+            ),
             false => button,
         };
         button.on_click(move |event, window, cx| press(event, window, cx))
