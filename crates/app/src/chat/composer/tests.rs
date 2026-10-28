@@ -1,6 +1,6 @@
 use super::complete::TriggerSpot;
 use super::complete::trigger_spot;
-use super::{Draft, highlight};
+use super::{Draft, end_of, highlight};
 use onehand_core::attachment::{AttachmentSource, StagedAttachment};
 use std::path::PathBuf;
 
@@ -147,4 +147,15 @@ fn fork_draft_skips_missing_attachments() {
     assert_eq!(draft.attachments.len(), 1);
     assert_eq!(draft.attachments[0].path, kept);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A draft put back leaves the caret after its last character, so typing
+/// carries on from where it was written; columns count characters.
+#[test]
+fn a_restored_draft_ends_where_it_was_written() {
+    let at = |line, character| gpui_component::input::Position { line, character };
+    assert_eq!(end_of(""), at(0, 0));
+    assert_eq!(end_of("second fast"), at(0, 11));
+    assert_eq!(end_of("one\nhai đây"), at(1, 7));
+    assert_eq!(end_of("trailing\n"), at(1, 0));
 }

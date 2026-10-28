@@ -285,9 +285,13 @@ impl ChatPane {
         };
         // Set the first time an adapter is actually up and never unset: it is
         // what tells a first connect from a reconnect.
+        let parked_on_pane = self.focus_handle.is_focused(window);
         if link == Link::Connected
             && let Some(conv) = self.active_conversation_mut()
         {
+            if super::caret_to_composer(link, conv.was_live, parked_on_pane) {
+                cx.defer_in(window, |pane, window, cx| pane.focus_composer(window, cx));
+            }
             conv.was_live = true;
         }
         // A first connect draws nothing but the wait.

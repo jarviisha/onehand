@@ -760,6 +760,18 @@ fn waits_alone(link: Link, was_live: bool) -> bool {
     link == Link::Connecting && !was_live
 }
 
+/// Whether the composer takes the keyboard as it first appears.
+///
+/// A session shown for the first time is given the composer's focus while the
+/// pane draws nothing but the wait, so the composer is not in the frame: the
+/// keyboard falls back to the pane's own handle, and stays there once the
+/// composer arrives unless something hands it over. Only a first connect, and
+/// only a keyboard parked on the pane: one the person moved elsewhere
+/// meanwhile (the Workbench, a terminal) is theirs.
+fn caret_to_composer(link: Link, was_live: bool, parked_on_pane: bool) -> bool {
+    link == Link::Connected && !was_live && parked_on_pane
+}
+
 /// Whether showing `next` means putting down whatever the pane was showing.
 ///
 /// Pure so the rule has one statement rather than one per call site: the pane

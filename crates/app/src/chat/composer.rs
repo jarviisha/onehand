@@ -110,6 +110,15 @@ impl Draft {
     }
 }
 
+/// Where `text` ends, as the line and the character column a caret takes.
+fn end_of(text: &str) -> gpui_component::input::Position {
+    let last = text.rsplit('\n').next().unwrap_or_default();
+    gpui_component::input::Position {
+        line: text.matches('\n').count() as u32,
+        character: last.chars().count() as u32,
+    }
+}
+
 /// Which row the highlight is actually on, given how many rows there are.
 ///
 /// The stored index is made against one candidate list and read against
@@ -295,10 +304,15 @@ impl Composer {
         draft
     }
 
-    /// Put a set-aside draft back.
+    /// Put a set-aside draft back, the caret after its last character.
     pub fn restore_draft(&mut self, draft: Draft, window: &mut Window, cx: &mut Context<Self>) {
-        self.state
-            .update(cx, |state, cx| state.set_value(&draft.text, window, cx));
+        let end = end_of(&draft.text);
+        self.state.update(cx, |state, cx| {
+            state.set_value(&draft.text, window, cx);
+            // Setting a value puts the caret back at the start, which would
+            // have the next word typed in front of what was written.
+            state.set_cursor_position(end, window, cx);
+        });
         self.attachments = draft.attachments;
         cx.notify();
     }

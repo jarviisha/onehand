@@ -1,7 +1,7 @@
 use super::body::away_from_tail;
 use super::runs::lead_gap;
 use super::runs::working_word;
-use super::{BLOCK_GAP, COMPACT_GAP, switching_away, waits_alone};
+use super::{BLOCK_GAP, COMPACT_GAP, caret_to_composer, switching_away, waits_alone};
 use crate::chat::viewport::{self, RunKind};
 use gpui::rems;
 use onehand_core::chat::{Link, TranscriptItemId};
@@ -246,4 +246,16 @@ fn reselecting_the_shown_session_changes_nothing() {
 fn every_other_move_is_a_switch() {
     assert!(switching_away(Some(7), 8), "one session to another");
     assert!(switching_away(None, 8), "from nothing showing to a session");
+}
+
+/// A session's first connect hands the composer the keyboard the wait left on
+/// the pane, so typing goes where the new conversation is; a reconnect, or a
+/// keyboard somewhere else (the Workbench, a terminal), is left alone.
+#[test]
+fn a_first_connect_gives_the_composer_the_keyboard_parked_on_the_pane() {
+    assert!(caret_to_composer(Link::Connected, false, true));
+    assert!(!caret_to_composer(Link::Connected, true, true));
+    assert!(!caret_to_composer(Link::Connected, false, false));
+    assert!(!caret_to_composer(Link::Connecting, false, true));
+    assert!(!caret_to_composer(Link::Lost, false, true));
 }

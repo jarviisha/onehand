@@ -127,6 +127,10 @@ minor bump may break any of them.
 
 ### Fixed
 
+- A session shown for the first time takes the keyboard in its composer once it connects,
+  instead of leaving typing to go nowhere until the composer is clicked.
+- A draft put back in the composer, on switching back to a session or in a fork, keeps the caret
+  after its last character.
 - A subagent's steps are no longer mixed into the agent's own: each is kept in the subagent's card.
 - A session whose agent still runs work in the background reads *Running* on the rail, not idle.
 - What an agent writes after its turn has ended, when background work reports back, is saved to
