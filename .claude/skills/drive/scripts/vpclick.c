@@ -1,9 +1,14 @@
-// vpclick X Y [click|move|scroll N]: a pointer for a compositor with none.
+// vpclick X Y [click|move [HOLD_MS]|scroll N]: a pointer for a compositor with none.
 //
 // A headless sway seat has no pointer device, so `swaymsg seat cursor` moves
 // nothing a client sees. This creates a wlr virtual pointer, moves it to
 // X Y (pixels on the 1600x1000 output session.sh makes), and clicks, only
 // moves, or scrolls N notches down (negative: up). Built by session.sh.
+//
+// The pointer is destroyed when it is done, and the seat then has none, so
+// a client stops counting anything as hovered. HOLD_MS keeps it for that
+// long after a click or a move, still where it was: long enough for a
+// tooltip to show, or to show that it does not.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -41,6 +46,8 @@ int main(int argc, char **argv) {
     zwlr_virtual_pointer_v1_axis(p, 0, 0, wl_fixed_from_int(15 * n)); zwlr_virtual_pointer_v1_frame(p);
   }
   wl_display_roundtrip(d); usleep(80000);
+  int hold = strcmp(what, "scroll") && argc > 4 ? atoi(argv[4]) : 0;
+  for (int t = 0; t < hold; t += 50) { usleep(50000); wl_display_roundtrip(d); }
   zwlr_virtual_pointer_v1_destroy(p);
   wl_display_roundtrip(d);
   wl_display_disconnect(d);
