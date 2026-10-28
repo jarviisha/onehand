@@ -8,6 +8,7 @@ use gpui::{
 };
 use gpui_component::{ActiveTheme, StyledExt};
 use std::path::PathBuf;
+use std::rc::Rc;
 
 /// What a project filter reads while it is not narrowing the list at all:
 /// the workspace page's issues, or the Tasks page.
@@ -173,4 +174,45 @@ fn tinted_lines(
                 .min_w_0()
                 .children(lines.into_iter().map(|line| div().child(line))),
         )
+}
+
+/// A page's project filter: a picker named for the project the list is
+/// narrowed to, opening on every project under "All projects", with the one
+/// in force checked. `pick` hears the choice, `None` for all of them.
+pub(crate) fn project_filter(
+    id: &'static str,
+    name: Option<SharedString>,
+    projects: impl IntoIterator<Item = (SharedString, PathBuf)>,
+    current: Option<PathBuf>,
+    size: onehand_ui::ControlSize,
+    pick: impl Fn(Option<PathBuf>, &mut App) + 'static,
+    cx: &App,
+) -> gpui_component::popover::Popover {
+    let choices: Vec<(SharedString, Option<PathBuf>)> =
+        std::iter::once((ALL_PROJECTS.into(), None))
+            .chain(
+                projects
+                    .into_iter()
+                    .map(|(label, root)| (label, Some(root))),
+            )
+            .collect();
+    let trigger = onehand_ui::picker(
+        SharedString::from(format!("{id}-trigger")),
+        name.unwrap_or_else(|| ALL_PROJECTS.into()),
+        current.is_some(),
+        size,
+        cx,
+    );
+    let pick = Rc::new(pick);
+    crate::controls::menu_below(id, trigger, move |mut menu, _, _| {
+        for (label, only) in &choices {
+            let (only, pick) = (only.clone(), pick.clone());
+            menu = menu.item(
+                crate::controls::menu_item(label.clone())
+                    .checked(only == current)
+                    .on_click(move |_, _, cx: &mut App| pick(only.clone(), cx)),
+            );
+        }
+        menu
+    })
 }

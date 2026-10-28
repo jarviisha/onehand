@@ -1,10 +1,10 @@
 use super::project_page::count_of;
 use super::{ChatPane, ChatPaneEvent, Page, SessionSignal, rel_time};
-use crate::page_parts::{ALL_PROJECTS, PageProject};
+use crate::page_parts::PageProject;
 use crate::page_parts::{card_box, card_title, page_card, page_head, page_top, pair, ruled};
 use crate::tokens::PAGE_WIDE;
 use gpui::{
-    App, Context, InteractiveElement, IntoElement, ParentElement, Rems, SharedString,
+    Context, InteractiveElement, IntoElement, ParentElement, Rems, SharedString,
     StatefulInteractiveElement, Styled, Window, div, rems,
 };
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
@@ -687,44 +687,21 @@ impl ChatPane {
 
         let unbound = !page.projects.is_empty()
             && page.projects.iter().all(|project| project.issues.is_none());
-        let filter_name = page
-            .filter
-            .as_deref()
-            .map_or_else(|| ALL_PROJECTS.to_string(), |root| page.label_of(root));
-        let choices: Vec<(SharedString, Option<PathBuf>)> =
-            std::iter::once((ALL_PROJECTS.into(), None))
-                .chain(
-                    page.projects
-                        .iter()
-                        .map(|project| (project.label.clone(), Some(project.root.clone()))),
-                )
-                .collect();
-        let current = page.filter.clone();
         let this = cx.entity();
-        let filter = crate::controls::menu_below(
+        let filter = crate::page_parts::project_filter(
             "workspace-filter",
-            onehand_ui::picker(
-                "workspace-filter-trigger",
-                filter_name,
-                page.filter.is_some(),
-                onehand_ui::ControlSize::Short,
-                cx,
-            ),
-            move |mut menu, _, _| {
-                for (label, only) in &choices {
-                    let (only, this) = (only.clone(), this.clone());
-                    menu = menu.item(
-                        crate::controls::menu_item(label.clone())
-                            .checked(only == current)
-                            .on_click(move |_, _, cx: &mut App| {
-                                this.update(cx, |pane: &mut Self, cx| {
-                                    pane.filter_workspace(only.clone(), cx)
-                                });
-                            }),
-                    );
-                }
-                menu
+            page.filter
+                .as_deref()
+                .map(|root| page.label_of(root).into()),
+            page.projects
+                .iter()
+                .map(|project| (project.label.clone(), project.root.clone())),
+            page.filter.clone(),
+            onehand_ui::ControlSize::Short,
+            move |only, cx| {
+                this.update(cx, |pane: &mut Self, cx| pane.filter_workspace(only, cx));
             },
+            cx,
         );
         let note = match &page.read {
             _ if unbound => {

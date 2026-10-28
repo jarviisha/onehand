@@ -449,45 +449,22 @@ impl Render for SchedulesPage {
 impl SchedulesPage {
     /// The project filter, as the Tasks page's.
     fn filter_picker(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        let name = self.filter.as_deref().map_or_else(
-            || crate::page_parts::ALL_PROJECTS.into(),
-            |root| self.label_of(root),
-        );
-        let choices: Vec<(SharedString, Option<PathBuf>)> =
-            std::iter::once((crate::page_parts::ALL_PROJECTS.into(), None))
-                .chain(
-                    self.projects
-                        .iter()
-                        .map(|(root, label)| (label.clone(), Some(root.clone()))),
-                )
-                .collect();
-        let current = self.filter.clone();
         let this = cx.entity();
-        crate::controls::menu_below(
+        crate::page_parts::project_filter(
             "schedules-filter",
-            onehand_ui::picker(
-                "schedules-filter-trigger",
-                name,
-                self.filter.is_some(),
-                onehand_ui::ControlSize::Tall,
-                cx,
-            ),
-            move |mut menu, _, _| {
-                for (label, only) in &choices {
-                    let (only, this) = (only.clone(), this.clone());
-                    menu = menu.item(
-                        crate::controls::menu_item(label.clone())
-                            .checked(only == current)
-                            .on_click(move |_, _, cx: &mut App| {
-                                this.update(cx, |page: &mut Self, cx| {
-                                    page.filter = only.clone();
-                                    cx.notify();
-                                });
-                            }),
-                    );
-                }
-                menu
+            self.filter.as_deref().map(|root| self.label_of(root)),
+            self.projects
+                .iter()
+                .map(|(root, label)| (label.clone(), root.clone())),
+            self.filter.clone(),
+            onehand_ui::ControlSize::Tall,
+            move |only, cx| {
+                this.update(cx, |page: &mut Self, cx| {
+                    page.filter = only;
+                    cx.notify();
+                });
             },
+            cx,
         )
     }
 }
