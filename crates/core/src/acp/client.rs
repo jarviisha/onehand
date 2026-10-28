@@ -71,6 +71,9 @@ pub struct SessionOpts {
     pub mcp_servers: Vec<Value>,
 }
 
+/// What a fork that did not open says first.
+pub(crate) const FORK_FAILED: &str = "Could not fork the conversation";
+
 /// How a session is opened.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Opening {

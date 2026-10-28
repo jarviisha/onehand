@@ -9,6 +9,7 @@
 //! that landed somewhere near it would be worse than none.
 
 use super::{Chat, ChatItem, Replay, TranscriptItemId};
+use crate::acp::client::FORK_FAILED;
 use crate::attachment::AttachmentSnapshot;
 use crate::chat::store::{ConversationSnapshot, Prefs};
 
@@ -90,7 +91,18 @@ impl Chat {
         self.persisted = 0;
         self.replay = Replay::Settled;
         self.rewrite = false;
+        self.forking = true;
         self.touch();
+    }
+
+    /// Why this conversation, started as a fork, never opened: what to tell
+    /// the person when the session goes.
+    pub fn fork_failure(&self) -> Option<String> {
+        let why = self.fork_failed.as_deref()?;
+        Some(match why.starts_with(FORK_FAILED) {
+            true => why.to_string(),
+            false => format!("{FORK_FAILED}: {why}"),
+        })
     }
 }
 

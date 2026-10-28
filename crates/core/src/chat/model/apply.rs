@@ -213,6 +213,7 @@ impl Chat {
             } => {
                 self.tx = Some(tx);
                 self.forkable = forkable;
+                self.forking = false;
                 self.link = Link::Connected;
                 self.resumed = resumed;
                 // The replay window was armed in `load_history`; this is where it
@@ -437,6 +438,9 @@ impl Chat {
                 self.items.push(ChatItem::failure(text, level, detail));
             }
             AcpEvent::Disconnected(e) => {
+                if std::mem::take(&mut self.forking) {
+                    self.fork_failed = Some(e.clone());
+                }
                 // A thought cut off with the adapter is over, not still running.
                 self.finalize_thought();
                 self.tx = None;

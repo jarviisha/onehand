@@ -242,3 +242,53 @@ fn fork_seed_survives_the_original_being_deleted() {
     assert!(matches!(&t.call.content[0], ToolContent::Image(b) if b.as_slice() == b"pretend-png"));
     let _ = std::fs::remove_dir_all(&store);
 }
+
+fn adopted_fork(name: &str) -> Chat {
+    let store = scratch(name);
+    let chat = saved(
+        &store,
+        vec![prompt("one"), answer("a", Some("m1")), prompt("two")],
+    );
+    let point = chat.fork_point(TranscriptItemId::Live(2)).unwrap();
+    let seed = fork_seed(load(&conv_dir(&store, "orig")).unwrap(), &point).unwrap();
+    let _ = std::fs::remove_dir_all(&store);
+    let mut fork = Chat::default();
+    fork.adopt_fork(seed);
+    fork
+}
+
+#[test]
+fn a_fork_that_never_opened_says_why() {
+    let mut fork = adopted_fork("never-opened");
+    assert_eq!(fork.fork_failure(), None);
+    fork.apply(AcpEvent::Disconnected(
+        "Could not fork the conversation: no such session".into(),
+    ));
+    assert_eq!(
+        fork.fork_failure().as_deref(),
+        Some("Could not fork the conversation: no such session")
+    );
+
+    let mut fork = adopted_fork("timed-out");
+    fork.apply(AcpEvent::Disconnected("handshake timed out".into()));
+    assert_eq!(
+        fork.fork_failure().as_deref(),
+        Some("Could not fork the conversation: handshake timed out")
+    );
+}
+
+#[test]
+fn an_opened_fork_that_drops_is_no_failed_fork() {
+    let mut fork = adopted_fork("opened");
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    fork.apply(AcpEvent::Connected {
+        tx,
+        resumed: true,
+        forkable: true,
+    });
+    fork.apply(AcpEvent::Disconnected("adapter closed stdout".into()));
+    assert_eq!(fork.fork_failure(), None);
+    let mut chat = chat_of(vec![prompt("one")]);
+    chat.apply(AcpEvent::Disconnected("gone".into()));
+    assert_eq!(chat.fork_failure(), None);
+}

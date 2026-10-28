@@ -102,6 +102,10 @@ pub struct Chat {
     /// Whether the agent serving this conversation forks sessions, as its
     /// last handshake said.
     pub(crate) forkable: bool,
+    /// Started as a fork that has not opened yet.
+    forking: bool,
+    /// Why this conversation's fork never opened.
+    fork_failed: Option<String>,
     /// The session's root + agent name, for the persisted metadata.
     pub root: PathBuf,
     pub agent: String,

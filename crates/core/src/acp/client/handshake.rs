@@ -184,7 +184,7 @@ impl Conn {
 
 /// Why a fork did not open, as the session's failure says it.
 fn not_forked(why: &str) -> String {
-    format!("Could not fork the conversation: {why}")
+    format!("{FORK_FAILED}: {why}")
 }
 
 /// Whether an update is part of the conversation itself, which a load replays,
