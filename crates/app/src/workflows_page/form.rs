@@ -8,7 +8,7 @@ use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
 use crate::controls::Short as _;
 use crate::controls::text_input;
-use crate::settings::{about, field, section};
+use crate::settings::{about, field, lead_section, section};
 use gpui::{AnyElement, App, Entity, IntoElement, ParentElement, Styled, Window, div};
 use gpui_component::{ActiveTheme, Icon, IconName, StyledExt};
 use onehand_core::workflow::Place;
@@ -40,9 +40,7 @@ pub(super) fn workflow_column(
             cx,
         );
         if shipped {
-            trigger
-                .refuses(Some("Built in: duplicate it to change it".to_string()))
-                .into_any_element()
+            trigger.refuses(Some(super::SHIPPED)).into_any_element()
         } else {
             let handle = handle.clone();
             crate::controls::menu_below("workflow-place", trigger, move |mut menu, _, _| {
@@ -69,7 +67,8 @@ pub(super) fn workflow_column(
     let half = |element: AnyElement| div().flex_1().min_w(PAIR_MIN).child(element);
     // A pair stands on its controls' line: one field's hint must not push its
     // input below its neighbour's.
-    let about_group = section(Some("About"), None, cx).child(
+    // First in its column in every layout: no rule above it.
+    let about_group = lead_section("About", None, cx).child(
         div()
             .h_flex()
             .items_end()

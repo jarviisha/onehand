@@ -96,11 +96,11 @@ size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in ea
 
 | Role | Component | Size |
 |---|---|---|
-| A page's head and the row under it: its actions, its search, a split action's both halves | Button, Input | `.tall()` |
+| A page's head and the row under it: its actions, its search, its filters' choices and pickers, a split action's both halves | Button, Input | `.tall()` |
 | An icon-only button in a page's head or a page's form | Button | `.tall_icon()`, square at `FIELD_H` |
 | A page's form: its fields, its pickers, its switch and its buttons | Button, Input | `.tall()` |
 | A form in a dialog at `DIALOG_FORM` (the agent form, the workflow launcher, the issue picker): its fields, its pickers and its footer | Button, Input | `.tall()` |
-| A dialog that asks one thing (a rename, a worktree): its fields and footer; a filter bar's choices and pickers, and a dock's search | Button, Input | `.short()` |
+| A dialog that asks one thing (a rename, a worktree): its fields and footer; a dock's filter bar, its search, choices and pickers | Button, Input | `.short()` |
 | Every other button with words: a strip's, a box's, a row's, a secondary action inside dense content (a line of meta text, a transcript block, a chip), a tab, a fold toggle, a pinned card's answers | Button | `.short()`, under a row, so the controls never outweigh what they act on |
 | Every other icon-only button: a strip's, a row's, a copy control, the composer's send | Button | `.small()`, square at `CONTROL_H`, so an icon alone is as tall as a worded peer beside it |
 | A field in a strip or the rail | Input | `.short()`, as tall as the buttons beside it |
@@ -251,22 +251,22 @@ The list takes the pane's whole width, a whole list scanned at a glance; its top
 ### Filter bars
 
 Whatever filters its content draws its filters in one order. On a page they stand in the row under
-its head, after the search, at `.short()`, as below. In a dock, which is dense chrome with no head, the bar leads with its
+its head, after the search, at `.tall()` as the search is, so the row keeps one height. In a dock, which is dense chrome with no head, the bar leads with its
 search and takes the same order, all at `.short()` (the Plugins mode's marketplaces as choices). A
 dock's bar that stands over a list and its detail both (the Issues tab) leaves the choices out:
 they split the list, so they stand over its rows, under the bar's line.
 
 - where the content splits into a few states that each count (*Open*, *Closed*), those first,
-  each a `.short()` `choice`, the shown one filled, its count a slim `badge` in the hue of that
-  state hung from its top-right corner, its lower-left corner `2` in from that point each way,
+  each a `choice` at the bar's size, the shown one filled, its count a slim `badge` in the hue of that
+  state (neutral at zero, which has nothing to draw the eye to) hung from its top-right corner, its lower-left corner `2` in from that point each way,
   over the button's inset and above its words, the choices `gap_6` apart so a count keeps clear
   of the next;
 - the filters, kept to the row's end after the choices, wrapping under them when narrow. Each is a
-  `.short()` `picker` with its caret, its label naming what it is set to: a ghost in the muted
+  `picker` at the bar's size with its caret, its label naming what it is set to: a ghost in the muted
   ink while it is where it starts, on the secondary fill in that fill's ink once it narrows the
   content;
 - after them, where more than one thing narrows the content and only while one is set, *Clear
-  filters*: a `.short()` ghost that
+  filters*: a ghost at the bar's size that
   puts the search and every filter back (a choice is not a filter); last in its group, so nothing
   moves as it comes and goes.
 

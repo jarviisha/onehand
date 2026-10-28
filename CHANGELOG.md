@@ -144,6 +144,14 @@ minor bump may break any of them.
   the turn it ran in.
 - A tooltip no longer appears over a row or a mark just pressed while the pointer rests there, on
   the rail, in the Issues list and the transcript.
+- A built-in workflow's Kind and Target pickers and its switches refuse a press, as its fields
+  already did, instead of looking live and doing nothing.
+- A workflow's description and an issue's title cut to two lines end on an ellipsis instead of
+  stopping mid-word.
+- The Issues, Tasks and Schedules pages' filters stand at the search's height, and a count of zero
+  on *Open* or *Closed* no longer takes its state's colour.
+- A conversation's header names its agent before the first prompt, as the rail does; *Recent
+  conversations* counts what it holds; boxes stand evenly apart whether two to a row or stacked.
 - The *More* and *Refresh* buttons on the Workflows, Issues and schedule pages, and a step
   setting's remove, are drawn whole; they had shrunk to a dot or a sliver.
 - A question card's long choice wraps clear of its Alt key instead of running under it.

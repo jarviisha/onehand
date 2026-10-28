@@ -339,7 +339,7 @@ at `.text_sm()`), so a control takes one of two heights. On a page, where there 
 the person reads and types what a control holds, it takes `.tall()`: a page's head and a page's
 form, its fields, pickers and buttons alike, so a field's words stand at its title's size; a
 dialog holding a form at `DIALOG_FORM` is that room too. In dense chrome (the rail, a dock, a
-strip, a filter bar, a dialog that asks one thing, a row, a box's title row, the composer) it takes
+strip, a dock's filter bar, a dialog that asks one thing, a row, a box's title row, the composer) it takes
 `.short()`, so it never outweighs what it acts on. An icon alone is square at
 its row's height: `.small()` beside `.short()` peers, `.tall()` beside tall ones. `.tall()`
 (`FIELD_H`) is the ceiling: no control stands taller. Never the library's default.

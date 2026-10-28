@@ -72,13 +72,15 @@ pub(super) fn card_title(
 }
 
 /// Two boxes or sections to a row where the column is wide enough, one under
-/// the other where it is not, a box's gap apart.
+/// the other where it is not, a page section's gap apart: the gap the column
+/// leaves between pairs, so the boxes stand evenly whether they sit two to a
+/// row or stack.
 pub(super) fn pair(left: Div, right: Div) -> Div {
     div()
         .h_flex()
         .flex_wrap()
         .items_start()
-        .gap_4()
+        .gap_6()
         .w_full()
         .child(left.flex_grow_1().flex_basis(PAGE_CARD))
         .child(right.flex_grow_1().flex_basis(PAGE_CARD))

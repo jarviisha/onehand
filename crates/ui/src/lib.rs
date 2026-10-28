@@ -421,6 +421,16 @@ pub fn tint(base: Hsla, cx: &App) -> Tint {
     tint_over(base, cx.theme().background, cx.theme().foreground)
 }
 
+/// The tint of a badge that says nothing about state: a plain tag, or a
+/// count of nothing, which in a state's hue would draw the eye to it.
+pub fn neutral_tint(cx: &App) -> Tint {
+    let theme = cx.theme();
+    Tint {
+        fill: theme.secondary,
+        ink: theme.secondary_foreground,
+    }
+}
+
 /// [`tint`] from the three colours it is made of. `pub` for the reason
 /// [`status_hue`] is: the app's contrast test works from a resolved ramp.
 pub fn tint_over(base: Hsla, surface: Hsla, foreground: Hsla) -> Tint {

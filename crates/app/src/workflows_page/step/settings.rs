@@ -5,8 +5,8 @@
 //! options are typed by id. The editor judges no value against an agent, the
 //! run's preflight does.
 
-use super::super::WorkflowsPage;
 use super::super::draft::{StepDraft, run_agent_offer, set_pick};
+use super::super::{SHIPPED, WorkflowsPage};
 use crate::controls::Named as _;
 use crate::controls::Quiet as _;
 use crate::controls::text_input;
@@ -25,9 +25,6 @@ use std::rc::Rc;
 /// The most of an agent's options drawn as rows of choices before it counts
 /// the rest, which are still set by id among the typed rows.
 const OPTIONS_SHOWN: usize = 12;
-
-/// What a refused pick says on a shipped workflow.
-const SHIPPED: &str = "Built in: duplicate it to change it";
 
 /// What picking a choice does: `None` for the run's own value.
 type Pick = crate::controls::SettingPick;

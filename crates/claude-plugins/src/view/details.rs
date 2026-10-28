@@ -59,14 +59,7 @@ pub(super) fn component_chips(plugin: &Plugin, cx: &App) -> Option<AnyElement> {
 /// A kind the plugin carries, as a neutral badge: a fact about it, which the
 /// details say more of.
 fn chip(text: String, cx: &App) -> AnyElement {
-    onehand_ui::badge(
-        text,
-        onehand_ui::Tint {
-            fill: cx.theme().secondary,
-            ink: cx.theme().secondary_foreground,
-        },
-    )
-    .into_any_element()
+    onehand_ui::badge(text, onehand_ui::neutral_tint(cx)).into_any_element()
 }
 
 /// The details drawer's width: a hook's command on one line at the panel's

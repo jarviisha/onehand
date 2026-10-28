@@ -469,7 +469,7 @@ impl SchedulesPage {
                 "schedules-filter-trigger",
                 name,
                 self.filter.is_some(),
-                onehand_ui::ControlSize::Short,
+                onehand_ui::ControlSize::Tall,
                 cx,
             ),
             move |mut menu, _, _| {

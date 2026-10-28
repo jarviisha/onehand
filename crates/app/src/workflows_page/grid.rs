@@ -198,6 +198,7 @@ fn card(
                         div()
                             .text_color(crate::theme::meta_ink(cx))
                             .line_clamp(2)
+                            .text_ellipsis()
                             .child(template.description.clone()),
                     )
                 })
@@ -232,6 +233,7 @@ fn card(
                     .text_xs()
                     .text_color(crate::theme::status_ink(cx).warning)
                     .line_clamp(2)
+                    .text_ellipsis()
                     .child(format!("Cannot be read: {why}")),
             )
             .child(

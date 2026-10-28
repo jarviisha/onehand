@@ -137,7 +137,7 @@ impl IssuesView {
         // The page narrows to a reference; only the tab jumps to it.
         let hint = match self.page {
             Some(_) => "Search issues or #number",
-            None => "Search titles, or #6 to jump",
+            None => "Search issues, or #number to jump",
         };
         let query = cx.new(|cx| InputState::new(window, cx).placeholder(hint));
         cx.subscribe(&query, |view, query, event: &InputEvent, cx| {
@@ -681,6 +681,7 @@ impl IssuesView {
                 div()
                     .text_size(onehand_ui::tokens::CHROME_TEXT)
                     .line_clamp(2)
+                    .text_ellipsis()
                     // A closed issue stays in the list as a record, drawn
                     // quieter than the work that is still open.
                     .when(!issue.open, |title| title.text_color(muted).line_through())
@@ -730,16 +731,7 @@ pub(super) fn chip(label: String, cx: &App) -> Tag {
 /// neutral, so a name that happens to read like a label is never drawn as
 /// one.
 pub(super) fn plain_tag(text: String, cx: &App) -> Tag {
-    tag(text, neutral(cx))
-}
-
-/// The tint a tag takes when it says nothing about state.
-fn neutral(cx: &App) -> Tint {
-    let theme = cx.theme();
-    Tint {
-        fill: theme.secondary,
-        ink: theme.secondary_foreground,
-    }
+    tag(text, onehand_ui::neutral_tint(cx))
 }
 
 /// A badge that keeps its width in a row.

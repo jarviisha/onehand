@@ -1,5 +1,5 @@
 use super::draft::{Kind, StepDraft, WorkflowDraft, split_problems, step_facts};
-use super::{WorkflowsPage, click};
+use super::{SHIPPED, WorkflowsPage, click};
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
 use crate::controls::text_area;
@@ -13,7 +13,7 @@ use gpui::{
 use onehand_ui::Tall as _;
 
 use crate::controls::Named as _;
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Disableable as _, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::workflow::{GateKind, Place};
 
 mod settings;
@@ -292,33 +292,32 @@ pub(super) fn step_panel(
         true => step.id.read(cx).value().trim().to_string(),
         false => label,
     };
-    let kind_menu = {
+    let kind_trigger = onehand_ui::picker(
+        ("step-kind-trigger", i),
+        step.kind.label(),
+        true,
+        onehand_ui::ControlSize::Tall,
+        cx,
+    );
+    // A built-in workflow's refuses, as its fields are disabled.
+    let kind_menu = if shipped {
+        kind_trigger.refuses(Some(SHIPPED)).into_any_element()
+    } else {
         let handle = handle.clone();
-        crate::controls::menu_below(
-            ("step-kind", i),
-            onehand_ui::picker(
-                ("step-kind-trigger", i),
-                step.kind.label(),
-                true,
-                onehand_ui::ControlSize::Tall,
-                cx,
-            ),
-            move |mut menu, _, _| {
-                for kind in Kind::ALL {
-                    let handle = handle.clone();
-                    menu = menu.item(crate::controls::menu_item(kind.label()).on_click(
-                        move |_, window: &mut Window, cx: &mut App| {
-                            handle.update(cx, |page, cx| {
-                                page.edit_workflow_draft(window, cx, |d, _, _| {
-                                    d.steps[i].kind = kind
-                                })
-                            });
-                        },
-                    ));
-                }
-                menu
-            },
-        )
+        crate::controls::menu_below(("step-kind", i), kind_trigger, move |mut menu, _, _| {
+            for kind in Kind::ALL {
+                let handle = handle.clone();
+                menu = menu.item(crate::controls::menu_item(kind.label()).on_click(
+                    move |_, window: &mut Window, cx: &mut App| {
+                        handle.update(cx, |page, cx| {
+                            page.edit_workflow_draft(window, cx, |d, _, _| d.steps[i].kind = kind)
+                        });
+                    },
+                ));
+            }
+            menu
+        })
+        .into_any_element()
     };
     // Each sets which step is open: the one before, the one after, or none.
     // A step past either end refuses, saying there is none.
@@ -443,38 +442,51 @@ pub(super) fn step_panel(
                     let gate = *gate;
                     let on = step.gates.contains(&gate);
                     let handle = handle.clone();
-                    div().flex_none().cursor_pointer().child(
-                        onehand_ui::toggle(SharedString::from(format!("gate-{i}-{gate:?}")), on)
+                    div()
+                        .flex_none()
+                        .when(!shipped, |d| d.cursor_pointer())
+                        .child(
+                            onehand_ui::toggle(
+                                SharedString::from(format!("gate-{i}-{gate:?}")),
+                                on,
+                            )
                             .label(gate.label())
-                            .on_click(move |_: &bool, window: &mut Window, cx: &mut App| {
-                                handle.update(cx, |page, cx| {
-                                    page.edit_workflow_draft(window, cx, |d, _, _| {
-                                        let gates = &mut d.steps[i].gates;
-                                        match gates.iter().position(|g| *g == gate) {
-                                            Some(at) => {
-                                                gates.remove(at);
+                            .disabled(shipped)
+                            .on_click(
+                                move |_: &bool, window: &mut Window, cx: &mut App| {
+                                    handle.update(cx, |page, cx| {
+                                        page.edit_workflow_draft(window, cx, |d, _, _| {
+                                            let gates = &mut d.steps[i].gates;
+                                            match gates.iter().position(|g| *g == gate) {
+                                                Some(at) => {
+                                                    gates.remove(at);
+                                                }
+                                                None => gates.push(gate),
                                             }
-                                            None => gates.push(gate),
-                                        }
-                                    })
-                                });
-                            }),
-                    )
+                                        })
+                                    });
+                                },
+                            ),
+                        )
                 })
                 .collect::<Vec<_>>();
             let keep = {
                 let handle = handle.clone();
-                div().flex_none().cursor_pointer().child(
-                    onehand_ui::toggle(("keep-answer", i), step.keep_answer)
-                        .label("Keep its answer")
-                        .on_click(move |_: &bool, window: &mut Window, cx: &mut App| {
-                            handle.update(cx, |page, cx| {
-                                page.edit_workflow_draft(window, cx, |d, _, _| {
-                                    d.steps[i].keep_answer = !d.steps[i].keep_answer
-                                })
-                            });
-                        }),
-                )
+                div()
+                    .flex_none()
+                    .when(!shipped, |d| d.cursor_pointer())
+                    .child(
+                        onehand_ui::toggle(("keep-answer", i), step.keep_answer)
+                            .label("Keep its answer")
+                            .disabled(shipped)
+                            .on_click(move |_: &bool, window: &mut Window, cx: &mut App| {
+                                handle.update(cx, |page, cx| {
+                                    page.edit_workflow_draft(window, cx, |d, _, _| {
+                                        d.steps[i].keep_answer = !d.steps[i].keep_answer
+                                    })
+                                });
+                            }),
+                    )
             };
             div()
                 .v_flex()
@@ -523,21 +535,24 @@ pub(super) fn step_panel(
                 .map(|step| step.id.clone())
                 .collect();
             let current = step.target.clone();
-            let target = {
+            let target_trigger = onehand_ui::picker(
+                ("step-target-trigger", i),
+                if current.is_empty() {
+                    "Pick a step".to_string()
+                } else {
+                    current.clone()
+                },
+                !current.is_empty(),
+                onehand_ui::ControlSize::Tall,
+                cx,
+            );
+            let target = if shipped {
+                target_trigger.refuses(Some(SHIPPED)).into_any_element()
+            } else {
                 let handle = handle.clone();
                 crate::controls::menu_below(
                     ("step-target", i),
-                    onehand_ui::picker(
-                        ("step-target-trigger", i),
-                        if current.is_empty() {
-                            "Pick a step".to_string()
-                        } else {
-                            current.clone()
-                        },
-                        !current.is_empty(),
-                        onehand_ui::ControlSize::Tall,
-                        cx,
-                    ),
+                    target_trigger,
                     move |mut menu, _, _| {
                         for id in &choices {
                             let (handle, id) = (handle.clone(), id.clone());
@@ -560,6 +575,7 @@ pub(super) fn step_panel(
                         menu
                     },
                 )
+                .into_any_element()
             };
             div()
                 .v_flex()

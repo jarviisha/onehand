@@ -41,6 +41,10 @@ use gpui_component::input::{InputEvent, InputState};
 use onehand_ui::{Measured, measure_width, unmeasured};
 use std::path::PathBuf;
 
+/// What a control refuses with on a built-in workflow, which is read and
+/// changed only by duplicating it.
+const SHIPPED: &str = "Built in: duplicate it to change it";
+
 /// What the page asks of its window.
 pub(crate) enum WorkflowsPageEvent {
     /// Open the launcher on `root` with the workflow of id `workflow`
