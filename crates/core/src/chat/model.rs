@@ -13,6 +13,7 @@ use std::path::PathBuf;
 
 mod apply;
 mod background;
+mod fork;
 mod items;
 mod meta;
 mod persist;
@@ -20,6 +21,7 @@ mod subagent;
 mod turn;
 pub use apply::{ApplyOutcome, Away, UserAsk};
 pub use background::{BackgroundItem, Level, Meter};
+pub use fork::{fork_seed, ForkPoint, ForkSeed};
 pub(crate) use items::line_change_counts;
 pub use items::{
     AskItem, AskRow, ChatItem, Md, MdId, NoticeLevel, PermItem, PlanItem, Thought, ToolItem,
