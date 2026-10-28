@@ -573,6 +573,7 @@ function backgroundEnd() {
       update({ sessionUpdate: 'async_task_state_update', asyncTaskId, state: 'completed' });
       update({
         sessionUpdate: 'agent_message_chunk',
+        messageId: `mock-msg-${++messageSeq}`,
         content: { type: 'text', text: '\nThe watcher finished while you were away.' },
       });
       update({
