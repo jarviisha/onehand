@@ -2,7 +2,7 @@ use super::{ChatPane, ChatPaneEvent, Page};
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
 use crate::controls::Short as _;
-use crate::page_parts::{ALL_PROJECTS, PageProject};
+use crate::page_parts::PageProject;
 use crate::page_parts::{page_card, page_head, pair, ruled};
 use crate::task::Row;
 use crate::tokens::PAGE_WIDE;
@@ -128,44 +128,21 @@ impl ChatPane {
             return self.tasks_frame(Vec::new(), body, crate::tokens::PAGE_PROSE, cx);
         }
 
-        let filter_name = page
-            .filter
-            .as_deref()
-            .map_or_else(|| ALL_PROJECTS.to_string(), |root| page.label_of(root));
-        let choices: Vec<(SharedString, Option<PathBuf>)> =
-            std::iter::once((ALL_PROJECTS.into(), None))
-                .chain(
-                    page.projects
-                        .iter()
-                        .map(|project| (project.label.clone(), Some(project.root.clone()))),
-                )
-                .collect();
-        let current = page.filter.clone();
         let this = cx.entity();
-        let filter = crate::controls::menu_below(
+        let filter = crate::page_parts::project_filter(
             "tasks-filter",
-            onehand_ui::picker(
-                "tasks-filter-trigger",
-                filter_name,
-                page.filter.is_some(),
-                onehand_ui::ControlSize::Tall,
-                cx,
-            ),
-            move |mut menu, _, _| {
-                for (label, only) in &choices {
-                    let (only, this) = (only.clone(), this.clone());
-                    menu = menu.item(
-                        crate::controls::menu_item(label.clone())
-                            .checked(only == current)
-                            .on_click(move |_, _, cx: &mut App| {
-                                this.update(cx, |pane: &mut Self, cx| {
-                                    pane.filter_tasks(only.clone(), cx)
-                                });
-                            }),
-                    );
-                }
-                menu
+            page.filter
+                .as_deref()
+                .map(|root| page.label_of(root).into()),
+            page.projects
+                .iter()
+                .map(|project| (project.label.clone(), project.root.clone())),
+            page.filter.clone(),
+            onehand_ui::ControlSize::Tall,
+            move |only, cx| {
+                this.update(cx, |pane: &mut Self, cx| pane.filter_tasks(only, cx));
             },
+            cx,
         );
 
         // Each card says what it holds when it holds nothing, and how many it
