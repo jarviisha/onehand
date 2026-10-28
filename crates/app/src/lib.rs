@@ -27,6 +27,7 @@ mod guards;
 mod icons;
 mod instance;
 mod keymap;
+mod page_parts;
 mod rail;
 mod remote;
 mod saves;

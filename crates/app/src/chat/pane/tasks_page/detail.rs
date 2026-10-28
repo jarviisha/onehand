@@ -2,7 +2,6 @@
 //! what it waits on approval for, its last run's visits with what each kept
 //! and changed, and its earlier runs.
 
-use super::super::page_parts::page_card;
 use super::super::step_strip::{open_review, open_revise, press_continue};
 use super::super::{ChatPane, ChatPaneEvent, rel_time};
 use super::{Page, Press, TasksPage, open_session, row_said, task_acts};
@@ -10,6 +9,7 @@ use crate::controls::Named as _;
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
 use crate::controls::Short as _;
+use crate::page_parts::page_card;
 use crate::task::Row;
 use crate::tokens::LEADING_TIGHT;
 use gpui::{

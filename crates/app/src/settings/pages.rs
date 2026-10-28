@@ -433,7 +433,7 @@ fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     // Whatever stops every run, said above the switches on the warning tint:
     // with it unsaid they would look as though they did something.
     .when_some(crate::unattended::blocked(cx), |group, why| {
-        group.child(crate::chat::pane::page_parts::notice_box(
+        group.child(crate::page_parts::notice_box(
             IconName::TriangleAlert,
             ink.warning,
             vec![format!("Nothing will be picked up: {why}")],
@@ -639,7 +639,7 @@ fn workflow_labels(handle: &Entity<Shell>, cx: &App) -> impl IntoElement {
                 .child(add),
         )
         .when_some(refused, |list, why| {
-            list.child(crate::chat::pane::page_parts::notice_box(
+            list.child(crate::page_parts::notice_box(
                 IconName::TriangleAlert,
                 ink.warning,
                 vec![why.to_string()],

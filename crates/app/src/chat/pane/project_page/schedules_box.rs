@@ -1,8 +1,8 @@
 //! The project page's *Schedules* box: the project's schedules, each leading
 //! to the Schedules page narrowed to the project.
 
-use super::super::page_parts::page_card;
 use super::super::{ChatPane, ChatPaneEvent};
+use crate::page_parts::page_card;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     Context, Div, InteractiveElement as _, ParentElement, StatefulInteractiveElement as _, Styled,

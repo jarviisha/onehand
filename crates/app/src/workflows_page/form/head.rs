@@ -196,7 +196,7 @@ pub(in crate::workflows_page) fn editor_head(
                 .into_any_element(),
         );
     }
-    crate::chat::pane::page_parts::page_head(title, Some(facts.into_any_element()), actions, cx)
+    crate::page_parts::page_head(title, Some(facts.into_any_element()), actions, cx)
         .into_any_element()
 }
 
@@ -214,7 +214,7 @@ pub(in crate::workflows_page) fn unreadable(
     div()
         .v_flex()
         .gap_6()
-        .child(crate::chat::pane::page_parts::page_head(
+        .child(crate::page_parts::page_head(
             name,
             Some(
                 div()

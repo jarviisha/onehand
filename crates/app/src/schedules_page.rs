@@ -13,8 +13,8 @@ mod when;
 
 gpui::actions!(schedules_page, [CloseScheduleForm]);
 
-use crate::chat::pane::page_parts::{page_card, page_head, page_top, ruled};
 use crate::controls::Refuses as _;
+use crate::page_parts::{page_card, page_head, page_top, ruled};
 use crate::state::Shared;
 use draft::ScheduleDraft;
 use gpui::prelude::FluentBuilder as _;
@@ -279,7 +279,7 @@ impl Render for SchedulesPage {
             let problems = draft.problems(cx);
             let say = !problems.is_empty() && (draft.original.is_some() || draft.dirty(cx));
             let bar = say.then(|| {
-                crate::chat::pane::page_parts::foot_bar(
+                crate::page_parts::foot_bar(
                     gpui_component::IconName::TriangleAlert,
                     crate::theme::status_ink(cx).danger,
                     problems,
@@ -450,11 +450,11 @@ impl SchedulesPage {
     /// The project filter, as the Tasks page's.
     fn filter_picker(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let name = self.filter.as_deref().map_or_else(
-            || crate::chat::pane::ALL_PROJECTS.into(),
+            || crate::page_parts::ALL_PROJECTS.into(),
             |root| self.label_of(root),
         );
         let choices: Vec<(SharedString, Option<PathBuf>)> =
-            std::iter::once((crate::chat::pane::ALL_PROJECTS.into(), None))
+            std::iter::once((crate::page_parts::ALL_PROJECTS.into(), None))
                 .chain(
                     self.projects
                         .iter()

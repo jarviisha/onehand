@@ -363,7 +363,7 @@ const LIST_ROW_WORDS: gpui::Rems = gpui::rems(12.);
 /// A run of [`list_row`]s, a hairline between each two, as a page's box parts
 /// its rows: the entries of one list read as one list, not as loose lines.
 pub(crate) fn list_rows(rows: impl IntoIterator<Item = AnyElement>, cx: &App) -> Div {
-    crate::chat::pane::page_parts::ruled(
+    crate::page_parts::ruled(
         rows.into_iter()
             .map(|row| div().py_2().child(row).into_any_element()),
         cx,
@@ -533,12 +533,9 @@ fn settings(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         // Named in its own head, as every other page is, the pane's header
         // above it left bare. The head runs the pane's width, so its name
         // starts on the nav's edge.
-        .child(crate::chat::pane::page_parts::page_top(
+        .child(crate::page_parts::page_top(
             None,
-            [
-                crate::chat::pane::page_parts::page_head("Settings", None, Vec::new(), cx)
-                    .into_any_element(),
-            ],
+            [crate::page_parts::page_head("Settings", None, Vec::new(), cx).into_any_element()],
             cx,
         ))
         .child(

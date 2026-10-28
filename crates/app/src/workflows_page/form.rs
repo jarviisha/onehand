@@ -172,7 +172,7 @@ pub(super) fn steps_column(
     // The steps decide what a run does, so they are the one group on the
     // form standing in a box, its count and *Add step* on its title row,
     // where the fields around it stand plain.
-    let steps_group = crate::chat::pane::page_parts::page_card(
+    let steps_group = crate::page_parts::page_card(
         "Steps",
         Some(draft.steps.len()),
         (!shipped).then(|| add_step.into_any_element()),
@@ -216,9 +216,7 @@ pub(super) fn message_bar(draft: &super::WorkflowDraft, cx: &App) -> Option<AnyE
             problems,
         )
     };
-    Some(crate::chat::pane::page_parts::foot_bar(
-        icon, base, lines, cx,
-    ))
+    Some(crate::page_parts::foot_bar(icon, base, lines, cx))
 }
 
 /// What a prompt may use, a hint in meta text with each variable in mono, so

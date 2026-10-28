@@ -1,6 +1,7 @@
-use super::page_parts::{card_box, card_title, page_card, page_head, page_top, pair, ruled};
 use super::project_page::count_of;
 use super::{ChatPane, ChatPaneEvent, Page, SessionSignal, rel_time};
+use crate::page_parts::{ALL_PROJECTS, PageProject};
+use crate::page_parts::{card_box, card_title, page_card, page_head, page_top, pair, ruled};
 use crate::tokens::PAGE_WIDE;
 use gpui::{
     App, Context, InteractiveElement, IntoElement, ParentElement, Rems, SharedString,
@@ -37,25 +38,6 @@ const PAGE_TILE_MAX: Rems = rems(21.);
 
 /// A tile's first line, which the folder beside it is centred on.
 const PAGE_TITLE_LINE: Rems = rems(1.25);
-
-/// What a project filter reads while it is not narrowing the list at all:
-/// the workspace page's issues, or the Tasks page.
-pub(crate) const ALL_PROJECTS: &str = "All projects";
-
-/// One project as the workspace page lists it.
-pub struct PageProject {
-    pub label: SharedString,
-    pub root: PathBuf,
-    /// Its sessions, each with what to call it before its conversation has a
-    /// name of its own.
-    pub sessions: Vec<(u64, SharedString)>,
-    /// Its branch and how much is changed, as the last `git status` sweep
-    /// found them — `None` for a folder that is not a repository.
-    pub git: Option<String>,
-    /// The file its issues are kept in — `None` for a workspace bound to no
-    /// storage, which keeps none.
-    pub issues: Option<PathBuf>,
-}
 
 /// The page shown in place of a conversation when the user asks what the whole
 /// workspace needs: the runs waiting on them, the runs working, and every

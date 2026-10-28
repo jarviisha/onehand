@@ -1,12 +1,32 @@
 //! What every page is built from: its head, a box with a title row, rows
 //! parted by a line, and a pair of boxes set side by side while the column
-//! holds two.
+//! holds two; and the projects a page about more than one of them lists.
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, Div, IntoElement, ParentElement, Rems, SharedString, Styled, div, rems,
 };
 use gpui_component::{ActiveTheme, StyledExt};
+use std::path::PathBuf;
+
+/// What a project filter reads while it is not narrowing the list at all:
+/// the workspace page's issues, or the Tasks page.
+pub(crate) const ALL_PROJECTS: &str = "All projects";
+
+/// One project as the workspace page lists it.
+pub struct PageProject {
+    pub label: SharedString,
+    pub root: PathBuf,
+    /// Its sessions, each with what to call it before its conversation has a
+    /// name of its own.
+    pub sessions: Vec<(u64, SharedString)>,
+    /// Its branch and how much is changed, as the last `git status` sweep
+    /// found them — `None` for a folder that is not a repository.
+    pub git: Option<String>,
+    /// The file its issues are kept in — `None` for a workspace bound to no
+    /// storage, which keeps none.
+    pub issues: Option<PathBuf>,
+}
 
 /// The hairline box every card on a page is drawn in, the UI crate's so
 /// an issue's boxes are the same one.
@@ -51,7 +71,7 @@ pub(crate) fn ruled(rows: impl IntoIterator<Item = AnyElement>, cx: &App) -> Div
 
 /// A page heading: the title in bold, a muted count beside it and an
 /// optional control at the far end.
-pub(super) fn card_title(
+pub(crate) fn card_title(
     title: impl Into<SharedString>,
     count: Option<usize>,
     control: Option<gpui::AnyElement>,
@@ -75,7 +95,7 @@ pub(super) fn card_title(
 /// the other where it is not, a page section's gap apart: the gap the column
 /// leaves between pairs, so the boxes stand evenly whether they sit two to a
 /// row or stack.
-pub(super) fn pair(left: Div, right: Div) -> Div {
+pub(crate) fn pair(left: Div, right: Div) -> Div {
     div()
         .h_flex()
         .flex_wrap()
