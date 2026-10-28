@@ -160,7 +160,10 @@ pub fn item(
         .then(|| chat.turn_answer(target))
         .flatten();
     let body = match it {
-        ChatItem::User(u) => user(u, fold_key(target), room, cx).into_any_element(),
+        ChatItem::User(u) => {
+            let fork = chat.fork_point(target).map(|_| (session.clone(), target));
+            user(u, fold_key(target), room, fork, cx).into_any_element()
+        }
         ChatItem::Agent(md) => agent(session, md, target, turn, window, cx).into_any_element(),
         ChatItem::Thought(th) => thought(session, th, target, window, cx).into_any_element(),
         ChatItem::Tool(t) => tool(session, t, target, cx).into_any_element(),

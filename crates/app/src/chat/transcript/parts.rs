@@ -1,6 +1,6 @@
 use super::fold_key;
 use super::metrics::{CARD_PAD, DETAIL_OPEN_H, FOLD_INDENT, TEXT_SM, TIGHT_GAP};
-use crate::chat::session::ChatSession;
+use crate::chat::session::{ChatEvent, ChatSession};
 use crate::controls::Named as _;
 use crate::controls::Quiet as _;
 use crate::controls::Short as _;
@@ -153,6 +153,30 @@ fn copy_control(id: impl Into<gpui::ElementId>, tip: &'static str, cx: &App) -> 
         .flex_none()
         .icon(IconName::Copy)
         .named(tip)
+}
+
+/// Fork the conversation from the prompt at `target`: the copy control's peer
+/// under the bubble, drawn the same way. A press asks; the pane and the shell
+/// make the session.
+pub(super) fn fork_button(
+    id: impl Into<gpui::ElementId>,
+    session: &Entity<ChatSession>,
+    target: TranscriptItemId,
+    cx: &App,
+) -> Button {
+    let session = session.clone();
+    crate::controls::action(id)
+        .quiet_icon(false, cx)
+        .small()
+        .flex_none()
+        .icon(Icon::new(crate::icons::Icon::GitFork))
+        .named(
+            "Fork from here: a new session from just before this prompt, with it in the \
+             composer. Files stay as they are",
+        )
+        .on_click(move |_, _, cx: &mut App| {
+            session.update(cx, |_, cx| cx.emit(ChatEvent::Fork(target)));
+        })
 }
 
 /// Copy `text`, which is already at hand.

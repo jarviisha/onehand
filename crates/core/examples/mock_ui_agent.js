@@ -261,10 +261,18 @@ const text = (body) => [{ type: 'content', content: { type: 'text', text: body }
 // **Streamed, because that is the only state it has.** An answer arriving whole
 // never exercises the one thing the transcript does while a turn is live: re-parse
 // its markdown on every chunk without moving what the reader is looking at.
+// Each answer is one message with an id of its own, as the real adapters send:
+// a fork names the message it cuts after.
+let messageSeq = 0;
 const prose = (body) => {
+  const messageId = `mock-msg-${++messageSeq}`;
   for (const piece of chunks(body)) {
     beat(TYPING, () =>
-      update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: piece } }),
+      update({
+        sessionUpdate: 'agent_message_chunk',
+        messageId,
+        content: { type: 'text', text: piece },
+      }),
     );
   }
 };
@@ -857,13 +865,24 @@ rl.on('line', (line) => {
       return send({
         jsonrpc: '2.0',
         id: m.id,
-        result: { protocolVersion: 1, agentCapabilities: {} },
+        result: { protocolVersion: 1, agentCapabilities: { sessionCapabilities: { fork: {} } } },
       });
 
     // Everything the chips read is here, in the one reply that opens a session.
     case 'session/new':
     case 'session/load':
       SESSION = m.params?.sessionId ?? `mock-ui-${process.pid}-${Date.now()}`;
+      send({
+        jsonrpc: '2.0',
+        id: m.id,
+        result: { sessionId: SESSION, modes: MODES, configOptions: configOptions() },
+      });
+      return update({ sessionUpdate: 'available_commands_update', availableCommands: COMMANDS });
+
+    // Opened in answering, as Codex does, so no load follows: the transcript
+    // onehand seeded is the whole of what the fork shows.
+    case 'session/fork':
+      SESSION = `mock-ui-fork-${process.pid}-${Date.now()}`;
       send({
         jsonrpc: '2.0',
         id: m.id,

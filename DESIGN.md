@@ -109,8 +109,8 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   path or a command is mono; the agent's own wording, a folder and what the agent did (a
   thought, a command's output, a read or search list) read in the middle ink. One copy control
   (`.small()`, quiet, named in its tooltip, in a column of its own; a permission's on the line
-  under its command, beside where it runs; a prompt's under its bubble, shown while the prompt
-  is pointed at or the control holds focus) and one show-more control serve every block. Text
+  under its command, beside where it runs; a prompt's under its bubble, with *Fork from here* beside it, shown while
+  the prompt is pointed at or a control holds focus) and one show-more control serve every block. Text
   that scrolls keeps a gutter for its scrollbar.
 - **A table keeps its columns readable**: each is as wide as its text down to a floor, and past
   the column the table scrolls sideways in its own track while the vertical wheel stays the

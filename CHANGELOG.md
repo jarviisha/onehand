@@ -120,6 +120,10 @@ minor bump may break any of them.
   3 steps. Once it ends it folds to its state and step count, opened by a press. Its permission
   requests and questions pin above the composer under its name, and the rail counts the subagents
   a session has working. A session closed mid-subagent keeps the card as interrupted.
+- Claude Code and Codex sessions offer *Fork from here* under a prompt: a new session on the same
+  project, its history the conversation's up to just before that prompt and the prompt in its
+  composer to send again or rewrite. The original conversation is left as it is, and files are not
+  rolled back.
 
 ### Fixed
 
