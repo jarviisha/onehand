@@ -217,7 +217,7 @@ colour is the value of a VS Code key, and a colour read anywhere but through a t
 | floating surfaces (`popover`) | `editorWidget.background` |
 | the composer card, the rail's search (`theme::raised`, `theme::inset`) | `input.background` |
 | a field's fill (`field_fill`) | mixed: `muted` a step toward `foreground`, so it stands off the page, a floating surface and a well alike |
-| a control's edge, a box's edge (`input`) | `input.border` |
+| a control's edge, a box's edge, the rail joining a workflow's steps (`input`) | `input.border` |
 | a secondary button at rest, pointed at, its word | `button.secondaryBackground` (dark: `input.background`, as Dark Modern's is transparent), `button.secondaryHoverBackground`, `button.secondaryForeground` |
 | the open tab's word | `tab.activeForeground` |
 | what runs, links (`link`, `info`), at rest, pointed at, pressed | `textLink.foreground`, `textLink.activeForeground` |

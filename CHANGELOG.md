@@ -156,6 +156,10 @@ minor bump may break any of them.
   where a group's commands work once, on the group, rather than on every row.
 - Config keys and a project's path are set in the monospace face, and the new-issue form says what
   it is for once.
+- Settings ▸ Shortcuts groups the commands by where they work, the rail's list, each page, each
+  card and the composer, instead of listing the pages' and cards' commands under *Composer*.
+- The rail joining a workflow's steps is drawn in a box edge's ink, so it shows; in the hairline
+  ink it was all but lost on the page.
 - The *More* and *Refresh* buttons on the Workflows, Issues and schedule pages, and a step
   setting's remove, are drawn whole; they had shrunk to a dot or a sliver.
 - A question card's long choice wraps clear of its Alt key instead of running under it.

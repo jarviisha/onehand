@@ -568,11 +568,11 @@ pub const COMMANDS: &[Command] = &[
     ),
     command!(
         "completion_accept",
-        "Accept suggestion",
+        "Accept the suggestion; Enter does too",
         ["tab"],
         CompletionAccept,
         "ChatComposer > Input",
-        "Composer suggestions (Enter also accepts)"
+        "Composer suggestions"
     ),
     command!(
         "cycle_mode",

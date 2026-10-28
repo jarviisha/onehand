@@ -279,6 +279,9 @@ open the agent form as a dialog (*Kind*, *Name*, *Command* and *Arguments* for a
 this build does not know shows its `preset` line, *Not supported by this build of onehand* under it,
 and only *Delete…*. The Connections page lists each connector and who it acts as, then an *Outside
 control* group: what a program may and may never do, the socket's path in mono, and one switch.
+The Shortcuts page lists the window's commands first, then a group for each place the rest work
+in (the rail's list, a page, a card, the composer), in the keymap's order, and last the terminal's
+fixed keys; a group says where its commands work, and a row says so only where it differs.
 
 ## Persistence
 

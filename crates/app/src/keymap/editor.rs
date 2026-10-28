@@ -97,25 +97,6 @@ impl Editor {
     }
 }
 
-/// The groups the page lists commands in, by where they work.
-#[derive(Clone, Copy)]
-enum Group {
-    Window,
-    Rail,
-    Composer,
-}
-
-impl Group {
-    /// The scope the group's heading already says, which its rows leave out.
-    fn scope(self) -> Option<&'static str> {
-        match self {
-            Self::Window => Some(super::WINDOW_SCOPE),
-            Self::Rail => Some(super::RAIL_SCOPE),
-            Self::Composer => None,
-        }
-    }
-}
-
 /// The keys a shortcut field holds: alternatives separated by spaces, none at
 /// all when it is empty.
 fn typed_keys(value: &str) -> Vec<String> {
@@ -208,21 +189,15 @@ impl Render for Editor {
                 .into_any_element();
         }
 
-        // Two groups, by where a command works: the window's own commands reach
-        // over any panel, the rest only while the composer holds the caret.
+        // The window's own commands, then a group for each place the rest
+        // work in, named by it, in the table's order. Where a command works is
+        // said once, by its group, and on a row only where it differs.
         let mut window_rows = Vec::new();
-        let mut rail_rows = Vec::new();
-        let mut composer_rows = Vec::new();
+        let mut groups: Vec<(&'static str, Vec<gpui::AnyElement>)> = Vec::new();
         for (index, command) in COMMANDS.iter().enumerate() {
             let bound = command.keys(&overrides);
-            // Where a command works is said once, by its group, and on a row
-            // only where the row differs from it.
-            let group = match command.context {
-                context if context.starts_with("Shell") => Group::Window,
-                context if context.starts_with("Rail") => Group::Rail,
-                _ => Group::Composer,
-            };
-            let scope = (Some(command.scope) != group.scope()).then_some(command.scope);
+            let window = command.context.starts_with("Shell");
+            let scope = (window && command.scope != super::WINDOW_SCOPE).then_some(command.scope);
             let row = list_row(
                 command.label,
                 scope.map(IntoElement::into_any_element),
@@ -253,10 +228,12 @@ impl Render for Editor {
                 cx,
             )
             .into_any_element();
-            match group {
-                Group::Window => window_rows.push(row),
-                Group::Rail => rail_rows.push(row),
-                Group::Composer => composer_rows.push(row),
+            if window {
+                window_rows.push(row);
+            } else if let Some((_, rows)) = groups.iter_mut().find(|(s, _)| *s == command.scope) {
+                rows.push(row);
+            } else {
+                groups.push((command.scope, vec![row]));
             }
         }
 
@@ -290,15 +267,11 @@ impl Render for Editor {
                 )
                 .child(list_rows(window_rows, cx)),
             )
-            .child(
-                section(
-                    Some("Rail"),
-                    Some("While the rail's list has the keyboard".into()),
-                    cx,
-                )
-                .child(list_rows(rail_rows, cx)),
-            )
-            .child(section(Some("Composer"), None, cx).child(list_rows(composer_rows, cx)))
+            .children(groups.into_iter().map(|(scope, rows)| {
+                let about = (scope == super::RAIL_SCOPE)
+                    .then(|| "While the rail's list has the keyboard".into());
+                section(Some(scope), about, cx).child(list_rows(rows, cx))
+            }))
             .child(
                 section(
                     Some("Terminal"),
@@ -311,7 +284,7 @@ impl Render for Editor {
                 .child(list_rows(
                     [
                         list_row(
-                            "Copy / paste",
+                            "Copy and paste",
                             None,
                             keys(["ctrl-shift-c", "ctrl-shift-v"], "", cx),
                             cx,
