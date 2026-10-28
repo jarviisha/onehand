@@ -187,13 +187,13 @@ impl ChatPane {
                 }
                 page.projects = projects;
             }
-            Some(Page::Tasks(page)) => {
-                if gone(&page.filter) {
-                    page.filter = None;
-                }
-                page.projects = projects;
-            }
-            Some(Page::Issues(_) | Page::Workflows(_) | Page::Schedules(_) | Page::Settings(_))
+            Some(
+                Page::Tasks(_)
+                | Page::Issues(_)
+                | Page::Workflows(_)
+                | Page::Schedules(_)
+                | Page::Settings(_),
+            )
             | None => return,
         }
         cx.notify();
@@ -317,6 +317,17 @@ impl ChatPane {
         // Off another view page, a field there may hold the caret.
         self.leave_issues_page(window, cx);
         self.page = Some(Page::Settings(view));
+        self.leave_shown_session(window, cx);
+        self.active = None;
+        self.empty = None;
+        cx.notify();
+    }
+
+    /// Show the Tasks page, `view`, the way the Workflows page is shown.
+    pub fn show_tasks(&mut self, view: gpui::AnyView, window: &mut Window, cx: &mut Context<Self>) {
+        // Off another view page, a field there may hold the caret.
+        self.leave_issues_page(window, cx);
+        self.page = Some(Page::Tasks(view));
         self.leave_shown_session(window, cx);
         self.active = None;
         self.empty = None;

@@ -187,11 +187,7 @@ pub(super) fn diff_path(
 ///
 /// The number is the line's in the file as it is now, so a removed line has
 /// none and a skipped run moves the count on by what it skipped.
-pub(in crate::chat) fn diff_rows(
-    hunks: &[DiffRow],
-    budget: &mut usize,
-    cx: &App,
-) -> Vec<gpui::AnyElement> {
+pub(crate) fn diff_rows(hunks: &[DiffRow], budget: &mut usize, cx: &App) -> Vec<gpui::AnyElement> {
     let status = crate::theme::status_ink(cx);
     let muted = cx.theme().muted_foreground;
     // A changed line's wash: its hue mixed into the well it lies in, one solid

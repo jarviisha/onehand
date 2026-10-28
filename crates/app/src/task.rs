@@ -16,6 +16,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+pub(crate) mod approval;
 mod driver;
 mod listing;
 mod place;

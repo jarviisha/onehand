@@ -77,7 +77,7 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | A Settings sub-page's scope line | `page_head` | `crates/app/src/settings.rs` |
 | A scrollbar on a region the app scrolls itself | `scrollbar` (its thumb at `SCROLLBAR_THUMB`) | `crates/ui/src/lib.rs` |
 | A sunk box of machine text | `well` (sets the code text size; callers set padding) | `crates/ui/src/lib.rs` |
-| A mono well on a page | `mono_well`, built on `well` | `crates/app/src/chat/pane/tasks_page/detail.rs` |
+| A mono well on a page | `mono_well`, built on `well` | `crates/app/src/tasks_page/detail.rs` |
 | Shared sizes and the floating shadow | `tokens` | `crates/ui/src/tokens.rs` |
 | A transcript well, a pinned card, a row's note | `plain_box`, `floating_card`, `row_note` | `crates/app/src/chat/transcript/parts.rs` |
 | Transcript sizes | the constants | `crates/app/src/chat/transcript/metrics.rs` |
@@ -114,7 +114,7 @@ need migrating itself.
 
 | Building | Pattern | Example |
 |---|---|---|
-| Fields, boxes or one thing read in full, in the agent pane | Column page | `tasks_frame` in `crates/app/src/chat/pane/tasks_page.rs` |
+| Fields, boxes or one thing read in full, in the agent pane | Column page | `tasks_frame` in `crates/app/src/tasks_page.rs` |
 | One long list to scan, filter and pick from, in the agent pane | List page | the Issues page, `crates/issues/src/view/page.rs` |
 | The top of a page: its head, then its search and filters | The top of a page, Filter bar | `crates/issues/src/view/page/head.rs`; `tasks_frame` for a top with no search |
 | Related fields or a subsection | Plain section | `section` in `crates/app/src/settings.rs` |

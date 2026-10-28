@@ -37,6 +37,7 @@ mod settings;
 pub mod shell;
 mod state;
 mod task;
+mod tasks_page;
 mod terminal;
 mod text_drag;
 mod theme;

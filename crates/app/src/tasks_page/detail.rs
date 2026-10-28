@@ -2,15 +2,14 @@
 //! what it waits on approval for, its last run's visits with what each kept
 //! and changed, and its earlier runs.
 
-use super::super::step_strip::{open_review, open_revise, press_continue};
-use super::super::{ChatPane, ChatPaneEvent, rel_time};
-use super::{Page, Press, TasksPage, open_session, row_said, task_acts};
+use super::{Press, TasksPage, TasksPageEvent, open_session, row_said, task_acts};
 use crate::controls::Named as _;
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
 use crate::controls::Short as _;
 use crate::page_parts::page_card;
 use crate::task::Row;
+use crate::task::approval::{open_review, open_revise, press_continue};
 use crate::tokens::LEADING_TIGHT;
 use gpui::{
     App, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
@@ -20,6 +19,7 @@ use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::chat::now_secs;
 use onehand_core::diff::Row as DiffRow;
+use onehand_core::rel_time;
 use onehand_core::task::Approval;
 use onehand_core::task::Group;
 use onehand_core::task::marks::{self, Change};
@@ -53,7 +53,7 @@ type Loaded<T> = Option<Result<T, String>>;
 type Dirs = (PathBuf, PathBuf);
 
 /// The task a detail shows, and what of it is opened.
-pub(in crate::chat::pane) struct TaskDetail {
+pub(super) struct TaskDetail {
     pub(super) id: String,
     /// Visits opened, by run id and visit id.
     expanded: HashSet<(String, u32)>,
@@ -69,27 +69,22 @@ pub(in crate::chat::pane) struct TaskDetail {
     pr: Loaded<Option<onehand_core::connector::PullRequest>>,
 }
 
-impl ChatPane {
+impl TasksPage {
     fn detail_mut(&mut self) -> Option<&mut TaskDetail> {
-        match self.page.as_mut() {
-            Some(Page::Tasks(page)) => page.open.as_mut(),
-            _ => None,
-        }
+        self.open.as_mut()
     }
 
     /// Show task `id` in place of the cards, or the cards again for `None`.
     pub(crate) fn open_task(&mut self, id: Option<String>, cx: &mut Context<Self>) {
-        if let Some(Page::Tasks(page)) = self.page.as_mut() {
-            page.open = id.clone().map(|id| TaskDetail {
-                id,
-                expanded: HashSet::new(),
-                earlier_open: HashSet::new(),
-                changes: HashMap::new(),
-                files: HashMap::new(),
-                pr: None,
-            });
-            cx.notify();
-        }
+        self.open = id.clone().map(|id| TaskDetail {
+            id,
+            expanded: HashSet::new(),
+            earlier_open: HashSet::new(),
+            changes: HashMap::new(),
+            files: HashMap::new(),
+            pr: None,
+        });
+        cx.notify();
         if let Some(id) = id {
             self.read_pr(id, cx);
         }
@@ -108,13 +103,13 @@ impl ChatPane {
             return;
         };
         let repo = task.setup.repo.clone();
-        cx.spawn(async move |pane, cx| {
+        cx.spawn(async move |page, cx| {
             let read = cx
                 .background_executor()
                 .spawn(async move { forge.pull_request_for_blocking(&repo, &branch) })
                 .await;
-            let _ = pane.update(cx, |pane: &mut Self, cx| {
-                if let Some(detail) = pane.detail_mut().filter(|d| d.id == id) {
+            let _ = page.update(cx, |page: &mut Self, cx| {
+                if let Some(detail) = page.detail_mut().filter(|d| d.id == id) {
                     detail.pr = Some(read);
                     cx.notify();
                 }
@@ -200,13 +195,13 @@ impl ChatPane {
         land: impl FnOnce(&mut TaskDetail, Result<T, String>) + 'static,
         cx: &mut Context<Self>,
     ) {
-        cx.spawn(async move |pane, cx| {
+        cx.spawn(async move |page, cx| {
             let read = cx
                 .background_executor()
                 .spawn(async move { read(if dir.is_dir() { &dir } else { &repo }) })
                 .await;
-            let _ = pane.update(cx, |pane: &mut Self, cx| {
-                if let Some(detail) = pane.detail_mut() {
+            let _ = page.update(cx, |page: &mut Self, cx| {
+                if let Some(detail) = page.detail_mut() {
                     land(detail, read);
                     cx.notify();
                 }
@@ -226,7 +221,7 @@ pub(super) fn task_detail(
     task: &onehand_core::task::Task,
     row: &Row,
     page: &TasksPage,
-    cx: &mut Context<ChatPane>,
+    cx: &mut Context<TasksPage>,
 ) -> Vec<gpui::AnyElement> {
     let muted = cx.theme().muted_foreground;
     let last = task.runs.last();
@@ -292,8 +287,8 @@ pub(super) fn task_detail(
                     open,
                     cx,
                 )
-                .on_click(cx.listener(move |pane: &mut ChatPane, _, _, cx| {
-                    pane.toggle_earlier(id.clone(), cx)
+                .on_click(cx.listener(move |page: &mut TasksPage, _, _, cx| {
+                    page.toggle_earlier(id.clone(), cx)
                 }))
                 .child(
                     div()
@@ -333,10 +328,10 @@ fn trail(
     task: &onehand_core::task::Task,
     row: &Row,
     held: bool,
-    cx: &mut Context<ChatPane>,
+    cx: &mut Context<TasksPage>,
 ) -> gpui::Div {
     let back = onehand_ui::back_link("task-back", "Tasks", cx)
-        .on_click(cx.listener(|pane: &mut ChatPane, _, _, cx| pane.open_task(None, cx)));
+        .on_click(cx.listener(|page: &mut TasksPage, _, _, cx| page.open_task(None, cx)));
     let acts = task_acts(row, true);
     let mut acts = acts.into_iter();
     let primary = acts.next().map(|act| {
@@ -354,11 +349,11 @@ fn trail(
     let answer = answers_review(task).then(|| {
         (
             "Answer the pull request review…",
-            Rc::new(super::emit(&task.id, cx, ChatPaneEvent::AnswerReview)) as Press,
+            Rc::new(super::emit(&task.id, cx, TasksPageEvent::AnswerReview)) as Press,
         )
     });
     let remove = removable(task, detail)
-        .then(|| Rc::new(super::emit(&task.id, cx, ChatPaneEvent::RemoveWorktree)) as Press);
+        .then(|| Rc::new(super::emit(&task.id, cx, TasksPageEvent::RemoveWorktree)) as Press);
     let rest: Vec<_> = rest.into_iter().chain(answer).collect();
     let empty = rest.is_empty() && remove.is_none();
     // What ⋯ holds and is still being read or done waits on ⋯ itself.
@@ -465,7 +460,7 @@ fn removable(task: &onehand_core::task::Task, detail: &TaskDetail) -> bool {
 /// steps down beside.
 fn way_out(
     task: &onehand_core::task::Task,
-    cx: &mut Context<ChatPane>,
+    cx: &mut Context<TasksPage>,
 ) -> Option<(gpui::AnyElement, bool)> {
     let mut work = Work::of(task, None, None);
     work.timeout_moved = crate::unattended::timeout_moved(task, cx);
@@ -493,7 +488,7 @@ fn way_out(
             true => button.primary(),
             false => button.quiet(cx),
         };
-        button.on_click(super::emit(&task.id, cx, ChatPaneEvent::RetryTaskCurrent))
+        button.on_click(super::emit(&task.id, cx, TasksPageEvent::RetryTaskCurrent))
     });
     Some((
         page_card("Way out", None, None, cx)
@@ -510,7 +505,7 @@ fn review_card(
     task: &str,
     row: &Row,
     review: &UnderReview,
-    cx: &mut Context<ChatPane>,
+    cx: &mut Context<TasksPage>,
 ) -> gpui::AnyElement {
     let muted = cx.theme().muted_foreground;
     let open = open_session("task-review-open", row, cx).map(IntoElement::into_any_element);
@@ -528,7 +523,6 @@ fn review_card(
                 "Showing the last {ANSWER_LINES} of {lines} lines; Review… opens all of it"
             ))
     });
-    let pane = cx.entity().downgrade();
     let approval = Approval {
         task: task.to_string(),
         at: review.at.clone(),
@@ -552,11 +546,8 @@ fn review_card(
                     .quiet(cx)
                     .short()
                     .label("Review…")
-                    .on_click({
-                        let pane = pane.clone();
-                        move |_, window, cx| {
-                            open_review(&on_read, pane.clone(), read.clone(), false, window, cx)
-                        }
+                    .on_click(move |_, window, cx| {
+                        open_review(&on_read, read.clone(), false, window, cx)
                     }),
             ),
         )
@@ -565,9 +556,7 @@ fn review_card(
                 .quiet(cx)
                 .short()
                 .label("Revise…")
-                .on_click(
-                    cx.listener(move |_, _, window, cx| open_revise(revised.clone(), window, cx)),
-                ),
+                .on_click(move |_, window, cx| open_revise(revised.clone(), window, cx)),
             review.revise_said(),
         ))
         .child(answer_row(
@@ -575,7 +564,7 @@ fn review_card(
                 .primary()
                 .short()
                 .label("Continue")
-                .on_click(move |_, window, cx| press_continue(pane.clone(), &pressed, window, cx)),
+                .on_click(move |_, window, cx| press_continue(&pressed, window, cx)),
             review.continue_said(),
         ))
         .into_any_element()

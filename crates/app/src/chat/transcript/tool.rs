@@ -27,7 +27,7 @@ use std::path::Path;
 mod command;
 mod diff;
 pub(super) use command::{CommandBlock, command_cwd};
-pub(in crate::chat) use diff::diff_rows;
+pub(crate) use diff::diff_rows;
 use diff::{diff_detail, diff_text};
 
 /// Less than a pixel left to scroll is the scroller's rounding, not more text

@@ -610,9 +610,18 @@ impl Shell {
                             .iter()
                             .map(|p| (p.root.clone(), SharedString::from(p.label.to_string())))
                             .collect();
-                        shell
-                            .chat
-                            .update(cx, |pane, cx| pane.set_page_projects(projects, cx));
+                        // The Tasks page's projects, while it is the page:
+                        // a filter left on another page waits for its next
+                        // showing, which checks it then.
+                        if shell.tasks_shown(cx) {
+                            shell
+                                .tasks_page
+                                .update(cx, |page, cx| page.set_projects(projects, cx));
+                        } else {
+                            shell
+                                .chat
+                                .update(cx, |pane, cx| pane.set_page_projects(projects, cx));
+                        }
                         // The Schedules page's list and filter, likewise.
                         shell
                             .schedules_page

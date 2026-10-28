@@ -683,10 +683,11 @@ impl Shell {
     ) {
         let projects = self.page_projects();
         self.docks_aside(window, cx);
-        self.chat.update(cx, |pane, cx| {
-            pane.leave_issues_page(window, cx);
-            pane.show_tasks(projects, filter, window, cx)
-        });
+        let view: gpui::AnyView = self.tasks_page.clone().into();
+        self.chat
+            .update(cx, |pane, cx| pane.show_tasks(view, window, cx));
+        self.tasks_page
+            .update(cx, |page, cx| page.show(projects, filter, window, cx));
         self.sync_agent_started(cx);
         cx.notify();
     }
@@ -695,8 +696,8 @@ impl Shell {
     pub fn show_task(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
         self.show_tasks(None, window, cx);
         let id = id.to_string();
-        self.chat
-            .update(cx, |pane, cx| pane.open_task(Some(id), cx));
+        self.tasks_page
+            .update(cx, |page, cx| page.open_task(Some(id), cx));
     }
 
     /// Both docks hold one project's things, and a page is about all of
