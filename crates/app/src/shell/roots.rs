@@ -554,9 +554,11 @@ impl Shell {
         self.refresh_git(cx);
         self.workbench.update(cx, |panel, cx| panel.rescan(cx));
         self.tell_issues_page(&onehand_workbench::Request::Rescan, cx);
-        // A run leaving a note or a sync landing changes the issue files too;
-        // a no-op unless the workspace page is what is showing.
-        self.chat.update(cx, |pane, cx| pane.reload_workspace(cx));
+        // A run leaving a note or a sync landing changes the issue files too,
+        // read again while the workspace page is what is showing.
+        if self.workspace_shown(cx) {
+            self.workspace_page.update(cx, |page, cx| page.reload(cx));
+        }
     }
 
     /// Refresh `git status` for every root, off the UI loop.
@@ -610,17 +612,17 @@ impl Shell {
                             .iter()
                             .map(|p| (p.root.clone(), SharedString::from(p.label.to_string())))
                             .collect();
-                        // The Tasks page's projects, while it is the page:
-                        // a filter left on another page waits for its next
-                        // showing, which checks it then.
+                        // The Tasks page's or the workspace page's projects,
+                        // while it is the page: a filter left on another page
+                        // waits for its next showing, which checks it then.
                         if shell.tasks_shown(cx) {
                             shell
                                 .tasks_page
                                 .update(cx, |page, cx| page.set_projects(projects, cx));
-                        } else {
+                        } else if shell.workspace_shown(cx) {
                             shell
-                                .chat
-                                .update(cx, |pane, cx| pane.set_page_projects(projects, cx));
+                                .workspace_page
+                                .update(cx, |page, cx| page.set_projects(projects, cx));
                         }
                         // The Schedules page's list and filter, likewise.
                         shell
@@ -637,5 +639,42 @@ impl Shell {
                 .ok();
         })
         .detach();
+    }
+}
+
+impl Shell {
+    /// Answer what the workspace page asked for.
+    pub(super) fn on_workspace_page(
+        &mut self,
+        event: &crate::workspace_page::WorkspacePageEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        use crate::workspace_page::WorkspacePageEvent as E;
+        match event {
+            E::OpenIssue { root, number } => self.open_issue(root, *number, window, cx),
+            E::ShowSession { uid, window: at } => self.show_session_in(*uid, *at, window, cx),
+            E::ShowProject(root) => {
+                if let Some(idx) = self.root_index(root) {
+                    self.select_root(idx, window, cx);
+                }
+            }
+            // Its project made the active one first, since a session
+            // is minted on that, but not shown: showing it would
+            // connect the session it was last on, which nobody asked
+            // for. The new session's own arrival shows the project.
+            E::ResumeIn {
+                root,
+                agent,
+                archive,
+            } => {
+                if let Some(idx) = self.root_index(root) {
+                    self.window.workspace.select_root(idx);
+                    let _ =
+                        self.start_session(Some(agent.clone()), Some(archive.clone()), window, cx);
+                }
+            }
+        }
+        cx.notify();
     }
 }

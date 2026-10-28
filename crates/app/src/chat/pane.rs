@@ -30,23 +30,23 @@ mod fork;
 mod header;
 mod history;
 mod overlay;
+mod pages;
 mod project_page;
 mod resume_picker;
 mod runs;
 mod sessions;
 mod step_strip;
 mod titles;
-mod workspace_page;
 pub use events::{ChatPaneEvent, ProjectAction, Restart, SessionSignal};
 use header::Archives;
 use project_page::EmptyProject;
-use workspace_page::WorkspacePage;
 
 /// A page drawn in place of a conversation, about more than one project.
 enum Page {
-    Workspace(WorkspacePage),
-    /// The Tasks page, an entity of the window's, so its filter outlives
-    /// this.
+    /// The workspace page, an entity of the window's, so its filter
+    /// outlives this.
+    Workspace(gpui::AnyView),
+    /// The Tasks page, likewise.
     Tasks(gpui::AnyView),
     /// The Issues crate's page, whose state is its own entity's and so
     /// outlives this.
@@ -237,9 +237,6 @@ pub struct DocksOpen {
 
 pub struct ChatPane {
     focus_handle: FocusHandle,
-    /// The project the overview's issues are narrowed to, kept while the
-    /// overview is left and shown again.
-    workspace_filter: Option<std::path::PathBuf>,
     /// Every session the user has opened, in whatever phase it has reached.
     ///
     /// One map, not six. What each session's phase means, and why the parallel
@@ -418,7 +415,6 @@ impl ChatPane {
 
             Self {
                 focus_handle: cx.focus_handle(),
-                workspace_filter: None,
                 conversations: HashMap::new(),
                 active: None,
                 composer,

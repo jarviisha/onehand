@@ -5,7 +5,7 @@ use crate::controls::Named as _;
 use crate::controls::Quiet as _;
 use crate::controls::Short as _;
 use crate::controls::text_input;
-use crate::page_parts::{page_card, page_head, ruled};
+use crate::page_parts::{count_of, page_card, page_head, ruled};
 use crate::tokens::PAGE_PROSE;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -537,14 +537,6 @@ impl ChatPane {
                     ),
             )
             .into_any_element()
-    }
-}
-
-/// `n` of `noun`, with the noun's plural where `n` is not one.
-pub(super) fn count_of(n: usize, noun: &str) -> String {
-    match n {
-        1 => format!("1 {noun}"),
-        n => format!("{n} {noun}s"),
     }
 }
 

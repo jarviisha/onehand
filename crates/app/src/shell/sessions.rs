@@ -663,10 +663,11 @@ impl Shell {
     pub fn show_workspace(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let projects = self.page_projects();
         self.docks_aside(window, cx);
-        self.chat.update(cx, |pane, cx| {
-            pane.leave_issues_page(window, cx);
-            pane.show_workspace(projects, window, cx)
-        });
+        let view: gpui::AnyView = self.workspace_page.clone().into();
+        self.chat
+            .update(cx, |pane, cx| pane.show_workspace(view, window, cx));
+        self.workspace_page
+            .update(cx, |page, cx| page.show(projects, cx));
         // No session is showing now, so there is no running agent to be
         // behind on anything.
         self.sync_agent_started(cx);

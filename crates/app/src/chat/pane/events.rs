@@ -180,28 +180,6 @@ pub enum ChatPaneEvent {
         uid: Option<u64>,
         why: String,
     },
-    /// Open issue `number` of the project at `root` — a row of the workspace
-    /// page. Selecting a project and opening the Workbench are both the
-    /// shell's.
-    OpenIssue {
-        root: PathBuf,
-        number: u64,
-    },
-    /// Show session `uid`, in whichever window holds it — a row of the
-    /// workspace page, for an unattended run's session or one of this window's.
-    ShowSession {
-        uid: u64,
-        window: gpui::AnyWindowHandle,
-    },
-    /// Select the project at this root — a row of the workspace page.
-    ShowProject(PathBuf),
-    /// Resume `archive` on `agent` in the project at `root` — a recent
-    /// conversation on the workspace page.
-    ResumeIn {
-        root: PathBuf,
-        agent: SharedString,
-        archive: PathBuf,
-    },
     /// Stop the run on session `uid`.
     StopWorkflow(u64),
     /// Show the Tasks page, narrowed to one project or not.

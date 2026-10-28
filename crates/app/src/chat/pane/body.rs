@@ -248,9 +248,9 @@ impl ChatPane {
         // every early return below leaves it false without having to say so.
         self.composer_drawn = false;
         match &self.page {
-            Some(super::Page::Workspace(_)) => return self.workspace_page(cx),
             Some(
-                super::Page::Issues(view)
+                super::Page::Workspace(view)
+                | super::Page::Issues(view)
                 | super::Page::Tasks(view)
                 | super::Page::Workflows(view)
                 | super::Page::Schedules(view)

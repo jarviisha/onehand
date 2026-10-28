@@ -45,6 +45,7 @@ mod unattended;
 mod workbench;
 mod workflow;
 mod workflows_page;
+mod workspace_page;
 mod zoom;
 
 /// The sizes and the lift the app shares with its feature crates.
