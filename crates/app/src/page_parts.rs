@@ -216,3 +216,11 @@ pub(crate) fn project_filter(
         menu
     })
 }
+
+/// `n` of `noun`, with the noun's plural where `n` is not one.
+pub(crate) fn count_of(n: usize, noun: &str) -> String {
+    match n {
+        1 => format!("1 {noun}"),
+        n => format!("{n} {noun}s"),
+    }
+}

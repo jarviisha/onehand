@@ -51,6 +51,16 @@ impl Shell {
             },
         )
         .detach();
+        let workspace_page =
+            cx.new(|_| crate::workspace_page::WorkspacePage::new(chat.downgrade()));
+        cx.subscribe_in(
+            &workspace_page,
+            window,
+            |shell: &mut Self, _, event: &crate::workspace_page::WorkspacePageEvent, window, cx| {
+                shell.on_workspace_page(event, window, cx)
+            },
+        )
+        .detach();
         let tasks_page = cx.new(crate::tasks_page::TasksPage::new);
         cx.subscribe_in(
             &tasks_page,
@@ -228,15 +238,6 @@ impl Shell {
                             cx,
                         );
                     }
-                    E::OpenIssue { root, number } => shell.open_issue(root, *number, window, cx),
-                    E::ShowSession { uid, window: at } => {
-                        shell.show_session_in(*uid, *at, window, cx)
-                    }
-                    E::ShowProject(root) => {
-                        if let Some(idx) = shell.root_index(root) {
-                            shell.select_root(idx, window, cx);
-                        }
-                    }
                     E::StopWorkflow(uid) => {
                         let uid = *uid;
                         cx.defer(move |cx| crate::task::stop(uid, cx));
@@ -247,25 +248,6 @@ impl Shell {
                         if let Some(root) = shell.window.workspace.active_root() {
                             let root = root.path.clone();
                             shell.run_check(root, window, cx);
-                        }
-                    }
-                    // Its project made the active one first, since a session
-                    // is minted on that, but not shown: showing it would
-                    // connect the session it was last on, which nobody asked
-                    // for. The new session's own arrival shows the project.
-                    E::ResumeIn {
-                        root,
-                        agent,
-                        archive,
-                    } => {
-                        if let Some(idx) = shell.root_index(root) {
-                            shell.window.workspace.select_root(idx);
-                            let _ = shell.start_session(
-                                Some(agent.clone()),
-                                Some(archive.clone()),
-                                window,
-                                cx,
-                            );
                         }
                     }
                 }
@@ -519,6 +501,7 @@ impl Shell {
             workflows_page,
             schedules_page: crate::schedules_page::SchedulesPage::new(cx),
             tasks_page,
+            workspace_page,
             terminal,
             _pending_save: None,
             saves: Default::default(),

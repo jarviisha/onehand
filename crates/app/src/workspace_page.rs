@@ -1,15 +1,21 @@
-use super::project_page::count_of;
-use super::{ChatPane, ChatPaneEvent, Page, SessionSignal, rel_time};
+//! The workspace page, the overview: what waits on the user and what is
+//! working, every project, the newest past conversations and every
+//! project's open issues. An entity of the window's, drawn by the chat pane.
+
+use crate::chat::pane::{ChatPane, SessionSignal};
 use crate::page_parts::PageProject;
-use crate::page_parts::{card_box, card_title, page_card, page_head, page_top, pair, ruled};
+use crate::page_parts::{
+    card_box, card_title, count_of, page_card, page_head, page_top, pair, ruled,
+};
 use crate::tokens::PAGE_WIDE;
 use gpui::{
-    Context, InteractiveElement, IntoElement, ParentElement, Rems, SharedString,
-    StatefulInteractiveElement, Styled, Window, div, rems,
+    Context, EventEmitter, InteractiveElement, IntoElement, ParentElement, Rems, Render,
+    SharedString, StatefulInteractiveElement, Styled, WeakEntity, Window, div, rems,
 };
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::chat::ConvMeta;
-use std::collections::HashSet;
+use onehand_core::rel_time;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 /// How many rows each of the workspace page's two activity groups draws: the
@@ -42,10 +48,15 @@ const PAGE_TITLE_LINE: Rems = rems(1.25);
 /// The page shown in place of a conversation when the user asks what the whole
 /// workspace needs: the runs waiting on them, the runs working, and every
 /// project's open issues.
-pub(super) struct WorkspacePage {
+pub(crate) struct WorkspacePage {
+    /// The pane that draws this, read for what only it knows: each session's
+    /// signal and title, and which conversations are open. Weak, since the
+    /// pane holds this page's view.
+    pane: WeakEntity<ChatPane>,
     /// Every project in rail order.
     projects: Vec<PageProject>,
     /// The project the issue list is narrowed to, or `None` for all of them.
+    /// Kept while the page is away, for its next showing.
     filter: Option<PathBuf>,
     /// Every project's issues as last read. `None` while the first read is
     /// out, which is a wait rather than an answer.
@@ -61,7 +72,43 @@ pub(super) struct WorkspacePage {
     _load: Option<gpui::Task<()>>,
 }
 
+/// What the workspace page asks of the window.
+pub(crate) enum WorkspacePageEvent {
+    /// Open issue `number` of the project at `root`. Selecting a project and
+    /// opening the Workbench are both the shell's.
+    OpenIssue { root: PathBuf, number: u64 },
+    /// Show session `uid`, in whichever window holds it: an unattended run's
+    /// session or one of this window's.
+    ShowSession {
+        uid: u64,
+        window: gpui::AnyWindowHandle,
+    },
+    /// Select the project at this root.
+    ShowProject(PathBuf),
+    /// Resume `archive` on `agent` in the project at `root`.
+    ResumeIn {
+        root: PathBuf,
+        agent: SharedString,
+        archive: PathBuf,
+    },
+}
+
+impl EventEmitter<WorkspacePageEvent> for WorkspacePage {}
+
 impl WorkspacePage {
+    pub(crate) fn new(pane: WeakEntity<ChatPane>) -> Self {
+        Self {
+            pane,
+            projects: Vec::new(),
+            filter: None,
+            read: None,
+            failed: Vec::new(),
+            shown: Default::default(),
+            recent: None,
+            _load: None,
+        }
+    }
+
     /// Narrow what was read to the filter. Run when either changes, not per
     /// frame, since it copies every open issue it keeps.
     fn refilter(&mut self) {
@@ -91,57 +138,35 @@ impl WorkspacePage {
     }
 }
 
-impl ChatPane {
-    /// Show the workspace page: what is waiting, what is working, and every
-    /// project's open issues. `projects` is every project in rail order, with
-    /// the file its issues are kept in.
-    ///
-    /// Leaves the shown session the way standing on a project does — the draft
-    /// put down, the session left running — since the page is somewhere else to
-    /// be and not a session closing.
-    pub fn show_workspace(
-        &mut self,
-        projects: Vec<PageProject>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+impl WorkspacePage {
+    /// Come on screen over `projects`, every project in rail order with the
+    /// file its issues are kept in, and read them afresh.
+    pub(crate) fn show(&mut self, projects: Vec<PageProject>, cx: &mut Context<Self>) {
         // A filter survives the page being shown again, while its project does.
-        // The filter is the pane's, so it is kept while the page is left.
-        let filter = self
-            .workspace_filter
-            .clone()
+        self.filter = self
+            .filter
+            .take()
             .filter(|only| projects.iter().any(|project| &project.root == only));
-        self.page = None;
-        self.page = Some(Page::Workspace(WorkspacePage {
-            projects,
-            filter,
-            read: None,
-            failed: Vec::new(),
-            shown: Default::default(),
-            recent: None,
-            _load: None,
-        }));
-        self.leave_shown_session(window, cx);
-        self.active = None;
-        self.empty = None;
-        self.reload_workspace(cx);
+        self.projects = projects;
+        self.read = None;
+        self.failed = Vec::new();
+        self.shown = Default::default();
+        self.recent = None;
+        self.reload(cx);
         cx.notify();
     }
 
-    /// Read every project's issues again, if the workspace page is showing.
-    /// What is on screen stays until the new read lands, so a reload does not
-    /// blank a list that already had something in it.
-    pub fn reload_workspace(&mut self, cx: &mut Context<Self>) {
-        let Some(Page::Workspace(page)) = self.page.as_mut() else {
-            return;
-        };
-        let files: Vec<(PathBuf, PathBuf)> = page
+    /// Read every project's issues and past conversations again. What is on
+    /// screen stays until the new read lands, so a reload does not blank a
+    /// list that already had something in it.
+    pub(crate) fn reload(&mut self, cx: &mut Context<Self>) {
+        let files: Vec<(PathBuf, PathBuf)> = self
             .projects
             .iter()
             .filter_map(|project| Some((project.root.clone(), project.issues.clone()?)))
             .collect();
-        let roots: Vec<PathBuf> = page.projects.iter().map(|p| p.root.clone()).collect();
-        page._load = Some(cx.spawn(async move |pane, cx| {
+        let roots: Vec<PathBuf> = self.projects.iter().map(|p| p.root.clone()).collect();
+        self._load = Some(cx.spawn(async move |page, cx| {
             let (read, failed, recent) = cx
                 .background_executor()
                 .spawn(async move {
@@ -159,10 +184,7 @@ impl ChatPane {
                     (read, failed, recent)
                 })
                 .await;
-            let _ = pane.update(cx, |pane: &mut Self, cx| {
-                let Some(Page::Workspace(page)) = pane.page.as_mut() else {
-                    return;
-                };
+            let _ = page.update(cx, |page: &mut Self, cx| {
                 page.read = Some(read);
                 page.failed = failed;
                 page.recent = Some(recent);
@@ -174,267 +196,22 @@ impl ChatPane {
 
     /// Replace the page's projects with a fresher listing, keeping
     /// everything it has read. A filter on a project no longer listed goes.
-    pub fn set_page_projects(&mut self, projects: Vec<PageProject>, cx: &mut Context<Self>) {
-        let gone = |only: &Option<PathBuf>| {
-            only.as_ref()
-                .is_some_and(|only| !projects.iter().any(|project| &project.root == only))
-        };
-        match self.page.as_mut() {
-            Some(Page::Workspace(page)) => {
-                if gone(&page.filter) {
-                    page.filter = None;
-                    page.refilter();
-                }
-                page.projects = projects;
-            }
-            Some(
-                Page::Tasks(_)
-                | Page::Issues(_)
-                | Page::Workflows(_)
-                | Page::Schedules(_)
-                | Page::Settings(_),
-            )
-            | None => return,
-        }
-        cx.notify();
-    }
-
-    /// Whether the workspace page is what the pane shows.
-    pub fn showing_workspace(&self) -> bool {
-        match self.page {
-            Some(Page::Workspace(_)) => true,
-            Some(
-                Page::Tasks(_)
-                | Page::Issues(_)
-                | Page::Workflows(_)
-                | Page::Schedules(_)
-                | Page::Settings(_),
-            )
-            | None => false,
-        }
-    }
-
-    /// Whether the Tasks page is what the pane shows.
-    pub fn showing_tasks(&self) -> bool {
-        match self.page {
-            Some(Page::Tasks(_)) => true,
-            Some(
-                Page::Workspace(_)
-                | Page::Issues(_)
-                | Page::Workflows(_)
-                | Page::Schedules(_)
-                | Page::Settings(_),
-            )
-            | None => false,
-        }
-    }
-
-    /// Whether the Issues page is what the pane shows.
-    pub fn showing_issues(&self) -> bool {
-        match self.page {
-            Some(Page::Issues(_)) => true,
-            Some(
-                Page::Workspace(_)
-                | Page::Tasks(_)
-                | Page::Workflows(_)
-                | Page::Schedules(_)
-                | Page::Settings(_),
-            )
-            | None => false,
-        }
-    }
-
-    /// Whether the Workflows page is what the pane shows.
-    pub fn showing_workflows(&self) -> bool {
-        match self.page {
-            Some(Page::Workflows(_)) => true,
-            Some(
-                Page::Workspace(_)
-                | Page::Tasks(_)
-                | Page::Issues(_)
-                | Page::Schedules(_)
-                | Page::Settings(_),
-            )
-            | None => false,
-        }
-    }
-
-    /// Whether the Schedules page is what the pane shows.
-    pub fn showing_schedules(&self) -> bool {
-        match self.page {
-            Some(Page::Schedules(_)) => true,
-            Some(
-                Page::Workspace(_)
-                | Page::Tasks(_)
-                | Page::Issues(_)
-                | Page::Workflows(_)
-                | Page::Settings(_),
-            )
-            | None => false,
-        }
-    }
-
-    /// Show the Schedules page, `view`, as it was left, the way the
-    /// Workflows page is shown.
-    pub fn show_schedules(
-        &mut self,
-        view: gpui::AnyView,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.leave_issues_page(window, cx);
-        self.page = Some(Page::Schedules(view));
-        self.leave_shown_session(window, cx);
-        self.active = None;
-        self.empty = None;
-        cx.notify();
-    }
-
-    /// Whether Settings is what the pane shows.
-    pub fn showing_settings(&self) -> bool {
-        match self.page {
-            Some(Page::Settings(_)) => true,
-            Some(
-                Page::Workspace(_)
-                | Page::Tasks(_)
-                | Page::Issues(_)
-                | Page::Workflows(_)
-                | Page::Schedules(_),
-            )
-            | None => false,
-        }
-    }
-
-    /// Show Settings, `view`, on the page it was left on, its drafts as they
-    /// were left, the way the other pages that are views of their own are
-    /// shown.
-    pub fn show_settings(
-        &mut self,
-        view: gpui::AnyView,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        // Off another view page, a field there may hold the caret.
-        self.leave_issues_page(window, cx);
-        self.page = Some(Page::Settings(view));
-        self.leave_shown_session(window, cx);
-        self.active = None;
-        self.empty = None;
-        cx.notify();
-    }
-
-    /// Show the Tasks page, `view`, the way the Workflows page is shown.
-    pub fn show_tasks(&mut self, view: gpui::AnyView, window: &mut Window, cx: &mut Context<Self>) {
-        // Off another view page, a field there may hold the caret.
-        self.leave_issues_page(window, cx);
-        self.page = Some(Page::Tasks(view));
-        self.leave_shown_session(window, cx);
-        self.active = None;
-        self.empty = None;
-        cx.notify();
-    }
-
-    /// Show the Workflows page, `view`, as it was left, the way the Issues
-    /// page is shown.
-    pub fn show_workflows(
-        &mut self,
-        view: gpui::AnyView,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        // Off another view page, a field there may hold the caret.
-        self.leave_issues_page(window, cx);
-        self.page = Some(Page::Workflows(view));
-        self.leave_shown_session(window, cx);
-        self.active = None;
-        self.empty = None;
-        cx.notify();
-    }
-
-    /// Show the Issues page, `view`, as it was left. Leaves the shown session
-    /// the way the other pages do.
-    pub fn show_issues(
-        &mut self,
-        view: gpui::AnyView,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        // Off another view page, a field there may hold the caret.
-        self.leave_issues_page(window, cx);
-        self.page = Some(Page::Issues(view));
-        self.leave_shown_session(window, cx);
-        self.active = None;
-        self.empty = None;
-        cx.notify();
-    }
-
-    /// A page that is a view of its own (Issues, Workflows, Settings) under the
-    /// pane's header, which names it as it names every page.
-    pub(super) fn view_page(
-        &self,
-        view: gpui::AnyView,
-        cx: &mut Context<Self>,
-    ) -> gpui::AnyElement {
-        // The Workflows page splits the pane from its top edge to its bottom,
-        // so its header floats over the page rather than standing above it:
-        // the strip draws no fill, and the page keeps its own content clear
-        // of it.
-        if self.showing_workflows() {
-            return div()
-                .relative()
-                .size_full()
-                .child(div().size_full().v_flex().child(view))
-                .child(
-                    div()
-                        .absolute()
-                        .top_0()
-                        .left_0()
-                        .right_0()
-                        .child(self.header(cx)),
-                )
-                .into_any_element();
-        }
-        div()
-            .size_full()
-            .v_flex()
-            .child(self.header(cx))
-            .child(div().flex_1().min_h_0().v_flex().child(view))
-            .into_any_element()
-    }
-
-    /// Take the caret back before a page that is a view of its own leaves
-    /// the frame: a field on it may hold it, and a caret in nothing answers
-    /// no key.
-    pub fn leave_issues_page(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.showing_issues()
-            || self.showing_workflows()
-            || self.showing_settings()
-            || self.showing_tasks()
-            || self.showing_schedules()
+    pub(crate) fn set_projects(&mut self, projects: Vec<PageProject>, cx: &mut Context<Self>) {
+        if let Some(only) = &self.filter
+            && !projects.iter().any(|project| &project.root == only)
         {
-            self.focus_handle.clone().focus(window, cx);
+            self.filter = None;
+            self.refilter();
         }
-    }
-
-    /// Whether a page about more than one project is what the pane shows.
-    pub fn showing_page(&self) -> bool {
-        self.page.is_some()
-    }
-
-    /// The session whose conversation the pane shows: none while a page
-    /// covers it, even though the project still has an active session.
-    pub fn viewing(&self) -> Option<u64> {
-        self.active.filter(|_| self.page.is_none())
+        self.projects = projects;
+        cx.notify();
     }
 
     /// Narrow the workspace page's issue list to one project, or `None` for all.
     fn filter_workspace(&mut self, only: Option<PathBuf>, cx: &mut Context<Self>) {
-        self.workspace_filter = only.clone();
-        if let Some(Page::Workspace(page)) = self.page.as_mut() {
-            page.filter = only;
-            page.refilter();
-            cx.notify();
-        }
+        self.filter = only;
+        self.refilter();
+        cx.notify();
     }
 
     /// The workspace page: what waits on the user and what is working, across
@@ -444,14 +221,27 @@ impl ChatPane {
     /// Sessions and runs are read here, per frame, rather than held: a run
     /// starting, parking or ending already refreshes every window, and a
     /// session's signal is the same query the rail draws its dots from.
-    pub(super) fn workspace_page(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let Some(Page::Workspace(page)) = self.page.as_ref() else {
-            return div().into_any_element();
-        };
+    fn page(&self, window: &Window, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let page = self;
+        // What the pane alone knows, read once for the frame: each session's
+        // signal and title, and the conversations open in one.
+        let (sessions, open) = self
+            .pane
+            .read_with(cx, |pane, cx| {
+                let sessions: HashMap<u64, _> = page
+                    .projects
+                    .iter()
+                    .flat_map(|project| &project.sessions)
+                    .map(|(uid, _)| (*uid, (pane.signal(*uid, cx), pane.title_for(*uid, cx))))
+                    .collect();
+                (sessions, pane.open_conversations(cx))
+            })
+            .unwrap_or_default();
+        let signal = |uid: u64| sessions.get(&uid).and_then(|(signal, _)| *signal);
         let muted = cx.theme().muted_foreground;
         let warning = crate::theme::status_ink(cx).warning;
         let muted_line = |text: String| div().text_xs().text_color(muted).child(text);
-        let here = self.window;
+        let here = window.window_handle();
         let now = onehand_core::chat::now_secs();
 
         // The two activity cards gather runs and sessions alike. A run's row is
@@ -471,7 +261,7 @@ impl ChatPane {
                 cx,
             )
             .on_click(cx.listener(move |_: &mut Self, _, _, cx| {
-                cx.emit(ChatPaneEvent::ShowSession { uid, window });
+                cx.emit(WorkspacePageEvent::ShowSession { uid, window });
             }))
             .into_any_element();
             match waits {
@@ -485,11 +275,12 @@ impl ChatPane {
         for project in &page.projects {
             for (uid, fallback) in &project.sessions {
                 let uid = *uid;
-                let Some(signal) = self.signal(uid, cx) else {
+                let Some(signal) = signal(uid) else {
                     continue;
                 };
-                let title = self
-                    .title_for(uid, cx)
+                let title = sessions
+                    .get(&uid)
+                    .and_then(|(_, title)| title.clone())
                     .unwrap_or_else(|| fallback.to_string());
                 let row = crate::dialogs::page_row(
                     ("workspace-session", uid as usize),
@@ -499,7 +290,7 @@ impl ChatPane {
                     cx,
                 )
                 .on_click(cx.listener(move |_: &mut Self, _, _, cx| {
-                    cx.emit(ChatPaneEvent::ShowSession { uid, window: here });
+                    cx.emit(WorkspacePageEvent::ShowSession { uid, window: here });
                 }))
                 .into_any_element();
                 match signal {
@@ -568,10 +359,7 @@ impl ChatPane {
                     (true, Some(_)) => "Nothing open".to_string(),
                 };
                 let rollup = SessionSignal::most_urgent(
-                    project
-                        .sessions
-                        .iter()
-                        .filter_map(|(uid, _)| self.signal(*uid, cx)),
+                    project.sessions.iter().filter_map(|(uid, _)| signal(*uid)),
                 );
                 let root = project.root.clone();
                 // The folder in a column of its own, so the name and the
@@ -626,7 +414,7 @@ impl ChatPane {
                             .child(muted_line(holds)),
                     )
                     .on_click(cx.listener(move |_: &mut Self, _, _, cx| {
-                        cx.emit(ChatPaneEvent::ShowProject(root.clone()));
+                        cx.emit(WorkspacePageEvent::ShowProject(root.clone()));
                     }))
                     .into_any_element()
             })
@@ -648,11 +436,7 @@ impl ChatPane {
         // The past conversations to pick back up. One already open in a session
         // is left out: it is on the rail, and resuming it again would put the
         // same conversation in two sessions.
-        let open: HashSet<String> = self
-            .conversations
-            .values()
-            .filter_map(|conv| conv.session()?.read(cx).chat.session_id.clone())
-            .collect();
+        let open: &HashSet<String> = &open;
         let recent: Vec<gpui::AnyElement> = page
             .recent
             .iter()
@@ -673,7 +457,7 @@ impl ChatPane {
                     cx,
                 )
                 .on_click(cx.listener(move |_: &mut Self, _, _, cx| {
-                    cx.emit(ChatPaneEvent::ResumeIn {
+                    cx.emit(WorkspacePageEvent::ResumeIn {
                         root: root.clone(),
                         agent: agent.clone(),
                         archive: archive.clone(),
@@ -710,7 +494,7 @@ impl ChatPane {
             page.filter.clone(),
             onehand_ui::ControlSize::Short,
             move |only, cx| {
-                this.update(cx, |pane: &mut Self, cx| pane.filter_workspace(only, cx));
+                this.update(cx, |page: &mut Self, cx| page.filter_workspace(only, cx));
             },
             cx,
         );
@@ -739,7 +523,7 @@ impl ChatPane {
                     cx,
                 )
                 .on_click(cx.listener(move |_: &mut Self, _, _, cx| {
-                    cx.emit(ChatPaneEvent::OpenIssue {
+                    cx.emit(WorkspacePageEvent::OpenIssue {
                         root: root.clone(),
                         number,
                     });
@@ -775,9 +559,6 @@ impl ChatPane {
         div()
             .size_full()
             .v_flex()
-            // The header stays for the way back to a hidden rail; the page
-            // names itself in its head, and the dock controls are left off.
-            .child(self.header(cx))
             // The head stays put over a line, as every page's does.
             .child(page_top(
                 Some(PAGE_WIDE),
@@ -811,5 +592,11 @@ impl ChatPane {
                     ),
             )
             .into_any_element()
+    }
+}
+
+impl Render for WorkspacePage {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.page(window, cx)
     }
 }
