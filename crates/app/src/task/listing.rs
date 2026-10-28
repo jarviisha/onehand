@@ -24,8 +24,6 @@ pub(crate) struct Row {
     /// The session it runs in, and the window that holds it.
     pub(crate) session: Option<(u64, AnyWindowHandle)>,
     pub(crate) resumable: bool,
-    /// Why its Resume refuses, while the preflight finds something in the way.
-    pub(crate) resume_refused: Option<String>,
     /// Something answers Stop: a place asked for, a run driven or a check
     /// running. A task that ended but still holds its place, its session's
     /// turn not yet over, has nothing left to stop.
@@ -89,10 +87,6 @@ pub(crate) fn rows(roots: &[PathBuf], cx: &App) -> Vec<Row> {
             group: task.group(working),
             session: live.and_then(|d| Some((d.uid()?, d.window))),
             resumable: task.resumable(),
-            resume_refused: task
-                .resumable()
-                .then(|| super::resume_refused(task, cx))
-                .flatten(),
             stoppable: live.is_some() || t.queue.queued(&task.id),
             stopping: t.stopping(&task.id),
         };
