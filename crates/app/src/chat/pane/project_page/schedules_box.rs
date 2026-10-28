@@ -43,10 +43,10 @@ pub(super) fn schedules_box(root: &Path, cx: &mut Context<ChatPane>) -> Div {
             .gap_2()
             .child(div().min_w_0().truncate().child(s.name.clone()))
             .child(div().flex_none().text_xs().text_color(muted).child(next))
-            .tooltip(|window, cx| {
+            .tooltip(onehand_ui::tip(|window, cx| {
                 gpui_component::tooltip::Tooltip::new("Show it on the Schedules page")
                     .build(window, cx)
-            })
+            }))
             .on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {
                 cx.emit(ChatPaneEvent::ShowSchedules(Some(root.clone())));
             }))

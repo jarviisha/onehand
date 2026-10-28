@@ -539,7 +539,9 @@ impl IssuesView {
                     .text_color(ink)
                     .child(line),
             )
-            .tooltip(move |window, cx| Tooltip::new(detail.clone()).build(window, cx));
+            .tooltip(onehand_ui::tip(move |window, cx| {
+                Tooltip::new(detail.clone()).build(window, cx)
+            }));
         let footer = div()
             .h_flex()
             .items_center()

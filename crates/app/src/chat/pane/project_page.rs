@@ -721,12 +721,12 @@ fn tasks_box(root: &Path, cx: &mut Context<ChatPane>) -> Div {
                         .when_some(ink, |row, ink| row.text_color(ink))
                         .child(label)
                         .child(div().text_xs().child(n.to_string()))
-                        .tooltip(|window, cx| {
+                        .tooltip(onehand_ui::tip(|window, cx| {
                             gpui_component::tooltip::Tooltip::new(
                                 "Show these tasks on the Tasks page",
                             )
                             .build(window, cx)
-                        })
+                        }))
                         .on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {
                             cx.emit(ChatPaneEvent::ShowTasks(Some(root.clone())));
                         }))

@@ -354,10 +354,10 @@ fn reference_link(issue: &LocalIssue, named: String, cx: &mut Context<IssuesView
             .text_color(cx.theme().link)
             .cursor_pointer()
             .hover(|reference| reference.underline())
-            .tooltip({
+            .tooltip(onehand_ui::tip({
                 let tip = format!("Open on {}", link.connector);
                 move |window, cx| Tooltip::new(tip.clone()).build(window, cx)
-            })
+            }))
             .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
                 view.with_url(number, |url, cx| cx.open_url(&url), cx)
             }))
@@ -424,9 +424,9 @@ fn activity(issue: &LocalIssue, cx: &mut Context<IssuesView>) -> AnyElement {
                                 .flex_none()
                                 .w(AGE_W)
                                 .text_color(muted)
-                                .tooltip(move |window, cx| {
+                                .tooltip(onehand_ui::tip(move |window, cx| {
                                     Tooltip::new(moment(at)).build(window, cx)
-                                })
+                                }))
                                 .child(onehand_core::rel_time(now, at)),
                         )
                         .child(div().flex_1().min_w_0().child(text))

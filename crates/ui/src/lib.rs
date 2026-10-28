@@ -24,6 +24,7 @@ mod tabs;
 pub mod toast;
 mod toggle;
 pub mod tokens;
+mod tooltip;
 pub use choice_mark::choice_mark;
 pub use confirm::{Confirm, confirm_on};
 pub use list_detail::{ListDetail, ListWidths, back_link, list_detail};
@@ -41,6 +42,7 @@ pub use tabs::{
     tab_close, tab_more, tab_select, tab_strip, tab_width, unmeasured,
 };
 pub use toggle::toggle;
+pub use tooltip::{put_tooltips_away, tip, tooltip_guard};
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{

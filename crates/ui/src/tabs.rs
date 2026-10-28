@@ -209,7 +209,9 @@ pub fn tab_chip(
         })
         .when(chosen, |tab| tab.bg(theme.accent))
         .when(!chosen, |tab| tab.hover(|tab| tab.bg(theme.list_hover)))
-        .tooltip(move |window, cx| Tooltip::new(hint.clone()).build(window, cx))
+        .tooltip(crate::tip(move |window, cx| {
+            Tooltip::new(hint.clone()).build(window, cx)
+        }))
         // `min_w_0` lets the name shrink far enough to ellipsize at all.
         .child(gpui::div().min_w_0().truncate().child(label))
 }

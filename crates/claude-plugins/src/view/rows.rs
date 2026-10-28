@@ -94,7 +94,9 @@ impl PluginsView {
                 .text_color(onehand_ui::meta_ink(cx))
                 .child(shown)
                 .when_some(full, |v, full| {
-                    v.tooltip(move |window, cx| Tooltip::new(full.clone()).build(window, cx))
+                    v.tooltip(onehand_ui::tip(move |window, cx| {
+                        Tooltip::new(full.clone()).build(window, cx)
+                    }))
                 })
         });
         let update = plugin.update.clone().map(|update| {

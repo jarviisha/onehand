@@ -451,7 +451,9 @@ fn meter_view(index: usize, meter: Meter, cx: &App) -> impl IntoElement + use<> 
         .text_color(ink)
         .child(ring)
         .children(meter.percent.map(|percent| format!("{percent}%")))
-        .tooltip(move |window, cx| Tooltip::new(tip.clone()).build(window, cx))
+        .tooltip(onehand_ui::tip(move |window, cx| {
+            Tooltip::new(tip.clone()).build(window, cx)
+        }))
 }
 
 /// Fast mode's mark: the muted ink at rest, the warning ink while fast.

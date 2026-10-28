@@ -142,6 +142,8 @@ minor bump may break any of them.
 - A turn that failed closes on *Failed after Ns* instead of *Processed in Ns*.
 - Commands that ran side by side are timed once: a stretch of them no longer reads longer than
   the turn it ran in.
+- A tooltip no longer appears over a row or a mark just pressed while the pointer rests there, on
+  the rail, in the Issues list and the transcript.
 - The *More* and *Refresh* buttons on the Workflows, Issues and schedule pages, and a step
   setting's remove, are drawn whole; they had shrunk to a dot or a sliver.
 - A question card's long choice wraps clear of its Alt key instead of running under it.

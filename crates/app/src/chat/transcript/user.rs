@@ -374,8 +374,8 @@ pub(in crate::chat) fn opens(
     plate
         .cursor_pointer()
         .hover(move |plate| plate.border_color(edge))
-        .tooltip(move |window, cx| {
+        .tooltip(onehand_ui::tip(move |window, cx| {
             gpui_component::tooltip::Tooltip::new(tip.clone()).build(window, cx)
-        })
+        }))
         .on_click(move |_, window, cx| on_press(window, cx))
 }

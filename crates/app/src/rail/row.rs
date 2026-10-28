@@ -176,11 +176,11 @@ pub(super) fn covered_tip(
     tip: impl Fn(&mut Window, &mut App) -> gpui::AnyView + 'static,
 ) -> impl Fn(&mut Window, &mut App) -> gpui::AnyView + 'static {
     let group = group.clone();
-    move |window, cx| {
+    onehand_ui::tip(move |window, cx| {
         let tip = tip(window, cx);
         let group = group.clone();
         gpui::AppContext::new(cx, |_| CoveredTip { group, tip }).into()
-    }
+    })
 }
 
 struct CoveredTip {

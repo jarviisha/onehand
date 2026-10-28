@@ -36,6 +36,10 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
 - **A refused menu row cannot say why.** The library's menu row takes no tooltip, so a row that
   refuses (*Move up* on a workflow's first step) is drawn refusing without its reason, which its
   place has to say.
+- **A tooltip of a row or a mark comes back only once the pointer leaves it.** After a press it
+  stays away until the pointer leaves the control, not as soon as it moves from where it was
+  pressed: gpui's own tooltip, which these use, counts the one kept away as shown and offers no
+  way to ask again from outside. The library's controls follow the rule as written.
 - **A fork splits the conversation, not the files.** What the agent changed after the point stays
   on disk. Only a prompt forks: not an answer, a tool step or a subagent card, and there is no
   switching between branches inside one conversation. A prompt of attachments only has no

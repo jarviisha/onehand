@@ -833,7 +833,7 @@ const step = {
         send({
           jsonrpc: '2.0',
           id,
-          error: { code: -32000, message: 'the adapter gave up halfway through the turn' },
+          error: { code: -32603, message: 'the adapter gave up halfway through the turn' },
         });
       } else {
         send({ jsonrpc: '2.0', id, result: { stopReason: 'end_turn' } });

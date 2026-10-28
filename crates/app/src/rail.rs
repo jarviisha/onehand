@@ -436,14 +436,14 @@ fn page_row<F: Fn(&mut Shell, &mut Window, &mut Context<Shell>) + 'static>(
         .rounded(cx.theme().radius)
         .cursor_pointer();
     page_fill(row, on, cx)
-        .tooltip(move |window, cx| {
+        .tooltip(onehand_ui::tip(move |window, cx| {
             let tip = Tooltip::new(tip);
             match key {
                 Some(key) => tip.action(key, None),
                 None => tip,
             }
             .build(window, cx)
-        })
+        }))
         .on_click(
             cx.listener(move |shell: &mut Shell, _: &ClickEvent, window, cx| go(shell, window, cx)),
         )
@@ -545,7 +545,9 @@ fn add_project(cx: &mut Context<Shell>) -> AnyElement {
         .cursor_pointer()
         .hover(move |d| d.bg(hover))
         .text_color(cx.theme().muted_foreground)
-        .tooltip(|window, cx| Tooltip::new("Add a project to this workspace").build(window, cx))
+        .tooltip(onehand_ui::tip(|window, cx| {
+            Tooltip::new("Add a project to this workspace").build(window, cx)
+        }))
         .on_click(cx.listener(|shell: &mut Shell, _, _, cx| shell.add_root(cx)))
         .child(mark_slot(Icon::new(IconName::Plus).small()))
         .child("Add project…")
