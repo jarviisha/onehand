@@ -26,6 +26,7 @@ use std::path::PathBuf;
 mod body;
 mod bridge;
 mod events;
+mod fork;
 mod header;
 mod history;
 mod overlay;
@@ -294,6 +295,8 @@ pub struct ChatPane {
     /// Taken on use, so a conversation picked once cannot be resumed again by a
     /// later switch back to that session.
     pending_resume: Option<(u64, PathBuf)>,
+    /// A fork read off disk, waiting for the session the shell mints for it.
+    pending_fork: Option<fork::StagedFork>,
     /// Whether the window's rail is hidden, so this pane can offer the way
     /// back.
     ///
@@ -438,6 +441,7 @@ impl ChatPane {
                 page: None,
                 archives: None,
                 pending_resume: None,
+                pending_fork: None,
                 rail_hidden: false,
                 background_menu: std::cell::Cell::new(None),
                 terminal_live: false,

@@ -28,7 +28,7 @@ use super::session::ChatSession;
 use gpui::{App, AppContext, Context, Entity, IntoElement, Render, Subscription, Window, div};
 use gpui::{Bounds, Pixels};
 use gpui_component::input::{InputEvent, TextareaState};
-use onehand_core::attachment::StagedAttachment;
+use onehand_core::attachment::{AttachmentSnapshot, AttachmentSource, StagedAttachment};
 use onehand_core::completion::ActiveTrigger;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -95,6 +95,18 @@ impl Draft {
     /// Nothing typed and nothing staged, so there is nothing to set aside.
     pub fn is_empty(&self) -> bool {
         self.text.is_empty() && self.attachments.is_empty()
+    }
+    /// A sent prompt put back to send again: its text, and those of its
+    /// attachments still on disk. Blocking: it looks at each file.
+    pub fn staged(text: String, attachments: &[AttachmentSnapshot]) -> Self {
+        Self {
+            text,
+            attachments: attachments
+                .iter()
+                .filter(|a| a.path.exists())
+                .map(|a| StagedAttachment::inspect(a.path.clone(), AttachmentSource::Picker))
+                .collect(),
+        }
     }
 }
 

@@ -125,3 +125,26 @@ fn an_attachment_alone_is_not_an_empty_draft() {
     assert!(!draft.is_empty());
     assert!(Draft::default().is_empty());
 }
+
+#[test]
+fn fork_draft_skips_missing_attachments() {
+    let dir = std::env::temp_dir().join(format!("onehand-fork-draft-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let kept = dir.join("notes.md");
+    std::fs::write(&kept, "notes").unwrap();
+    let snapshot = |path: PathBuf| onehand_core::attachment::AttachmentSnapshot {
+        name: path.file_name().unwrap().to_string_lossy().into_owned(),
+        path,
+        bytes: None,
+        kind: onehand_core::attachment::AttachmentKind::File,
+        delivery: onehand_core::attachment::AttachmentDelivery::ResourceLink,
+    };
+    let draft = Draft::staged(
+        "two".into(),
+        &[snapshot(kept.clone()), snapshot(dir.join("gone.png"))],
+    );
+    assert_eq!(draft.text, "two");
+    assert_eq!(draft.attachments.len(), 1);
+    assert_eq!(draft.attachments[0].path, kept);
+    let _ = std::fs::remove_dir_all(&dir);
+}

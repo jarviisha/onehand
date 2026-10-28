@@ -24,6 +24,7 @@ mod dock_rules;
 mod dock_skin;
 mod docks;
 mod drafts;
+mod fork;
 mod issue_work;
 mod issues_page;
 mod presentation;

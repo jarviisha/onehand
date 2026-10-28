@@ -168,6 +168,19 @@ pub enum ChatPaneEvent {
     PickRefused(String),
     /// The adapter would not stop a background item: why.
     StopRefused(String),
+    /// A conversation is being forked: a session on the project at `root`,
+    /// running `spec`, the agent of the conversation forked from. The fork
+    /// itself is waiting in the pane for that session.
+    Fork {
+        root: PathBuf,
+        spec: onehand_core::config::AgentSpec,
+    },
+    /// A fork could not be made, and why. `uid` is the session started for it,
+    /// to end, when one was.
+    ForkFailed {
+        uid: Option<u64>,
+        why: String,
+    },
     /// Open issue `number` of the project at `root` — a row of the workspace
     /// page. Selecting a project and opening the Workbench are both the
     /// shell's.

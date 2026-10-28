@@ -95,14 +95,15 @@ impl Chat {
         self.touch();
     }
 
-    /// Why this conversation, started as a fork, never opened: what to tell
-    /// the person when the session goes.
+    /// Why this conversation, started as a fork, never opened, as the reason
+    /// alone: what to tell the person when the session goes.
     pub fn fork_failure(&self) -> Option<String> {
         let why = self.fork_failed.as_deref()?;
-        Some(match why.starts_with(FORK_FAILED) {
-            true => why.to_string(),
-            false => format!("{FORK_FAILED}: {why}"),
-        })
+        let reason = why
+            .strip_prefix(FORK_FAILED)
+            .and_then(|rest| rest.strip_prefix(": "))
+            .unwrap_or(why);
+        Some(reason.to_string())
     }
 }
 

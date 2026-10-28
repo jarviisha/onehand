@@ -139,6 +139,9 @@ pub enum ChatEvent {
     CycleEnded,
     /// The adapter would not stop a background item: why.
     StopRefused(String),
+    /// Fork the conversation from the prompt at this place. A new session is
+    /// the shell's to make.
+    Fork(onehand_core::chat::TranscriptItemId),
 }
 
 /// The widget behind one question field's free-text box, and the subscription
@@ -654,6 +657,15 @@ impl ChatSession {
         cx: &mut Context<Self>,
     ) {
         self.chat.resume_from(snapshot);
+        self.forget_folds();
+        self.sync_md(cx);
+        cx.notify();
+    }
+
+    /// Start as a fork of another conversation, seeded with its history up to
+    /// the point; parsed as an adopted conversation is.
+    pub fn adopt_fork(&mut self, seed: onehand_core::chat::ForkSeed, cx: &mut Context<Self>) {
+        self.chat.adopt_fork(seed);
         self.forget_folds();
         self.sync_md(cx);
         cx.notify();

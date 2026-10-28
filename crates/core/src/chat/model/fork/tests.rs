@@ -264,17 +264,11 @@ fn a_fork_that_never_opened_says_why() {
     fork.apply(AcpEvent::Disconnected(
         "Could not fork the conversation: no such session".into(),
     ));
-    assert_eq!(
-        fork.fork_failure().as_deref(),
-        Some("Could not fork the conversation: no such session")
-    );
+    assert_eq!(fork.fork_failure().as_deref(), Some("no such session"));
 
     let mut fork = adopted_fork("timed-out");
     fork.apply(AcpEvent::Disconnected("handshake timed out".into()));
-    assert_eq!(
-        fork.fork_failure().as_deref(),
-        Some("Could not fork the conversation: handshake timed out")
-    );
+    assert_eq!(fork.fork_failure().as_deref(), Some("handshake timed out"));
 }
 
 #[test]

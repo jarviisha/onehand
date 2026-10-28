@@ -1,3 +1,4 @@
+use super::fork::StagedFork;
 use super::project_page::EmptyProject;
 use super::{ChatPane, ChatPaneEvent, ProjectFacts, Restart, SessionSignal, switching_away};
 use crate::chat::conversation::{Conversation, SessionPhase};
@@ -30,6 +31,7 @@ impl ChatPane {
             .pending_resume
             .take_if(|(pending, _)| *pending == uid)
             .map(|(_, archive)| archive);
+        let fork = self.take_fork(uid);
         // An entry in the map *is* "already being set up", whatever phase it has
         // reached. Before there was one entry there were three maps and three
         // checks, and two quick selections of the same session could both pass
@@ -50,8 +52,13 @@ impl ChatPane {
             // Nothing went with it: the project page lists that project's
             // archives above the button that starts a session, and a session
             // already running reaches the same picker from its header menu.
-            let stored = asked_for.as_deref().and_then(onehand_core::chat::load);
-            self.connect(uid, stored, cx);
+            match fork {
+                Some(staged) => self.connect_as(uid, Start::Fork(staged), cx),
+                None => {
+                    let stored = asked_for.as_deref().and_then(onehand_core::chat::load);
+                    self.connect(uid, stored, cx);
+                }
+            }
         }
         if switching_away(self.active, uid) {
             self.leave_shown_session(window, cx);
@@ -155,6 +162,15 @@ impl ChatPane {
         stored: Option<onehand_core::chat::ConversationSnapshot>,
         cx: &mut Context<Self>,
     ) {
+        let start = match stored {
+            Some(stored) => Start::Resume(stored),
+            None => Start::Fresh,
+        };
+        self.connect_as(uid, start, cx);
+    }
+
+    /// [`Self::connect`], starting the conversation as `start` says.
+    fn connect_as(&mut self, uid: u64, start: Start, cx: &mut Context<Self>) {
         let Some(conv) = self.conversations.get_mut(&uid) else {
             return;
         };
@@ -168,20 +184,31 @@ impl ChatPane {
             uid,
             root.clone(),
             &spec,
-            match &stored {
-                Some(stored) => Opening::Resume(stored.session_id.clone()),
-                None => Opening::Fresh,
+            match &start {
+                Start::Fresh => Opening::Fresh,
+                Start::Resume(stored) => Opening::Resume(stored.session_id.clone()),
+                Start::Fork(staged) => Opening::Fork {
+                    from: staged.from.clone(),
+                    message: staged.message.clone(),
+                },
             },
             cx,
         );
         cx.emit(ChatPaneEvent::AgentStarted);
-        if let Some(stored) = stored {
-            // The conversation is adopted *before* the adapter's replay lands,
-            // so a stale resume still shows it instead of a blank pane. Through
-            // the session rather than into its model directly: adopting is what
-            // parses the markdown being adopted, and a transcript whose blocks
-            // are unparsed draws its own source.
-            session.update(cx, |session, cx| session.adopt(stored, cx));
+        // The conversation is adopted *before* the adapter's replay lands,
+        // so a stale resume still shows it instead of a blank pane. Through
+        // the session rather than into its model directly: adopting is what
+        // parses the markdown being adopted, and a transcript whose blocks
+        // are unparsed draws its own source.
+        match start {
+            Start::Fresh => {}
+            Start::Resume(stored) => session.update(cx, |session, cx| session.adopt(stored, cx)),
+            Start::Fork(staged) => {
+                session.update(cx, |session, cx| session.adopt_fork(staged.seed, cx));
+                if let Some(conv) = self.conversations.get_mut(&uid) {
+                    conv.draft = Some(staged.draft);
+                }
+            }
         }
 
         let agent = spec.name.clone();
@@ -235,9 +262,17 @@ impl ChatPane {
                     // Matched exhaustively so a new variant cannot be added and
                     // silently dropped here -- which is how this one was lost.
                     ChatEvent::OpenFile(path) => cx.emit(ChatPaneEvent::OpenFile(path.clone())),
-                    ChatEvent::Disconnected => {
-                        pane.link_lost_detached(uid, &agent, &root_label, cx);
-                    }
+                    // A fork that never opened goes, and says why, rather than
+                    // stand on the rail as a session holding someone else's
+                    // history with no agent behind it.
+                    ChatEvent::Disconnected => match session.read(cx).chat.fork_failure() {
+                        Some(why) => cx.emit(ChatPaneEvent::ForkFailed {
+                            uid: Some(uid),
+                            why,
+                        }),
+                        None => pane.link_lost_detached(uid, &agent, &root_label, cx),
+                    },
+                    ChatEvent::Fork(target) => pane.begin_fork(uid, *target, cx),
                     ChatEvent::Appended => {}
                     ChatEvent::PickRefused(why) => {
                         cx.emit(ChatPaneEvent::PickRefused(why.clone()));
@@ -704,4 +739,13 @@ impl ChatPane {
         })
         .detach();
     }
+}
+
+/// How a session's conversation starts.
+enum Start {
+    Fresh,
+    /// On a saved conversation, resumed.
+    Resume(onehand_core::chat::ConversationSnapshot),
+    /// As a fork of another.
+    Fork(StagedFork),
 }

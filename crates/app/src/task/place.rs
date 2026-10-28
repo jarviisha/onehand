@@ -199,7 +199,8 @@ pub(super) fn ended(
                 | E::OpenFile(_)
                 | E::PickRefused(_)
                 | E::CycleEnded
-                | E::StopRefused(_) => {}
+                | E::StopRefused(_)
+                | E::Fork(_) => {}
             }
         },
     );
