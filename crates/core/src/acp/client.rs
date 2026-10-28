@@ -43,6 +43,7 @@ use tokio::io::AsyncBufReadExt;
 use tokio::sync::mpsc;
 
 mod forms;
+mod handshake;
 mod transport;
 mod wire;
 
@@ -316,15 +317,6 @@ impl Conn {
         write_msg(&mut self.stdin, &request(id, method, params)).await
     }
 
-    /// Open the session: a fresh one.
-    async fn new_session(&mut self) -> Result<(), String> {
-        let params = json!({
-            "cwd": self.opts.cwd.display().to_string(),
-            "mcpServers": self.opts.mcp_servers,
-        });
-        self.send("session/new", params, Pending::NewSession).await
-    }
-
     /// Carry out one request from the front end.
     async fn request(&mut self, req: AcpRequest) -> Result<(), String> {
         match req {
@@ -502,124 +494,9 @@ impl Conn {
         // Response to one of our requests.
         if let Some(id) = msg.get("id").and_then(Value::as_u64) {
             match self.pending.remove(&id) {
-                Some(Pending::Init) => {
-                    // Surface a failed handshake as what it is — otherwise an
-                    // error response would read as "no loadSession capability"
-                    // and the eventual failure would blame `session/new` instead
-                    // of the real protocol-version/handshake problem.
-                    if let Some(err) = msg.get("error") {
-                        return Err(format!("initialize failed: {err}"));
-                    }
-                    self.auth_advice = auth_advice(msg.get("result"));
-                    let capabilities = msg.get("result").and_then(|r| r.get("agentCapabilities"));
-                    let load_supported = capabilities
-                        .and_then(|c| c.get("loadSession"))
-                        .and_then(Value::as_bool)
-                        .unwrap_or(false);
-                    self.images = capabilities
-                        .and_then(|c| c.get("promptCapabilities"))
-                        .and_then(|p| p.get("image"))
-                        .and_then(Value::as_bool)
-                        .unwrap_or(false);
-                    match (load_supported, self.opts.resume.clone()) {
-                        (true, Some(prev)) => {
-                            let params = json!({
-                                "sessionId": prev,
-                                "cwd": self.opts.cwd.display().to_string(),
-                                "mcpServers": self.opts.mcp_servers,
-                            });
-                            self.send("session/load", params, Pending::LoadSession)
-                                .await?;
-                        }
-                        _ => self.new_session().await?,
-                    }
-                }
-                Some(Pending::NewSession) => {
-                    if let Some(err) = msg.get("error") {
-                        // The whole object, code and all, for whoever reads the log.
-                        eprintln!("[acp] session/new failed: {err}");
-                        if login_required(err) {
-                            let advice = self.auth_advice.clone();
-                            let _ = self.output.send(AcpEvent::LoginRequired { advice }).await;
-                        }
-                        return Err(format!("Could not start a session: {}", in_words(err).0));
-                    }
-                    let result = msg.get("result");
-                    // Every prompt names the session; one the agent did not name
-                    // cannot be prompted at all, so it is a start that failed.
-                    let Some(sid) = result
-                        .and_then(|r| r.get("sessionId"))
-                        .and_then(Value::as_str)
-                        .filter(|sid| !sid.is_empty())
-                        .map(String::from)
-                    else {
-                        return Err("Could not start a session: the agent named none".into());
-                    };
-                    self.session_id = Some(sid.clone());
-                    let _ = self.output.send(AcpEvent::SessionId(sid)).await;
-                    if let Some(modes) = result.and_then(|r| r.get("modes")) {
-                        let _ = self.output.send(parse_modes(modes)).await;
-                    }
-                    let cfg =
-                        parse::parse_config_options(result.and_then(|r| r.get("configOptions")));
-                    if !cfg.is_empty() {
-                        let _ = self.output.send(AcpEvent::ConfigOptions(cfg)).await;
-                    }
-                    let _ = self
-                        .output
-                        .send(AcpEvent::Connected {
-                            tx: self.req_tx.clone(),
-                            resumed: false,
-                        })
-                        .await;
-                    self.ready = true;
-                }
-                Some(Pending::LoadSession) => {
-                    if let Some(err) = msg.get("error") {
-                        // A stale persisted session id (the adapter's store was
-                        // wiped or expired) must not brick the session — failing
-                        // here would refreeze the same id on every restart and
-                        // refail forever. Note it and fall back to a fresh
-                        // session; the loaded history stays as read-only context.
-                        eprintln!("[acp] session/load failed: {err}");
-                        let (message, detail) = in_words(err);
-                        let _ = self
-                            .output
-                            .send(AcpEvent::Error {
-                                text: format!(
-                                    "Loading the session failed: {message}; starting a fresh one"
-                                ),
-                                detail,
-                            })
-                            .await;
-                        self.new_session().await?;
-                        return Ok(());
-                    }
-                    let result = msg.get("result");
-                    self.session_id = self.opts.resume.clone();
-                    if let Some(s) = self.session_id.clone() {
-                        let _ = self.output.send(AcpEvent::SessionId(s)).await;
-                    }
-                    // `session/load` returns the same session info as `session/new`
-                    // (available modes + config options). Emit them here too, else a
-                    // *resumed* session shows no mode (permission) / model selectors.
-                    if let Some(modes) = result.and_then(|r| r.get("modes")) {
-                        let _ = self.output.send(parse_modes(modes)).await;
-                    }
-                    let cfg =
-                        parse::parse_config_options(result.and_then(|r| r.get("configOptions")));
-                    if !cfg.is_empty() {
-                        let _ = self.output.send(AcpEvent::ConfigOptions(cfg)).await;
-                    }
-                    let _ = self
-                        .output
-                        .send(AcpEvent::Connected {
-                            tx: self.req_tx.clone(),
-                            resumed: true,
-                        })
-                        .await;
-                    self.ready = true;
-                }
+                Some(Pending::Init) => self.answer_init(&msg).await?,
+                Some(Pending::NewSession) => self.answer_new(&msg).await?,
+                Some(Pending::LoadSession) => self.answer_load(&msg).await?,
                 // The agent's answer to a pick is its confirmation or its
                 // refusal: what is shown follows it.
                 Some(Pending::Pick { group, value }) => {
