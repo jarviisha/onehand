@@ -39,24 +39,15 @@ mod step_strip;
 mod titles;
 pub use events::{ChatPaneEvent, ProjectAction, Restart, SessionSignal};
 use header::Archives;
+pub use pages::PageKind;
 use project_page::EmptyProject;
 
-/// A page drawn in place of a conversation, about more than one project.
-enum Page {
-    /// The workspace page, an entity of the window's, so its filter
-    /// outlives this.
-    Workspace(gpui::AnyView),
-    /// The Tasks page, likewise.
-    Tasks(gpui::AnyView),
-    /// The Issues crate's page, whose state is its own entity's and so
-    /// outlives this.
-    Issues(gpui::AnyView),
-    /// The Workflows page, an entity of the window's for the same reason.
-    Workflows(gpui::AnyView),
-    /// The Schedules page, likewise.
-    Schedules(gpui::AnyView),
-    /// Settings, whose drafts are the shell's and so outlive this.
-    Settings(gpui::AnyView),
+/// A page drawn in place of a conversation, about more than one project:
+/// every one a view of its own, held by the window, so what it holds
+/// outlives this.
+struct Page {
+    kind: PageKind,
+    view: gpui::AnyView,
 }
 
 /// The rest the transcript comes to above the composer.
