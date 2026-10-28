@@ -150,7 +150,16 @@ pub enum BackgroundReport {
     },
     Ended {
         id: String,
+        end: BackgroundEnd,
     },
+}
+
+/// How a piece of background work ended, by the adapter's own word.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BackgroundEnd {
+    Completed,
+    Failed,
+    Stopped,
 }
 
 // ── Plan (ACP `plan` update — Claude Code's TodoWrite) ──────────────────────
