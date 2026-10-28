@@ -531,6 +531,15 @@ impl Chat {
                 && end == self.items.len()
                 && self.busy,
             elapsed_secs,
+            failed: items[start..end].iter().any(|it| {
+                matches!(
+                    it,
+                    ChatItem::Notice {
+                        level: NoticeLevel::Failed,
+                        ..
+                    }
+                )
+            }),
         })
     }
 

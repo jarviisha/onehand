@@ -627,11 +627,8 @@ pub(super) fn tool_update(items: &mut Vec<ChatItem>, tu: ToolCallUpdate) {
                     // stamped once: a later update to the same card -- of
                     // which there are several, since content arrives after
                     // the status does -- must not restart the clock.
-                    if !matches!(status, ToolStatus::Pending | ToolStatus::InProgress)
-                        && t.elapsed_secs.is_none()
-                    {
-                        t.elapsed_secs =
-                            Some(t.started.map(|s| s.elapsed().as_secs()).unwrap_or(0));
+                    if !matches!(status, ToolStatus::Pending | ToolStatus::InProgress) {
+                        t.settle_clock();
                     }
                     // **A failure opens itself, and can still be shut.**
                     // The one thing a reader needs from a settled step is
@@ -716,9 +713,7 @@ pub(super) fn settle_steps(items: &mut [ChatItem]) {
             // Timed here for the same reason a settling update is: this is
             // the moment the step stopped, and a step that never settles
             // has no duration at all.
-            if tool.elapsed_secs.is_none() {
-                tool.elapsed_secs = Some(tool.started.map(|s| s.elapsed().as_secs()).unwrap_or(0));
-            }
+            tool.settle_clock();
             // The same seed a failure arriving as an update leaves, so a
             // reader can see what the step had said before it stopped.
             tool.fold.get_or_insert(true);

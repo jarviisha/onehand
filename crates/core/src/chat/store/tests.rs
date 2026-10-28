@@ -875,3 +875,34 @@ fn an_old_agent_line_reads_without_an_id() {
     };
     assert_eq!(md.message, None);
 }
+
+/// A step's end survives the archive, so a reopened conversation times a
+/// stretch of steps the way it was timed live.
+#[test]
+fn a_step_keeps_when_it_settled() {
+    let store = scratch("settled");
+    let mut chat = chat_in(&store, "s1");
+    chat.push_user("go".into(), Vec::new());
+    let mut tool = ToolItem::new(crate::acp::ToolCall {
+        id: "t1".into(),
+        title: "cargo test".into(),
+        description: None,
+        kind: crate::acp::ToolKind::Execute,
+        status: crate::acp::ToolStatus::Completed,
+        content: Vec::new(),
+    });
+    tool.elapsed_secs = Some(50);
+    tool.settled_at = Some(1_050);
+    chat.items.push(ChatItem::Tool(tool));
+    save(&mut chat);
+
+    let back = load(&conv_dir(&store, "s1")).unwrap();
+    let Some(ChatItem::Tool(tool)) = back.items.last() else {
+        panic!("the step did not come back")
+    };
+    assert_eq!(
+        (tool.elapsed_secs, tool.settled_at),
+        (Some(50), Some(1_050))
+    );
+    let _ = std::fs::remove_dir_all(&store);
+}

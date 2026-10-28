@@ -512,6 +512,20 @@ pub struct TurnAnswer {
     /// Wall-clock duration from prompt submission to `TurnEnded`. Legacy and
     /// replayed turns without timestamps leave this absent.
     pub elapsed_secs: Option<u64>,
+    /// Whether the turn ended on a failure, its `Failed` notice inside it.
+    pub failed: bool,
+}
+
+impl TurnAnswer {
+    /// The words beside the turn's Copy: how long it took, said as a failure
+    /// where it ended on one, so a failed turn never reads as done.
+    pub fn closing_line(&self) -> Option<String> {
+        let took = crate::duration(self.elapsed_secs?);
+        Some(match self.failed {
+            true => format!("Failed after {took}"),
+            false => format!("Processed in {took}"),
+        })
+    }
 }
 
 /// Add/remove counts between two line sequences. Small and medium payloads use
@@ -613,6 +627,14 @@ pub struct ToolItem {
     /// per frame and getting a different answer each time, which is a number
     /// that never settles even after the step has.
     pub elapsed_secs: Option<u64>,
+    /// When the step settled, in epoch seconds, stamped with `elapsed_secs`.
+    ///
+    /// **What lets steps that overlapped be timed together.** Two commands
+    /// running side by side through a parked card each took the whole wait;
+    /// their durations added up to more than the turn they ran in. With each
+    /// one's end, a stretch of steps is timed from its first start to its last
+    /// end instead. `None` on a step saved before this was kept.
+    pub(crate) settled_at: Option<u64>,
     /// What the command exited with, where it ran through a real terminal.
     ///
     /// `None` for every step that did not: the protocol carries no exit status
@@ -624,6 +646,15 @@ pub struct ToolItem {
 }
 
 impl ToolItem {
+    /// Stop the step's clock, once: a later update to a settled step must not
+    /// restart it.
+    pub(crate) fn settle_clock(&mut self) {
+        if self.elapsed_secs.is_none() {
+            self.elapsed_secs = Some(self.started.map(|s| s.elapsed().as_secs()).unwrap_or(0));
+            self.settled_at = Some(crate::chat::store::now_secs());
+        }
+    }
+
     pub fn new(call: ToolCall) -> Self {
         let diff_rows = Self::hunks(&call);
         let diff_summary = Self::summarize_diffs(&call, &diff_rows);
@@ -634,6 +665,7 @@ impl ToolItem {
             // would measure the moment it reached this process.
             started: running.then(Instant::now),
             elapsed_secs: None,
+            settled_at: None,
             exit_code: None,
             call,
             diff_summary,

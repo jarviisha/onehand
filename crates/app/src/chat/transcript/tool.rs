@@ -125,7 +125,7 @@ pub(super) fn step_row(
     let object = match t.call.kind {
         // A command is not a path and must not be split at its last slash.
         ToolKind::Execute => Some(Object::plain(activity::first_line_trunc(
-            &onehand_core::chat::redact(&presented.subject),
+            &presented.subject,
             160,
         ))),
         _ if presented.subject.trim().is_empty() => None,

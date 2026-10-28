@@ -35,7 +35,8 @@ pub(super) fn agent(
     // whatever had landed by the click, silently.
     let footer = turn
         .as_ref()
-        .and_then(|t| (t.is_last && !t.is_active).then_some(t.elapsed_secs));
+        .filter(|t| t.is_last && !t.is_active)
+        .map(TurnAnswer::closing_line);
 
     div()
         .v_flex()
@@ -46,7 +47,7 @@ pub(super) fn agent(
         // appears under it is one nobody finds who was not already reaching
         // for it, and a footer that appears pushes the conversation down by
         // its own height as the reader crosses the answer.
-        .children(footer.map(|elapsed| {
+        .children(footer.map(|closing| {
             div()
                 .h_flex()
                 .items_center()
@@ -54,9 +55,7 @@ pub(super) fn agent(
                 .text_xs()
                 .text_color(cx.theme().muted_foreground)
                 .child(copy_turn_button(session, target, cx))
-                .children(
-                    elapsed.map(|secs| format!("Processed in {}", onehand_core::duration(secs))),
-                )
+                .children(closing)
         }))
 }
 
