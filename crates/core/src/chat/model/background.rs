@@ -7,7 +7,7 @@
 use super::items::ChatItem;
 use super::{ApplyOutcome, Chat, Link, Replay};
 use crate::acp::{AcpRequest, BackgroundReport, LimitStatus, RateLimit, ToolStatus, Usage};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 /// One piece of work the agent started that runs on after its turn.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -17,6 +17,29 @@ pub struct BackgroundItem {
     pub kind: String,
     pub started: Instant,
 }
+
+/// What the agent does by itself between turns. No adapter says when such a
+/// cycle starts, only (Claude) when it ends, so it is read off what arrives.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(super) enum OwnCycle {
+    #[default]
+    None,
+    /// The last background item ended, and the agent will most likely answer
+    /// it: running, so the wait for that answer neither reads idle nor lets a
+    /// run judge its step early.
+    Expected,
+    /// The agent is writing with no turn open.
+    Writing,
+}
+
+/// A silence this long ends a cycle of an adapter that never says when its
+/// own work settles.
+const QUIET: Duration = Duration::from_secs(3);
+
+/// A silence this long ends a cycle the adapter should have ended itself, or
+/// one expected that never started: its word may never come, and a model can
+/// take a while to start answering.
+const GRACE: Duration = Duration::from_secs(30);
 
 /// How near a meter is to its cap, worst last.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -164,10 +187,68 @@ impl Chat {
         })
     }
 
-    /// Whether the agent is running: a turn is open, or work or a subagent it
-    /// started runs on after its turn.
+    /// Whether the agent is running: a turn is open, work or a subagent it
+    /// started runs on after its turn, or it is at work by itself.
     pub fn running(&self) -> bool {
-        self.busy || !self.background.is_empty() || self.subagents_working() > 0
+        self.busy || self.works_aside() || self.own_cycle != OwnCycle::None
+    }
+
+    /// Whether work or a subagent the agent started runs beside its turns.
+    pub(super) fn works_aside(&self) -> bool {
+        !self.background.is_empty() || self.subagents_working() > 0
+    }
+
+    /// How long a silence ends the cycle the agent is running by itself, if
+    /// it is thought to run one; the front end calls
+    /// [`Self::quiet_spell`] once it has passed.
+    pub fn own_cycle_wait(&self) -> Option<Duration> {
+        match self.own_cycle {
+            OwnCycle::None => None,
+            OwnCycle::Writing if !self.cycles_marked => Some(QUIET),
+            OwnCycle::Writing | OwnCycle::Expected => Some(GRACE),
+        }
+    }
+
+    /// The agent has been silent for [`Self::own_cycle_wait`]: its own cycle
+    /// is taken to be over, unless a step or a thought it left in flight says
+    /// it is not. Whether that changed anything.
+    pub fn quiet_spell(&mut self) -> bool {
+        let over = match self.own_cycle {
+            OwnCycle::None => false,
+            OwnCycle::Expected => true,
+            OwnCycle::Writing => !self.in_flight(),
+        };
+        if over {
+            self.own_cycle = OwnCycle::None;
+        }
+        over
+    }
+
+    /// Follow the agent's own cycle through the event just applied: it
+    /// `wrote`, work beside the turns ran before it (`aside_was`), and it
+    /// `closed` a turn or a cycle.
+    pub(super) fn follow_own_cycle(&mut self, wrote: bool, aside_was: bool, closed: bool) {
+        self.own_cycle = if closed || self.busy || self.link != Link::Connected {
+            // A turn's own running covers what it writes, and nothing comes
+            // from an adapter that is gone, or still replaying a resume.
+            OwnCycle::None
+        } else if wrote {
+            OwnCycle::Writing
+        } else if aside_was && !self.works_aside() && self.own_cycle == OwnCycle::None {
+            // The last of it ended: the agent answers that by itself.
+            OwnCycle::Expected
+        } else {
+            self.own_cycle
+        };
+    }
+
+    /// A step or a thought still moving.
+    fn in_flight(&self) -> bool {
+        self.items.iter().any(|item| {
+            matches!(item, ChatItem::Tool(tool)
+                if matches!(tool.call.status, ToolStatus::Pending | ToolStatus::InProgress))
+                || matches!(item, ChatItem::Thought(thought) if thought.is_running())
+        })
     }
 
     /// Whether the transcript holds something not yet on disk that is safe to
@@ -184,11 +265,7 @@ impl Chat {
             && !self.rewrite
             && !matches!(self.replay, Replay::Partial(_))
             && self.persisted < self.saveable_len()
-            && !self.items.iter().any(|item| {
-                matches!(item, ChatItem::Tool(tool)
-                    if matches!(tool.call.status, ToolStatus::Pending | ToolStatus::InProgress))
-                    || matches!(item, ChatItem::Thought(thought) if thought.is_running())
-            })
+            && !self.in_flight()
     }
 
     /// Whether the event just applied, with `outcome`, is the agent writing

@@ -307,14 +307,17 @@ pub(crate) fn note(session: &Entity<ChatSession>, text: String, cx: &mut App) {
     });
 }
 
-/// Wait out [`QUIET_SAVE`], then save what the agent wrote between turns if
-/// any of it is still unsaved and settled.
-fn quiet_save(cx: &mut Context<ChatSession>) -> Task<()> {
+/// Wait out `quiet`, then save what the agent wrote between turns if any of
+/// it is still unsaved and settled, and end the cycle it ran by itself.
+fn quiet_save(quiet: Duration, cx: &mut Context<ChatSession>) -> Task<()> {
     cx.spawn(async move |session, cx| {
-        cx.background_executor().timer(QUIET_SAVE).await;
+        cx.background_executor().timer(quiet).await;
         let _ = session.update(cx, |session: &mut ChatSession, cx| {
             if session.chat.unsaved_between_turns() {
                 cx.emit(ChatEvent::CycleEnded);
+            }
+            if session.chat.quiet_spell() {
+                cx.notify();
             }
         });
     })
@@ -441,10 +444,14 @@ impl ChatSession {
                             if changed {
                                 session.sync_md(cx);
                             }
+                            // Every batch restarts the wait: a silence is
+                            // counted from the agent's last word.
                             if session.chat.busy {
                                 session._quiet_save = None;
+                            } else if let Some(wait) = session.chat.own_cycle_wait() {
+                                session._quiet_save = Some(quiet_save(wait, cx));
                             } else if quiet {
-                                session._quiet_save = Some(quiet_save(cx));
+                                session._quiet_save = Some(quiet_save(QUIET_SAVE, cx));
                             }
                             cx.notify();
                         });

@@ -213,6 +213,9 @@ pub struct Chat {
     /// The adapter has said which cycle a report closes, so it says when its
     /// own work between turns settles and no quiet spell has to guess.
     cycles_marked: bool,
+    /// What the agent is doing by itself between turns, as far as its reports
+    /// let onehand tell.
+    own_cycle: background::OwnCycle,
     /// How many times the transcript has changed, counting from zero.
     ///
     /// A front end derives expensive things from a transcript -- a run layout,

@@ -178,6 +178,22 @@ impl Chat {
         let mut pick_refused = None;
         let mut stop_refused = None;
         let cycle_ended = matches!(&event, AcpEvent::Usage(usage) if usage.cycle_end);
+        // What the agent itself writes, as against reports about it or lines
+        // onehand adds: between turns, only this says the agent is at work.
+        let wrote = matches!(
+            &event,
+            AcpEvent::AgentChunk { .. }
+                | AcpEvent::ThoughtChunk(_)
+                | AcpEvent::ToolCall(_)
+                | AcpEvent::ToolUpdate(_)
+                | AcpEvent::Plan(_)
+        );
+        // Asked only of the events that can end such work: it scans the
+        // transcript for working subagents.
+        let aside_was = matches!(
+            &event,
+            AcpEvent::Background(_) | AcpEvent::SubagentEnded { .. } | AcpEvent::InChild { .. }
+        ) && self.works_aside();
         let asked_user = match event {
             AcpEvent::Permission(_) => Some(UserAsk::Permission),
             AcpEvent::Elicitation(_) => Some(UserAsk::Question),
@@ -462,6 +478,8 @@ impl Chat {
                     .push(ChatItem::failure(text, NoticeLevel::Error, None));
             }
         }
+
+        self.follow_own_cycle(wrote, aside_was, turn_ended || cycle_ended);
 
         ApplyOutcome {
             transcript_changed: self.revision != before,

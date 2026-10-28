@@ -539,6 +539,47 @@ fn in_turn() -> Rig {
 }
 
 #[test]
+fn a_step_is_judged_once_the_work_its_turn_left_is_done() {
+    use crate::acp::{BackgroundReport, Usage};
+    let read = |fx: &[Effect]| has(fx, |e| matches!(e, Effect::ReadFacts { .. }));
+    let mut rig = in_turn();
+    rig.chat
+        .apply(AcpEvent::Background(BackgroundReport::Spawned {
+            id: "t1".into(),
+            name: "cargo test".into(),
+            kind: "shell".into(),
+        }));
+    let fx = rig.turn_ends("Tests run in the background.");
+    assert!(!read(&fx), "the build still runs: {fx:?}");
+    assert!(rig.drive.heeds_notified());
+    assert!(!read(&rig.on(Input::Notified)));
+
+    rig.chat
+        .apply(AcpEvent::Background(BackgroundReport::Ended {
+            id: "t1".into(),
+        }));
+    assert!(
+        !read(&rig.on(Input::Notified)),
+        "its answer is still to come"
+    );
+    rig.chat.apply(AcpEvent::AgentChunk {
+        text: "The tests pass.".into(),
+        message: None,
+    });
+    assert!(!read(&rig.on(Input::Notified)));
+    rig.chat.apply(AcpEvent::Usage(Usage {
+        used: 1,
+        size: 10,
+        limit: None,
+        cycle_end: true,
+        marks_cycles: true,
+    }));
+    let fx = rig.on(Input::Notified);
+    assert!(read(&fx), "{fx:?}");
+    assert!(!rig.drive.heeds_notified());
+}
+
+#[test]
 fn a_cancelled_turn_is_a_persons_stop() {
     let mut rig = in_turn();
     rig.chat.cancel_turn();

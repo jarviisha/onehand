@@ -32,7 +32,10 @@ same menu. A session row, indented under its project: its state mark, title and 
 the keyboard's row, always on the one shown), and under them `state · agent · age` (*waiting Nm*
 while it needs input, a card or its run's approval, the state's word in its ink while it waits on the
 person; *Running · N in background · M subagents · agent · age* while background work outlives the
-turn or a subagent works, which keeps the session running), over which the
+turn or a subagent works, which keeps the session running, as does the agent writing with no turn
+open: it answers what it waited for by itself, and is running until it says that cycle ended or
+falls silent, 3s for an agent that never says, 30s for one that does or after the last of its
+background work ended, since its answer may take a while to start), over which the
 pointer and the keyboard's row lay *Stop* (only while a turn is in flight, not for background work alone), *Send the last prompt again* (failed) and
 *Close*; the keyboard's row lays them on any session but the one shown, whose conversation already
 holds *Stop* and the way back, so a row the keys only pass through stays still. The other filters

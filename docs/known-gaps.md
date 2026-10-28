@@ -226,6 +226,10 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   limit meter, because their adapters do not report them. A subagent shows as a card in the
   transcript and in the rail's count, not in the background list, and one cannot be stopped or
   prompted on its own. Copilot shows no subagent cards.
+- **An agent waiting on a timer reads idle.** An agent that ends its turn to wake later, or to
+  wait on an event, reports nothing while it waits, so the rail says idle until it writes again.
+  An item of background work that never ends, a server left running, holds a run's step until the
+  run's timeout, since the step is judged only once the agent's work is done.
 - **A background subagent that never ends holds later turns out of the saved transcript.** A card
   is written only once it has ended, and the file is only ever added to, so every turn after a
   card still working waits for it. They are written when the session closes, the card as

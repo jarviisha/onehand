@@ -551,3 +551,111 @@ fn a_working_card_alone_is_not_unsaved() {
     // Never written: the store is a path nobody owns.
     chat.store = None;
 }
+
+fn chunk(text: &str) -> AcpEvent {
+    AcpEvent::AgentChunk {
+        text: text.into(),
+        message: None,
+    }
+}
+
+fn cycle_closed(cycle_end: bool) -> AcpEvent {
+    AcpEvent::Usage(Usage {
+        used: 1,
+        size: 10,
+        limit: None,
+        cycle_end,
+        marks_cycles: true,
+    })
+}
+
+#[test]
+fn an_agent_writing_by_itself_runs_until_a_quiet_spell() {
+    let mut chat = settled_chat();
+    assert!(!chat.running());
+    assert_eq!(chat.own_cycle_wait(), None);
+    chat.apply(chunk("a task finished"));
+    assert!(chat.running(), "between turns, writing is running");
+    assert_eq!(chat.own_cycle_wait(), Some(QUIET));
+    assert!(chat.quiet_spell());
+    assert!(!chat.running());
+    assert!(!chat.quiet_spell(), "nothing left to end");
+    chat.store = None;
+}
+
+#[test]
+fn a_cycle_the_adapter_marks_runs_until_its_end() {
+    let mut chat = settled_chat();
+    chat.apply(cycle_closed(false));
+    chat.apply(chunk("a task finished"));
+    assert!(chat.running());
+    assert_eq!(chat.own_cycle_wait(), Some(GRACE), "its word is awaited");
+    chat.apply(cycle_closed(true));
+    assert!(!chat.running());
+    chat.store = None;
+}
+
+#[test]
+fn the_last_background_end_expects_an_answer() {
+    let mut chat = settled_chat();
+    chat.apply(spawned("t1"));
+    chat.apply(spawned("t2"));
+    chat.apply(ended("t1"));
+    assert_eq!(chat.own_cycle_wait(), None, "t2 still runs");
+    chat.apply(ended("t2"));
+    assert!(chat.running(), "the answer to it is still to come");
+    assert_eq!(chat.own_cycle_wait(), Some(GRACE));
+    chat.apply(chunk("the build passed"));
+    assert_eq!(chat.own_cycle_wait(), Some(QUIET), "and it came");
+    assert!(chat.quiet_spell());
+    assert!(!chat.running());
+
+    // An answer that never comes is waited for once.
+    chat.apply(spawned("t3"));
+    chat.apply(ended("t3"));
+    assert!(chat.quiet_spell());
+    assert!(!chat.running());
+    chat.store = None;
+}
+
+#[test]
+fn a_step_in_flight_outlasts_a_quiet_spell() {
+    let mut chat = settled_chat();
+    chat.apply(AcpEvent::ToolCall(ToolCall {
+        id: "c9".into(),
+        title: "Bash".into(),
+        kind: ToolKind::Execute,
+        status: ToolStatus::InProgress,
+        content: Vec::new(),
+        description: None,
+    }));
+    assert!(chat.running());
+    assert!(!chat.quiet_spell(), "the step still runs");
+    assert!(chat.running());
+    chat.store = None;
+}
+
+#[test]
+fn no_own_cycle_inside_a_turn_in_a_replay_or_after_the_adapter() {
+    let mut chat = settled_chat();
+    chat.busy = true;
+    chat.apply(spawned("t1"));
+    chat.apply(ended("t1"));
+    chat.apply(AcpEvent::TurnEnded {
+        stop_reason: "end_turn".into(),
+    });
+    assert!(!chat.running(), "the turn answered it");
+
+    chat.link = Link::Connecting;
+    chat.apply(chunk("replayed"));
+    assert!(
+        !chat.running(),
+        "a resume replaying is not the agent at work"
+    );
+
+    chat.link = Link::Connected;
+    chat.apply(chunk("on its own"));
+    chat.apply(AcpEvent::Disconnected(String::new()));
+    assert!(!chat.running());
+    chat.store = None;
+}

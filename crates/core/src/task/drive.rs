@@ -97,6 +97,9 @@ pub struct Drive {
     spent_before: u64,
     /// The agent parked a card nobody has answered yet.
     card: bool,
+    /// The turn sent ended with the agent still at work beside it: the step
+    /// is judged once that work, and the agent's answer to it, are done.
+    after_work: bool,
     /// The step's command, or a forge call, is running.
     command: bool,
     /// How the run ends once its called-off command has exited.
@@ -144,6 +147,7 @@ impl Drive {
             noted: None,
             budget: Budget::start(limit, now),
             card: false,
+            after_work: false,
             command: false,
             stopping: None,
             over: false,
@@ -183,6 +187,12 @@ impl Drive {
         self.card
     }
 
+    /// Whether [`Input::Notified`] could move the run: a card may have been
+    /// answered, or the work a turn left running may have ended.
+    pub fn heeds_notified(&self) -> bool {
+        self.card || self.after_work
+    }
+
     /// Stop was asked for, and waits on a command or forge call to land.
     pub fn stopping(&self) -> bool {
         self.stopping.is_some()
@@ -218,10 +228,20 @@ impl Drive {
             | Input::Disconnected
             | Input::PickRefused(_) => self.on_event(input, chat, now, &mut fx),
             Input::Notified => {
-                if self.card && chat.is_some_and(|chat| !chat.awaiting_permission()) {
+                if self.card
+                    && chat
+                        .as_deref()
+                        .is_some_and(|chat| !chat.awaiting_permission())
+                {
                     self.card = false;
                     self.budget.resume(now);
                     fx.push(Effect::Answered);
+                }
+                if let Some(chat) = chat.filter(|chat| self.after_work && !chat.running()) {
+                    self.after_work = false;
+                    if self.run.awaiting_turn() && self.held.is_none() {
+                        self.after_turn(chat, &mut fx);
+                    }
                 }
             }
             Input::SessionGone => self.end(Stop::Closed, chat, now, &mut fx),
@@ -352,6 +372,9 @@ impl Drive {
                     run.failed(why, Failure::Other)
                 });
             }
+            // What the agent left running is part of the step: a build in the
+            // background, a subagent, and what it says once they are done.
+            Input::TurnEnded if judge_turn && chat.running() => self.after_work = true,
             Input::TurnEnded if judge_turn => self.after_turn(chat, fx),
             Input::TurnEnded => {}
             // A person answers the card; the clock waits for them.
