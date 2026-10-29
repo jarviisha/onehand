@@ -131,7 +131,8 @@ it back and says so.
 ## A worker
 
 What a session's agent gets from `open_session` beyond what an outside program does. An outside
-program naming a folder that is no project of the window, or `dirs`, is refused.
+program naming a folder that is no project of the window, or `dirs`, `request`, `turn` or `model`,
+is refused, naming it.
 
 - **The folder**: a project of the window, or the top level of a git worktree of a repository one
   of the window's projects belongs to. Every path is canonicalized first (symlinks resolved),
