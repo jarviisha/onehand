@@ -539,6 +539,72 @@ fn in_turn() -> Rig {
 }
 
 #[test]
+fn a_step_is_judged_once_the_work_its_turn_left_is_done() {
+    use crate::acp::{BackgroundReport, Usage};
+    let read = |fx: &[Effect]| has(fx, |e| matches!(e, Effect::ReadFacts { .. }));
+    let mut rig = in_turn();
+    rig.chat
+        .apply(AcpEvent::Background(BackgroundReport::Spawned {
+            id: "t1".into(),
+            name: "cargo test".into(),
+            kind: "shell".into(),
+        }));
+    let fx = rig.turn_ends("Tests run in the background.");
+    assert!(!read(&fx), "the build still runs: {fx:?}");
+    assert!(!rig.drive.heeds_notified(&rig.chat), "nothing to learn yet");
+    assert!(!read(&rig.on(Input::Notified)));
+
+    rig.chat
+        .apply(AcpEvent::Background(BackgroundReport::Ended {
+            id: "t1".into(),
+            end: crate::acp::BackgroundEnd::Completed,
+        }));
+    assert!(
+        !read(&rig.on(Input::Notified)),
+        "its answer is still to come"
+    );
+    rig.chat.apply(AcpEvent::AgentChunk {
+        text: "The tests pass.".into(),
+        message: None,
+    });
+    assert!(!read(&rig.on(Input::Notified)));
+    rig.chat.apply(AcpEvent::Usage(Usage {
+        used: 1,
+        size: 10,
+        limit: None,
+        cycle_end: true,
+        marks_cycles: true,
+    }));
+    assert!(rig.drive.heeds_notified(&rig.chat));
+    let fx = rig.on(Input::Notified);
+    assert!(read(&fx), "{fx:?}");
+    assert!(!rig.drive.heeds_notified(&rig.chat));
+}
+
+#[test]
+fn work_an_earlier_step_left_running_does_not_hold_this_one() {
+    use crate::acp::BackgroundReport;
+    let (mut rig, _) = Rig::start(checkout(), None, connected());
+    rig.chat
+        .apply(AcpEvent::Background(BackgroundReport::Spawned {
+            id: "server".into(),
+            name: "npm run dev".into(),
+            kind: "shell".into(),
+        }));
+    // The step's prompt goes after the server started.
+    std::thread::sleep(std::time::Duration::from_millis(2));
+    rig.now = Instant::now();
+    rig.on(Input::Pinned(Ok("c0".into())));
+    let fx = rig.on(Input::Measured(Ok(mark("a", "d0"))));
+    assert!(submitted(&fx));
+    let fx = rig.turn_ends("The plan.");
+    assert!(
+        has(&fx, |e| matches!(e, Effect::ReadFacts { .. })),
+        "{fx:?}"
+    );
+}
+
+#[test]
 fn a_cancelled_turn_is_a_persons_stop() {
     let mut rig = in_turn();
     rig.chat.cancel_turn();

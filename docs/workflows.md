@@ -278,7 +278,7 @@ session and maps its events onto the engine:
 
 | Event | Report |
 |---|---|
-| A turn the run sent ends | facts read in the background, then `turn_ended` |
+| A turn the run sent ends | facts read in the background, then `turn_ended`; with the agent still at work on the step (`Chat::running_since` its prompt: background work started since, a subagent), once it no longer is, its own answer to that work included |
 | A turn ends cancelled (`Chat::cancelled`) | `stopped(ByPerson)` |
 | A turn the run sent ends failed (`Chat::failed`: an error, a refusal, a limit the agent reached) | `failed`, in the failure's words |
 | A prompt the run did not send (`prompts_sent` above what it sent, or one queued) | `stopped(TakenOver)` |

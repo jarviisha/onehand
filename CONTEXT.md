@@ -19,7 +19,8 @@ _Avoid_: chat, thread, tab
 
 **Background work**:
 What an agent started that runs on after its turn ends: a background command. The session stays
-running while it lives, and it can be stopped one item at a time without stopping the turn.
+running while it lives, and while the agent answers it once it ends, and it can be stopped one
+item at a time without stopping the turn.
 _Avoid_: task, job, process
 
 **Card**:

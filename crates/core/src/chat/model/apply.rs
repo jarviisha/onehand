@@ -178,6 +178,23 @@ impl Chat {
         let mut pick_refused = None;
         let mut stop_refused = None;
         let cycle_ended = matches!(&event, AcpEvent::Usage(usage) if usage.cycle_end);
+        // What the agent itself writes, as against reports about it or lines
+        // onehand adds: between turns, only this says the agent is at work.
+        let wrote = matches!(
+            &event,
+            AcpEvent::AgentChunk { .. }
+                | AcpEvent::ThoughtChunk(_)
+                | AcpEvent::ToolCall(_)
+                | AcpEvent::ToolUpdate(_)
+                | AcpEvent::Plan(_)
+        );
+        // Asked only of the events that can end such work: it scans the
+        // transcript for working subagents.
+        let aside_was = matches!(
+            &event,
+            AcpEvent::Background(_) | AcpEvent::SubagentEnded { .. } | AcpEvent::InChild { .. }
+        ) && self.works_aside();
+        let mut asked_end = false;
         let asked_user = match event {
             AcpEvent::Permission(_) => Some(UserAsk::Permission),
             AcpEvent::Elicitation(_) => Some(UserAsk::Question),
@@ -291,7 +308,8 @@ impl Chat {
                 // An item's end is a line of transcript, so it seals what came
                 // before it, as any line does. One a resume re-delivers is
                 // already in the archive.
-                let line = self.apply_background(report);
+                let (line, asked) = self.apply_background(report);
+                asked_end = asked;
                 if let Some(line) = line.filter(|_| matches!(self.replay, Replay::Settled)) {
                     self.finalize_thought();
                     self.user_chunk_open = false;
@@ -474,6 +492,8 @@ impl Chat {
                     .push(ChatItem::failure(text, NoticeLevel::Error, None));
             }
         }
+
+        self.follow_own_cycle(wrote, aside_was && !asked_end, turn_ended || cycle_ended);
 
         ApplyOutcome {
             transcript_changed: self.revision != before,
