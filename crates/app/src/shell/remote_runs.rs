@@ -91,6 +91,15 @@ impl Shell {
     ///
     /// For the bridge, which has to know what there is before it can go looking
     /// on disk for what was said in it.
+    /// Session `uid`'s live session, when it is one of this window's.
+    pub fn session_entity(
+        &self,
+        uid: u64,
+        cx: &App,
+    ) -> Option<Entity<crate::chat::session::ChatSession>> {
+        self.chat.read(cx).session_entity(uid)
+    }
+
     /// Every session's uid in this window.
     pub fn session_uids(&self) -> Vec<u64> {
         self.window

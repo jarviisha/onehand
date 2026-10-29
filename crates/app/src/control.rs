@@ -656,7 +656,7 @@ fn perform_now(
             .ok_or("the window closed")?;
             Ok(format!("Opened {} in the Workbench", path.display()))
         }
-        Call::SessionState { session: _ } => Err("not yet".to_string()),
+        Call::SessionState { session } => workers::state::answer(caller, &session, cx),
         Call::OpenSession {
             project,
             agent,

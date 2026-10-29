@@ -168,3 +168,9 @@ fn dirs_are_named() {
     };
     assert_eq!(line(&state(&chat, &held), "dirs"), "/run, /r/.git");
 }
+
+#[test]
+fn counts_read_in_the_singular_for_one() {
+    assert_eq!(subagents_said(1), "1 subagent");
+    assert_eq!(subagents_said(2), "2 subagents");
+}

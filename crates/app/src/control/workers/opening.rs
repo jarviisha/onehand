@@ -184,6 +184,7 @@ fn ready(
         turn: open.turn,
         text: open.prompt.clone(),
         sent: chat.prompts_sent,
+        dirs: open.dirs.clone(),
     };
     let in_force = chat.in_force();
     let mode = in_force

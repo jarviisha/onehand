@@ -119,7 +119,7 @@ fn activity(chat: &Chat) -> String {
     }
     let subagents = chat.subagents_working();
     if subagents > 0 {
-        parts.push(format!("{subagents} subagents"));
+        parts.push(subagents_said(subagents));
     }
     if chat.working_by_itself() {
         parts.push("working by itself".to_string());
@@ -127,6 +127,13 @@ fn activity(chat: &Chat) -> String {
     match parts.is_empty() {
         true => "none reported".to_string(),
         false => format!("running: {}", parts.join(", ")),
+    }
+}
+
+fn subagents_said(n: usize) -> String {
+    match n {
+        1 => "1 subagent".to_string(),
+        n => format!("{n} subagents"),
     }
 }
 
