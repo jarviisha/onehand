@@ -10,7 +10,7 @@
 //! **No tool answers a card, a permission or an approval.** Those wait for a
 //! person, whoever asks; there is nothing here to call for them.
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use std::path::{Path, PathBuf};
 
 /// What a tool call asks the app to do, its arguments read and checked.
@@ -57,6 +57,8 @@ pub enum Call {
         project: String,
         agent: String,
         prompt: Option<String>,
+        /// Folders outside the project the session's agent may also write.
+        dirs: Vec<PathBuf>,
     },
 }
 
@@ -275,9 +277,19 @@ fn catalogue() -> Vec<Value> {
              first prompt if one is given. It appears in the rail",
             schema(
                 json!({
-                    "project": text(project),
+                    "project": text(
+                        "A project of the window, by its name or its path; for a session's \
+                         agent, also the top level of a git worktree of a repository one of \
+                         the window's projects belongs to"
+                    ),
                     "agent": text("An agent's name, as list_agents gives it"),
                     "prompt": text("The session's first prompt"),
+                    "dirs": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Absolute folders outside the project the session's \
+                                        agent may also write, for a session's agent only",
+                    },
                 }),
                 &["project", "agent"],
             ),
@@ -401,7 +413,7 @@ fn parse(name: &str, arguments: &Value) -> Result<Call, String> {
         "open_file" => &["path"],
         "list_issues" => &["project"],
         "create_issue" => &["project", "title", "body"],
-        "open_session" => &["project", "agent", "prompt"],
+        "open_session" => &["project", "agent", "prompt", "dirs"],
         "read_workflow" => &["workflow"],
         "save_workflow" => &["toml"],
         "start_workflow" => &["project", "workflow", "title", "brief"],
@@ -465,9 +477,26 @@ fn parse(name: &str, arguments: &Value) -> Result<Call, String> {
             project: required("project")?,
             agent: required("agent")?,
             prompt: optional("prompt")?,
+            dirs: folders(args.get("dirs"))?,
         },
         _ => return Err(format!("no tool named `{name}`")),
     })
+}
+
+/// A list of folder paths, as `dirs` takes it: absent is none.
+fn folders(value: Option<&Value>) -> Result<Vec<PathBuf>, String> {
+    let refused = || "`dirs` must be a list of folder paths".to_string();
+    match value {
+        None | Some(Value::Null) => Ok(Vec::new()),
+        Some(Value::Array(items)) => items
+            .iter()
+            .map(|item| match item {
+                Value::String(path) if !path.trim().is_empty() => Ok(PathBuf::from(path)),
+                _ => Err(refused()),
+            })
+            .collect(),
+        Some(_) => Err(refused()),
+    }
 }
 
 /// The project of `projects` (name, path) that `named` names: by its path,

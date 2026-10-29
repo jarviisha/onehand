@@ -93,7 +93,8 @@ fn every_tool_parses_its_input() {
         Call::OpenSession {
             project: "app".into(),
             agent: "Claude".into(),
-            prompt: None
+            prompt: None,
+            dirs: Vec::new(),
         }
     );
     assert_eq!(
@@ -104,7 +105,20 @@ fn every_tool_parses_its_input() {
         Call::OpenSession {
             project: "app".into(),
             agent: "Claude".into(),
-            prompt: Some("hi".into())
+            prompt: Some("hi".into()),
+            dirs: Vec::new(),
+        }
+    );
+    assert_eq!(
+        performs(
+            "open_session",
+            json!({"project": "/wt", "agent": "Claude", "dirs": ["/run", "/other"]})
+        ),
+        Call::OpenSession {
+            project: "/wt".into(),
+            agent: "Claude".into(),
+            prompt: None,
+            dirs: vec!["/run".into(), "/other".into()],
         }
     );
 }
@@ -122,6 +136,21 @@ fn every_tool_refuses_malformed_input() {
             "open_session",
             json!({"project": "app", "agent": "Claude", "prompt": 3}),
             "prompt",
+        ),
+        (
+            "open_session",
+            json!({"project": "app", "agent": "Claude", "dirs": "/run"}),
+            "`dirs` must be a list of folder paths",
+        ),
+        (
+            "open_session",
+            json!({"project": "app", "agent": "Claude", "dirs": [1]}),
+            "`dirs` must be a list of folder paths",
+        ),
+        (
+            "open_session",
+            json!({"project": "app", "agent": "Claude", "dirs": [""]}),
+            "`dirs` must be a list of folder paths",
         ),
         ("list_agents", json!({"extra": 1}), "extra"),
     ];
@@ -379,9 +408,11 @@ fn a_project_is_found_by_path_or_name() {
         pick_project(&projects, "/one/app").unwrap(),
         Path::new("/one/app")
     );
-    assert!(pick_project(&projects, "nope")
-        .unwrap_err()
-        .contains("nope"));
+    assert!(
+        pick_project(&projects, "nope")
+            .unwrap_err()
+            .contains("nope")
+    );
 }
 
 #[test]
@@ -589,9 +620,11 @@ fn the_issue_tools_parse_their_input() {
     );
     assert!(refusal(call("create_issue", json!({"body": "x"}))).contains("title"));
     // No labels: an agent never labels its own issue.
-    assert!(refusal(call(
-        "create_issue",
-        json!({"title": "t", "labels": ["auto"]})
-    ))
-    .contains("labels"));
+    assert!(
+        refusal(call(
+            "create_issue",
+            json!({"title": "t", "labels": ["auto"]})
+        ))
+        .contains("labels")
+    );
 }

@@ -626,6 +626,7 @@ fn perform_now(
             project,
             agent,
             prompt,
+            dirs: _,
         } => {
             let dir = control::pick_project(&projects, &project)?.to_path_buf();
             let spec =
