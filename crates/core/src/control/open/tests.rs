@@ -189,3 +189,16 @@ fn parse_handle_refuses_nonsense() {
         assert!(why.contains("not a session's handle"), "{text}: {why}");
     }
 }
+
+#[test]
+fn parse_handle_calls_only_a_run_id_an_earlier_run() {
+    for text in ["foo-7", "x-3f2a9c01-7"] {
+        let why = parse_handle(text, "3f2a9c01").unwrap_err();
+        assert!(why.contains("not a session's handle"), "{text}: {why}");
+    }
+}
+
+#[test]
+fn parse_handle_trims_spaces() {
+    assert_eq!(parse_handle(" 3f2a9c01-7 ", "3f2a9c01"), Ok(7));
+}

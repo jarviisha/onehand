@@ -228,7 +228,7 @@ impl Chat {
 
     /// Whether the agent is thought to be working by itself, with no turn
     /// open: answering what it waited for in the background.
-    pub fn working_by_itself(&self) -> bool {
+    pub(crate) fn working_by_itself(&self) -> bool {
         self.own_cycle != OwnCycle::None
     }
 

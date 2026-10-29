@@ -477,6 +477,7 @@ impl Chat {
                 // Picks sent over the lost connection are answered by nothing.
                 self.picks_out.clear();
                 self.link = Link::Lost;
+                self.cut_off = self.busy;
                 self.busy = false;
                 // No live adapter to answer — but the cards must not keep
                 // offering buttons whose rpc ids died with the connection.

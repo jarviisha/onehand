@@ -174,3 +174,47 @@ fn counts_read_in_the_singular_for_one() {
     assert_eq!(subagents_said(1), "1 subagent");
     assert_eq!(subagents_said(2), "2 subagents");
 }
+
+/// A turn cut off by a lost link did not end in any way anyone knows.
+#[test]
+fn a_turn_cut_off_by_the_link_is_not_ended() {
+    let (mut chat, _rx, held) = prompted();
+    chat.apply(AcpEvent::Disconnected("adapter exited".into()));
+    let state = state(&chat, &held);
+    assert_eq!(line(&state, "turn"), "lost with the link");
+    assert_eq!(line(&state, "turns"), "sent 1, not yet ended");
+}
+
+/// The next prompt after a reconnect clears what the cut-off turn said.
+#[test]
+fn a_new_turn_after_a_cut_off_one_reads_as_itself() {
+    let (mut chat, _rx, held) = prompted();
+    chat.apply(AcpEvent::Disconnected("adapter exited".into()));
+    let (tx, _rx2): (ReqTx, _) = tokio::sync::mpsc::unbounded_channel();
+    chat.apply(AcpEvent::Connected {
+        tx,
+        resumed: false,
+        forkable: false,
+    });
+    assert!(chat.submit("again", &[]));
+    assert_eq!(line(&state(&chat, &held), "turn"), "running");
+}
+
+/// A restart builds the chat anew: what was sent before it still counts,
+/// or the person's next prompt would read as the lead's.
+#[test]
+fn a_restarted_chat_keeps_the_prompts_sent() {
+    let (old, _rx, held) = prompted();
+    let (mut fresh, _rx2) = connected();
+    fresh.carry_sent(old.prompts_sent);
+    assert!(fresh.submit("my own words", &[]));
+    assert_eq!(line(&state(&fresh, &held), "held by"), "person");
+}
+
+#[test]
+fn what_it_runs_with_reads_as_the_open_says_it() {
+    let (chat, _rx) = connected();
+    assert_eq!(mode_said(&chat), "the agent's own");
+    assert_eq!(model_said(&chat), "the agent's own");
+    assert_eq!(dirs_said(&[]), "none");
+}

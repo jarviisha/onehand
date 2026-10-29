@@ -17,7 +17,6 @@ use crate::chat::session::ChatSession;
 use futures::StreamExt as _;
 use futures::future::select;
 use gpui::{App, AsyncApp, WeakEntity};
-use onehand_core::acp::Role;
 use onehand_core::control::open::{Step, step};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -186,30 +185,13 @@ fn ready(
         sent: chat.prompts_sent,
         dirs: open.dirs.clone(),
     };
-    let in_force = chat.in_force();
-    let mode = in_force
-        .mode
-        .clone()
-        .unwrap_or_else(|| "the agent's own".to_string());
-    let model = chat
-        .config_options
-        .iter()
-        .find(|option| option.role() == Some(Role::Model))
-        .and_then(|option| option.current.clone())
-        .unwrap_or_else(|| "the agent's own".to_string());
+    let mode = onehand_core::control::state::mode_said(chat);
+    let model = onehand_core::control::state::model_said(chat);
     let name = crate::state::with_shell(open.window, cx, |shell, _, cx| {
         shell.session_label(open.uid, cx)
     })
     .unwrap_or_default();
-    let dirs = match open.dirs.is_empty() {
-        true => "none".to_string(),
-        false => open
-            .dirs
-            .iter()
-            .map(|dir| dir.display().to_string())
-            .collect::<Vec<_>>()
-            .join(", "),
-    };
+    let dirs = onehand_core::control::state::dirs_said(&open.dirs);
     let mut said = vec![
         format!(
             "session: {}",

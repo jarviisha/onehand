@@ -105,10 +105,13 @@ pub fn handle(run: &str, uid: u64) -> String {
 /// earlier run is refused as such: its number may belong to another session
 /// now.
 pub fn parse_handle(text: &str, run: &str) -> Result<u64, String> {
+    let text = text.trim();
     let refused = || format!("{text} is not a session's handle");
     let (from, uid) = text.rsplit_once('-').ok_or_else(refused)?;
     let uid: u64 = uid.parse().map_err(|_| refused())?;
-    if from.is_empty() {
+    // Only something shaped like a run's id is called an earlier run's.
+    let a_run = from.len() == run.len() && from.chars().all(|c| c.is_ascii_hexdigit());
+    if !a_run {
         return Err(refused());
     }
     if from != run {

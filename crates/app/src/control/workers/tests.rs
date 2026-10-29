@@ -182,28 +182,38 @@ fn relation(lead: u64) -> Relation {
 
 #[test]
 fn a_worker_of_the_caller_is_mine() {
-    assert!(matches!(whose(Some(&relation(1)), 1, true), Whose::Mine(_)));
+    assert!(matches!(
+        whose(Some(&relation(1)), None, 1, true),
+        Whose::Mine(_)
+    ));
 }
 
 #[test]
 fn another_lead_s_worker_is_not_yours() {
     assert!(matches!(
-        whose(Some(&relation(2)), 1, true),
+        whose(Some(&relation(2)), None, 1, true),
         Whose::NotYours
     ));
 }
 
 #[test]
 fn a_session_no_lead_opened_is_not_yours() {
-    assert!(matches!(whose(None, 1, true), Whose::NotYours));
+    assert!(matches!(whose(None, None, 1, true), Whose::NotYours));
 }
 
 #[test]
-fn a_gone_worker_is_closed() {
-    assert!(matches!(whose(Some(&relation(1)), 1, false), Whose::Closed));
+fn a_worker_of_the_caller_that_closed_is_closed() {
+    assert!(matches!(whose(None, Some(1), 1, false), Whose::Closed));
+}
+
+/// Another lead's worker closing is none of the caller's business: the same
+/// refusal as for any session that is not its own.
+#[test]
+fn another_lead_s_closed_worker_is_not_yours() {
+    assert!(matches!(whose(None, Some(2), 1, false), Whose::NotYours));
 }
 
 #[test]
-fn a_uid_never_seen_is_closed() {
-    assert!(matches!(whose(None, 1, false), Whose::Closed));
+fn a_uid_never_seen_is_not_yours() {
+    assert!(matches!(whose(None, None, 1, false), Whose::NotYours));
 }

@@ -179,6 +179,11 @@ impl ChatPane {
             return;
         };
         let (root, spec, dirs) = (conv.root.clone(), conv.spec.clone(), conv.dirs.clone());
+        // What the old session had sent, counted on: who prompted a worker is
+        // read from it, and the new chat would start it from nothing.
+        let sent_before = conv
+            .session()
+            .map_or(0, |session| session.read(cx).chat.prompts_sent);
         // Whatever the session was on goes *before* the replacement is spawned.
         // On a restart that is the old adapter, and its pump owns the event
         // stream: dropping it afterwards would briefly leave two processes on
@@ -199,6 +204,9 @@ impl ChatPane {
             dirs,
             cx,
         );
+        if sent_before > 0 {
+            session.update(cx, |session, _| session.chat.carry_sent(sent_before));
+        }
         cx.emit(ChatPaneEvent::AgentStarted);
         // The conversation is adopted *before* the adapter's replay lands,
         // so a stale resume still shows it instead of a blank pane. Through

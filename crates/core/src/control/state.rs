@@ -36,12 +36,9 @@ pub fn state(chat: &Chat, held: &Held) -> String {
         format!("activity: {}", activity(chat)),
         format!("held by: {}", if person { "person" } else { "lead" }),
         format!("turns: {}", turns(chat, held, person)),
-        format!(
-            "mode: {}",
-            chat.in_force().mode.unwrap_or_else(|| OWN.to_string())
-        ),
-        format!("model: {}", model(chat)),
-        format!("dirs: {}", dirs(&held.dirs)),
+        format!("mode: {}", mode_said(chat)),
+        format!("model: {}", model_said(chat)),
+        format!("dirs: {}", dirs_said(&held.dirs)),
     ];
     lines.join("\n")
 }
@@ -62,6 +59,9 @@ fn turn(chat: &Chat) -> String {
     }
     if chat.busy {
         return "running".to_string();
+    }
+    if chat.turn_cut_off() {
+        return "lost with the link".to_string();
     }
     if let Some(failure) = chat.failure() {
         return format!("failed: {failure}");
@@ -140,12 +140,24 @@ fn subagents_said(n: usize) -> String {
 fn turns(chat: &Chat, held: &Held, person: bool) -> String {
     match held.turn {
         None => "none sent".to_string(),
-        Some(turn) if !chat.busy && !person => format!("sent {turn}, ended {turn}"),
+        // Over only as far as anyone knows: a link lost or still coming up
+        // says nothing of how the turn went.
+        Some(turn)
+            if chat.link == Link::Connected && !chat.busy && !chat.turn_cut_off() && !person =>
+        {
+            format!("sent {turn}, ended {turn}")
+        }
         Some(turn) => format!("sent {turn}, not yet ended"),
     }
 }
 
-fn model(chat: &Chat) -> String {
+/// The mode in force, as a worker's answers say it.
+pub fn mode_said(chat: &Chat) -> String {
+    chat.in_force().mode.unwrap_or_else(|| OWN.to_string())
+}
+
+/// The model in force, as a worker's answers say it.
+pub fn model_said(chat: &Chat) -> String {
     chat.config_options
         .iter()
         .find(|option| option.role() == Some(Role::Model))
@@ -153,7 +165,8 @@ fn model(chat: &Chat) -> String {
         .unwrap_or_else(|| OWN.to_string())
 }
 
-fn dirs(dirs: &[PathBuf]) -> String {
+/// The folders a worker may write, as its answers say them.
+pub fn dirs_said(dirs: &[PathBuf]) -> String {
     match dirs.is_empty() {
         true => "none".to_string(),
         false => dirs

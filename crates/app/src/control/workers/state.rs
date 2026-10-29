@@ -1,10 +1,11 @@
 //! `session_state`, carried out: which worker a handle names, whether the
 //! caller may read it, and what it is doing.
 //!
-//! **A worker of this run whose session is gone reads `link: closed`**, the
-//! one answer that proves it stopped: closing a session ends its agent. A
-//! uid that never was one reads the same, since a uid is never given twice
-//! in a run and the caller learns nothing more from it.
+//! **A worker of the caller's whose session is gone reads `link: closed`**,
+//! the one answer that proves it stopped: closing a session ends its agent.
+//! Anything else that is not the caller's own worker, open or closed, or a
+//! uid that never was one, gets the same refusal, so a lead learns nothing
+//! of sessions that are not its own.
 
 use super::requests::Relation;
 use super::sessions;
@@ -23,17 +24,23 @@ pub(in crate::control) enum Whose {
     NotYours,
 }
 
-/// What session `uid` is to `caller`, from its relation and whether its
-/// session is `open`.
-pub(in crate::control) fn whose(relation: Option<&Relation>, caller: u64, open: bool) -> Whose {
-    match (relation, open) {
-        (_, false) => Whose::Closed,
-        (Some(relation), true) if relation.lead == caller => Whose::Mine(Held {
+/// What session `uid` is to `caller`: from its relation while it lasts, the
+/// lead it had once it closed (`closed`), and whether its session is `open`.
+pub(in crate::control) fn whose(
+    relation: Option<&Relation>,
+    closed: Option<u64>,
+    caller: u64,
+    open: bool,
+) -> Whose {
+    match relation.filter(|relation| relation.lead == caller) {
+        Some(relation) if open => Whose::Mine(Held {
             turn: relation.turn,
             sent: relation.sent,
             dirs: relation.dirs.clone(),
         }),
-        _ => Whose::NotYours,
+        Some(_) => Whose::Closed,
+        None if closed == Some(caller) && !open => Whose::Closed,
+        None => Whose::NotYours,
     }
 }
 
@@ -50,13 +57,19 @@ pub(in crate::control) fn answer(
         .iter()
         .filter_map(|window| window.shell.upgrade())
         .find_map(|shell| shell.read(cx).session_entity(uid, cx));
-    let relation = sessions().workers.get(&uid).cloned();
-    match whose(relation.as_ref(), caller, entity.is_some()) {
-        Whose::Closed => Ok("link: closed".to_string()),
-        Whose::NotYours => Err(format!("{session} is not a worker you opened")),
-        Whose::Mine(held) => {
-            let entity = entity.ok_or("link: closed")?;
-            Ok(state(&entity.read(cx).chat, &held))
-        }
+    let (relation, closed) = {
+        let sessions = sessions();
+        (
+            sessions.workers.get(&uid).cloned(),
+            sessions.closed_workers.get(&uid).copied(),
+        )
+    };
+    match (
+        whose(relation.as_ref(), closed, caller, entity.is_some()),
+        entity,
+    ) {
+        (Whose::Mine(held), Some(entity)) => Ok(state(&entity.read(cx).chat, &held)),
+        (Whose::Mine(_) | Whose::Closed, _) => Ok("link: closed".to_string()),
+        (Whose::NotYours, _) => Err(format!("{session} is not a worker you opened")),
     }
 }

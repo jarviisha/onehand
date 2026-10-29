@@ -185,21 +185,23 @@ is refused, naming each.
   facts rather than the rail's single mark:
   - `link`: `connecting`, `connected` or `lost`; once the worker's session is gone the whole
     answer is `link: closed`, the one line that proves it stopped, since closing a session ends
-    its agent. A uid that never was a worker of this run reads the same.
+    its agent.
   - `turn`: `none`, `running`, `failed: <its words>`, `cancelled` (a person's Stop is not a
-    failure) or `ended`.
+    failure), `lost with the link` (cut off, so how it ended is not known) or `ended`.
   - `waiting`: the permissions and questions parked, which only a person answers, or `none`.
   - `activity`: `running:` with the turn, background work by name, subagents and the agent
     working by itself; `none reported`; or `unknown` while the link is not connected, since a
     lost link clears what onehand held. `none reported` is enough to send the next turn, never
     proof the agent stopped.
-  - `held by`: `person` once a prompt of theirs has gone to the agent, else `lead`.
-  - `turns`: the lead's last turn number, `ended` once it is over and the lead still holds the
-    worker, else `not yet ended`.
+  - `held by`: `person` once a prompt of theirs has gone to the agent, else `lead`; a restart of
+    the worker's agent keeps the count it is read from.
+  - `turns`: the lead's last turn number, `ended` once it is over, the link up and the lead still
+    holding the worker, else `not yet ended`.
   - `mode`, `model`, `dirs`, as in force.
 
-  A handle from an earlier run is refused as such; another lead's worker, or a session no lead
-  opened, is refused.
+  A handle from an earlier run is refused as such. Anything that is not the caller's own worker,
+  open or closed, or a uid that never was one, gets the same refusal, so a lead learns nothing of
+  sessions that are not its own.
 - **The lead is asked about at every step**, and its closing or being switched off wakes the open
   at once. A lead that went while its worker was opening abandons the open: it fails as above,
   its prompt never sent. A person watching a worker whose open failed is put back on what is

@@ -114,6 +114,8 @@ struct Sessions {
     requests: workers::requests::Requests,
     /// Each worker's lead, by the worker's uid.
     workers: HashMap<u64, workers::requests::Relation>,
+    /// The lead each closed worker had, so it alone reads it as closed.
+    closed_workers: HashMap<u64, u64>,
     /// The opens each lead has in flight, woken when it closes or is
     /// switched off, so they are abandoned at once.
     pokes: HashMap<u64, Vec<UnboundedSender<()>>>,
@@ -245,9 +247,10 @@ pub(crate) fn forget(uid: u64) {
     sessions.only.remove(&uid);
     sessions.reserved.release_worker(uid);
     sessions.requests.forget_lead(uid);
-    sessions
-        .workers
-        .retain(|worker, relation| *worker != uid && relation.lead != uid);
+    if let Some(relation) = sessions.workers.remove(&uid) {
+        sessions.closed_workers.insert(uid, relation.lead);
+    }
+    sessions.workers.retain(|_, relation| relation.lead != uid);
 }
 
 /// Said when a call's answer cannot come, because the app is going.
