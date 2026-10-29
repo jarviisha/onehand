@@ -34,6 +34,9 @@ pub struct Conversation {
     /// would make the first restart the last one.
     pub root: PathBuf,
     pub spec: AgentSpec,
+    /// Folders beyond `root` its agent may write, held for the same reason:
+    /// a restart that dropped them would leave a worker unable to commit.
+    pub dirs: Vec<PathBuf>,
     pub phase: SessionPhase,
     /// How this session's transcript is laid out and where it is scrolled, so
     /// coming back to it finds the conversation where it was left rather than
@@ -122,6 +125,7 @@ impl Conversation {
         Self {
             root,
             spec,
+            dirs: Vec::new(),
             phase: SessionPhase::Opening,
             viewport: Viewport::default(),
             unseen: false,

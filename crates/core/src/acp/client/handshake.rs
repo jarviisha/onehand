@@ -6,11 +6,25 @@ use super::*;
 impl Conn {
     /// Open the session: a fresh one.
     pub(super) async fn new_session(&mut self) -> Result<(), String> {
-        let params = json!({
+        let params = self.with_dirs(json!({
             "cwd": self.opts.cwd.display().to_string(),
             "mcpServers": self.opts.mcp_servers,
-        });
+        }));
         self.send("session/new", params, Pending::NewSession).await
+    }
+
+    /// `params` with the session's further folders, when it has any.
+    fn with_dirs(&self, mut params: Value) -> Value {
+        if !self.opts.dirs.is_empty() {
+            let dirs: Vec<String> = self
+                .opts
+                .dirs
+                .iter()
+                .map(|dir| dir.display().to_string())
+                .collect();
+            params["additionalDirectories"] = json!(dirs);
+        }
+        params
     }
 
     /// `initialize` answered: read what the agent offers and open the session.
@@ -42,7 +56,7 @@ impl Conn {
             Opening::Fresh | Opening::Resume(_) => self.new_session().await,
             Opening::Fork { .. } if !self.forkable => Err(not_forked("this agent cannot fork")),
             Opening::Fork { from, message } => {
-                let params = json!({
+                let params = self.with_dirs(json!({
                     "sessionId": from,
                     "cwd": self.opts.cwd.display().to_string(),
                     "mcpServers": self.opts.mcp_servers,
@@ -50,7 +64,7 @@ impl Conn {
                         "version": 1,
                         "messageId": message,
                     } } } },
-                });
+                }));
                 self.send("session/fork", params, Pending::Fork).await
             }
         }
@@ -58,11 +72,11 @@ impl Conn {
 
     /// Load the saved session `sid`.
     async fn load(&mut self, sid: String) -> Result<(), String> {
-        let params = json!({
+        let params = self.with_dirs(json!({
             "sessionId": sid,
             "cwd": self.opts.cwd.display().to_string(),
             "mcpServers": self.opts.mcp_servers,
-        });
+        }));
         self.send("session/load", params, Pending::LoadSession { sid })
             .await
     }

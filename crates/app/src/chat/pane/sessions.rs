@@ -98,10 +98,14 @@ impl ChatPane {
         uid: u64,
         root: PathBuf,
         spec: &AgentSpec,
+        dirs: Vec<PathBuf>,
         cx: &mut Context<Self>,
     ) -> Option<Entity<ChatSession>> {
         if let Entry::Vacant(slot) = self.conversations.entry(uid) {
-            slot.insert(Conversation::opening(root, spec.clone()));
+            slot.insert(Conversation {
+                dirs,
+                ..Conversation::opening(root, spec.clone())
+            });
             self.connect(uid, None, cx);
         }
         self.session_of(uid).cloned()
@@ -174,7 +178,7 @@ impl ChatPane {
         let Some(conv) = self.conversations.get_mut(&uid) else {
             return;
         };
-        let (root, spec) = (conv.root.clone(), conv.spec.clone());
+        let (root, spec, dirs) = (conv.root.clone(), conv.spec.clone(), conv.dirs.clone());
         // Whatever the session was on goes *before* the replacement is spawned.
         // On a restart that is the old adapter, and its pump owns the event
         // stream: dropping it afterwards would briefly leave two processes on
@@ -192,6 +196,7 @@ impl ChatPane {
                     message: staged.message.clone(),
                 },
             },
+            dirs,
             cx,
         );
         cx.emit(ChatPaneEvent::AgentStarted);

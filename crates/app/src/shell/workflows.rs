@@ -505,7 +505,7 @@ impl Shell {
                 if spec.is_none() {
                     unstarted = found_late(About::Agent);
                 }
-                let started = spec.and_then(|spec| self.run_unattended(dir, spec, cx));
+                let started = spec.and_then(|spec| self.run_unattended(dir, spec, Vec::new(), cx));
                 if let (Some((_, session)), Some(_)) = (&started, task.issue()) {
                     crate::unattended::opening(&task, session, cx);
                 }

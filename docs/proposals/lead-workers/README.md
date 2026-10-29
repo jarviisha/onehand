@@ -75,7 +75,8 @@ a tool to press *Continue*.
 | 4 | A model per worker or per stage | per worker in [onehand.md](onehand.md) and [spec.md](spec.md), built with step 3; per stage later | 3, then 4 |
 | 5 | A *Worker under a lead* workflow | not written | 5, optional |
 
-Step 1 is written as a personal skill; step 3 has a spec, [spec.md](spec.md).
+Step 1 is written as a personal skill; step 3 has a spec, [spec.md](spec.md), whose PR 1 (the
+worktree and its folders) is built.
 
 ## Order of work
 

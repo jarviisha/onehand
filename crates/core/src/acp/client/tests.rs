@@ -25,6 +25,7 @@ fn connect(
             cwd,
             opening,
             mcp_servers: Vec::new(),
+            dirs: Vec::new(),
         },
     )
 }
@@ -94,6 +95,14 @@ fn client() -> (Agent, tokio::sync::mpsc::UnboundedReceiver<AcpEvent>) {
 
 /// [`client`], opening its session the way `opening` says.
 fn client_opening(opening: Opening) -> (Agent, tokio::sync::mpsc::UnboundedReceiver<AcpEvent>) {
+    client_with(opening, Vec::new())
+}
+
+/// [`client_opening`], its session also given `dirs` to write.
+fn client_with(
+    opening: Opening,
+    dirs: Vec<PathBuf>,
+) -> (Agent, tokio::sync::mpsc::UnboundedReceiver<AcpEvent>) {
     let (transport, agent) = Transport::scripted();
     let (read, out) = tokio::io::split(agent);
     let (tx, events) = tokio::sync::mpsc::unbounded_channel();
@@ -104,6 +113,7 @@ fn client_opening(opening: Opening) -> (Agent, tokio::sync::mpsc::UnboundedRecei
                 cwd: PathBuf::from("/tmp"),
                 opening,
                 mcp_servers: vec![json!({"name": "onehand"})],
+                dirs,
             },
         );
         futures::pin_mut!(stream);
@@ -134,6 +144,57 @@ async fn session_new_carries_the_sessions_mcp_servers() {
         .await;
     let new = agent.heard().await;
     assert_eq!(new["params"]["mcpServers"], json!([{"name": "onehand"}]));
+}
+
+/// **A worker writes outside its folder** -- its repository's `.git`, the
+/// lead's run folder -- and the agent learns where from the session it opens.
+#[tokio::test]
+async fn session_new_carries_the_folders_a_worker_may_write() {
+    let dirs = vec![PathBuf::from("/w/.git"), PathBuf::from("/run")];
+    let (mut agent, _events) = client_with(Opening::Fresh, dirs);
+    let hello = agent.heard().await;
+    agent
+        .say(json!({"jsonrpc": "2.0", "id": hello["id"],
+            "result": { "protocolVersion": 1, "agentCapabilities": {} }}))
+        .await;
+    let new = agent.heard().await;
+    assert_eq!(
+        new["params"]["additionalDirectories"],
+        json!(["/w/.git", "/run"])
+    );
+}
+
+/// No folders, no key: an agent that does not know the field is never sent it.
+#[tokio::test]
+async fn session_new_without_folders_sends_no_key() {
+    let (mut agent, _events) = client();
+    let hello = agent.heard().await;
+    agent
+        .say(json!({"jsonrpc": "2.0", "id": hello["id"],
+            "result": { "protocolVersion": 1, "agentCapabilities": {} }}))
+        .await;
+    let new = agent.heard().await;
+    assert!(
+        new["params"].get("additionalDirectories").is_none(),
+        "{new:#}"
+    );
+}
+
+/// A restart resumes the conversation, and the folders go with it.
+#[tokio::test]
+async fn session_load_carries_the_folders_too() {
+    let (mut agent, _events) = client_with(
+        Opening::Resume("s1".to_string()),
+        vec![PathBuf::from("/run")],
+    );
+    let hello = agent.heard().await;
+    agent
+        .say(json!({"jsonrpc": "2.0", "id": hello["id"],
+            "result": { "protocolVersion": 1, "agentCapabilities": { "loadSession": true } }}))
+        .await;
+    let load = agent.heard().await;
+    assert_eq!(load["method"], "session/load");
+    assert_eq!(load["params"]["additionalDirectories"], json!(["/run"]));
 }
 
 /// **The capability that makes multiple-choice prompts appear at all.** The
@@ -994,6 +1055,7 @@ async fn the_last_answer_before_an_exit_is_not_lost() {
                 cwd: PathBuf::from("/tmp"),
                 opening: Opening::Fresh,
                 mcp_servers: Vec::new(),
+                dirs: Vec::new(),
             },
         );
         futures::pin_mut!(stream);
