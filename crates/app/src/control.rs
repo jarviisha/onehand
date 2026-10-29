@@ -661,7 +661,9 @@ fn perform_now(
                 sessions().opened.insert(*uid, open);
             }
             let (opened, session) = shell
-                .update(cx, |shell, cx| shell.run_unattended(dir, spec, cx))
+                .update(cx, |shell, cx| {
+                    shell.run_unattended(dir, spec, Vec::new(), cx)
+                })
                 .ok_or("the session did not start")?;
             if let Some((uid, _)) = &caller {
                 sessions().opened.entry(*uid).or_default().push(opened);

@@ -159,7 +159,8 @@ impl Shell {
     }
 
     /// Start `spec` on `dir`, off screen: on the project already open there,
-    /// or on `dir` added as a transient project.
+    /// or on `dir` added as a transient project. Its agent may also write
+    /// `dirs`.
     ///
     /// **Nothing the user is looking at moves.** No root is selected and the
     /// pane connects the session without showing it. A root added here is
@@ -170,6 +171,7 @@ impl Shell {
         &mut self,
         dir: PathBuf,
         spec: AgentSpec,
+        dirs: Vec<PathBuf>,
         cx: &mut Context<Self>,
     ) -> Option<(u64, Entity<crate::chat::session::ChatSession>)> {
         let uid = cx.update_global::<Shared, _>(|shared, _| shared.next_uid());
@@ -181,7 +183,7 @@ impl Shell {
         let root = self.window.workspace.roots[idx].path.clone();
         let session = self
             .chat
-            .update(cx, |pane, cx| pane.open_unshown(uid, root, &spec, cx));
+            .update(cx, |pane, cx| pane.open_unshown(uid, root, &spec, dirs, cx));
         self.refresh_git(cx);
         cx.notify();
         Some((uid, session?))

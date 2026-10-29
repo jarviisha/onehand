@@ -122,7 +122,13 @@ impl AcpRuntime {
             return;
         }
         let token = crate::control::Token::mint();
-        let events = self.start(spec, cwd.clone(), acp::Opening::Fresh, token.servers());
+        let events = self.start(
+            spec,
+            cwd.clone(),
+            acp::Opening::Fresh,
+            token.servers(),
+            Vec::new(),
+        );
         *self.warm.borrow_mut() = Some(Warm {
             spec: nameless(spec),
             cwd,
@@ -158,12 +164,9 @@ impl AcpRuntime {
         spec: &AgentSpec,
         cwd: PathBuf,
         opening: acp::Opening,
+        dirs: Vec<PathBuf>,
     ) -> (Events, Instant, crate::control::Token) {
-        // A resume or a fork names a conversation, and the parked adapter has
-        // already been through `session/new` on a fresh one -- it is the wrong
-        // process to hand this caller, so it stays parked for whoever wants a new
-        // conversation instead.
-        if opening == acp::Opening::Fresh
+        if takes_warm(&opening, &dirs)
             && let Some(warm) = self
                 .warm
                 .borrow_mut()
@@ -172,7 +175,7 @@ impl AcpRuntime {
             return (warm.events, warm.started, warm.token);
         }
         let token = crate::control::Token::mint();
-        let events = self.start(spec, cwd, opening, token.servers());
+        let events = self.start(spec, cwd, opening, token.servers(), dirs);
         (events, Instant::now(), token)
     }
 
@@ -181,7 +184,7 @@ impl AcpRuntime {
     /// take the spare a session is about to claim.
     pub fn probe(&self, spec: &AgentSpec, cwd: PathBuf) -> Events {
         // No session will hold it, so its agent is given no way to onehand.
-        self.start(spec, cwd, acp::Opening::Fresh, Vec::new())
+        self.start(spec, cwd, acp::Opening::Fresh, Vec::new(), Vec::new())
     }
 
     /// Spawn an adapter and forward its events, with no reference to the parked
@@ -192,6 +195,7 @@ impl AcpRuntime {
         cwd: PathBuf,
         opening: acp::Opening,
         mcp_servers: Vec<serde_json::Value>,
+        dirs: Vec<PathBuf>,
     ) -> Events {
         let (rx, mut tx, alive) = events();
         // A built-in agent whose binary is gone starts nothing and says so on
@@ -210,13 +214,24 @@ impl AcpRuntime {
                 cwd,
                 opening,
                 mcp_servers,
-                dirs: Vec::new(),
+                dirs,
             };
             forward(acp::connect(launch, opts), tx, alive).await;
         });
 
         rx
     }
+}
+
+/// Whether a session opening this way may take the parked adapter.
+///
+/// That adapter has already been through `session/new` on a fresh
+/// conversation with nothing but its folder: a resume or a fork names another
+/// conversation, and a session with further folders to write needs them in
+/// its `session/new`, so either would be handed the wrong process. It stays
+/// parked for whoever wants a plain new conversation instead.
+fn takes_warm(opening: &acp::Opening, dirs: &[PathBuf]) -> bool {
+    *opening == acp::Opening::Fresh && dirs.is_empty()
 }
 
 /// An adapter's events, as the UI reads them. Dropping them is what ends the
@@ -270,12 +285,20 @@ async fn forward(
 
 #[cfg(test)]
 mod tests {
-    use super::{events, forward};
+    use super::{events, forward, takes_warm};
     use futures::StreamExt as _;
-    use onehand_core::acp::AcpEvent;
+    use onehand_core::acp::{AcpEvent, Opening};
+    use std::path::PathBuf;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::Duration;
+
+    #[test]
+    fn a_session_with_folders_never_takes_the_warm_adapter() {
+        assert!(takes_warm(&Opening::Fresh, &[]));
+        assert!(!takes_warm(&Opening::Fresh, &[PathBuf::from("/run")]));
+        assert!(!takes_warm(&Opening::Resume("s".into()), &[]));
+    }
 
     /// Set once the stream it is moved into is dropped, as core's stream
     /// ends its adapter when dropped.
