@@ -101,5 +101,23 @@ pub fn handle(run: &str, uid: u64) -> String {
     format!("{run}-{uid}")
 }
 
+/// The uid `text` names, when it is a handle of this run, `run`. One from an
+/// earlier run is refused as such: its number may belong to another session
+/// now.
+pub fn parse_handle(text: &str, run: &str) -> Result<u64, String> {
+    let refused = || format!("{text} is not a session's handle");
+    let (from, uid) = text.rsplit_once('-').ok_or_else(refused)?;
+    let uid: u64 = uid.parse().map_err(|_| refused())?;
+    if from.is_empty() {
+        return Err(refused());
+    }
+    if from != run {
+        return Err(format!(
+            "{text} is from an earlier run of onehand; its worker is gone"
+        ));
+    }
+    Ok(uid)
+}
+
 #[cfg(test)]
 mod tests;

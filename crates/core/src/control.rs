@@ -11,6 +11,7 @@
 //! person, whoever asks; there is nothing here to call for them.
 
 pub mod open;
+pub mod state;
 
 use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};

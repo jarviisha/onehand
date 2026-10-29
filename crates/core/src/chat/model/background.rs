@@ -226,6 +226,12 @@ impl Chat {
             || self.own_cycle != OwnCycle::None
     }
 
+    /// Whether the agent is thought to be working by itself, with no turn
+    /// open: answering what it waited for in the background.
+    pub fn working_by_itself(&self) -> bool {
+        self.own_cycle != OwnCycle::None
+    }
+
     /// Whether work or a subagent the agent started runs beside its turns.
     pub(super) fn works_aside(&self) -> bool {
         !self.background.is_empty() || self.subagents_working() > 0
