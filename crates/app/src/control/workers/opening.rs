@@ -14,9 +14,8 @@
 
 use super::requests::Relation;
 use crate::chat::session::ChatSession;
-use crate::shell::Shell;
 use futures::StreamExt as _;
-use futures::future::{Either, select};
+use futures::future::select;
 use gpui::{App, AsyncApp, WeakEntity};
 use onehand_core::acp::Role;
 use onehand_core::control::open::{Step, step};
@@ -34,7 +33,9 @@ pub(super) struct Opening {
     pub(super) uid: u64,
     /// Held weakly: a person closing it ends it, whatever this open waits on.
     pub(super) session: WeakEntity<ChatSession>,
-    pub(super) shell: WeakEntity<Shell>,
+    /// The window it opens in, to put the person back on something to see
+    /// when the session they were watching fails.
+    pub(super) window: gpui::AnyWindowHandle,
     /// The project the session was started on, and whether the open added it.
     pub(super) root: PathBuf,
     pub(super) added: bool,
@@ -57,6 +58,11 @@ enum Flow {
 /// Drive `open` until its worker is up, or it fails; answer either way.
 pub(super) async fn wait_open(open: Opening, cx: &mut AsyncApp) -> Result<String, String> {
     let (tx, mut changed) = futures::channel::mpsc::unbounded::<()>();
+    // The lead closing or switched off wakes the open too: nothing in the
+    // worker changes when it goes. A channel of its own, so the worker's
+    // ending when its session is dropped is still heard.
+    let (poke, mut poked) = futures::channel::mpsc::unbounded::<()>();
+    crate::control::poke_on(open.lead, poke);
     let watch = cx.update(|cx| {
         let session = open.session.upgrade()?;
         Some(cx.observe(&session, move |_, _| {
@@ -75,20 +81,18 @@ pub(super) async fn wait_open(open: Opening, cx: &mut AsyncApp) -> Result<String
                 let left = open.deadline.saturating_duration_since(Instant::now());
                 let timer = cx.background_executor().timer(left);
                 futures::pin_mut!(timer);
-                if let Either::Left((None, _)) = select(changed.next(), timer).await {
-                    // The session was dropped: the next wake says so.
-                }
+                // Whatever woke it, the next wake reads the session, the lead
+                // and the deadline afresh.
+                let _ = select(select(changed.next(), poked.next()), timer).await;
             }
         }
     };
     drop(watch);
     if outcome.is_err() {
         cx.update(|cx| {
-            if let Some(shell) = open.shell.upgrade() {
-                shell.update(cx, |shell, cx| {
-                    shell.drop_opened(open.uid, &open.root, open.added, cx)
-                });
-            }
+            crate::state::with_shell(open.window, cx, |shell, window, cx| {
+                shell.drop_opened(open.uid, &open.root, open.added, window, cx)
+            });
             super::sessions().requests.failed(open.lead, &open.request);
         });
     }
@@ -192,11 +196,10 @@ fn ready(
         .find(|option| option.role() == Some(Role::Model))
         .and_then(|option| option.current.clone())
         .unwrap_or_else(|| "the agent's own".to_string());
-    let name = open
-        .shell
-        .upgrade()
-        .map(|shell| shell.read(cx).session_label(open.uid, cx))
-        .unwrap_or_default();
+    let name = crate::state::with_shell(open.window, cx, |shell, _, cx| {
+        shell.session_label(open.uid, cx)
+    })
+    .unwrap_or_default();
     let dirs = match open.dirs.is_empty() {
         true => "none".to_string(),
         false => open

@@ -247,16 +247,30 @@ impl Shell {
     /// drop its project when the open added it and nothing else stands on it.
     ///
     /// Quietly, as a run's project is dropped: nothing is shown and the caret
-    /// stays where it is. A project the window had, or one another session is
-    /// on, stays.
-    pub fn drop_opened(&mut self, uid: u64, dir: &Path, added: bool, cx: &mut Context<Self>) {
+    /// stays where it is, unless the person was watching that session or its
+    /// project, which then gives way to whatever is active. A project the
+    /// window had, or one another session is on, stays.
+    pub fn drop_opened(
+        &mut self,
+        uid: u64,
+        dir: &Path,
+        added: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let watched = self.chat.read(cx).viewing() == Some(uid);
         self.drop_session(uid, cx);
         let empty = self.root_index(dir).filter(|&idx| {
             let root = &self.window.workspace.roots[idx];
             added && root.transient && root.sessions.is_empty()
         });
+        let mut shown = watched;
         if let Some(idx) = empty {
+            shown |= self.window.workspace.active_root == idx;
             self.forget_root(idx, cx);
+        }
+        if shown {
+            self.show_active_session(window, cx);
         }
         cx.notify();
     }

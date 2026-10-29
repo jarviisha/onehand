@@ -95,6 +95,7 @@ impl Open {
 /// agent once its folder has been checked off the UI thread.
 pub(super) fn open(
     open: Open,
+    window: gpui::AnyWindowHandle,
     shell: Entity<Shell>,
     projects: &[(String, PathBuf)],
     answer: &mut Option<Answer>,
@@ -110,16 +111,8 @@ pub(super) fn open(
     let Some(caller) = open.caller.clone() else {
         // An outside program opens on a project of the window, as it always
         // has; a worker's folders are for a session's agent.
-        let worker_only = [
-            ("dirs", !open.dirs.is_empty()),
-            ("request", open.request.is_some()),
-            ("turn", open.turn.is_some()),
-            ("model", open.model.is_some()),
-        ];
-        if let Some((name, _)) = worker_only.iter().find(|(_, named)| *named) {
-            return Err(format!(
-                "`{name}` is for a session's agent, not an outside program"
-            ));
+        if let Some(why) = worker_only(&open) {
+            return Err(why);
         }
         let dir = named?;
         let name = spec.name.clone();
@@ -191,7 +184,7 @@ pub(super) fn open(
                     request: request.clone(),
                     uid: started.uid,
                     session: started.session,
-                    shell,
+                    window,
                     root: started.root,
                     added: started.added,
                     mode,
@@ -214,6 +207,28 @@ pub(super) fn open(
     })
     .detach();
     Ok(String::new())
+}
+
+/// Why an outside program's `open` is refused: every argument it named
+/// that only a session's agent may, or `None` when it named none.
+fn worker_only(open: &Open) -> Option<String> {
+    let named: Vec<String> = [
+        ("dirs", !open.dirs.is_empty()),
+        ("request", open.request.is_some()),
+        ("turn", open.turn.is_some()),
+        ("model", open.model.is_some()),
+    ]
+    .iter()
+    .filter(|(_, named)| *named)
+    .map(|(name, _)| format!("`{name}`"))
+    .collect();
+    (!named.is_empty()).then(|| {
+        format!(
+            "{} {} for a session's agent, not an outside program",
+            named.join(", "),
+            if named.len() == 1 { "is" } else { "are" }
+        )
+    })
 }
 
 /// The folder a session's agent named.

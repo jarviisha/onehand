@@ -132,7 +132,7 @@ it back and says so.
 
 What a session's agent gets from `open_session` beyond what an outside program does. An outside
 program naming a folder that is no project of the window, or `dirs`, `request`, `turn` or `model`,
-is refused, naming it.
+is refused, naming each.
 
 - **The folder**: a project of the window, or the top level of a git worktree of a repository one
   of the window's projects belongs to. Every path is canonicalized first (symlinks resolved),
@@ -180,5 +180,7 @@ is refused, naming it.
   that never came up, a mode or model refused, a prompt not taken. Only the open's own session is
   closed, ending its agent; its project goes only if the open added it and no session is left on
   it; its folder, its place under the cap and its request id are freed; the answer says why.
-- **The lead is asked about at every step.** A lead whose session closed, or switched off, while
-  its worker was opening abandons the open: it fails as above, its prompt never sent.
+- **The lead is asked about at every step**, and its closing or being switched off wakes the open
+  at once. A lead that went while its worker was opening abandons the open: it fails as above,
+  its prompt never sent. A person watching a worker whose open failed is put back on what is
+  active.

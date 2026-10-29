@@ -114,6 +114,9 @@ struct Sessions {
     requests: workers::requests::Requests,
     /// Each worker's lead, by the worker's uid.
     workers: HashMap<u64, workers::requests::Relation>,
+    /// The opens each lead has in flight, woken when it closes or is
+    /// switched off, so they are abandoned at once.
+    pokes: HashMap<u64, Vec<UnboundedSender<()>>>,
 }
 
 static SESSIONS: LazyLock<Mutex<Sessions>> = LazyLock::new(Mutex::default);
@@ -181,6 +184,21 @@ pub(crate) fn switch(uid: u64, on: bool) {
     };
     if changed {
         tell_changed(&mut sessions, uid);
+        if !on {
+            wake_opens(&mut sessions, uid);
+        }
+    }
+}
+
+/// Wake `sender` when session `lead` closes or is switched off.
+pub(crate) fn poke_on(lead: u64, sender: UnboundedSender<()>) {
+    sessions().pokes.entry(lead).or_default().push(sender);
+}
+
+/// Wake every open `lead` has in flight, dropping those already over.
+fn wake_opens(sessions: &mut Sessions, lead: u64) {
+    if let Some(senders) = sessions.pokes.get_mut(&lead) {
+        senders.retain(|sender| sender.unbounded_send(()).is_ok());
     }
 }
 
@@ -219,6 +237,8 @@ pub(crate) fn grant(uid: u64, grant: &onehand_core::task::Grant) {
 /// Session `uid` is closed: its switch and what its tools opened go with it.
 pub(crate) fn forget(uid: u64) {
     let mut sessions = sessions();
+    wake_opens(&mut sessions, uid);
+    sessions.pokes.remove(&uid);
     sessions.on.remove(&uid);
     sessions.opened.remove(&uid);
     sessions.labels.remove(&uid);
@@ -655,6 +675,7 @@ fn perform_now(
                 turn,
                 model,
             },
+            handle,
             shell,
             &projects,
             answer,
