@@ -68,7 +68,7 @@ answer, and exits.
 |---|---|---|---|
 | `list_projects` | none | the window's projects | `name — path — check: yes/no`, one per line |
 | `list_agents` | none | the agents a session can be opened with | one name per line |
-| `open_session` | `project`, `agent`, optional `prompt`; for a session's agent, `project` may also be a worktree's top level, and optional `dirs` | opens a session on the project with that agent, not shown; it appears in the rail; `prompt` is sent once the agent is up. A session's agent opens a worker: see *A worker* below | what it opened (and the folders it may write), or why not |
+| `open_session` | `project`, `agent`, optional `prompt`; for a session's agent, `request` (required), `turn` (required with `prompt`), optional `model` and `dirs`, and `project` may also be a worktree's top level | opens a session on the project with that agent, not shown; it appears in the rail; `prompt` is sent once the agent is up. A session's agent opens a worker: see *A worker* below | for an outside program, what it opened; for a session's agent, the worker's handle and what it runs with; or why not |
 | `list_workflows` | none | the library's workflows | `id — name`; an unreadable file says why |
 | `read_workflow` | `workflow` id | the workflow's file as TOML, a shipped one's too | the TOML, or why not |
 | `save_workflow` | `toml` | `workflow::store::save_text_blocking`: read as a file is (a key onehand does not read refuses), checked as the editor's *Save* is, and refused when another workflow has its name. It goes over the person's own file with its `id`, else into a new file: a shipped workflow is copied, never changed. The library is read again | `Saved <name> as <id>, version <n>`, or every problem, in the editor's words |
@@ -157,5 +157,27 @@ program naming a folder that is no project of the window, or `dirs`, is refused.
   not trace, such as `systemd --user` or `ssh-agent`, which an agent never is), refuses it as
   unknown, as does a process table that could not be read at all. Nothing is opened either way.
 - A worker whose window closed holds its folder no longer: the next open lets it go.
-- The checks read git, the file system and the process table off the UI thread; the answer comes
-  once the session has started.
+- The checks read git, the file system and the process table off the UI thread.
+- **The answer comes once the worker is up**, within 120 seconds of the call: its agent connected,
+  put in its mode and on its model one pick at a time, each answered, then its prompt accepted.
+  - **The mode** is not the lead's to name: it is `[unattended] mode` when the worker's agent is
+    the one unattended runs use (a mode is the adapter's own id), else what that agent is known
+    to need, else the agent's own.
+  - **The model**, when named, is a value of the agent's model option. An agent that offers no
+    model option, or not that value, refuses the open, naming what it offers; one that refuses
+    the pick does too. A worker never runs on another model.
+  - A `prompt` needs a `turn`, the caller's number for it, and a `turn` needs a prompt.
+- **What it answers**, one fact per line: `session:` the handle, `<run>-<uid>`, which names this
+  run of the app since uids count from 1 in every run; `name:` as the rail shows it; `project:`;
+  `mode:` and `model:` in force, or *the agent's own*; `dirs:` or *none*; and `turn: <n>
+  accepted` with a prompt, which means the agent was handed it, nothing more.
+- **`request` is the caller's id for the open**, per lead and for this run of the app. The same
+  id with the same arguments, while the open runs, answers that it is still opening; once it
+  answered, the same answer again; once it failed, it opens afresh. The same id with other
+  arguments is refused. Nothing is opened, sent or counted under the cap twice.
+- **A failure leaves nothing behind and touches nothing else**: past the 120 seconds, an agent
+  that never came up, a mode or model refused, a prompt not taken. Only the open's own session is
+  closed, ending its agent; its project goes only if the open added it and no session is left on
+  it; its folder, its place under the cap and its request id are freed; the answer says why.
+- **The lead is asked about at every step.** A lead whose session closed, or switched off, while
+  its worker was opening abandons the open: it fails as above, its prompt never sent.
