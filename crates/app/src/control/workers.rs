@@ -302,6 +302,11 @@ fn finish(
     shell: &Entity<Shell>,
     cx: &mut App,
 ) -> Result<Started, String> {
+    // The lead may have gone while the folder was read: nothing is started
+    // for nobody, nor counted under a cap a forgotten lead no longer has.
+    if !opening::lead_here(caller.0, cx) {
+        return Err("the lead went before its worker was ready".to_string());
+    }
     let taken = shell.read(cx).roots_with_sessions();
     if let Some((root, _)) = taken
         .iter()

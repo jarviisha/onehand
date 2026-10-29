@@ -136,7 +136,7 @@ fn wake(
 }
 
 /// Whether `lead` is still a session of some window, allowed to open one.
-fn lead_here(lead: u64, cx: &App) -> bool {
+pub(super) fn lead_here(lead: u64, cx: &App) -> bool {
     let allowed = {
         let sessions = super::sessions();
         sessions.on.contains(&lead)
