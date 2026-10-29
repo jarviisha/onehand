@@ -37,3 +37,20 @@ fn release_worker_leaves_other_folders() {
     held.release_worker(7);
     assert!(held.take(Path::new("/b")).is_err());
 }
+
+/// A worker whose session went without being closed (its window closed)
+/// leaves its folder held; the next open lets it go.
+#[test]
+fn a_worker_no_longer_live_frees_its_folder() {
+    let mut held = Reservations::default();
+    held.take(Path::new("/a")).unwrap();
+    held.bind(Path::new("/a"), 7);
+    held.take(Path::new("/b")).unwrap();
+    held.bind(Path::new("/b"), 8);
+    held.take(Path::new("/c")).unwrap();
+    held.prune(|uid| uid == 8);
+    assert!(held.take(Path::new("/a")).is_ok());
+    assert!(held.take(Path::new("/b")).is_err());
+    // An open still in flight holds its folder whatever is live.
+    assert!(held.take(Path::new("/c")).is_err());
+}

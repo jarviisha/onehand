@@ -152,7 +152,10 @@ program naming a folder that is no project of the window, or `dirs`, is refused.
 - **Nothing else working in it.** Every process of the user is read for one whose directory is in
   the folder (`/proc` on Linux, `lsof` elsewhere), leaving out onehand itself and its terminal's
   shells: an earlier run's worker, left by a crash, is what this finds. Any found refuses the
-  open, naming each by pid and command; a process whose directory could not be read refuses it
-  as unknown. Nothing is opened either way.
+  open, naming each by pid and command; a process whose directory could not be read for any
+  other reason than being gone, or than the system refusing it to its own user (a process it may
+  not trace, such as `systemd --user` or `ssh-agent`, which an agent never is), refuses it as
+  unknown, as does a process table that could not be read at all. Nothing is opened either way.
+- A worker whose window closed holds its folder no longer: the next open lets it go.
 - The checks read git, the file system and the process table off the UI thread; the answer comes
   once the session has started.

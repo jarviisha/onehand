@@ -47,9 +47,21 @@ fn a_process_gone_meanwhile_is_left_out() {
     assert_eq!(judge(Path::new(W), table, &[]), Occupants::None);
 }
 
+/// The system hides the folder of a process it will not let even its own
+/// user trace (`systemd --user`, `ssh-agent`); every desktop has some, and an
+/// agent is never one of them.
+#[test]
+fn a_process_hiding_its_folder_is_left_out() {
+    let table = [
+        unread(3302, "systemd", ErrorKind::PermissionDenied),
+        at(1, "bash", "/home"),
+    ];
+    assert_eq!(judge(Path::new(W), table, &[]), Occupants::None);
+}
+
 #[test]
 fn an_unreadable_cwd_is_unknown_never_none() {
-    let table = [unread(7, "bash", ErrorKind::PermissionDenied)];
+    let table = [unread(7, "bash", ErrorKind::Other)];
     assert_eq!(
         judge(Path::new(W), table, &[]),
         Occupants::Unknown(vec!["7 bash".to_string()])
@@ -58,10 +70,7 @@ fn an_unreadable_cwd_is_unknown_never_none() {
 
 #[test]
 fn found_wins_over_unknown() {
-    let table = [
-        unread(7, "bash", ErrorKind::PermissionDenied),
-        at(41, "node", "/w"),
-    ];
+    let table = [unread(7, "bash", ErrorKind::Other), at(41, "node", "/w")];
     assert_eq!(
         judge(Path::new(W), table, &[]),
         Occupants::Found(vec!["41 node".to_string()])
@@ -94,4 +103,14 @@ fn occupants_finds_this_test_process() {
         }
         other => panic!("expected this process among {other:?}"),
     }
+}
+
+/// On a real desktop, an empty folder has nobody in it: the processes the
+/// system hides from their own user do not make every answer unknown.
+#[cfg(target_os = "linux")]
+#[test]
+fn an_empty_folder_has_no_occupants_here() {
+    let empty = std::env::temp_dir().join(format!("onehand-occupants-{}", std::process::id()));
+    std::fs::create_dir_all(&empty).unwrap();
+    assert_eq!(occupants_blocking(&empty, &[]), Occupants::None);
 }

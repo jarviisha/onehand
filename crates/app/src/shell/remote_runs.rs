@@ -91,6 +91,16 @@ impl Shell {
     ///
     /// For the bridge, which has to know what there is before it can go looking
     /// on disk for what was said in it.
+    /// Every session's uid in this window.
+    pub fn session_uids(&self) -> Vec<u64> {
+        self.window
+            .workspace
+            .roots
+            .iter()
+            .flat_map(|root| root.sessions.iter().map(|session| session.uid))
+            .collect()
+    }
+
     /// Every root's path, with how many sessions are open on it.
     pub fn roots_with_sessions(&self) -> Vec<(PathBuf, usize)> {
         self.window

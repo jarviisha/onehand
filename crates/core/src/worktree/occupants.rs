@@ -4,9 +4,13 @@
 //! **An earlier run's worker is what this is for.** After onehand crashes, a
 //! worker's agent may still be running in its worktree, and nothing in the
 //! new run knows its pid. So the whole process table is read, and a process
-//! whose folder cannot be read is a refusal rather than a pass: "nothing was
-//! found" is only an answer when everything was looked at. A process gone
-//! between being listed and being read is simply gone.
+//! whose folder cannot be read for an unexpected reason is a refusal rather
+//! than a pass: "nothing was found" is only an answer when everything was
+//! looked at. Two reasons are expected and pass. A process gone between being
+//! listed and being read is simply gone. And the system refuses its own user
+//! the folder of a process that user may not trace (`systemd --user`,
+//! `ssh-agent`, anything holding capabilities): every desktop has some, and
+//! an agent, an ordinary process of the user's, is never one.
 
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -45,7 +49,9 @@ fn judge(folder: &Path, table: impl IntoIterator<Item = Entry>, skip: &[u32]) ->
         let named = format!("{} {}", entry.pid, entry.command);
         match entry.cwd {
             Ok(cwd) if cwd.starts_with(folder) => found.push(named),
-            Ok(_) | Err(ErrorKind::NotFound) => {}
+            // Gone meanwhile, or one the system will not let its own user
+            // trace: never an agent, whose folder is always readable.
+            Ok(_) | Err(ErrorKind::NotFound | ErrorKind::PermissionDenied) => {}
             Err(_) => unknown.push(named),
         }
     }

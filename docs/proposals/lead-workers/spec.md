@@ -78,7 +78,9 @@ PR 2's; what is built is in control.md's *A worker*.
 - **Three answers, and only one opens**: none found, and every process of the user was read:
   the open goes on. Some found: refused, naming each (its pid and command) and saying the person
   has to stop them. **Some could not be read** (a process gone between listing and reading
-  aside, a permission refused, `lsof` missing or out of time): refused as unknown, naming what
+  aside, and a permission refused aside too: the system refuses its own user the folder of a
+  process that user may not trace, `systemd --user` and `ssh-agent` on every desktop, and an
+  agent is never one; `lsof` missing or out of time counts): refused as unknown, naming what
   could not be read, never taken as none. The refusal is the lead's answer, and nothing is
   opened.
 

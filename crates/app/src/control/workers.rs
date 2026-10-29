@@ -52,6 +52,13 @@ impl Reservations {
         self.held.remove(folder);
     }
 
+    /// Let go of every folder held by a worker `live` says is gone. A
+    /// window closing ends its sessions without closing them one by one, so
+    /// nothing else would.
+    pub(super) fn prune(&mut self, live: impl Fn(u64) -> bool) {
+        self.held.retain(|_, worker| worker.is_none_or(&live));
+    }
+
     /// Session `uid` closed: the folder it held is free.
     pub(super) fn release_worker(&mut self, uid: u64) {
         self.held.retain(|_, worker| *worker != Some(uid));
@@ -107,6 +114,7 @@ pub(super) fn open(
     let roots: Vec<PathBuf> = projects.iter().map(|(_, path)| path.clone()).collect();
     let home = std::env::var_os("HOME").map(PathBuf::from);
     let dirs = open.dirs.clone();
+    let shell = shell.downgrade();
     let answer = answer.take();
     cx.spawn(async move |cx| {
         let resolved = cx
@@ -114,7 +122,11 @@ pub(super) fn open(
             .spawn(async move { resolve_blocking(target, &roots, &dirs, home.as_deref(), &skip) })
             .await;
         let outcome = match resolved {
-            Ok(resolved) => cx.update(|cx| finish(&open, caller, resolved, spec, &shell, cx)),
+            // The window may have closed while the folder was read.
+            Ok(resolved) => cx.update(|cx| match shell.upgrade() {
+                Some(shell) => finish(&open, caller, resolved, spec, &shell, cx),
+                None => Err("the window closed".to_string()),
+            }),
             Err(why) => Err(why),
         };
         if let Some(answer) = answer {
@@ -212,7 +224,16 @@ fn finish(
             root.display()
         ));
     }
-    sessions().reserved.take(&resolved.folder)?;
+    let live: Vec<u64> = crate::state::Shared::global(cx)
+        .windows
+        .iter()
+        .filter_map(|window| window.shell.upgrade())
+        .flat_map(|shell| shell.read(cx).session_uids())
+        .collect();
+    let mut held = sessions();
+    held.reserved.prune(|uid| live.contains(&uid));
+    held.reserved.take(&resolved.folder)?;
+    drop(held);
     let refused = match &resolved.occupants {
         Occupants::None => None,
         Occupants::Found(found) => Some(format!(
