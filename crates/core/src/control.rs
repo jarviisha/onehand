@@ -70,6 +70,9 @@ pub enum Call {
         /// The model the session runs, by the agent's own value.
         model: Option<String>,
     },
+    SessionState {
+        session: String,
+    },
 }
 
 /// Who a connection speaks for, fixed by its `initialize`.
@@ -181,7 +184,9 @@ pub fn handle(conn: &mut Conn, line: &str, standing: impl Fn(&Peer) -> Standing)
             if let Standing::Refused(why) = &standing {
                 return fail(NOT_ALLOWED, why);
             }
+            let outside = matches!(peer, Peer::Outside);
             let allowed = |name: &str| match &standing {
+                _ if outside && SESSION_ONLY.contains(&name) => false,
                 Standing::On => true,
                 Standing::Only(names) => names.iter().any(|n| n == name),
                 Standing::Off | Standing::Refused(_) => false,
@@ -199,6 +204,9 @@ pub fn handle(conn: &mut Conn, line: &str, standing: impl Fn(&Peer) -> Standing)
             }
             if !allowed(name) {
                 let why = match standing {
+                    _ if outside && SESSION_ONLY.contains(&name) => {
+                        format!("`{name}` is for a session's agent, about a worker it opened")
+                    }
                     Standing::Only(_) => format!("`{name}` is not among this session's tools"),
                     _ => "onehand's tools are switched off for this session".to_string(),
                 };
@@ -238,7 +246,7 @@ fn error(id: &Value, code: i64, message: &str) -> String {
 }
 
 /// The tools, in the order they are listed.
-const TOOLS: [&str; 13] = [
+const TOOLS: [&str; 14] = [
     "list_projects",
     "list_agents",
     "open_session",
@@ -252,7 +260,12 @@ const TOOLS: [&str; 13] = [
     "open_file",
     "list_issues",
     "create_issue",
+    "session_state",
 ];
+
+/// The tools about a session's workers: an outside program owns none, so it
+/// is never offered them.
+const SESSION_ONLY: [&str; 1] = ["session_state"];
 
 /// The tools' names, in the order they are listed: what a schedule may give
 /// its sessions.
@@ -416,6 +429,17 @@ fn catalogue() -> Vec<Value> {
                 &["title"],
             ),
         ),
+        (
+            "session_state",
+            "What a worker you opened is doing, one fact per line: its link, its turn and how \
+             the last ended, what waits on a person, its activity, who holds it, your turns sent \
+             and over, what it runs with. It never says the worker stopped: only `link: closed` \
+             does",
+            schema(
+                json!({"session": text("The worker's handle, as open_session answered it")}),
+                &["session"],
+            ),
+        ),
     ];
     tools
         .into_iter()
@@ -446,6 +470,7 @@ fn parse(name: &str, arguments: &Value) -> Result<Call, String> {
         "save_workflow" => &["toml"],
         "start_workflow" => &["project", "workflow", "title", "brief"],
         "start_issue" => &["project", "issue", "workflow"],
+        "session_state" => &["session"],
         _ => &[],
     };
     if let Some(extra) = args.keys().find(|k| !known.contains(&k.as_str())) {
@@ -516,6 +541,9 @@ fn parse(name: &str, arguments: &Value) -> Result<Call, String> {
                 ),
             },
             model: optional("model")?,
+        },
+        "session_state" => Call::SessionState {
+            session: required("session")?,
         },
         _ => return Err(format!("no tool named `{name}`")),
     })
