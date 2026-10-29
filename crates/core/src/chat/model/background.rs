@@ -3,10 +3,16 @@
 //! Neither is transcript: a background item comes and goes by the adapter's
 //! own reports, and the meters are read off the latest usage report. Both are
 //! cleared when the adapter goes away, since nothing would ever end them.
+//!
+//! What stays is the end: a line in the transcript saying what ran, how it
+//! ended and for how long, so a conversation read back later still shows it.
 
-use super::items::ChatItem;
+use super::items::{ChatItem, NoticeLevel};
 use super::{ApplyOutcome, Chat, Link, Replay};
-use crate::acp::{AcpRequest, BackgroundReport, LimitStatus, RateLimit, ToolStatus, Usage};
+use crate::acp::{
+    AcpRequest, BackgroundEnd, BackgroundReport, LimitStatus, RateLimit, ToolStatus, Usage,
+};
+use crate::chat::activity::first_line_trunc;
 use std::time::{Duration, Instant};
 
 /// One piece of work the agent started that runs on after its turn.
@@ -113,6 +119,22 @@ fn status_level(limit: &RateLimit) -> Level {
         LimitStatus::Warning => Level::Warning,
         LimitStatus::Rejected => Level::Danger,
     }
+}
+
+/// How long a background item's name runs on its line before it is clipped.
+const NAME_CHARS: usize = 80;
+
+/// The transcript's line for a background item that is over: `ended` says
+/// how, `level` how loudly.
+fn ended_line(item: &BackgroundItem, ended: &str, level: NoticeLevel) -> ChatItem {
+    let took = crate::duration(item.started.elapsed().as_secs());
+    let mut text = format!("Background work {ended} after {took}");
+    // A name that only repeats the kind (the fallback) is no name.
+    if item.name != item.kind {
+        text.push_str(": ");
+        text.push_str(&first_line_trunc(&item.name, NAME_CHARS));
+    }
+    ChatItem::failure(text, level, None)
 }
 
 fn limit_line(limit: &RateLimit) -> String {
@@ -296,13 +318,17 @@ impl Chat {
             && self.link == Link::Connected
     }
 
-    /// Whether the report ended an item a person asked to stop: nothing the
-    /// agent will answer.
-    pub(super) fn apply_background(&mut self, report: BackgroundReport) -> bool {
+    /// Follow one background report: the transcript's line when an item
+    /// ended, and whether it was an item a person asked to stop, so nothing
+    /// the agent will answer.
+    pub(super) fn apply_background(
+        &mut self,
+        report: BackgroundReport,
+    ) -> (Option<ChatItem>, bool) {
         match report {
             BackgroundReport::Spawned { id, name, kind } => {
                 if self.background.iter().any(|item| item.id == id) {
-                    return false;
+                    return (None, false);
                 }
                 let kind = if kind.is_empty() { "task".into() } else { kind };
                 let name = if name.is_empty() { kind.clone() } else { name };
@@ -312,13 +338,21 @@ impl Chat {
                     kind,
                     started: Instant::now(),
                 });
-                false
+                (None, false)
             }
-            BackgroundReport::Ended { id } => {
-                self.background.retain(|item| item.id != id);
+            BackgroundReport::Ended { id, end } => {
                 let asked = self.stop_asked.contains(&id);
                 self.stop_asked.retain(|asked| *asked != id);
-                asked
+                let Some(at) = self.background.iter().position(|item| item.id == id) else {
+                    return (None, asked);
+                };
+                let item = self.background.remove(at);
+                let line = match end {
+                    BackgroundEnd::Completed => ended_line(&item, "finished", NoticeLevel::Info),
+                    BackgroundEnd::Failed => ended_line(&item, "failed", NoticeLevel::Error),
+                    BackgroundEnd::Stopped => ended_line(&item, "stopped", NoticeLevel::Info),
+                };
+                (Some(line), asked)
             }
         }
     }
@@ -336,10 +370,16 @@ impl Chat {
 
     /// Forget the background work and the meters, and interrupt the working
     /// subagents: the adapter that reported them is gone and will never end
-    /// them.
+    /// them. Each item still running says so in the transcript.
     pub(super) fn forget_activity(&mut self) {
         self.interrupt_subagents();
-        self.background.clear();
+        if !self.background.is_empty() {
+            for item in std::mem::take(&mut self.background) {
+                let line = ended_line(&item, "interrupted", NoticeLevel::Info);
+                self.items.push(line);
+            }
+            self.touch();
+        }
         self.stop_asked.clear();
         self.context = None;
         self.limits.clear();

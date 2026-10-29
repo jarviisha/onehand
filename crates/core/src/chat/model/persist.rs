@@ -129,8 +129,9 @@ impl Chat {
     /// condition has already been said out loud long before this runs.
     pub fn save_blocking(&mut self) {
         // The adapter goes with the chat, so a card still working never ends;
-        // held back, it and everything after it would never be written.
-        self.interrupt_subagents();
+        // held back, it and everything after it would never be written. Its
+        // background work ends here too, and says so.
+        self.forget_activity();
         if let Some(write) = self.flush() {
             if let Err(e) = store::commit(&write) {
                 eprintln!("onehand: conversation not archived: {e}");
@@ -148,8 +149,9 @@ impl Chat {
     pub fn take_snapshot(&mut self) -> Option<ConversationSnapshot> {
         let session_id = self.session_id.clone()?;
         // The adapter that would end a working card is the one being
-        // replaced; carried over working, it would hold every save back.
-        self.interrupt_subagents();
+        // replaced; carried over working, it would hold every save back. Its
+        // background work goes with it, each item's end said before the lift.
+        self.forget_activity();
         // Whatever is known to be whole. Mid-replay that is the copy that was
         // adopted, not the re-delivery that has not finished arriving.
         let items = match std::mem::replace(&mut self.replay, Replay::Settled) {

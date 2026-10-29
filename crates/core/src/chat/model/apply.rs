@@ -304,7 +304,20 @@ impl Chat {
                 plan(&mut self.items, entries);
             }
             AcpEvent::Usage(usage) => self.apply_usage(usage),
-            AcpEvent::Background(report) => asked_end = self.apply_background(report),
+            AcpEvent::Background(report) => {
+                // An item's end is a line of transcript, so it seals what came
+                // before it, as any line does. One a resume re-delivers is
+                // already in the archive.
+                let (line, asked) = self.apply_background(report);
+                asked_end = asked;
+                if let Some(line) = line.filter(|_| matches!(self.replay, Replay::Settled)) {
+                    self.finalize_thought();
+                    self.user_chunk_open = false;
+                    self.items.push(line);
+                    self.last_activity = Some(store::now_secs());
+                    self.touch();
+                }
+            }
             // Changes the transcript only when it lands in a card, so the
             // stamp and the revision wait for that answer.
             event @ (AcpEvent::SubagentSpawned { .. }

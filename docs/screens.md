@@ -57,7 +57,9 @@ weight; a dots menu (*Rename…*, *Export as Markdown…*; *Resume in this sessi
 and *Restart the agent*; *Delete conversation* in the danger tint, refused until the first turn
 ends); a spacer; *N in background* (only while the session's agent has work running in the
 background: a menu of each item's name, its kind and how long it has run, each row stopping that
-one item and never the turn, 12 listed and then *N more*); past conversations and *Close session*
+one item and never the turn, 12 listed and then *N more*; when an item ends, the transcript keeps a
+notice of how and after how long: *Background work finished after 2m 14s: npm test*, an error when it
+failed, *interrupted* when the agent went away first); past conversations and *Close session*
 (only while a session shows); the terminal, an accent dot on it while its dock is closed over a
 shell running a command; last, the Workbench.
 The two dock buttons are filled while their dock is open. On the overview, Tasks, Issues,

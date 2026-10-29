@@ -557,6 +557,7 @@ fn a_step_is_judged_once_the_work_its_turn_left_is_done() {
     rig.chat
         .apply(AcpEvent::Background(BackgroundReport::Ended {
             id: "t1".into(),
+            end: crate::acp::BackgroundEnd::Completed,
         }));
     assert!(
         !read(&rig.on(Input::Notified)),

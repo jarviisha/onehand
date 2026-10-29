@@ -18,8 +18,9 @@ pub use client::{base64_encode, connect, Opening, SessionOpts};
 pub use parse::base64_decode;
 pub use roles::{Role, Switch};
 pub use types::{
-    AcpEvent, AcpRequest, Attachment, BackgroundReport, ConfigChoice, ConfigOption, ElicitChoice,
-    ElicitField, ElicitKind, ElicitOutcome, ElicitValue, Elicitation, LimitStatus, Mode,
-    PermissionOption, PermissionRequest, PermissionWeight, PlanEntry, PlanStatus, RateLimit, ReqTx,
-    SlashCommand, SubagentEnd, ToolCall, ToolCallUpdate, ToolContent, ToolKind, ToolStatus, Usage,
+    AcpEvent, AcpRequest, Attachment, BackgroundEnd, BackgroundReport, ConfigChoice, ConfigOption,
+    ElicitChoice, ElicitField, ElicitKind, ElicitOutcome, ElicitValue, Elicitation, LimitStatus,
+    Mode, PermissionOption, PermissionRequest, PermissionWeight, PlanEntry, PlanStatus, RateLimit,
+    ReqTx, SlashCommand, SubagentEnd, ToolCall, ToolCallUpdate, ToolContent, ToolKind, ToolStatus,
+    Usage,
 };
