@@ -110,6 +110,13 @@ struct Sessions {
     only: HashMap<u64, Vec<String>>,
     /// The folders workers are opening or open on.
     reserved: workers::Reservations,
+    /// What each lead asked `open_session` for, by its request id.
+    requests: workers::requests::Requests,
+    /// Each worker's lead, by the worker's uid.
+    workers: HashMap<u64, workers::requests::Relation>,
+    /// The opens each lead has in flight, woken when it closes or is
+    /// switched off, so they are abandoned at once.
+    pokes: HashMap<u64, Vec<UnboundedSender<()>>>,
 }
 
 static SESSIONS: LazyLock<Mutex<Sessions>> = LazyLock::new(Mutex::default);
@@ -177,6 +184,21 @@ pub(crate) fn switch(uid: u64, on: bool) {
     };
     if changed {
         tell_changed(&mut sessions, uid);
+        if !on {
+            wake_opens(&mut sessions, uid);
+        }
+    }
+}
+
+/// Wake `sender` when session `lead` closes or is switched off.
+pub(crate) fn poke_on(lead: u64, sender: UnboundedSender<()>) {
+    sessions().pokes.entry(lead).or_default().push(sender);
+}
+
+/// Wake every open `lead` has in flight, dropping those already over.
+fn wake_opens(sessions: &mut Sessions, lead: u64) {
+    if let Some(senders) = sessions.pokes.get_mut(&lead) {
+        senders.retain(|sender| sender.unbounded_send(()).is_ok());
     }
 }
 
@@ -215,11 +237,17 @@ pub(crate) fn grant(uid: u64, grant: &onehand_core::task::Grant) {
 /// Session `uid` is closed: its switch and what its tools opened go with it.
 pub(crate) fn forget(uid: u64) {
     let mut sessions = sessions();
+    wake_opens(&mut sessions, uid);
+    sessions.pokes.remove(&uid);
     sessions.on.remove(&uid);
     sessions.opened.remove(&uid);
     sessions.labels.remove(&uid);
     sessions.only.remove(&uid);
     sessions.reserved.release_worker(uid);
+    sessions.requests.forget_lead(uid);
+    sessions
+        .workers
+        .retain(|worker, relation| *worker != uid && relation.lead != uid);
 }
 
 /// Said when a call's answer cannot come, because the app is going.
@@ -259,7 +287,7 @@ pub(crate) async fn converse(
             Handled::Perform { id, call } => {
                 let peer = conn.peer().cloned().unwrap_or(Peer::Outside);
                 let (answer, answered) = oneshot::channel();
-                let outcome = match tx.unbounded_send(Incoming::Call(peer, call, answer)) {
+                let outcome = match tx.unbounded_send(Incoming::Call(peer, *call, answer)) {
                     Ok(()) => answered.await.unwrap_or_else(|_| Err(CLOSING.to_string())),
                     Err(_) => Err(CLOSING.to_string()),
                 };
@@ -303,6 +331,11 @@ pub(crate) fn perform(peer: Peer, call: Call, answer: Answer, cx: &mut App) {
 
 /// Where a call's answer goes.
 pub(crate) type Answer = oneshot::Sender<Result<String, String>>;
+
+/// This run of the app, as a worker's handle names it: uids count from 1 in
+/// every run, so a handle from an earlier one must never reach whichever
+/// session took its number. Never written anywhere.
+static RUN: LazyLock<String> = LazyLock::new(|| control::new_token()[..8].to_string());
 
 /// How many sessions one session's tools may have open at once.
 const OPENED_CAP: usize = 4;
@@ -628,6 +661,9 @@ fn perform_now(
             agent,
             prompt,
             dirs,
+            request,
+            turn,
+            model,
         } => workers::open(
             workers::Open {
                 caller,
@@ -635,7 +671,11 @@ fn perform_now(
                 agent,
                 prompt,
                 dirs,
+                request,
+                turn,
+                model,
             },
+            handle,
             shell,
             &projects,
             answer,

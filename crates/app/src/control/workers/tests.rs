@@ -54,3 +54,115 @@ fn a_worker_no_longer_live_frees_its_folder() {
     // An open still in flight holds its folder whatever is live.
     assert!(held.take(Path::new("/c")).is_err());
 }
+
+use super::requests::{Asked, Requests, Seen};
+
+fn asked(prompt: &str) -> Asked {
+    Asked {
+        project: "/wt".into(),
+        agent: "Claude".into(),
+        prompt: Some(prompt.into()),
+        dirs: Vec::new(),
+        turn: Some(1),
+        model: None,
+    }
+}
+
+#[test]
+fn a_first_request_is_new() {
+    let mut requests = Requests::default();
+    assert_eq!(requests.see(1, "a", &asked("go")), Ok(Seen::New));
+}
+
+#[test]
+fn the_same_request_while_opening_says_so() {
+    let mut requests = Requests::default();
+    requests.see(1, "a", &asked("go")).unwrap();
+    assert_eq!(requests.see(1, "a", &asked("go")), Ok(Seen::Opening(None)));
+    requests.started(1, "a", 7);
+    assert_eq!(
+        requests.see(1, "a", &asked("go")),
+        Ok(Seen::Opening(Some(7)))
+    );
+}
+
+#[test]
+fn a_finished_request_answers_again() {
+    let mut requests = Requests::default();
+    requests.see(1, "a", &asked("go")).unwrap();
+    requests.answered(1, "a", "session: r-7".into());
+    assert_eq!(
+        requests.see(1, "a", &asked("go")),
+        Ok(Seen::Answered("session: r-7".into()))
+    );
+}
+
+#[test]
+fn a_failed_request_opens_afresh() {
+    let mut requests = Requests::default();
+    requests.see(1, "a", &asked("go")).unwrap();
+    requests.failed(1, "a");
+    assert_eq!(requests.see(1, "a", &asked("go")), Ok(Seen::New));
+}
+
+#[test]
+fn the_same_request_with_other_arguments_is_refused() {
+    let mut requests = Requests::default();
+    requests.see(1, "a", &asked("go")).unwrap();
+    let why = requests.see(1, "a", &asked("stop")).unwrap_err();
+    assert!(why.contains("request a"), "{why}");
+}
+
+#[test]
+fn requests_are_per_lead() {
+    let mut requests = Requests::default();
+    requests.see(1, "a", &asked("go")).unwrap();
+    assert_eq!(requests.see(2, "a", &asked("stop")), Ok(Seen::New));
+}
+
+#[test]
+fn forgetting_a_lead_forgets_its_requests() {
+    let mut requests = Requests::default();
+    requests.see(1, "a", &asked("go")).unwrap();
+    requests.see(2, "b", &asked("go")).unwrap();
+    requests.forget_lead(1);
+    assert_eq!(requests.see(1, "a", &asked("stop")), Ok(Seen::New));
+    assert_eq!(requests.see(2, "b", &asked("go")), Ok(Seen::Opening(None)));
+}
+
+/// An outside program is told every worker-only argument it named, not
+/// only the first.
+#[test]
+fn an_outside_program_hears_every_worker_input_it_named() {
+    let open = super::Open {
+        caller: None,
+        project: "app".into(),
+        agent: "Claude".into(),
+        prompt: None,
+        dirs: vec!["/run".into()],
+        request: None,
+        turn: Some(1),
+        model: Some("strong".into()),
+    };
+    let why = super::worker_only(&open).unwrap();
+    assert!(
+        why.contains("`dirs`") && why.contains("`turn`") && why.contains("`model`"),
+        "{why}"
+    );
+    assert!(!why.contains("`request`"), "{why}");
+}
+
+#[test]
+fn an_outside_program_naming_none_is_let_through() {
+    let open = super::Open {
+        caller: None,
+        project: "app".into(),
+        agent: "Claude".into(),
+        prompt: Some("hi".into()),
+        dirs: Vec::new(),
+        request: None,
+        turn: None,
+        model: None,
+    };
+    assert_eq!(super::worker_only(&open), None);
+}

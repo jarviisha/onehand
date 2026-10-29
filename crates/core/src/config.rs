@@ -58,6 +58,21 @@ pub fn run_mode(mode: Option<&str>, agents: &[AgentSpec], agent: Option<&str>) -
     }
 }
 
+/// The mode a lead's worker starts in: the one configured for unattended
+/// runs, but only for the agent those runs use, since a mode is the adapter's
+/// own id; else what the worker's own agent is known to need; else none,
+/// which leaves the agent in the mode it starts in. The lead names no mode.
+pub fn worker_mode(
+    configured: Option<&str>,
+    runs_agent: Option<&str>,
+    agents: &[AgentSpec],
+    worker_agent: &str,
+) -> Option<String> {
+    let runs = agent_or_first(agents, runs_agent).map(|spec| spec.name.as_str());
+    let configured = configured.filter(|_| runs == Some(worker_agent));
+    mode_set(&run_mode(configured, agents, Some(worker_agent)))
+}
+
 /// Which of the theme's two modes the window is drawn in.
 ///
 /// Three values rather than a `dark = true` flag, because "follow the desktop"

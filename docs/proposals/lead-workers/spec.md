@@ -26,8 +26,7 @@ them only if the set names them.
 
 ## 1. `open_session`
 
-Built in PR 1, except the waiting, the answer's handle, `request`, `turn` and `model`, which are
-PR 2's; what is built is in control.md's *A worker*.
+Built in PR 1 and PR 2; what is built is in control.md's *A worker*.
 
 ### Input
 

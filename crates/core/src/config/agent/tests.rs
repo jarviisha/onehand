@@ -631,3 +631,54 @@ fn copilot_runs_unattended_in_its_own_default_mode() {
     let agents = [AgentSpec::of(Preset::Copilot, &[])];
     assert_eq!(crate::config::run_mode(None, &agents, None), "");
 }
+
+fn claude_and_codex() -> [AgentSpec; 2] {
+    let claude = AgentSpec {
+        name: "Claude Code".into(),
+        preset: Some(Preset::ClaudeCode.into()),
+        ..Default::default()
+    };
+    let codex = AgentSpec {
+        name: "Codex".into(),
+        preset: Some(Preset::Codex.into()),
+        ..Default::default()
+    };
+    [claude, codex]
+}
+
+#[test]
+fn worker_mode_takes_the_configured_mode_for_the_runs_agent() {
+    let both = claude_and_codex();
+    let mode = crate::config::worker_mode(Some("plan"), Some("Claude Code"), &both, "Claude Code");
+    assert_eq!(mode.as_deref(), Some("plan"));
+}
+
+/// A mode is the adapter's own id: one set for Claude's runs means nothing to
+/// a worker on Codex.
+#[test]
+fn worker_mode_ignores_it_for_another_agent() {
+    let both = claude_and_codex();
+    assert_eq!(
+        crate::config::worker_mode(Some("plan"), Some("Claude Code"), &both, "Codex"),
+        None
+    );
+}
+
+#[test]
+fn worker_mode_falls_back_to_the_preset() {
+    let both = claude_and_codex();
+    assert_eq!(
+        crate::config::worker_mode(None, None, &both, "Claude Code").as_deref(),
+        Some("acceptEdits")
+    );
+    assert_eq!(crate::config::worker_mode(None, None, &both, "Codex"), None);
+}
+
+#[test]
+fn a_blank_configured_mode_is_none() {
+    let both = claude_and_codex();
+    assert_eq!(
+        crate::config::worker_mode(Some(" "), None, &both, "Claude Code"),
+        None
+    );
+}

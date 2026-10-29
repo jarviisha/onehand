@@ -85,3 +85,26 @@ fn a_grant_tells_an_agent_that_listed_its_tools_before() {
     assert!(heard.try_recv().is_err());
     forget(uid);
 }
+
+/// A lead closing wakes every open it has in flight, so the open is
+/// abandoned at once rather than at its worker's next change.
+#[test]
+fn forgetting_a_lead_wakes_its_opens() {
+    let lead = 9_000_001;
+    let (tx, mut rx) = futures::channel::mpsc::unbounded();
+    super::poke_on(lead, tx);
+    super::forget(lead);
+    assert_eq!(rx.try_recv().ok(), Some(()));
+}
+
+/// So does a lead switched off.
+#[test]
+fn switching_a_lead_off_wakes_its_opens() {
+    let lead = 9_000_002;
+    super::switch(lead, true);
+    let (tx, mut rx) = futures::channel::mpsc::unbounded();
+    super::poke_on(lead, tx);
+    super::switch(lead, false);
+    assert_eq!(rx.try_recv().ok(), Some(()));
+    super::forget(lead);
+}
