@@ -143,11 +143,11 @@ impl AcpRuntime {
 
     /// Spawn an adapter for `spec` and return its event stream.
     ///
-    /// Dropping the returned receiver tears the whole thing down: the forwarder
-    /// sees a closed channel, stops polling, drops the stream, and core's
-    /// `connect` kills the child. So a caller holds the receiver for exactly as
-    /// long as it wants the agent alive — there is no separate shutdown to
-    /// remember.
+    /// Dropping the returned events tears the whole thing down: the forwarder
+    /// hears it at once, even from an agent with nothing to say, drops the
+    /// stream, and core's `connect` kills the child. So a caller holds them for
+    /// exactly as long as it wants the agent alive — there is no separate
+    /// shutdown to remember.
     ///
     /// Also handed back: when the adapter was started. For one spawned here
     /// that is now; for a parked one it is when it was parked, since an agent
