@@ -95,6 +95,9 @@ fn every_tool_parses_its_input() {
             agent: "Claude".into(),
             prompt: None,
             dirs: Vec::new(),
+            request: None,
+            turn: None,
+            model: None,
         }
     );
     assert_eq!(
@@ -107,6 +110,9 @@ fn every_tool_parses_its_input() {
             agent: "Claude".into(),
             prompt: Some("hi".into()),
             dirs: Vec::new(),
+            request: None,
+            turn: None,
+            model: None,
         }
     );
     assert_eq!(
@@ -119,6 +125,25 @@ fn every_tool_parses_its_input() {
             agent: "Claude".into(),
             prompt: None,
             dirs: vec!["/run".into(), "/other".into()],
+            request: None,
+            turn: None,
+            model: None,
+        }
+    );
+    assert_eq!(
+        performs(
+            "open_session",
+            json!({"project": "/wt", "agent": "Claude", "prompt": "go",
+                   "request": "a-1", "turn": 3, "model": "strong"})
+        ),
+        Call::OpenSession {
+            project: "/wt".into(),
+            agent: "Claude".into(),
+            prompt: Some("go".into()),
+            dirs: Vec::new(),
+            request: Some("a-1".into()),
+            turn: Some(3),
+            model: Some("strong".into()),
         }
     );
 }
@@ -151,6 +176,21 @@ fn every_tool_refuses_malformed_input() {
             "open_session",
             json!({"project": "app", "agent": "Claude", "dirs": [""]}),
             "`dirs` must be a list of folder paths",
+        ),
+        (
+            "open_session",
+            json!({"project": "app", "agent": "Claude", "turn": 0}),
+            "`turn` must be a turn number, a whole number from 1",
+        ),
+        (
+            "open_session",
+            json!({"project": "app", "agent": "Claude", "turn": "1"}),
+            "`turn` must be a turn number, a whole number from 1",
+        ),
+        (
+            "open_session",
+            json!({"project": "app", "agent": "Claude", "model": 3}),
+            "model",
         ),
         ("list_agents", json!({"extra": 1}), "extra"),
     ];

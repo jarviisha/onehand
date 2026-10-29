@@ -628,6 +628,9 @@ fn perform_now(
             agent,
             prompt,
             dirs,
+            request: _,
+            turn: _,
+            model: _,
         } => workers::open(
             workers::Open {
                 caller,

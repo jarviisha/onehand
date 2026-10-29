@@ -61,6 +61,13 @@ pub enum Call {
         prompt: Option<String>,
         /// Folders outside the project the session's agent may also write.
         dirs: Vec<PathBuf>,
+        /// The caller's id for this open: the same id again answers with
+        /// the same session rather than opening a second.
+        request: Option<String>,
+        /// The turn number `prompt` is, in the caller's count.
+        turn: Option<u64>,
+        /// The model the session runs, by the agent's own value.
+        model: Option<String>,
     },
 }
 
@@ -276,7 +283,9 @@ fn catalogue() -> Vec<Value> {
         (
             "open_session",
             "Open a session on a project with an agent, without showing it, and send it a \
-             first prompt if one is given. It appears in the rail",
+             first prompt if one is given. It appears in the rail. For a session's agent it \
+             answers once the session is up, on its model, its first prompt accepted, with \
+             the handle the session is named by",
             schema(
                 json!({
                     "project": text(
@@ -292,6 +301,17 @@ fn catalogue() -> Vec<Value> {
                         "description": "Absolute folders outside the project the session's \
                                         agent may also write, for a session's agent only",
                     },
+                    "request": text(
+                        "Your id for this open, required from a session's agent: the same id \
+                         again answers with the session it opened rather than opening another"
+                    ),
+                    "turn": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "The turn number the prompt is, required with a prompt \
+                                        from a session's agent",
+                    },
+                    "model": text("The model the session runs, by the agent's own value"),
                 }),
                 &["project", "agent"],
             ),
@@ -415,7 +435,9 @@ fn parse(name: &str, arguments: &Value) -> Result<Call, String> {
         "open_file" => &["path"],
         "list_issues" => &["project"],
         "create_issue" => &["project", "title", "body"],
-        "open_session" => &["project", "agent", "prompt", "dirs"],
+        "open_session" => &[
+            "project", "agent", "prompt", "dirs", "request", "turn", "model",
+        ],
         "read_workflow" => &["workflow"],
         "save_workflow" => &["toml"],
         "start_workflow" => &["project", "workflow", "title", "brief"],
@@ -480,6 +502,16 @@ fn parse(name: &str, arguments: &Value) -> Result<Call, String> {
             agent: required("agent")?,
             prompt: optional("prompt")?,
             dirs: folders(args.get("dirs"))?,
+            request: optional("request")?,
+            turn: match args.get("turn") {
+                None | Some(Value::Null) => None,
+                Some(turn) => Some(
+                    turn.as_u64()
+                        .filter(|&n| n > 0)
+                        .ok_or("`turn` must be a turn number, a whole number from 1")?,
+                ),
+            },
+            model: optional("model")?,
         },
         _ => return Err(format!("no tool named `{name}`")),
     })
