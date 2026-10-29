@@ -72,6 +72,23 @@ pub(super) struct Open {
     pub(super) agent: String,
     pub(super) prompt: Option<String>,
     pub(super) dirs: Vec<PathBuf>,
+    pub(super) request: Option<String>,
+    pub(super) turn: Option<u64>,
+    pub(super) model: Option<String>,
+}
+
+impl Open {
+    /// The arguments its request is held to.
+    fn asked(&self) -> requests::Asked {
+        requests::Asked {
+            project: self.project.clone(),
+            agent: self.agent.clone(),
+            prompt: self.prompt.clone(),
+            dirs: self.dirs.clone(),
+            turn: self.turn,
+            model: self.model.clone(),
+        }
+    }
 }
 
 /// Carry out `open`: at once for an outside program, and for a session's
@@ -93,20 +110,57 @@ pub(super) fn open(
     let Some(caller) = open.caller.clone() else {
         // An outside program opens on a project of the window, as it always
         // has; a worker's folders are for a session's agent.
-        if !open.dirs.is_empty() {
-            return Err("`dirs` is for a session's agent, not an outside program".to_string());
+        let worker_only = [
+            ("dirs", !open.dirs.is_empty()),
+            ("request", open.request.is_some()),
+            ("turn", open.turn.is_some()),
+            ("model", open.model.is_some()),
+        ];
+        if let Some((name, _)) = worker_only.iter().find(|(_, named)| *named) {
+            return Err(format!(
+                "`{name}` is for a session's agent, not an outside program"
+            ));
         }
         let dir = named?;
         let name = spec.name.clone();
         let (_, session) = start(&shell, dir, spec, Vec::new(), None, cx)?;
         return Ok(answered(&open, &name, &session, &[], cx));
     };
+    let deadline = std::time::Instant::now() + opening::OPEN_DEADLINE;
+    let request = open
+        .request
+        .clone()
+        .ok_or("`request` is required: your id for this open, so a retry opens nothing twice")?;
+    match (&open.prompt, open.turn) {
+        (Some(_), None) => return Err("`turn` is required with a prompt".to_string()),
+        (None, Some(_)) => return Err("`turn` goes with a prompt; there is none".to_string()),
+        _ => {}
+    }
+    match sessions().requests.see(caller.0, &request, &open.asked())? {
+        requests::Seen::New => {}
+        requests::Seen::Opening(uid) => {
+            return Ok(match uid {
+                Some(uid) => format!(
+                    "{} is still opening; call again with the same request",
+                    control::open::handle(&super::RUN, uid)
+                ),
+                None => {
+                    "the session is still opening; call again with the same request".to_string()
+                }
+            });
+        }
+        requests::Seen::Answered(answer) => return Ok(answer),
+    }
+    let mode = crate::unattended::worker_mode(&spec.name, cx);
     let target = match named {
         Ok(dir) => Target::Project(dir),
         Err(_) if Path::new(&open.project).is_absolute() => {
             Target::Worktree(PathBuf::from(&open.project))
         }
-        Err(why) => return Err(why),
+        Err(why) => {
+            sessions().requests.failed(caller.0, &request);
+            return Err(why);
+        }
     };
     let skip: Vec<u32> = std::iter::once(std::process::id())
         .chain(shell.read(cx).shell_pids(cx))
@@ -121,13 +175,38 @@ pub(super) fn open(
             .background_executor()
             .spawn(async move { resolve_blocking(target, &roots, &dirs, home.as_deref(), &skip) })
             .await;
-        let outcome = match resolved {
+        let started = match resolved {
             // The window may have closed while the folder was read.
             Ok(resolved) => cx.update(|cx| match shell.upgrade() {
-                Some(shell) => finish(&open, caller, resolved, spec, &shell, cx),
+                Some(strong) => finish(&caller, resolved, spec, &strong, cx),
                 None => Err("the window closed".to_string()),
             }),
             Err(why) => Err(why),
+        };
+        let outcome = match started {
+            Ok(started) => {
+                sessions().requests.started(caller.0, &request, started.uid);
+                let opening = opening::Opening {
+                    lead: caller.0,
+                    request: request.clone(),
+                    uid: started.uid,
+                    session: started.session,
+                    shell,
+                    root: started.root,
+                    added: started.added,
+                    mode,
+                    model: open.model,
+                    prompt: open.prompt,
+                    turn: open.turn,
+                    dirs: started.dirs,
+                    deadline,
+                };
+                opening::wait_open(opening, cx).await
+            }
+            Err(why) => {
+                sessions().requests.failed(caller.0, &request);
+                Err(why)
+            }
         };
         if let Some(answer) = answer {
             let _ = answer.send(outcome);
@@ -204,16 +283,25 @@ fn resolve_blocking(
     })
 }
 
+/// A worker's session, started and not yet up.
+struct Started {
+    uid: u64,
+    session: gpui::WeakEntity<ChatSession>,
+    root: PathBuf,
+    /// Whether the open added `root` to the window.
+    added: bool,
+    dirs: Vec<PathBuf>,
+}
+
 /// Back on the UI thread: refuse a folder another session or a process
 /// works in, or the caller over its cap; else reserve it and start.
 fn finish(
-    open: &Open,
-    caller: (u64, PathBuf),
+    caller: &(u64, PathBuf),
     resolved: Resolved,
     spec: onehand_core::config::AgentSpec,
     shell: &Entity<Shell>,
     cx: &mut App,
-) -> Result<String, String> {
+) -> Result<Started, String> {
     let taken = shell.read(cx).roots_with_sessions();
     if let Some((root, _)) = taken
         .iter()
@@ -252,21 +340,24 @@ fn finish(
         sessions().reserved.release(&resolved.folder);
         return Err(why);
     }
-    let name = spec.name.clone();
+    let added = resolved.same.is_empty();
     match start(
         shell,
-        resolved.root,
+        resolved.root.clone(),
         spec,
         resolved.dirs.clone(),
-        Some(&caller),
+        Some(caller),
         cx,
     ) {
         Ok((uid, session)) => {
             sessions().reserved.bind(&resolved.folder, uid);
-            if let Some(prompt) = open.prompt.clone() {
-                send_when_connected(session.clone(), prompt, cx);
-            }
-            Ok(answered(open, &name, &session, &resolved.dirs, cx))
+            Ok(Started {
+                uid,
+                session: session.downgrade(),
+                root: resolved.root,
+                added,
+                dirs: resolved.dirs,
+            })
         }
         Err(why) => {
             sessions().reserved.release(&resolved.folder);
@@ -375,6 +466,7 @@ fn send_when_connected(session: Entity<ChatSession>, prompt: String, cx: &mut Ap
     }));
 }
 
+mod opening;
 pub(super) mod requests;
 
 #[cfg(test)]

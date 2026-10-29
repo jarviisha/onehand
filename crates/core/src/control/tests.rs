@@ -36,7 +36,7 @@ fn call(name: &str, arguments: Value) -> Handled {
 
 fn performs(name: &str, arguments: Value) -> Call {
     match call(name, arguments) {
-        Handled::Perform { call, .. } => call,
+        Handled::Perform { call, .. } => *call,
         other => panic!("{name}: {other:?}"),
     }
 }

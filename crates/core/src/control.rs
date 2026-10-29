@@ -116,7 +116,7 @@ pub enum Handled {
     /// Write this line back.
     Reply(String),
     /// Perform `call`, then write [`answered`] for `id`.
-    Perform { id: Value, call: Call },
+    Perform { id: Value, call: Box<Call> },
     /// A notification: nothing is written.
     Quiet,
 }
@@ -204,7 +204,10 @@ pub fn handle(conn: &mut Conn, line: &str, standing: impl Fn(&Peer) -> Standing)
                 return Handled::Reply(answered(&id, Err(why)));
             }
             match parse(name, &params["arguments"]) {
-                Ok(call) => Handled::Perform { id, call },
+                Ok(call) => Handled::Perform {
+                    id,
+                    call: Box::new(call),
+                },
                 Err(why) => Handled::Reply(answered(&id, Err(why))),
             }
         }

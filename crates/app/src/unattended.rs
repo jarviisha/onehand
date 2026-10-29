@@ -487,6 +487,14 @@ pub(crate) fn run_mode(cx: &App) -> String {
     onehand_core::config::run_mode(mode, &shared.agents, run_agent(cx).as_deref())
 }
 
+/// The mode a lead's worker on agent `agent` starts in: the mode runs use,
+/// when that agent is theirs, else what it is known to need.
+pub(crate) fn worker_mode(agent: &str, cx: &App) -> Option<String> {
+    let shared = Shared::global(cx);
+    let mode = shared.unattended.as_ref().and_then(|u| u.mode.as_deref());
+    onehand_core::config::worker_mode(mode, run_agent(cx).as_deref(), &shared.agents, agent)
+}
+
 pub(crate) fn run_agent(cx: &App) -> Option<String> {
     let shared = Shared::global(cx);
     shared

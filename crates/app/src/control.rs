@@ -267,7 +267,7 @@ pub(crate) async fn converse(
             Handled::Perform { id, call } => {
                 let peer = conn.peer().cloned().unwrap_or(Peer::Outside);
                 let (answer, answered) = oneshot::channel();
-                let outcome = match tx.unbounded_send(Incoming::Call(peer, call, answer)) {
+                let outcome = match tx.unbounded_send(Incoming::Call(peer, *call, answer)) {
                     Ok(()) => answered.await.unwrap_or_else(|_| Err(CLOSING.to_string())),
                     Err(_) => Err(CLOSING.to_string()),
                 };
@@ -311,6 +311,11 @@ pub(crate) fn perform(peer: Peer, call: Call, answer: Answer, cx: &mut App) {
 
 /// Where a call's answer goes.
 pub(crate) type Answer = oneshot::Sender<Result<String, String>>;
+
+/// This run of the app, as a worker's handle names it: uids count from 1 in
+/// every run, so a handle from an earlier one must never reach whichever
+/// session took its number. Never written anywhere.
+static RUN: LazyLock<String> = LazyLock::new(|| control::new_token()[..8].to_string());
 
 /// How many sessions one session's tools may have open at once.
 const OPENED_CAP: usize = 4;
@@ -636,9 +641,9 @@ fn perform_now(
             agent,
             prompt,
             dirs,
-            request: _,
-            turn: _,
-            model: _,
+            request,
+            turn,
+            model,
         } => workers::open(
             workers::Open {
                 caller,
@@ -646,6 +651,9 @@ fn perform_now(
                 agent,
                 prompt,
                 dirs,
+                request,
+                turn,
+                model,
             },
             shell,
             &projects,

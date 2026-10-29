@@ -622,7 +622,7 @@ impl Shell {
 
     /// What a question about session `uid` calls it: whatever its row is
     /// named by, so the question and the row read as the same thing.
-    fn session_label(&self, uid: u64, cx: &App) -> String {
+    pub fn session_label(&self, uid: u64, cx: &App) -> String {
         self.chat.read(cx).title_for(uid, cx).unwrap_or_else(|| {
             self.window
                 .workspace
