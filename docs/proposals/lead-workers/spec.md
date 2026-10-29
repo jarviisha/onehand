@@ -41,28 +41,55 @@ them only if the set names them.
 ### The project
 
 - A name or path of a window project resolves as today (`control::pick_project`).
-- Otherwise `project` must be an absolute path of a **worktree of a repository a window project
-  belongs to**: `git rev-parse --git-common-dir` in it equals that of some window project. Read on
-  the background executor, never in the call's handler. Anything else is refused, naming why
-  (not a folder, not a git worktree, a repository no project of this window belongs to).
+- Otherwise `project` must be the absolute path of a **worktree's top level, of a repository a
+  window project belongs to**. Every path is canonicalized first (symlinks resolved), and so is
+  what git answers:
+  - `git rev-parse --show-toplevel` in it, canonicalized, is the path itself: a folder inside a
+    checkout is refused, naming the top level it belongs to;
+  - `git rev-parse --path-format=absolute --git-common-dir`, canonicalized, equals the same for
+    some window project, read the same way from that project's folder, whether the project is the
+    main checkout, a linked worktree or a folder inside one.
+  Read on the background executor, never in the call's handler. Anything else is refused, naming
+  why (not a folder, not a worktree's top level, a repository no project of this window belongs
+  to).
 - A worktree opens as a transient root through `Shell::run_unattended`, selecting nothing and
   taking no focus. A worktree that is already a root of the window is used as it is.
-- **A worktree with other processes working in it is refused**, read with
-  `worktree::removal::working_in_blocking`, leaving out onehand's own process and the sessions
-  and terminals it holds there. The refusal is the lead's answer: it names each process (its pid
-  and command) and says the person has to stop them, and nothing is opened. This is required
-  case 4 on onehand's side: after a crash an old worker may still run, and no second one opens on
-  its worktree until the person stops it.
+
+### One worker per worktree
+
+- **A reservation**, for every open by a session's agent, on a worktree or on a window project:
+  the root's canonical path, taken in the call's handler before anything runs in the background,
+  held in `Sessions` from the first check until the open fails, or until the worker it opened
+  closes. A second open on a reserved folder, by any lead, is refused at once, naming the session
+  or the open holding it. **Any other session open on that folder refuses it too**, the person's
+  or the lead's own: a worker never shares its folder with another session. An outside client's
+  open is unchanged.
+- **What the reservation cannot see** is a worker left by an earlier run: after a crash its
+  agent may still run, with nothing in this run knowing its pid. So before opening, onehand looks
+  through **every process of the same user** for one working in the worktree, by the directory
+  the system says it is in: `/proc/<pid>/cwd` for each pid in `/proc` on Linux, and
+  `lsof -a -d cwd -u <user> -Fpn` elsewhere, bounded in time. Left out: onehand's own process and
+  the shells of its own terminals, by the pids it holds. `working_in_blocking` does not do this
+  today: it only checks the pids it is given, and treats a directory it cannot read as no match.
+  The new reading lives beside it in core, with tests over a fake process table.
+- **Three answers, and only one opens**: none found, and every process of the user was read:
+  the open goes on. Some found: refused, naming each (its pid and command) and saying the person
+  has to stop them. **Some could not be read** (a process gone between listing and reading
+  aside, a permission refused, `lsof` missing or out of time): refused as unknown, naming what
+  could not be read, never taken as none. The refusal is the lead's answer, and nothing is
+  opened.
 
 ### What the worker may write
 
 `session/new` gets ACP's `additionalDirectories` (`Conn::new_session`,
 `crates/core/src/acp/client/handshake.rs`, through a new `SessionOpts::dirs`):
 
-- the repository's common `.git`, when the session opens on a worktree;
-- each of `dirs`, which must be absolute and existing, and none of: `/`, the home folder, the
+- the repository's common `.git`, canonicalized, when the session opens on a worktree;
+- each of `dirs`, which must be absolute and existing, and is **canonicalized before any check**,
+  so a symlink or an alias cannot pass for another folder: then none of `/`, the home folder, the
   worktree, a folder inside it, or a folder holding it or the repository. The first that fails
-  refuses the call, naming it and why.
+  refuses the call, naming it as given and as resolved, and why. The canonical paths are what
+  `session/new` gets and what the answer names.
 
 A session with any of these never takes the warm adapter (`AcpRuntime::warm`,
 `crates/app/src/acp.rs`), which opened its session without them. `session/load` and
@@ -83,12 +110,26 @@ the config option `model`.
 
 The call answers once the worker is up, not before:
 
-1. the cap and the arguments are checked; a place under the cap is taken;
-2. the session starts; the call waits for `Link::Connected`, bounded by the handshake's own
-   timeout (`HANDSHAKE_TIMEOUT`, `crates/core/src/acp/client.rs`);
+1. the cap and the arguments are checked; the worktree is reserved and a place under the cap is
+   taken; the worktree's checks and the process reading run;
+2. the session starts; the call waits for `Link::Connected`;
 3. the mode and the model are picked, each answered;
 4. `prompt` is submitted. A blank `prompt` is refused at step 1, so after step 3 the only blocker
    left is a link lost, which is a failure.
+
+**One deadline for the whole open**, `OPEN_DEADLINE`, 120 seconds from step 1, named beside the
+tools. `HANDSHAKE_TIMEOUT` (`crates/core/src/acp/client.rs`) bounds only the handshake and stops
+counting once the connection is ready, so nothing else bounds a `session/set_mode` or
+`session/set_config_option` the agent never answers. Past the deadline the open fails at the step
+it was in, as any failure does. An answer arriving after that finds its session ended and is
+dropped with it; nothing it says reaches the lead or the session.
+
+**The lead is checked again** before each of steps 2 to 4, and before the answer: still open,
+still switched on, still standing with these tools. A lead that closed or was switched off while
+its worker was opening **abandons the open**: it fails as below, the first prompt is never sent,
+no relation is made, and nothing is answered, since nobody waits for the answer. A relation is
+only ever written once the prompt has gone, so `control::forget` running in between cannot have
+one made again after it.
 
 It answers, one fact per line:
 
@@ -102,10 +143,16 @@ dirs: <each folder added, or none>
 turn: <n> accepted
 ```
 
-**A failure at any step leaves nothing behind**: the session is ended, a root the open added is
-dropped with `Shell::end_unattended` (which uses `Shell::forget_root`), the place under the cap
-and the `request` id are freed, and the prompt is never sent. The answer says which step failed
-and why, in the agent's words where it gave any.
+**A failure at any step leaves nothing behind**, and touches nothing else:
+
+- **The session first, by its uid**: only the session this open started is closed, which ends its
+  agent's process group. Never `Shell::end_unattended`, which drops the whole root with every
+  session on it (`Shell::forget_root`).
+- **Then the root, only if this open added it** as transient and no session is left on it. A root
+  that was a window project, or one a session of anyone else's stands on, stays.
+- The reservation, the place under the cap and the `request` id are freed, and the prompt is
+  never sent. The answer says which step failed and why, in the agent's words where it gave
+  any.
 
 ### The request id
 
@@ -132,15 +179,30 @@ tests without a GUI. It answers, one fact per line:
 | `link` | `connecting`, `connected`, `lost`, `closed` | `Chat::link` |
 | `turn` | `none` (never prompted), `running`, `ended`, `failed: <the failure's words>`, `cancelled` | `Chat::busy`, `Chat::cancelled`, `Chat::failure` |
 | `waiting` | `none`, or `<n> permission`, `<n> question`: only a person answers these | the unresolved permission and question cards |
-| `background` | `none`, or `<n> running: <names>` | `Chat::background` |
+| `activity` | `running: <what>`, `none reported`, `unknown` (below) | `Chat::running_since(None)`'s four sources |
 | `held by` | `lead`, `person` | below |
 | `turns` | `sent <n>, ended <m>` | the relation |
 | `mode`, `model`, `dirs` | as the open answered | the session |
 
 `ended <m>` is the last turn the lead sent that is over: `m = n` once the turn after the lead's
 last send has ended and the person has not prompted since. **A turn over is not a stage done**;
-the lead reads the worker's `status.md` for that. A worker is **confirmed stopped for this
-session** when `turn` is not `running`, `waiting` and `background` are `none`.
+the lead reads the worker's `status.md` for that.
+
+**`activity` tells apart what was reported from what is known**, from every source core keeps
+(`Chat::running_since`, `crates/core/src/chat/model/background.rs`):
+
+- `running: <what>`, naming each that holds: the turn, `<n> in background: <names>`, `<n>
+  subagents`, `working by itself` (the agent writing with no turn open, `own_cycle`).
+- `none reported`: connected, and none of the four holds. **This is not "stopped"**: it is enough
+  to send the next turn (the skill's case 1), never to open a replacement on the worktree.
+- `unknown`: the link is lost, or still connecting. A lost link clears the turn and the activity
+  core held (`AcpEvent::Disconnected` in `crates/core/src/chat/model/apply.rs`: `busy` goes
+  false, `forget_activity`), so empty values then prove nothing about the agent's processes.
+
+**Stopped is only ever confirmed by closing**: `link: closed` means onehand ended the session and
+its agent's process group. Whether anything outside that group still works in the worktree is
+what the next `open_session` there reads (section 1); a lead that needs a replacement after
+`unknown` asks the person to close the worker, then opens again.
 
 ## 3. `send_prompt(session, text, turn)`
 
@@ -186,7 +248,9 @@ and the person's prompt then goes, as with the composer's Stop.
 ## 6. The lead and the cap
 
 - **The lead closes or is lost**: `control::forget` drops its relations. Its workers stay open,
-  owned by nobody, and go back into the rail; they are the person's to close.
+  owned by nobody, and go back into the rail; they are the person's to close. An open still in
+  progress is abandoned (section 1). Switching the lead off does the same for opens in progress;
+  its workers already open keep their relation, unusable until it is switched on again.
 - **The cap** of four counts workers still open, the ones opening included, unchanged otherwise.
   A worker that failed to open gives its place back.
 
@@ -226,6 +290,26 @@ the composer and the docks in `docs/screens.md`, one line for the new region in 
   (the block goes).
 - A worker's `ChatSession` is mounted in the region only; the agent pane never shows it while
   its lead is open.
+- **Focus**, every way it moves; the region and the deck track their own focus, as a dock panel
+  does, so their keys reach only them:
+  - opening or folding the deck with the pointer leaves the caret where it was, in the lead's
+    composer as a rule; a keymap command, *Show the workers*, opens it with the keyboard and puts
+    focus on its first row; `↑`/`↓` move along the rows, `Enter` opens the row's worker in the
+    region, `Esc` folds the deck and gives the caret back to the lead's composer;
+  - a worker's block opened from the deck or the strip takes the caret into its compact composer;
+  - **a block leaving the region while it holds focus** (the person closes the worker, it is
+    closed from elsewhere, its lead goes and it returns to the rail) hands the caret to the
+    lead's composer **before** the block leaves the frame, as `ChatPane::reclaim_focus` does for
+    a closing panel, or the whole keymap goes with it;
+  - **the lead on screen changing** while focus is in the region gives the caret to the composer
+    of the session now shown, first, then the region shows the new lead's workers or closes;
+  - **the Workbench taking the region's place**, or the region the Workbench's, moves focus out
+    of the one leaving before it goes, to the lead's composer; the one arriving takes no focus.
+- **Height**: the open block keeps a minimum, `WORKER_OPEN_MIN`, about ten rows of transcript and
+  its composer, in rems so zoom scales it. When the folded blocks, the pinned cards and the open
+  block's minimum do not fit, the folded blocks drop their tails first and keep their heads and
+  pinned cards; when even that does not fit (a low dock, a large zoom, several cards), the stack
+  of blocks scrolls as a whole, the open block keeping its minimum and its own scroll inside.
 
 ## 8. What is not done
 
@@ -245,7 +329,7 @@ the composer and the docks in `docs/screens.md`, one line for the new region in 
 | A restart mid-stage | nothing survives; a handle from the old run is refused; the lead opens anew (the skill's case 5) |
 | A lost answer to a send | `send_prompt` once per turn number |
 | A lost answer to an open | the `request` id |
-| An old worker that may still run | a worktree with other processes in it is refused |
+| An old worker that may still run | a worktree reserved in this run is refused; any process of the user working in it, or one that could not be read, refuses the open; `activity: none reported` never counts as stopped |
 | The person steps in | `held by: person`; `send_prompt` and `cancel_turn` refused until *Give back* in the worker's block |
 | A finished worker holding a place | the cap's refusal names the four; closing is the person's |
 | A turn that fails at once | `turn: failed: <the failure's words>` |
@@ -257,20 +341,27 @@ Each one is buildable and testable alone, carries its tests, updates control.md 
 builds, and keeps files under the size the repository allows (`crates/app/src/control.rs` is near
 it: the workers' tools go in `control/workers.rs`).
 
-1. **The worktree and its folders**: `project` as a worktree, the check with git, the process
-   check, `dirs`, `SessionOpts::dirs` into `additionalDirectories`, the warm adapter skipped.
-   Tests: the worktree rule and the folder rule in core; `session/new` params with and without
-   folders.
+1. **The worktree and its folders**: `project` as a worktree's top level, the canonical checks
+   with git, the reservation, the reading of every process of the user, `dirs` canonicalized,
+   `SessionOpts::dirs` into `additionalDirectories`, the warm adapter skipped. Tests: the worktree
+   rule from a main checkout, a linked worktree and a folder inside one, a relative common dir;
+   the folder rule through a symlink; the process reading's three answers over a fake process
+   table; a second open on a reserved worktree; `session/new` params with and without folders.
 2. **The handle and the open**: the run id, the handle, waiting for the worker, the mode and the
-   model before the first prompt, `request`, `turn`, cleanup on failure, the outside client
-   refused the new inputs. Tests: request dedup and refusals; a model not offered leaves nothing
-   behind (with the mock agents).
+   model before the first prompt, `OPEN_DEADLINE`, the lead checked again at each step,
+   `request`, `turn`, cleanup by session, the outside client refused the new inputs. Tests:
+   request dedup and refusals; a model not offered leaves nothing behind (with the mock agents);
+   an agent that never answers a pick fails at the deadline and a late answer is dropped; a failed
+   open beside a successful one on the same project leaves the other running; a lead closed or
+   switched off mid-open leaves nothing and sends nothing.
 3. **`session_state`**: the core rule over the chat's facts, the tool. Tests: each line from a
-   chat in that state.
+   chat in that state; `activity` naming a subagent and the agent working by itself; `unknown`
+   after a disconnect, never `none reported`.
 4. **`send_prompt` and `cancel_turn`**, with who holds a worker. Tests: once per turn, other text
    refused, refused while held, cancel refused while a card waits.
 5. **The person's view** (section 7) with ***Give back to the lead***, the contract documents
    with it. Tests: which sessions the rail lists with a lead open and after it closes; the lead
-   row's state; the region following the lead on screen.
+   row's state; the region following the lead on screen; focus handed back before a focused
+   block leaves, on a lead change and when the Workbench takes the region's place.
 6. onehand.md's part leaves this folder, its rest moved into control.md and the screens'
    documents.
