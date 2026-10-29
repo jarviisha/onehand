@@ -110,6 +110,10 @@ struct Sessions {
     only: HashMap<u64, Vec<String>>,
     /// The folders workers are opening or open on.
     reserved: workers::Reservations,
+    /// What each lead asked `open_session` for, by its request id.
+    requests: workers::requests::Requests,
+    /// Each worker's lead, by the worker's uid.
+    workers: HashMap<u64, workers::requests::Relation>,
 }
 
 static SESSIONS: LazyLock<Mutex<Sessions>> = LazyLock::new(Mutex::default);
@@ -220,6 +224,10 @@ pub(crate) fn forget(uid: u64) {
     sessions.labels.remove(&uid);
     sessions.only.remove(&uid);
     sessions.reserved.release_worker(uid);
+    sessions.requests.forget_lead(uid);
+    sessions
+        .workers
+        .retain(|worker, relation| *worker != uid && relation.lead != uid);
 }
 
 /// Said when a call's answer cannot come, because the app is going.
