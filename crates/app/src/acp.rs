@@ -17,12 +17,14 @@
 //! and unbounded sends never block or touch the reactor, so the UI thread can
 //! send a prompt straight into the running adapter.
 
-use futures::channel::mpsc;
-use futures::{SinkExt as _, StreamExt as _};
+use futures::channel::{mpsc, oneshot};
+use futures::{SinkExt as _, Stream, StreamExt as _};
 use onehand_core::acp::{self, AcpEvent};
 use onehand_core::config::AgentSpec;
 use std::cell::RefCell;
 use std::path::PathBuf;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use std::time::Instant;
 
 /// Events buffered between the adapter and the UI before the forwarder waits.
@@ -53,7 +55,7 @@ struct Warm {
     /// The agent it runs, nameless: see [`Warm::matches`].
     spec: AgentSpec,
     cwd: PathBuf,
-    events: mpsc::Receiver<AcpEvent>,
+    events: Events,
     /// What its agent's proxy to onehand's tools speaks for, handed to the
     /// session that claims it.
     token: crate::control::Token,
@@ -156,7 +158,7 @@ impl AcpRuntime {
         spec: &AgentSpec,
         cwd: PathBuf,
         opening: acp::Opening,
-    ) -> (mpsc::Receiver<AcpEvent>, Instant, crate::control::Token) {
+    ) -> (Events, Instant, crate::control::Token) {
         // A resume or a fork names a conversation, and the parked adapter has
         // already been through `session/new` on a fresh one -- it is the wrong
         // process to hand this caller, so it stays parked for whoever wants a new
@@ -177,7 +179,7 @@ impl AcpRuntime {
     /// Spawn an adapter for a look at what it offers, never the parked one:
     /// it is brought up as far as its session and dropped, so it must not
     /// take the spare a session is about to claim.
-    pub fn probe(&self, spec: &AgentSpec, cwd: PathBuf) -> mpsc::Receiver<AcpEvent> {
+    pub fn probe(&self, spec: &AgentSpec, cwd: PathBuf) -> Events {
         // No session will hold it, so its agent is given no way to onehand.
         self.start(spec, cwd, acp::Opening::Fresh, Vec::new())
     }
@@ -190,8 +192,8 @@ impl AcpRuntime {
         cwd: PathBuf,
         opening: acp::Opening,
         mcp_servers: Vec<serde_json::Value>,
-    ) -> mpsc::Receiver<AcpEvent> {
-        let (mut tx, rx) = mpsc::channel(EVENT_BUFFER);
+    ) -> Events {
+        let (rx, mut tx, alive) = events();
         // A built-in agent whose binary is gone starts nothing and says so on
         // the stream its session already reads, as any other failed start does.
         let launch = spec.launch(std::env::var_os("PATH").as_deref());
@@ -209,15 +211,106 @@ impl AcpRuntime {
                 opening,
                 mcp_servers,
             };
-            let stream = acp::connect(launch, opts);
-            futures::pin_mut!(stream);
-            while let Some(event) = stream.next().await {
-                if tx.send(event).await.is_err() {
-                    break;
-                }
-            }
+            forward(acp::connect(launch, opts), tx, alive).await;
         });
 
         rx
+    }
+}
+
+/// An adapter's events, as the UI reads them. Dropping them is what ends the
+/// adapter: the forwarder notices at once and drops core's stream.
+pub struct Events {
+    rx: mpsc::Receiver<AcpEvent>,
+    /// Held only to be dropped with the events, which the forwarder hears.
+    _held: oneshot::Receiver<()>,
+}
+
+impl Stream for Events {
+    type Item = AcpEvent;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<AcpEvent>> {
+        self.rx.poll_next_unpin(cx)
+    }
+}
+
+/// A new pair: the events the UI holds, and the forwarder's two ends.
+fn events() -> (Events, mpsc::Sender<AcpEvent>, oneshot::Sender<()>) {
+    let (tx, rx) = mpsc::channel(EVENT_BUFFER);
+    let (alive, held) = oneshot::channel();
+    (Events { rx, _held: held }, tx, alive)
+}
+
+/// Hand `stream`'s events to `tx` until either side ends.
+///
+/// **The UI letting go ends it at once**, not at the next event: a closed
+/// session's agent is usually idle, and an idle agent says nothing, so a
+/// forwarder that only noticed a failed send would keep the stream, and with
+/// it the adapter's whole process group, alive for as long as onehand runs.
+/// `alive` hears the events dropped.
+async fn forward(
+    stream: impl Stream<Item = AcpEvent>,
+    mut tx: mpsc::Sender<AcpEvent>,
+    mut alive: oneshot::Sender<()>,
+) {
+    use futures::future::{Either, select};
+    futures::pin_mut!(stream);
+    loop {
+        let event = match select(alive.cancellation(), stream.next()).await {
+            Either::Left(_) | Either::Right((None, _)) => return,
+            Either::Right((Some(event), _)) => event,
+        };
+        match select(alive.cancellation(), tx.send(event)).await {
+            Either::Left(_) | Either::Right((Err(_), _)) => return,
+            Either::Right((Ok(()), _)) => {}
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{events, forward};
+    use futures::StreamExt as _;
+    use onehand_core::acp::AcpEvent;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::time::Duration;
+
+    /// Set once the stream it is moved into is dropped, as core's stream
+    /// ends its adapter when dropped.
+    struct Dropped(Arc<AtomicBool>);
+
+    impl Drop for Dropped {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+
+    /// **An adapter with nothing to say is still let go.** A session closed
+    /// while its agent is idle drops the events; the forwarder must drop the
+    /// stream then, not at an event that never comes.
+    #[test]
+    fn the_forwarder_lets_go_once_nobody_holds_the_events() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap();
+        let gone = Arc::new(AtomicBool::new(false));
+        let guard = Dropped(gone.clone());
+        let silent = futures::stream::pending::<AcpEvent>().map(move |event| {
+            let _ = &guard;
+            event
+        });
+        let (held, tx, alive) = events();
+        rt.block_on(async move {
+            let task = tokio::spawn(forward(silent, tx, alive));
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            drop(held);
+            tokio::time::timeout(Duration::from_secs(1), task)
+                .await
+                .expect("the forwarder kept an idle adapter after its events were dropped")
+                .unwrap();
+        });
+        assert!(gone.load(Ordering::SeqCst));
     }
 }
