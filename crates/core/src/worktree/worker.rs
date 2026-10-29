@@ -8,7 +8,7 @@
 //! it was given would let one folder pass for another: a worktree for a
 //! stranger, or the worktree itself for a harmless run folder.
 
-use super::{LOCAL_LIMIT, git, git_message};
+use super::{git, git_message, LOCAL_LIMIT};
 use crate::process::output_within;
 use std::path::{Path, PathBuf};
 

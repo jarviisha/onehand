@@ -408,11 +408,9 @@ fn a_project_is_found_by_path_or_name() {
         pick_project(&projects, "/one/app").unwrap(),
         Path::new("/one/app")
     );
-    assert!(
-        pick_project(&projects, "nope")
-            .unwrap_err()
-            .contains("nope")
-    );
+    assert!(pick_project(&projects, "nope")
+        .unwrap_err()
+        .contains("nope"));
 }
 
 #[test]
@@ -620,11 +618,9 @@ fn the_issue_tools_parse_their_input() {
     );
     assert!(refusal(call("create_issue", json!({"body": "x"}))).contains("title"));
     // No labels: an agent never labels its own issue.
-    assert!(
-        refusal(call(
-            "create_issue",
-            json!({"title": "t", "labels": ["auto"]})
-        ))
-        .contains("labels")
-    );
+    assert!(refusal(call(
+        "create_issue",
+        json!({"title": "t", "labels": ["auto"]})
+    ))
+    .contains("labels"));
 }

@@ -12,8 +12,8 @@
 //! what is wrong with a name while it is being typed, and the same rule has to
 //! be the one `git worktree add` is finally handed.
 
-pub mod removal;
 pub mod occupants;
+pub mod removal;
 pub mod worker;
 
 use crate::process::output_within;
