@@ -91,6 +91,26 @@ impl Shell {
     ///
     /// For the bridge, which has to know what there is before it can go looking
     /// on disk for what was said in it.
+    /// Every root's path, with how many sessions are open on it.
+    pub fn roots_with_sessions(&self) -> Vec<(PathBuf, usize)> {
+        self.window
+            .workspace
+            .roots
+            .iter()
+            .map(|root| (root.path.clone(), root.sessions.len()))
+            .collect()
+    }
+
+    /// The process id of every shell in this window's terminal.
+    pub fn shell_pids(&self, cx: &App) -> Vec<u32> {
+        self.terminal
+            .read(cx)
+            .processes()
+            .into_iter()
+            .map(|(_, pid)| pid)
+            .collect()
+    }
+
     pub fn remote_roots(&self) -> Vec<(PathBuf, String)> {
         self.window
             .workspace

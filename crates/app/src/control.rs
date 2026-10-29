@@ -10,21 +10,19 @@ use crate::state::Shared;
 use futures::channel::mpsc::UnboundedSender;
 use futures::channel::oneshot;
 use gpui::{App, Window};
-use onehand_core::chat::model::Link;
 use onehand_core::config::ControlConfig;
 use onehand_core::control::{self, Call, Conn, Handled, Peer, Standing};
 use onehand_core::task::Group;
 use onehand_core::workflow::Brief;
-use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::path::{Component, PathBuf};
-use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{LazyLock, Mutex};
 use tokio::io::{AsyncWriteExt as _, BufReader};
 use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 
 mod start;
+mod workers;
 
 pub(crate) use start::{Started, start_task};
 use start::{start, template};
@@ -110,6 +108,8 @@ struct Sessions {
     labels: HashMap<u64, Vec<String>>,
     /// The tools each session not switched on may use: its schedule's.
     only: HashMap<u64, Vec<String>>,
+    /// The folders workers are opening or open on.
+    reserved: workers::Reservations,
 }
 
 static SESSIONS: LazyLock<Mutex<Sessions>> = LazyLock::new(Mutex::default);
@@ -219,6 +219,7 @@ pub(crate) fn forget(uid: u64) {
     sessions.opened.remove(&uid);
     sessions.labels.remove(&uid);
     sessions.only.remove(&uid);
+    sessions.reserved.release_worker(uid);
 }
 
 /// Said when a call's answer cannot come, because the app is going.
@@ -626,55 +627,20 @@ fn perform_now(
             project,
             agent,
             prompt,
-            dirs: _,
-        } => {
-            let dir = control::pick_project(&projects, &project)?.to_path_buf();
-            let spec =
-                onehand_core::config::agent_or_first(&Shared::global(cx).agents, Some(&agent))
-                    .cloned()
-                    .ok_or_else(|| format!("no agent named {agent}; list_agents names them"))?;
-            let name = spec.name.clone();
-            if let Some((uid, _)) = &caller {
-                let shell = shell.read(cx);
-                let open: Vec<u64> = sessions()
-                    .opened
-                    .get(uid)
-                    .into_iter()
-                    .flatten()
-                    .copied()
-                    .filter(|opened| shell.session_project(*opened).is_some())
-                    .collect();
-                if open.len() >= OPENED_CAP {
-                    let said: Vec<String> = open
-                        .iter()
-                        .map(|opened| {
-                            let at = shell.session_project(*opened).unwrap_or_default();
-                            format!("session {opened} on {}", at.display())
-                        })
-                        .collect();
-                    return Err(format!(
-                        "this session's tools already have {OPENED_CAP} sessions open: {}; \
-                         one has to close first",
-                        said.join(", ")
-                    ));
-                }
-                sessions().opened.insert(*uid, open);
-            }
-            let (opened, session) = shell
-                .update(cx, |shell, cx| {
-                    shell.run_unattended(dir, spec, Vec::new(), cx)
-                })
-                .ok_or("the session did not start")?;
-            if let Some((uid, _)) = &caller {
-                sessions().opened.entry(*uid).or_default().push(opened);
-            }
-            if let Some(prompt) = prompt {
-                send_when_connected(session, prompt, cx);
-            }
-            Ok(format!(
-                "Opened a session with {name} on {project}. It is in the rail, not shown"
-            ))
-        }
+            dirs,
+        } => workers::open(
+            workers::Open {
+                caller,
+                project,
+                agent,
+                prompt,
+                dirs,
+            },
+            shell,
+            &projects,
+            answer,
+            cx,
+        ),
     }
 }
 
@@ -696,38 +662,6 @@ fn issue_file(
         .read(cx)
         .issues_file(&root)
         .ok_or_else(|| "this workspace keeps no issues of its own".to_string())
-}
-
-/// Send `prompt` as `session`'s first message once its agent is up, as a
-/// person would after watching it connect; dropped if it never comes up.
-fn send_when_connected(
-    session: gpui::Entity<crate::chat::session::ChatSession>,
-    prompt: String,
-    cx: &mut App,
-) {
-    // A warm adapter can be up before anything is watching for it.
-    if session.read(cx).chat.link == Link::Connected {
-        session.update(cx, |session, cx| session.submit(&prompt, &[], cx));
-        return;
-    }
-    let held: Rc<RefCell<Option<gpui::Subscription>>> = Rc::default();
-    let hold = held.clone();
-    *held.borrow_mut() = Some(cx.observe(&session, move |session, cx| {
-        let link = session.read(cx).chat.link;
-        if link == Link::Connecting {
-            return;
-        }
-        let (prompt, hold) = (prompt.clone(), hold.clone());
-        // Deferred: the observer runs while the session's change is still
-        // being flushed. Once only: dropping the subscription ends it.
-        // The first change to land takes it; any queued behind it finds it gone.
-        cx.defer(move |cx| {
-            let first = hold.borrow_mut().take().is_some();
-            if first && link == Link::Connected {
-                session.update(cx, |session, cx| session.submit(&prompt, &[], cx));
-            }
-        });
-    }));
 }
 
 /// A task's group, as a caller reads it.
