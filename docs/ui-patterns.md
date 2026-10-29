@@ -426,11 +426,14 @@ uses a word or recognizable mark as well as colour. A quieter state must still b
 ### Motion
 
 - Nothing animates. A hover, a selection, a fold or a new state lands in the frame it happens in.
-- The one motion is a `Spinner` on work still running, where *Waiting* puts it. The library's own
-  overlays (dialogs, popovers, toasts) and controls (a switch's thumb) keep what they do
-  themselves.
-- A size or a position never animates, and nothing pulses or slides to draw the eye (a field's
-  caret blinks on its own); a state that needs the person says so in ink and a word.
+- The motions are two. A `Spinner` on work still running, where *Waiting* puts it. And a card
+  tucked behind another, its edge showing past it: pressed, it slides out from under that card to
+  its open height, and slides back when closed, short and eased (about 200ms), moving only then.
+  The library's own overlays (dialogs, popovers, toasts) and controls (a switch's thumb) keep
+  what they do themselves.
+- Beside the tucked card's slide, a size or a position never animates, and nothing pulses or
+  slides to draw the eye (a field's caret blinks on its own); a state that needs the person says
+  so in ink and a word, never in motion: a tucked card does not slide open by itself.
 
 ### Nothing to show
 

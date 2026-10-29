@@ -43,8 +43,9 @@ a hex literal outside the ramp is a bug even when it looks right, as no theme sw
 6. **Bounded, and say so.** Every list has a named cap, and when the cap cuts something off, the
    screen says how many were left out.
 7. **Calm and immediate.** What a person changes shows at once, and the work behind it follows.
-   Nothing moves for show: the one motion is a `Spinner` on work still running, beside what the
-   library's own overlays and controls do (*Components*). `docs/ui-patterns.md` (*Immediate feedback*, *Motion*) holds how.
+   Nothing moves for show: the motions are a `Spinner` on work still running, and a card tucked
+   behind another sliding out from under it as the person opens it and back as they close it,
+   beside what the library's own overlays and controls do (*Components*). `docs/ui-patterns.md` (*Immediate feedback*, *Motion*) holds how.
 
 ## Layout
 
