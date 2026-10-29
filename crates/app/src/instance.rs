@@ -309,13 +309,16 @@ mod tests {
         let mut stream = UnixStream::connect(&socket).unwrap();
         assert!(ask(&mut stream, init)["result"].is_object());
         let list = json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"});
-        assert_eq!(
-            ask(&mut stream, list)["result"]["tools"]
-                .as_array()
-                .unwrap()
-                .len(),
-            onehand_core::control::tool_names().len()
-        );
+        // Every tool but those about a session's workers, which an outside
+        // program owns none of.
+        let listed: Vec<String> = ask(&mut stream, list)["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|tool| tool["name"].as_str().unwrap().to_string())
+            .collect();
+        assert!(!listed.contains(&"session_state".to_string()), "{listed:?}");
+        assert_eq!(listed.len(), onehand_core::control::tool_names().len() - 1);
         let call = json!({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
             "params": {"name": "list_agents", "arguments": {}}});
         let reply = ask(&mut stream, call);
