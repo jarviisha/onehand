@@ -13,6 +13,7 @@
 //! be the one `git worktree add` is finally handed.
 
 pub mod removal;
+pub mod worker;
 
 use crate::process::output_within;
 use crate::workspace::label_for;

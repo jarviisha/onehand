@@ -1,11 +1,11 @@
 use super::{
+    ADAPTER_GRACE, LastWords, STDERR_LINE_CAP, STDERR_TAIL_LINES, SessionOpts, Transport,
     base64_encode, connect_over, elicit_result, explain, file_uri, handle_reverse,
-    parse_elicitation, LastWords, SessionOpts, Transport, ADAPTER_GRACE, STDERR_LINE_CAP,
-    STDERR_TAIL_LINES,
+    parse_elicitation,
 };
 use crate::acp::{AcpEvent, AcpRequest, ElicitKind, ElicitOutcome, ElicitValue, Opening};
 use futures::StreamExt as _;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::path::PathBuf;
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
 
@@ -174,7 +174,10 @@ async fn session_new_without_folders_sends_no_key() {
             "result": { "protocolVersion": 1, "agentCapabilities": {} }}))
         .await;
     let new = agent.heard().await;
-    assert!(new["params"].get("additionalDirectories").is_none(), "{new:#}");
+    assert!(
+        new["params"].get("additionalDirectories").is_none(),
+        "{new:#}"
+    );
 }
 
 /// A restart resumes the conversation, and the folders go with it.
@@ -915,9 +918,11 @@ async fn the_first_described_auth_method_is_the_advice() {
 #[tokio::test]
 async fn another_error_is_not_read_as_login() {
     let seen = refused_start(json!({ "code": -32603, "message": "Internal error" })).await;
-    assert!(!seen
-        .iter()
-        .any(|e| matches!(e, AcpEvent::LoginRequired { .. })));
+    assert!(
+        !seen
+            .iter()
+            .any(|e| matches!(e, AcpEvent::LoginRequired { .. }))
+    );
 }
 
 /// Codex's question as it sent it on 2026-10-22: the free-text answer is a
