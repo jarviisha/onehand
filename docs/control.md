@@ -68,7 +68,7 @@ answer, and exits.
 |---|---|---|---|
 | `list_projects` | none | the window's projects | `name — path — check: yes/no`, one per line |
 | `list_agents` | none | the agents a session can be opened with | one name per line |
-| `open_session` | `project`, `agent`, optional `prompt` | opens a session on the project with that agent, not shown; it appears in the rail; `prompt` is sent once the agent is up | what it opened, or why not |
+| `open_session` | `project`, `agent`, optional `prompt`; for a session's agent, `project` may also be a worktree's top level, and optional `dirs` | opens a session on the project with that agent, not shown; it appears in the rail; `prompt` is sent once the agent is up. A session's agent opens a worker: see *A worker* below | what it opened (and the folders it may write), or why not |
 | `list_workflows` | none | the library's workflows | `id — name`; an unreadable file says why |
 | `read_workflow` | `workflow` id | the workflow's file as TOML, a shipped one's too | the TOML, or why not |
 | `save_workflow` | `toml` | `workflow::store::save_text_blocking`: read as a file is (a key onehand does not read refuses), checked as the editor's *Save* is, and refused when another workflow has its name. It goes over the person's own file with its `id`, else into a new file: a shipped workflow is copied, never changed. The library is read again | `Saved <name> as <id>, version <n>`, or every problem, in the editor's words |
@@ -127,3 +127,32 @@ it back and says so.
 - **A session's call lands in its own window.** `open_file` resolves a relative path against the
   session's project. `stop_task` refuses the task whose session is calling. A session's tools may
   have at most four sessions open at once; the fifth `open_session` is refused, naming the four.
+
+## A worker
+
+What a session's agent gets from `open_session` beyond what an outside program does. An outside
+program naming a folder that is no project of the window, or `dirs`, is refused.
+
+- **The folder**: a project of the window, or the top level of a git worktree of a repository one
+  of the window's projects belongs to. Every path is canonicalized first (symlinks resolved),
+  and the repository is told by git's common directory, read the same way from the worktree and
+  from each project, main checkout, linked worktree or a folder inside one. A folder inside a
+  checkout is refused, naming the top level; any other folder, naming why. A worktree that is no
+  project of the window opens as a transient project, selecting nothing.
+- **What it may write besides its folder**, sent as ACP's `additionalDirectories` in
+  `session/new`, `session/load` and `session/fork`: the repository's common git directory when
+  the folder is a linked worktree, where its commits go, then each of `dirs`, absolute, existing
+  and canonicalized, and never `/`, the home folder, the worker's folder or one inside it, or a
+  folder holding it or the repository's main checkout. The first that fails refuses the call,
+  naming it as given and as resolved. The answer names them. A session with any never takes the
+  warm adapter, which opened its session without them, and a restart of its agent sends them again.
+- **One worker per folder.** A folder another session of the window is open on is refused. So is
+  one a worker is opening or open on: it is reserved, by its canonical path, in the same update
+  that checks it, until the open fails or the worker closes.
+- **Nothing else working in it.** Every process of the user is read for one whose directory is in
+  the folder (`/proc` on Linux, `lsof` elsewhere), leaving out onehand itself and its terminal's
+  shells: an earlier run's worker, left by a crash, is what this finds. Any found refuses the
+  open, naming each by pid and command; a process whose directory could not be read refuses it
+  as unknown. Nothing is opened either way.
+- The checks read git, the file system and the process table off the UI thread; the answer comes
+  once the session has started.

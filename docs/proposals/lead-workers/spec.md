@@ -26,6 +26,9 @@ them only if the set names them.
 
 ## 1. `open_session`
 
+Built in PR 1, except the waiting, the answer's handle, `request`, `turn` and `model`, which are
+PR 2's; what is built is in control.md's *A worker*.
+
 ### Input
 
 | Field | Type | Meaning |
@@ -58,9 +61,9 @@ them only if the set names them.
 ### One worker per worktree
 
 - **A reservation**, for every open by a session's agent, on a worktree or on a window project:
-  the root's canonical path, taken in the call's handler before anything runs in the background,
-  held in `Sessions` from the first check until the open fails, or until the worker it opened
-  closes. A second open on a reserved folder, by any lead, is refused at once, naming the session
+  the root's canonical path, taken on the UI thread in the same update that checks it, once the
+  background reading has answered (the UI thread runs nothing beside it, so two opens cannot both
+  pass), held in `Sessions` until the open fails, or until the worker it opened closes. A second open on a reserved folder, by any lead, is refused at once, naming the session
   or the open holding it. **Any other session open on that folder refuses it too**, the person's
   or the lead's own: a worker never shares its folder with another session. An outside client's
   open is unchanged.

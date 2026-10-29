@@ -41,7 +41,7 @@ fn repo_with_worktree(case: &str) -> (PathBuf, PathBuf) {
 #[test]
 fn a_linked_worktree_of_a_project_is_accepted() {
     let (main, wt) = repo_with_worktree("linked");
-    let repo = worktree_of_blocking(&wt, &[main.clone()]).unwrap();
+    let repo = worktree_of_blocking(&wt, std::slice::from_ref(&main)).unwrap();
     assert_eq!(repo.top, wt);
     assert_eq!(repo.common, main.join(".git"));
 }
@@ -100,7 +100,7 @@ fn writable_refuses_the_root_home_and_the_worktree() {
         base.join("missing"),
     ] {
         assert!(
-            writable_blocking(&[bad.clone()], &repo, Some(&home)).is_err(),
+            writable_blocking(std::slice::from_ref(&bad), &repo, Some(&home)).is_err(),
             "{} should be refused",
             bad.display()
         );
@@ -115,7 +115,7 @@ fn writable_refuses_through_a_symlink() {
         std::env::temp_dir().join(format!("onehand-worker-alias-link-{}", std::process::id()));
     let _ = std::fs::remove_file(&outside);
     std::os::unix::fs::symlink(&wt, &outside).unwrap();
-    let why = writable_blocking(&[outside.clone()], &repo, None).unwrap_err();
+    let why = writable_blocking(std::slice::from_ref(&outside), &repo, None).unwrap_err();
     assert!(why.contains(&outside.display().to_string()), "{why}");
     assert!(why.contains(&wt.display().to_string()), "{why}");
 }
