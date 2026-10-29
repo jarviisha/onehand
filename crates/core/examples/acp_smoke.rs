@@ -56,6 +56,7 @@ async fn main() {
             cwd,
             opening: onehand_core::acp::Opening::Fresh,
             mcp_servers: Vec::new(),
+            dirs: Vec::new(),
         },
     );
     let mut stream = std::pin::pin!(stream);

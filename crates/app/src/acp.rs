@@ -210,6 +210,7 @@ impl AcpRuntime {
                 cwd,
                 opening,
                 mcp_servers,
+                dirs: Vec::new(),
             };
             forward(acp::connect(launch, opts), tx, alive).await;
         });

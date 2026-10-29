@@ -69,6 +69,10 @@ pub struct SessionOpts {
     pub opening: Opening,
     /// The MCP servers the session is given, as ACP's `mcpServers` entries.
     pub mcp_servers: Vec<Value>,
+    /// Folders beyond `cwd` the agent may write, as ACP's
+    /// `additionalDirectories`: none for most sessions, which then send no
+    /// such key at all.
+    pub dirs: Vec<PathBuf>,
 }
 
 /// What a fork that did not open says first.
