@@ -26,8 +26,7 @@ a hex literal is a bug even when it looks right, as no theme switch reaches it.
    take the agent pane and put the docks away; a page opens over a session only when picked.
 2. **Content leads; navigation recedes.** Neutral surfaces carry the layout. Hue identifies a
    state, a link, a label's kind or code in prose, never a decorative section background.
-   The palette's blue also marks keyboard focus and the primary action, and in the dark
-   palette the selected item's fill. Attention is earned: the signals that call for the person
+   Focus and the primary action are greys, as the library's palette has them. Attention is earned: the signals that call for the person
    (a state's hue, a count or badge of what waits, a dot, weight past what the role takes) mark
    only what needs them or has just changed, so a view at rest is calm. Hierarchy and identity are not attention: a heading keeps
    its weight, a list its muted count, a label its kind's hue. Nor is a mode switched on: the
@@ -57,7 +56,7 @@ mono font.
 ┌──────────────────────────────────────────────────────────────────────────┐
 │ File  View  Go  Session                                        _  []  x  │
 ├──────────────────┬────────────────────────────────────┬──────────────────┤
-│ W Workspace   v <│ Title (...)    past close term wb  │ modes   max hide │
+│ W Workspace   v <│ Title (...)    past close workers  │ modes   max hide │
 │ Search...  New v │                                    │                  │
 │ Overview         │ workflow > step > step   Stop      │                  │
 │ Tasks         2  │                                    │                  │
@@ -164,15 +163,15 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
 | Reading text: the transcript, the composer's field, a document | `.text_sm()`, on the reading leading; the transcript's `TEXT` |
 | The transcript's record: activity, thoughts, notices, a card's question | a step under the reading size, the transcript's `TEXT_SM` (13px) |
 | A heading in reading text | a step up the scale per level, two at most; then the body's size |
-| A page's or an issue's title | `.text_xl()` |
+| A page's or an issue's title | `.text_2xl()` |
 
-- **Weight carries hierarchy before size does**: `font_medium` for a page's title and a name in
-  a header, `font_semibold` for any other title or heading; nothing bolder. A list page's rows,
+- **Weight carries hierarchy before size does**: `font_medium` for a name in a header,
+  `font_semibold` for a page's title and any other title or heading; nothing bolder. A list page's rows,
   at the meta size, carry their name and the column read down the list in `font_medium`
   (`docs/ui-patterns.md`, *List pages*). Line height is gpui's,
   but `LEADING` for reading text and `LEADING_TIGHT` for a wrapped title.
 - **Inks by role.** Text on a neutral surface (the reading surface, a dock, the rail, a floating
-  surface, a well, the bubble) takes one of three: `foreground` for content and the current
+  surface, a well) takes one of three: `foreground` for content and the current
   location; `theme::meta_ink` for a detail beside a name on its line (its folder, its number, its
   kind); `muted_foreground`, still readable, for labels, counts, hints, placeholders and a row's
   second line. Text on a fill takes the ink paired with that fill: a
@@ -194,18 +193,18 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   zoom wrapper. A size the steps lack is a named constant (shared ones in
   `onehand_ui::tokens`, others beside their use), its reason in its doc comment.
 - **The library's corners.** What a person presses or what holds content takes `radius`, 6px:
-  a control, a field, a row, a chip, a well, a box. A dock and its tab bar's tabs stand square, flush with the dock. A large surface takes
-  `radius_lg`, 8px: the composer, a floating panel, a dialog, a toast; the library's own follow. A badge (a `Tag`) takes the library's
+  a control, a field, a row, a chip, a well, a box on a page (`card_box`). A dock and its tab bar's tabs stand square, flush with the dock. A large surface takes
+  `radius_lg`, 8px: the composer, a floating panel, a dialog, a toast, and with them a folding
+  block, a Settings group and a pinned card; the library's own follow. A badge (a `Tag`) takes the library's
   own corner and size, its edge halfway from its fill to its ink (`badge_edge`); inside a line of
   meta text a label is written in its kind's ink instead, unframed. A dot or a status mark is
   `rounded_full`. The library's small parts keep its half
   corner (*Components*). A part joined to its container's edge takes its corner there.
 - **Lines** part regions and are a 1px `border`. A **mark** says where the person is, not where
-  a region ends: the one under an open tab is 2px, as a stroke a step heavier than a line. The line under a page's top and
-  a list page's lines across the pane are a step fainter
-  (`faint_rule`), so a page's top ends on one line whatever its column and the edge-to-edge list
-  reads as one surface. A
-  box's edge is a step stronger, a control's edge (`input`).
+  a region ends: the stroke of the primary along an open tab's top is 2px, a step heavier than a
+  line. A list page's line over its foot is a step fainter (`faint_rule`), so the edge-to-edge
+  list reads as one surface; a page's top draws no line under it. A box on a page takes a step
+  stronger edge, a control's (`input`); a folding block and a Settings group keep the hairline.
 
 ## Colour and state
 
@@ -229,11 +228,11 @@ reaches.
 | `theme::dock_surface` | the Workbench and the terminal, a step off the reading surface |
 | `muted` / `muted_foreground` | quiet fills (every well), meta text |
 | `theme::meta_ink` | the middle ink: a detail beside a name, between prose and meta, contrast-tested |
-| `border` | every hairline; a box takes `input` for its edge |
+| `border` | every hairline, a folding block's and a Settings group's edge; a box on a page takes `input` |
 | `ring` | keyboard focus, drawn only when the keyboard moved it; the composer while a file is dragged over it |
 | `accent` | the one item selected among several (a fill, not a hue) |
 | `link` | a link: the library draws it in the prose ink, underlined |
-| `info` | the library's blue: what runs |
+| `info` | what runs |
 | `list_hover` | hover on a pickable row |
 | `primary` | the single primary action in a view; the prompt bubble's fill, its code spans in its own ink thinned |
 | `status_ink()` | danger, warning and success text, and `closed` for what is over and settled (a closed issue) |
@@ -255,7 +254,7 @@ reaches.
   stack, what waits on the person holds it while it shows (a floating issue, an open form, a
   pinned card, a run's approval), and what it covers steps down to `secondary`.
 - Surfaces and inks are greys, so a hue on screen means something: a state, a link, a label's
-  kind, focus, the primary action, or in the dark palette a selected item. A missing surface or
+  kind, or code in prose. A missing surface or
   ink is derived from the library's tokens with its contrast asserted, never a value in one
   view; a step between two tokens is mixed from them perceptually (`mix_oklab`), so both modes
   derive it by one rule.
@@ -317,11 +316,11 @@ draws on (a radio's or a checkbox's ring on the selected step), `choice_mark` dr
 
 **A size names a role, and the role follows the room the control stands in.** A control takes
 one of the library's two sizes. On a page, where there is room and the person reads and types
-what a control holds, it takes `.tall()`, the library's medium (32px): a page's head and a page's
+what a control holds, it takes `.tall()` (32px; a button is the library's small held at `FIELD_H`): a page's head and a page's
 form, its fields, pickers and buttons alike, so a field's words stand at its title's size; a
 dialog holding a form at `DIALOG_FORM` is that room too. In dense chrome (the rail, a dock, a
 strip, a dock's filter bar, a dialog that asks one thing, a row, a box's title row, the composer) it takes
-`.short()`, the library's small (24px), so it never outweighs what it acts on. An icon alone is
+`.short()` (24px; a button is the library's extra small, a field its small, held at `CONTROL_H`), so it never outweighs what it acts on. An icon alone is
 square at its row's height: `.small()` beside `.short()` peers, `.tall()` beside tall ones.
 `.tall()` (`FIELD_H`) is the ceiling: no control stands taller.
 **What a small object holds scales with the object.** Inside a fixed object smaller than a row of

@@ -19,9 +19,9 @@ Slot names that mislead (the library's names, kept because its own controls read
 |---|---|
 | `accent`, `accent_foreground` | the selected fill and its ink: a fill, not a hue |
 | `link` | a link, in the prose ink |
-| `info` | the library's blue: what runs |
-| `muted` | the well's fill, and the user's bubble |
-| `secondary` | a step past the well: code inside the bubble |
+| `info` | what runs |
+| `muted` | the well's fill |
+| `secondary` | a step past the well: a document's code on a dock, an attached file's plate |
 | `button_secondary`, `button_secondary_foreground` | the secondary button's own fill at rest (its pointed-at step under the pointer or pressed) and its ink |
 | `primary` | the primary action: near black with white on it (light), near white with black on it (dark) |
 | `danger`, `warning`, `success` | fills with white on them; their text is `status_ink(cx)` |
@@ -37,7 +37,7 @@ Helpers:
 | `dock_surface(cx)` | the Workbench's and the terminal's surface | `crates/ui/src/surface.rs` |
 | `badge_edge(tint)` | a badge's edge: halfway from its `Tint`'s fill to its ink | `crates/ui/src/badge.rs` |
 | `control_fill(cx)` | a ghost control's fill hovered, pressed or chosen; between `list_hover` and `accent` | `crates/ui/src/ink.rs` |
-| `faint_rule(cx)` | a hairline a step fainter, halfway to the surface: the line under a page's top, and a list page's line over its foot | `crates/ui/src/ink.rs` |
+| `faint_rule(cx)` | a hairline a step fainter, halfway to the surface: a list page's line over its foot, and the Issues tab's filter bar's line | `crates/ui/src/ink.rs` |
 | `meta_ink(cx)` | the middle ink: a detail beside a name, between prose and muted | `crates/ui/src/ink.rs`; the app says `crate::theme::meta_ink` |
 | `middle_ink(full, meta)` | the same step under another full ink: on a fill, under that fill's paired ink | `crates/ui/src/ink.rs` |
 | `hue_ink(base, cx)` | a hue tempered for ink: code inside prose | `crates/app/src/theme.rs` |
@@ -64,10 +64,11 @@ Text on a fill takes the ink paired with it:
 | a ghost's hover or selected fill, under an icon alone (`quiet_icon`) | `secondary_foreground`, as at rest |
 | `accent`, the selected row | `accent_foreground` |
 | `rail_chosen(cx)`, the rail's current row | `sidebar_accent_foreground` |
-| `muted` (a well, the bubble) | the neutral inks, as on the surface: a neutral fill, not a paired one |
+| `muted` (a well) | the neutral inks, as on the surface: a neutral fill, not a paired one |
+| `primary` (the prompt bubble) | `primary_foreground` |
 | a badge's `Tint` fill | that `Tint`'s `ink` |
 
-Semantic inks, on any surface: `status_ink(cx)` for a state, `link` for a link or what runs,
+Semantic inks, on any surface: `status_ink(cx)` for a state, `link` for a link, `info` for what runs,
 `hue_ink(base, cx)` for code in prose.
 
 ## Spacing
@@ -137,13 +138,13 @@ Moving the library's rev means checking this table.
 | Size | Button: height / words / icon / icon–label gap / inset | Input: height / words / inset | Icon alone |
 |---|---|---|---|
 | `.xsmall()`: an icon-only button inside a small object only | 20 / 12 / 12 / 4 / 4 | 20 / 12 / 4 **px** | 12 |
-| `.short()` (`CONTROL_H`): the library's small | 24 / 14 / 14 / 4 / 8 | 24 / 14 / 8 **px** | 14 |
+| `.short()` (`CONTROL_H`): a button the library's extra small, a field its small | 24 / 12 / 12 / 4 / 8 | 24 / 14 / 8 **px** | 14 |
 | `.small()`: an icon-only button beside `.short()` | 24 / 14 / 14 / 4 / 8 | 24 / 14 / 8 **px** | 14 |
-| `.tall()` (`FIELD_H`): the library's medium | 32 / 14 / 16 / 8 / 10 | 32 / 14 / 10 **px** | 16 |
+| `.tall()` (`FIELD_H`): the library's small, held taller | 32 / 14 / 14 / 4 / 12 | 32 / 14 / 8 **px** | 16 |
 
-An icon-only button is square at its height. `.short()` is the library's small size held at
-`CONTROL_H` and `.tall()` its medium at `FIELD_H` (`Short` and `Tall` in
-`crates/ui/src/control_size.rs`); their words, icons and insets are the library's. A builder that
+An icon-only button is square at its height. A button's `.short()` is the library's extra small
+held at `CONTROL_H` and its `.tall()` the library's small held at `FIELD_H`; a field takes the
+library's small at both (`Short` and `Tall` in `crates/ui/src/control_size.rs`); their words, icons and insets are the library's. A builder that
 sizes the controls it makes (`choice`, `switch`, `picker`) takes one of them as a `ControlSize`.
 
 A field of several lines (`text_area`) is the library's `Textarea`, which takes no size: its text
@@ -154,7 +155,7 @@ Components that keep geometry of their own, centred in their row rather than siz
 
 | Component | Geometry |
 |---|---|
-| `Tag` at `.small()` through `badge` | words 12 set solid (`badge` overrides the library's 10 at 1.25), inset 6 × 4; its height follows its line |
+| `Tag` at its default size through `badge` | words 12 at 1.25, inset 10 × 4; its height follows its line |
 | `Checkbox` | box 12 / 14 / 16 at `.xsmall()` / `.small()` / default; its label 12 / 14 / 16 |
 | `Switch` | track 28 × 16 **px** at `.xsmall()` and `.small()`, 36 × 20 **px** at the default; thumb 12 / 16 **px** |
 | `Kbd` | words 12, inset 4 × 2 |
@@ -192,8 +193,8 @@ All in `onehand_ui::tokens` (`crates/ui/src/tokens.rs`), which the app names
 | `SCROLLBAR_W` | 16px | room held clear beside text the library's scrollbar scrolls (the transcript's boxes, the Markdown reader) |
 | `lift(cx)` | | the floating shadow |
 
-Equal values kept apart on purpose, each one decision beside its one use: `CHAT_MIN`,
-`NARROW_PANEL` and `MODES_MIN_W` (30rem); `CONTENT_COLUMN` and `COMPOSER_COLUMN` (44rem).
+Equal values kept apart on purpose, each one decision beside its one use: `CHAT_MIN` and
+`NARROW_PANEL` (30rem); `CONTENT_COLUMN` and `COMPOSER_COLUMN` (44rem).
 
 ## Adding a token
 

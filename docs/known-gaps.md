@@ -11,11 +11,6 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   on some surfaces they land on, held at `HUE_INK` in `crates/app/src/theme.rs`. For a control:
   the focus ring, the library's grey, at about 2.5 on the light page. Fixing them means changing
   the library's values, which this palette does not do.
-- **Settings still stands at the old page treatment.** The overview, Tasks, Issues, Workflows,
-  Schedules and a project's page name themselves in their head, group in boxes and give their forms `.tall()`
-  fields; Settings keeps its name in the header, its groups as plain sections parted by
-  hairlines, and its fields and buttons at `.short()`. Moving it means a head per sub-page and
-  every Settings field and button resized together, so one page does not hold both sizes.
 - **The newest terminal tab is not scrolled into view.** Past the width of the strip a new shell can
   be the active one with its tab off the end of the list: the grid is right, the strip is behind.
   Fixing it means a `ScrollHandle` on the panel, and `scroll_to_item` on a tab that has never been

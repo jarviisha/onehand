@@ -44,7 +44,7 @@ running, what needs me, and what has finished.
   also stay drawn as buttons.
 
 **The task detail** opens in place of the boxes when a row's text is pressed, read as a page at
-the prose width, its parts plain sections. It shows:
+the prose width. It shows:
 
 - **a trail**: *Tasks* to go back (Esc too) › the project › the workflow, as a breadcrumb, then what can be done with the task: the most
   fitting a primary (a secondary while *Awaiting approval* or the way out holds the view's one

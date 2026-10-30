@@ -68,7 +68,7 @@ are flat, the project in place of the agent. A group lists six sessions, then *N
 project with none says *No open sessions*, a search or filter with none *No sessions match*. Each
 state has its own ink, and a mark per thing the person can do, none animated (running is a filled
 dot): failed and disconnected share one, both answered by trying again, their words telling them
-apart. The inks: failed or disconnected danger, needs input warning, running the accent, done unread
+apart. The inks: failed or disconnected danger, needs input warning, running `info`, done unread
 success, idle muted. `↑`/`↓` move the list's row, ringed while the keys move it, `Enter` and `←`/`→`
 act on it, `Alt+↑`/`↓` step through sessions in its order. The tree's order is the user's, set by
 dragging; pinned projects stay on top and sessions never leave their project. `Ctrl+Shift+B` hides
@@ -293,10 +293,11 @@ dragged height kept).
   place; then four boxes two by two,
   *Needs attention*, *Running*, *Queued*, *Finished*, each with a count, an empty line and a cap,
   its rows parted by hairlines. A row is the title
-  over workflow, step or outcome and project, with ghost actions by state (*Open session*, *Stop*,
-  *Resume*, *Retry…*, *Dismiss*) shown on hover, kept under *Needs attention*; its text opens the
-  task's detail, a page of its own at the prose width: a trail, the title, then *Awaiting approval*,
-  *Way out* and the runs as plain sections.
+  over workflow, step or outcome and project, its actions by state (*Open session*, *Stop*,
+  *Resume*, *Retry…*, *Dismiss*) in a `⋯` on hover and on a right-click, under *Needs attention*
+  also drawn as buttons beside it; its text opens the task's detail, a page of its own at the
+  prose width: a trail, the title, then *Awaiting approval* in a box in the warning alert's look,
+  *Way out*, and the runs on a vertical stepper.
 - *Issues*, a list page (`docs/ui-patterns.md`, *List pages*): a head (*Issues*, then *Refresh*
   and *New issue*, its primary, at the end); the row under it (the search, then *Open* and
   *Closed* as choices, each its count in a badge after its word, then pickers for progress, project
@@ -316,7 +317,7 @@ dragged height kept).
   The cards stand under *Yours* (the person's own) and *Built in* (the shipped), four to a row
   while the page holds them and fewer as it narrows, down to one. A card is a box: the
   workflow's name, its description cut at two lines, a short mark per step in its kind's ink (an
-  agent's turn the accent, a command muted, an approval warning, what goes to the forge success),
+  agent's turn the primary ink, a command muted, an approval warning, what goes to the forge success),
   and a foot with where it works and how many steps, *Run…* and a ⋯ (*Duplicate* and *Export…*
   on any that reads, *Delete…* on the person's own). An unreadable one names its file and says
   *Cannot be read: …* in the warning ink, its ⋯ holding *Delete…* alone. Hover raises a card's
@@ -346,7 +347,7 @@ dragged height kept).
   back to the cards over unsaved changes asks first. Along the page's foot, the whole width,
   stands what the editor has to tell: the problems (a name clash among them), each a line, on the
   danger tint led by the warning mark, from the first change on; or, on a shipped workflow, *Built
-  in, read-only: duplicate it to change it* on the accent's tint led by the info mark. A shipped
+  in, read-only: duplicate it to change it* on the primary's tint led by the info mark. A shipped
   workflow opens read-only, *Duplicate to edit* its primary, with no *Save* or *Cancel*; an unreadable file of the person's own opens
   why, with *Delete…*.
 
