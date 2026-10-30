@@ -58,6 +58,8 @@ pub(super) struct Item {
     pub(super) subagents: usize,
     /// A turn is open, which is what Stop ends; background work outlives it.
     pub(super) in_turn: bool,
+    /// The lead whose worker it is, opening or open.
+    pub(super) lead: Option<u64>,
 }
 
 /// A session waits on the person: an answer, or a turn or an agent that broke.
@@ -140,6 +142,48 @@ pub(super) fn visible(
         Filter::Recent => out.sort_by_key(|i| std::cmp::Reverse(items[*i].since)),
     }
     out
+}
+
+/// The list without the workers of a lead it lists, each lead taking the
+/// most urgent state of itself and its workers, and the age of the one whose
+/// state that is. A worker whose lead is not listed stays, as any session.
+pub(super) fn fold_workers(items: Vec<Item>) -> Vec<Item> {
+    let listed: Vec<u64> = items.iter().map(|item| item.uid).collect();
+    let (workers, mut kept): (Vec<Item>, Vec<Item>) = items
+        .into_iter()
+        .partition(|item| item.lead.is_some_and(|lead| listed.contains(&lead)));
+    for lead in &mut kept {
+        let mine = workers.iter().filter(|w| w.lead == Some(lead.uid));
+        let Some(urgent) = SessionSignal::most_urgent(
+            std::iter::once(lead.signal)
+                .chain(mine.clone().map(|w| w.signal))
+                .flatten(),
+        ) else {
+            continue;
+        };
+        if lead.signal == Some(urgent) {
+            continue;
+        }
+        if let Some(winner) = mine.filter(|w| w.signal == Some(urgent)).min_by_key(|w| w.since) {
+            lead.signal = winner.signal;
+            lead.since = winner.since;
+            lead.age = winner.age;
+        }
+    }
+    kept
+}
+
+/// The projects that had sessions (`before`, each session's project) and
+/// have none left in `after`: a worktree holding only hidden workers.
+pub(super) fn emptied(before: &[usize], after: &[Item]) -> Vec<usize> {
+    let mut roots: Vec<usize> = before
+        .iter()
+        .copied()
+        .filter(|root| !after.iter().any(|item| item.root == *root))
+        .collect();
+    roots.sort_unstable();
+    roots.dedup();
+    roots
 }
 
 pub(super) fn attention_count(items: &[Item]) -> usize {
