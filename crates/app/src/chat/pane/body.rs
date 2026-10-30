@@ -41,11 +41,15 @@ impl ChatPane {
         cx: &mut Context<Self>,
     ) -> Vec<gpui::AnyElement> {
         let composer_idle = composer_idle(&self.composer, window, cx);
-        let mut pinned = Self::cards(session, well, composer_idle, window, cx);
+        let (mut pinned, waiting) = Self::cards(session, well, composer_idle, window, cx);
         // Under the blocking cards and directly over the composer, because that
         // is where the prompt it holds was written and where it will reappear
         // if the queue is cancelled.
         let mut lines: Vec<gpui::AnyElement> = Vec::new();
+        // How many more cards wait after the one shown, first among the lines
+        // the composer carries, so it rests on the surface they share rather
+        // than bare between the card and the composer.
+        lines.extend(waiting);
         lines.extend(self.connecting_strip(cx).map(IntoElement::into_any_element));
         lines.extend(self.queued_strip(cx).map(IntoElement::into_any_element));
         // Last, so it rests on the composer it belongs to: what is staged
@@ -74,8 +78,8 @@ impl ChatPane {
         pinned
     }
 
-    /// The oldest permission or question session `session` waits on, and how
-    /// many more wait after it. `composer_idle` is whether the composer under
+    /// The oldest permission or question session `session` waits on, and the
+    /// line saying how many more wait after it. `composer_idle` is whether the composer under
     /// them is focused and empty, so Enter may answer the card.
     pub(super) fn cards(
         session: &Entity<ChatSession>,
@@ -83,7 +87,7 @@ impl ChatPane {
         composer_idle: bool,
         window: &mut Window,
         cx: &mut App,
-    ) -> Vec<gpui::AnyElement> {
+    ) -> (Vec<gpui::AnyElement>, Option<gpui::AnyElement>) {
         // A question's free-text box needs a window to be built and the session
         // never has one, so the card's own way to the screen is where it is
         // made. Before the cards are read, since the box is one of them.
@@ -118,15 +122,13 @@ impl ChatPane {
         // offered Enter while only the focused one would take it. The next
         // takes the same place once this one is answered.
         let waiting = out.len().saturating_sub(1);
-        let mut pinned: Vec<gpui::AnyElement> = out
+        let pinned: Vec<gpui::AnyElement> = out
             .into_iter()
             .take(1)
             .map(|(_, element)| element)
             .collect();
-        pinned.extend((waiting > 0).then(|| {
+        let waiting = (waiting > 0).then(|| {
             div()
-                // On the composer's text edge, as the lines under it are.
-                .px_1p5()
                 .text_xs()
                 .text_color(cx.theme().muted_foreground)
                 .child(match waiting {
@@ -134,8 +136,8 @@ impl ChatPane {
                     n => format!("{n} more requests wait after this one"),
                 })
                 .into_any_element()
-        }));
-        pinned
+        });
+        (pinned, waiting)
     }
 
     /// Shown while the adapter is still coming up.

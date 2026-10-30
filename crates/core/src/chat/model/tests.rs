@@ -56,6 +56,22 @@ fn title_caps_at_a_word_boundary() {
 }
 
 #[test]
+fn title_keeps_a_quote_pair_it_cuts_after() {
+    assert_eq!(
+        summarize_title("show me `everything` please").as_deref(),
+        Some("Show me `everything`"),
+    );
+    assert_eq!(
+        summarize_title("`cargo test`").as_deref(),
+        Some("Cargo test")
+    );
+    assert_eq!(
+        summarize_title("rename foo`").as_deref(),
+        Some("Rename foo")
+    );
+}
+
+#[test]
 fn title_is_none_for_blank_prompt() {
     assert_eq!(summarize_title("   \n\t "), None);
 }

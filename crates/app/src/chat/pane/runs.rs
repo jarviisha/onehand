@@ -298,6 +298,22 @@ impl ChatPane {
                 };
                 return column(rems(BLOCK_GAP.0 * 2.), margin, vec![body]).into_any_element();
             }
+            // Answered permissions and questions in a row are one box of
+            // records. A list row is a layout root of its own, so each row
+            // draws its segment of the box: the edge and corners at the ends,
+            // and the gap between records inside the fill.
+            if viewport::is_record(chat, plan) {
+                let viewport = conv.map(|conv| &conv.viewport);
+                let record_at = |ix: Option<usize>| {
+                    ix.and_then(|ix| viewport?.run(ix))
+                        .is_some_and(|run| viewport::is_record(chat, run))
+                };
+                let first = !record_at(ix.checked_sub(1));
+                let last = !record_at(Some(ix + 1));
+                let segment = record_segment(first, last, body(&plan.members, &room), cx);
+                let lead = if first { lead } else { rems(0.) };
+                return column(lead, margin, vec![segment]).into_any_element();
+            }
             return column(lead, margin, body(&plan.members, &room)).into_any_element();
         };
 
@@ -496,6 +512,34 @@ pub(super) fn lead_gap(previous: Option<RunKind>, this: RunKind) -> Rems {
         (RunKind::Compact, RunKind::Compact) => COMPACT_GAP,
         _ => BLOCK_GAP,
     }
+}
+
+/// One record's share of the box a stretch of records is drawn in: the
+/// folding block's look (`fold_box`), split across rows. `first` and `last`
+/// draw the box's ends; a record after another sits a tight step under it,
+/// inside the fill.
+fn record_segment(
+    first: bool,
+    last: bool,
+    content: Vec<gpui::AnyElement>,
+    cx: &App,
+) -> gpui::AnyElement {
+    use gpui_component::ActiveTheme as _;
+    let radius = cx.theme().radius_lg;
+    div()
+        .w_full()
+        .min_w_0()
+        .px_3()
+        .bg(cx.theme().group_box)
+        .border_color(cx.theme().border)
+        .border_x_1()
+        .map(|box_| match first {
+            true => box_.border_t_1().rounded_t(radius).pt_2(),
+            false => box_.pt(transcript::TIGHT_GAP),
+        })
+        .when(last, |box_| box_.border_b_1().rounded_b(radius).pb_2())
+        .children(content)
+        .into_any_element()
 }
 
 /// The frame one run of the transcript is drawn in: a centred reading column,

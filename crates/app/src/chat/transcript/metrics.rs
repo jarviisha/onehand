@@ -47,7 +47,7 @@ pub(in crate::chat) const TURN_GAP: Rems = rems(2.);
 /// Between two blocks of one turn.
 pub(in crate::chat) const BLOCK_GAP: Rems = rems(0.75);
 /// Between the parts of one block.
-pub(super) const PART_GAP: Rems = rems(0.5);
+pub(in crate::chat) const PART_GAP: Rems = rems(0.5);
 /// Between two rows that are read as one list, and between a line and the
 /// caption belonging to it.
 pub(in crate::chat) const TIGHT_GAP: Rems = rems(0.25);

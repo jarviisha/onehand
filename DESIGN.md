@@ -105,8 +105,9 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
 - **A centred reading column**, narrowed on small panels, read at the reading size; what is
   wider scrolls inside its well. A scrollbar runs on the panel's edge down to the composer.
 - **One turn, many blocks**: prose, thoughts, plans, activity clusters (tools only), commands,
-  diffs, a subagent's card (a bare fold block where the agent handed work off), answered
-  permissions and questions, notices and errors, the files the turn changed,
+  diffs, a subagent's card (a fold block where the agent handed work off), answered
+  permissions and questions (a line each, those in a row sharing one box drawn as the folding
+  blocks' are), notices and errors, the files the turn changed,
   and, while it runs, the running line (a spinner, its clock, *N running*, what the agent says it
   is doing). A workflow's steps and an interrupted turn are notices, never prompts.
 - **Folding blocks open from one line**, the chevron first, in the library's collapsible look: a

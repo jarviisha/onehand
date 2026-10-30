@@ -91,7 +91,8 @@ impl ChatPane {
         // shrink each other frame by frame.
         let height = self.workers.detail_height.get();
         let bound = (height > px(0.)).then_some(height);
-        let cards = Self::cards(&session, bound, idle, window, cx);
+        let (cards, waiting) = Self::cards(&session, bound, idle, window, cx);
+        let cards = cards.into_iter().chain(waiting);
         let card = composer.map(|composer| {
             let blocked = {
                 let composer = composer.read(cx);

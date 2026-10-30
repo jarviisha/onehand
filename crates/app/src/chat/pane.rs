@@ -140,8 +140,8 @@ struct OverlayRoom {
 /// number it was free to stop being a ladder at all.
 const BLOCK_GAP: Rems = transcript::BLOCK_GAP;
 /// The space between two collapsed history rows, which are an index and are
-/// read as one.
-const COMPACT_GAP: Rems = transcript::TIGHT_GAP;
+/// read as one: close, yet apart enough that two boxes in a row read as two.
+const COMPACT_GAP: Rems = transcript::PART_GAP;
 /// How far above the clip the transcript dissolves into the surface under it.
 ///
 /// **A gradient and not a second edge.** The clip at the composer's middle is

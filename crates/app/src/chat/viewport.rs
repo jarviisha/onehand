@@ -16,8 +16,8 @@ use onehand_core::chat::{
 };
 
 mod plan;
-pub use plan::item;
 use plan::*;
+pub use plan::{is_record, item};
 
 /// How far below a row's top still counts as resting on it: under a pixel is
 /// the list's own rounding, not a reader's scroll.
@@ -390,6 +390,7 @@ impl Viewport {
             .zip(plan.iter())
             .position(|(was, now)| !draws_the_same(was, now))
             .unwrap_or_else(|| self.plan.len().min(plan.len()));
+        let diverged = with_record_above(chat, &plan, diverged);
         self.changed_from = self.changed_from.min(diverged);
         self.plan = plan;
 

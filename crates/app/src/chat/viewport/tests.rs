@@ -205,6 +205,25 @@ fn an_answered_one_returns_to_where_it_was() {
     assert!(card < after, "and it sits before what came after it");
 }
 
+/// Answered cards in a row draw one box between them, each row its share, so
+/// a record arriving under another changes the foot of the box the one above
+/// draws: that row is told to the list again, not only the new one.
+#[test]
+fn a_record_arriving_under_another_redraws_the_one_above() {
+    let mut chat = chat();
+    chat.items.push(permission(Some("Allow once")));
+    let mut viewport = Viewport::default();
+    viewport.replan(&chat, 0, |_, open| open, |_, default| default);
+    let _ = viewport.list_state(false, ROOM);
+    let above = viewport
+        .run_of(TranscriptItemId::Live(3))
+        .expect("the record has a row");
+
+    chat.items.push(permission(Some("Deny")));
+    viewport.replan(&chat, 0, |_, open| open, |_, default| default);
+    assert_eq!(viewport.changed_from, above, "the record above the new one");
+}
+
 /// A frame that changed nothing about the conversation keeps the layout it
 /// has. `render` runs for a hover, a keystroke in the composer, a panel
 /// drag -- none of which is a reason to walk the transcript again.

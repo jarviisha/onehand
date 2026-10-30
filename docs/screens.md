@@ -154,10 +154,10 @@ in the warning ink, and pressing it switches that off. The `+` menu ends on *Age
 onehand* under a heading of its own, *This session*, checked while on, and not offered in an
 unattended run's session. Each chip's
 menu opens just above it, without its tooltip. Above the card: one pinned permission or question,
-the oldest (a subagent's is titled `<name> asks permission` or `<name> asks: <question>`), with
-how many more wait; a permission's command shows whole up to about ten lines, and past them
-ends on *Show all N lines*, which opens it in place; then one surface on the card's fill and lift holding a
-reconnect and the queue as lines, then the staged files as one row of plates (a picture's preview,
+the oldest (a subagent's is titled `<name> asks permission` or `<name> asks: <question>`); a
+permission's command shows whole up to about ten lines, and past them
+ends on *Show all N lines*, which opens it in place; then one surface on the card's fill, edge and lift holding
+how many more cards wait, a reconnect and the queue as lines, then the staged files as one row of plates (a picture's preview,
 pressed to open it whole in a dialog; a text file opening in the Workbench), faded where cut beside
 *Show all N*. A picture attached to a sent prompt opens the same way. While the session on screen
 leads workers, the lead's strip stands on the card, narrower than it, one line above the card's: *N
