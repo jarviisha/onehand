@@ -324,11 +324,7 @@ pub fn rail(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> impl Int
                 .child(workspace::new_button(shell, window_state, target, cx)),
         )
         .child(pages(shell, cx))
-        .child(search::sessions_header(
-            state,
-            list.waiting,
-            cx,
-        ))
+        .child(search::sessions_header(state, list.waiting, cx))
         .child(
             div()
                 .id("rail-list")

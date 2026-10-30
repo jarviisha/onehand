@@ -164,7 +164,10 @@ pub(super) fn fold_workers(items: Vec<Item>) -> Vec<Item> {
         if lead.signal == Some(urgent) {
             continue;
         }
-        if let Some(winner) = mine.filter(|w| w.signal == Some(urgent)).min_by_key(|w| w.since) {
+        if let Some(winner) = mine
+            .filter(|w| w.signal == Some(urgent))
+            .min_by_key(|w| w.since)
+        {
             lead.signal = winner.signal;
             lead.since = winner.since;
             lead.age = winner.age;

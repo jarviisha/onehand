@@ -22,34 +22,28 @@ impl ChatPane {
     /// The line under a live turn: a spinner and the turn's clock in the
     /// accent, then how many steps run (*N running*) and what the agent says
     /// it is doing.
-    fn working_strip(&self, cx: &App) -> gpui::AnyElement {
-        let running = self
-            .active_conversation()
-            .and_then(|conv| conv.session())
-            .map(|session| session.read(cx))
-            .map(|session| {
-                session
-                    .chat
-                    .items
-                    .iter()
-                    .filter(|item| {
-                        matches!(
-                            item,
-                            onehand_core::chat::ChatItem::Tool(tool)
-                                if matches!(
-                                    tool.call.status,
-                                    onehand_core::acp::ToolStatus::InProgress
-                                        | onehand_core::acp::ToolStatus::Pending
-                                )
+    fn working_strip(&self, session: &Entity<ChatSession>, cx: &App) -> gpui::AnyElement {
+        let chat = &session.read(cx).chat;
+        let running = chat
+            .items
+            .iter()
+            .filter(|item| {
+                matches!(
+                    item,
+                    onehand_core::chat::ChatItem::Tool(tool)
+                        if matches!(
+                            tool.call.status,
+                            onehand_core::acp::ToolStatus::InProgress
+                                | onehand_core::acp::ToolStatus::Pending
                         )
-                    })
-                    .count()
+                )
             })
-            .unwrap_or(0);
-        let status = self
-            .active_chat(cx)
-            .and_then(|chat| chat.activity_status().or_else(|| working_word(chat)));
-        let elapsed = self.turn_began.map_or(0, |began| began.elapsed().as_secs());
+            .count();
+        let status = chat.activity_status().or_else(|| working_word(chat));
+        // The clock is kept for the session on screen; a worker's turn shows
+        // its spinner and its words without one.
+        let elapsed = (self.active == Some(chat.uid))
+            .then(|| self.turn_began.map_or(0, |began| began.elapsed().as_secs()));
         let accent = transcript::accent(cx);
 
         // **Only what is actually there.** A separator standing between a thing
@@ -85,13 +79,13 @@ impl ChatPane {
             .text_color(accent)
             // At the transcript's mark size, as every spinner above it is.
             .child(Spinner::new().xsmall().color(accent))
-            .child(
+            .children(elapsed.map(|elapsed| {
                 div()
                     .flex_none()
                     .w(Self::CLOCK_W)
                     .whitespace_nowrap()
-                    .child(onehand_core::duration(elapsed)),
-            );
+                    .child(onehand_core::duration(elapsed))
+            }));
         for (n, part) in parts.into_iter().enumerate() {
             if n > 0 {
                 row = row.child(div().flex_none().child("·"));
@@ -165,10 +159,20 @@ impl ChatPane {
     /// plan's length, and a list told about a different number of runs than the
     /// plan holds draws blanks or drops the tail.
     pub(super) fn reproject(&mut self, room: viewport::TopRoom, cx: &App) -> Option<ListState> {
-        let session = self.active_conversation()?.session()?.clone();
+        self.reproject_for(self.active?, room, cx)
+    }
+
+    /// [`Self::reproject`] for session `uid`, on screen or not.
+    pub(super) fn reproject_for(
+        &mut self,
+        uid: u64,
+        room: viewport::TopRoom,
+        cx: &App,
+    ) -> Option<ListState> {
+        let session = self.conversations.get(&uid)?.session()?.clone();
         let session = session.read(cx);
         let handle = self.handle.clone();
-        let conv = self.active_conversation_mut()?;
+        let conv = self.conversations.get_mut(&uid)?;
         conv.viewport.replan(
             &session.chat,
             session.chat.folds(),
@@ -224,13 +228,9 @@ impl ChatPane {
         window: &Window,
         cx: &App,
     ) -> gpui::AnyElement {
-        let Some(plan) = self
-            .active_conversation()
-            .and_then(|conv| conv.viewport.run(ix))
-        else {
-            return div().into_any_element();
-        };
-        let Some(chat) = self.active_chat(cx) else {
+        let chat = &session.read(cx).chat;
+        let conv = self.conversations.get(&chat.uid);
+        let Some(plan) = conv.and_then(|conv| conv.viewport.run(ix)) else {
             return div().into_any_element();
         };
         let body =
@@ -250,8 +250,7 @@ impl ChatPane {
         // above this one is decided by the pair it forms with the run before it
         // rather than by this run's opinion of itself.
         let lead = lead_gap(
-            self.active_conversation()
-                .and_then(|conv| conv.viewport.kind_before(ix)),
+            conv.and_then(|conv| conv.viewport.kind_before(ix)),
             plan.head_kind(),
         );
         let margin = match room.narrow {
@@ -295,7 +294,7 @@ impl ChatPane {
                             cx,
                         )
                     }
-                    None => self.working_strip(cx),
+                    None => self.working_strip(session, cx),
                 };
                 return column(rems(BLOCK_GAP.0 * 2.), margin, vec![body]).into_any_element();
             }
@@ -374,9 +373,7 @@ impl ChatPane {
         window: &Window,
         cx: &App,
     ) -> gpui::AnyElement {
-        let Some(chat) = self.active_chat(cx) else {
-            return div().into_any_element();
-        };
+        let chat = &session.read(cx).chat;
         let body =
             |targets: &[TranscriptItemId], room: &transcript::Room| -> Vec<gpui::AnyElement> {
                 targets
