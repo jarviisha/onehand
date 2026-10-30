@@ -264,3 +264,98 @@ fn sessions_on_the_folder_or_inside_it_refuse() {
     );
     assert!(sessions_in(Path::new("/repo/.worktrees/a"), &roots).is_empty());
 }
+
+use super::super::Sessions;
+use super::whose::{Worker, lead_in, offered, workers_in};
+
+/// A lead 1 with worker 7 open and worker 9 still opening.
+fn with_workers() -> Sessions {
+    let mut sessions = Sessions::default();
+    sessions.workers.insert(7, relation(1));
+    sessions.requests.see(1, "a", &asked("a")).unwrap();
+    sessions.requests.started(1, "a", 7);
+    sessions.requests.answered(1, "a", "session: 7".into());
+    sessions.requests.see(1, "b", &asked("b")).unwrap();
+    sessions.requests.started(1, "b", 9);
+    sessions
+}
+
+#[test]
+fn an_open_in_flight_is_a_worker() {
+    let sessions = with_workers();
+    assert_eq!(lead_in(&sessions, 9), Some(1));
+    assert_eq!(
+        workers_in(&sessions, 1),
+        vec![
+            Worker {
+                uid: 7,
+                turn: Some(1),
+                sent: Some(1),
+            },
+            Worker {
+                uid: 9,
+                turn: None,
+                sent: None,
+            },
+        ]
+    );
+}
+
+#[test]
+fn a_relation_names_its_lead() {
+    let sessions = with_workers();
+    assert_eq!(lead_in(&sessions, 7), Some(1));
+    assert_eq!(lead_in(&sessions, 1), None);
+    assert!(workers_in(&sessions, 2).is_empty());
+}
+
+/// An open not yet started has no session to show anywhere.
+#[test]
+fn an_open_not_started_is_no_worker() {
+    let mut sessions = Sessions::default();
+    sessions.requests.see(1, "a", &asked("a")).unwrap();
+    assert!(workers_in(&sessions, 1).is_empty());
+}
+
+#[test]
+fn a_lead_forgotten_lets_its_workers_go() {
+    let mut sessions = with_workers();
+    // As `forget` does for a lead.
+    sessions.requests.forget_lead(1);
+    sessions.workers.retain(|_, relation| relation.lead != 1);
+    assert_eq!(lead_in(&sessions, 7), None);
+    assert_eq!(lead_in(&sessions, 9), None);
+    assert!(workers_in(&sessions, 1).is_empty());
+}
+
+#[test]
+fn give_back_is_offered_only_while_the_person_holds_it() {
+    let held = relation(1);
+    assert!(!offered(Some(&held), 1, true, true), "the lead holds it");
+    assert!(offered(Some(&held), 2, true, true));
+    assert!(!offered(None, 2, true, true), "no lead to give it to");
+}
+
+#[test]
+fn give_back_is_not_offered_once_the_lead_is_off_or_gone() {
+    let held = relation(1);
+    assert!(!offered(Some(&held), 2, false, true));
+    assert!(!offered(Some(&held), 2, true, false));
+}
+
+/// Given back, the lead holds it again: what the person sent counts as sent.
+#[test]
+fn given_back_the_lead_holds_it() {
+    let mut chat = onehand_core::chat::model::Chat::default();
+    chat.prompts_sent = 3;
+    let mut given = relation(1);
+    given.sent = chat.prompts_sent;
+    let held = onehand_core::control::state::Held {
+        turn: given.turn,
+        sent: given.sent,
+        dirs: Vec::new(),
+    };
+    let said = onehand_core::control::state::state(&chat, &held);
+    assert!(said.contains("held by: lead"), "{said}");
+    assert!(!offered(Some(&given), chat.prompts_sent, true, true));
+}

@@ -25,6 +25,7 @@ mod start;
 mod workers;
 
 pub(crate) use start::{Started, start_task};
+pub(crate) use workers::whose::{Worker, give_back, give_back_offered, lead_of, workers_of};
 use start::{start, template};
 
 /// Whether a program outside onehand may use the tools. Read by the

@@ -80,6 +80,27 @@ impl Requests {
         self.held.retain(|(held, _), _| *held != lead);
     }
 
+    /// The sessions `lead`'s opens in flight have started.
+    pub(in crate::control) fn opening_of(&self, lead: u64) -> Vec<u64> {
+        self.held
+            .iter()
+            .filter_map(|((held, _), (_, seen))| match seen {
+                Seen::Opening(Some(uid)) if *held == lead => Some(*uid),
+                Seen::Opening(_) | Seen::New | Seen::Answered(_) => None,
+            })
+            .collect()
+    }
+
+    /// The lead whose open in flight started session `uid`.
+    pub(in crate::control) fn lead_opening(&self, uid: u64) -> Option<u64> {
+        self.held
+            .iter()
+            .find_map(|((lead, _), (_, seen))| match seen {
+                Seen::Opening(Some(started)) if *started == uid => Some(*lead),
+                Seen::Opening(_) | Seen::New | Seen::Answered(_) => None,
+            })
+    }
+
     fn set(&mut self, lead: u64, request: &str, seen: Seen) {
         if let Some(entry) = self.held.get_mut(&(lead, request.to_string())) {
             entry.1 = seen;
