@@ -606,12 +606,9 @@ impl TerminalPanel {
             .size_full()
             .v_flex()
             .child(
-                // Drawn here rather than with the library's `TabBar`, whose
-                // variants each bring a plate, a capsule, a ring or a border of
-                // their own: a tab here is a flat label on the dock, the chosen
-                // one on the selected fill, and nothing else. A strip like every
-                // other, the shell below it parted from it by the space.
-                onehand_ui::strip(cx)
+                // The library's tab panel bar: the shells as its tabs, the
+                // chosen one on the tab's fill under the primary's stroke.
+                onehand_ui::tab_bar(cx)
                     .id("terminal-tabs")
                     // The tabs live in a box of their own that scrolls sideways,
                     // and that box is what gives way, so `+` and the controls at
@@ -620,13 +617,11 @@ impl TerminalPanel {
                         div()
                             .id("terminal-tab-list")
                             .h_flex()
-                            .items_center()
-                            .gap_1()
                             .flex_1()
                             .min_w_0()
                             .overflow_x_scroll()
                             .children(labels.into_iter().enumerate().map(|(i, label)| {
-                                onehand_ui::tab_chip(
+                                onehand_ui::panel_tab(
                                     ("terminal-tab", i),
                                     label.clone(),
                                     label,
@@ -663,52 +658,69 @@ impl TerminalPanel {
                     // the panel. The hover fill brings it back on the one about
                     // to be pressed.
                     .child(
-                        onehand_ui::strip_control("add-shell", IconName::Plus, false, cx)
-                            .named("New shell in this project")
-                            .on_click(cx.listener(|panel: &mut Self, _, window, cx| {
-                                panel.open_shell(window, cx);
-                            })),
+                        div().h_flex().items_center().px_1().child(
+                            onehand_ui::strip_control("add-shell", IconName::Plus, false, cx)
+                                .named("New shell in this project")
+                                .on_click(cx.listener(|panel: &mut Self, _, window, cx| {
+                                    panel.open_shell(window, cx);
+                                })),
+                        ),
                     )
-                    // The icon is the state, not the action: the one situation
-                    // where it matters is the panel filling the frame and the
-                    // user looking for the way back.
-                    .child({
-                        let full = self.maximized;
-                        onehand_ui::strip_control(
-                            "maximize-terminal",
-                            match full {
-                                true => IconName::Minimize,
-                                false => IconName::Maximize,
-                            },
-                            false,
-                            cx,
-                        )
-                        .named_with_action(
-                            match full {
-                                true => "Back to the dock",
-                                false => "Fill the window",
-                            },
-                            &crate::shell::ToggleMaximize,
-                            None,
-                        )
-                        .on_click(cx.listener(|_: &mut Self, _, _, cx| {
-                            cx.emit(TerminalPanelEvent::ToggleMaximize);
-                        }))
-                    })
-                    // A minus, as the Workbench's: the shells are not being
-                    // ended, which the cross on every tab is for. `Minus` and
-                    // never `Dash`, whose stroke is written as literal black and
-                    // ignores `text_color`.
                     .child(
-                        onehand_ui::strip_control("hide-terminal", IconName::Minus, false, cx)
-                            .named_with_action(
-                                "Hide the terminal",
-                                &crate::shell::ToggleTerminal,
-                                None,
-                            )
-                            .on_click(cx.listener(|_: &mut Self, _, _, cx| {
-                                cx.emit(TerminalPanelEvent::Hide);
-                            })),
+                        div()
+                            .h_flex()
+                            .items_center()
+                            .gap_1()
+                            // The icon is the state, not the action: the one situation
+                            // where it matters is the panel filling the frame and the
+                            // user looking for the way back.
+                            .child({
+                                let full = self.maximized;
+                                onehand_ui::strip_control(
+                                    "maximize-terminal",
+                                    match full {
+                                        true => IconName::Minimize,
+                                        false => IconName::Maximize,
+                                    },
+                                    false,
+                                    cx,
+                                )
+                                .named_with_action(
+                                    match full {
+                                        true => "Back to the dock",
+                                        false => "Fill the window",
+                                    },
+                                    &crate::shell::ToggleMaximize,
+                                    None,
+                                )
+                                .on_click(cx.listener(
+                                    |_: &mut Self, _, _, cx| {
+                                        cx.emit(TerminalPanelEvent::ToggleMaximize);
+                                    },
+                                ))
+                            })
+                            // A minus, as the Workbench's: the shells are not being
+                            // ended, which the cross on every tab is for. `Minus` and
+                            // never `Dash`, whose stroke is written as literal black and
+                            // ignores `text_color`.
+                            .child(
+                                onehand_ui::strip_control(
+                                    "hide-terminal",
+                                    IconName::Minus,
+                                    false,
+                                    cx,
+                                )
+                                .named_with_action(
+                                    "Hide the terminal",
+                                    &crate::shell::ToggleTerminal,
+                                    None,
+                                )
+                                .on_click(cx.listener(
+                                    |_: &mut Self, _, _, cx| {
+                                        cx.emit(TerminalPanelEvent::Hide);
+                                    },
+                                )),
+                            ),
                     ),
             )
             .children(body.map(|view| {

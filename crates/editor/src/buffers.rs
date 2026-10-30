@@ -22,8 +22,9 @@ use onehand_ui::{
 use std::collections::HashMap;
 use std::path::Path;
 
-/// The room between two tabs on the strip.
-const TAB_GAP: Rems = rems(0.25);
+/// Tabs stand flush, as a tab panel's do, each parted from the next by its
+/// own line.
+const TAB_GAP: Rems = rems(0.);
 /// The unsaved-edits mark on a tab.
 const DIRTY_DOT: Rems = rems(0.375);
 
@@ -196,7 +197,7 @@ pub(crate) fn tab_strip<T: 'static>(
         let file = &files[i];
         let (select, close) = (on_select.clone(), on_close.clone());
         let measure = measure_tab(widths.clone(), key(file), view.clone());
-        onehand_ui::tab_chip(
+        onehand_ui::panel_tab(
             ("editor-tab", i),
             file.label.clone().into(),
             hint_of(file),
@@ -263,17 +264,16 @@ pub(crate) fn tab_strip<T: 'static>(
         )
     });
     let tab_list = div()
+        .h_full()
         .h_flex()
-        .items_center()
-        .gap(TAB_GAP)
         .children(tabs)
-        .children(more);
+        .children(more.map(|more| div().h_flex().items_center().px_1().child(more)));
 
-    onehand_ui::mode_strip(cx)
-        // Where the editor's head ends and the code begins.
-        .border_b_1()
-        .border_color(cx.theme().border)
-        .child(lead)
+    // The library's tab panel bar, a mode's bar a step lower than the
+    // Workbench's over it, its line under it where the code begins.
+    onehand_ui::tab_bar(cx)
+        .h(onehand_ui::tokens::MODE_BAR_H)
+        .child(div().h_flex().items_center().px_1().child(lead))
         // The one part of the row that gives way, and the box the tabs are
         // laid out to: `flex_1` + `min_w_0`, so its width is what is left
         // after the controls, never its content.
@@ -290,9 +290,11 @@ pub(crate) fn tab_strip<T: 'static>(
         // same glyph.
         .when(!files.is_empty(), |strip| {
             strip.child(
-                onehand_ui::strip_control("close-all-files", IconName::Close, false, cx)
-                    .named("Close all files")
-                    .on_click(on_close_all),
+                div().h_flex().items_center().child(
+                    onehand_ui::strip_control("close-all-files", IconName::Close, false, cx)
+                        .named("Close all files")
+                        .on_click(on_close_all),
+                ),
             )
         })
         .into_any_element()

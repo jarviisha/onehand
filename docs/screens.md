@@ -177,9 +177,13 @@ down the Workbench's edge beside the conversation. The terminal is a block edged
 held off its neighbours by a gap, drawn no taller than leaves the conversation a readable
 height (its dragged height kept).
 
-- Strips as tall as the header, a mode's own bar under the Workbench's a step lower. The Workbench's: *← Conversation* while it has the area, the modes
+- Strips as tall as the header, a mode's own bar under the Workbench's a step lower. The
+  Workbench's, the terminal's and the Editor's files are the library's tab panel bars (`tab_bar`):
+  on the tab bar's fill with a line under, the tabs flush and parted by lines, the open one on the
+  tab's fill under a stroke of the primary along its top, the controls at the end. The
+  Workbench's: *← Conversation* while it has the area, the modes as tabs
   (Editor, Markdown, Issues, Plugins only where a Claude Code agent is set up when the window
-  opens, Neovim; a select when narrow), maximize, hide. The terminal's:
+  opens, Neovim; a select under 26rem), maximize, hide. The terminal's:
   shell tabs (each capped in width, scrolling, so none is left out), `+`, maximize, hide. File
   tabs never shrink: the newest that fit stay, the current one among them, and the older ones
   go into an *N more* menu after them.
@@ -190,7 +194,7 @@ height (its dragged height kept).
 - A failed open or save in the Editor or Markdown is a toast; a file changed on disk, a Neovim that
   would not start and a listing that failed stand as a status line under the mode.
 - Plugins: the search and filters a filter bar; a row's actions on hover and on keyboard focus, its
-  switch always; what runs and what waits on a restart under the list, so neither moves it.
+  ⋯ menu also on a right-click (refused while another change runs), its switch always; what runs and what waits on a restart under the list, so neither moves it.
 - The Issues tab: one filter bar over the list and the issue both, a faint line under it: the
   search, the label picker, while the search or a label narrows the list *Clear filters*, and `+`
   (*New issue*, primary, secondary while the form holds that) at the end, the filters wrapping

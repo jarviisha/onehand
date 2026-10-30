@@ -168,6 +168,7 @@ All in `onehand_ui::tokens` (`crates/ui/src/tokens.rs`), which the app names
 | Token | Value | What |
 |---|---|---|
 | `BAR_H` | 2.75rem | every strip along the top of a region |
+| `TAB_MARK` | 0.125rem | the stroke along the top of a dock's open tab |
 | `MODE_BAR_H` | 2rem | a mode's own bar under the Workbench's strip (the editor's tabs, the reader's bar) |
 | `ROW_H` | 2rem | a list row (the rail, the composer's popup) |
 | `TREE_ROW_H` | 1.5rem | a Workbench tree's row pitch (Files, Markdown) |

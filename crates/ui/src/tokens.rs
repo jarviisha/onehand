@@ -13,6 +13,10 @@ use gpui_component::ActiveTheme as _;
 /// a page's column heads, so bars side by side line up across the window.
 pub const BAR_H: Rems = rems(2.75);
 
+/// The mark saying which tab of a dock's bar is open: a stroke along its
+/// top, a step heavier than a line.
+pub const TAB_MARK: Rems = rems(0.125);
+
 /// A mode's own bar, under the Workbench's strip: the editor's tabs, the
 /// reader's bar. A step under [`BAR_H`], so the second bar reads as the
 /// mode's rather than as the panel's a second time; its controls keep their
