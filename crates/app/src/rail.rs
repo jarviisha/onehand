@@ -40,9 +40,9 @@ mod row;
 mod search;
 mod session;
 mod workspace;
-pub(crate) use model::{needs_attention, word};
+pub(crate) use model::{age_label, needs_attention, word};
 pub use project::{pick_item, unattended_item};
-pub(crate) use row::page_fill;
+pub(crate) use row::{key_ring, page_fill};
 pub(crate) use session::{RESEND, session_label, signal_mark, status_icon, word_ink};
 pub(crate) use workspace::ellipsize_front;
 

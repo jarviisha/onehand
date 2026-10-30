@@ -164,6 +164,7 @@ impl Shell {
                     // The visibility button and its shortcut preserve the selected mode.
                     E::ToggleWorkbench => shell.toggle_workbench(window, cx),
                     E::ToggleWorkers => shell.toggle_workers(window, cx),
+                    E::ShowWorker(uid) => shell.show_workers(Some(*uid), true, window, cx),
                     E::MaximizeWorkers => {
                         shell.toggle_maximize_panel(FocusedPanel::Workers, window, cx)
                     }

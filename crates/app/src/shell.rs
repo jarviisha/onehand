@@ -50,6 +50,7 @@ gpui::actions!(
         ToggleMarkdown,
         ToggleWorkbench,
         ToggleWorkbenchVisibility,
+        ShowWorkers,
         OpenSettings,
         SaveFile,
         ToggleTerminal,

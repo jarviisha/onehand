@@ -126,7 +126,9 @@ minor bump may break any of them.
   rolled back.
 - A session whose agent opens workers is their lead: the workers leave the rail, the lead's row
   carries their most urgent state, and a workers' region in the Workbench's place stacks a block
-  per worker, where you read, answer, stop and write to it. Writing to a worker takes it from the
+  per worker, where you read, answer, stop and write to it. A deck tucked behind the lead's
+  composer counts them and how they stand; pressed, or with `Ctrl+Shift+Y`, it slides up to a row
+  per worker. Writing to a worker takes it from the
   lead; *Give back to the lead* in its block returns it. A lead closing puts its workers back in
   the rail.
 

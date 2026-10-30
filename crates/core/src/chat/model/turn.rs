@@ -136,6 +136,28 @@ impl Chat {
             .collect()
     }
 
+    /// What the session waits on a person for, in one line: its oldest
+    /// unanswered permission (`asks permission: <title>`) or question
+    /// (`asks: <its message>`), each named by the subagent asking when one is.
+    pub fn waiting_line(&self) -> Option<String> {
+        let permission = self.pending_permissions().into_iter().map(|(at, p)| {
+            (
+                at,
+                p.asker.as_deref(),
+                format!("asks permission: {}", p.req.title),
+            )
+        });
+        let ask = self
+            .pending_asks()
+            .into_iter()
+            .map(|(at, a)| (at, a.asker.as_deref(), format!("asks: {}", a.req.message)));
+        let (_, asker, what) = permission.chain(ask).min_by_key(|(at, _, _)| *at)?;
+        Some(match asker {
+            Some(name) => format!("{name} {what}"),
+            None => what,
+        })
+    }
+
     /// Answer the question at `idx` and settle its card. `Decline` is the Skip
     /// button: the model is told the user passed and the turn carries on.
     pub fn answer_ask(&mut self, idx: usize, skip: bool) {

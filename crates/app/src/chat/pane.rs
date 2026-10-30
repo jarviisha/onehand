@@ -25,6 +25,7 @@ use std::path::PathBuf;
 
 mod body;
 mod bridge;
+mod deck;
 mod events;
 mod fork;
 mod header;
@@ -38,6 +39,7 @@ mod sessions;
 mod step_strip;
 mod titles;
 mod workers;
+pub use deck::{DeckDown, DeckFold, DeckOpen, DeckUp};
 pub use events::{ChatPaneEvent, ProjectAction, Restart, SessionSignal};
 use header::Archives;
 pub use pages::PageKind;
@@ -341,6 +343,9 @@ pub struct ChatPane {
     composer_drawn: bool,
     /// The workers' region, drawn here and mounted in a dock panel.
     workers: workers::Workers,
+    /// The deck tucked behind the composer while the lead on screen has
+    /// workers.
+    deck: deck::Deck,
     /// When the turn on screen started, and the ticker keeping its clock true.
     ///
     /// **Stamped here because the model does not carry it.** A turn's start is
@@ -430,6 +435,7 @@ impl ChatPane {
                 composer_h: Default::default(),
                 composer_drawn: false,
                 workers: workers::Workers::new(),
+                deck: deck::Deck::new(cx.focus_handle()),
                 turn_began: None,
                 ticker: None,
             }

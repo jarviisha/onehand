@@ -77,7 +77,7 @@ pub(crate) fn word(signal: Option<SessionSignal>) -> &'static str {
 }
 
 /// The age as the row says it: `now`, `4m`, `2h`, `3d`.
-pub(super) fn age_label(minutes: u64) -> String {
+pub(crate) fn age_label(minutes: u64) -> String {
     match minutes {
         0 => "now".into(),
         m if m < 60 => format!("{m}m"),

@@ -79,7 +79,7 @@ pub(super) fn row_inks(chosen: bool, cx: &App) -> (Hsla, Hsla) {
 /// The ring on the row the keyboard is on, apart from the chosen fill, which
 /// says what is on screen. Laid over the row's edge rather than drawn as a
 /// border of its own, so a row the keys reach does not move by a pixel.
-pub(super) fn key_ring(cx: &App) -> Div {
+pub(crate) fn key_ring(cx: &App) -> Div {
     div()
         .absolute()
         .inset_0()

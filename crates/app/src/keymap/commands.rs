@@ -195,6 +195,44 @@ pub const COMMANDS: &[Command] = &[
         "Outside terminal"
     ),
     command!(
+        "show_workers",
+        "Show the workers",
+        ["ctrl-shift-y"],
+        crate::shell::ShowWorkers
+    ),
+    command!(
+        "workers_deck_up",
+        "Move to the worker above",
+        ["up"],
+        crate::chat::pane::DeckUp,
+        "WorkersDeck && !Input && !Dialog",
+        "Workers deck"
+    ),
+    command!(
+        "workers_deck_down",
+        "Move to the worker below",
+        ["down"],
+        crate::chat::pane::DeckDown,
+        "WorkersDeck && !Input && !Dialog",
+        "Workers deck"
+    ),
+    command!(
+        "workers_deck_open",
+        "Open the worker in the workers' region",
+        ["enter"],
+        crate::chat::pane::DeckOpen,
+        "WorkersDeck && !Input && !Dialog",
+        "Workers deck"
+    ),
+    command!(
+        "workers_deck_fold",
+        "Fold the workers' deck",
+        ["escape"],
+        crate::chat::pane::DeckFold,
+        "WorkersDeck && !Input && !Dialog",
+        "Workers deck"
+    ),
+    command!(
         "rail_open",
         "Open the session, or fold the project",
         ["enter"],

@@ -130,7 +130,16 @@ the oldest (a subagent's is titled `<name> asks permission` or `<name> asks: <qu
 how many more wait; then one surface on the card's fill and lift holding a
 reconnect and the queue as lines, then the staged files as one row of plates (a picture's preview,
 pressed to open it whole in a dialog; a text file opening in the Workbench), faded where cut beside
-*Show all N*. A picture attached to a sent prompt opens the same way. *Run a workflow…* (the `+` menu, the
+*Show all N*. A picture attached to a sent prompt opens the same way. While the session on screen
+leads workers, a deck is tucked behind the card, narrower than it, its top edge showing above the
+card's: *N workers*, a count per state that has any, most urgent first, in its mark and ink, and at
+the end the most urgent worker's name, state and age. Pressed, it slides up over the transcript to
+a row per worker (its mark, name, state, age, the lead's last turn and its background count, and
+under them what it waits on in the warning ink, else what it is doing), *Stop* on one whose turn
+runs; pressed again it slides back. A row opens the workers' region at that worker, the caret in
+its block. The pointer leaves the caret where it was; *Show the workers* (`Ctrl+Shift+Y`) opens the
+deck with the keys on its first row, `↑`/`↓` move them, `Enter` opens the row, `Esc` folds the deck
+and gives the caret to the composer. *Run a workflow…* (the `+` menu, the
 keymap, the Workflows page's *Run…*) opens the launcher, and an issue's *Run workflow…* its start
 form; both are drawn as `docs/workflows.md` describes.
 

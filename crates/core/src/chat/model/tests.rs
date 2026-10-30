@@ -2871,3 +2871,23 @@ fn prompted_since_counts_what_went_not_what_waits() {
     });
     assert!(chat.prompted_since(sent));
 }
+
+/// The oldest card is the one a worker's row says it waits on.
+#[test]
+fn the_waiting_line_names_the_oldest_card() {
+    let (mut chat, _rx) = chat_with_tx();
+    assert_eq!(chat.waiting_line(), None);
+    chat.items.push(ChatItem::Ask(ask_item()));
+    chat.items.push(ChatItem::Permission(PermItem {
+        req: permission("rm -rf build"),
+        resolved: None,
+        asker: Some("Explorer".into()),
+        expanded: false,
+    }));
+    assert_eq!(chat.waiting_line().as_deref(), Some("asks: pick"));
+    chat.items.remove(0);
+    assert_eq!(
+        chat.waiting_line().as_deref(),
+        Some("Explorer asks permission: rm -rf build")
+    );
+}

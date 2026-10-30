@@ -4,7 +4,7 @@ use super::{
     ToggleMaximize, ToggleRail, ToggleTerminal, ToggleWorkbench, ToggleWorkbenchVisibility, ZoomIn,
     ZoomOut, ZoomReset,
 };
-use super::{FocusedPanel, SelectSession, Shell, ZoomStep};
+use super::{FocusedPanel, SelectSession, Shell, ShowWorkers, ZoomStep};
 use crate::state::Shared;
 use crate::workbench::{EDITOR_MODE, MARKDOWN_MODE};
 use gpui::{
@@ -80,6 +80,11 @@ impl Render for Shell {
             .on_action(
                 cx.listener(|shell: &mut Self, _: &OpenSettings, window, cx| {
                     shell.open_settings(window, cx);
+                }),
+            )
+            .on_action(
+                cx.listener(|shell: &mut Self, _: &ShowWorkers, window, cx| {
+                    shell.chat.update(cx, |pane, cx| pane.show_deck(window, cx));
                 }),
             )
             .on_action(cx.listener(
