@@ -23,7 +23,7 @@ use gpui::{
 };
 use gpui_base::dock::{Panel, PanelEvent};
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::{ActiveTheme, IconName, StyledExt};
+use gpui_component::{IconName, StyledExt};
 use onehand_terminal_ui::{Program, PtyTab, TerminalThemeKey, spawn_pty, terminal_palette};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -521,13 +521,14 @@ impl Render for TerminalPanel {
         self.sync_theme(cx);
         div()
             .size_full()
-            // A block of its own, held off the conversation above, the
-            // Workbench beside it and the window's edges by a gap of the
-            // reading surface, so a shell never reads as the conversation
-            // running on. The gap belongs to the panel: a click in it is a
-            // click on the terminal, and the dock's grip runs along its top.
-            .p_2()
-            .bg(cx.theme().background)
+            // Flush with its dock, as the Workbench is with its own: the
+            // dock's line along its top parts it from the conversation, and
+            // its tab bar runs the panel's whole width.
+            .v_flex()
+            .overflow_hidden()
+            // The grid is handed the same surface as its background, so a
+            // shell is the panel rather than a plate laid on it.
+            .bg(crate::theme::dock_surface(cx))
             // Tracked here because this panel is mounted bare. A `TabPanel` calls
             // `track_focus` on the panel it holds, which is what normally puts
             // that handle in the focus tree; without a tab group nothing does,
@@ -536,22 +537,7 @@ impl Render for TerminalPanel {
             // every "which panel is this" question at some other panel.
             .track_focus(&self.focus_handle)
             .key_context("Terminal")
-            .child(
-                // The grid inside is handed the same surface as its
-                // background, so a shell is the block rather than a plate
-                // laid on it. Clipped, or the strip's rule would run through
-                // the corners the radius cuts. Edged in the same line as the
-                // rail and the Workbench.
-                div()
-                    .size_full()
-                    .v_flex()
-                    .rounded(cx.theme().radius)
-                    .border_1()
-                    .border_color(cx.theme().border)
-                    .overflow_hidden()
-                    .bg(crate::theme::dock_surface(cx))
-                    .child(self.body(window, cx)),
-            )
+            .child(self.body(window, cx))
     }
 }
 

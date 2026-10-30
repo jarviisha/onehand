@@ -172,10 +172,10 @@ form; both are drawn as `docs/workflows.md` describes.
 
 ## Docks
 
-Bare panels on the dock surface with strips of their own, no library tab bars; a hairline runs
-down the Workbench's edge beside the conversation. The terminal is a block edged in a hairline,
-held off its neighbours by a gap, drawn no taller than leaves the conversation a readable
-height (its dragged height kept).
+Bare panels on the dock surface, flush with their docks, each opening on its own tab bar; a
+hairline runs down the Workbench's edge beside the conversation and along the terminal's top
+under it. The terminal is drawn no taller than leaves the conversation a readable height (its
+dragged height kept).
 
 - Strips as tall as the header, a mode's own bar under the Workbench's a step lower. The
   Workbench's, the terminal's and the Editor's files are the library's tab panel bars (`tab_bar`):

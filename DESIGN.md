@@ -88,7 +88,7 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   a page that names itself in its head.
 - **Step strip**: a run's steps under the header, while it drives the session on screen.
 - **Composer**: the input surface under the transcript, and what waits pinned above it.
-- **Docks**: the Workbench and the terminal, bare panels with strips of their own; a lead's
+- **Docks**: the Workbench and the terminal, bare panels flush with their docks, each opening on a tab bar; a lead's
   workers' region takes the Workbench's place, never beside it.
 - **Pages without a session**: a project's page, the overview, Tasks, Issues and Workflows.
 - **Settings**: a page of its own, a nav column beside the sub-page it shows.
@@ -194,7 +194,7 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   zoom wrapper. A size the steps lack is a named constant (shared ones in
   `onehand_ui::tokens`, others beside their use), its reason in its doc comment.
 - **The library's corners.** What a person presses or what holds content takes `radius`, 6px:
-  a control, a field, a row, a tab, a chip, a well, a box, the terminal. A large surface takes
+  a control, a field, a row, a chip, a well, a box. A dock and its tab bar's tabs stand square, flush with the dock. A large surface takes
   `radius_lg`, 8px: the composer, a floating panel, a dialog, a toast; the library's own follow. A badge (a `Tag`) takes the library's
   own corner and size, its edge halfway from its fill to its ink (`badge_edge`); inside a line of
   meta text a label is written in its kind's ink instead, unframed. A dot or a status mark is
