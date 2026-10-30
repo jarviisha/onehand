@@ -74,6 +74,14 @@ pub enum Call {
     SessionState {
         session: String,
     },
+    SendPrompt {
+        session: String,
+        text: String,
+        turn: u64,
+    },
+    CancelTurn {
+        session: String,
+    },
 }
 
 /// Who a connection speaks for, fixed by its `initialize`.
@@ -247,7 +255,7 @@ fn error(id: &Value, code: i64, message: &str) -> String {
 }
 
 /// The tools, in the order they are listed.
-const TOOLS: [&str; 14] = [
+const TOOLS: [&str; 16] = [
     "list_projects",
     "list_agents",
     "open_session",
@@ -262,11 +270,13 @@ const TOOLS: [&str; 14] = [
     "list_issues",
     "create_issue",
     "session_state",
+    "send_prompt",
+    "cancel_turn",
 ];
 
 /// The tools about a session's workers: an outside program owns none, so it
 /// is never offered them.
-const SESSION_ONLY: [&str; 1] = ["session_state"];
+const SESSION_ONLY: [&str; 3] = ["session_state", "send_prompt", "cancel_turn"];
 
 /// The tools' names, in the order they are listed: what a schedule may give
 /// its sessions.
@@ -441,6 +451,35 @@ fn catalogue() -> Vec<Value> {
                 &["session"],
             ),
         ),
+        (
+            "send_prompt",
+            "Give a worker you opened its next turn. Never queued: refused while a turn runs, \
+             while it connects or once its link is lost, and while a person holds it. Each turn \
+             number goes once: the same turn and text again answers that it was already sent, \
+             so a lost answer can be retried; the same turn with other text is refused",
+            schema(
+                json!({
+                    "session": text("The worker's handle, as open_session answered it"),
+                    "text": text("The turn's prompt"),
+                    "turn": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Your number for this turn, above the last you sent",
+                    },
+                }),
+                &["session", "text", "turn"],
+            ),
+        ),
+        (
+            "cancel_turn",
+            "Cancel the turn a worker you opened is running, as the person's Stop does. \
+             Refused while a permission or a question waits on a person, which only they \
+             answer, and while a person holds the worker",
+            schema(
+                json!({"session": text("The worker's handle, as open_session answered it")}),
+                &["session"],
+            ),
+        ),
     ];
     tools
         .into_iter()
@@ -472,6 +511,8 @@ fn parse(name: &str, arguments: &Value) -> Result<Call, String> {
         "start_workflow" => &["project", "workflow", "title", "brief"],
         "start_issue" => &["project", "issue", "workflow"],
         "session_state" => &["session"],
+        "send_prompt" => &["session", "text", "turn"],
+        "cancel_turn" => &["session"],
         _ => &[],
     };
     if let Some(extra) = args.keys().find(|k| !known.contains(&k.as_str())) {
@@ -544,6 +585,18 @@ fn parse(name: &str, arguments: &Value) -> Result<Call, String> {
             model: optional("model")?,
         },
         "session_state" => Call::SessionState {
+            session: required("session")?,
+        },
+        "send_prompt" => Call::SendPrompt {
+            session: required("session")?,
+            text: required("text")?,
+            turn: args
+                .get("turn")
+                .and_then(Value::as_u64)
+                .filter(|&n| n > 0)
+                .ok_or("`turn` must be a turn number, a whole number from 1")?,
+        },
+        "cancel_turn" => Call::CancelTurn {
             session: required("session")?,
         },
         _ => return Err(format!("no tool named `{name}`")),

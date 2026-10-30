@@ -227,7 +227,9 @@ fn the_catalogue_lists_every_tool_with_a_schema() {
             "open_file",
             "list_issues",
             "create_issue",
-            "session_state"
+            "session_state",
+            "send_prompt",
+            "cancel_turn"
         ]
     );
     for tool in tools {
@@ -734,4 +736,68 @@ fn a_session_on_lists_session_state() {
 fn a_set_without_it_does_not_list_it() {
     let some = |_: &Peer| Standing::Only(vec!["list_issues".into()]);
     assert!(!names_listed(&mut session_ready(), some).contains(&"session_state".to_string()));
+}
+
+#[test]
+fn send_prompt_and_cancel_turn_parse() {
+    let mut conn = session_ready();
+    let perform = |conn: &mut Conn, name: &str, arguments: Value| match handle(
+        conn,
+        &line("tools/call", json!({"name": name, "arguments": arguments})),
+        on,
+    ) {
+        Handled::Perform { call, .. } => *call,
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(
+        perform(
+            &mut conn,
+            "send_prompt",
+            json!({"session": "3f2a9c01-7", "text": "next", "turn": 2})
+        ),
+        Call::SendPrompt {
+            session: "3f2a9c01-7".into(),
+            text: "next".into(),
+            turn: 2,
+        }
+    );
+    assert_eq!(
+        perform(&mut conn, "cancel_turn", json!({"session": "3f2a9c01-7"})),
+        Call::CancelTurn {
+            session: "3f2a9c01-7".into()
+        }
+    );
+}
+
+#[test]
+fn send_prompt_needs_a_turn_number() {
+    for turn in [json!(null), json!(0), json!("2")] {
+        let mut conn = session_ready();
+        let mut arguments = json!({"session": "3f2a9c01-7", "text": "next"});
+        if !turn.is_null() {
+            arguments["turn"] = turn.clone();
+        }
+        let why = refusal(handle(
+            &mut conn,
+            &line(
+                "tools/call",
+                json!({"name": "send_prompt", "arguments": arguments}),
+            ),
+            on,
+        ));
+        assert!(why.contains("turn"), "{turn}: {why}");
+    }
+}
+
+#[test]
+fn an_outside_program_is_offered_neither() {
+    let listed = names_listed(&mut ready(), on);
+    for name in ["send_prompt", "cancel_turn"] {
+        assert!(!listed.contains(&name.to_string()), "{name}");
+        let why = refusal(call(
+            name,
+            json!({"session": "3f2a9c01-7", "text": "x", "turn": 1}),
+        ));
+        assert!(why.contains("session's agent"), "{name}: {why}");
+    }
 }
