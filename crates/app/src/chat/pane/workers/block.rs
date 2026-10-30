@@ -34,7 +34,10 @@ impl ChatPane {
         // A worker coming up has nothing to show yet but that it is coming.
         let connecting = !self.worker_ready(uid, cx);
         let head = self.worker_head(worker, connecting, cx);
+        // Its own id, so the same transcript's elements in two blocks are
+        // never one element to the window.
         let block = div()
+            .id(("worker-block", uid))
             .v_flex()
             .w_full()
             .border_b_1()
@@ -91,7 +94,9 @@ impl ChatPane {
                 .flex_1()
                 .min_h(WORKER_OPEN_MIN)
                 .child(
+                    // The scrollbar lies over the transcript alone.
                     div()
+                        .relative()
                         .flex_1()
                         .min_h_0()
                         .child(transcript)
@@ -191,6 +196,8 @@ impl ChatPane {
             .gap_2()
             .h(onehand_ui::tokens::ROW_H)
             .px_3()
+            // Chrome, as the rail's rows: the transcript under it reads larger.
+            .text_size(onehand_ui::tokens::CHROME_TEXT)
             .child(
                 div()
                     .id(("worker-head", uid))
@@ -201,6 +208,8 @@ impl ChatPane {
                     .min_w_0()
                     .h_full()
                     .cursor_pointer()
+                    // On the release: the press has already focused the
+                    // panel, so the caret put in the composer here stays.
                     .on_click(cx.listener(move |pane: &mut Self, _, window, cx| {
                         pane.open_worker(uid, true, window, cx);
                     }))
