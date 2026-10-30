@@ -8,6 +8,7 @@
 //! *Show the workers* opens it from the keyboard with focus on its first
 //! row; Esc folds it and gives the caret back to the composer.
 
+use super::workers::urgency;
 use super::{ChatPane, ChatPaneEvent, SessionSignal};
 use crate::control::Worker;
 use crate::controls::Quiet as _;
@@ -18,7 +19,6 @@ use gpui::{
     StatefulInteractiveElement as _, Styled, Window, div, rems,
 };
 use gpui_component::{ActiveTheme as _, Icon, IconName, Sizable as _, StyledExt as _};
-use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::time::Instant;
 
@@ -80,16 +80,6 @@ impl Deck {
         self.open = false;
         self.pressed = None;
         self.row = 0;
-    }
-}
-
-/// Which of two states is the more urgent, by the signal's own order; no
-/// state at all is the least.
-fn urgency(a: Option<SessionSignal>, b: Option<SessionSignal>) -> Ordering {
-    match a == b {
-        true => Ordering::Equal,
-        false if SessionSignal::most_urgent(a.into_iter().chain(b)) == a => Ordering::Less,
-        false => Ordering::Greater,
     }
 }
 

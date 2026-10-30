@@ -12,7 +12,7 @@
 
 mod block;
 
-use super::{ChatPane, ChatPaneEvent};
+use super::{ChatPane, ChatPaneEvent, SessionSignal};
 use crate::chat::composer::{Composer, ComposerEvent};
 use crate::control::Worker;
 use crate::controls::Named as _;
@@ -26,6 +26,7 @@ use gpui_component::input::InputEvent;
 use gpui_component::{ActiveTheme as _, IconName, StyledExt as _};
 use onehand_core::chat::Link;
 use std::cell::Cell;
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -73,6 +74,39 @@ fn tails_fit(avail: f32, content: f32, shown: bool, folded: usize, tail: f32) ->
         false => content + folded as f32 * tail,
     };
     needed <= avail
+}
+
+/// Which of two states is the more urgent, by the signal's own order; no
+/// state at all is the least.
+pub(super) fn urgency(a: Option<SessionSignal>, b: Option<SessionSignal>) -> Ordering {
+    match a == b {
+        true => Ordering::Equal,
+        false if SessionSignal::most_urgent(a.into_iter().chain(b)) == a => Ordering::Less,
+        false => Ordering::Greater,
+    }
+}
+
+/// The workers in the order the list draws them. Fresh (`refresh`), most
+/// urgent first, ties in the order the lead opened them. Otherwise the
+/// `frozen` order kept, so a row never moves under a person reading it: a
+/// worker gone leaves it, a new one joins its end.
+fn ordered(frozen: &[u64], now: &[(u64, Option<SessionSignal>)], refresh: bool) -> Vec<u64> {
+    if refresh {
+        let mut fresh = now.to_vec();
+        fresh.sort_by(|(_, a), (_, b)| urgency(*a, *b));
+        return fresh.into_iter().map(|(uid, _)| uid).collect();
+    }
+    let mut kept: Vec<u64> = frozen
+        .iter()
+        .copied()
+        .filter(|uid| now.iter().any(|(at, _)| at == uid))
+        .collect();
+    kept.extend(
+        now.iter()
+            .map(|(uid, _)| *uid)
+            .filter(|uid| !frozen.contains(uid)),
+    );
+    kept
 }
 
 /// Whether a worker's block draws its body, the composer among it: once its
