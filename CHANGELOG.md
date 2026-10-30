@@ -125,14 +125,14 @@ minor bump may break any of them.
   composer to send again or rewrite. The original conversation is left as it is, and files are not
   rolled back.
 - A session whose agent opens workers is their lead: the workers leave the rail, the lead's row
-  keeps its own state and counts *N workers need you*, and a workers' region in the Workbench's place stacks a block
-  per worker, where you read, answer, stop and write to it. A deck tucked behind the lead's
+  keeps its own state and counts *N workers need you*, and a workers' region in the Workbench's
+  place stacks a block per worker, where you read, answer, stop and write to it. A deck tucked behind the lead's
   composer counts them and how they stand; pressed, or with `Ctrl+Shift+Y`, it slides up to a row
   per worker. Writing to a worker takes it from the
   lead; *Give back to the lead* in its block returns it. A lead closing puts its workers back in
   the rail.
-- A worker is named for what it works on when its lead gives a name, else for its folder, never for the
-  first words of its lead's prompt.
+- A worker is named for what it works on when its lead gives a name, else for its folder, never
+  for the first words of its lead's prompt.
 
 ### Fixed
 

@@ -243,13 +243,8 @@ pub(super) fn session_row(
     // The state's word leads the line, so its ink runs over its own bytes; a
     // lead's waiting workers follow it, in the ink of waiting on the person.
     let word_end = super::model::word(signal).len();
-    let waiting = super::model::workers_said(item.waiting).map(|said| {
-        let start = word_end + " · ".len();
-        (
-            start..start + said.len(),
-            ink(crate::theme::status_ink(cx).warning),
-        )
-    });
+    let waiting = super::model::waiting_span(signal, item.waiting)
+        .map(|span| (span, ink(crate::theme::status_ink(cx).warning)));
     let words = StyledText::new(facts.clone()).with_highlights(
         word_ink(signal, cx)
             .map(|color| (0..word_end, ink(color)))

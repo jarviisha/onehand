@@ -92,8 +92,10 @@ deck.
 ### The rail
 
 The lead's row keeps its own state, mark, words and age; it no longer takes its workers' most
-urgent state. Beside its second line, a badge in the warning ink, *N workers*, counts its workers
-waiting on the person (needs input or failed); none, no badge. *N need attention* above the
+urgent state. After the state on its second line, *N workers need you* in the warning ink counts its
+workers waiting on the person (needs input, failed or disconnected); none, nothing. (Built as a
+count in the line rather than a separate badge, as the line already counts background work, so
+the row keeps its height and truncation.) *N need attention* above the
 sessions keeps counting each such worker. Workers stay unlisted under the lead, as now.
 
 ### Permission cards

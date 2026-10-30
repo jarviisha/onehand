@@ -101,8 +101,8 @@ pub(crate) fn age_label(minutes: u64) -> String {
 
 /// The line under a session's title, in one order for every state:
 /// `state · who · age`, where who is the agent, or the project in a flat list.
-/// Live background work and working subagents are counted after the state, and
-/// only when there are some.
+/// A lead's waiting workers, then live background work and working subagents,
+/// are counted after the state, and only when there are some.
 pub(super) fn meta(
     signal: Option<SessionSignal>,
     background: usize,
@@ -138,6 +138,16 @@ pub(super) fn workers_said(waiting: usize) -> Option<String> {
         1 => Some("1 worker needs you".into()),
         n => Some(format!("{n} workers need you")),
     }
+}
+
+/// Where [`workers_said`] sits in [`meta`]'s line, right after the state's
+/// word, so its ink lands on its own bytes; nothing when none wait.
+pub(super) fn waiting_span(
+    signal: Option<SessionSignal>,
+    waiting: usize,
+) -> Option<std::ops::Range<usize>> {
+    let start = word(signal).len() + " · ".len();
+    workers_said(waiting).map(|said| start..start + said.len())
 }
 
 /// The sessions a filter and a query keep, as indices into `items`, in the

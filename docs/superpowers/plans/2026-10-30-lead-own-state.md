@@ -4,7 +4,7 @@
 
 **Goal:** A lead's rail row shows its own state, mark and age, and says how many of its workers wait on the person; the attention filter, *N need attention* and a folded project's badge still see those workers.
 
-**Architecture:** `rail::model::Item` keeps `signal` as the session's own and gains `rolled` (the most urgent of itself and its workers, what the filter and the project badge read) and `waiting` (its workers waiting on the person). `fold_workers` fills those two instead of overwriting the lead's state. The row's meta line counts the waiting workers after the state, in the warning ink.
+**Architecture:** `rail::model::Item` keeps `signal` as the session's own and gains `workers` (its unlisted workers' most urgent state; `Item::rolled()` combines it with its own for what the filter and the project badge read) and `waiting` (its workers waiting on the person). `fold_workers` fills those two instead of overwriting the lead's state. The row's meta line counts the waiting workers after the state, in the warning ink.
 
 **Tech Stack:** Rust, GPUI.
 
@@ -37,7 +37,7 @@
 - Test: `crates/app/src/rail/tests.rs`
 
 **Interfaces:**
-- `Item { …, rolled: Option<SessionSignal>, waiting: usize }`
+- `Item { …, workers: Option<SessionSignal>, waiting: usize }`, `Item::rolled() -> Option<SessionSignal>`, `waiting_span(signal, waiting) -> Option<Range<usize>>`
 - `pub(super) fn meta(signal, background, subagents, waiting: usize, who, age) -> String`
 - `pub(super) fn workers_said(waiting: usize) -> Option<String>`: `None` for 0, `1 worker needs you`, `N workers need you`.
 

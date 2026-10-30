@@ -50,13 +50,14 @@ dragging; pinned projects stay on top and sessions never leave their project. `C
 the rail completely, never to an icon column. It resizes between 232 and 448px, on the side bar's
 surface.
 
-A worker of a lead in the window is not listed. Its lead's row keeps its own state and age, so a
-lead never reads as failed for a worker that did, and after its state its line counts *N workers
-need you* (a worker needing input, failed or disconnected) in the warning ink. The
-*Needs attention* filter and a folded project's badge read the most urgent state of the lead and
-its workers (by that order: lost, failed, needs input, running, done unread), and *N need
-attention* counts a worker waiting on the person. A worktree project holding nothing but such workers is left out with them. When the lead
-closes or is lost, its workers are listed again under their project.
+A worker of a lead in the window is not listed. Its lead's row keeps its own state and age (and
+its place in *Recent activity*), so a lead never reads as failed for a worker that did, and after
+its state its line counts *N workers need you* (a worker needing input, failed or disconnected)
+in the warning ink. The *Needs attention* filter and a folded project's badge read the most urgent
+state of the lead and its workers (by that order: lost, failed, needs input, running, done
+unread), and *N need attention* counts a worker waiting on the person. A worktree project holding
+nothing but such workers is left out with them. When the lead closes or is lost, its workers are
+listed again under their project.
 
 ## Agent pane header
 

@@ -631,6 +631,27 @@ fn meta_counts_waiting_workers() {
 }
 
 #[test]
+fn the_waiting_ink_lands_on_the_count_for_every_state() {
+    use super::model::{waiting_span, workers_said};
+    use SessionSignal::*;
+    for signal in [
+        None,
+        Some(Busy),
+        Some(AwaitingUser),
+        Some(Failed),
+        Some(Lost),
+        Some(UnseenTurn),
+    ] {
+        for waiting in [1, 3] {
+            let line = meta(signal, 2, 1, waiting, "claude", 5);
+            let span = waiting_span(signal, waiting).unwrap();
+            assert_eq!(line[span].to_string(), workers_said(waiting).unwrap());
+        }
+        assert_eq!(waiting_span(signal, 0), None);
+    }
+}
+
+#[test]
 fn a_folded_project_shows_an_idle_lead_s_waiting_worker() {
     let mut items = seed();
     items[0].signal = None;
