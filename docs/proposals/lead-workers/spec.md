@@ -212,6 +212,8 @@ what the next `open_session` there reads (section 1); a lead that needs a replac
 
 ## 3. `send_prompt(session, text, turn)`
 
+Built in PR 4; what is built is in control.md's *A worker*.
+
 For a worker of the caller, held by the lead.
 
 - **Refused, not queued**, by `Chat::submit_blocker`'s rule, in its words: a turn running,
@@ -222,6 +224,8 @@ For a worker of the caller, held by the lead.
 - The answer `turn <n> accepted` means the prompt went to the agent as the next turn, nothing more.
 
 ## 4. `cancel_turn(session)`
+
+Built in PR 4; what is built is in control.md's *A worker*.
 
 For a worker of the caller, held by the lead, with a turn running. As the composer's Stop does
 (`Chat::cancel_turn`). Refused while `waiting` is not `none`, so the lead never cancels what a

@@ -76,7 +76,8 @@ a tool to press *Continue*.
 | 5 | A *Worker under a lead* workflow | not written | 5, optional |
 
 Step 1 is written as a personal skill; step 3 has a spec, [spec.md](spec.md), whose PR 1 (the
-worktree and its folders) PR 2 (the handle and the open) and PR 3 (`session_state`) are built.
+worktree and its folders) PR 2 (the handle and the open), PR 3 (`session_state`) and PR 4 (`send_prompt`,
+`cancel_turn`) are built.
 
 ## Order of work
 

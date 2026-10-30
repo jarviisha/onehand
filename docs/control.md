@@ -80,6 +80,8 @@ answer, and exits.
 | `list_issues` | optional `project` | the project's own open issues, as its Issues tab keeps them (a synced project's imported ones too); the calling session's project when none is named | `#<n> — <title>`, one per line |
 | `create_issue` | optional `project`, `title`, optional `body` | writes one issue into the project's own issue file, read again wherever the issues are on screen; an open issue with the same title (case and spaces aside) is not written again. It takes no labels: the issue gets those of the calling session's schedule, so no agent labels its own issue for an unattended run | `Wrote issue #<n>: …`, or `Issue #<n> is already open with that title` |
 | `session_state` | `session`, a worker's handle | for a session's agent, about a worker it opened; never listed to an outside program | the worker's state, one fact per line; `link: closed` once it is gone; or why not |
+| `send_prompt` | `session`, `text`, `turn` | for a session's agent, gives a worker it opened its next turn; never listed to an outside program | `turn <n> accepted`, `turn <n> already sent`, or why not |
+| `cancel_turn` | `session` | for a session's agent, cancels the turn a worker it opened runs, as the person's Stop does | `cancelling turn <n>`, or why not |
 
 - **A task a tool starts is driven off screen**, the way an issue's run is: its session is in the
   rail (a schedule's that ends done leaves it, `docs/schedules.md`) and the task on the Tasks page,
@@ -149,11 +151,13 @@ is refused, naming each.
   naming it as given and as resolved. The answer names them. A session with any never takes the
   warm adapter, which opened its session without them, and a restart of its agent sends them again.
 - **One worker per folder.** A folder another session of the window is open on is refused. So is
-  one a worker is opening or open on: it is reserved, by its canonical path, in the same update
-  that checks it, until the open fails or the worker closes.
+  one a worker is opening or open on, or a folder inside it or holding it, which are the same
+  files: it is reserved, by its canonical path, in the same update that checks it, until the open
+  fails or the worker closes.
 - **Nothing else working in it.** Every process of the user is read for one whose directory is in
-  the folder (`/proc` on Linux, `lsof` elsewhere), leaving out onehand itself and its terminal's
-  shells: an earlier run's worker, left by a crash, is what this finds. Any found refuses the
+  the folder (`/proc` on Linux, `lsof` elsewhere), leaving out onehand itself, what it starts
+  there itself (a `git status`, an editor) and its terminal's shells: an earlier run's worker,
+  left by a crash, is what this finds. Any found refuses the
   open, naming each by pid and command; a process whose directory could not be read for any
   other reason than being gone, or than the system refusing it to its own user (a process it may
   not trace, such as `systemd --user` or `ssh-agent`, which an agent never is), refuses it as
@@ -202,6 +206,16 @@ is refused, naming each.
   A handle from an earlier run is refused as such. Anything that is not the caller's own worker,
   open or closed, or a uid that never was one, gets the same refusal, so a lead learns nothing of
   sessions that are not its own.
+- **`send_prompt`** gives the caller's worker its next turn, and is checked in this order:
+  refused once the person holds the worker; the same turn and text again answers `turn <n>
+  already sent` and sends nothing, even while that turn still runs, so a lost answer can be
+  retried; the same turn with other text, or a turn below the last sent, is refused; then
+  refused, not queued, while a turn runs, while connecting or once the link is lost, in the
+  composer's own words. `turn <n> accepted` means the agent was handed it, nothing more.
+- **`cancel_turn`** cancels the turn the caller's worker runs, as the person's Stop does. It is
+  refused while a permission or a question waits, which only a person answers, while the person
+  holds the worker, and with no turn running; it answers no card. `cancelling turn <n>` means the
+  cancel was sent; `session_state` says when the turn is over.
 - **The lead is asked about at every step**, and its closing or being switched off wakes the open
   at once. A lead that went while its worker was opening abandons the open: it fails as above,
   its prompt never sent. A person watching a worker whose open failed is put back on what is
