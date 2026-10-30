@@ -184,7 +184,7 @@ fn relation(lead: u64) -> Relation {
 fn a_worker_of_the_caller_is_mine() {
     assert!(matches!(
         whose(Some(&relation(1)), None, 1, true),
-        Whose::Mine(_)
+        Whose::Mine
     ));
 }
 

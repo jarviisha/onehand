@@ -489,6 +489,7 @@ fn send_when_connected(session: Entity<ChatSession>, prompt: String, cx: &mut Ap
 mod opening;
 pub(super) mod requests;
 pub(super) mod state;
+pub(super) mod turns;
 
 #[cfg(test)]
 mod tests;
