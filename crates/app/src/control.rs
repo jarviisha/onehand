@@ -675,6 +675,7 @@ fn perform_now(
             request,
             turn,
             model,
+            name,
         } => workers::open(
             workers::Open {
                 caller,
@@ -685,6 +686,7 @@ fn perform_now(
                 request,
                 turn,
                 model,
+                name,
             },
             handle,
             shell,
