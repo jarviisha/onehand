@@ -423,9 +423,10 @@ fn finish(
                 || resolved.root.display().to_string(),
                 |last| last.to_string_lossy().into_owned(),
             );
-            session.update(cx, |session, _| {
+            session.update(cx, |session, cx| {
                 session.chat.stand_in_title = Some(folder);
                 session.chat.custom_title = name;
+                cx.notify();
             });
             Ok(Started {
                 uid,

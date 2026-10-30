@@ -521,7 +521,8 @@ impl Shell {
         }
     }
 
-    /// Give a conversation its derived title back.
+    /// Give a conversation its automatic title back (a worker's folder, else
+    /// the first prompt's).
     pub fn reset_conversation_title(&mut self, cx: &mut Context<Self>) {
         let Some(uid) = self.renaming.take() else {
             return;

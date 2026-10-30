@@ -185,6 +185,12 @@ impl ChatPane {
         let sent_before = conv
             .session()
             .map_or(0, |session| session.read(cx).chat.prompts_sent);
+        // Its names too: a worker's stand-in is never saved, and a name its
+        // lead gave is not written down until a turn ends.
+        let titles = conv.session().map(|session| {
+            let chat = &session.read(cx).chat;
+            (chat.custom_title.clone(), chat.stand_in_title.clone())
+        });
         // Whatever the session was on goes *before* the replacement is spawned.
         // On a restart that is the old adapter, and its pump owns the event
         // stream: dropping it afterwards would briefly leave two processes on
@@ -207,6 +213,9 @@ impl ChatPane {
         );
         if sent_before > 0 {
             session.update(cx, |session, _| session.chat.carry_sent(sent_before));
+        }
+        if let Some((custom, stand_in)) = titles {
+            session.update(cx, |session, _| session.chat.carry_titles(custom, stand_in));
         }
         cx.emit(ChatPaneEvent::AgentStarted);
         // The conversation is adopted *before* the adapter's replay lands,
