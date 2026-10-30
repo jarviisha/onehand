@@ -297,6 +297,8 @@ height (its dragged height kept).
   and *New issue*, its primary, at the end); the row under it (the search, then *Open* and
   *Closed* as choices, each its count in a badge after its word, then pickers for progress, project
   and label and *Clear filters* at the row's end), the two kept in place;
+  the rows a table under a head naming each column (*Issue*, *Title*, *Labels*, *Project*,
+  *Updated*) in the meta ink, drawn only while there are rows;
   a row is its state mark (open in the success ink, closed in the closed ink), reference, title,
   priority and note, then its labels, project and age in slots at the end, the labels and project
   dropped first; *Showing N of M open issues* at the foot. *Reading the issues…* until the first

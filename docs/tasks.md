@@ -56,11 +56,12 @@ the prose width, its parts plain sections. It shows:
 - **Way out**, on an ended task: why it ended and the way out that fits, in the issue's words
   (`next_action`), with *Retry with current settings…* when that is a way out (first for a
   configuration failure);
-- **Awaiting approval**, while the last run waits on one: its answer (its last 60 lines, said
+- **Awaiting approval**, while the last run waits on one, in the warning alert's look: its answer (its last 60 lines, said
   when cut, *Review…* opening all of it), *Revise…* and *Continue* each beside what it starts, and
   *Open session*. It is answered here as on the strip, through the same call: each press carries
   the visit it was drawn from, and one the run no longer waits at shows the new answer instead;
-- **Run N**, the last run's timeline: one line per step visit (the step, why it ended, when it
+- **Run N**, the last run's timeline as a vertical stepper (a dot per visit on a rail, a check once
+  it ended, its number ringed in `info` while it runs): one line per step visit (the step, why it ended, when it
   started and how long it took), each opening onto what it kept or printed (its last 60 lines) and
   the files it changed between its start and end marks, with their added and removed lines.
   Pressing a file shows its line diff in the transcript's diff renderer, cut at 400 lines; a binary

@@ -59,6 +59,8 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | Tabs that fit their strip, the older ones in a menu | `tab_strip` (the newest that fit at their own widths, the current one among them), `measure_tab` and `tab_width` (each tab's width as last drawn, `TabWidths`), `tab_chip`, `tab_close`, `tab_more` (*N more*, with the picker's caret, opening those left out, `TAB_MENU_CAP` listed), `tab_select` (the Workbench's modes when narrow), `measure_width` | `crates/ui/src/tabs.rs` |
 | A list beside its detail, or one at a time | `list_detail`, `ListWidths`, `back_link` | `crates/ui/src/list_detail.rs` |
 | A page's trail back to the list it was opened from (a task, a workflow, a schedule) | `crumbs` over a `crumb_link` | `crates/ui/src/list_detail.rs` |
+| A vertical stepper of rows the caller draws (a task's visits, a workflow's steps) | `step_line(first, last, step_dot(StepMark, cx), content, cx)`, `STEP_LINE_H` | `crates/ui/src/stepper.rs` |
+| A box that waits on the person (a run's approval) | `alert_tone(box, tone, cx)` | `crates/ui/src/surface.rs` |
 | A line filling an empty panel | `hint` | `crates/ui/src/notice.rs` |
 | A condition standing under a view | `status_line(message, ink)`, in the ink of its state | `crates/ui/src/notice.rs` |
 | Status ink, the middle ink, a dock's surface | `status_ink`, `meta_ink` (`middle_ink` on a fill), `dock_surface` | `crates/ui/src/ink.rs`, `crates/ui/src/surface.rs` |

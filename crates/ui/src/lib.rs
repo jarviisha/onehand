@@ -28,6 +28,7 @@ mod prose;
 mod resize;
 mod row;
 mod row_actions;
+mod stepper;
 mod strip;
 mod surface;
 mod tabs;
@@ -58,8 +59,9 @@ pub use prose::{no_code_label, unedged_code};
 pub use resize::{edge_handle, h_resizable, v_resizable};
 pub use row::{mark_slot, row, tree_row};
 pub use row_actions::{HoverSlot, Press, RowAct, hover_slot, row_menu_items, row_more};
+pub use stepper::{STEP_LINE_H, StepMark, step_dot, step_line};
 pub use strip::{mode_strip, strip, strip_control, workbench_strip};
-pub use surface::{card_box, dock_surface, scrollbar, well};
+pub use surface::{alert_tone, card_box, dock_surface, scrollbar, well};
 pub use tabs::{
     Measured, TAB_MAX_W, TAB_MENU_CAP, TabStrip, TabWidths, measure_tab, measure_width, tab_chip,
     tab_close, tab_more, tab_select, tab_strip, tab_width, unmeasured,

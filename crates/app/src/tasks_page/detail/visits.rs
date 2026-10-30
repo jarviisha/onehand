@@ -24,8 +24,9 @@ const DIFF_LINES: usize = 400;
 /// A fold row's chevron, at the dense icon size.
 const CHEVRON_W: gpui::Rems = gpui::rems(0.75);
 
-/// `run`'s visits, oldest first, each opening onto what it kept and what
-/// it changed. `live` when the run is at work, so its open visit is under
+/// `run`'s visits, oldest first, as a vertical stepper: each a dot on a rail
+/// (a check once it ended, ringed while it runs), opening onto what it kept
+/// and what it changed. `live` when the run is at work, so its open visit is under
 /// way rather than cut off.
 pub(super) fn timeline(
     detail: &TaskDetail,
@@ -47,7 +48,18 @@ pub(super) fn timeline(
             cx,
         ));
     }
-    for visit in &visits[hidden..] {
+    let shown = &visits[hidden..];
+    // The steps in one column with no gap, so the rail runs on unbroken from
+    // dot to dot whatever gap the box around them keeps.
+    let mut rail: Vec<gpui::AnyElement> = Vec::new();
+    for (at, visit) in shown.iter().enumerate() {
+        let mut steps: Vec<gpui::AnyElement> = Vec::new();
+        let number = hidden + at + 1;
+        let mark = match (visit.ended_at, live) {
+            (Some(_), _) => onehand_ui::StepMark::Done,
+            (None, true) => onehand_ui::StepMark::Current(number),
+            (None, false) => onehand_ui::StepMark::Waiting(number),
+        };
         let key = (run.id.clone(), visit.id);
         let open = detail.expanded.contains(&key);
         let label = run
@@ -80,12 +92,13 @@ pub(super) fn timeline(
         });
         let pinned = visit.start.clone().zip(visit.end.clone());
         let dirs = dirs(run);
-        out.push(
+        steps.push(
             fold_row(
                 SharedString::from(format!("task-visit-{}-{}", run.id, visit.id)),
                 open,
                 cx,
             )
+            .min_h(onehand_ui::STEP_LINE_H)
             .on_click(cx.listener(move |page: &mut TasksPage, _, _, cx| {
                 page.toggle_visit(key.clone(), pinned.clone(), dirs.clone(), cx)
             }))
@@ -108,7 +121,7 @@ pub(super) fn timeline(
             .map(Settings::said)
             .unwrap_or_default();
         if !said.is_empty() {
-            out.push(
+            steps.push(
                 div()
                     .pl(FOLD_INDENT)
                     .text_xs()
@@ -118,7 +131,7 @@ pub(super) fn timeline(
             );
         }
         if open {
-            out.push(
+            steps.push(
                 div()
                     .v_flex()
                     .gap_2()
@@ -127,7 +140,15 @@ pub(super) fn timeline(
                     .into_any_element(),
             );
         }
+        rail.push(onehand_ui::step_line(
+            at == 0,
+            at + 1 == shown.len(),
+            onehand_ui::step_dot(mark, cx),
+            div().v_flex().children(steps),
+            cx,
+        ));
     }
+    out.push(div().v_flex().children(rail).into_any_element());
     out
 }
 

@@ -547,37 +547,42 @@ fn review_card(
             .child(button)
             .child(div().text_xs().text_color(muted).child(said))
     };
-    page_card("Awaiting approval", None, open, cx)
-        .children(said)
-        .children(cut)
-        .child(
-            div().h_flex().child(
-                crate::controls::action("task-review-read")
-                    .quiet(cx)
-                    .short()
-                    .label("Review…")
-                    .on_click(move |_, window, cx| {
-                        open_review(&on_read, read.clone(), false, window, cx)
-                    }),
-            ),
-        )
-        .child(answer_row(
-            crate::controls::action("task-review-revise")
+    // Waits on the person, so it takes the warning alert's look.
+    onehand_ui::alert_tone(
+        page_card("Awaiting approval", None, open, cx),
+        crate::theme::status_ink(cx).warning,
+        cx,
+    )
+    .children(said)
+    .children(cut)
+    .child(
+        div().h_flex().child(
+            crate::controls::action("task-review-read")
                 .quiet(cx)
                 .short()
-                .label("Revise…")
-                .on_click(move |_, window, cx| open_revise(revised.clone(), window, cx)),
-            review.revise_said(),
-        ))
-        .child(answer_row(
-            crate::controls::action("task-review-continue")
-                .primary()
-                .short()
-                .label("Continue")
-                .on_click(move |_, window, cx| press_continue(&pressed, window, cx)),
-            review.continue_said(),
-        ))
-        .into_any_element()
+                .label("Review…")
+                .on_click(move |_, window, cx| {
+                    open_review(&on_read, read.clone(), false, window, cx)
+                }),
+        ),
+    )
+    .child(answer_row(
+        crate::controls::action("task-review-revise")
+            .quiet(cx)
+            .short()
+            .label("Revise…")
+            .on_click(move |_, window, cx| open_revise(revised.clone(), window, cx)),
+        review.revise_said(),
+    ))
+    .child(answer_row(
+        crate::controls::action("task-review-continue")
+            .primary()
+            .short()
+            .label("Continue")
+            .on_click(move |_, window, cx| press_continue(&pressed, window, cx)),
+        review.continue_said(),
+    ))
+    .into_any_element()
 }
 
 /// `text`'s last lines in a mono well, saying how many were left out.
