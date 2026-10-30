@@ -248,6 +248,8 @@ and the person's prompt then goes, as with the composer's Stop.
 
 ### *Give back to the lead*
 
+Built in PR 5a; what is built is in control.md's *A worker*.
+
 - In the `⋯` menu of the worker's block in the workers' region (section 7). Offered only while
   the person holds the worker and the lead is still open and switched on. With no such lead the
   session stays the person's.
@@ -265,6 +267,9 @@ and the person's prompt then goes, as with the composer's Stop.
   A worker that failed to open gives its place back.
 
 ## 7. The person's view
+
+Built in PR 5a but the deck, which PR 5b builds; what is built is in control.md's *A worker* and
+screens.md's *Rail*, *Agent pane header* and *Docks*.
 
 What onehand.md section 8 decided, as built. Contract work in the same pull request: the rail,
 the composer and the docks in `docs/screens.md`, one line for the new region in DESIGN.md's

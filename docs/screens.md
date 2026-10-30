@@ -50,6 +50,12 @@ dragging; pinned projects stay on top and sessions never leave their project. `C
 the rail completely, never to an icon column. It resizes between 232 and 448px, on the side bar's
 surface.
 
+A worker of a lead in the window is not listed: its lead's row stands for it, taking the most urgent
+state of itself and its workers (by that order: lost, failed, needs input, running, done unread)
+and the age of the one whose state it is, and *N need attention* counts a worker waiting on the
+person. A worktree project holding nothing but such workers is left out with them. When the lead
+closes or is lost, its workers are listed again under their project.
+
 ## Agent pane header
 
 Left to right: the show-rail button (only while the rail is hidden); the conversation's name, medium
@@ -61,7 +67,8 @@ one item and never the turn, 12 listed and then *N more*; when an item ends, the
 notice of how and after how long: *Background work finished after 2m 14s: npm test*, an error when it
 failed, *interrupted* when the agent went away first); past conversations and *Close session*
 (only while a session shows); the terminal, an accent dot on it while its dock is closed over a
-shell running a command; last, the Workbench.
+shell running a command; while the session on screen leads workers, its workers, a warning dot on
+it while one waits on the person and the region is closed; last, the Workbench.
 The two dock buttons are filled while their dock is open. On the overview, Tasks, Issues,
 Workflows, Schedules and Settings, which name themselves in their head, it carries no name; none of these has a dots menu or dock buttons. As the pane narrows, the name gives way
 first, down to a minimum. Without a session it carries no name, the page naming the project, but
@@ -165,6 +172,22 @@ height (its dragged height kept).
   and *Activity N* (the history). Sections are parted by space, not rules. ⋯ ▸ *Open in Issues* and
   *Review…* open it on the Issues page, the latter with its review open.
 - Hiding a dock keeps its buffers and processes; the terminal's open state follows the project.
+- **The workers' region**, in the Workbench's place and never beside it: opening one puts the
+  other away, a caret in the one leaving going to the lead's composer and the one arriving taking
+  none. It shows the workers of the lead on screen, follows the lead on screen, and closes on a
+  session without workers or a page. Its strip: *Workers of* the lead's name, maximize, hide. Under
+  it a block per worker, stacked, at most four (the cap). A block's head: its state mark (a
+  spinner while it connects, with nothing under it yet), name, the state's word in its ink, the
+  lead's last turn, *held by you* while the person holds it, *Stop* while a turn runs, and `⋯`
+  (*Give back to the lead* while offered, *Send the last prompt again* after a failure, *Close*);
+  pressing it opens the block, the caret in its composer. One block is open, the first by
+  default: its whole transcript, scrolling, the oldest card it waits on, and a composer with
+  *Send*, *Stop* and *Queue* and nothing else. A folded block shows its transcript's last lines
+  at a fixed height and its oldest card. The open block keeps a minimum of about ten rows and its
+  composer; short of room, the folded blocks drop their last lines first, then the stack scrolls
+  as a whole. A caret in a block that leaves (closed, its lead gone) goes to the lead's composer
+  first. A worker asked for anywhere else (the keys, a toast, the remote bridge) shows its lead
+  with the region at that worker. Not saved.
 
 ## Pages without a session
 

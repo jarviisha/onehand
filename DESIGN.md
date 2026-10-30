@@ -82,7 +82,8 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   a page that names itself in its head.
 - **Step strip**: a run's steps under the header, while it drives the session on screen.
 - **Composer**: the input surface under the transcript, and what waits pinned above it.
-- **Docks**: the Workbench and the terminal, bare panels with strips of their own.
+- **Docks**: the Workbench and the terminal, bare panels with strips of their own; a lead's
+  workers' region takes the Workbench's place, never beside it.
 - **Pages without a session**: a project's page, the overview, Tasks, Issues and Workflows.
 - **Settings**: a page of its own, a nav column beside the sub-page it shows.
 - **Persistence**: what the layout saves.

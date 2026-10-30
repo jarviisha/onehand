@@ -218,6 +218,13 @@ is refused, naming each.
   refused while a permission or a question waits, which only a person answers, while the person
   holds the worker, and with no turn running; it answers no card. `cancelling turn <n>` means the
   cancel was sent; `session_state` says when the turn is over.
+- ***Give back to the lead***, in the `⋯` of the worker's block, is offered while the person holds
+  the worker and its lead is open and switched on: it counts every prompt the person sent as the
+  lead's, so the lead holds it again. Nothing is sent, nothing said in the transcript; the lead
+  learns of it through `session_state`. With no such lead the worker stays the person's.
+- **What the person sees**: a worker, from the moment its session starts opening, is left out of
+  the rail and shown through its lead (`docs/screens.md`); a lead closed or lost lets its workers
+  go back into the rail, the person's to close.
 - **The lead is asked about at every step**, and its closing or being switched off wakes the open
   at once. A lead that went while its worker was opening abandons the open: it fails as above,
   its prompt never sent. A person watching a worker whose open failed is put back on what is
