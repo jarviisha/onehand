@@ -124,6 +124,11 @@ minor bump may break any of them.
   project, its history the conversation's up to just before that prompt and the prompt in its
   composer to send again or rewrite. The original conversation is left as it is, and files are not
   rolled back.
+- A session whose agent opens workers is their lead: the workers leave the rail, the lead's row
+  carries their most urgent state, and a workers' region in the Workbench's place stacks a block
+  per worker, where you read, answer, stop and write to it. Writing to a worker takes it from the
+  lead; *Give back to the lead* in its block returns it. A lead closing puts its workers back in
+  the rail.
 
 ### Fixed
 

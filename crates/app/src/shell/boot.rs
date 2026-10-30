@@ -509,6 +509,7 @@ impl Shell {
             workbench,
             workers_panel,
             right: super::workers::RightPanel::Workbench,
+            workbench_under: false,
             issues_page,
             workflows_page,
             schedules_page: crate::schedules_page::SchedulesPage::new(cx),

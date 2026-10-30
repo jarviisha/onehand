@@ -174,7 +174,8 @@ height (its dragged height kept).
 - Hiding a dock keeps its buffers and processes; the terminal's open state follows the project.
 - **The workers' region**, in the Workbench's place and never beside it: opening one puts the
   other away, a caret in the one leaving going to the lead's composer and the one arriving taking
-  none. It shows the workers of the lead on screen, follows the lead on screen, and closes on a
+  none; hiding the region gives the Workbench back as it was, and while it shows the layout saves
+  the Workbench's state, not the region's. It shows the workers of the lead on screen, follows the lead on screen, and closes on a
   session without workers or a page. Its strip: *Workers of* the lead's name, maximize, hide. Under
   it a block per worker, stacked, at most four (the cap). A block's head: its state mark (a
   spinner while it connects, with nothing under it yet), name, the state's word in its ink, the
@@ -187,7 +188,7 @@ height (its dragged height kept).
   composer; short of room, the folded blocks drop their last lines first, then the stack scrolls
   as a whole. A caret in a block that leaves (closed, its lead gone) goes to the lead's composer
   first. A worker asked for anywhere else (the keys, a toast, the remote bridge) shows its lead
-  with the region at that worker. Not saved.
+  with the region at that worker; `Ctrl+Tab` passes over workers. Not saved.
 
 ## Pages without a session
 

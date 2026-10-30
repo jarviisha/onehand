@@ -1,4 +1,4 @@
-use super::{Arrival, Follow, arrival, follow};
+use super::{Arrival, arrival, region_closes};
 
 #[test]
 fn a_plain_session_shows_itself() {
@@ -21,20 +21,15 @@ fn a_worker_whose_lead_is_elsewhere_shows_itself() {
 
 #[test]
 fn the_region_follows_a_lead_with_workers() {
-    assert_eq!(follow(true, false, true), Follow::Stay);
+    assert!(!region_closes(false, true));
 }
 
 #[test]
 fn the_region_closes_on_a_session_without_workers() {
-    assert_eq!(follow(true, false, false), Follow::Close);
+    assert!(region_closes(false, false));
 }
 
 #[test]
 fn the_region_closes_on_a_page() {
-    assert_eq!(follow(true, true, true), Follow::Close);
-}
-
-#[test]
-fn a_closed_region_stays_closed() {
-    assert_eq!(follow(false, true, false), Follow::Stay);
+    assert!(region_closes(true, true));
 }

@@ -83,7 +83,7 @@ pub const COMMANDS: &[Command] = &[
         "Save the open file",
         ["ctrl-s"],
         SaveFile,
-        "Shell && !Terminal && !Dialog && !Settings",
+        "Shell && !Terminal && !Dialog && !Settings && !Workers",
         "Outside terminal"
     ),
     command!(

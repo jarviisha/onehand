@@ -24,6 +24,7 @@ use gpui::{
 use gpui::{AppContext as _, Focusable as _};
 use gpui_component::input::InputEvent;
 use gpui_component::{ActiveTheme as _, IconName, StyledExt as _};
+use onehand_core::chat::Link;
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -38,12 +39,15 @@ const WORKER_TAIL_H: Rems = rems(4.5);
 pub(super) struct Workers {
     /// The block open, at most one.
     open: Option<u64>,
-    /// Each open block's composer, kept while its worker stays, so a draft
-    /// survives the block folding.
+    /// Each opened block's composer, kept while its session is a worker, so
+    /// a draft survives the block folding and the lead on screen changing.
     composers: HashMap<u64, (Entity<Composer>, [Subscription; 2])>,
     scroll: gpui::ScrollHandle,
     /// How tall the stack measured last frame.
     height: Rc<Cell<Pixels>>,
+    /// Whether the folded blocks drew their tails last frame, which the
+    /// stack's measured height includes.
+    tails: bool,
 }
 
 impl Workers {
@@ -53,17 +57,28 @@ impl Workers {
             composers: HashMap::new(),
             scroll: gpui::ScrollHandle::new(),
             height: Rc::default(),
+            tails: true,
         }
     }
 }
 
-/// Whether the folded blocks keep their tails: only while every head, every
-/// tail and the open block's minimum fit in `avail`. Without them, and
-/// still short, the stack scrolls.
-fn tails_fit(avail: f32, blocks: usize, open: bool, head: f32, tail: f32, open_min: f32) -> bool {
-    let folded = blocks.saturating_sub(usize::from(open));
-    let open_min = if open { open_min } else { 0. };
-    blocks as f32 * head + folded as f32 * tail + open_min <= avail
+/// Whether the folded blocks keep their tails: only while the whole stack
+/// (heads, cards, the open block at its minimum) fits in `avail` with them.
+/// `content` is what the stack measured last frame, its `folded` tails of
+/// `tail` each included when `shown`. Without them, and still short, the
+/// stack scrolls.
+fn tails_fit(avail: f32, content: f32, shown: bool, folded: usize, tail: f32) -> bool {
+    let needed = match shown {
+        true => content,
+        false => content + folded as f32 * tail,
+    };
+    needed <= avail
+}
+
+/// Whether a worker's block draws its body, the composer among it: once its
+/// session is up, and not while a first connect is all there is.
+fn shows_body(present: bool, link: Link, was_live: bool) -> bool {
+    present && (link != Link::Connecting || was_live)
 }
 
 impl ChatPane {
@@ -89,21 +104,46 @@ impl ChatPane {
         cx: &mut Context<Self>,
     ) {
         self.workers.open = Some(uid);
-        if caret {
+        // Only into a composer drawn: one still connecting has none yet.
+        if caret && self.worker_ready(uid, cx) {
             let composer = self.worker_composer(uid, window, cx);
             composer.read(cx).state.focus_handle(cx).focus(window, cx);
         }
         cx.notify();
     }
 
-    /// Let go of every block's composer whose worker is no longer shown,
-    /// handing the caret to the lead's composer first when one held it: a
-    /// focused element leaving the frame takes the whole keymap with it.
+    /// Whether worker `uid`'s block draws its body.
+    pub(super) fn worker_ready(&self, uid: u64, cx: &App) -> bool {
+        let conv = self.conversations.get(&uid);
+        let chat = conv
+            .and_then(|conv| conv.session())
+            .map(|session| &session.read(cx).chat);
+        shows_body(
+            chat.is_some(),
+            chat.map_or(Link::Connecting, |chat| chat.link),
+            conv.is_some_and(|conv| conv.was_live),
+        )
+    }
+
+    /// Let go of every block's composer whose session is no longer a worker
+    /// here (closed, or its lead gone), handing the caret to the lead's
+    /// composer first when one held it: a focused element leaving the frame
+    /// takes the whole keymap with it. Another lead's workers keep theirs,
+    /// drafts and all.
     pub fn release_workers(&mut self, cx: &mut Context<Self>) {
-        let shown: Vec<u64> = self.lead_workers().iter().map(|w| w.uid).collect();
-        if self.workers.open.is_some_and(|uid| !shown.contains(&uid)) {
+        let still = |pane: &Self, uid: u64| {
+            pane.conversations.contains_key(&uid) && crate::control::lead_of(uid).is_some()
+        };
+        if self.workers.open.is_some_and(|uid| !still(self, uid)) {
             self.workers.open = None;
         }
+        let shown: Vec<u64> = self
+            .workers
+            .composers
+            .keys()
+            .copied()
+            .filter(|uid| still(self, *uid))
+            .collect();
         let gone: Vec<u64> = self
             .workers
             .composers
@@ -121,7 +161,12 @@ impl ChatPane {
             cx.defer(move |cx| {
                 let _ = window.update(cx, |_, window, cx| {
                     if composer.read(cx).state.focus_handle(cx).is_focused(window) {
-                        let _ = pane.update(cx, |pane, cx| pane.reclaim_focus(window, cx));
+                        // The lead may have gone with it, leaving no composer
+                        // to draw: then the pane itself, which always is.
+                        let _ = pane.update(cx, |pane, cx| match pane.session() {
+                            Some(_) => pane.reclaim_focus(window, cx),
+                            None => pane.focus_handle.clone().focus(window, cx),
+                        });
                     }
                 });
             });
@@ -227,6 +272,7 @@ impl ChatPane {
     pub(crate) fn workers_region(
         &mut self,
         maximized: bool,
+        zoom: crate::zoom::Zoom,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
@@ -239,12 +285,15 @@ impl ChatPane {
         {
             self.workers.open = workers.first().map(|worker| worker.uid);
         }
-        // On screen here, a worker's finished turn has been seen: it never
-        // shows in the pane, which is what clears it for any other session.
+        // On screen here, in the window in front, a worker's finished turn
+        // has been seen: it never shows in the pane, which is what clears it
+        // for any other session.
         let mut seen = false;
-        for worker in &workers {
-            if let Some(conv) = self.conversations.get_mut(&worker.uid) {
-                seen |= std::mem::take(&mut conv.unseen);
+        if window.is_window_active() {
+            for worker in &workers {
+                if let Some(conv) = self.conversations.get_mut(&worker.uid) {
+                    seen |= std::mem::take(&mut conv.unseen);
+                }
             }
         }
         if seen {
@@ -254,15 +303,21 @@ impl ChatPane {
             .active
             .map(|uid| self.worker_name(uid, cx))
             .unwrap_or_default();
-        let rem = window.rem_size();
+        // Measured in the zoomed panel, so the tail is too.
+        let tail = f32::from(WORKER_TAIL_H.to_pixels(window.rem_size())) * zoom.factor();
+        let avail = f32::from(self.workers.height.get());
+        let folded = workers
+            .iter()
+            .filter(|w| Some(w.uid) != self.workers.open && self.worker_ready(w.uid, cx))
+            .count();
         let tails = tails_fit(
-            f32::from(self.workers.height.get()),
-            workers.len(),
-            workers.iter().any(|w| Some(w.uid) == self.workers.open),
-            f32::from(onehand_ui::tokens::ROW_H.to_pixels(rem)),
-            f32::from(WORKER_TAIL_H.to_pixels(rem)),
-            f32::from(WORKER_OPEN_MIN.to_pixels(rem)),
+            avail,
+            avail + f32::from(self.workers.scroll.max_offset().y),
+            self.workers.tails,
+            folded,
+            tail,
         );
+        self.workers.tails = tails;
         let blocks: Vec<gpui::AnyElement> = workers
             .iter()
             .map(|worker| self.worker_block(worker, tails, window, cx))
@@ -272,45 +327,51 @@ impl ChatPane {
         div()
             .size_full()
             .v_flex()
+            // Chrome keeps its size while the blocks under it zoom, as the
+            // pane's header does.
             .child(
-                onehand_ui::strip(cx)
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .truncate()
-                            .text_color(cx.theme().foreground)
-                            .child(format!("Workers of {lead}")),
-                    )
-                    .child(
-                        onehand_ui::strip_control(
-                            "maximize-workers",
-                            match maximized {
-                                true => IconName::Minimize,
-                                false => IconName::Maximize,
-                            },
-                            false,
-                            cx,
+                zoom.unscale(
+                    onehand_ui::strip(cx)
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .truncate()
+                                .text_color(cx.theme().foreground)
+                                .child(format!("Workers of {lead}")),
                         )
-                        .named_with_action(
-                            match maximized {
-                                true => "Back to the dock",
-                                false => "Fill the window",
-                            },
-                            &crate::shell::ToggleMaximize,
-                            None,
+                        .child(
+                            onehand_ui::strip_control(
+                                "maximize-workers",
+                                match maximized {
+                                    true => IconName::Minimize,
+                                    false => IconName::Maximize,
+                                },
+                                false,
+                                cx,
+                            )
+                            .named_with_action(
+                                match maximized {
+                                    true => "Back to the dock",
+                                    false => "Fill the window",
+                                },
+                                &crate::shell::ToggleMaximize,
+                                None,
+                            )
+                            .on_click(cx.listener(
+                                |_: &mut Self, _, _, cx| {
+                                    cx.emit(ChatPaneEvent::MaximizeWorkers);
+                                },
+                            )),
                         )
-                        .on_click(cx.listener(|_: &mut Self, _, _, cx| {
-                            cx.emit(ChatPaneEvent::MaximizeWorkers);
-                        })),
-                    )
-                    .child(
-                        onehand_ui::strip_control("hide-workers", IconName::Minus, false, cx)
-                            .named("Hide the workers")
-                            .on_click(cx.listener(|_: &mut Self, _, _, cx| {
-                                cx.emit(ChatPaneEvent::ToggleWorkers);
-                            })),
-                    ),
+                        .child(
+                            onehand_ui::strip_control("hide-workers", IconName::Minus, false, cx)
+                                .named("Hide the workers")
+                                .on_click(cx.listener(|_: &mut Self, _, _, cx| {
+                                    cx.emit(ChatPaneEvent::ToggleWorkers);
+                                })),
+                        ),
+                ),
             )
             .child(
                 div()

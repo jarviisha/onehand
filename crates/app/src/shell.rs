@@ -363,6 +363,9 @@ pub struct Shell {
     workers_panel: Entity<crate::chat::workers_panel::WorkersPanel>,
     /// Which of the two the right dock holds.
     right: workers::RightPanel,
+    /// Whether the Workbench was open when the region took its place: what
+    /// hiding the region gives back, and what the layout saves meanwhile.
+    workbench_under: bool,
     /// The bottom dock. Per-root shells, so it follows the selection too.
     terminal: Entity<TerminalPanel>,
     /// The Issues page, made once so it is found as it was left whenever it

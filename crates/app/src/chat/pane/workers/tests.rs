@@ -1,35 +1,37 @@
-use super::tails_fit;
+use super::{shows_body, tails_fit};
+use onehand_core::chat::Link;
 
-const HEAD: f32 = 30.;
 const TAIL: f32 = 72.;
-const OPEN: f32 = 300.;
 
 #[test]
 fn every_tail_is_kept_when_there_is_room() {
-    // Three blocks, one open: three heads, two tails, the open minimum.
-    assert!(tails_fit(
-        3. * HEAD + 2. * TAIL + OPEN,
-        3,
-        true,
-        HEAD,
-        TAIL,
-        OPEN
-    ));
+    assert!(tails_fit(600., 600., true, 2, TAIL));
 }
 
+/// Measured with its tails and over: they go first.
 #[test]
 fn the_tails_go_first() {
-    assert!(!tails_fit(
-        3. * HEAD + OPEN + 10.,
-        3,
-        true,
-        HEAD,
-        TAIL,
-        OPEN
-    ));
+    assert!(!tails_fit(600., 640., true, 2, TAIL));
 }
 
+/// Dropped, they come back only once they fit again, so the stack never
+/// flips between the two from one frame to the next.
 #[test]
-fn with_none_open_only_heads_and_tails_count() {
-    assert!(tails_fit(2. * HEAD + 2. * TAIL, 2, false, HEAD, TAIL, OPEN));
+fn dropped_tails_come_back_only_once_they_fit() {
+    assert!(!tails_fit(600., 500., false, 2, TAIL));
+    assert!(tails_fit(700., 500., false, 2, TAIL));
+}
+
+/// No composer is drawn, so none may take the caret, until the worker is up.
+#[test]
+fn a_worker_connecting_for_the_first_time_shows_no_body() {
+    assert!(!shows_body(false, Link::Connecting, false));
+    assert!(!shows_body(true, Link::Connecting, false));
+    assert!(shows_body(true, Link::Connected, false));
+}
+
+/// A reconnect keeps the conversation on screen, as the pane does.
+#[test]
+fn a_worker_reconnecting_keeps_its_body() {
+    assert!(shows_body(true, Link::Connecting, true));
 }

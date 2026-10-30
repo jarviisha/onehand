@@ -90,7 +90,10 @@ impl Shell {
         PanelLayout {
             // The width the person wants, never one a narrow window drew.
             workbench_w: fallback.workbench_w,
-            workbench_open: self.workbench_open(cx) || self.stepped_aside,
+            // The region is not saved: the Workbench it stands in for is.
+            workbench_open: self.workbench_open(cx)
+                || self.stepped_aside
+                || (self.right == super::workers::RightPanel::Workers && self.workbench_under),
             // The height the person wants, never one a short window drew.
             terminal_h: fallback.terminal_h,
             terminal_open: dock.is_dock_open(DockPlacement::Bottom),

@@ -18,7 +18,6 @@ use gpui::{
 use gpui_component::menu::DropdownMenu as _;
 use gpui_component::spinner::Spinner;
 use gpui_component::{ActiveTheme as _, IconName, Sizable as _, StyledExt as _};
-use onehand_core::chat::Link;
 
 impl ChatPane {
     /// Worker `worker`'s block; `tails` whether a folded one keeps its tail.
@@ -32,15 +31,8 @@ impl ChatPane {
         let uid = worker.uid;
         let open = self.workers.open == Some(uid);
         let session = self.session_of(uid).cloned();
-        let was_live = self
-            .conversations
-            .get(&uid)
-            .is_some_and(|conv| conv.was_live);
         // A worker coming up has nothing to show yet but that it is coming.
-        let connecting = session.as_ref().is_none_or(|session| {
-            let chat = &session.read(cx).chat;
-            chat.link == Link::Connecting && !was_live
-        });
+        let connecting = !self.worker_ready(uid, cx);
         let head = self.worker_head(worker, connecting, cx);
         let block = div()
             .v_flex()
@@ -162,8 +154,13 @@ impl ChatPane {
                     menu.item(
                         crate::controls::menu_item("Give back to the lead").on_click(
                             move |_, _, cx: &mut App| {
-                                let _ = back.update(cx, |_: &mut Self, cx| {
-                                    crate::control::give_back(uid, prompts, cx);
+                                let _ = back.update(cx, |pane: &mut Self, cx| {
+                                    // Read now: the menu may have stood open
+                                    // while a prompt went.
+                                    let sent = pane
+                                        .session_of(uid)
+                                        .map_or(0, |session| session.read(cx).chat.prompts_sent);
+                                    crate::control::give_back(uid, sent, cx);
                                     cx.notify();
                                 });
                             },

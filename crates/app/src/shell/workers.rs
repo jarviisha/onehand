@@ -14,20 +14,10 @@ pub(super) enum RightPanel {
     Workers,
 }
 
-/// What the region does when the lead on screen, or the page, changes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Follow {
-    Stay,
-    Close,
-}
-
-/// The region, `open`, follows the lead on screen: it stays on one with
-/// workers and closes on anything else, a page included.
-pub(super) fn follow(open: bool, page: bool, has_workers: bool) -> Follow {
-    match open && (page || !has_workers) {
-        true => Follow::Close,
-        false => Follow::Stay,
-    }
+/// Whether the open region closes as it follows the lead on screen: it
+/// stays on one with workers and closes on anything else, a page included.
+pub(super) fn region_closes(page: bool, has_workers: bool) -> bool {
+    page || !has_workers
 }
 
 /// Where arriving at a session lands.
@@ -124,10 +114,13 @@ impl Shell {
         if self.page_shown(cx) || self.chat.read(cx).lead_workers().is_empty() {
             return;
         }
+        // Another panel filling the window would hide the region, and the
+        // caret put in it with it.
+        if let Some(panel) = self.app_maximized.filter(|p| *p != FocusedPanel::Workers) {
+            self.toggle_maximize_panel(panel, window, cx);
+        }
         if self.right == RightPanel::Workbench {
-            if self.app_maximized == Some(FocusedPanel::Workbench) {
-                self.toggle_maximize_panel(FocusedPanel::Workbench, window, cx);
-            }
+            self.workbench_under = self.workbench_open(cx);
             let had_focus = self.workbench.focus_handle(cx).contains_focused(window, cx);
             if had_focus {
                 self.last_panel = FocusedPanel::Chat;
@@ -149,13 +142,14 @@ impl Shell {
         cx.notify();
     }
 
-    /// Give the Workbench its place back, the dock closed. A caret in the
-    /// region goes to the lead's composer before the region leaves.
+    /// Give the Workbench its place back, open again if it was open when the
+    /// region took it, else the dock closed. A caret in the region goes to
+    /// the lead's composer before the region leaves.
     pub(super) fn hide_workers(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.right != RightPanel::Workers {
             return;
         }
-        if self.dock.read(cx).is_dock_open(DockPlacement::Right) {
+        if self.dock.read(cx).is_dock_open(DockPlacement::Right) != self.workbench_under {
             self.dock.update(cx, |dock, cx| {
                 dock.toggle_dock(DockPlacement::Right, window, cx)
             });
@@ -203,8 +197,7 @@ impl Shell {
             return;
         }
         let has_workers = !self.chat.read(cx).lead_workers().is_empty();
-        let open = self.workers_open(cx);
-        if !open || follow(open, self.page_shown(cx), has_workers) == Follow::Close {
+        if !self.workers_open(cx) || region_closes(self.page_shown(cx), has_workers) {
             self.hide_workers(window, cx);
         }
     }

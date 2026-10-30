@@ -57,12 +57,23 @@ pub(crate) fn give_back(uid: u64, prompts_sent: usize, cx: &App) -> bool {
     if !give_back_offered(uid, prompts_sent, cx) {
         return false;
     }
-    match sessions().workers.get_mut(&uid) {
-        Some(relation) => {
+    // Asked again under the lock that writes: the lead may have sent between
+    // the two, and `sent` never goes back.
+    let mut sessions = sessions();
+    let Sessions { workers, on, .. } = &mut *sessions;
+    match workers.get_mut(&uid) {
+        Some(relation)
+            if offered(
+                Some(relation),
+                prompts_sent,
+                on.contains(&relation.lead),
+                true,
+            ) =>
+        {
             relation.sent = prompts_sent;
             true
         }
-        None => false,
+        Some(_) | None => false,
     }
 }
 

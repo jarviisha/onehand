@@ -208,8 +208,9 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
 
 - **Key contexts:**
   - Window commands are bound `Shell && !Dialog`.
-  - `Ctrl+S` is bound `Shell && !Terminal && !Dialog && !Settings`, so a PTY keeps it and the
-    Settings page, which hides the editor, does not reach through to it.
+  - `Ctrl+S` is bound `Shell && !Terminal && !Dialog && !Settings && !Workers`, so a PTY keeps it
+    and the Settings page and the workers' region, which hide the editor, do not reach through
+    to it.
   - Anything mounting a live grid, the Neovim mode included, must take the `Terminal` context,
     or the editor's save fires over `:w`.
   - The terminal toggle is plain `` Ctrl+` ``, because shift+backtick cannot be typed.

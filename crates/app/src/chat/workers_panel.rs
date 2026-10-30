@@ -67,10 +67,12 @@ impl Focusable for WorkersPanel {
 
 impl Render for WorkersPanel {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let maximized = self.maximized;
+        let (maximized, zoom) = (self.maximized, self.zoom);
         let body = self
             .pane
-            .update(cx, |pane, cx| pane.workers_region(maximized, window, cx))
+            .update(cx, |pane, cx| {
+                pane.workers_region(maximized, zoom, window, cx)
+            })
             .unwrap_or_else(|_| div().into_any_element());
         let panel = div()
             .size_full()
