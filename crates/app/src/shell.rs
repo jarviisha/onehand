@@ -35,6 +35,7 @@ mod roots;
 mod sessions;
 mod settings_page;
 mod storage;
+mod workers;
 mod workflows;
 pub use crate::instance::hold_or_forward;
 pub use boot::{boot, open_or_focus, seed_workspace};

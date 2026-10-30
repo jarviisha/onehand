@@ -639,19 +639,7 @@ impl Shell {
     /// showing. For a run somebody picked by hand, who asked for it and is
     /// waiting to watch it, and for a session pressed on the workspace page.
     pub fn show_session(&mut self, uid: u64, window: &mut Window, cx: &mut Context<Self>) {
-        let found = self
-            .window
-            .workspace
-            .roots
-            .iter()
-            .enumerate()
-            .find_map(|(ri, root)| {
-                root.sessions
-                    .iter()
-                    .position(|session| session.uid == uid)
-                    .map(|si| (ri, si))
-            });
-        if let Some((root_idx, session_idx)) = found {
+        if let Some((root_idx, session_idx)) = self.locate(uid) {
             self.select_root_session(root_idx, session_idx, window, cx);
         }
     }

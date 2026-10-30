@@ -127,6 +127,7 @@ impl Shell {
     /// The body of [`Self::show_active_session`]: every panel pointed at the
     /// active root, and the pane at its session or its project page.
     fn arrive_at_active_root(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let _worker = self.turn_to_lead();
         // Arriving at a project is asking what is in it, so arriving opens it
         // -- and this is the one place every arrival passes through, which is
         // what the two callers that used to do it themselves could not be.
