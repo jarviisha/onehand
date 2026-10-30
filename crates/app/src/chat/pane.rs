@@ -39,11 +39,11 @@ mod sessions;
 mod step_strip;
 mod titles;
 mod workers;
-pub use deck::{DeckDown, DeckFold, DeckOpen, DeckUp};
 pub use events::{ChatPaneEvent, ProjectAction, Restart, SessionSignal};
 use header::Archives;
 pub use pages::PageKind;
 use project_page::EmptyProject;
+pub use workers::{WorkersBack, WorkersDown, WorkersUp, WorkersWrite};
 
 /// A page drawn in place of a conversation, about more than one project:
 /// every one a view of its own, held by the window, so what it holds
@@ -434,7 +434,7 @@ impl ChatPane {
                 git: None,
                 composer_h: Default::default(),
                 composer_drawn: false,
-                workers: workers::Workers::new(),
+                workers: workers::Workers::new(cx.focus_handle(), cx.focus_handle()),
                 deck: deck::Deck::new(cx.focus_handle()),
                 turn_began: None,
                 ticker: None,

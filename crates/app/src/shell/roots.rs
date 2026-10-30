@@ -222,8 +222,8 @@ impl Shell {
                 pane.reclaim_focus(window, cx);
             }
         });
-        // A worker asked for is shown in its lead's region, the caret in its
-        // block.
+        // A worker asked for is shown in its lead's region, picked, the caret
+        // on the list.
         if let Some(worker) = worker {
             self.show_workers(Some(worker), true, window, cx);
         }

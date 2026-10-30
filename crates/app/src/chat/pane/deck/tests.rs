@@ -1,4 +1,4 @@
-use super::{step, summary};
+use super::summary;
 use crate::chat::pane::SessionSignal::{AwaitingUser, Busy, Failed, UnseenTurn};
 
 #[test]
@@ -21,12 +21,4 @@ fn the_summary_counts_each_state_most_urgent_first() {
             (None, 1),
         ]
     );
-}
-
-#[test]
-fn the_deck_steps_and_stops_at_its_ends() {
-    assert_eq!(step(0, 3, true), 1);
-    assert_eq!(step(2, 3, true), 2);
-    assert_eq!(step(0, 3, false), 0);
-    assert_eq!(step(2, 3, false), 1);
 }

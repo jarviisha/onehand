@@ -130,11 +130,11 @@ pub(super) const COMMAND_FADE: Rems = rems(3.);
 pub(super) const MONO_ADVANCE: f32 = 0.62;
 /// One line of the secondary size, at the reading leading.
 pub(super) const LINE_SM: Rems = rems(TEXT_SM.0 * crate::tokens::LEADING);
-/// How tall a permission's command box stands before it scrolls: eight lines,
-/// which leaves the heading, the buttons and enough of a script to recognise
-/// on one screen. A height and not a line count, so one line three thousand
-/// characters long is held to the same box as eight short ones.
-pub(super) const COMMAND_H: Rems = rems(LINE_SM.0 * 8.);
+/// How tall a permission's command box stands before *Show all*: ten lines,
+/// which leaves the heading, the buttons and most scripts whole on one
+/// screen. A height and not a line count, so one line three thousand
+/// characters long is held to the same box as ten short ones.
+pub(super) const COMMAND_H: Rems = rems(LINE_SM.0 * 10.);
 
 // The question and permission cards pinned above the composer.
 /// A pinned card's side padding, which a question's choices' scroll frame

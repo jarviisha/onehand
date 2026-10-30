@@ -3,12 +3,14 @@
 //! workers' conversations.
 
 use super::pane::ChatPane;
+use super::transcript::{PinnedAllow, PinnedAlways, PinnedDeny};
 use gpui::{
     App, Context, EventEmitter, FocusHandle, Focusable, InteractiveElement as _, IntoElement,
     ParentElement as _, Render, Styled as _, Subscription, WeakEntity, Window, div,
 };
 use gpui_base::dock::{Panel, PanelEvent};
 use gpui_component::StyledExt as _;
+use onehand_core::acp::PermissionWeight;
 
 pub struct WorkersPanel {
     pane: WeakEntity<ChatPane>,
@@ -38,6 +40,12 @@ impl WorkersPanel {
     pub fn set_zoom(&mut self, zoom: crate::zoom::Zoom, cx: &mut Context<Self>) {
         self.zoom = zoom;
         cx.notify();
+    }
+
+    fn answer(&self, weight: PermissionWeight, cx: &mut Context<Self>) {
+        let _ = self
+            .pane
+            .update(cx, |pane, cx| pane.answer_worker_pinned(weight, cx));
     }
 
     /// Tell the strip which way round the maximize is.
@@ -81,6 +89,17 @@ impl Render for WorkersPanel {
             // focus and its keys reach only it.
             .track_focus(&self.focus_handle)
             .key_context("Workers")
+            // The pinned card's answers with the modifier, for the picked
+            // worker while the caret is in the region.
+            .on_action(cx.listener(|panel: &mut Self, _: &PinnedAllow, _, cx| {
+                panel.answer(PermissionWeight::AllowOnce, cx);
+            }))
+            .on_action(cx.listener(|panel: &mut Self, _: &PinnedAlways, _, cx| {
+                panel.answer(PermissionWeight::AllowAlways, cx);
+            }))
+            .on_action(cx.listener(|panel: &mut Self, _: &PinnedDeny, _, cx| {
+                panel.answer(PermissionWeight::Deny, cx);
+            }))
             .v_flex()
             .child(self.zoom.scale(body));
         // The Workbench's region for a drag: the two never show at once.

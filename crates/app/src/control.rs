@@ -342,7 +342,7 @@ pub(crate) type Answer = oneshot::Sender<Result<String, String>>;
 static RUN: LazyLock<String> = LazyLock::new(|| control::new_token()[..8].to_string());
 
 /// How many sessions one session's tools may have open at once.
-const OPENED_CAP: usize = 4;
+pub(crate) const OPENED_CAP: usize = 4;
 
 fn perform_now(
     peer: Peer,
