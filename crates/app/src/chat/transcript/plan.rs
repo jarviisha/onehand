@@ -1,6 +1,6 @@
 use super::fold_key;
 use super::metrics::{FOLD_INDENT, TEXT_SM};
-use super::parts::{accent, fold_line};
+use super::parts::{accent, fold_box, fold_line};
 use crate::chat::session::ChatSession;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -56,67 +56,61 @@ pub(super) fn plan(
                 .child(format!("{done}/{}", p.entries.len())),
         );
 
-    div()
-        .v_flex()
-        .gap_2()
-        .w_full()
-        .min_w_0()
-        .child(line)
-        .when(open, |block| {
-            block.child(
-                div()
-                    .v_flex()
-                    .gap_1()
-                    .pl(FOLD_INDENT)
-                    .text_size(TEXT_SM)
-                    .children(p.entries.iter().take(MAX_TODO_ITEMS).map(|entry| {
-                        // **The glyph changes, never the row**: a plan is
-                        // worked through while it is on screen.
-                        // A finished step is calm, a muted check; the one in
-                        // hand turns while the turn runs and rests after.
-                        let (icon, struck) = match entry.status {
-                            PlanStatus::Completed => (Some(IconName::Check), true),
-                            PlanStatus::InProgress if busy => (None, false),
-                            PlanStatus::InProgress => (Some(IconName::LoaderCircle), false),
-                            PlanStatus::Pending => (Some(IconName::Minus), false),
-                        };
-                        let mark = match icon {
-                            Some(icon) => Icon::new(icon)
-                                .xsmall()
-                                .text_color(muted)
-                                .into_any_element(),
-                            None => Spinner::new().xsmall().color(accent(cx)).into_any_element(),
-                        };
-                        div()
-                            .h_flex()
-                            .items_center()
-                            .gap_2()
-                            .min_w_0()
-                            .child(mark)
-                            .child(
-                                div()
-                                    .min_w_0()
-                                    .truncate()
-                                    .text_color(match struck {
-                                        true => muted,
-                                        false => cx.theme().foreground,
-                                    })
-                                    // Finished work is struck: the eye skips
-                                    // it and lands on what is left.
-                                    .when(struck, |row| row.line_through())
-                                    .child(label(&entry.content, cx)),
-                            )
-                    }))
-                    .when(hidden > 0, |list| {
-                        list.child(
+    fold_box(cx).child(line).when(open, |block| {
+        block.child(
+            div()
+                .v_flex()
+                .gap_1()
+                .pl(FOLD_INDENT)
+                .text_size(TEXT_SM)
+                .children(p.entries.iter().take(MAX_TODO_ITEMS).map(|entry| {
+                    // **The glyph changes, never the row**: a plan is
+                    // worked through while it is on screen.
+                    // A finished step is calm, a muted check; the one in
+                    // hand turns while the turn runs and rests after.
+                    let (icon, struck) = match entry.status {
+                        PlanStatus::Completed => (Some(IconName::Check), true),
+                        PlanStatus::InProgress if busy => (None, false),
+                        PlanStatus::InProgress => (Some(IconName::LoaderCircle), false),
+                        PlanStatus::Pending => (Some(IconName::Minus), false),
+                    };
+                    let mark = match icon {
+                        Some(icon) => Icon::new(icon)
+                            .xsmall()
+                            .text_color(muted)
+                            .into_any_element(),
+                        None => Spinner::new().xsmall().color(accent(cx)).into_any_element(),
+                    };
+                    div()
+                        .h_flex()
+                        .items_center()
+                        .gap_2()
+                        .min_w_0()
+                        .child(mark)
+                        .child(
                             div()
-                                .text_xs()
-                                .text_color(muted)
-                                .child(format!("+{hidden} more")),
+                                .min_w_0()
+                                .truncate()
+                                .text_color(match struck {
+                                    true => muted,
+                                    false => cx.theme().foreground,
+                                })
+                                // Finished work is struck: the eye skips
+                                // it and lands on what is left.
+                                .when(struck, |row| row.line_through())
+                                .child(label(&entry.content, cx)),
                         )
-                    }),
-            )
-        })
+                }))
+                .when(hidden > 0, |list| {
+                    list.child(
+                        div()
+                            .text_xs()
+                            .text_color(muted)
+                            .child(format!("+{hidden} more")),
+                    )
+                }),
+        )
+    })
 }
 
 /// A step's words with what it set in backticks in code's ink, as prose sets

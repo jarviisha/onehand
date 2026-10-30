@@ -64,8 +64,10 @@ impl ChatPane {
                 // field's do.
                 .p_1p5()
                 .bg(crate::theme::raised(cx))
+                .border_1()
+                .border_color(cx.theme().input)
                 .shadow(crate::theme::composer_lift(cx))
-                .rounded(cx.theme().radius)
+                .rounded(cx.theme().radius_lg)
                 .children(lines)
                 .into_any_element()
         }));

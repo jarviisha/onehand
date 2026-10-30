@@ -9,11 +9,14 @@
 use super::{Shell, ToggleRail, ToggleTerminal, ToggleWorkbenchVisibility};
 use crate::controls::{Named as _, Quiet as _, action};
 use crate::keymap::{CLOSE_SESSION, COMMANDS, NEW_SESSION, RESTART};
-use gpui::{App, Entity, IntoElement, Menu, MenuItem, ParentElement as _, Styled as _};
+use gpui::prelude::FluentBuilder as _;
+use gpui::{App, Entity, IntoElement, Menu, MenuItem, ParentElement as _, Styled as _, div};
 use gpui_component::dock::DockPlacement;
 use gpui_component::menu::AppMenuBar;
 use gpui_component::status_bar::StatusBar;
-use gpui_component::{GlobalState, Icon, IconName, Sizable as _, TitleBar, h_flex};
+use gpui_component::{
+    ActiveTheme as _, GlobalState, Icon, IconName, Sizable as _, TitleBar, h_flex,
+};
 
 /// A menu item: a command's keymap id and the name it takes in the menu, or
 /// `None` for a separator.
@@ -144,7 +147,10 @@ impl Shell {
             .and_then(|root| self.window.git.get(&root.path))
             .map(|status| status.branch.clone());
         // Dispatched as the command is, from where the keys are, so the
-        // shell answers a press here exactly as it answers the key.
+        // shell answers a press here exactly as it answers the key. A closed
+        // panel's glyph takes the muted ink: on the dark bar the selected
+        // fill alone is too near the bar's own to say which are open.
+        let muted = cx.theme().muted_foreground;
         let toggle = |id: &'static str,
                       icon: IconName,
                       name: &'static str,
@@ -153,12 +159,13 @@ impl Shell {
             action(id)
                 .quiet_icon(on, cx)
                 .small()
-                .icon(Icon::new(icon))
+                .icon(Icon::new(icon).when(!on, |icon| icon.text_color(muted)))
                 .named(name)
                 .on_click(move |_, window, cx| window.dispatch_action(act.boxed_clone(), cx))
         };
         let terminal = self.dock.read(cx).is_dock_open(DockPlacement::Bottom);
         let workbench = self.workbench_open(cx);
+        let live = self.terminal_live;
         StatusBar::new()
             .left(toggle(
                 "status-rail",
@@ -173,13 +180,38 @@ impl Shell {
                     .child(Icon::new(crate::icons::Icon::GitBranch).small())
                     .child(branch)
             })))
-            .right(toggle(
-                "status-terminal",
-                IconName::PanelBottom,
-                "Show or hide the terminal",
-                terminal,
-                Box::new(ToggleTerminal),
-            ))
+            // A command still running behind a closed dock is the one fact
+            // the icon cannot carry, so a dot in the running ink rides its
+            // corner while the dock is closed; an open terminal shows the
+            // command itself.
+            .right(
+                div()
+                    .relative()
+                    .flex_none()
+                    .child(toggle(
+                        "status-terminal",
+                        IconName::PanelBottom,
+                        match live {
+                            true => {
+                                "A command is running in a shell here — show or hide the terminal"
+                            }
+                            false => "Show or hide the terminal",
+                        },
+                        terminal,
+                        Box::new(ToggleTerminal),
+                    ))
+                    .when(live && !terminal, |toggle| {
+                        toggle.child(
+                            div()
+                                .absolute()
+                                .top_0p5()
+                                .right_0p5()
+                                .size(crate::chat::pane::LIVE_DOT)
+                                .rounded_full()
+                                .bg(cx.theme().info),
+                        )
+                    }),
+            )
             .right(toggle(
                 "status-workbench",
                 IconName::PanelRight,

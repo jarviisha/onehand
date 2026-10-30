@@ -10,6 +10,7 @@ use gpui::{
     App, Entity, InteractiveElement, IntoElement, ParentElement, RenderOnce, SharedString,
     StatefulInteractiveElement, Styled, StyledImage as _, Window, div, relative,
 };
+use gpui_component::bubble::BubbleContent;
 use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::chat::{TranscriptItemId, UserMsg};
 
@@ -154,17 +155,12 @@ impl RenderOnce for Prompt {
                     cx.notify();
                 });
             })
+            // The library's filled bubble: the one surface in the transcript
+            // in the primary fill, so the reader's own words stand out of a
+            // column that is otherwise the agent's.
             .child(
-                div()
+                BubbleContent::new()
                     .max_w(BUBBLE_MAX)
-                    .px_3()
-                    .py_2()
-                    // **Even corners, the well's fill and no edge.** The side
-                    // it sits on already says whose words these are; the fill
-                    // only has to set them off the page.
-                    .rounded(cx.theme().radius)
-                    .bg(cx.theme().muted)
-                    .text_color(cx.theme().foreground)
                     .child(prompt_text(&self.text, cx)),
             )
             .child(
@@ -205,9 +201,10 @@ fn prompt_text(text: &str, cx: &App) -> gpui::AnyElement {
         // its glyphs and there is no radius on it — the rounded chip this wants
         // would need the text laid out by hand. The fill and the face together
         // are still enough to read as one.
-        // The bubble's step on the well it sits in, so the chip shows on it.
-        background_color: Some(cx.theme().secondary),
-        color: Some(cx.theme().secondary_foreground),
+        // The bubble's own ink, thinned, so the chip shows on the primary fill
+        // in either theme.
+        background_color: Some(cx.theme().primary_foreground.opacity(0.2)),
+        color: Some(cx.theme().primary_foreground),
         ..Default::default()
     };
     let mono = cx.theme().mono_font_family.clone();

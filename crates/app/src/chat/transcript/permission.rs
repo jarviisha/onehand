@@ -146,73 +146,75 @@ pub(in crate::chat) fn permission(
     let kind = (p.req.kind != ToolKind::Other).then(|| tool_label(p.req.kind));
     let cwd = command_cwd(&session.read(cx).chat.root);
 
-    pinned_card(idx.is_some(), cx)
-        // The one card that keeps its mark: a grant is the block where a
-        // misread costs most.
-        .child(card_head(
-            Some(
-                Icon::new(IconName::TriangleAlert).text_color(crate::theme::status_ink(cx).warning),
+    pinned_card(
+        idx.is_some(),
+        Some(crate::theme::status_ink(cx).warning),
+        cx,
+    )
+    // The one card that keeps its mark: a grant is the block where a
+    // misread costs most.
+    .child(card_head(
+        Some(Icon::new(IconName::TriangleAlert).text_color(crate::theme::status_ink(cx).warning)),
+        // A subagent's request says whose it is: the agent itself is the
+        // one asking otherwise.
+        match &p.asker {
+            Some(asker) => format!("{asker} asks permission"),
+            None => "Permission required".to_string(),
+        },
+        // The only word the protocol offers about *what* is asked for,
+        // opposite the heading where the question card keeps its count.
+        kind.map(SharedString::from),
+        cx,
+    ))
+    .child(
+        card_body()
+            .gap_2()
+            .child(block)
+            // Where it would run, and the copy, on the line under the
+            // command: in the well, a copy took a column the whole
+            // command's height for one icon, and its scrollbar ran over
+            // the text. Drawn always, never waiting to be hovered: this
+            // is the text most likely wanted elsewhere, and a command
+            // that scrolls cannot be selected out by dragging.
+            .child(
+                div()
+                    .h_flex()
+                    .items_center()
+                    .gap_2()
+                    .w_full()
+                    .child(div().flex_1().min_w_0().children(cwd.map(|(shown, full)| {
+                        div()
+                            .id(("perm-cwd", fold_key(target)))
+                            .truncate()
+                            .text_xs()
+                            .text_color(crate::theme::meta_ink(cx))
+                            .child(format!("in {shown}"))
+                            .tooltip(onehand_ui::tip(move |window, cx| {
+                                Tooltip::new(full.clone()).build(window, cx)
+                            }))
+                    })))
+                    .child(copy_button(
+                        ("perm-copy", fold_key(target)),
+                        p.command().to_string(),
+                        "Copy the whole command",
+                        cx,
+                    )),
             ),
-            // A subagent's request says whose it is: the agent itself is the
-            // one asking otherwise.
-            match &p.asker {
-                Some(asker) => format!("{asker} asks permission"),
-                None => "Permission required".to_string(),
-            },
-            // The only word the protocol offers about *what* is asked for,
-            // opposite the heading where the question card keeps its count.
-            kind.map(SharedString::from),
+    )
+    // A card replayed from the archive carries an rpc id no running adapter
+    // issued: showing controls would invite an answer nobody is waiting
+    // for. An answered one never reaches here -- it is a row.
+    .map(|card| match idx {
+        None => card.into_any_element(),
+        Some(idx) => permission_keys(
+            card.child(permission_footer(session, p, idx, cx)),
+            session,
+            p,
+            idx,
             cx,
-        ))
-        .child(
-            card_body()
-                .gap_2()
-                .child(block)
-                // Where it would run, and the copy, on the line under the
-                // command: in the well, a copy took a column the whole
-                // command's height for one icon, and its scrollbar ran over
-                // the text. Drawn always, never waiting to be hovered: this
-                // is the text most likely wanted elsewhere, and a command
-                // that scrolls cannot be selected out by dragging.
-                .child(
-                    div()
-                        .h_flex()
-                        .items_center()
-                        .gap_2()
-                        .w_full()
-                        .child(div().flex_1().min_w_0().children(cwd.map(|(shown, full)| {
-                            div()
-                                .id(("perm-cwd", fold_key(target)))
-                                .truncate()
-                                .text_xs()
-                                .text_color(crate::theme::meta_ink(cx))
-                                .child(format!("in {shown}"))
-                                .tooltip(onehand_ui::tip(move |window, cx| {
-                                    Tooltip::new(full.clone()).build(window, cx)
-                                }))
-                        })))
-                        .child(copy_button(
-                            ("perm-copy", fold_key(target)),
-                            p.command().to_string(),
-                            "Copy the whole command",
-                            cx,
-                        )),
-                ),
-        )
-        // A card replayed from the archive carries an rpc id no running adapter
-        // issued: showing controls would invite an answer nobody is waiting
-        // for. An answered one never reaches here -- it is a row.
-        .map(|card| match idx {
-            None => card.into_any_element(),
-            Some(idx) => permission_keys(
-                card.child(permission_footer(session, p, idx, cx)),
-                session,
-                p,
-                idx,
-                cx,
-            ),
-        })
-        .into_any_element()
+        ),
+    })
+    .into_any_element()
 }
 
 /// Enter allows once, Esc denies — and only while the card holds the caret.

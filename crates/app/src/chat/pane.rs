@@ -28,6 +28,7 @@ mod bridge;
 mod events;
 mod fork;
 mod header;
+pub(crate) use header::LIVE_DOT;
 mod history;
 mod lead_strip;
 mod overlay;
@@ -290,14 +291,6 @@ pub struct ChatPane {
     /// while its menu holds focus even after the last item ended: a trigger
     /// that leaves the frame with its menu takes focus with it, and the keymap.
     background_menu: std::cell::Cell<Option<u64>>,
-    /// Whether the active project has a shell alive in the terminal dock.
-    ///
-    /// Pushed by the shell, like the flag above and for the same reason: the
-    /// dock is the window's and this panel has no handle on it. It is not the
-    /// dock's *open* state — it is whether a child process is running behind a
-    /// dock that may well be closed, which is the one thing the terminal button
-    /// cannot say by being a button.
-    terminal_live: bool,
     /// Which docks are open, so their header buttons can show it. Pushed by
     /// the shell, which owns the docks.
     docks_open: DocksOpen,
@@ -426,7 +419,6 @@ impl ChatPane {
                 pending_fork: None,
                 rail_hidden: false,
                 background_menu: std::cell::Cell::new(None),
-                terminal_live: false,
                 docks_open: DocksOpen::default(),
                 git: None,
                 composer_h: Default::default(),
@@ -554,14 +546,6 @@ impl ChatPane {
             return;
         }
         self.git = line;
-        cx.notify();
-    }
-
-    pub fn set_terminal_live(&mut self, live: bool, cx: &mut Context<Self>) {
-        if self.terminal_live == live {
-            return;
-        }
-        self.terminal_live = live;
         cx.notify();
     }
 

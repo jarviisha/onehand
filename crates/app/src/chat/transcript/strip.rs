@@ -1,8 +1,8 @@
 use super::fold_key;
 use super::metrics::{FOLD_INDENT, TEXT_SM};
 use super::parts::{
-    ActivityRow, Object, RowMark, activity_row, chevron, detail_well, fold_line, line_counts,
-    plain_box, show_more, sideways,
+    ActivityRow, Object, RowMark, activity_row, chevron, detail_well, fold_box, fold_line,
+    line_counts, plain_box, show_more, sideways,
 };
 use super::tool::diff_rows;
 use crate::chat::session::ChatSession;
@@ -64,11 +64,7 @@ pub fn cluster(
     body: Vec<gpui::AnyElement>,
     cx: &App,
 ) -> gpui::AnyElement {
-    div()
-        .v_flex()
-        .w_full()
-        .min_w_0()
-        .gap_2()
+    fold_box(cx)
         .child(cluster_line(plan, open, on_click, id, cx))
         .when(open, |cluster| {
             cluster.child(
@@ -179,7 +175,7 @@ pub(in crate::chat) fn turn_summary(
         )
         .children(line_counts(changes.added, changes.removed, cx));
 
-    let block = div().v_flex().w_full().min_w_0().gap_2().child(head);
+    let block = fold_box(cx).child(head);
     if !open {
         return block.into_any_element();
     }

@@ -14,6 +14,7 @@
 use super::session::ChatSession;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{App, Entity, IntoElement, ParentElement, Styled, Window, div};
+use gpui_component::bubble::{Bubble, BubbleVariant};
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::chat::{ChatItem, NoticeLevel, TranscriptItemId};
 
@@ -287,59 +288,59 @@ fn notice(
             .into_any_element();
     }
 
-    // A failure is a banner: the full width of the column on the danger tint,
-    // a solid fill and no edge, and the mark anchored to the first line so a
-    // message that wraps to three lines does not carry the icon down the
-    // middle of itself.
-    let tint = onehand_ui::tint(cx.theme().red, cx);
-    div()
-        .h_flex()
-        .items_start()
-        .gap_2()
+    // A failure is the library's destructive bubble across the column, the
+    // mark anchored to the first line so a message that wraps to three lines
+    // does not carry the icon down the middle of itself.
+    let ink = cx.theme().danger;
+    Bubble::new()
+        .with_variant(BubbleVariant::Destructive)
         .w_full()
-        .min_w_0()
-        .px_3()
-        .py_2()
-        .rounded(cx.theme().radius)
-        .bg(tint.fill)
-        .text_size(TEXT_SM)
-        .text_color(tint.ink)
+        .max_w_full()
         .child(
-            // The glyph is held to the first line's height, so a message that
-            // wraps keeps it beside its first words.
             div()
-                .h(metrics::LINE_SM)
-                .flex_none()
                 .h_flex()
-                .items_center()
-                .child(Icon::new(IconName::TriangleAlert).xsmall()),
-        )
-        .child(
-            div()
-                .flex_1()
+                .items_start()
+                .gap_2()
+                .w_full()
                 .min_w_0()
-                .v_flex()
-                .gap_1()
+                .text_size(TEXT_SM)
+                .child(
+                    // The glyph is held to the first line's height, so a message that
+                    // wraps keeps it beside its first words.
+                    div()
+                        .h(metrics::LINE_SM)
+                        .flex_none()
+                        .h_flex()
+                        .items_center()
+                        .child(Icon::new(IconName::TriangleAlert).xsmall()),
+                )
                 .child(
                     div()
-                        .h_flex()
-                        .flex_wrap()
-                        .items_center()
-                        .gap_x_2()
-                        // In a box that may shrink: bare text in a flex row
-                        // measures its whole line as its least width, so an
-                        // adapter's long error ran out past the column.
-                        .child(div().min_w_0().child(text.to_string()))
-                        .children(restart.map(|key| {
+                        .flex_1()
+                        .min_w_0()
+                        .v_flex()
+                        .gap_1()
+                        .child(
                             div()
                                 .h_flex()
+                                .flex_wrap()
                                 .items_center()
-                                .gap_1()
-                                .child("Restart the agent with")
-                                .child(key)
-                        })),
-                )
-                .children(detail(tint.ink)),
+                                .gap_x_2()
+                                // In a box that may shrink: bare text in a flex row
+                                // measures its whole line as its least width, so an
+                                // adapter's long error ran out past the column.
+                                .child(div().min_w_0().child(text.to_string()))
+                                .children(restart.map(|key| {
+                                    div()
+                                        .h_flex()
+                                        .items_center()
+                                        .gap_1()
+                                        .child("Restart the agent with")
+                                        .child(key)
+                                })),
+                        )
+                        .children(detail(ink)),
+                ),
         )
         .into_any_element()
 }

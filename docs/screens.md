@@ -24,7 +24,9 @@ being written). Nothing else.
 
 The library's `StatusBar` along the window's foot. At its start the rail's toggle and the branch of
 the project on screen; at its end the terminal's and the Workbench's toggles, each an icon alone,
-marked while what it shows is open, and dispatching the command its key does. Nothing else: a
+marked while what it shows is open (a closed one's glyph in the muted ink), and dispatching the
+command its key does. The terminal's carries an `info` dot while its dock is closed over a shell
+running a command. Nothing else: a
 transient state is a toast.
 
 ## Rail
@@ -92,11 +94,10 @@ background: a menu of each item's name, its kind and how long it has run, each r
 one item and never the turn, 12 listed and then *N more*; when an item ends, the transcript keeps a
 notice of how and after how long: *Background work finished after 2m 14s: npm test*, an error when it
 failed, *interrupted* when the agent went away first); past conversations and *Close session*
-(only while a session shows); the terminal, an accent dot on it while its dock is closed over a
-shell running a command; while the session on screen leads workers, its workers, a warning dot on
-it while one waits on the person and the region is closed; last, the Workbench.
-The two dock buttons are filled while their dock is open. On the overview, Tasks, Issues,
-Workflows, Schedules and Settings, which name themselves in their head, it carries no name; none of these has a dots menu or dock buttons. As the pane narrows, the name gives way
+(only while a session shows); last, while the session on screen leads workers, its workers, a
+warning dot on it while one waits on the person and the region is closed. The docks' toggles are
+the status bar's. On the overview, Tasks, Issues,
+Workflows, Schedules and Settings, which name themselves in their head, it carries no name; none of these has a dots menu. As the pane narrows, the name gives way
 first, down to a minimum. Without a session it carries no name, the page naming the project, but
 keeps the project's dots menu, holding the project's actions but *New session* and *Open
 terminal*, which the page and the header already offer.
@@ -114,7 +115,8 @@ are not rolled back. A fork that cannot open is a toast saying why, and its sess
 
 ## Subagent card
 
-Where the agent hands work to a subagent, the transcript draws a bare fold block: no edge, no box.
+Where the agent hands work to a subagent, the transcript draws a fold block, boxed as every
+folding block is.
 Its head is a fold line with a state mark, the subagent's name and its state word (*done*,
 *failed*, *cancelled*, *interrupted*; a spinner while it works), and under it the first line of its
 task in the meta ink, the body inset. While it works the card shows its latest 3 steps behind
@@ -136,8 +138,8 @@ unread.
 
 ## Composer
 
-A card with no edge, set off by its raised fill and lift; the caret alone shows focus, and no line
-is ever added to it (a refusal is Send's tooltip, a failure a toast). The field, then the `+` menu,
+A card edged in the field's edge, set off by its raised fill and lift; the caret alone shows
+focus, and no line is ever added to it (a refusal is Send's tooltip, a failure a toast). The field, then the `+` menu,
 *Fast* (its bolt alone, in the warning ink while fast: a toggle with no caret when its choices
 read as on and off; else a picker with a caret, the value in force on its tooltip), the model and
 effort chips, then *Send*, or *Stop* (solid danger,

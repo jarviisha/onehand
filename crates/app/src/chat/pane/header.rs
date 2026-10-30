@@ -27,9 +27,9 @@ use std::path::PathBuf;
 /// trade taken on purpose: a name cut to two characters names nothing, while a
 /// panel this narrow has already stopped being a place a conversation is read.
 const HEADER_NAME_MIN: Rems = rems(8.);
-/// The dot on the terminal button saying a shell is alive behind a closed dock:
+/// The dot on a toggle saying something is alive behind a closed region:
 /// small enough to sit on the glyph's corner without covering it.
-pub(super) const LIVE_DOT: Rems = rems(0.375);
+pub(crate) const LIVE_DOT: Rems = rems(0.375);
 
 /// The conversations already had in the project on screen, for the header's
 /// *Open a past conversation* menu.
@@ -67,11 +67,9 @@ impl ChatPane {
     /// mixing them into one row of seven buttons made every one of them equally
     /// easy to hit by accident.
     ///
-    /// It is also **the only chrome this panel has**. The dock draws the
-    /// conversation as a bare panel with no tab bar, so the two ways back to
-    /// something the window has put away — the rail and the Workbench — have
-    /// nowhere else to be offered from, and a route that exists only as a
-    /// keystroke is a route only someone who already knows it can take.
+    /// The docks' toggles are the status bar's, which holds them for every
+    /// page; the header keeps the way back to a hidden rail, which sits on the
+    /// side the rail returns to.
     ///
     /// **The name names the conversation and the vertical-dots mark beside it
     /// carries its menu**, and every other
@@ -79,8 +77,7 @@ impl ChatPane {
     /// rail at the row's left edge, the side the rail returns to, and the
     /// right-hand end reading outward from the name — the past conversations
     /// and closing the session, which act on the session the name names, then
-    /// the terminal and last the Workbench, whose dock is the window's right
-    /// edge, so the outermost control moves the outermost panel. The dots are
+    /// the workers' toggle for the region beside the conversation. The dots are
     /// the row's one menu mark, and everything behind them is something done
     /// to the conversation the name beside them is.
     fn header_row(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
@@ -186,8 +183,8 @@ impl ChatPane {
             // Only while there is a session to end, and *before* the docks
             // rather than last: the cluster reads outward from the name by
             // what each control is about -- this and the past conversations
-            // act on the session the name names, the dock pair on the window
-            // around it -- and the row's far edge, where a pointer drifts, is
+            // act on the session the name names, the workers' toggle on the
+            // region beside it -- and the row's far edge, where a pointer drifts, is
             // the wrong seat for the one control that ends something. It keeps the
             // conversation -- the transcript is written at the end of every turn
             // and closing costs nothing that is not already on disk -- which is
@@ -197,7 +194,7 @@ impl ChatPane {
                 header.child(
                     // The exit-door arrow and not an ×: this ends a session
                     // while keeping every word, and every × in the row's
-                    // reach says "dismiss this" -- beside two dock toggles it
+                    // reach says "dismiss this" -- beside a panel toggle it
                     // read as closing a panel, and a power mark read as
                     // quitting the whole app.
                     strip_control("close-session", crate::icons::Icon::LogOut, false, cx)
@@ -211,60 +208,10 @@ impl ChatPane {
                         })),
                 )
             })
-            // Beside the Workbench button: both are docks this panel is
-            // sitting between, and a closed one leaves nothing on screen at all
-            // -- no edge, no strip, no name -- so the route to it belongs with
-            // the panel that took the space. Both are a plain open-or-close and
-            // not the three-state rule their keys follow, which is the shell's
-            // to apply: a key has one binding and no other way to reach an open
-            // panel, while a button can see the dock and is pressed with the
-            // caret back in the composer.
-            // Neither dock is offered on the workspace or Tasks page: both
-            // hold one project's things, and the page stands on none.
-            .when(self.page.is_none(), |row| {
-                row.child(self.terminal_control(cx))
-            })
-            // Between the terminal and the Workbench, whose place it takes.
+            // The workers' region, which takes the Workbench's place. The
+            // docks' own toggles are the status bar's.
             .when(self.page.is_none(), |row| {
                 row.children(self.workers_control(cx))
-            })
-            // The Workbench closed leaves nothing on screen at all -- no strip,
-            // no edge, no name -- so without this the file tree and the editor
-            // exist only for someone who remembers two keystrokes. Offered from
-            // here rather than done here: which mode it opens on, and closing it
-            // rather than focusing it, are both the shell's rules, and the chat
-            // has no business knowing a dock is where the Workbench lives.
-            // Outermost on the row, always: its dock is the window's right
-            // edge, so the control that moves it holds the row's right edge --
-            // the same mapping that puts the rail's button at the left.
-            .when(self.page.is_none(), |row| {
-                row.child(
-                    // Lit while its dock is open, so the button says which
-                    // way the next press goes.
-                    strip_control(
-                        "workbench",
-                        IconName::PanelRight,
-                        self.docks_open.workbench,
-                        cx,
-                    )
-                    // **Both directions, because the button does both.** It
-                    // said "Show the Workbench" while it was a three-state
-                    // control that could only ever open from here, and kept
-                    // saying it after it became a plain toggle -- so the one
-                    // press a user most wants named, the one that puts the
-                    // panel away, was the press the tooltip denied existed.
-                    // Which way it will go this time is not said, since that
-                    // needs a dock fact pushed down here and the panel on
-                    // screen already answers it.
-                    .named_with_action(
-                        "Show or hide the Workbench",
-                        &crate::shell::ToggleWorkbenchVisibility,
-                        None,
-                    )
-                    .on_click(cx.listener(|_: &mut Self, _, _, cx| {
-                        cx.emit(ChatPaneEvent::ToggleWorkbench);
-                    })),
-                )
             })
     }
 
@@ -377,61 +324,6 @@ impl ChatPane {
             });
         });
         Some(div().flex_none().child(menu).into_any_element())
-    }
-
-    /// The way to the terminal, and whether a command is running in it.
-    ///
-    /// **The dot is the whole reason this is not one more plain button.** A
-    /// command still running behind a closed dock is the one fact the icon
-    /// cannot carry: it is still doing whatever it was doing, and closing the
-    /// window is what would end it. A shell idle at its prompt is not that, and
-    /// a dot lit for it would never go out. It rides at the corner rather than
-    /// inside the button so the button keeps the square metrics its neighbours
-    /// have — a child in the content row would make this one control wider than
-    /// the three beside it, which reads as a mistake.
-    ///
-    /// The accent, the ink of something running, and only while the dock is
-    /// closed, since an open terminal shows the command itself.
-    fn terminal_control(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        let live = self.terminal_live;
-        let open = self.docks_open.terminal;
-        let running = cx.theme().info;
-
-        div()
-            .relative()
-            .flex_none()
-            .child(
-                strip_control("terminal", IconName::SquareTerminal, open, cx)
-                    // What it says is about the *shell*, which is the fact
-                    // this pane is pushed and the one the icon cannot carry.
-                    // Which way the press will go is left out for the reason
-                    // the Workbench's is: the panel on screen answers it, and
-                    // saying it would need a second fact pushed down here to
-                    // keep in step.
-                    .named_with_action(
-                        if live {
-                            "A command is running in a shell here — show or hide the terminal"
-                        } else {
-                            "Show or hide the terminal"
-                        },
-                        &crate::shell::ToggleTerminal,
-                        None,
-                    )
-                    .on_click(cx.listener(|_: &mut Self, _, _, cx| {
-                        cx.emit(ChatPaneEvent::ToggleTerminal);
-                    })),
-            )
-            .when(live && !open, |control| {
-                control.child(
-                    div()
-                        .absolute()
-                        .top_0p5()
-                        .right_0p5()
-                        .size(LIVE_DOT)
-                        .rounded_full()
-                        .bg(running),
-                )
-            })
     }
 
     /// The name of the conversation on screen, and everything done *to* it.

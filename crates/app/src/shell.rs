@@ -295,6 +295,9 @@ pub struct Shell {
     /// The docks' open state as last saved, so opening or closing one
     /// schedules a save.
     docks_saved: Option<crate::chat::DocksOpen>,
+    /// Whether a shell of the active project is running a command, for the
+    /// dot on the status bar's terminal toggle.
+    terminal_live: bool,
     /// A pending agent pre-start, cancelled the same way — see
     /// [`Shell::warm_default_agent`].
     _pending_warm: Option<gpui::Task<()>>,

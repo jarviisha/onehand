@@ -63,11 +63,14 @@ impl ChatPane {
                 .gap_2()
                 .h(onehand_ui::tokens::ROW_H)
                 .px_3()
-                // Set off by its fill and the composer's lift, as the card it
-                // stands on: no edge to add to its height.
+                // Edged and lifted as the card it stands on, open at its foot
+                // where the card's own edge closes it.
                 .bg(crate::theme::raised(cx))
+                .border_t_1()
+                .border_x_1()
+                .border_color(cx.theme().input)
                 .shadow(crate::theme::composer_lift(cx))
-                .rounded_t(cx.theme().radius)
+                .rounded_t(cx.theme().radius_lg)
                 .text_size(onehand_ui::tokens::CHROME_TEXT)
                 .text_color(muted)
                 .cursor_pointer()

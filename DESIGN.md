@@ -84,7 +84,7 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
 
 - **Title bar**: the app's menus, and the window's own controls where the app decorates it.
 - **Rail**: app chrome outside the dock, from the workspace bar down to *Settings*.
-- **Agent pane header**: the conversation's name, its menu and the dock buttons; chrome alone over
+- **Agent pane header**: the conversation's name, its menu and the session's controls; chrome alone over
   a page that names itself in its head.
 - **Step strip**: a run's steps under the header, while it drives the session on screen.
 - **Composer**: the input surface under the transcript, and what waits pinned above it.
@@ -99,8 +99,9 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
 
 ## Transcript
 
-- **Two sides.** The user's prompt is the one filled bubble, against the right edge. Everything
-  the agent produces starts on a shared left axis and runs bare. Nothing else is right-aligned.
+- **Two sides.** The user's prompt is the library's `Filled` bubble (the primary fill, the `2xl`
+  corner), against the right edge. Everything the agent produces starts on a shared left axis
+  across the column, as the library's ghost bubble draws it. Nothing else is right-aligned.
 - **A centred reading column**, narrowed on small panels, read at the reading size; what is
   wider scrolls inside its well. A scrollbar runs on the panel's edge down to the composer.
 - **One turn, many blocks**: prose, thoughts, plans, activity clusters (tools only), commands,
@@ -108,7 +109,9 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   permissions and questions, notices and errors, the files the turn changed,
   and, while it runs, the running line (a spinner, its clock, *N running*, what the agent says it
   is doing). A workflow's steps and an interrupted turn are notices, never prompts.
-- **Folding blocks open from one line**, the chevron first: what runs is open until done, the
+- **Folding blocks open from one line**, the chevron first, in the library's collapsible look: a
+  box on `group_box` with an edge at `radius_lg`, the line at its head and what it holds under it
+  (a cluster, a thought, a plan, a subagent, a turn's changes). What runs is open until done, the
   plan stays open, and a reader's fold wins. Long output folds and is capped, an opened cluster
   too, each saying what it holds back. Wells are filled with no edge, their text at
   `CODE_TEXT`. A finished turn ends on Copy (its closing paragraph) and how long it took, said as
@@ -128,11 +131,14 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   dialog as wide as the window allows.
 - **Calm once it is past**: a failure a later prompt has moved past keeps its words in the
   muted ink, with no fill; a settled *N failed* drops the danger ink; a refusal's badge is
-  neutral. A live failure is a solid danger wash with no edge, in the agent's words (*The turn
+  neutral. A live failure is the library's `Destructive` bubble across the column, in the agent's words (*The turn
   failed: …*), what it attached folded under *Show details* in mono; a lost agent's names the key
   that restarts it. A failed turn holds until a prompt goes out; a restart does not answer it. An
   error that failed no turn (one answering a *Stop*, a resume that fell back) is past at once.
-- **The pinned cards** (a permission, a question) share one shell: a head, the body, the
+- **The pinned cards** (a permission, a question) share one shell, in the library's alert look
+  while they wait, at `radius_lg` and lifted: a permission the warning alert (an edge and a wash
+  of the warning ink mixed into an opaque fill), a question the neutral one. Back in the history the shell
+  is neutral and flat. It holds a head, the body, the
   answers at the end at `.short()` (a hairline under the head and over the answers, padded as a box
   whose body scrolls, its cut end fading out while more lies below), the dismissing one a quiet
   ghost. A choice is a row on a well
@@ -220,7 +226,7 @@ reaches.
 |---|---|
 | `background` / `foreground` | surface and text |
 | `theme::dock_surface` | the Workbench and the terminal, a step off the reading surface |
-| `muted` / `muted_foreground` | quiet fills (the prompt bubble, every well), meta text |
+| `muted` / `muted_foreground` | quiet fills (every well), meta text |
 | `theme::meta_ink` | the middle ink: a detail beside a name, between prose and meta, contrast-tested |
 | `border` | every hairline; a box takes `input` for its edge |
 | `ring` | keyboard focus, drawn only when the keyboard moved it; the composer while a file is dragged over it |
@@ -228,15 +234,16 @@ reaches.
 | `link` | a link: the library draws it in the prose ink, underlined |
 | `info` | the library's blue: what runs |
 | `list_hover` | hover on a pickable row |
-| `primary` | the single primary action in a view |
+| `primary` | the single primary action in a view; the prompt bubble's fill, its code spans in its own ink thinned |
 | `status_ink()` | danger, warning and success text, and `closed` for what is over and settled (a closed issue) |
 | `popover` | floating surfaces |
 | `theme::raised` | the composer card |
-| `secondary` | inline code in the prompt bubble, a step off its fill; a document's code on a dock |
+| `group_box` | a folding block in the transcript |
+| `secondary` | a document's code on a dock |
 
 - Reading content is the visual anchor; rail and dock chrome remain quieter. A nested container
   inherits its surface unless it has a distinct role: well, selection or floating content.
-- Boxes are borders; wells and the bubble are fills. Ordinary sections remain unboxed. Do not
+- Boxes are borders; wells and the bubbles are fills. Ordinary sections remain unboxed. Do not
   combine a border, contrasting fill and shadow just to make a group visible.
 - Hover and selection are fills: distinct steps on a row (`list_hover`, `accent`; on the rail's side bar surface its
   own pair, `sidebar_accent` and `rail_chosen`, as a fill is a step from the surface under it), and the library's own hover on a ghost button. A secondary button rests on a fill of its own and takes
@@ -290,8 +297,9 @@ and the button confirming a removal inside its modal. Nothing that destroys noth
 danger ink.
 
 **The composer is the input surface**, a role of its own rather than a box or a field: a card
-with no edge, standing off the page on its own fill (`theme::raised`) and lift (`composer_lift`),
-showing focus by the caret alone. Its pickers (the model, the effort, the mode, *Fast*, the
+edged in `input` at `radius_lg`, standing off the page on its own fill (`theme::raised`) and lift
+(`composer_lift`), showing focus by the caret alone; what waits on it (the workers' line, the
+strip of queued and staged things) takes the same edge. Its pickers (the model, the effort, the mode, *Fast*, the
 branch) are `.short()` ghosts with a caret whatever they hold (*Fast* is its bolt alone, lit in
 the warning ink while fast, as a mode switched on is, and as a toggle opens no menu and carries none), where a picker elsewhere takes
 the secondary fill once set: each always holds a choice, and a fill on every chip would crowd

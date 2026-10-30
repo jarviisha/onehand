@@ -165,8 +165,6 @@ impl Shell {
                     E::WorkTreeTouched => shell.refresh_worktree(cx),
                     E::AgentStarted => shell.sync_agent_started(cx),
                     E::ShowRail => shell.show_rail(window, cx),
-                    // The visibility button and its shortcut preserve the selected mode.
-                    E::ToggleWorkbench => shell.toggle_workbench(window, cx),
                     E::ToggleWorkers => shell.toggle_workers(window, cx),
                     E::ShowWorker(uid) => shell.show_workers(Some(*uid), false, window, cx),
                     E::MaximizeWorkers => {
@@ -177,9 +175,6 @@ impl Shell {
                             shell.close_session(root, session, window, cx);
                         }
                     }
-                    // The key's rule, one owner: an open dock with a shell
-                    // closes, anything else opens.
-                    E::ToggleTerminal => shell.show_terminal(window, cx),
                     // Every one of these acts on the selected project, because
                     // the page that offers them is what shows when the selected
                     // project has nothing running in it.
@@ -321,7 +316,7 @@ impl Shell {
         })
         .detach();
 
-        // The conversation header's terminal dot is a fact the docks have no
+        // The status bar's terminal dot is a fact the docks have no
         // idea anyone outside them wants. Guarded the same way and for the same
         // reason as the rail's rows above: the terminal notifies for its own
         // changes and when its watch sees a command start or end.
@@ -533,6 +528,7 @@ impl Shell {
             _pending_save: None,
             saves: Default::default(),
             docks_saved: None,
+            terminal_live: false,
             _pending_warm: None,
             git_generation: 0,
             rail_sessions: Vec::new(),

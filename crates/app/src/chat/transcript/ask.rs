@@ -52,7 +52,7 @@ pub(in crate::chat) fn ask(
     // Where the reader is in the form, in words, because the tab strip says
     // which question is open but not how many are left. No mark: the
     // permission card keeps the one mark a pinned card carries.
-    pinned_card(live, cx)
+    pinned_card(live, None, cx)
         .child(card_head(
             None,
             match &a.asker {
