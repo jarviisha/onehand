@@ -70,6 +70,9 @@ pub enum Call {
         turn: Option<u64>,
         /// The model the session runs, by the agent's own value.
         model: Option<String>,
+        /// What the session is called wherever it is listed, its spaces
+        /// collapsed.
+        name: Option<String>,
     },
     SessionState {
         session: String,
@@ -340,6 +343,10 @@ fn catalogue() -> Vec<Value> {
                                         from a session's agent",
                     },
                     "model": text("The model the session runs, by the agent's own value"),
+                    "name": text(
+                        "A short name saying the session's job, shown wherever it is listed, \
+                         at most 40 characters; for a session's agent only"
+                    ),
                 }),
                 &["project", "agent"],
             ),
@@ -504,7 +511,7 @@ fn parse(name: &str, arguments: &Value) -> Result<Call, String> {
         "list_issues" => &["project"],
         "create_issue" => &["project", "title", "body"],
         "open_session" => &[
-            "project", "agent", "prompt", "dirs", "request", "turn", "model",
+            "project", "agent", "prompt", "dirs", "request", "turn", "model", "name",
         ],
         "read_workflow" => &["workflow"],
         "save_workflow" => &["toml"],
@@ -583,6 +590,13 @@ fn parse(name: &str, arguments: &Value) -> Result<Call, String> {
                 ),
             },
             model: optional("model")?,
+            name: optional("name")?
+                .map(|name| name.split_whitespace().collect::<Vec<_>>().join(" "))
+                .map(|name| match name.chars().count() {
+                    ..=NAME_MAX => Ok(name),
+                    _ => Err(format!("`name` must be at most {NAME_MAX} characters")),
+                })
+                .transpose()?,
         },
         "session_state" => Call::SessionState {
             session: required("session")?,
@@ -602,6 +616,9 @@ fn parse(name: &str, arguments: &Value) -> Result<Call, String> {
         _ => return Err(format!("no tool named `{name}`")),
     })
 }
+
+/// The longest name a session may be given, so a rail row still shows it.
+const NAME_MAX: usize = 40;
 
 /// A list of folder paths, as `dirs` takes it: absent is none.
 fn folders(value: Option<&Value>) -> Result<Vec<PathBuf>, String> {

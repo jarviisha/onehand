@@ -272,10 +272,14 @@ impl Chat {
             .and_then(summarize_title)
     }
 
-    /// The title shown throughout the UI: an explicit rename wins, otherwise
-    /// use the compact task label derived from the first prompt.
+    /// The title shown throughout the UI: an explicit rename wins, then the
+    /// stand-in, otherwise the compact task label derived from the first
+    /// prompt.
     pub fn conversation_title(&self) -> Option<String> {
-        self.custom_title.clone().or_else(|| self.derived_title())
+        self.custom_title
+            .clone()
+            .or_else(|| self.stand_in_title.clone())
+            .or_else(|| self.derived_title())
     }
 
     /// Commit a user-entered title. Whitespace is normalized so a value pasted

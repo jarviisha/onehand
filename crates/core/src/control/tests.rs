@@ -98,6 +98,7 @@ fn every_tool_parses_its_input() {
             request: None,
             turn: None,
             model: None,
+            name: None,
         }
     );
     assert_eq!(
@@ -113,6 +114,7 @@ fn every_tool_parses_its_input() {
             request: None,
             turn: None,
             model: None,
+            name: None,
         }
     );
     assert_eq!(
@@ -128,6 +130,7 @@ fn every_tool_parses_its_input() {
             request: None,
             turn: None,
             model: None,
+            name: None,
         }
     );
     assert_eq!(
@@ -144,6 +147,23 @@ fn every_tool_parses_its_input() {
             request: Some("a-1".into()),
             turn: Some(3),
             model: Some("strong".into()),
+            name: None,
+        }
+    );
+    assert_eq!(
+        performs(
+            "open_session",
+            json!({"project": "/wt", "agent": "Claude", "name": "  a ·  review #265 "})
+        ),
+        Call::OpenSession {
+            project: "/wt".into(),
+            agent: "Claude".into(),
+            prompt: None,
+            dirs: Vec::new(),
+            request: None,
+            turn: None,
+            model: None,
+            name: Some("a · review #265".into()),
         }
     );
 }
@@ -191,6 +211,21 @@ fn every_tool_refuses_malformed_input() {
             "open_session",
             json!({"project": "app", "agent": "Claude", "model": 3}),
             "model",
+        ),
+        (
+            "open_session",
+            json!({"project": "app", "agent": "Claude", "name": "   "}),
+            "name",
+        ),
+        (
+            "open_session",
+            json!({"project": "app", "agent": "Claude", "name": 3}),
+            "name",
+        ),
+        (
+            "open_session",
+            json!({"project": "app", "agent": "Claude", "name": "x".repeat(41)}),
+            "`name` must be at most 40 characters",
         ),
         ("list_agents", json!({"extra": 1}), "extra"),
     ];

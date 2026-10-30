@@ -120,6 +120,11 @@ pub struct Chat {
     /// User-chosen conversation title. `None` keeps automatic title generation
     /// from the first prompt; persisted independently so Reset can restore it.
     pub custom_title: Option<String>,
+    /// The title shown when nobody named the conversation, ahead of the one
+    /// taken from the first prompt: a worker's folder, whose prompt is its
+    /// lead's instructions and says nothing of which worker it is. Never
+    /// saved, so Reset comes back to it while it lasts.
+    pub stand_in_title: Option<String>,
     /// Last activity (epoch secs): bumped on every applied agent event and on
     /// each submitted prompt, seeded from the archive's `updated` on resume.
     /// Drives the rail session row's relative-time label. Runtime-only.
