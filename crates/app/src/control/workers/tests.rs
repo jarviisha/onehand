@@ -1,5 +1,5 @@
 use super::Reservations;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[test]
 fn a_reserved_folder_refuses_a_second_open() {
@@ -240,4 +240,27 @@ fn a_sibling_with_a_common_prefix_is_free() {
     let mut held = Reservations::default();
     held.take(Path::new("/repo")).unwrap();
     assert!(held.take(Path::new("/repo2")).is_ok());
+}
+
+/// Any window's session on the worker's folder, or on a folder inside it,
+/// refuses the open; one holding the worker's folder (a lead in the main
+/// checkout, its worktrees beneath) does not.
+#[test]
+fn sessions_on_the_folder_or_inside_it_refuse() {
+    use super::sessions_in;
+    let roots = vec![
+        (PathBuf::from("/repo"), PathBuf::from("/repo"), 1),
+        (PathBuf::from("/repo/sub"), PathBuf::from("/repo/sub"), 1),
+        (PathBuf::from("/other"), PathBuf::from("/other"), 2),
+        (
+            PathBuf::from("/repo/empty"),
+            PathBuf::from("/repo/empty"),
+            0,
+        ),
+    ];
+    assert_eq!(
+        sessions_in(Path::new("/repo"), &roots),
+        vec![PathBuf::from("/repo"), PathBuf::from("/repo/sub")]
+    );
+    assert!(sessions_in(Path::new("/repo/.worktrees/a"), &roots).is_empty());
 }

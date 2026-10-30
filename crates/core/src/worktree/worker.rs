@@ -33,7 +33,11 @@ pub fn repo_of_blocking(dir: &Path) -> Result<Option<Repo>, String> {
         return Err(format!("{} is not a folder", dir.display()));
     }
     let mut asked = git(dir);
-    asked.args(["rev-parse", "--show-toplevel", "--git-common-dir"]);
+    // git's own words in English, whatever the person's language: "no
+    // checkout" is read from them.
+    asked
+        .env("LC_ALL", "C")
+        .args(["rev-parse", "--show-toplevel", "--git-common-dir"]);
     let out = output_within(&mut asked, LOCAL_LIMIT)
         .map_err(|why| format!("git could not be run in {}: {why}", dir.display()))?;
     if !out.status.success() {

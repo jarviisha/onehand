@@ -28,7 +28,7 @@ pub struct Held {
 
 /// The worker's state, one fact per line.
 pub fn state(chat: &Chat, held: &Held) -> String {
-    let person = chat.prompts_sent > held.sent;
+    let person = chat.prompted_since(held.sent);
     let lines = [
         format!("link: {}", link(chat)),
         format!("turn: {}", turn(chat)),

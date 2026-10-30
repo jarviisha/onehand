@@ -158,3 +158,32 @@ fn the_person_holding_refuses_the_cancel() {
     let why = cancel(&chat, &last).unwrap_err();
     assert!(why.contains("person"), "{why}");
 }
+
+/// A working subagent's card outlives the turn: the cancel is refused as a
+/// card waiting, never as "no turn".
+#[test]
+fn a_subagent_s_card_after_the_turn_refuses_the_cancel() {
+    let (mut chat, _rx) = connected();
+    assert!(chat.submit("go", &[]));
+    chat.apply(AcpEvent::SubagentSpawned {
+        id: "c1".into(),
+        name: "Explorer".into(),
+        task: "read".into(),
+    });
+    chat.apply(AcpEvent::Permission(PermissionRequest {
+        rpc_id: serde_json::Value::from(9),
+        tool_call_id: None,
+        kind: ToolKind::Execute,
+        child: Some("c1".into()),
+        title: "cargo test".into(),
+        options: vec![],
+    }));
+    ended(&mut chat);
+    let last = Last {
+        turn: Some(1),
+        text: Some("go".into()),
+        sent: chat.prompts_sent,
+    };
+    let why = cancel(&chat, &last).unwrap_err();
+    assert!(why.contains("card"), "{why}");
+}

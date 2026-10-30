@@ -36,8 +36,9 @@ struct Entry {
 }
 
 /// Every process of this user working inside `folder`, but those in `skip`
-/// and the children of `onehand`, this process: what it starts there itself
-/// (a `git status`, an editor) is its own, never an earlier run's worker.
+/// and the children of `onehand`, this process: what it starts itself (its
+/// agents, a `git status`, an editor) is its own, never an earlier run's
+/// worker, and its agents' sessions are the caller's to check by folder.
 /// Blocking.
 pub fn occupants_blocking(folder: &Path, skip: &[u32], onehand: u32) -> Occupants {
     match table() {

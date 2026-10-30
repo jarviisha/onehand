@@ -5,7 +5,7 @@
 use super::sessions;
 use super::state::{Found, find};
 use gpui::App;
-use onehand_core::control::turns::{self, Last, Send};
+use onehand_core::control::turns::{self, Last};
 use std::path::PathBuf;
 
 /// Give the worker `session` names turn `turn`, `text`.
@@ -30,8 +30,8 @@ pub(in crate::control) fn send(
         sent: relation.sent,
     };
     match turns::send(&worker.read(cx).chat, &last, turn, text)? {
-        Send::AlreadySent(turn) => Ok(format!("turn {turn} already sent")),
-        Send::Go => {
+        turns::Send::AlreadySent(turn) => Ok(format!("turn {turn} already sent")),
+        turns::Send::Go => {
             if !worker.update(cx, |worker, cx| worker.submit(text, &[], cx)) {
                 return Err("the prompt was not accepted".to_string());
             }

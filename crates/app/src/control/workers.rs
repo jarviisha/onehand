@@ -164,6 +164,14 @@ pub(super) fn open(
         .chain(shell.read(cx).shell_pids(cx))
         .collect();
     let roots: Vec<PathBuf> = projects.iter().map(|(_, path)| path.clone()).collect();
+    // Every window's projects, to find a session on the folder or inside it.
+    let everywhere: Vec<PathBuf> = crate::state::Shared::global(cx)
+        .windows
+        .iter()
+        .filter_map(|window| window.shell.upgrade())
+        .flat_map(|shell| shell.read(cx).roots_with_sessions())
+        .map(|(path, _)| path)
+        .collect();
     let home = std::env::var_os("HOME").map(PathBuf::from);
     let dirs = open.dirs.clone();
     let shell = shell.downgrade();
@@ -171,7 +179,9 @@ pub(super) fn open(
     cx.spawn(async move |cx| {
         let resolved = cx
             .background_executor()
-            .spawn(async move { resolve_blocking(target, &roots, &dirs, home.as_deref(), &skip) })
+            .spawn(async move {
+                resolve_blocking(target, &roots, &everywhere, &dirs, home.as_deref(), &skip)
+            })
             .await;
         let started = match resolved {
             // The window may have closed while the folder was read.
@@ -256,6 +266,9 @@ struct Resolved {
     /// What the worker may write besides its folder.
     dirs: Vec<PathBuf>,
     occupants: Occupants,
+    /// Every window's project, by the path the window knows it by and its
+    /// canonical one.
+    canonical: Vec<(PathBuf, PathBuf)>,
 }
 
 /// Check the folder and the further folders, and read what works in it.
@@ -263,6 +276,7 @@ struct Resolved {
 fn resolve_blocking(
     target: Target,
     roots: &[PathBuf],
+    everywhere: &[PathBuf],
     dirs: &[PathBuf],
     home: Option<&Path>,
     skip: &[u32],
@@ -292,11 +306,16 @@ fn resolve_blocking(
         .filter(|root| std::fs::canonicalize(root).is_ok_and(|real| real == repo.top))
         .cloned()
         .collect();
+    let canonical = everywhere
+        .iter()
+        .filter_map(|root| Some((root.clone(), std::fs::canonicalize(root).ok()?)))
+        .collect();
     let root = match &target {
         Target::Project(path) => path.clone(),
         Target::Worktree(_) => same.first().cloned().unwrap_or_else(|| repo.top.clone()),
     };
     Ok(Resolved {
+        canonical,
         occupants: occupants::occupants_blocking(&repo.top, skip, std::process::id()),
         dirs: worker::worker_dirs(&repo, writable),
         folder: repo.top,
@@ -329,11 +348,25 @@ fn finish(
     if !opening::lead_here(caller.0, cx) {
         return Err("the lead went before its worker was ready".to_string());
     }
-    let taken = shell.read(cx).roots_with_sessions();
-    if let Some((root, _)) = taken
+    let counts: Vec<(PathBuf, usize)> = crate::state::Shared::global(cx)
+        .windows
         .iter()
-        .find(|(root, count)| *count > 0 && resolved.same.contains(root))
-    {
+        .filter_map(|window| window.shell.upgrade())
+        .flat_map(|shell| shell.read(cx).roots_with_sessions())
+        .collect();
+    let roots: Vec<(PathBuf, PathBuf, usize)> = resolved
+        .canonical
+        .iter()
+        .map(|(path, real)| {
+            let count = counts
+                .iter()
+                .filter(|(root, _)| root == path)
+                .map(|(_, count)| count)
+                .sum();
+            (path.clone(), real.clone(), count)
+        })
+        .collect();
+    if let Some(root) = sessions_in(&resolved.folder, &roots).first() {
         return Err(format!(
             "{} already has a session open on it; a worker never shares its folder",
             root.display()
@@ -391,6 +424,18 @@ fn finish(
             Err(why)
         }
     }
+}
+
+/// The roots of `roots` (as the window knows it, canonical, sessions open)
+/// with a session on `folder` or on a folder inside it: a worker would share
+/// their files. A root holding `folder` does not count: a lead in the main
+/// checkout with its workers' worktrees beneath it is the usual layout.
+fn sessions_in(folder: &Path, roots: &[(PathBuf, PathBuf, usize)]) -> Vec<PathBuf> {
+    roots
+        .iter()
+        .filter(|(_, real, count)| *count > 0 && real.starts_with(folder))
+        .map(|(path, _, _)| path.clone())
+        .collect()
 }
 
 /// Start `spec` on `dir` off screen, within the caller's cap; the first

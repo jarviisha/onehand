@@ -150,13 +150,15 @@ is refused, naming each.
   folder holding it or the repository's main checkout. The first that fails refuses the call,
   naming it as given and as resolved. The answer names them. A session with any never takes the
   warm adapter, which opened its session without them, and a restart of its agent sends them again.
-- **One worker per folder.** A folder another session of the window is open on is refused. So is
-  one a worker is opening or open on, or a folder inside it or holding it, which are the same
-  files: it is reserved, by its canonical path, in the same update that checks it, until the open
+- **One worker per folder.** A folder a session of any window is open on, or one holding such a
+  session's folder, is refused; a session's folder holding the worker's (a lead in the main
+  checkout, its workers' worktrees beneath) is not. So is a folder a worker is opening or open
+  on, or a folder inside it or holding it, which are the same files: it is reserved, by its canonical path, in the same update that checks it, until the open
   fails or the worker closes.
 - **Nothing else working in it.** Every process of the user is read for one whose directory is in
-  the folder (`/proc` on Linux, `lsof` elsewhere), leaving out onehand itself, what it starts
-  there itself (a `git status`, an editor) and its terminal's shells: an earlier run's worker,
+  the folder (`/proc` on Linux, `lsof` elsewhere), leaving out onehand itself, everything it
+  starts itself (its agents, whose sessions are checked by folder above, a `git status`, an
+  editor) and its terminal's shells: an earlier run's worker,
   left by a crash, is what this finds. Any found refuses the
   open, naming each by pid and command; a process whose directory could not be read for any
   other reason than being gone, or than the system refusing it to its own user (a process it may

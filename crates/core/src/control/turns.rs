@@ -67,7 +67,7 @@ pub fn cancel(chat: &Chat, last: &Last) -> Result<u64, String> {
 
 /// Refused once a prompt of the person's has gone since the lead's last.
 fn held_by_lead(chat: &Chat, last: &Last) -> Result<(), String> {
-    match chat.prompts_sent > last.sent {
+    match chat.prompted_since(last.sent) {
         true => Err(
             "the person holds this worker: they have prompted it since your last turn".to_string(),
         ),

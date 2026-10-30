@@ -605,6 +605,13 @@ impl Chat {
         }
     }
 
+    /// Whether a prompt went out beyond the first `sent`: what a lead reads
+    /// as its worker taken over by a person. Unlike [`Self::prompted_beyond`],
+    /// a prompt waiting in the queue does not count until it is sent.
+    pub fn prompted_since(&self, sent: usize) -> bool {
+        self.prompts_sent > sent
+    }
+
     /// Whether somebody other than whatever sent `sent` prompts has put one
     /// into this session: any more went out, or one waits behind the turn.
     /// Either came from the composer or the remote bridge, so a person is
