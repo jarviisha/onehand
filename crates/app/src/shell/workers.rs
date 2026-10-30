@@ -100,8 +100,8 @@ impl Shell {
         });
     }
 
-    /// Show the region, at worker `at` when one is named, with the caret in
-    /// its composer when `caret`. In the Workbench's place: a caret in the
+    /// Show the region, at worker `at` picked when one is named, with the
+    /// caret on the list when `caret`. In the Workbench's place: a caret in the
     /// Workbench goes to the lead's composer first, and the region takes
     /// none unless asked.
     pub(super) fn show_workers(

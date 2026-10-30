@@ -7,7 +7,7 @@
 //! a rule: the edge's press is kept from the pane, which would take focus.
 //! The keyboard's way to the workers is the region's list.
 
-use super::workers::{WORKER_ROW_H, step, urgency};
+use super::workers::{WORKER_ROW_H, urgency};
 use super::{ChatPane, ChatPaneEvent, SessionSignal};
 use gpui::{
     Context, FocusHandle, InteractiveElement, IntoElement, MouseButton, ParentElement,
@@ -16,8 +16,6 @@ use gpui::{
 use gpui_component::{ActiveTheme as _, Icon, IconName, Sizable as _, StyledExt as _};
 use std::collections::HashMap;
 use std::time::Instant;
-
-gpui::actions!(workers_deck, [DeckUp, DeckDown, DeckOpen, DeckFold]);
 
 /// The deck's own state.
 pub(super) struct Deck {
@@ -206,24 +204,6 @@ impl ChatPane {
             .shadow(crate::theme::composer_lift(cx))
             .rounded_t(cx.theme().radius)
             .text_size(onehand_ui::tokens::CHROME_TEXT)
-            .track_focus(&self.deck.focus)
-            .key_context("WorkersDeck")
-            .on_action(cx.listener(|pane: &mut Self, _: &DeckUp, _, cx| {
-                let len = pane.lead_workers().len();
-                pane.deck.row = step(pane.deck.row, len, false);
-                cx.notify();
-            }))
-            .on_action(cx.listener(|pane: &mut Self, _: &DeckDown, _, cx| {
-                let len = pane.lead_workers().len();
-                pane.deck.row = step(pane.deck.row, len, true);
-                cx.notify();
-            }))
-            .on_action(cx.listener(|pane: &mut Self, _: &DeckOpen, _, cx| {
-                pane.deck_open_row(cx);
-            }))
-            .on_action(cx.listener(|pane: &mut Self, _: &DeckFold, window, cx| {
-                pane.fold_deck(window, cx);
-            }))
             // A wheel over the open deck scrolls nothing under it.
             .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
             .child(edge)

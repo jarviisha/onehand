@@ -233,38 +233,6 @@ pub const COMMANDS: &[Command] = &[
         "Workers' list"
     ),
     command!(
-        "workers_deck_up",
-        "Move to the worker above",
-        ["up"],
-        crate::chat::pane::DeckUp,
-        "WorkersDeck && !Input && !Dialog",
-        "Workers deck"
-    ),
-    command!(
-        "workers_deck_down",
-        "Move to the worker below",
-        ["down"],
-        crate::chat::pane::DeckDown,
-        "WorkersDeck && !Input && !Dialog",
-        "Workers deck"
-    ),
-    command!(
-        "workers_deck_open",
-        "Open the worker in the workers' region",
-        ["enter"],
-        crate::chat::pane::DeckOpen,
-        "WorkersDeck && !Input && !Dialog",
-        "Workers deck"
-    ),
-    command!(
-        "workers_deck_fold",
-        "Fold the workers' deck",
-        ["escape"],
-        crate::chat::pane::DeckFold,
-        "WorkersDeck && !Input && !Dialog",
-        "Workers deck"
-    ),
-    command!(
         "rail_open",
         "Open the session, or fold the project",
         ["enter"],

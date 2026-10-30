@@ -92,7 +92,8 @@ impl ChatPane {
     }
 
     /// The keys' move along the list: the row above or below picked, the
-    /// caret staying on the list.
+    /// caret staying on the list. The order stands: rows moving under the
+    /// keys would send the next press somewhere the person did not aim.
     fn step_pick(&mut self, down: bool, window: &mut Window, cx: &mut Context<Self>) {
         let order = &self.workers.order;
         let at = self
@@ -101,7 +102,7 @@ impl ChatPane {
             .and_then(|picked| order.iter().position(|uid| *uid == picked))
             .unwrap_or(0);
         if let Some(&uid) = order.get(step(at, order.len(), down)) {
-            self.open_worker(uid, true, window, cx);
+            self.pick(uid, window, cx);
         }
     }
 

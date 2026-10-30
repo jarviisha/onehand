@@ -86,9 +86,10 @@ impl Render for Shell {
                 cx.listener(|shell: &mut Self, _: &ShowWorkers, window, cx| {
                     shell.show_workers(None, false, window, cx);
                     if shell.workers_open(cx) {
-                        shell
-                            .chat
-                            .update(cx, |pane, cx| pane.focus_workers_list(window, cx));
+                        shell.chat.update(cx, |pane, cx| {
+                            pane.workers_shown(cx);
+                            pane.focus_workers_list(window, cx);
+                        });
                     }
                 }),
             )

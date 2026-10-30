@@ -52,3 +52,12 @@ fn a_new_worker_joins_the_end_and_a_gone_one_leaves() {
     let now = [(1, None), (3, None), (4, Some(Failed))];
     assert_eq!(ordered(&[3, 2, 1], &now, false), vec![3, 1, 4]);
 }
+
+#[test]
+fn the_keys_step_and_stop_at_the_ends() {
+    use super::list::step;
+    assert_eq!(step(0, 3, true), 1);
+    assert_eq!(step(2, 3, true), 2);
+    assert_eq!(step(0, 3, false), 0);
+    assert_eq!(step(2, 3, false), 1);
+}

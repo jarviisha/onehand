@@ -192,15 +192,17 @@ height (its dragged height kept).
   - **The list**, pinned under the strip and never scrolled away: a row per worker, at most four
     (the cap), as the deck draws them, the picked one in the selected step. Ordered by urgency
     (failed or disconnected, needs input, running or connecting, done, idle; ties as the lead
-    opened them) when the region opens and when a worker is picked; in between a row that changes
-    state changes in place and does not move. A worker starting to wait moves nothing, picks
+    opened them) when the region opens and when a worker is picked by a press or from elsewhere;
+    in between, and while `↑`/`↓` walk it, a row that changes state changes in place and does not
+    move. A worker starting to wait moves nothing, picks
     nothing and opens nothing: its row turns to *Needs input* with the command under it.
   - **The picked worker's detail** fills the rest, the most urgent picked when the region opens.
     Its head: its state mark (a spinner while it connects, with nothing under it yet), name, the
     state's word in its ink, its folder's last component (the whole path on hover), *held by you*
     while the person holds it, *Write to <name>…* (the name up to its first ` · `), *Stop* while
     a turn runs, and `⋯` (*Give back to the lead* while offered, *Send the last prompt again* after
-    a failure, *Close*). Under it the oldest card it waits on, then its whole transcript,
+    a failure, *Close*). Under it the oldest card it waits on, with how many more wait, bounded by
+    the detail's own height, then its whole transcript,
     scrolling, following the newest output. No composer until *Write to …*: then one at the foot,
     with *Send*, *Stop* and *Queue* and nothing else; sending or `Esc` closes it, the draft kept.
   - **The keys.** Opened by the pointer the region takes no caret. *Show the workers*

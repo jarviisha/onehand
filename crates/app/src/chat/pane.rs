@@ -39,7 +39,6 @@ mod sessions;
 mod step_strip;
 mod titles;
 mod workers;
-pub use deck::{DeckDown, DeckFold, DeckOpen, DeckUp};
 pub use events::{ChatPaneEvent, ProjectAction, Restart, SessionSignal};
 use header::Archives;
 pub use pages::PageKind;
@@ -435,7 +434,7 @@ impl ChatPane {
                 git: None,
                 composer_h: Default::default(),
                 composer_drawn: false,
-                workers: workers::Workers::new(cx.focus_handle()),
+                workers: workers::Workers::new(cx.focus_handle(), cx.focus_handle()),
                 deck: deck::Deck::new(cx.focus_handle()),
                 turn_began: None,
                 ticker: None,

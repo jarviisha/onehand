@@ -15,7 +15,7 @@
 mod detail;
 mod list;
 
-pub(super) use list::{WORKER_ROW_H, step};
+pub(super) use list::WORKER_ROW_H;
 pub use list::{WorkersBack, WorkersDown, WorkersUp, WorkersWrite};
 
 use super::{ChatPane, ChatPaneEvent, SessionSignal};
@@ -24,15 +24,17 @@ use crate::control::Worker;
 use crate::controls::Named as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, Context, Entity, FocusHandle, IntoElement, ParentElement, Styled, Subscription, Window,
-    div,
+    App, Context, Entity, FocusHandle, IntoElement, ParentElement, Pixels, Styled, Subscription,
+    Window, div,
 };
 use gpui::{AppContext as _, Focusable as _};
 use gpui_component::input::InputEvent;
 use gpui_component::{ActiveTheme as _, IconName, StyledExt as _};
 use onehand_core::chat::Link;
+use std::cell::Cell;
 use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 /// What the region holds beyond what the conversations do.
 pub(super) struct Workers {
@@ -52,10 +54,17 @@ pub(super) struct Workers {
     composers: HashMap<u64, (Entity<Composer>, [Subscription; 2])>,
     /// The list's, for its keys.
     focus: FocusHandle,
+    /// The detail's, so a caret anywhere in it (its composer, its card) is
+    /// known when the detail goes to another worker.
+    detail_focus: FocusHandle,
+    /// How tall the detail measured last frame: what its card is bounded
+    /// against. Its own height, which the card does not change, unlike the
+    /// transcript's under the card.
+    detail_height: Rc<Cell<Pixels>>,
 }
 
 impl Workers {
-    pub(super) fn new(focus: FocusHandle) -> Self {
+    pub(super) fn new(focus: FocusHandle, detail_focus: FocusHandle) -> Self {
         Self {
             picked: None,
             order: Vec::new(),
@@ -64,6 +73,8 @@ impl Workers {
             writing: None,
             composers: HashMap::new(),
             focus,
+            detail_focus,
+            detail_height: Rc::default(),
         }
     }
 }
@@ -126,12 +137,24 @@ impl ChatPane {
             .collect()
     }
 
-    /// The region is coming on screen: its list is ordered afresh and the
-    /// most urgent worker picked.
+    /// The region is coming on screen, or asked for again: its list is
+    /// ordered afresh and the most urgent worker picked.
     pub fn workers_shown(&mut self, cx: &mut Context<Self>) {
+        self.follow_lead();
         self.workers.refresh = true;
         self.workers.picked = None;
         cx.notify();
+    }
+
+    /// The region drawn for the lead on screen from here on: a lead it was
+    /// not drawn for starts afresh, no composer open.
+    fn follow_lead(&mut self) {
+        if self.workers.lead != self.active {
+            self.workers.lead = self.active;
+            self.workers.refresh = true;
+            self.workers.picked = None;
+            self.workers.writing = None;
+        }
     }
 
     /// Pick worker `uid`, ordering the list afresh, and put the caret on the
@@ -144,10 +167,7 @@ impl ChatPane {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.workers.picked != Some(uid) {
-            self.close_writing(window, cx);
-        }
-        self.workers.picked = Some(uid);
+        self.pick(uid, window, cx);
         self.workers.refresh = true;
         if caret {
             self.workers.focus.focus(window, cx);
@@ -155,8 +175,24 @@ impl ChatPane {
         cx.notify();
     }
 
-    /// The caret on the list: the keys' way in. Only once the region is
-    /// drawn, so the focus lands in the frame.
+    /// Pick worker `uid` without ordering the list again. A caret in the
+    /// detail of the one picked before goes to the list first: that detail
+    /// leaves the frame, and a focused element leaving it takes the keymap.
+    fn pick(&mut self, uid: u64, window: &mut Window, cx: &mut Context<Self>) {
+        self.follow_lead();
+        if self.workers.picked == Some(uid) {
+            return;
+        }
+        self.close_writing(window, cx);
+        if self.workers.detail_focus.contains_focused(window, cx) {
+            self.workers.focus.focus(window, cx);
+        }
+        self.workers.picked = Some(uid);
+        cx.notify();
+    }
+
+    /// The caret on the list: the keys' way in. The list is drawn by the
+    /// next frame, before any key reaches it.
     pub fn focus_workers_list(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.workers.focus.focus(window, cx);
         cx.notify();
@@ -211,6 +247,20 @@ impl ChatPane {
         };
         if self.workers.picked.is_some_and(|uid| !still(self, uid)) {
             self.workers.picked = None;
+            // A caret in its detail, a card's say, would leave the frame with
+            // it: to the list, which stays.
+            let (detail, list, window) = (
+                self.workers.detail_focus.clone(),
+                self.workers.focus.clone(),
+                self.window,
+            );
+            cx.defer(move |cx| {
+                let _ = window.update(cx, |_, window, cx| {
+                    if detail.contains_focused(window, cx) {
+                        list.focus(window, cx);
+                    }
+                });
+            });
         }
         if self.workers.writing.is_some_and(|uid| !still(self, uid)) {
             self.workers.writing = None;
@@ -373,11 +423,7 @@ impl ChatPane {
     ) -> gpui::AnyElement {
         let workers = self.lead_workers();
         // Another lead's workers are ordered afresh, its most urgent picked.
-        if self.workers.lead != self.active {
-            self.workers.lead = self.active;
-            self.workers.refresh = true;
-            self.workers.picked = None;
-        }
+        self.follow_lead();
         let now: Vec<(u64, Option<SessionSignal>)> = workers
             .iter()
             .map(|worker| (worker.uid, self.signal(worker.uid, cx)))

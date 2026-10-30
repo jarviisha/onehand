@@ -111,7 +111,7 @@ impl RenderOnce for CommandBlock {
                     // padding, because the scrollbar lays itself out in the
                     // block's content box, and a gutter of padding there moved
                     // the scrollbar in with the text rather than clear of it.
-                    .map(|area| match overflows {
+                    .map(|area| match open && overflows {
                         true => area.pr(SCROLLBAR_W),
                         false => area.pr_3(),
                     })

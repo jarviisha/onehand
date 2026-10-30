@@ -33,11 +33,22 @@ impl ChatPane {
         // A worker coming up has nothing to show yet but that it is coming.
         let connecting = !self.worker_ready(uid, cx);
         let head = self.worker_head(worker, connecting, cx);
+        let measure = self.workers.detail_height.clone();
         let detail = div()
             .id(("worker-detail", uid))
+            .relative()
             .v_flex()
             .flex_1()
             .min_h_0()
+            .track_focus(&self.workers.detail_focus)
+            .child(
+                gpui::canvas(
+                    move |bounds, _, _| measure.set(bounds.size.height),
+                    |_, _: (), _, _| {},
+                )
+                .absolute()
+                .size_full(),
+            )
             .child(head);
         let session = self.session_of(uid).cloned();
         let Some(session) = session.filter(|_| !connecting) else {
@@ -75,10 +86,12 @@ impl ChatPane {
         let idle = composer
             .as_ref()
             .is_some_and(|composer| super::super::body::composer_idle(composer, window, cx));
-        // Bounded by the window, not by the transcript under it, whose
-        // height is what the card leaves: bounded by that, the two would
+        // Bounded by the detail's own height, not the transcript's under it,
+        // which is what the card leaves: bounded by that, the two would
         // shrink each other frame by frame.
-        let cards = Self::cards(&session, None, idle, window, cx);
+        let height = self.workers.detail_height.get();
+        let bound = (height > px(0.)).then_some(height);
+        let cards = Self::cards(&session, bound, idle, window, cx);
         let card = composer.map(|composer| {
             let blocked = {
                 let composer = composer.read(cx);
@@ -93,11 +106,11 @@ impl ChatPane {
         });
         let inset = |el: gpui::Div| el.px_3().pb_2();
         detail
-            // The oldest card it waits on first, where the eye lands.
+            // The oldest card it waits on first, where the eye lands, and how
+            // many more wait after it.
             .children(
                 cards
                     .into_iter()
-                    .take(1)
                     .map(|card| inset(div().pt_2()).child(card)),
             )
             .child(
@@ -257,6 +270,11 @@ impl ChatPane {
                         .secondary()
                         .short()
                         .label(short)
+                        .named_with_action(
+                            "Write to this worker",
+                            &super::WorkersWrite,
+                            Some("WorkersList"),
+                        )
                         .on_click(cx.listener(move |pane: &mut Self, _, window, cx| {
                             pane.write_to(uid, window, cx);
                         })),
