@@ -85,7 +85,7 @@ fn a_relative_path_is_refused() {
 #[test]
 fn writable_refuses_the_root_home_and_the_worktree() {
     let (main, wt) = repo_with_worktree("refuse");
-    let repo = repo_of_blocking(&wt).unwrap();
+    let repo = repo_of_blocking(&wt).unwrap().unwrap();
     let base = wt.parent().unwrap().to_path_buf();
     let home = std::env::temp_dir().join(format!("onehand-worker-home-{}", std::process::id()));
     std::fs::create_dir_all(&home).unwrap();
@@ -110,7 +110,7 @@ fn writable_refuses_the_root_home_and_the_worktree() {
 #[test]
 fn writable_refuses_through_a_symlink() {
     let (_, wt) = repo_with_worktree("alias");
-    let repo = repo_of_blocking(&wt).unwrap();
+    let repo = repo_of_blocking(&wt).unwrap().unwrap();
     let outside =
         std::env::temp_dir().join(format!("onehand-worker-alias-link-{}", std::process::id()));
     let _ = std::fs::remove_file(&outside);
@@ -123,7 +123,7 @@ fn writable_refuses_through_a_symlink() {
 #[test]
 fn writable_keeps_an_outside_folder_canonical() {
     let (_, wt) = repo_with_worktree("keep");
-    let repo = repo_of_blocking(&wt).unwrap();
+    let repo = repo_of_blocking(&wt).unwrap().unwrap();
     let run = std::env::temp_dir().join(format!("onehand-worker-run-{}", std::process::id()));
     std::fs::create_dir_all(&run).unwrap();
     let kept = writable_blocking(&[run.join("."), run.clone()], &repo, None).unwrap();
@@ -133,7 +133,7 @@ fn writable_keeps_an_outside_folder_canonical() {
 #[test]
 fn worker_dirs_put_the_common_git_first_for_a_linked_worktree() {
     let (main, wt) = repo_with_worktree("first");
-    let repo = repo_of_blocking(&wt).unwrap();
+    let repo = repo_of_blocking(&wt).unwrap().unwrap();
     let run = PathBuf::from("/run-folder");
     assert_eq!(
         worker_dirs(&repo, vec![run.clone()]),
@@ -144,6 +144,23 @@ fn worker_dirs_put_the_common_git_first_for_a_linked_worktree() {
 #[test]
 fn worker_dirs_add_nothing_for_the_main_checkout() {
     let (main, _) = repo_with_worktree("plain");
-    let repo = repo_of_blocking(&main).unwrap();
+    let repo = repo_of_blocking(&main).unwrap().unwrap();
     assert!(worker_dirs(&repo, Vec::new()).is_empty());
+}
+
+#[test]
+fn a_plain_folder_is_no_checkout() {
+    let plain = std::env::temp_dir().join(format!("onehand-worker-plain-{}", std::process::id()));
+    std::fs::create_dir_all(&plain).unwrap();
+    assert_eq!(repo_of_blocking(&plain), Ok(None));
+}
+
+/// git failing to answer is not "no checkout": a folder it cannot even
+/// enter is an error, said as one.
+#[test]
+fn a_missing_folder_is_an_error() {
+    let missing =
+        std::env::temp_dir().join(format!("onehand-worker-missing-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&missing);
+    assert!(repo_of_blocking(&missing).is_err());
 }

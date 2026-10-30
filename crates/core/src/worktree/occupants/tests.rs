@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 fn at(pid: u32, command: &str, cwd: &str) -> Entry {
     Entry {
         pid,
+        parent: Some(1),
         command: command.to_string(),
         cwd: Ok(PathBuf::from(cwd)),
     }
@@ -13,6 +14,7 @@ fn at(pid: u32, command: &str, cwd: &str) -> Entry {
 fn unread(pid: u32, command: &str, kind: ErrorKind) -> Entry {
     Entry {
         pid,
+        parent: Some(1),
         command: command.to_string(),
         cwd: Err(kind),
     }
@@ -23,14 +25,14 @@ const W: &str = "/w";
 #[test]
 fn none_when_every_cwd_is_elsewhere() {
     let table = [at(1, "bash", "/home"), at(2, "node", "/srv")];
-    assert_eq!(judge(Path::new(W), table, &[]), Occupants::None);
+    assert_eq!(judge(Path::new(W), table, &[], 0), Occupants::None);
 }
 
 #[test]
 fn found_names_pid_and_command() {
     let table = [at(41, "node", "/w/src"), at(2, "bash", "/home")];
     assert_eq!(
-        judge(Path::new(W), table, &[]),
+        judge(Path::new(W), table, &[], 0),
         Occupants::Found(vec!["41 node".to_string()])
     );
 }
@@ -38,13 +40,13 @@ fn found_names_pid_and_command() {
 #[test]
 fn a_skipped_pid_is_not_found() {
     let table = [at(41, "bash", "/w")];
-    assert_eq!(judge(Path::new(W), table, &[41]), Occupants::None);
+    assert_eq!(judge(Path::new(W), table, &[41], 0), Occupants::None);
 }
 
 #[test]
 fn a_process_gone_meanwhile_is_left_out() {
     let table = [unread(9, "node", ErrorKind::NotFound)];
-    assert_eq!(judge(Path::new(W), table, &[]), Occupants::None);
+    assert_eq!(judge(Path::new(W), table, &[], 0), Occupants::None);
 }
 
 /// The system hides the folder of a process it will not let even its own
@@ -56,14 +58,14 @@ fn a_process_hiding_its_folder_is_left_out() {
         unread(3302, "systemd", ErrorKind::PermissionDenied),
         at(1, "bash", "/home"),
     ];
-    assert_eq!(judge(Path::new(W), table, &[]), Occupants::None);
+    assert_eq!(judge(Path::new(W), table, &[], 0), Occupants::None);
 }
 
 #[test]
 fn an_unreadable_cwd_is_unknown_never_none() {
     let table = [unread(7, "bash", ErrorKind::Other)];
     assert_eq!(
-        judge(Path::new(W), table, &[]),
+        judge(Path::new(W), table, &[], 0),
         Occupants::Unknown(vec!["7 bash".to_string()])
     );
 }
@@ -72,7 +74,7 @@ fn an_unreadable_cwd_is_unknown_never_none() {
 fn found_wins_over_unknown() {
     let table = [unread(7, "bash", ErrorKind::Other), at(41, "node", "/w")];
     assert_eq!(
-        judge(Path::new(W), table, &[]),
+        judge(Path::new(W), table, &[], 0),
         Occupants::Found(vec!["41 node".to_string()])
     );
 }
@@ -80,12 +82,12 @@ fn found_wins_over_unknown() {
 #[test]
 fn a_sibling_with_a_common_prefix_is_not_inside() {
     let table = [at(41, "node", "/w2")];
-    assert_eq!(judge(Path::new(W), table, &[]), Occupants::None);
+    assert_eq!(judge(Path::new(W), table, &[], 0), Occupants::None);
 }
 
 #[test]
 fn parse_lsof_reads_pid_command_and_cwd() {
-    let parsed = parse_lsof("p41\ncnode\nn/w/src\np7\ncbash\nn/home\n");
+    let parsed = parse_lsof("p41\nR1\ncnode\nn/w/src\np7\nR1\ncbash\nn/home\n");
     assert_eq!(
         parsed,
         vec![at(41, "node", "/w/src"), at(7, "bash", "/home")]
@@ -96,7 +98,7 @@ fn parse_lsof_reads_pid_command_and_cwd() {
 #[test]
 fn occupants_finds_this_test_process() {
     let here = std::env::current_dir().unwrap();
-    match occupants_blocking(&here, &[]) {
+    match occupants_blocking(&here, &[], 0) {
         Occupants::Found(found) => {
             let me = format!("{} ", std::process::id());
             assert!(found.iter().any(|line| line.starts_with(&me)), "{found:?}");
@@ -112,5 +114,33 @@ fn occupants_finds_this_test_process() {
 fn an_empty_folder_has_no_occupants_here() {
     let empty = std::env::temp_dir().join(format!("onehand-occupants-{}", std::process::id()));
     std::fs::create_dir_all(&empty).unwrap();
-    assert_eq!(occupants_blocking(&empty, &[]), Occupants::None);
+    assert_eq!(occupants_blocking(&empty, &[], 0), Occupants::None);
+}
+
+/// What onehand itself starts in the folder (a `git status`, an editor) is
+/// onehand's, never an earlier run's worker.
+#[test]
+fn a_child_of_onehand_is_not_an_occupant() {
+    let mut git = at(50, "git", "/w");
+    git.parent = Some(4242);
+    assert_eq!(judge(Path::new(W), [git], &[], 4242), Occupants::None);
+}
+
+#[test]
+fn a_child_of_another_process_still_counts() {
+    let mut git = at(50, "git", "/w");
+    git.parent = Some(77);
+    assert_eq!(
+        judge(Path::new(W), [git], &[], 4242),
+        Occupants::Found(vec!["50 git".to_string()])
+    );
+}
+
+#[test]
+fn the_parent_is_read_from_proc_stat() {
+    assert_eq!(
+        parent_of_stat("123 (my (odd) name) S 4242 123 123 0"),
+        Some(4242)
+    );
+    assert_eq!(parent_of_stat("garbage"), None);
 }

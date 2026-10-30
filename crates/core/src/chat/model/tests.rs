@@ -2850,3 +2850,24 @@ fn a_merged_answer_keeps_its_latest_id() {
     assert_eq!(md.source, "abc");
     assert_eq!(md.message.as_deref(), Some("m2"));
 }
+
+/// One rule for "a person prompted since the lead's last": what was sent,
+/// not what waits in the queue.
+#[test]
+fn prompted_since_counts_what_went_not_what_waits() {
+    let (tx, _rx): (crate::acp::ReqTx, _) = tokio::sync::mpsc::unbounded_channel();
+    let mut chat = Chat::default();
+    chat.apply(AcpEvent::Connected {
+        tx,
+        resumed: false,
+        forkable: false,
+    });
+    assert!(chat.submit("lead", &[]));
+    let sent = chat.prompts_sent;
+    assert!(chat.queue("person", &[]));
+    assert!(!chat.prompted_since(sent));
+    chat.apply(AcpEvent::TurnEnded {
+        stop_reason: "end_turn".into(),
+    });
+    assert!(chat.prompted_since(sent));
+}

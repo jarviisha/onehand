@@ -32,10 +32,15 @@ pub(super) struct Reservations {
 impl Reservations {
     /// Take `folder` for an open, unless an open or a worker holds it.
     pub(super) fn take(&mut self, folder: &Path) -> Result<(), String> {
-        if self.held.contains_key(folder) {
+        // A folder inside a held one, or holding one, is the same files.
+        if let Some(held) = self
+            .held
+            .keys()
+            .find(|held| held.starts_with(folder) || folder.starts_with(held))
+        {
             return Err(format!(
                 "{} already has a worker opening or open on it",
-                folder.display()
+                held.display()
             ));
         }
         self.held.insert(folder.to_path_buf(), None);
@@ -159,6 +164,14 @@ pub(super) fn open(
         .chain(shell.read(cx).shell_pids(cx))
         .collect();
     let roots: Vec<PathBuf> = projects.iter().map(|(_, path)| path.clone()).collect();
+    // Every window's projects, to find a session on the folder or inside it.
+    let everywhere: Vec<PathBuf> = crate::state::Shared::global(cx)
+        .windows
+        .iter()
+        .filter_map(|window| window.shell.upgrade())
+        .flat_map(|shell| shell.read(cx).roots_with_sessions())
+        .map(|(path, _)| path)
+        .collect();
     let home = std::env::var_os("HOME").map(PathBuf::from);
     let dirs = open.dirs.clone();
     let shell = shell.downgrade();
@@ -166,7 +179,9 @@ pub(super) fn open(
     cx.spawn(async move |cx| {
         let resolved = cx
             .background_executor()
-            .spawn(async move { resolve_blocking(target, &roots, &dirs, home.as_deref(), &skip) })
+            .spawn(async move {
+                resolve_blocking(target, &roots, &everywhere, &dirs, home.as_deref(), &skip)
+            })
             .await;
         let started = match resolved {
             // The window may have closed while the folder was read.
@@ -251,6 +266,9 @@ struct Resolved {
     /// What the worker may write besides its folder.
     dirs: Vec<PathBuf>,
     occupants: Occupants,
+    /// Every window's project, by the path the window knows it by and its
+    /// canonical one.
+    canonical: Vec<(PathBuf, PathBuf)>,
 }
 
 /// Check the folder and the further folders, and read what works in it.
@@ -258,6 +276,7 @@ struct Resolved {
 fn resolve_blocking(
     target: Target,
     roots: &[PathBuf],
+    everywhere: &[PathBuf],
     dirs: &[PathBuf],
     home: Option<&Path>,
     skip: &[u32],
@@ -267,16 +286,18 @@ fn resolve_blocking(
         Target::Project(path) => {
             let top =
                 std::fs::canonicalize(path).map_err(|why| format!("{}: {why}", path.display()))?;
-            // A project that is no checkout is its own folder and nothing more.
-            worker::repo_of_blocking(&top)
-                .map(|repo| Repo {
+            // A project that is no checkout is its own folder and nothing
+            // more; git failing to say refuses the open in its words.
+            match worker::repo_of_blocking(&top)? {
+                Some(repo) => Repo {
                     top: top.clone(),
                     ..repo
-                })
-                .unwrap_or_else(|_| Repo {
+                },
+                None => Repo {
                     common: top.join(".git"),
                     top,
-                })
+                },
+            }
         }
     };
     let writable = worker::writable_blocking(dirs, &repo, home)?;
@@ -285,12 +306,17 @@ fn resolve_blocking(
         .filter(|root| std::fs::canonicalize(root).is_ok_and(|real| real == repo.top))
         .cloned()
         .collect();
+    let canonical = everywhere
+        .iter()
+        .filter_map(|root| Some((root.clone(), std::fs::canonicalize(root).ok()?)))
+        .collect();
     let root = match &target {
         Target::Project(path) => path.clone(),
         Target::Worktree(_) => same.first().cloned().unwrap_or_else(|| repo.top.clone()),
     };
     Ok(Resolved {
-        occupants: occupants::occupants_blocking(&repo.top, skip),
+        canonical,
+        occupants: occupants::occupants_blocking(&repo.top, skip, std::process::id()),
         dirs: worker::worker_dirs(&repo, writable),
         folder: repo.top,
         root,
@@ -322,11 +348,25 @@ fn finish(
     if !opening::lead_here(caller.0, cx) {
         return Err("the lead went before its worker was ready".to_string());
     }
-    let taken = shell.read(cx).roots_with_sessions();
-    if let Some((root, _)) = taken
+    let counts: Vec<(PathBuf, usize)> = crate::state::Shared::global(cx)
+        .windows
         .iter()
-        .find(|(root, count)| *count > 0 && resolved.same.contains(root))
-    {
+        .filter_map(|window| window.shell.upgrade())
+        .flat_map(|shell| shell.read(cx).roots_with_sessions())
+        .collect();
+    let roots: Vec<(PathBuf, PathBuf, usize)> = resolved
+        .canonical
+        .iter()
+        .map(|(path, real)| {
+            let count = counts
+                .iter()
+                .filter(|(root, _)| root == path)
+                .map(|(_, count)| count)
+                .sum();
+            (path.clone(), real.clone(), count)
+        })
+        .collect();
+    if let Some(root) = sessions_in(&resolved.folder, &roots).first() {
         return Err(format!(
             "{} already has a session open on it; a worker never shares its folder",
             root.display()
@@ -384,6 +424,18 @@ fn finish(
             Err(why)
         }
     }
+}
+
+/// The roots of `roots` (as the window knows it, canonical, sessions open)
+/// with a session on `folder` or on a folder inside it: a worker would share
+/// their files. A root holding `folder` does not count: a lead in the main
+/// checkout with its workers' worktrees beneath it is the usual layout.
+fn sessions_in(folder: &Path, roots: &[(PathBuf, PathBuf, usize)]) -> Vec<PathBuf> {
+    roots
+        .iter()
+        .filter(|(_, real, count)| *count > 0 && real.starts_with(folder))
+        .map(|(path, _, _)| path.clone())
+        .collect()
 }
 
 /// Start `spec` on `dir` off screen, within the caller's cap; the first
@@ -489,6 +541,7 @@ fn send_when_connected(session: Entity<ChatSession>, prompt: String, cx: &mut Ap
 mod opening;
 pub(super) mod requests;
 pub(super) mod state;
+pub(super) mod turns;
 
 #[cfg(test)]
 mod tests;

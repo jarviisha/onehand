@@ -660,6 +660,12 @@ fn perform_now(
             Ok(format!("Opened {} in the Workbench", path.display()))
         }
         Call::SessionState { session } => workers::state::answer(caller, &session, cx),
+        Call::SendPrompt {
+            session,
+            text,
+            turn,
+        } => workers::turns::send(caller, &session, &text, turn, cx),
+        Call::CancelTurn { session } => workers::turns::cancel(caller, &session, cx),
         Call::OpenSession {
             project,
             agent,
