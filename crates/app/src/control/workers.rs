@@ -416,9 +416,10 @@ fn finish(
     ) {
         Ok((uid, session)) => {
             sessions().reserved.bind(&resolved.folder, uid);
-            // Named for its job, else for its folder, never for its prompt,
-            // which is the lead's instructions. No conversation file exists
-            // yet; the first turn's end writes the given name with the rest.
+            // Named for what it works on, else for its folder, never for its
+            // prompt, which is the lead's instructions. No conversation file
+            // exists yet; the first turn's end writes the given name with the
+            // rest.
             let folder = resolved.root.file_name().map_or_else(
                 || resolved.root.display().to_string(),
                 |last| last.to_string_lossy().into_owned(),

@@ -344,7 +344,7 @@ fn catalogue() -> Vec<Value> {
                     },
                     "model": text("The model the session runs, by the agent's own value"),
                     "name": text(
-                        "A short name saying the session's job, shown wherever it is listed, \
+                        "A short name saying what the session works on, shown wherever it is listed, \
                          at most 40 characters; for a session's agent only"
                     ),
                 }),

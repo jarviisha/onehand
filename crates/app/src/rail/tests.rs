@@ -24,12 +24,14 @@ fn seed() -> Vec<Item> {
         title: title.into(),
         agent: "claude".into(),
         signal,
+        workers: None,
         since: since(age),
         age,
         background: 0,
         subagents: 0,
         in_turn: false,
         lead: None,
+        waiting: 0,
     };
     vec![
         s(0, 0, 1, "Inspect dashboard", Some(AwaitingUser), 4),
@@ -116,21 +118,24 @@ fn attention_counts_input_failures_and_lost_agents() {
 #[test]
 fn the_meta_line_keeps_one_order() {
     use SessionSignal::*;
-    assert_eq!(meta(Some(Busy), 0, 0, "claude", 1), "Running · claude · 1m");
     assert_eq!(
-        meta(Some(AwaitingUser), 0, 0, "claude", 4),
+        meta(Some(Busy), 0, 0, 0, "claude", 1),
+        "Running · claude · 1m"
+    );
+    assert_eq!(
+        meta(Some(AwaitingUser), 0, 0, 0, "claude", 4),
         "Needs input · claude · waiting 4m"
     );
     assert_eq!(
-        meta(Some(Failed), 0, 0, "codex", 25),
+        meta(Some(Failed), 0, 0, 0, "codex", 25),
         "Failed · codex · 25m"
     );
     assert_eq!(
-        meta(Some(Lost), 0, 0, "codex", 0),
+        meta(Some(Lost), 0, 0, 0, "codex", 0),
         "Disconnected · codex · now"
     );
     assert_eq!(
-        meta(None, 0, 0, "claude", 2 * 60 * 24),
+        meta(None, 0, 0, 0, "claude", 2 * 60 * 24),
         "Idle · claude · 2d"
     );
 }
@@ -139,24 +144,30 @@ fn the_meta_line_keeps_one_order() {
 fn meta_counts_background_work() {
     use SessionSignal::*;
     assert_eq!(
-        meta(Some(Busy), 2, 0, "Claude Code", 1),
+        meta(Some(Busy), 2, 0, 0, "Claude Code", 1),
         "Running · 2 in background · Claude Code · 1m"
     );
-    assert_eq!(meta(Some(Busy), 0, 0, "claude", 1), "Running · claude · 1m");
+    assert_eq!(
+        meta(Some(Busy), 0, 0, 0, "claude", 1),
+        "Running · claude · 1m"
+    );
 }
 
 #[test]
 fn meta_counts_subagents() {
     use SessionSignal::*;
     assert_eq!(
-        meta(Some(Busy), 0, 2, "Claude Code", 1),
+        meta(Some(Busy), 0, 2, 0, "Claude Code", 1),
         "Running · 2 subagents · Claude Code · 1m"
     );
     assert_eq!(
-        meta(Some(Busy), 1, 1, "Claude Code", 1),
+        meta(Some(Busy), 1, 1, 0, "Claude Code", 1),
         "Running · 1 in background · 1 subagent · Claude Code · 1m"
     );
-    assert_eq!(meta(Some(Busy), 0, 0, "claude", 1), "Running · claude · 1m");
+    assert_eq!(
+        meta(Some(Busy), 0, 0, 0, "claude", 1),
+        "Running · claude · 1m"
+    );
 }
 
 #[test]
@@ -311,12 +322,14 @@ fn a_group_past_the_cap_says_how_many_more_until_shown_whole() {
             title: format!("session {i}"),
             agent: "claude".into(),
             signal: None,
+            workers: None,
             since: since(0),
             age: 0,
             background: 0,
             subagents: 0,
             in_turn: false,
             lead: None,
+            waiting: 0,
         })
         .collect();
     let capped = rows(&many, &shape(Filter::ByProject, "", &|_| true, &|_| false));
@@ -574,12 +587,14 @@ fn with_workers() -> Vec<Item> {
         title: "Worker".into(),
         agent: "claude".into(),
         signal: Some(SessionSignal::Failed),
+        workers: None,
         since: since(3),
         age: 3,
         background: 0,
         subagents: 0,
         in_turn: false,
         lead: Some(1),
+        waiting: 0,
     });
     items
 }
@@ -591,11 +606,62 @@ fn a_worker_of_an_open_lead_is_not_listed() {
 }
 
 #[test]
-fn the_lead_row_takes_its_most_urgent_worker() {
+fn the_lead_row_keeps_its_own_state_and_counts_its_waiting_workers() {
     let folded = fold_workers(with_workers());
     let lead = folded.iter().find(|i| i.uid == 1).unwrap();
-    assert_eq!(lead.signal, Some(SessionSignal::Failed));
-    assert_eq!(lead.age, 3, "the age of the worker whose state it is");
+    assert_eq!(lead.signal, Some(SessionSignal::AwaitingUser));
+    assert_eq!(lead.age, 4, "its own age, not a worker's");
+    assert_eq!(lead.rolled(), Some(SessionSignal::Failed));
+    assert_eq!(
+        lead.waiting, 1,
+        "the failed worker; the running one waits on nobody"
+    );
+}
+
+#[test]
+fn meta_counts_waiting_workers() {
+    assert_eq!(
+        meta(None, 0, 0, 2, "claude", 60),
+        "Idle · 2 workers need you · claude · 1h"
+    );
+    assert_eq!(
+        meta(None, 0, 0, 1, "claude", 60),
+        "Idle · 1 worker needs you · claude · 1h"
+    );
+}
+
+#[test]
+fn the_waiting_ink_lands_on_the_count_for_every_state() {
+    use super::model::{waiting_span, workers_said};
+    use SessionSignal::*;
+    for signal in [
+        None,
+        Some(Busy),
+        Some(AwaitingUser),
+        Some(Failed),
+        Some(Lost),
+        Some(UnseenTurn),
+    ] {
+        for waiting in [1, 3] {
+            let line = meta(signal, 2, 1, waiting, "claude", 5);
+            let span = waiting_span(signal, waiting).unwrap();
+            assert_eq!(line[span].to_string(), workers_said(waiting).unwrap());
+        }
+        assert_eq!(waiting_span(signal, 0), None);
+    }
+}
+
+#[test]
+fn a_folded_project_shows_an_idle_lead_s_waiting_worker() {
+    let mut items = seed();
+    items[0].signal = None;
+    items[1].lead = Some(1);
+    items[1].signal = Some(SessionSignal::AwaitingUser);
+    items[2].signal = None;
+    assert_eq!(
+        badge(&fold_workers(items), 0),
+        Some(SessionSignal::AwaitingUser)
+    );
 }
 
 #[test]
@@ -606,6 +672,7 @@ fn a_lead_more_urgent_than_its_workers_keeps_its_own() {
     let folded = fold_workers(items);
     assert_eq!(folded[0].signal, Some(SessionSignal::Lost));
     assert_eq!(folded[0].age, 4);
+    assert_eq!(folded[0].waiting, 0);
 }
 
 /// Counted before the fold: a waiting worker needs attention even unlisted.

@@ -228,15 +228,29 @@ pub(super) fn session_row(
     let (name_ink, meta_ink) = row_inks(chosen, cx);
     let group = SharedString::from(format!("rail-session-{uid}"));
     let title = SharedString::from(item.title.clone());
-    let facts = SharedString::from(meta(signal, item.background, item.subagents, who, item.age));
-    // The state's word leads the line, so its ink runs over its own bytes.
-    let words = StyledText::new(facts.clone()).with_highlights(word_ink(signal, cx).map(|ink| {
-        let color = HighlightStyle {
-            color: Some(ink),
-            ..HighlightStyle::default()
-        };
-        (0..super::model::word(signal).len(), color)
-    }));
+    let facts = SharedString::from(meta(
+        signal,
+        item.background,
+        item.subagents,
+        item.waiting,
+        who,
+        item.age,
+    ));
+    let ink = |color| HighlightStyle {
+        color: Some(color),
+        ..HighlightStyle::default()
+    };
+    // The state's word leads the line, so its ink runs over its own bytes; a
+    // lead's waiting workers follow it, in the ink of waiting on the person.
+    let word_end = super::model::word(signal).len();
+    let waiting = super::model::waiting_span(signal, item.waiting)
+        .map(|span| (span, ink(crate::theme::status_ink(cx).warning)));
+    let words = StyledText::new(facts.clone()).with_highlights(
+        word_ink(signal, cx)
+            .map(|color| (0..word_end, ink(color)))
+            .into_iter()
+            .chain(waiting),
+    );
     let (shell, hover) = (cx.entity().downgrade(), hover_fill(cx));
     let label = SharedString::from(format!(
         "{}: {}",
