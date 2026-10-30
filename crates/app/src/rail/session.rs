@@ -290,7 +290,8 @@ pub(super) fn session_row(
                         .tooltip(onehand_ui::tip(move |window, cx| {
                             Tooltip::new(tip.clone()).build(window, cx)
                         }))
-                        .text_color(name_ink),
+                        .text_color(name_ink)
+                        .when(chosen, |name| name.font_medium()),
                 )
                 .child(on_hover(
                     &group,

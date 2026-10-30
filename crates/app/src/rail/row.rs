@@ -39,30 +39,33 @@ pub(super) fn hover_fill(cx: &App) -> Hsla {
 }
 
 /// The fill of the row that is chosen, the session on screen or the project
-/// whose page shows, one step past the hover.
+/// whose page shows: the hover's own step, as the library's sidebar marks its
+/// active item, told from a hovered row by its weight.
 pub(super) fn chosen_fill(cx: &App) -> Hsla {
     crate::theme::rail_chosen(cx)
 }
 
-/// A page's row, the rail's and Settings' nav alike: while its page shows,
-/// the chosen fill in the ink paired with it; otherwise muted at rest, the
-/// hover fill under the pointer and its ink unchanged.
+/// A page's row, the rail's and Settings' nav alike, as the library's sidebar
+/// draws an item: while its page shows, the chosen fill in the ink paired
+/// with it and at medium weight; otherwise the sidebar's ink at rest and the
+/// hover fill under the pointer.
 pub(crate) fn page_fill<E: Styled + InteractiveElement>(row: E, on: bool, cx: &App) -> E {
     match on {
         true => row
             .bg(chosen_fill(cx))
-            .text_color(cx.theme().sidebar_accent_foreground),
+            .text_color(cx.theme().sidebar_accent_foreground)
+            .font_weight(gpui::FontWeight::MEDIUM),
         false => {
             let hover = hover_fill(cx);
             row.hover(move |row| row.bg(hover))
-                .text_color(cx.theme().muted_foreground)
+                .text_color(cx.theme().sidebar_foreground)
         }
     }
 }
 
-/// The inks a row writes its name and its meta line in. At rest the rail is
-/// navigation, every row of it in the muted ink, and hovering one changes its
-/// fill alone. The chosen row is where the person is: its name in the ink
+/// The inks a row writes its name and its meta line in, as the library's
+/// sidebar letters an item: the name in the sidebar's ink and the meta line
+/// muted under it. The chosen row is where the person is: its name in the ink
 /// paired with its fill, and its meta line the step between that and muted,
 /// so the line stays a step under the name there too.
 pub(super) fn row_inks(chosen: bool, cx: &App) -> (Hsla, Hsla) {
@@ -72,7 +75,7 @@ pub(super) fn row_inks(chosen: bool, cx: &App) -> (Hsla, Hsla) {
             let ink = cx.theme().sidebar_accent_foreground;
             (ink, onehand_ui::middle_ink(ink, muted))
         }
-        false => (muted, muted),
+        false => (cx.theme().sidebar_foreground, muted),
     }
 }
 

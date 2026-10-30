@@ -42,7 +42,7 @@ Helpers:
 | `middle_ink(full, meta)` | the same step under another full ink: on a fill, under that fill's paired ink | `crates/ui/src/ink.rs` |
 | `hue_ink(base, cx)` | a hue tempered for ink: code inside prose | `crates/app/src/theme.rs` |
 | `raised(cx)` | the composer card's fill: the page's | `crates/app/src/theme.rs` |
-| `inset(cx)` | the rail's search; a badge in the rail: the page's fill | `crates/app/src/theme.rs` |
+| `inset(cx)` | a badge in the rail: the page's fill | `crates/app/src/theme.rs` |
 | `rail_chosen(cx)` | the rail's chosen row | `crates/app/src/theme.rs` |
 | `floating_well(cx)` | a well on a floating card, the command a pinned permission asks to run: the library's `muted` | `crates/app/src/theme.rs` |
 
@@ -53,7 +53,7 @@ neutral ones, for text on a neutral surface:
 |---|---|---|
 | Full | `cx.theme().foreground` | yes |
 | Middle | `meta_ink(cx)`; on a fill, `middle_ink(pair, muted_foreground)` | yes |
-| Muted | `cx.theme().muted_foreground`, which the rail's names take too | yes |
+| Muted | `cx.theme().muted_foreground`, which a rail row's second line takes | yes |
 
 Text on a fill takes the ink paired with it:
 

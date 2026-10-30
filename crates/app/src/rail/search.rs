@@ -13,23 +13,16 @@ use gpui::{Anchor, Context, IntoElement, ParentElement, Styled, div};
 use gpui_component::menu::DropdownMenu as _;
 use gpui_component::{ActiveTheme, Icon, Selectable as _, Sizable as _, StyledExt};
 
-/// The search field: borderless, with the key that reaches it from anywhere.
-///
-/// With no edge it needs a fill to be found by, so the field takes the ramp's
-/// inset step, VS Code's input fill on its side bar, so it reads as a place to
-/// type into rather than one more row.
+/// The search field, the library's edged field, with the key that reaches it
+/// from anywhere.
 pub(super) fn search_field(state: &RailState, cx: &Context<Shell>) -> impl IntoElement + use<> {
-    div().flex_1().min_w_0().child(
-        search_input(&state.search, cx)
-            .short()
-            // No edge at rest, but one to turn the ring ink on focus.
-            .border_color(crate::theme::inset(cx))
-            .bg(crate::theme::inset(cx))
-            .when_some(
-                crate::keymap::first_key("focus_rail_search", cx),
-                |input, key| input.suffix(gpui_component::kbd::Kbd::new(key)),
-            ),
-    )
+    div()
+        .flex_1()
+        .min_w_0()
+        .child(search_input(&state.search, cx).short().when_some(
+            crate::keymap::first_key("focus_rail_search", cx),
+            |input, key| input.suffix(gpui_component::kbd::Kbd::new(key)),
+        ))
 }
 
 /// *Sessions*, how many wait on the person, and the filter: a label line over
@@ -63,7 +56,7 @@ pub(super) fn sessions_header(
         .border_b_1()
         .border_color(cx.theme().border)
         .text_xs()
-        .child(div().text_color(muted).child("Sessions"))
+        .child(div().text_color(muted).font_medium().child("Sessions"))
         .when(waiting > 0 || attention, |d| {
             let verb = if waiting == 1 { "needs" } else { "need" };
             d.child(

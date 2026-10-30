@@ -37,9 +37,12 @@ project, else the one on screen, its caret picking *Start in* or *With agent*; *
 each filled while its page shows; *Sessions* with a warning-ink *N need attention* chip (shown above zero or
 while on, toggling that filter and back) and the filter menu (*By project*, *All sessions*, *Needs
 attention*, *Recent activity*) over a hairline; the scrolling list, ending on *Add project…*; a foot
-with *Settings*, a page row like the five above, filled while it shows. Every row at rest is in the
-muted ink; the one where the person is takes its fill and the ink paired with it. A neutral badge
-sinks a step into the surface it sits on, here the inset step.
+with *Settings*, a page row like the five above, filled while it shows. The rail is drawn as the
+library's sidebar draws its items: a row's name in the sidebar's ink and its second line muted, the
+row under the pointer on the sidebar's accent fill, and the one where the person is on that fill
+too, in the ink paired with it and at medium weight. The *Sessions* label is the small muted
+heading the library gives a group. The search is the library's edged field. A neutral badge
+stands on the page's fill.
 
 *By project* lists pinned projects first, a gap between projects. A project row: the fold chevron,
 folder and name, its git line (branch, uncommitted changes, commits ahead and behind, each only

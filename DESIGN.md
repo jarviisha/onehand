@@ -167,8 +167,8 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
 - **Inks by role.** Text on a neutral surface (the reading surface, a dock, the rail, a floating
   surface, a well, the bubble) takes one of three: `foreground` for content and the current
   location; `theme::meta_ink` for a detail beside a name on its line (its folder, its number, its
-  kind); `muted_foreground`, still readable, for labels, counts, hints, placeholders and every
-  navigation row but the current one. Text on a fill takes the ink paired with that fill: a
+  kind); `muted_foreground`, still readable, for labels, counts, hints, placeholders and a row's
+  second line. Text on a fill takes the ink paired with that fill: a
   button's variant and the library's controls set their own, a selected row `accent_foreground`,
   a badge its `Tint`'s ink. Meaning takes its semantic ink: a state `status_ink()`, a link `link`,
   what runs `info`, code in prose `hue_ink`. No fourth neutral ink, and a quieter ink is a mixed

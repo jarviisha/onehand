@@ -309,7 +309,7 @@ pub fn rail(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> impl Int
         .size_full()
         .bg(cx.theme().sidebar)
         .text_size(crate::tokens::CHROME_TEXT)
-        .text_color(cx.theme().muted_foreground)
+        .text_color(cx.theme().sidebar_foreground)
         .child(workspace::workspace_bar(
             window_state.workspace.name.clone().into(),
             window_state.workspace.storage_dir.clone(),
