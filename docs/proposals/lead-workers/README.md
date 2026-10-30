@@ -2,8 +2,10 @@
 
 - Date: 2026-10-29, revised the same day after a review against the code.
 - Status: proposal. Nothing here is a requirement until a task asks for it; once a piece is built,
-  its document moves into the owning documents and leaves this folder. The contract this touches
-  is [control.md](../../control.md).
+  its document moves into the owning documents and leaves this folder. onehand's part is built:
+  [control.md](../../control.md) (*A worker*) and [screens.md](../../screens.md) (*Rail*, *Agent
+  pane header*, *Composer*, *Docks*) describe it, and [known-gaps.md](../../known-gaps.md) what it
+  leaves for later. What stays here is the skill and the optional workflow.
 - Source: a run on another repository (mmerp) on 2026-10-28, where one lead session opened three
   worker sessions through onehand's tools, approved their work stage by stage and merged three
   pull requests. The run is summarised below; the person's own notes on it are outside this repo.
@@ -41,9 +43,9 @@ and fixing the semantic conflicts git could not see.
   examined at the time.
 - **No model per worker.** All three ran the lead's model; a cheaper one for implementation could
   not be asked for.
-- **The person could not follow the workers** without opening each from the rail. onehand.md
-  section 8 moves them out of the rail, into a deck tucked behind the lead's composer and a region
-  of their own in the Workbench's place.
+- **The person could not follow the workers** without opening each from the rail. They now leave
+  the rail, into a deck tucked behind the lead's composer and a region of their own in the
+  Workbench's place.
 - **Semantic conflicts surfaced only at merge**: a new scheduled job made a job-counting test
   flaky, and one branch forbidding an edit broke two tests of another. `git merge-tree` sees lines,
   not meaning.
@@ -57,7 +59,8 @@ Three layers, each in the place that suits it:
 1. **A skill for the lead**, independent of onehand and of any one agent: the method, its
    checklists, and a small file protocol between lead and workers. See [skill.md](skill.md).
 2. **onehand as a host for workers**: a way to open a worker on a fresh worktree, a handle on it,
-   the next turn and its state; after a restart the lead opens new workers. See [onehand.md](onehand.md).
+   the next turn and its state; after a restart the lead opens new workers. Built: see
+   [control.md](../../control.md), *A worker*.
 3. **A workflow for workers**, later and optional.
 
 The rule that **no tool answers a card, a permission or an approval** stays as it is. Approval of
@@ -68,16 +71,14 @@ a tool to press *Continue*.
 
 | # | Piece | Document | Step |
 |---|---|---|---|
-| 1 | The file protocol and the lifecycle of a worker | written: the `leading-worker-agents` skill, see [skill.md](skill.md); onehand's side in [onehand.md](onehand.md) | 1 |
+| 1 | The file protocol and the lifecycle of a worker | written: the `leading-worker-agents` skill, see [skill.md](skill.md) | 1 |
 | 2 | One worker through a whole cycle on the command line, the required cases below included | done on a scratch repository, every case that applies to the command line: see [skill.md](skill.md) | 2 |
-| 3 | Opening a worker on a worktree, with the folders it may write and the mode unattended runs use; the handle, the state, the next turn, cancelling, giving back | [onehand.md](onehand.md), [spec.md](spec.md) | 3, a spec |
-| 3b | The person's view of the workers: out of the rail, a deck tucked behind the lead's composer, a region in the Workbench's place | [onehand.md](onehand.md), [spec.md](spec.md) | 3 |
-| 4 | A model per worker or per stage | per worker in [onehand.md](onehand.md) and [spec.md](spec.md), built with step 3; per stage later | 3, then 4 |
+| 3 | Opening a worker on a worktree, with the folders it may write and the mode unattended runs use; the handle, the state, the next turn, cancelling, giving back | built (#261–#265): [control.md](../../control.md) | 3 |
+| 3b | The person's view of the workers: out of the rail, a deck tucked behind the lead's composer, a region in the Workbench's place | built (#266, #268): [screens.md](../../screens.md) | 3 |
+| 4 | A model per worker or per stage | per worker built with step 3; per stage later, in [known-gaps.md](../../known-gaps.md) | 3, then 4 |
 | 5 | A *Worker under a lead* workflow | not written | 5, optional |
 
-Step 1 is written as a personal skill; step 3 has a spec, [spec.md](spec.md), whose PR 1 (the
-worktree and its folders) PR 2 (the handle and the open), PR 3 (`session_state`) and PR 4 (`send_prompt`,
-`cancel_turn`) are built.
+Step 1 is written as a personal skill; step 3, onehand's part, is built.
 
 ## Order of work
 
