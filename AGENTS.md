@@ -152,7 +152,8 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
   [docs/rules-and-gotchas.md](docs/rules-and-gotchas.md#guard-coverage).
   Match our own event enums exhaustively, without wildcard arms or partial `if let` handling.
   Each guard was added after the same mistake appeared in several places. Remove one only
-  after a probe shows a lint covers it.
+  after a probe shows a lint covers it, or when the rule it holds is dropped. No guard scans
+  the UI's visual rules: they are reviewed by hand.
 
 ## GPUI model
 
