@@ -277,8 +277,8 @@ kept while the page is left and shown again.
 
 A box groups one thing on a page: edged in a control's edge (`input`) at `radius`, on no fill,
 padded `p_3`, its parts `gap_2` apart (`card_box`). Every fill under a page read as a slab too
-heavy for it or swallowed the fields and lines drawn on it, and the hairline sits too near the
-page's fill in Dark Modern to group anything. Its title row (`card_title`) holds the title in semibold, a
+heavy for it or swallowed the fields and lines drawn on it, and the hairline is too faint to
+group anything. Its title row (`card_title`) holds the title in semibold, a
 muted count, and at most one control at the end, at a fixed height so boxes side by side line up.
 Boxes sit side by side while the measured column holds two, and stack when it does not. A box
 that opens what it shows (a card in a grid) is pressed on its body: it takes the pointer, raises

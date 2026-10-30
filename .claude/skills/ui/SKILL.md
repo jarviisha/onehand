@@ -112,7 +112,7 @@ Take the path the diff needs; neither path's evidence proves the other complete.
 1. Keep each rule with its owner: DESIGN.md visual roles and the frame, screens.md what each
    region holds, UI patterns layouts and behaviour, tokens.md and catalog.md what is built; this
    skill applies them and is never a second system. No rule rests on another product; the one
-   source the contract names is its palette's, VS Code's keys.
+   source the contract names is its palette's, the component library's own theme.
 2. Follow the changed rule through this skill, tokens.md, catalog.md, checklist.md and
    `AGENTS.md`, resolving contradictions and broken links; preserve feature behaviour unless the
    user asked otherwise, and keep target rules apart from claims about the code. Walk realistic

@@ -45,11 +45,6 @@ pub const CONTROL_H: Rems = rems(1.5);
 /// library's default one, which letters a button at the reading size.
 pub const FIELD_H: Rems = rems(1.875);
 
-/// The one corner, in pixels as the theme holds it: every box, control,
-/// field, row, well and floating surface, the library's own included, which
-/// reads it as `radius` (and `radius_lg`, set to the same).
-pub const CORNER: usize = 4;
-
 /// Where a tree row's content starts from a dock's edge, and how far each
 /// level of the tree steps in: Files and Markdown share both, so their trees
 /// stand on one axis.
@@ -91,9 +86,9 @@ pub const SCROLLBAR_W: Pixels = px(16.);
 pub const SCROLLBAR_THUMB: Pixels = px(4.);
 pub const SCROLLBAR_THUMB_ACTIVE: Pixels = px(6.);
 
-/// Chrome text: a panel's rows, boxes, forms and strips. A step under the
-/// reading size, so dense chrome holds more and reading text stands apart.
-pub const CHROME_TEXT: Rems = rems(0.8125);
+/// Chrome text: a panel's rows, boxes, forms and strips, at the library's
+/// own control size (`text_sm`), so a row and the controls in it letter alike.
+pub const CHROME_TEXT: Rems = rems(0.875);
 
 /// Text inside a small object, a step under the meta size: a plate's caption.
 /// The floor of chrome is the meta size, but what a small object holds scales

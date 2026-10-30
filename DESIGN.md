@@ -1,8 +1,8 @@
 # DESIGN.md: onehand UI contract
 
 The whole-app UI contract for `onehand`: the principles every view follows, the window's frame,
-the transcript and the visual system, as structure and behaviour, not values (the palette names
-VS Code's keys, not their values: *Colour and state*). It binds at the level written here; below
+the transcript and the visual system, as structure and behaviour, not values (the palette is the
+component library's own: *Colour and state*). It binds at the level written here; below
 it, the code and its tests decide. `docs/screens.md` says what each region holds and in what
 order, a feature's own document (`docs/tasks.md`, `docs/workflows.md`, `docs/unattended.md`) its
 screens' detail, and `docs/ui-patterns.md` the patterns every screen repeats and how they behave.
@@ -13,10 +13,10 @@ compact controls and predictable alignment. It keeps no standing exceptions: a t
 differs is a rule of the role it belongs to, written where that role is. A departure is a bug,
 put right or recorded in `docs/known-gaps.md` with its reason within the change that makes it.
 
-**The palette is VS Code's Dark Modern and Light Modern** (*Colour and state*), installed over
-gpui-component's theme at boot (`crate::theme::install`, with its contrast tests). Every colour,
+**The palette is gpui-kit's Default Light and Default Dark** (*Colour and state*), as the
+component library ships them (`crate::theme::install`, with its contrast tests). Every colour,
 radius and size is a token read at the call site (see `.claude/skills/ui/tokens.md`);
-a hex literal outside the ramp is a bug even when it looks right, as no theme switch reaches it.
+a hex literal is a bug even when it looks right, as no theme switch reaches it.
 
 ## Principles
 
@@ -144,7 +144,7 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
 | Meta, hints, counts, a small label | `.text_xs()`, in `muted_foreground` when it is meta |
 | A caption inside a small object (an attachment's plate) | `MICRO_TEXT` (11px), a step under the meta size |
 | Machine text | `CODE_TEXT`, in `mono_font_family` |
-| Chrome: a panel's rows, boxes, forms and strips, a menu's rows | `CHROME_TEXT` (13px), a step under the reading size |
+| Chrome: a panel's rows, boxes, forms and strips, a menu's rows | `CHROME_TEXT` (14px), the library's control size |
 | A control's words (`.short()`) | `.text_xs()` |
 | Reading text: the transcript, the composer's field, a document | `.text_sm()`, on the reading leading; the transcript's `TEXT` |
 | The transcript's record: activity, thoughts, notices, a card's question | a step under the reading size, the transcript's `TEXT_SM` (13px) |
@@ -178,10 +178,9 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   terminal's). Fixed chrome heights stay outside the
   zoom wrapper. A size the steps lack is a named constant (shared ones in
   `onehand_ui::tokens`, others beside their use), its reason in its doc comment.
-- **Two shapes.** What a person presses or what holds content takes `radius`, 4px
-  (`tokens::CORNER`): a control, a field, a row, a tab, a chip, a well, the bubble, a box, the
-  composer, the terminal, a floating panel, a dialog, a toast. The theme sets `radius_lg` to the
-  same, so the library's own surfaces follow. What is only read beside content is
+- **The library's corners.** What a person presses or what holds content takes `radius`, 6px:
+  a control, a field, a row, a tab, a chip, a well, a box, the terminal. A large surface takes
+  `radius_lg`, 8px: the composer, a floating panel, a dialog, a toast; the library's own follow. What is only read beside content is
   `rounded_full`: a badge (a `Tag`), a tag standing on its own, so it reads as a tag rather than a
   button (inside a line of meta text a label is written in its kind's ink instead, unframed), its words `py_1` off its edges, its edge halfway from its fill to its ink (`badge_edge`), and a dot or a status mark is `rounded_full` too. The library's small parts keep its half
   corner (*Components*). A part joined to its container's edge takes its corner there.
@@ -190,56 +189,23 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   a list page's lines across the pane and the line between Settings' groups are a step fainter
   (`faint_rule`), so a page's top ends on one line whatever its column, the edge-to-edge list reads
   as one surface, and a group's heading, not its line, says where it starts. A
-  box's edge is a step stronger, a control's edge (`input`): in Dark Modern the hairline sits too
-  near the page's fill to group anything.
+  box's edge is a step stronger, a control's edge (`input`).
 
 ## Colour and state
 
-The palette is VS Code's **Dark Modern** and **Light Modern**. Each role takes the value VS Code
-gives the key named beside it, resolved through the theme's include chain (`dark_modern.json` over
-`dark_plus.json` over `dark_vs.json`, and the light trio likewise), and for a key no theme file
-sets, the default VS Code registers in its source. The key is the value's source; `crate::theme`'s
-ramp holds the value (for the terminal, `onehand_terminal_ui::ansi`), already derived where VS
-Code derives it. This table names the key, and changes only when a role takes another. A new
-colour is the value of a VS Code key, and a colour read anywhere but through a token is a bug.
+The palette is the component library's own: gpui-kit's **Default Light** and **Default Dark**,
+as the library ships them (`default-theme.json`). `crate::theme::install` takes both configs and
+changes no colour in them, so a library part and the app's own parts read one palette. A role
+takes the library token named for it; a step no token holds is derived in `crate::theme` or
+`onehand_ui::ink` from the tokens, never written as a value. The terminal's sixteen colours are
+not the library's: they stay VS Code's (`onehand_terminal_ui::ansi`), as a program's colours are
+its own. A chart's series and a label's kind take the library's base hues.
 
-| Role | VS Code key |
-|---|---|
-| reading surface (`background`), an open tab | `editor.background`, `tab.activeBackground` |
-| prose (`foreground`), the rail's slot ink | `foreground`, `sideBar.foreground` |
-| docks, the rail, title, status and tab bars, list and table heads | `panel.background`, `sideBar.background`, `titleBar.activeBackground`, `statusBar.background`, `editorGroupHeader.tabsBackground`, `sideBarSectionHeader.background` |
-| every well, the prompt bubble (`muted`), a skeleton | `textCodeBlock.background` |
-| meta text (`muted_foreground`), an off switch, a tab's word | `descriptionForeground` (dark), `tab.inactiveForeground` |
-| a step past the well (`secondary` and its ink) | `textPreformat.background` (light: black at 12% over `editor.background`), `textPreformat.foreground` |
-| hover (`list_hover`) | `list.hoverBackground` |
-| the selected item (`accent` and its ink) | `list.activeSelectionBackground`, `list.activeSelectionForeground` |
-| the rail's hovered row (`sidebar_accent`) | `list.inactiveSelectionBackground` |
-| every hairline (`border`), the window's edge | `panel.border`, `titleBar.border` |
-| floating surfaces (`popover`) | `editorWidget.background` |
-| the composer card, the rail's search (`theme::raised`, `theme::inset`) | `input.background` |
-| a field's fill (`field_fill`) | mixed: `muted` a step toward `foreground`, so it stands off the page, a floating surface and a well alike |
-| a control's edge, a box's edge, the rail joining a workflow's steps (`input`) | `input.border` |
-| a secondary button at rest, pointed at, its word | `button.secondaryBackground` (dark: `input.background`, as Dark Modern's is transparent), `button.secondaryHoverBackground`, `button.secondaryForeground` |
-| the open tab's word | `tab.activeForeground` |
-| what runs, links (`link`, `info`), at rest, pointed at, pressed | `textLink.foreground`, `textLink.activeForeground` |
-| keyboard focus (`ring`), a dragged panel's edge | `focusBorder`, `sash.hoverBorder` |
-| where a dragged panel lands | `editorGroup.dropBackground` |
-| a dialog's backdrop | `widget.shadow` |
-| the scrollbar thumb, pointed at | `scrollbarSlider.background`, `scrollbarSlider.hoverBackground` |
-| the caret | `editorCursor.foreground` |
-| selected text (`selection`) | `editor.selectionBackground` |
-| the primary action (`primary` and its ink), pointed at and pressed, a progress bar | `button.background`, `button.hoverBackground`, `button.foreground`, `progressBar.background` |
-| danger as a fill (`danger`) | `statusBarItem.errorBackground` (dark: `errorForeground` darkened by 0.4) |
-| danger pointed at and pressed | none: the fill mixed 15% and 25% toward Light Modern's ink |
-| the status hues `status_ink()` is derived from | `errorForeground`, `editorWarning.foreground`, `testing.iconPassed` |
-| a label's kind (`magenta`, `cyan`) | `terminal.ansiMagenta`, `terminal.ansiCyan` |
-| the terminal's sixteen colours | `terminal.ansi*` |
-| a chart's series | `charts.blue`, `charts.green`, `charts.yellow`, `charts.orange`, `charts.purple`, `charts.red` |
-
-VS Code's surfaces sit closer than a stepped ramp's would: a region may be as little as 1.01 off
-what it sits on, and a hairline or a shadow says where it ends. Its status hues and its focus ring
-fall under WCAG AA on some of the surfaces they land on; those pairs are in `docs/known-gaps.md`,
-and the ramp's tests hold each at what it reaches.
+The library's surfaces are neutral greys a step apart, its primary is near black on the light
+palette and near white on the dark one, and its focus ring is a grey. On the dark palette its
+surfaces are near black, so a floating surface is told apart by its edge rather than its shadow.
+Pairs under WCAG AA are in `docs/known-gaps.md`; `crate::theme`'s tests hold each at what it
+reaches.
 
 | Token | Use |
 |---|---|
@@ -250,7 +216,8 @@ and the ramp's tests hold each at what it reaches.
 | `border` | every hairline; a box takes `input` for its edge |
 | `ring` | keyboard focus, drawn only when the keyboard moved it; the composer while a file is dragged over it |
 | `accent` | the one item selected among several (a fill, not a hue) |
-| `link` | the accent hue: what runs, and links |
+| `link` | a link: the library draws it in the prose ink, underlined |
+| `info` | the library's blue: what runs |
 | `list_hover` | hover on a pickable row |
 | `primary` | the single primary action in a view |
 | `status_ink()` | danger, warning and success text, and `closed` for what is over and settled (a closed issue) |
@@ -274,15 +241,15 @@ and the ramp's tests hold each at what it reaches.
   pinned card, a run's approval), and what it covers steps down to `secondary`.
 - Surfaces and inks are greys, so a hue on screen means something: a state, a link, a label's
   kind, focus, the primary action, or in the dark palette a selected item. A missing surface or
-  ink is a VS Code key's value added to the ramp with its contrast asserted, never a value in
-  one view; a step between two the ramp holds is mixed from them perceptually
-  (`mix_oklab`), so both modes derive it by one rule.
+  ink is derived from the library's tokens with its contrast asserted, never a value in one
+  view; a step between two tokens is mixed from them perceptually (`mix_oklab`), so both modes
+  derive it by one rule.
 
 ## Components
 
 Reuse gpui-component before building anything: `Root`, `DockArea`, `Sidebar`, `Dialog`, `Switch`,
 `InputState`, `Editor`, `TextView`, plus gpui's own `list` for the transcript. Controls go through
-the UI crate's builders, which set the pointer cursor and the one corner (`radius`): buttons through
+the UI crate's builders, which set the pointer cursor and the library's corner (`radius`): buttons through
 `action`; fields through `text_input`, `search_input` and `text_area`. **Every field has a fill
 and no edge**: a field in a form, a dialog or a page's top and a search alike stand on
 `field_fill`, a step past the well, so one shape reads as a field wherever it sits; a search adds

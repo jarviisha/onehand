@@ -9,23 +9,24 @@ and density, use [UI patterns](../../../docs/ui-patterns.md#spacing-and-density)
 
 ## Colour
 
-Read from `cx.theme()`. The ramp in `crates/app/src/theme.rs` writes them for both palettes, with
-contrast tests; the terminal's sixteen colours are `onehand_terminal_ui::ansi`. Roles, the
-palette's source and the key each role takes: `DESIGN.md`, *Colour and state*.
+Read from `cx.theme()`. They are gpui-kit's Default Light and Default Dark as the library ships
+them; `crates/app/src/theme.rs` installs them unchanged, with contrast tests. The terminal's
+sixteen colours are `onehand_terminal_ui::ansi`. Roles: `DESIGN.md`, *Colour and state*.
 
 Slot names that mislead (the library's names, kept because its own controls read them):
 
 | Slot | Holds |
 |---|---|
 | `accent`, `accent_foreground` | the selected fill and its ink: a fill, not a hue |
-| `link` (also `info`) | the accent hue: what runs, and links |
+| `link` | a link, in the prose ink |
+| `info` | the library's blue: what runs |
 | `muted` | the well's fill, and the user's bubble |
 | `secondary` | a step past the well: code inside the bubble |
 | `button_secondary`, `button_secondary_foreground` | the secondary button's own fill at rest (its pointed-at step under the pointer or pressed) and its ink |
-| `primary` | the primary action: a blue, with white on it |
+| `primary` | the primary action: near black with white on it (light), near white with black on it (dark) |
 | `danger`, `warning`, `success` | fills with white on them; their text is `status_ink(cx)` |
-| `sidebar` | the rail's fill: the side bar's grey, the docks' too, read for a dock through `dock_surface(cx)` |
-| `sidebar_accent` | the rail's hovered row; its chosen row is `rail_chosen(cx)` |
+| `sidebar` | the rail's fill, the docks' too, read for a dock through `dock_surface(cx)` |
+| `sidebar_accent` | the rail's hovered row, and its chosen row through `rail_chosen(cx)` |
 
 Helpers:
 
@@ -41,10 +42,10 @@ Helpers:
 | `meta_ink(cx)` | the middle ink: a detail beside a name, between prose and muted | `crates/ui/src/ink.rs`; the app says `crate::theme::meta_ink` |
 | `middle_ink(full, meta)` | the same step under another full ink: on a fill, under that fill's paired ink | `crates/ui/src/ink.rs` |
 | `hue_ink(base, cx)` | a hue tempered for ink: code inside prose | `crates/app/src/theme.rs` |
-| `raised(cx)` | the composer card's fill | `crates/app/src/theme.rs` |
-| `inset(cx)` | the rail's search; a badge in the rail | `crates/app/src/theme.rs` |
+| `raised(cx)` | the composer card's fill: the page's | `crates/app/src/theme.rs` |
+| `inset(cx)` | the rail's search; a badge in the rail: the page's fill | `crates/app/src/theme.rs` |
 | `rail_chosen(cx)` | the rail's chosen row | `crates/app/src/theme.rs` |
-| `floating_well(cx)` | a well on a floating card: the command a pinned permission asks to run | `crates/app/src/theme.rs` |
+| `floating_well(cx)` | a well on a floating card, the command a pinned permission asks to run: the library's `muted` | `crates/app/src/theme.rs` |
 
 Inks (roles: `DESIGN.md`, *Type, space and shape*; by place: UI patterns, *Hierarchy*). The three
 neutral ones, for text on a neutral surface:
@@ -92,7 +93,8 @@ are not steps and stay allowed. A named spacing constant (`BLOCK_GAP`, `TIGHT_GA
 |---|---|---|
 | `tokens::MICRO_TEXT` | 0.6875 | 11 |
 | `.text_xs()` | 0.75 | 12 |
-| `tokens::CODE_TEXT`, `tokens::CHROME_TEXT` | 0.8125 | 13 |
+| `tokens::CODE_TEXT` | 0.8125 | 13 |
+| `tokens::CHROME_TEXT` | 0.875 | 14 |
 | `.text_sm()` | 0.875 | 14 |
 | `.text_base()` | 1 | 16 |
 | `.text_lg()` | 1.125 | 18 |
@@ -108,12 +110,13 @@ are not steps and stay allowed. A named spacing constant (`BLOCK_GAP`, `TIGHT_GA
 
 | Write | px |
 |---|---|
-| `cx.theme().radius` | 4 (`tokens::CORNER`) |
+| `cx.theme().radius` | 6, the library's |
+| `cx.theme().radius_lg` | 8, the library's: large surfaces |
 | `.rounded_full()` | a badge, a dot, a status mark |
 
-The theme sets `radius` and `radius_lg` both to `tokens::CORNER`, so the library's tooltips, menus,
-popovers, dialogs and toasts take the one corner too. What the library draws at half its corner
-(`radius_tokens().sm`: checkboxes, `Kbd`, its tabs) comes out at 2px and is left to it. A button
+The theme leaves both at the library's values, so its tooltips, menus, popovers, dialogs and
+toasts take them. What the library draws at half its corner (`radius_tokens().sm`: checkboxes,
+`Kbd`, its tabs) comes out at 3px and is left to it. A button
 (`action`, `ButtonRounded::Medium`) and a text field (`text_input`, `search_input`, `text_area`)
 set `radius` where they are built; a `Tag` takes `rounded_full` through `badge`.
 
@@ -177,7 +180,7 @@ All in `onehand_ui::tokens` (`crates/ui/src/tokens.rs`), which the app names
 | `CONTROL_H` | 1.5rem | a small control: `.short()`, and an icon-only `.small()` button |
 | `FIELD_H` | 1.875rem | the tallest control, a step over `.short()`: a page's head and form (`.tall()`); nothing stands taller |
 | `SCROLLBAR_THUMB`, `SCROLLBAR_THUMB_ACTIVE` | 4px, 6px | a scrollbar's thumb at rest, and hovered or dragged |
-| `CHROME_TEXT` | 0.8125rem | chrome text: a panel's rows, boxes, forms and strips |
+| `CHROME_TEXT` | 0.875rem | chrome text: a panel's rows, boxes, forms and strips, at the library's control size |
 | `MICRO_TEXT` | 0.6875rem | a caption inside a small object: an attachment's plate |
 | `CODE_TEXT` | 0.8125rem | machine text |
 | `LEADING` | 1.6 | reading text |
@@ -197,11 +200,10 @@ Equal values kept apart on purpose, each one decision beside its one use: `CHAT_
 
 ## Adding a token
 
-- **A colour**: a key's value in both palettes of `Ramp` in `crates/app/src/theme.rs`, from the
-  source `DESIGN.md` names (*Colour and state*), the key beside it and a row in that table, written
-  into its slot in `paint`, its contrast asserted in that file's tests against every surface it lands on.
-  A feature crate reads it through the theme slot. A step between two the ramp holds is derived from
-  them with `mix_oklab`, as `meta_ink` and `tint` are, not written as a value of its own.
+- **A colour**: first a library token for the role. A step no token holds is derived from the
+  tokens with `mix_oklab`, as `meta_ink` and `tint` are, in `crates/app/src/theme.rs` (or
+  `onehand_ui::ink` when a feature crate needs it), its contrast asserted in that file's tests
+  against every surface it lands on; never a value of its own.
 - **A size one module uses**: a `const` of type `Rems` beside its use, its reason in its doc
   comment. A spacing value equals a step.
 - **A size a second module needs**: move the constant into `onehand_ui::tokens` in that
