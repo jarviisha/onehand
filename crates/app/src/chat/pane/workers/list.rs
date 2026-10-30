@@ -1,6 +1,5 @@
 //! The workers' list: a row per worker, pinned at the top of the region, and
-//! the keys that move along it. The deck over the lead's composer draws its
-//! rows through the same row.
+//! the keys that move along it.
 
 use super::super::ChatPane;
 use crate::chat::pane::SessionSignal;
@@ -15,7 +14,7 @@ use gpui::{
 use gpui_component::{ActiveTheme as _, StyledExt as _};
 
 /// A worker's row: its state on one line, what it does or waits on under.
-pub(in crate::chat::pane) const WORKER_ROW_H: Rems = rems(2.75);
+const WORKER_ROW_H: Rems = rems(2.75);
 
 gpui::actions!(
     workers_list,
@@ -23,7 +22,7 @@ gpui::actions!(
 );
 
 /// The row a key moves to among `len`, stopping at either end.
-pub(in crate::chat::pane) fn step(row: usize, len: usize, down: bool) -> usize {
+pub(super) fn step(row: usize, len: usize, down: bool) -> usize {
     match down {
         true => (row + 1).min(len.saturating_sub(1)),
         false => row.saturating_sub(1),
@@ -52,15 +51,7 @@ impl ChatPane {
                 let picked = self.workers.picked == Some(uid);
                 let signal = self.signal(uid, cx);
                 let age = self.worker_age(uid);
-                self.worker_row(
-                    worker,
-                    signal,
-                    age,
-                    (picked, keyed && picked),
-                    "workers-list-row",
-                    move |pane, window, cx| pane.open_worker(uid, false, window, cx),
-                    cx,
-                )
+                self.worker_row(worker, signal, age, (picked, keyed && picked), cx)
             })
             .collect();
         div()
@@ -109,17 +100,14 @@ impl ChatPane {
     /// A worker's row: its mark, name, state, age, the lead's turn and its
     /// background count, and under them the card it waits on in the warning
     /// ink, else what it is doing; *Stop* while a turn runs. `(picked,
-    /// keyed)`: filled, and ringed for the keys. A press runs `on_press` and
-    /// leaves the caret where it was.
-    #[allow(clippy::too_many_arguments)]
-    pub(in crate::chat::pane) fn worker_row(
+    /// keyed)`: filled, and ringed for the keys. A press picks it and leaves
+    /// the caret where it was.
+    fn worker_row(
         &self,
         worker: &Worker,
         signal: Option<SessionSignal>,
         age: u64,
         (picked, keyed): (bool, bool),
-        id: &'static str,
-        on_press: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let uid = worker.uid;
@@ -157,14 +145,14 @@ impl ChatPane {
             .when(keyed, |row| row.child(crate::rail::key_ring(cx)))
             .child(
                 div()
-                    .id((id, uid))
+                    .id(("workers-list-row", uid))
                     .v_flex()
                     .flex_1()
                     .min_w_0()
                     .h_full()
                     .justify_center()
                     .on_click(cx.listener(move |pane: &mut Self, _, window, cx| {
-                        on_press(pane, window, cx);
+                        pane.open_worker(uid, false, window, cx);
                     }))
                     .child(
                         div()
@@ -204,7 +192,7 @@ impl ChatPane {
             )
             .when(in_turn, |row| {
                 row.child(
-                    crate::controls::action(gpui::SharedString::from(format!("{id}-stop-{uid}")))
+                    crate::controls::action(("workers-list-stop", uid))
                         .quiet(cx)
                         .short()
                         .label("Stop")

@@ -25,11 +25,11 @@ use std::path::PathBuf;
 
 mod body;
 mod bridge;
-mod deck;
 mod events;
 mod fork;
 mod header;
 mod history;
+mod lead_strip;
 mod overlay;
 mod pages;
 mod project_page;
@@ -343,9 +343,6 @@ pub struct ChatPane {
     composer_drawn: bool,
     /// The workers' region, drawn here and mounted in a dock panel.
     workers: workers::Workers,
-    /// The deck tucked behind the composer while the lead on screen has
-    /// workers.
-    deck: deck::Deck,
     /// When the turn on screen started, and the ticker keeping its clock true.
     ///
     /// **Stamped here because the model does not carry it.** A turn's start is
@@ -435,7 +432,6 @@ impl ChatPane {
                 composer_h: Default::default(),
                 composer_drawn: false,
                 workers: workers::Workers::new(cx.focus_handle(), cx.focus_handle()),
-                deck: deck::Deck::new(cx.focus_handle()),
                 turn_began: None,
                 ticker: None,
             }
@@ -722,10 +718,6 @@ impl Render for ChatPane {
                     if pane.composer.read(cx).overlay_open() {
                         pane.composer
                             .update(cx, |composer, cx| composer.close_overlay(cx));
-                    } else if pane.deck_open() {
-                        // A deck opened by the pointer, the caret still in
-                        // the composer: Esc folds it there too.
-                        pane.press_deck(false, cx);
                     } else {
                         cx.propagate();
                     }
