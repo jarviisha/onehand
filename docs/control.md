@@ -137,8 +137,8 @@ What a session's agent gets from `open_session` beyond what an outside program d
 program naming a folder that is no project of the window, or `dirs`, `request`, `turn`, `model` or `name`,
 is refused, naming each.
 
-- **Its name**: `name`, its spaces collapsed, not empty and at most 40 characters, says the
-  worker's job. It is the worker's title wherever it is listed and the answer's `name:`, saved as
+- **Its name**: `name`, its spaces collapsed, not empty and at most 40 characters, says what
+  the worker works on. It is the worker's title wherever it is listed and the answer's `name:`, saved as
   a rename is, and a rename by the person replaces it. Without one, the worker is named for its
   folder's last component, never for its prompt, which is the lead's instructions; that name is
   not saved, and *Reset title* comes back to it while the worker stays open.

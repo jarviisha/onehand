@@ -179,12 +179,14 @@ impl List {
                     title: session::session_label(row.title.as_deref(), s.title()).to_string(),
                     agent: s.title().to_string(),
                     signal: row.signal,
+                    workers: None,
                     since: row.since,
                     age: row.since.elapsed().as_secs() / 60,
                     background: row.background,
                     subagents: row.subagents,
                     in_turn: row.in_turn,
                     lead: crate::control::lead_of(s.uid),
+                    waiting: 0,
                 }
             })
             .collect();

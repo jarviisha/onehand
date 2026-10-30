@@ -48,6 +48,8 @@ pub(super) struct Item {
     pub(super) title: String,
     pub(super) agent: String,
     pub(super) signal: Option<SessionSignal>,
+    /// For a lead, the most urgent state of its unlisted workers.
+    pub(super) workers: Option<SessionSignal>,
     /// When it took its signal, which the latest-first list sorts by.
     pub(super) since: std::time::Instant,
     /// Whole minutes since then, as the row says it.
@@ -60,6 +62,17 @@ pub(super) struct Item {
     pub(super) in_turn: bool,
     /// The lead whose worker it is, opening or open.
     pub(super) lead: Option<u64>,
+    /// For a lead, its unlisted workers waiting on the person.
+    pub(super) waiting: usize,
+}
+
+impl Item {
+    /// The most urgent state of itself and its unlisted workers: what the
+    /// attention filter and a folded project read, so a waiting worker still
+    /// shows through its lead.
+    pub(super) fn rolled(&self) -> Option<SessionSignal> {
+        SessionSignal::most_urgent(self.signal.into_iter().chain(self.workers))
+    }
 }
 
 /// A session waits on the person: an answer, or a turn or an agent that broke.
@@ -94,6 +107,7 @@ pub(super) fn meta(
     signal: Option<SessionSignal>,
     background: usize,
     subagents: usize,
+    waiting: usize,
     who: &str,
     age: u64,
 ) -> String {
@@ -103,6 +117,9 @@ pub(super) fn meta(
         _ => age,
     };
     let mut state = word(signal).to_string();
+    if let Some(said) = workers_said(waiting) {
+        state += &format!(" · {said}");
+    }
     if background > 0 {
         state += &format!(" · {background} in background");
     }
@@ -112,6 +129,15 @@ pub(super) fn meta(
         n => state += &format!(" · {n} subagents"),
     }
     format!("{state} · {who} · {age}")
+}
+
+/// A lead's waiting workers, as its row counts them; nothing for none.
+pub(super) fn workers_said(waiting: usize) -> Option<String> {
+    match waiting {
+        0 => None,
+        1 => Some("1 worker needs you".into()),
+        n => Some(format!("{n} workers need you")),
+    }
 }
 
 /// The sessions a filter and a query keep, as indices into `items`, in the
@@ -132,7 +158,7 @@ pub(super) fn visible(
                 || projects
                     .get(s.root)
                     .is_some_and(|name| name.to_lowercase().contains(&query)))
-                && (filter != Filter::NeedsAttention || needs_attention(s.signal))
+                && (filter != Filter::NeedsAttention || needs_attention(s.rolled()))
         })
         .collect();
     match filter {
@@ -144,34 +170,20 @@ pub(super) fn visible(
     out
 }
 
-/// The list without the workers of a lead it lists, each lead taking the
-/// most urgent state of itself and its workers, and the age of the one whose
-/// state that is. A worker whose lead is not listed stays, as any session.
+/// The list without the workers of a lead it lists. A lead keeps its own
+/// state on its row, so it never reads as failed for a worker that did; it
+/// counts its workers waiting on the person, and rolls up the most urgent
+/// state of itself and them for what looks past the row. A worker whose
+/// lead is not listed stays, as any session.
 pub(super) fn fold_workers(items: Vec<Item>) -> Vec<Item> {
     let listed: Vec<u64> = items.iter().map(|item| item.uid).collect();
     let (workers, mut kept): (Vec<Item>, Vec<Item>) = items
         .into_iter()
         .partition(|item| item.lead.is_some_and(|lead| listed.contains(&lead)));
     for lead in &mut kept {
-        let mine = workers.iter().filter(|w| w.lead == Some(lead.uid));
-        let Some(urgent) = SessionSignal::most_urgent(
-            std::iter::once(lead.signal)
-                .chain(mine.clone().map(|w| w.signal))
-                .flatten(),
-        ) else {
-            continue;
-        };
-        if lead.signal == Some(urgent) {
-            continue;
-        }
-        if let Some(winner) = mine
-            .filter(|w| w.signal == Some(urgent))
-            .min_by_key(|w| w.since)
-        {
-            lead.signal = winner.signal;
-            lead.since = winner.since;
-            lead.age = winner.age;
-        }
+        let mine = || workers.iter().filter(|w| w.lead == Some(lead.uid));
+        lead.waiting = mine().filter(|w| needs_attention(w.signal)).count();
+        lead.workers = SessionSignal::most_urgent(mine().filter_map(|w| w.signal));
     }
     kept
 }
@@ -199,11 +211,11 @@ pub(super) fn attention_count(items: &[Item]) -> usize {
 pub(super) fn badge(items: &[Item], root: usize) -> Option<SessionSignal> {
     let mine = || items.iter().filter(move |s| s.root == root);
     SessionSignal::most_urgent(
-        mine().filter_map(|s| s.signal.filter(|_| needs_attention(s.signal))),
+        mine().filter_map(|s| s.rolled().filter(|&state| needs_attention(Some(state)))),
     )
     .or_else(|| {
         mine()
-            .any(|s| s.signal == Some(SessionSignal::Busy))
+            .any(|s| s.rolled() == Some(SessionSignal::Busy))
             .then_some(SessionSignal::Busy)
     })
 }
