@@ -40,9 +40,10 @@ mod row;
 mod search;
 mod session;
 mod workspace;
+pub(crate) use model::{needs_attention, word};
 pub use project::{pick_item, unattended_item};
 pub(crate) use row::page_fill;
-pub(crate) use session::signal_mark;
+pub(crate) use session::{RESEND, session_label, signal_mark, status_icon, word_ink};
 pub(crate) use workspace::ellipsize_front;
 
 /// How far a session row is set in under its project: one mark's slot, the

@@ -63,7 +63,7 @@ pub(super) struct Item {
 }
 
 /// A session waits on the person: an answer, or a turn or an agent that broke.
-pub(super) fn needs_attention(signal: Option<SessionSignal>) -> bool {
+pub(crate) fn needs_attention(signal: Option<SessionSignal>) -> bool {
     matches!(
         signal,
         Some(SessionSignal::Lost | SessionSignal::Failed | SessionSignal::AwaitingUser)
@@ -72,7 +72,7 @@ pub(super) fn needs_attention(signal: Option<SessionSignal>) -> bool {
 
 /// What a session's state is called on its row; a session with no signal is
 /// idle.
-pub(super) fn word(signal: Option<SessionSignal>) -> &'static str {
+pub(crate) fn word(signal: Option<SessionSignal>) -> &'static str {
     signal.map_or("Idle", SessionSignal::word)
 }
 

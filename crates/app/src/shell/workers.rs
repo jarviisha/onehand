@@ -2,7 +2,33 @@
 //! agent pane while their lead is open, but through the lead, in the
 //! workers' region.
 
-use super::Shell;
+use super::{FocusedPanel, Shell};
+use gpui::{Context, Focusable as _, Window};
+use gpui_component::dock::{DockLayout, DockPlacement};
+
+/// Which panel the right dock holds: the Workbench, or the workers' region
+/// in its place. The two never show at once.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum RightPanel {
+    Workbench,
+    Workers,
+}
+
+/// What the region does when the lead on screen, or the page, changes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Follow {
+    Stay,
+    Close,
+}
+
+/// The region, `open`, follows the lead on screen: it stays on one with
+/// workers and closes on anything else, a page included.
+pub(super) fn follow(open: bool, page: bool, has_workers: bool) -> Follow {
+    match open && (page || !has_workers) {
+        true => Follow::Close,
+        false => Follow::Stay,
+    }
+}
 
 /// Where arriving at a session lands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -54,6 +80,132 @@ impl Shell {
                 self.window.workspace.select_session(session);
                 Some(worker)
             }
+        }
+    }
+}
+
+impl Shell {
+    /// Whether the Workbench is on screen: its dock open, holding it.
+    pub(super) fn workbench_open(&self, cx: &gpui::App) -> bool {
+        self.right == RightPanel::Workbench && self.dock.read(cx).is_dock_open(DockPlacement::Right)
+    }
+
+    /// Whether the workers' region is on screen.
+    pub(super) fn workers_open(&self, cx: &gpui::App) -> bool {
+        self.right == RightPanel::Workers && self.dock.read(cx).is_dock_open(DockPlacement::Right)
+    }
+
+    /// Put `panel` in the right dock, which keeps its size and open state.
+    fn mount_right(&mut self, panel: RightPanel, window: &mut Window, cx: &mut Context<Self>) {
+        if self.right == panel {
+            return;
+        }
+        self.right = panel;
+        let layout = match panel {
+            RightPanel::Workbench => DockLayout::tabs().panel(self.workbench.clone()),
+            RightPanel::Workers => DockLayout::tabs().panel(self.workers_panel.clone()),
+        };
+        self.dock.update(cx, |dock, cx| {
+            dock.set_dock(DockPlacement::Right, layout, window, cx)
+        });
+    }
+
+    /// Show the region, at worker `at` when one is named, with the caret in
+    /// its composer when `caret`. In the Workbench's place: a caret in the
+    /// Workbench goes to the lead's composer first, and the region takes
+    /// none unless asked.
+    pub(super) fn show_workers(
+        &mut self,
+        at: Option<u64>,
+        caret: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.page_shown(cx) || self.chat.read(cx).lead_workers().is_empty() {
+            return;
+        }
+        if self.right == RightPanel::Workbench {
+            if self.app_maximized == Some(FocusedPanel::Workbench) {
+                self.toggle_maximize_panel(FocusedPanel::Workbench, window, cx);
+            }
+            let had_focus = self.workbench.focus_handle(cx).contains_focused(window, cx);
+            if had_focus {
+                self.last_panel = FocusedPanel::Chat;
+                self.chat
+                    .update(cx, |pane, cx| pane.reclaim_focus(window, cx));
+            }
+            self.stepped_aside = false;
+            self.mount_right(RightPanel::Workers, window, cx);
+        }
+        if !self.dock.read(cx).is_dock_open(DockPlacement::Right) {
+            self.dock.update(cx, |dock, cx| {
+                dock.toggle_dock(DockPlacement::Right, window, cx)
+            });
+        }
+        if let Some(uid) = at {
+            self.chat
+                .update(cx, |pane, cx| pane.open_worker(uid, caret, window, cx));
+        }
+        cx.notify();
+    }
+
+    /// Give the Workbench its place back, the dock closed. A caret in the
+    /// region goes to the lead's composer before the region leaves.
+    pub(super) fn hide_workers(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.right != RightPanel::Workers {
+            return;
+        }
+        if self.dock.read(cx).is_dock_open(DockPlacement::Right) {
+            self.dock.update(cx, |dock, cx| {
+                dock.toggle_dock(DockPlacement::Right, window, cx)
+            });
+        }
+        self.leave_workers(window, cx);
+        cx.notify();
+    }
+
+    /// Put the Workbench back in the dock in the region's place, the dock
+    /// left as it is; true when the region was there.
+    pub(super) fn leave_workers(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if self.right != RightPanel::Workers {
+            return false;
+        }
+        if self.app_maximized == Some(FocusedPanel::Workers) {
+            self.set_app_maximized(None, cx);
+            self.dock
+                .update(cx, |dock, cx| dock.set_zoomed_out(window, cx));
+        }
+        if self
+            .workers_panel
+            .focus_handle(cx)
+            .contains_focused(window, cx)
+        {
+            self.last_panel = FocusedPanel::Chat;
+            self.chat
+                .update(cx, |pane, cx| pane.reclaim_focus(window, cx));
+        }
+        self.mount_right(RightPanel::Workbench, window, cx);
+        true
+    }
+
+    /// The header's button and the strip's hide.
+    pub(super) fn toggle_workers(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        match self.workers_open(cx) {
+            true => self.hide_workers(window, cx),
+            false => self.show_workers(None, false, window, cx),
+        }
+    }
+
+    /// Run every frame: the region closes on a lead with no workers, on a
+    /// page, and when its dock was closed by any other way.
+    pub(super) fn follow_workers(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.right != RightPanel::Workers {
+            return;
+        }
+        let has_workers = !self.chat.read(cx).lead_workers().is_empty();
+        let open = self.workers_open(cx);
+        if !open || follow(open, self.page_shown(cx), has_workers) == Follow::Close {
+            self.hide_workers(window, cx);
         }
     }
 }

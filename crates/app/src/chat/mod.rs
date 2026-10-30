@@ -21,5 +21,6 @@ pub mod pane;
 pub mod session;
 pub mod transcript;
 pub mod viewport;
+pub mod workers_panel;
 
 pub use pane::{ChatPane, DocksOpen};

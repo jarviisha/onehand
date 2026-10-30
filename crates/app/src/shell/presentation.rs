@@ -99,6 +99,14 @@ impl Shell {
                 .update(cx, |panel, cx| panel.set_fills_area(false, cx));
             return;
         }
+        // The region in the Workbench's place shares the area as it stands
+        // and never takes it whole: there is no Workbench to present.
+        if self.right == super::workers::RightPanel::Workers {
+            self.presentation = Presentation::Conversation;
+            self.workbench
+                .update(cx, |panel, cx| panel.set_fills_area(false, cx));
+            return;
+        }
         let rem = f32::from(window.rem_size());
         let dock = self.dock.read(cx);
         let avail = rems(f32::from(dock.bounds().size.width) / rem);

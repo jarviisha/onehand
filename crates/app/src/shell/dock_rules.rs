@@ -125,11 +125,13 @@ pub(super) fn addressed(
     last: super::FocusedPanel,
     terminal_open: bool,
     workbench_open: bool,
+    workers_open: bool,
 ) -> super::FocusedPanel {
     use super::FocusedPanel as P;
     match last {
         P::Terminal if !terminal_open => P::Chat,
         P::Workbench if !workbench_open => P::Chat,
+        P::Workers if !workers_open => P::Chat,
         last => last,
     }
 }

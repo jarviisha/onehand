@@ -2,7 +2,7 @@ use super::confirm::Confirm;
 use super::storage::{Thing, WorkspaceChange, pick_folder};
 use super::{Shell, WARM_DELAY};
 use crate::state::Shared;
-use gpui::{App, Context, SharedString, Window};
+use gpui::{App, Context, Focusable as _, SharedString, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::dock::DockPlacement;
 use onehand_core::gitstat;
@@ -127,7 +127,13 @@ impl Shell {
     /// The body of [`Self::show_active_session`]: every panel pointed at the
     /// active root, and the pane at its session or its project page.
     fn arrive_at_active_root(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let _worker = self.turn_to_lead();
+        let worker = self.turn_to_lead();
+        // The lead on screen changing takes the region's caret to the
+        // composer of the session now shown, before the region moves on.
+        let region_caret = self
+            .workers_panel
+            .focus_handle(cx)
+            .contains_focused(window, cx);
         // Arriving at a project is asking what is in it, so arriving opens it
         // -- and this is the one place every arrival passes through, which is
         // what the two callers that used to do it themselves could not be.
@@ -210,8 +216,17 @@ impl Shell {
             return;
         };
         self.chat.update(cx, |pane, cx| {
-            pane.show(uid, path.clone(), &spec, window, cx)
+            pane.show(uid, path.clone(), &spec, window, cx);
+            pane.release_workers(cx);
+            if region_caret {
+                pane.reclaim_focus(window, cx);
+            }
         });
+        // A worker asked for is shown in its lead's region, the caret in its
+        // block.
+        if let Some(worker) = worker {
+            self.show_workers(Some(worker), true, window, cx);
+        }
         // After `show`, which is what connects a session shown for the first
         // time — before it, a fresh session has no agent to have started.
         self.sync_agent_started(cx);
@@ -299,6 +314,7 @@ impl Shell {
         }
         self.workbench
             .update(cx, |panel, cx| panel.open_file(path, window, cx));
+        self.leave_workers(window, cx);
         // Opening a file is what makes the Workbench worth showing -- but only
         // if it is closed, since toggling an open dock would hide the file
         // just asked for.

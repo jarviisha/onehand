@@ -36,6 +36,7 @@ impl Shell {
             panel.set_storage(workspace.storage_dir.as_deref(), cx)
         });
         let terminal = TerminalPanel::new(cx);
+        let workers_panel = cx.new(|cx| crate::chat::workers_panel::WorkersPanel::new(&chat, cx));
         let issues_page = Self::new_issues_page(tell, cx);
         let workflows_page = crate::workflows_page::WorkflowsPage::new(cx);
         cx.subscribe_in(
@@ -162,6 +163,15 @@ impl Shell {
                     E::ShowRail => shell.show_rail(window, cx),
                     // The visibility button and its shortcut preserve the selected mode.
                     E::ToggleWorkbench => shell.toggle_workbench(window, cx),
+                    E::ToggleWorkers => shell.toggle_workers(window, cx),
+                    E::MaximizeWorkers => {
+                        shell.toggle_maximize_panel(FocusedPanel::Workers, window, cx)
+                    }
+                    E::CloseWorker(uid) => {
+                        if let Some((root, session)) = shell.locate(*uid) {
+                            shell.close_session(root, session, window, cx);
+                        }
+                    }
                     // The key's rule, one owner: an open dock with a shell
                     // closes, anything else opens.
                     E::ToggleTerminal => shell.show_terminal(window, cx),
@@ -497,6 +507,8 @@ impl Shell {
             dock,
             chat,
             workbench,
+            workers_panel,
+            right: super::workers::RightPanel::Workbench,
             issues_page,
             workflows_page,
             schedules_page: crate::schedules_page::SchedulesPage::new(cx),

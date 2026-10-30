@@ -176,6 +176,8 @@ pub enum FocusedPanel {
     Chat,
     Workbench,
     Terminal,
+    /// The workers' region, in the Workbench's place.
+    Workers,
 }
 
 impl FocusedPanel {
@@ -189,6 +191,7 @@ impl FocusedPanel {
             Self::Chat => "Conversation",
             Self::Workbench => "Workbench",
             Self::Terminal => "Terminal",
+            Self::Workers => "Workers",
         }
     }
 }
@@ -355,6 +358,11 @@ pub struct Shell {
     /// The right dock, kept for the same reason: switching roots swaps its
     /// tabs and its tree.
     workbench: Entity<Workbench>,
+    /// The workers' region, mounted in the right dock in the Workbench's
+    /// place while it shows.
+    workers_panel: Entity<crate::chat::workers_panel::WorkersPanel>,
+    /// Which of the two the right dock holds.
+    right: workers::RightPanel,
     /// The bottom dock. Per-root shells, so it follows the selection too.
     terminal: Entity<TerminalPanel>,
     /// The Issues page, made once so it is found as it was left whenever it

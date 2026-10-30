@@ -702,8 +702,8 @@ impl Shell {
         let live = self.dock.read(cx).is_dock_open(DockPlacement::Bottom);
         self.terminal_homes.put_away(live);
         self.set_terminal_visible(false, window, cx);
-        self.page_hid_workbench =
-            self.dock.read(cx).is_dock_open(DockPlacement::Right) || self.stepped_aside;
+        self.hide_workers(window, cx);
+        self.page_hid_workbench = self.workbench_open(cx) || self.stepped_aside;
         self.hide_workbench(window, cx);
     }
 

@@ -183,6 +183,10 @@ icons! {
         // the filter lines.
         Hand,
         Circle,
+        // The header's button to a lead's workers. The bundled set draws no
+        // people of any kind; its nearest, `bot`, already marks an agent that
+        // controls onehand.
+        Users,
         Archive,
         Square,
         ListFilter,
