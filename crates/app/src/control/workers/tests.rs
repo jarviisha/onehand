@@ -65,6 +65,7 @@ fn asked(prompt: &str) -> Asked {
         dirs: Vec::new(),
         turn: Some(1),
         model: None,
+        name: None,
     }
 }
 
@@ -114,6 +115,21 @@ fn the_same_request_with_other_arguments_is_refused() {
 }
 
 #[test]
+fn the_same_request_with_another_name_is_refused() {
+    let mut requests = Requests::default();
+    let first = Asked {
+        name: Some("a · one".into()),
+        ..asked("go")
+    };
+    requests.see(1, "a", &first).unwrap();
+    let second = Asked {
+        name: Some("a · two".into()),
+        ..asked("go")
+    };
+    assert!(requests.see(1, "a", &second).is_err());
+}
+
+#[test]
 fn requests_are_per_lead() {
     let mut requests = Requests::default();
     requests.see(1, "a", &asked("go")).unwrap();
@@ -143,10 +159,14 @@ fn an_outside_program_hears_every_worker_input_it_named() {
         request: None,
         turn: Some(1),
         model: Some("strong".into()),
+        name: Some("a".into()),
     };
     let why = super::worker_only(&open).unwrap();
     assert!(
-        why.contains("`dirs`") && why.contains("`turn`") && why.contains("`model`"),
+        why.contains("`dirs`")
+            && why.contains("`turn`")
+            && why.contains("`model`")
+            && why.contains("`name`"),
         "{why}"
     );
     assert!(!why.contains("`request`"), "{why}");
@@ -163,6 +183,7 @@ fn an_outside_program_naming_none_is_let_through() {
         request: None,
         turn: None,
         model: None,
+        name: None,
     };
     assert_eq!(super::worker_only(&open), None);
 }

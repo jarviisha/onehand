@@ -13,8 +13,9 @@ impl ChatPane {
     /// copy of it one level up in the workspace tree would have nothing that
     /// could keep it current.
     ///
-    /// `None` until a prompt exists — an unnamed conversation is the caller's
-    /// to label, and for the rail that means falling back to the agent's name.
+    /// `None` until a prompt exists, unless a worker's folder stands in — an
+    /// unnamed conversation is the caller's to label, and for the rail that
+    /// means falling back to the agent's name.
     pub fn title_for(&self, uid: u64, cx: &App) -> Option<String> {
         self.session_of(uid)?.read(cx).chat.conversation_title()
     }
@@ -96,8 +97,8 @@ impl ChatPane {
         .detach();
     }
 
-    /// Drop a custom name and go back to the title derived from the first
-    /// prompt.
+    /// Drop a custom name and go back to the automatic title: a worker's
+    /// folder, else the one derived from the first prompt.
     pub fn reset_title(&mut self, uid: u64, cx: &mut Context<Self>) {
         let Some(session) = self.session_of(uid).cloned() else {
             return;

@@ -80,6 +80,7 @@ pub(super) struct Open {
     pub(super) request: Option<String>,
     pub(super) turn: Option<u64>,
     pub(super) model: Option<String>,
+    pub(super) name: Option<String>,
 }
 
 impl Open {
@@ -92,6 +93,7 @@ impl Open {
             dirs: self.dirs.clone(),
             turn: self.turn,
             model: self.model.clone(),
+            name: self.name.clone(),
         }
     }
 }
@@ -174,6 +176,7 @@ pub(super) fn open(
         .collect();
     let home = std::env::var_os("HOME").map(PathBuf::from);
     let dirs = open.dirs.clone();
+    let name = open.name.clone();
     let shell = shell.downgrade();
     let answer = answer.take();
     cx.spawn(async move |cx| {
@@ -186,7 +189,7 @@ pub(super) fn open(
         let started = match resolved {
             // The window may have closed while the folder was read.
             Ok(resolved) => cx.update(|cx| match shell.upgrade() {
-                Some(strong) => finish(&caller, resolved, spec, &strong, cx),
+                Some(strong) => finish(&caller, resolved, spec, name, &strong, cx),
                 None => Err("the window closed".to_string()),
             }),
             Err(why) => Err(why),
@@ -232,6 +235,7 @@ fn worker_only(open: &Open) -> Option<String> {
         ("request", open.request.is_some()),
         ("turn", open.turn.is_some()),
         ("model", open.model.is_some()),
+        ("name", open.name.is_some()),
     ]
     .iter()
     .filter(|(_, named)| *named)
@@ -340,6 +344,7 @@ fn finish(
     caller: &(u64, PathBuf),
     resolved: Resolved,
     spec: onehand_core::config::AgentSpec,
+    name: Option<String>,
     shell: &Entity<Shell>,
     cx: &mut App,
 ) -> Result<Started, String> {
@@ -411,6 +416,18 @@ fn finish(
     ) {
         Ok((uid, session)) => {
             sessions().reserved.bind(&resolved.folder, uid);
+            // Named for its job, else for its folder, never for its prompt,
+            // which is the lead's instructions. No conversation file exists
+            // yet; the first turn's end writes the given name with the rest.
+            let folder = resolved.root.file_name().map_or_else(
+                || resolved.root.display().to_string(),
+                |last| last.to_string_lossy().into_owned(),
+            );
+            session.update(cx, |session, cx| {
+                session.chat.stand_in_title = Some(folder);
+                session.chat.custom_title = name;
+                cx.notify();
+            });
             Ok(Started {
                 uid,
                 session: session.downgrade(),

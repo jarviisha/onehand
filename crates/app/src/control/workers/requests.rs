@@ -19,6 +19,7 @@ pub(in crate::control) struct Asked {
     pub(in crate::control) dirs: Vec<PathBuf>,
     pub(in crate::control) turn: Option<u64>,
     pub(in crate::control) model: Option<String>,
+    pub(in crate::control) name: Option<String>,
 }
 
 /// What a request has come to.

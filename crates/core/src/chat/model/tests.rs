@@ -97,6 +97,33 @@ fn custom_title_overrides_and_reset_restores_automatic_title() {
 }
 
 #[test]
+fn a_stand_in_title_comes_before_the_prompt_and_after_a_rename() {
+    let mut chat = Chat::default();
+    chat.items
+        .push(ChatItem::User(UserMsg::text("Turn 2: write the report")));
+    chat.stand_in_title = Some("onehand-sim-b".into());
+    assert_eq!(chat.conversation_title().as_deref(), Some("onehand-sim-b"));
+
+    assert!(chat.rename("b · report r1"));
+    assert_eq!(chat.conversation_title().as_deref(), Some("b · report r1"));
+
+    chat.reset_title();
+    assert_eq!(chat.conversation_title().as_deref(), Some("onehand-sim-b"));
+}
+
+#[test]
+fn a_restart_carries_both_titles_over() {
+    let mut old = Chat::default();
+    old.stand_in_title = Some("onehand-sim-b".into());
+    old.custom_title = Some("b · report r1".into());
+    let mut fresh = Chat::default();
+    fresh.carry_titles(old.custom_title.clone(), old.stand_in_title.clone());
+    assert_eq!(fresh.custom_title.as_deref(), Some("b · report r1"));
+    fresh.reset_title();
+    assert_eq!(fresh.conversation_title().as_deref(), Some("onehand-sim-b"));
+}
+
+#[test]
 fn blank_custom_title_is_ignored() {
     let mut chat = Chat::default();
     assert!(!chat.rename("  \n\t "));

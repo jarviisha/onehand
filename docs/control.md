@@ -68,7 +68,7 @@ answer, and exits.
 |---|---|---|---|
 | `list_projects` | none | the window's projects | `name — path — check: yes/no`, one per line |
 | `list_agents` | none | the agents a session can be opened with | one name per line |
-| `open_session` | `project`, `agent`, optional `prompt`; for a session's agent, `request` (required), `turn` (required with `prompt`), optional `model` and `dirs`, and `project` may also be a worktree's top level | opens a session on the project with that agent, not shown; it appears in the rail; `prompt` is sent once the agent is up. A session's agent opens a worker: see *A worker* below | for an outside program, what it opened; for a session's agent, the worker's handle and what it runs with; or why not |
+| `open_session` | `project`, `agent`, optional `prompt`; for a session's agent, `request` (required), `turn` (required with `prompt`), optional `model`, `dirs` and `name`, and `project` may also be a worktree's top level | opens a session on the project with that agent, not shown; it appears in the rail; `prompt` is sent once the agent is up. A session's agent opens a worker: see *A worker* below | for an outside program, what it opened; for a session's agent, the worker's handle and what it runs with; or why not |
 | `list_workflows` | none | the library's workflows | `id — name`; an unreadable file says why |
 | `read_workflow` | `workflow` id | the workflow's file as TOML, a shipped one's too | the TOML, or why not |
 | `save_workflow` | `toml` | `workflow::store::save_text_blocking`: read as a file is (a key onehand does not read refuses), checked as the editor's *Save* is, and refused when another workflow has its name. It goes over the person's own file with its `id`, else into a new file: a shipped workflow is copied, never changed. The library is read again | `Saved <name> as <id>, version <n>`, or every problem, in the editor's words |
@@ -134,9 +134,14 @@ it back and says so.
 ## A worker
 
 What a session's agent gets from `open_session` beyond what an outside program does. An outside
-program naming a folder that is no project of the window, or `dirs`, `request`, `turn` or `model`,
+program naming a folder that is no project of the window, or `dirs`, `request`, `turn`, `model` or `name`,
 is refused, naming each.
 
+- **Its name**: `name`, its spaces collapsed, not empty and at most 40 characters, says the
+  worker's job. It is the worker's title wherever it is listed and the answer's `name:`, saved as
+  a rename is, and a rename by the person replaces it. Without one, the worker is named for its
+  folder's last component, never for its prompt, which is the lead's instructions; that name is
+  not saved, and *Reset title* comes back to it while the worker stays open.
 - **The folder**: a project of the window, or the top level of a git worktree of a repository one
   of the window's projects belongs to. Every path is canonicalized first (symlinks resolved),
   and the repository is told by git's common directory, read the same way from the worktree and
