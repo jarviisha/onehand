@@ -67,4 +67,4 @@ pub use tabs::{
 };
 pub use toggle::toggle;
 pub use tooltip::{put_tooltips_away, tip, tooltip_guard};
-pub use tucked::tucked;
+pub use tucked::{TUCKED_SLIDE, tucked, tucked_openness};

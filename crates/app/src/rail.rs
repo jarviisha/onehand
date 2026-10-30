@@ -97,6 +97,8 @@ impl RailState {
                     if shell.rail_shown() {
                         cx.notify();
                     }
+                    // The deck behind the composer says ages too.
+                    shell.tick_deck(cx);
                 });
                 if alive.is_err() {
                     break;

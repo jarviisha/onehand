@@ -182,6 +182,14 @@ impl Shell {
         true
     }
 
+    /// Say the deck's ages again: it is drawn by the pane, which nothing
+    /// else wakes while every session stands still.
+    pub(crate) fn tick_deck(&self, cx: &mut Context<Self>) {
+        if !self.chat.read(cx).lead_workers().is_empty() {
+            self.chat.update(cx, |_, cx| cx.notify());
+        }
+    }
+
     /// The header's button and the strip's hide.
     pub(super) fn toggle_workers(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         match self.workers_open(cx) {

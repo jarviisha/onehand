@@ -32,13 +32,18 @@ pub(super) struct Deck {
     open: bool,
     /// Presses so far, so each plays the slide once.
     turns: usize,
-    /// The row the keys are on.
+    /// When the last press was and how far open the deck stood then, so the
+    /// slide plays only right after it, from there, and never when the deck
+    /// is only drawn again.
+    pressed: Option<(Instant, f32)>,
+    /// The row the keys are on, among the workers last drawn.
     row: usize,
+    shown: Vec<u64>,
     focus: FocusHandle,
     /// The lead it was last drawn for: another one finds it folded.
     lead: Option<u64>,
-    /// Each worker's state and since when it has stood so.
-    since: HashMap<u64, (Option<SessionSignal>, Instant)>,
+    /// Since when each session has stood as it is, by the rail's clock.
+    since: HashMap<u64, Instant>,
 }
 
 impl Deck {
@@ -46,11 +51,35 @@ impl Deck {
         Self {
             open: false,
             turns: 0,
+            pressed: None,
             row: 0,
+            shown: Vec::new(),
             focus,
             lead: None,
             since: HashMap::new(),
         }
+    }
+
+    /// The press still sliding the card, if one is.
+    fn sliding(&self) -> Option<(usize, f32)> {
+        self.pressed
+            .filter(|(at, _)| at.elapsed() < onehand_ui::TUCKED_SLIDE)
+            .map(|(_, from)| (self.turns, from))
+    }
+
+    /// How far open the deck stands now, mid-slide or at rest.
+    fn openness(&self) -> f32 {
+        match self.pressed {
+            Some((at, from)) => onehand_ui::tucked_openness(from, self.open, at.elapsed()),
+            None => f32::from(u8::from(self.open)),
+        }
+    }
+
+    /// Folded at once, with no slide: the deck went out of sight.
+    fn reset(&mut self) {
+        self.open = false;
+        self.pressed = None;
+        self.row = 0;
     }
 }
 
@@ -86,15 +115,34 @@ fn step(row: usize, len: usize, down: bool) -> usize {
 }
 
 impl ChatPane {
-    /// *Show the workers*: the deck open, focus on its first row.
+    /// Ages by the rail's clock, pushed by the shell as they change.
+    pub fn set_since(&mut self, since: HashMap<u64, Instant>) {
+        self.deck.since = since;
+    }
+
+    pub(super) fn deck_open(&self) -> bool {
+        self.deck.open
+    }
+
+    /// Open or fold the deck as a press does: sliding.
+    pub(super) fn press_deck(&mut self, open: bool, cx: &mut Context<Self>) {
+        if self.deck.open != open {
+            let from = self.deck.openness();
+            self.deck.open = open;
+            self.deck.turns += 1;
+            self.deck.pressed = Some((Instant::now(), from));
+        }
+        cx.notify();
+    }
+
+    /// *Show the workers*: the deck open, focus on its first row. Only where
+    /// the composer it is tucked behind is drawn, so the focus lands on
+    /// something in the frame.
     pub fn show_deck(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.lead_workers().is_empty() {
+        if self.lead_workers().is_empty() || !self.composer_drawn {
             return;
         }
-        if !self.deck.open {
-            self.deck.open = true;
-            self.deck.turns += 1;
-        }
+        self.press_deck(true, cx);
         self.deck.row = 0;
         self.deck.focus.focus(window, cx);
         cx.notify();
@@ -104,28 +152,19 @@ impl ChatPane {
     /// the deck.
     fn fold_deck(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let had_focus = self.deck.focus.contains_focused(window, cx);
-        if self.deck.open {
-            self.deck.open = false;
-            self.deck.turns += 1;
-        }
+        self.press_deck(false, cx);
         if had_focus {
             self.reclaim_focus(window, cx);
         }
-        cx.notify();
     }
 
+    /// The row the keys are on, as it was drawn, opened in the region.
     fn deck_open_row(&mut self, cx: &mut Context<Self>) {
-        let workers = self.lead_workers();
-        let Some(worker) = workers.get(self.deck.row) else {
+        let Some(&uid) = self.deck.shown.get(self.deck.row) else {
             return;
         };
-        cx.emit(ChatPaneEvent::ShowWorker(worker.uid));
-        // The caret goes into the worker's block, so none is left here.
-        if self.deck.open {
-            self.deck.open = false;
-            self.deck.turns += 1;
-        }
-        cx.notify();
+        cx.emit(ChatPaneEvent::ShowWorker(uid));
+        self.press_deck(false, cx);
     }
 
     /// The deck over the lead's composer, while the lead on screen has
@@ -136,39 +175,34 @@ impl ChatPane {
         cx: &mut Context<Self>,
     ) -> Option<gpui::AnyElement> {
         let workers = self.lead_workers();
-        // Another lead finds the deck folded, standing still.
-        if self.deck.lead != self.active {
+        let focused = self.deck.focus.contains_focused(window, cx);
+        // Another lead, or none to show, finds the deck folded and standing
+        // still; a caret in it goes back to the composer first, as a
+        // focused element leaving the frame would take the keymap.
+        let gone = workers.is_empty() || self.deck.lead != self.active;
+        if gone {
             self.deck.lead = self.active;
-            self.deck.open = false;
-            self.deck.row = 0;
-        }
-        if workers.is_empty() {
-            // Leaving the frame with the caret in it would take the keymap.
-            if self.deck.focus.contains_focused(window, cx) {
+            self.deck.reset();
+            if focused {
                 self.reclaim_focus(window, cx);
             }
-            self.deck.open = false;
-            self.deck.since.clear();
+        }
+        // The composer's own list opens where the deck would cover it.
+        if self.deck.open && self.composer.read(cx).overlay_open() {
+            self.deck.reset();
+        }
+        if workers.is_empty() {
             return None;
         }
-        let now = Instant::now();
+        self.deck.shown = workers.iter().map(|w| w.uid).collect();
         let signals: Vec<Option<SessionSignal>> =
             workers.iter().map(|w| self.signal(w.uid, cx)).collect();
-        for (worker, signal) in workers.iter().zip(&signals) {
-            let entry = self.deck.since.entry(worker.uid).or_insert((*signal, now));
-            if entry.0 != *signal {
-                *entry = (*signal, now);
-            }
-        }
-        self.deck
-            .since
-            .retain(|uid, _| workers.iter().any(|w| w.uid == *uid));
         self.deck.row = self.deck.row.min(workers.len() - 1);
         let age = |uid: u64| {
             self.deck
                 .since
                 .get(&uid)
-                .map_or(0, |(_, at)| at.elapsed().as_secs() / 60)
+                .map_or(0, |at| at.elapsed().as_secs() / 60)
         };
         let urgent = workers
             .iter()
@@ -177,11 +211,7 @@ impl ChatPane {
             .map(|(worker, signal)| (worker.uid, *signal));
         let edge = self.deck_edge(&summary(&signals), urgent, &age, cx);
         // The keys' row is ringed only while the keys are in the deck.
-        let keyed = self
-            .deck
-            .focus
-            .contains_focused(window, cx)
-            .then_some(self.deck.row);
+        let keyed = (focused && !gone).then_some(self.deck.row);
         let rows: Vec<gpui::AnyElement> = workers
             .iter()
             .zip(&signals)
@@ -196,10 +226,10 @@ impl ChatPane {
         let card = div()
             .v_flex()
             .w_full()
+            // Set off by its fill and the composer's lift, as the card it is
+            // tucked behind: no edge to add to its height.
             .bg(crate::theme::raised(cx))
-            .border_1()
-            .border_b_0()
-            .border_color(cx.theme().border)
+            .shadow(crate::theme::composer_lift(cx))
             .rounded_t(cx.theme().radius)
             .text_size(onehand_ui::tokens::CHROME_TEXT)
             .track_focus(&self.deck.focus)
@@ -232,7 +262,7 @@ impl ChatPane {
                 .child(onehand_ui::tucked(
                     "workers-deck",
                     self.deck.open,
-                    self.deck.turns,
+                    self.deck.sliding(),
                     rem,
                     full,
                     card,
@@ -344,8 +374,9 @@ impl ChatPane {
             .gap_2()
             .h(DECK_ROW_H)
             .px_3()
-            .border_t_1()
-            .border_color(cx.theme().border)
+            // A press here leaves the caret where it was: the deck tracks
+            // its focus for the keys alone.
+            .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
             .when(keyed, |row| row.child(crate::rail::key_ring(cx)))
             .child(
                 div()

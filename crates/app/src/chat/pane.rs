@@ -722,6 +722,10 @@ impl Render for ChatPane {
                     if pane.composer.read(cx).overlay_open() {
                         pane.composer
                             .update(cx, |composer, cx| composer.close_overlay(cx));
+                    } else if pane.deck_open() {
+                        // A deck opened by the pointer, the caret still in
+                        // the composer: Esc folds it there too.
+                        pane.press_deck(false, cx);
                     } else {
                         cx.propagate();
                     }
