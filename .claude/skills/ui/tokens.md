@@ -38,7 +38,6 @@ Helpers:
 | `badge_edge(tint)` | a badge's edge: halfway from its `Tint`'s fill to its ink | `crates/ui/src/badge.rs` |
 | `control_fill(cx)` | a ghost control's fill hovered, pressed or chosen; between `list_hover` and `accent` | `crates/ui/src/ink.rs` |
 | `faint_rule(cx)` | a hairline a step fainter, halfway to the surface: the line under a page's top, and a list page's line over its foot | `crates/ui/src/ink.rs` |
-| `field_fill(cx)` (private) | every field's fill: `muted` a step toward `foreground`; drawn by `text_input` and `text_area` | `crates/ui/src/field.rs` |
 | `meta_ink(cx)` | the middle ink: a detail beside a name, between prose and muted | `crates/ui/src/ink.rs`; the app says `crate::theme::meta_ink` |
 | `middle_ink(full, meta)` | the same step under another full ink: on a fill, under that fill's paired ink | `crates/ui/src/ink.rs` |
 | `hue_ink(base, cx)` | a hue tempered for ink: code inside prose | `crates/app/src/theme.rs` |
@@ -62,7 +61,7 @@ Text on a fill takes the ink paired with it:
 |---|---|
 | `primary`, a solid `danger` | `primary_foreground`, `danger_foreground`, set by the button's variant |
 | `button_secondary`; a `quiet` ghost | `button_secondary_foreground`; `secondary_foreground`, set by the builder |
-| a ghost's control fill (hovered, pressed or chosen), under an icon alone (`quiet_icon`) | `secondary_foreground`; at rest, with no fill, the icon is muted |
+| a ghost's hover or selected fill, under an icon alone (`quiet_icon`) | `secondary_foreground`, as at rest |
 | `accent`, the selected row | `accent_foreground` |
 | `rail_chosen(cx)`, the rail's current row | `sidebar_accent_foreground` |
 | `muted` (a well, the bubble) | the neutral inks, as on the surface: a neutral fill, not a paired one |
@@ -112,13 +111,13 @@ are not steps and stay allowed. A named spacing constant (`BLOCK_GAP`, `TIGHT_GA
 |---|---|
 | `cx.theme().radius` | 6, the library's |
 | `cx.theme().radius_lg` | 8, the library's: large surfaces |
-| `.rounded_full()` | a badge, a dot, a status mark |
+| `.rounded_full()` | a dot, a status mark |
 
 The theme leaves both at the library's values, so its tooltips, menus, popovers, dialogs and
 toasts take them. What the library draws at half its corner (`radius_tokens().sm`: checkboxes,
 `Kbd`, its tabs) comes out at 3px and is left to it. A button
 (`action`, `ButtonRounded::Medium`) and a text field (`text_input`, `search_input`, `text_area`)
-set `radius` where they are built; a `Tag` takes `rounded_full` through `badge`.
+set `radius` where they are built; a `Tag` keeps the library's corner through `badge`.
 
 ## Elevation
 
@@ -138,17 +137,14 @@ Moving the library's rev means checking this table.
 | Size | Button: height / words / icon / icon–label gap / inset | Input: height / words / inset | Icon alone |
 |---|---|---|---|
 | `.xsmall()`: an icon-only button inside a small object only | 20 / 12 / 12 / 4 / 4 | 20 / 12 / 4 **px** | 12 |
-| `.short()` (`CONTROL_H`) | 24 / 12 / 12 / 4 / 8 | 24 / 12 / 8 **px** | 12 |
-| `.tall()` (`FIELD_H`) | 30 / 14 / 14 / 4 / 12 | 30 / 14 / 8 **px** | 14 |
-| `.small()`: an icon-only button | 24 / 14 / 14 / 4 / 8: never with words | 24 / 14 / 8 **px** | 14 |
-| the library's default | 32 / 14 / 16 / 8 / 10: never used | 32 / 14 / 10 **px** | 16 |
+| `.short()` (`CONTROL_H`): the library's small | 24 / 14 / 14 / 4 / 8 | 24 / 14 / 8 **px** | 14 |
+| `.small()`: an icon-only button beside `.short()` | 24 / 14 / 14 / 4 / 8 | 24 / 14 / 8 **px** | 14 |
+| `.tall()` (`FIELD_H`): the library's medium | 32 / 14 / 16 / 8 / 10 | 32 / 14 / 10 **px** | 16 |
 
-An icon-only button is square at its height, and padding vertically equals its height less its
-words, halved: 4 at `.xsmall()`, 6 at `.short()`, 8 at `.tall()`. `.short()` is the extra small size given the small
-height and inset (`Short` in `crates/ui/src/control_size.rs`), so its words and icon are the extra
-small ones; a field keeps the small size and takes `.text_xs()`. `.tall()` is the small size
-given `FIELD_H` (`Tall`, beside it), so its words and icon stay the small ones. A builder that sizes the controls
-it makes (`choice`, `switch`, `picker`) takes one of them as a `ControlSize`.
+An icon-only button is square at its height. `.short()` is the library's small size held at
+`CONTROL_H` and `.tall()` its medium at `FIELD_H` (`Short` and `Tall` in
+`crates/ui/src/control_size.rs`); their words, icons and insets are the library's. A builder that
+sizes the controls it makes (`choice`, `switch`, `picker`) takes one of them as a `ControlSize`.
 
 A field of several lines (`text_area`) is the library's `Textarea`, which takes no size: its text
 sits at the default's inset, 10 **px**, which no wrapper reaches, so it starts 2px inside a
@@ -173,12 +169,12 @@ All in `onehand_ui::tokens` (`crates/ui/src/tokens.rs`), which the app names
 |---|---|---|
 | `BAR_H` | 2.75rem | every strip along the top of a region |
 | `MODE_BAR_H` | 2rem | a mode's own bar under the Workbench's strip (the editor's tabs, the reader's bar) |
-| `ROW_H` | 1.875rem | a list row (the rail, the composer's popup) |
+| `ROW_H` | 2rem | a list row (the rail, the composer's popup) |
 | `TREE_ROW_H` | 1.5rem | a Workbench tree's row pitch (Files, Markdown) |
 | `TREE_ROW_FILL` | 1.3125rem | a tree row's fill: 21px, odd so the name centres on a whole pixel |
 | `TREE_ROW_ABOVE`, `TREE_ROW_BELOW` | 0.0625rem, 0.125rem | the room over and under a tree row's fill; between two fills, their sum |
 | `CONTROL_H` | 1.5rem | a small control: `.short()`, and an icon-only `.small()` button |
-| `FIELD_H` | 1.875rem | the tallest control, a step over `.short()`: a page's head and form (`.tall()`); nothing stands taller |
+| `FIELD_H` | 2rem | the tallest control, a step over `.short()`: a page's head and form (`.tall()`); nothing stands taller |
 | `SCROLLBAR_THUMB`, `SCROLLBAR_THUMB_ACTIVE` | 4px, 6px | a scrollbar's thumb at rest, and hovered or dragged |
 | `CHROME_TEXT` | 0.875rem | chrome text: a panel's rows, boxes, forms and strips, at the library's control size |
 | `MICRO_TEXT` | 0.6875rem | a caption inside a small object: an attachment's plate |

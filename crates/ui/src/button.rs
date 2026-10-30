@@ -1,11 +1,10 @@
 //! The button every crate draws: the pointer it answers, the refusal that
 //! says why, the name an icon alone carries, and the quiet ghost.
 
-use crate::{Short as _, control_fill};
-use gpui::prelude::FluentBuilder as _;
+use crate::Short as _;
 use gpui::{App, ElementId, SharedString, Styled as _};
-use gpui_component::button::{Button, ButtonCustomVariant, ButtonRounded, ButtonVariants as _};
-use gpui_component::{ActiveTheme as _, Icon, IconName, Selectable as _};
+use gpui_component::button::{Button, ButtonRounded, ButtonVariants as _};
+use gpui_component::{Icon, IconName, Selectable as _};
 
 /// A button that answers the pointer, which is every button Onehand draws.
 ///
@@ -22,9 +21,9 @@ use gpui_component::{ActiveTheme as _, Icon, IconName, Selectable as _};
 /// `cursor_default`, so setting the cursor here wins — which is the whole reason
 /// this can be a wrapper rather than a fork of the control.
 ///
-/// **It also sets the theme's corner**, the one every box, row and field
-/// takes: the library's buttons default to it, but a size can change it, and
-/// every button passes through here and nowhere else.
+/// **It also sets the theme's corner**, the library's `radius`: the library's
+/// buttons default to it, but a size can change it, and every button passes
+/// through here and nowhere else.
 ///
 /// **It lives here rather than in the app** because a feature crate draws
 /// buttons too and cannot reach into the binary that hosts it. A second copy in
@@ -124,50 +123,30 @@ impl Named for Button {
     }
 }
 
-/// A ghost button whose hover is the fill a selected one shows.
+/// The quiet button: the library's own ghost, with no fill or edge at rest
+/// and its hover fill under the pointer, for familiar, low-emphasis commands
+/// in a toolbar, a strip or a row.
 ///
-/// The library's ghost hovers on a fill it mixes from the bubble's grey at
-/// four fifths opacity, which is no step of the app's ramp: beside a selected
-/// ghost in the same strip, the hovered one came out a shade fainter, its edge
-/// lost in the surface, and read as a smaller box. So the ghost is drawn here
-/// as a custom variant on the ramp's own steps: no fill at rest, the
-/// [`control_fill`] on hover, on press and when selected, so hovered and
-/// selected are one shape. Every ghost button in the app and its feature crates is this, never a bare
-/// `ghost()`.
+/// **One call for every ghost**, so a change to how a quiet command looks is
+/// made here once rather than at each call site. The `cx` is kept for the
+/// call sites, which pass it already.
 pub trait Quiet {
-    /// The ghost variant, hovering on the selected step.
+    /// The ghost variant.
     fn quiet(self, cx: &App) -> Self;
 
-    /// The ghost of an icon with no words: the muted ink at rest, as an icon
-    /// at rest is, and its fill's ink when hovered or `on`.
-    ///
-    /// **Its own call, because a bare icon is no label.** A word in a ghost
-    /// reads at full ink; the same ink on a lone mark makes it the brightest
-    /// thing on a chrome row. The library's hover takes the variant's ink, so
-    /// the mark comes up under the pointer by itself, but it replays the
-    /// caller's ink inside `selected`, which is why `on` is taken here and
-    /// set with it: a muted mark would otherwise sit on the selected fill.
-    /// A menu's trigger, which the library marks open on its own, keeps the
-    /// muted mark while its menu shows, for that same replay.
+    /// The ghost of an icon with no words, `on` while what it switches is
+    /// on: the library draws its mark in the ghost's ink, at rest as under the
+    /// pointer, and marks it selected on its own fill.
     fn quiet_icon(self, on: bool, cx: &App) -> Self;
 }
 
 impl Quiet for Button {
-    fn quiet(self, cx: &App) -> Self {
-        let theme = cx.theme();
-        self.custom(
-            ButtonCustomVariant::new(cx)
-                .foreground(theme.secondary_foreground)
-                .hover(control_fill(cx))
-                .active(control_fill(cx)),
-        )
+    fn quiet(self, _: &App) -> Self {
+        self.ghost()
     }
 
     fn quiet_icon(self, on: bool, cx: &App) -> Self {
-        let rest = cx.theme().muted_foreground;
-        self.quiet(cx)
-            .selected(on)
-            .when(!on, |button| button.text_color(rest))
+        self.quiet(cx).selected(on)
     }
 }
 
@@ -176,7 +155,7 @@ impl Quiet for Button {
 /// The caller says what a press does, and refuses it where there is nothing
 /// to open.
 ///
-/// On the secondary fill rather than a ghost: it starts its own line at the
+/// On the secondary variant rather than a ghost: it starts its own line at the
 /// block's edge, where a ghost's padding would set its chevron in from the
 /// text above it with nothing drawn to say where it begins.
 pub fn fold_toggle(id: impl Into<ElementId>, label: impl Into<SharedString>, open: bool) -> Button {

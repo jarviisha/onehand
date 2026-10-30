@@ -424,7 +424,6 @@ impl Render for SchedulesPage {
                         .child(self.filter_picker(cx))
                         .into_any_element(),
                 ],
-                cx,
             ))
             .child(
                 div()

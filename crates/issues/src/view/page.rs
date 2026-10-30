@@ -516,7 +516,7 @@ impl IssuesView {
             .child(filter_row)
             .children(notices)
             .into_any_element();
-        let top = onehand_ui::page_top(None, [head, filters_and_notices], cx).into_any_element();
+        let top = onehand_ui::page_top(None, [head, filters_and_notices]).into_any_element();
         let rows = div()
             .id("issues-page-list")
             .size_full()

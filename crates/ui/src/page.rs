@@ -10,11 +10,11 @@ use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, Div, Entity, ParentElement as _, Rems, SharedString, Styled as _, div, rems,
 };
-use gpui_component::StyledExt as _;
 use gpui_component::input::InputState;
+use gpui_component::{ActiveTheme as _, StyledExt as _};
 
 /// A page's head, in its body: the page's name at the title size, a line of
-/// facts under it in the middle ink, and its actions at the end, each at the
+/// facts under it in the muted ink, and its actions at the end, each at the
 /// head's size. The pane's header above it carries only chrome.
 pub fn page_head(
     title: impl Into<SharedString>,
@@ -36,12 +36,12 @@ pub fn page_head(
                 .child(
                     div()
                         .truncate()
-                        .text_xl()
+                        .text_2xl()
                         .font_semibold()
                         .child(title.into()),
                 )
                 .children(
-                    facts.map(|facts| div().text_xs().text_color(crate::meta_ink(cx)).child(facts)),
+                    facts.map(|facts| div().text_color(cx.theme().muted_foreground).child(facts)),
                 ),
         )
         .child(
@@ -57,10 +57,9 @@ pub fn page_head(
 /// The part of a page that stays put while the rest scrolls: `parts` (the
 /// head, then the search and filters) in a column `width` wide, centred, or
 /// the pane's whole width with none; inset as a page's body is at its sides,
-/// close under the pane's header, which already stands clear of it, and parted
-/// from what scrolls by a line the pane's whole width, so the column and the
-/// edge-to-edge list end their tops on one line.
-pub fn page_top(width: Option<Rems>, parts: impl IntoIterator<Item = AnyElement>, cx: &App) -> Div {
+/// close under the pane's header, which already stands clear of it. No line
+/// parts it from what scrolls: the head's own size says where the page begins.
+pub fn page_top(width: Option<Rems>, parts: impl IntoIterator<Item = AnyElement>) -> Div {
     div()
         .flex_none()
         .h_flex()
@@ -69,8 +68,6 @@ pub fn page_top(width: Option<Rems>, parts: impl IntoIterator<Item = AnyElement>
         .px_8()
         .pt_2()
         .pb_4()
-        .border_b_1()
-        .border_color(crate::faint_rule(cx))
         .child(
             div()
                 .v_flex()

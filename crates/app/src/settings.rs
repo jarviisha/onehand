@@ -536,7 +536,6 @@ fn settings(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         .child(crate::page_parts::page_top(
             None,
             [crate::page_parts::page_head("Settings", None, Vec::new(), cx).into_any_element()],
-            cx,
         ))
         .child(
             div()

@@ -20,10 +20,9 @@ pub const BAR_H: Rems = rems(2.75);
 pub const MODE_BAR_H: Rems = rems(2.);
 
 /// A single-line list row: a rail row, a choice in the composer's popup. A
-/// Workbench tree takes [`TREE_ROW_H`] instead. A little over a control's height, so a
-/// long list of names reads as rows with air between them rather than a
-/// block of text, and every list in the window stands at one pitch.
-pub const ROW_H: Rems = rems(1.875);
+/// Workbench tree takes [`TREE_ROW_H`] instead. The library's sidebar item,
+/// as tall as a medium control, so every list in the window stands at one pitch.
+pub const ROW_H: Rems = rems(2.);
 
 /// A small control the pointer has to hit: a transcript button, a composer
 /// chip, a blocking card's answers.
@@ -39,11 +38,10 @@ pub const ROW_H: Rems = rems(1.875);
 /// floors a pixel or two off read as a line of controls that do not agree.
 pub const CONTROL_H: Rems = rems(1.5);
 
-/// A control a step over [`CONTROL_H`], as tall as a list's row: the Issues
-/// page's head, its choices and its actions, over the filter bar. Set by
-/// [`crate::Tall`] over the small size rather than reached through the
-/// library's default one, which letters a button at the reading size.
-pub const FIELD_H: Rems = rems(1.875);
+/// The library's medium control, as tall as a list's row: a page's head, its
+/// form, its choices and its actions. Set by [`crate::Tall`] over the
+/// library's default size.
+pub const FIELD_H: Rems = rems(2.);
 
 /// Where a tree row's content starts from a dock's edge, and how far each
 /// level of the tree steps in: Files and Markdown share both, so their trees

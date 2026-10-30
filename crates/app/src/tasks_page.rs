@@ -275,7 +275,7 @@ impl TasksPage {
             .size_full()
             .v_flex()
             .when(!top.is_empty(), |page| {
-                page.child(crate::page_parts::page_top(Some(width), top, cx))
+                page.child(crate::page_parts::page_top(Some(width), top))
             })
             .child(
                 div()

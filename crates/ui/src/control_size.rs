@@ -6,13 +6,11 @@ use gpui_component::Sizable as _;
 use gpui_component::button::Button;
 use gpui_component::input::Input;
 
-/// A control a step over [`Short`]: [`tokens::FIELD_H`] high, its words and
-/// its icon at the small size's, the reading size, given that height and
-/// padding on the spacing steps. The library ties a control's words and icon
-/// to its size and its default size letters a button at the reading size, so
-/// this is the small size made taller rather than the default one.
+/// A control at the library's medium size, [`tokens::FIELD_H`] high: a page's
+/// head and form, a dialog's footer. Its words, icon and padding are the
+/// library's for that size.
 pub trait Tall {
-    /// The small size at [`tokens::FIELD_H`].
+    /// The medium size at [`tokens::FIELD_H`].
     fn tall(self) -> Self;
 }
 
@@ -40,7 +38,7 @@ pub trait TallIcon {
 
 impl TallIcon for Button {
     fn tall_icon(self) -> Self {
-        self.small().size(tokens::FIELD_H).px_0()
+        self.size(tokens::FIELD_H).px_0()
     }
 }
 
@@ -52,18 +50,11 @@ impl Tall for Input {
     }
 }
 
-/// A control at a form's scale: a form's fields and buttons, a dialog's
-/// footer, a page's filter bar. The small size's height, its words a step
-/// down at the meta size, so they sit in the box with room above and below
-/// rather than filling it edge to edge.
-///
-/// A button takes the extra small size for its words, the only way to reach
-/// the box the library letters them in, and is given back the small height
-/// and inset; its icon comes down with the words, and an icon alone stays
-/// square. A field's text size is its own style, which lands after the
-/// library's.
+/// A control in dense chrome: a strip, a row, a toolbar, the composer, a
+/// page's filter bar. The library's small size, [`tokens::CONTROL_H`] high,
+/// with its own words, icon and padding for that size.
 pub trait Short {
-    /// The small size, lettered at the meta size.
+    /// The small size.
     fn short(self) -> Self;
 }
 
@@ -80,7 +71,7 @@ impl Short for Button {
 
 impl Short for Input {
     fn short(self) -> Self {
-        self.small().text_xs()
+        self.small()
     }
 }
 
@@ -88,8 +79,7 @@ impl Short for Input {
 /// `.short()` the default, `.tall()` in a list page's head.
 ///
 /// For a builder that sizes the controls it makes, so a caller names one of
-/// these: the library's own scale also holds its default size, which
-/// letters a button at the reading size and is never used.
+/// these rather than a library size.
 #[derive(Clone, Copy)]
 pub enum ControlSize {
     Short,

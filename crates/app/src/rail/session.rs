@@ -47,7 +47,7 @@ pub(crate) fn status_icon(signal: Option<SessionSignal>, cx: &App) -> gpui::AnyE
             return div()
                 .size_2()
                 .rounded_full()
-                .bg(cx.theme().link)
+                .bg(cx.theme().info)
                 .into_any_element();
         }
         Some(SessionSignal::Lost | SessionSignal::Failed) => {

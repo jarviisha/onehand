@@ -23,7 +23,7 @@ the rule, not just the question. For prose-only work, use the contract path in `
    beside a sentence (`DESIGN.md`, *Components*, *Colour and state*)?
 7. A refusing button through `.refuses(why)` (`DESIGN.md`, *Components*), never `.disabled(`,
    which only a menu item or a switch takes, as `.refuses` does not reach them?
-8. `rounded_full` only on a badge, a dot or a status mark (`DESIGN.md`, *Type, space and shape*)?
+8. `rounded_full` only on a dot or a status mark, a badge at the library's corner (`DESIGN.md`, *Type, space and shape*)?
 9. Every list capped, saying how many it left out, and text that can run long truncating or
    wrapping as its neighbours do (`docs/ui-patterns.md`, *Lists*, *Cuts*)?
 10. Every split or stack reading the measured container, never the window (`docs/ui-patterns.md`,

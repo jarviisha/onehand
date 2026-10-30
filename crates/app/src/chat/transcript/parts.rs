@@ -232,10 +232,11 @@ pub(super) fn detail_well(body: impl IntoElement) -> gpui::Div {
     div().w_full().min_w_0().pl(FOLD_INDENT).pt_1().child(body)
 }
 
-/// The ink of what runs, and of a way into more: the theme's link hue, the
-/// one the rail marks a running session with.
+/// The ink of what runs, and of a way into more: the library's blue (`info`),
+/// the one the rail marks a running session with. Not `link`, which the
+/// library draws in the prose ink.
 pub(in crate::chat) fn accent(cx: &App) -> gpui::Hsla {
-    cx.theme().link
+    cx.theme().info
 }
 
 /// A disclosure's arrow: one shape that turns as its block opens, so opening

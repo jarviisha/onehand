@@ -242,7 +242,7 @@ pub(super) fn task_detail(
             .gap_1()
             .child(
                 div()
-                    .text_xl()
+                    .text_2xl()
                     .font_semibold()
                     .line_height(gpui::relative(LEADING_TIGHT))
                     .child(row.title.clone()),

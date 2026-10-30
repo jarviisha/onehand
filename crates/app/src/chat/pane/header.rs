@@ -395,7 +395,7 @@ impl ChatPane {
     fn terminal_control(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let live = self.terminal_live;
         let open = self.docks_open.terminal;
-        let running = cx.theme().link;
+        let running = cx.theme().info;
 
         div()
             .relative()
@@ -480,7 +480,7 @@ impl ChatPane {
             // the size a page's title takes.
             return div()
                 .min_w_0()
-                .when(self.page.is_some(), |title| title.text_xl())
+                .when(self.page.is_some(), |title| title.text_2xl())
                 .child(name)
                 .into_any_element();
         }

@@ -143,7 +143,7 @@ pub(super) fn issue_row(
     } else if let Some(line) = row.line.clone().filter(|_| row.attention) {
         Some(div().text_color(ink.warning).child(line))
     } else if running {
-        Some(div().text_color(theme.link).child("running"))
+        Some(div().text_color(theme.info).child("running"))
     } else if row.earlier_attention {
         Some(
             div()

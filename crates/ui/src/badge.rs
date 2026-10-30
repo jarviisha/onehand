@@ -2,7 +2,7 @@
 
 use crate::{Tint, tint};
 use gpui::{App, Hsla, ParentElement as _, SharedString, Styled as _};
-use gpui_component::{ActiveTheme as _, Colorize as _, Sizable as _};
+use gpui_component::{ActiveTheme as _, Colorize as _};
 
 /// An issue's label as a badge, in its [`label_tint`]. Every badge of a label
 /// is drawn through this, so a label reads one way wherever it is.
@@ -33,20 +33,10 @@ pub fn label_tint(label: &str, cx: &App) -> Tint {
     }
 }
 
-/// A small label on a fill, the shape every badge takes: the library's `Tag`
-/// at its small size, fully round so it reads as a tag rather than as a button
-/// beside it, in the `tint`'s fill and ink, with room above and below its
-/// words (`py_1`) where the library leaves them a hair off its edge, and an
-/// edge of its own ([`badge_edge`]). Its words are the small text, set solid,
-/// rather than the library's smaller size for a small tag.
+/// A short state or label: the library's `Tag` at its own size and corner, in
+/// the `tint`'s fill and ink and an edge of its own ([`badge_edge`]).
 pub fn badge(text: impl Into<SharedString>, tint: Tint) -> gpui_component::tag::Tag {
-    gpui_component::tag::Tag::custom(tint.fill, tint.ink, badge_edge(tint))
-        .small()
-        .text_xs()
-        .line_height(gpui::relative(1.))
-        .rounded_full()
-        .py_1()
-        .child(text.into())
+    gpui_component::tag::Tag::custom(tint.fill, tint.ink, badge_edge(tint)).child(text.into())
 }
 
 /// A badge's edge: halfway from its fill to its ink, in its own hue, so the

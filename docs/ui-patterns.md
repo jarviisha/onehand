@@ -104,11 +104,11 @@ size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in ea
 | Every other button with words: a strip's, a box's, a row's, a secondary action inside dense content (a line of meta text, a transcript block, a chip), a tab, a fold toggle, a pinned card's answers | Button | `.short()`, under a row, so the controls never outweigh what they act on |
 | Every other icon-only button: a strip's, a row's, a copy control, the composer's send | Button | `.small()`, square at `CONTROL_H`, so an icon alone is as tall as a worded peer beside it |
 | A field in a strip or the rail | Input | `.short()`, as tall as the buttons beside it |
-| An icon in a button | Icon | the button's own: `small` in a `.tall()` button and in an icon-only `.small()` one, `xsmall` beside words in a `.short()` one |
+| An icon in a button | Icon | the button's own, as the library sizes it for the button's size |
 | An icon leading a label the app draws: a row, a menu item | Icon | `.small()` |
 | A state's mark leading a row's label (a session's) | Icon | `.xsmall()`, a step under the label |
 | A mark inside a line of meta text | Icon | `.xsmall()` |
-| A badge: a tag standing on its own (a state, a count, *Default*) | Tag | `.small()`, at its own height |
+| A badge: a tag standing on its own (a state, a count, *Default*) | Tag | the library's own size, at its own height |
 | A label inside a line of meta text (an issue row's) | text | its kind's ink (`label_tint`), the one part of the line that truncates; the row's quieter ink on the selected fill |
 | A checkbox, a switch | Checkbox, Switch | `.small()` beside chrome text, at the library's own geometry |
 | A single-line row; a row with a second line | drawn by the app | `ROW_H`; at least `ROW_H` |
@@ -117,15 +117,13 @@ size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in ea
 
 - **`.tall()` is the ceiling.** No control stands taller than `FIELD_H`; a page gives a field
   room by its size, never by a larger control.
-- **One size, one measure.** The library's default stands a button 32px tall, over `.tall()`'s
-  ceiling, so it is never used. `.short()` is the wrapper that gives a Button and
-  an Input the small height with words at `.text_xs()`, so they breathe inside it, and `.tall()`
-  the one that gives both `FIELD_H` at `.text_sm()`, the reading size. A size a component gets wrong is corrected
-  in its shared wrapper, never at the call site. The library's `.small()` is an icon-only
-  button's size, square at the same height as `.short()`; a worded button never takes it, as its
-  words would stand at `.text_sm()`. A control holding a badge keeps it, being the one tall
-  enough. `.xsmall()` is no field's or worded button's size: an icon takes it, and an icon-only
-  button inside a small object (an attachment's plate), which scales with the object it sits on.
+- **One size, one measure.** `.short()` is the library's small size held at `CONTROL_H` (24px)
+  and `.tall()` its medium held at `FIELD_H` (32px), for a Button and an Input alike, their
+  words, icons and insets the library's. A size a component gets wrong is corrected in its shared
+  wrapper, never at the call site. The library's `.small()` is an icon-only button's size, square
+  at the same height as `.short()`. `.xsmall()` is no field's or worded button's size: an icon
+  takes it, and an icon-only button inside a small object (an attachment's plate), which scales
+  with the object it sits on.
 - **One row of actions, one height.** Every control standing in one row of actions (a button, both
   halves of a split action, a field, a picker, a choice, an icon alone) takes the same size, so
   their tops and bottoms meet on one line. The row takes the size its leading role takes, and

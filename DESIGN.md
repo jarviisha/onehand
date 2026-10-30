@@ -162,8 +162,8 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   kind); `muted_foreground`, still readable, for labels, counts, hints, placeholders and every
   navigation row but the current one. Text on a fill takes the ink paired with that fill: a
   button's variant and the library's controls set their own, a selected row `accent_foreground`,
-  a badge its `Tint`'s ink. Meaning takes its semantic ink: a state `status_ink()`, a link or
-  what runs `link`, code in prose `hue_ink`. No fourth neutral ink, and a quieter ink is a mixed
+  a badge its `Tint`'s ink. Meaning takes its semantic ink: a state `status_ink()`, a link `link`,
+  what runs `info`, code in prose `hue_ink`. No fourth neutral ink, and a quieter ink is a mixed
   step, never an alpha on the text or its container: see-through text reads differently on
   every fill under it.
 - **The UI and mono font families ship with the app**, so text looks and centres the same everywhere;
@@ -180,9 +180,10 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   `onehand_ui::tokens`, others beside their use), its reason in its doc comment.
 - **The library's corners.** What a person presses or what holds content takes `radius`, 6px:
   a control, a field, a row, a tab, a chip, a well, a box, the terminal. A large surface takes
-  `radius_lg`, 8px: the composer, a floating panel, a dialog, a toast; the library's own follow. What is only read beside content is
-  `rounded_full`: a badge (a `Tag`), a tag standing on its own, so it reads as a tag rather than a
-  button (inside a line of meta text a label is written in its kind's ink instead, unframed), its words `py_1` off its edges, its edge halfway from its fill to its ink (`badge_edge`), and a dot or a status mark is `rounded_full` too. The library's small parts keep its half
+  `radius_lg`, 8px: the composer, a floating panel, a dialog, a toast; the library's own follow. A badge (a `Tag`) takes the library's
+  own corner and size, its edge halfway from its fill to its ink (`badge_edge`); inside a line of
+  meta text a label is written in its kind's ink instead, unframed. A dot or a status mark is
+  `rounded_full`. The library's small parts keep its half
   corner (*Components*). A part joined to its container's edge takes its corner there.
 - **Lines** part regions and are a 1px `border`. A **mark** says where the person is, not where
   a region ends: the one under an open tab is 2px, as a stroke a step heavier than a line. The line under a page's top,
@@ -230,12 +231,10 @@ reaches.
 - Boxes are borders; wells and the bubble are fills. Ordinary sections remain unboxed. Do not
   combine a border, contrasting fill and shadow just to make a group visible.
 - Hover and selection are fills: distinct steps on a row (`list_hover`, `accent`; on the rail's side bar surface its
-  own pair, `sidebar_accent` and `rail_chosen`, as a fill is a step from the surface under it), one step on a ghost button (`control_fill`, between a
-  row's hover and its selected step). A secondary button rests on a fill of its own and takes
+  own pair, `sidebar_accent` and `rail_chosen`, as a fill is a step from the surface under it), and the library's own hover on a ghost button. A secondary button rests on a fill of its own and takes
   its pointed-at step under the pointer; the selected step is a chosen row's. Keyboard
-  focus on a control is the ring. A field is marked by its fill and has no edge at rest, so its focus
-  is an edge in the `ring` ink; the composer, the input surface,
-  shows focus by its caret (*Components*).
+  focus on a control is the ring. A field is edged at rest and ringed on focus, as the library
+  draws it; the composer, the input surface, shows focus by its caret (*Components*).
 - At most one primary in a view; a view needs none (the Settings page has none). Where layers
   stack, what waits on the person holds it while it shows (a floating issue, an open form, a
   pinned card, a run's approval), and what it covers steps down to `secondary`.
@@ -250,18 +249,16 @@ reaches.
 Reuse gpui-component before building anything: `Root`, `DockArea`, `Sidebar`, `Dialog`, `Switch`,
 `InputState`, `Editor`, `TextView`, plus gpui's own `list` for the transcript. Controls go through
 the UI crate's builders, which set the pointer cursor and the library's corner (`radius`): buttons through
-`action`; fields through `text_input`, `search_input` and `text_area`. **Every field has a fill
-and no edge**: a field in a form, a dialog or a page's top and a search alike stand on
-`field_fill`, a step past the well, so one shape reads as a field wherever it sits; a search adds
-the search mark and the clear button. The rail's search keeps the rail's own fill
-(`theme::inset`), and the composer's field is its card's. A button names its variant by role: `primary`
-the main action, `secondary` an alternative beside it, a set picker's trigger (an unset one is a ghost, through
-`picker`; a form's picker is set whatever it holds), every Settings button and the rail's *New*
-(the one filled control in that chrome, as starting a session is what the rail is opened for),
-`choice` in a pick-one row, `danger` as below, and ghost (`.quiet(cx)`, whose hover
-is the control fill) the rest. **No button draws an edge** (no default variant, no `outline()`): a
-field is marked by its fill, and its edge is focus alone. A control that refuses says so
-and why (`.refuses(why)`, the reason its tooltip) and goes back to the arrow.
+`action`; fields through `text_input`, `search_input` and `text_area`. **A field is the
+library's**: edged in `input` on the page's fill and ringed on focus, in a form, a dialog, a
+page's top and a search alike; a search adds the search mark and the clear button, and the
+composer's field is its card's. A button names its variant by role, each drawn as the library
+draws it: `primary` the one commitment in a decision area, `secondary` (edged, on its own fill)
+an ordinary action beside it, a set picker's trigger (an unset one is a ghost, through `picker`),
+every Settings button and the rail's *New*; `outline` an action that needs a boundary with less
+weight; `choice` in a pick-one row; `danger` as below; and ghost (`.quiet(cx)`) the familiar,
+low-emphasis commands of a toolbar, a strip or a row. A control that refuses says so and why
+(`.refuses(why)`, the reason its tooltip) and goes back to the arrow.
 
 **A ghost never starts a line alone.** Without a fill, a ghost's padding sets its words in from
 the edge the text above and below it starts on, and nothing drawn says where it begins. A ghost at
@@ -297,20 +294,19 @@ it draws itself stays as it draws it: a refusing or loading button's alpha, a pi
 badge under the pointer, a switch's thumb and the motion of its overlays; the `sm` radius, half
 the one corner, of its small parts drawn inside a control (a `Kbd`, a checkbox, its own tabs),
 where a full corner would round them to a pill; and an open dropdown's trigger on its pressed
-fill, in the ink the caller gave it, so a quiet icon stays muted there. The app corrects the
+fill, in the ink the caller gave it. The app corrects the
 library only through a shared wrapper: where the library's mark vanishes on a fill the app
 draws on (a radio's or a checkbox's ring on the selected step), `choice_mark` draws it in ink.
 
-**A size names a role, and the role follows the room the control stands in.** The library's
-sizes disagree across components (its default button letters at the body size beside a field
-at `.text_sm()`), so a control takes one of two heights. On a page, where there is room and
-the person reads and types what a control holds, it takes `.tall()`: a page's head and a page's
+**A size names a role, and the role follows the room the control stands in.** A control takes
+one of the library's two sizes. On a page, where there is room and the person reads and types
+what a control holds, it takes `.tall()`, the library's medium (32px): a page's head and a page's
 form, its fields, pickers and buttons alike, so a field's words stand at its title's size; a
 dialog holding a form at `DIALOG_FORM` is that room too. In dense chrome (the rail, a dock, a
 strip, a dock's filter bar, a dialog that asks one thing, a row, a box's title row, the composer) it takes
-`.short()`, so it never outweighs what it acts on. An icon alone is square at
-its row's height: `.small()` beside `.short()` peers, `.tall()` beside tall ones. `.tall()`
-(`FIELD_H`) is the ceiling: no control stands taller. Never the library's default.
+`.short()`, the library's small (24px), so it never outweighs what it acts on. An icon alone is
+square at its row's height: `.small()` beside `.short()` peers, `.tall()` beside tall ones.
+`.tall()` (`FIELD_H`) is the ceiling: no control stands taller.
 **What a small object holds scales with the object.** Inside a fixed object smaller than a row of
 controls (an attachment's plate, a thumbnail), an icon-only control takes `.xsmall()` and a caption
 `MICRO_TEXT`, so neither crowds what it sits on; anywhere else `.short()`, `.small()` and the meta

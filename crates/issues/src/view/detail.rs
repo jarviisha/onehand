@@ -139,7 +139,7 @@ pub(super) fn issue_view(
     // The title, the largest words on the issue: the whole of it, wrapped on
     // a title's leading.
     let title = div()
-        .text_xl()
+        .text_2xl()
         .font_semibold()
         .line_height(gpui::relative(LEADING_TIGHT))
         .child(issue.title.clone());
@@ -161,7 +161,7 @@ pub(super) fn issue_view(
             let ink = if work.group.needs_attention() {
                 status_ink(cx).warning
             } else if work.group == Group::Running {
-                cx.theme().link
+                cx.theme().info
             } else {
                 muted
             };
