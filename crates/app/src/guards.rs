@@ -1355,36 +1355,16 @@ mod tests {
             .collect()
     }
 
-    /// The one builder allowed to animate: a card tucked behind another,
-    /// sliding out from under it as the person opens it and back as they
-    /// close it. One file, so the slide stays one builder every caller shares
-    /// rather than a motion each screen times its own way.
-    const TUCKED_CARD: &str = "crates/ui/src/tucked.rs";
-
     /// Nothing moves for show: a hover, a fold or a new state lands in the
-    /// frame it happens in, and says itself in ink and a word. The motions are
-    /// a `Spinner` on work still running, which the library draws, as it
-    /// draws its own overlays, and the tucked card's slide, in its own file.
+    /// frame it happens in, and says itself in ink and a word. The one motion
+    /// is a `Spinner` on work still running, which the library draws, as it
+    /// draws its own overlays.
     #[test]
     fn nothing_animates() {
-        let (tucked, rest): (Vec<_>, Vec<_>) = ui_sources()
-            .into_iter()
-            .partition(|(path, _)| path.ends_with(TUCKED_CARD));
         forbid(
-            rest,
+            ui_sources(),
             animations,
-            "an animation, or the library's sliding TabBar (use `tab_chip`); a state lands in the frame it happens in, and only a Spinner and the tucked card's slide (`onehand_ui::tucked`) move",
-        );
-        // Even there the slide is all that moves: the library's TabBar is not.
-        forbid(
-            tucked,
-            |line| {
-                animations(line)
-                    .into_iter()
-                    .filter(|call| call == "TabBar::new(")
-                    .collect()
-            },
-            "the library's sliding TabBar (use `tab_chip`)",
+            "an animation, or the library's sliding TabBar (use `tab_chip`); a state lands in the frame it happens in, and only a Spinner moves",
         );
     }
 
