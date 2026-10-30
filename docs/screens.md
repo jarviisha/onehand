@@ -135,13 +135,12 @@ ends on *Show all N lines*, which opens it in place; then one surface on the car
 reconnect and the queue as lines, then the staged files as one row of plates (a picture's preview,
 pressed to open it whole in a dialog; a text file opening in the Workbench), faded where cut beside
 *Show all N*. A picture attached to a sent prompt opens the same way. While the session on screen
-leads workers, a deck is tucked behind the card, narrower than it, its top edge showing above the
-card's: *N workers*, a count per state that has any, most urgent first, in its mark and ink, and at
-the end the most urgent worker's name, state and age. Pressed, it slides up over the transcript to
-a row per worker (its mark, name, state, age, the lead's last turn and its background count, and
-under them what it waits on in the warning ink, else what it is doing), *Stop* on one whose turn
-runs; pressed again it slides back. A row opens the workers' region with that worker picked. The
-pointer leaves the caret where it was; the keys reach the workers through the region's list.
+leads workers, the lead's strip stands on the card, narrower than it, one line above the card's: *N
+workers*, a count per state that has any, most urgent first, in its mark and ink, and at the end,
+in the warning ink, *<name> needs you* for the most urgent worker waiting on the person, when one
+does. It stays while the workers' region shows. Pressed, the region shows with the most urgent
+worker picked; the pointer leaves the caret where it was, and the keys reach the workers through
+the region's list.
 *Run a workflow…* (the `+` menu, the
 keymap, the Workflows page's *Run…*) opens the launcher, and an issue's *Run workflow…* its start
 form; both are drawn as `docs/workflows.md` describes.
@@ -190,7 +189,9 @@ height (its dragged height kept).
   the Workbench's state, not the region's. It shows the workers of the lead on screen, follows the lead on screen, and closes on a
   session without workers or a page. Its strip: *Workers · N*, maximize, hide.
   - **The list**, pinned under the strip and never scrolled away: a row per worker, at most four
-    (the cap), as the deck draws them, the picked one in the selected step. Ordered by urgency
+    (the cap): its mark, name, state, age, the lead's last turn and its background count, and
+    under them what it waits on in the warning ink, else what it is doing, *Stop* on one whose
+    turn runs; the picked one in the selected step. Ordered by urgency
     (failed or disconnected, needs input, running or connecting, done, idle; ties as the lead
     opened them) when the region opens and when a worker is picked by a press or from elsewhere;
     in between, and while `↑`/`↓` walk it, a row that changes state changes in place and does not

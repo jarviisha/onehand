@@ -285,9 +285,9 @@ impl ChatPane {
                                     .w_full()
                                     .max_w(COMPOSER_COLUMN)
                                     .mx_auto()
-                                    // Tucked behind the composer, its edge
-                                    // showing above the card's.
-                                    .children(self.deck(window, cx))
+                                    // Standing on the composer, its line
+                                    // above the card's.
+                                    .children(self.lead_strip(cx))
                                     .child({
                                         // A run waiting at an approval holds the
                                         // view's one primary, so Send steps down.

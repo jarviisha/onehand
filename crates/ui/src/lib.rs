@@ -35,7 +35,6 @@ pub mod toast;
 mod toggle;
 pub mod tokens;
 mod tooltip;
-mod tucked;
 pub use badge::{badge, badge_edge, label_badge, label_tint};
 pub use button::{Named, Quiet, Refuses, action, fold_toggle};
 pub use choice::{choice, choice_track, picker, switch};
@@ -67,4 +66,3 @@ pub use tabs::{
 };
 pub use toggle::toggle;
 pub use tooltip::{put_tooltips_away, tip, tooltip_guard};
-pub use tucked::{TUCKED_SLIDE, tucked, tucked_openness};

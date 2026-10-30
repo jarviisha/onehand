@@ -15,7 +15,6 @@
 mod detail;
 mod list;
 
-pub(super) use list::WORKER_ROW_H;
 pub use list::{WorkersBack, WorkersDown, WorkersUp, WorkersWrite};
 
 use super::{ChatPane, ChatPaneEvent, SessionSignal};
@@ -35,6 +34,7 @@ use std::cell::Cell;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::time::Instant;
 
 /// What the region holds beyond what the conversations do.
 pub(super) struct Workers {
@@ -61,6 +61,8 @@ pub(super) struct Workers {
     /// against. Its own height, which the card does not change, unlike the
     /// transcript's under the card.
     detail_height: Rc<Cell<Pixels>>,
+    /// Since when each session has stood as it is, by the rail's clock.
+    since: HashMap<u64, Instant>,
 }
 
 impl Workers {
@@ -75,6 +77,7 @@ impl Workers {
             focus,
             detail_focus,
             detail_height: Rc::default(),
+            since: HashMap::new(),
         }
     }
 }
@@ -135,6 +138,19 @@ impl ChatPane {
             .into_iter()
             .filter(|worker| self.conversations.contains_key(&worker.uid))
             .collect()
+    }
+
+    /// Ages by the rail's clock, pushed by the shell as they change.
+    pub fn set_since(&mut self, since: HashMap<u64, Instant>) {
+        self.workers.since = since;
+    }
+
+    /// Whole minutes worker `uid` has stood as it is, by the rail's clock.
+    pub(super) fn worker_age(&self, uid: u64) -> u64 {
+        self.workers
+            .since
+            .get(&uid)
+            .map_or(0, |at| at.elapsed().as_secs() / 60)
     }
 
     /// The region is coming on screen, or asked for again: its list is

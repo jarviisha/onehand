@@ -127,8 +127,8 @@ minor bump may break any of them.
 - A session whose agent opens workers is their lead: the workers leave the rail, the lead's row
   keeps its own state and counts *N workers need you*, and a workers' region in the Workbench's
   place lists every worker, most urgent first, over the picked one's card and live transcript;
-  *Write to …* opens a composer for it only when asked. A deck tucked behind the lead's
-  composer counts them and how they stand; pressed, it slides up to a row per worker, and
+  *Write to …* opens a composer for it only when asked. One line above the lead's composer
+  counts them, how they stand and who needs you; pressed, it shows the region at that worker, and
   `Ctrl+Shift+Y` puts the caret on the region's list. Writing to a worker takes it from the lead;
   *Give back to the lead* in its menu returns it. A lead closing puts its workers back in
   the rail.

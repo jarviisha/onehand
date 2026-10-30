@@ -246,8 +246,8 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
 - **Only a session's agent leads.** An outside program may open sessions but never workers, since
   it has no session to own them by; owning what it opened for as long as its connection lasts is
   not built.
-- **A worker is seen only in the deck and the workers' region**, never inside the lead's
-  conversation, and the region's layout (which block is open, its height) is not saved. A
+- **A worker is seen only in the lead's strip and the workers' region**, never inside the lead's
+  conversation, and the region's state (which worker is picked, a composer open) is not saved. A
   worker's compact composer has no `@` or `/` completion and no `+` menu.
 - **No tool answers a card, a permission or an approval, and none cuts a worktree.** Both are on
   purpose: only a person answers what an agent parked, and the lead cuts its worktrees with git.

@@ -282,7 +282,8 @@ impl Shell {
         cx.observe(&chat, |shell: &mut Self, _, cx| {
             let sessions = shell.rail_sessions(cx);
             if sessions != shell.rail_sessions {
-                // The deck says a worker's age by the rail's own clock.
+                // The workers' list says a worker's age by the rail's own
+                // clock.
                 let since = sessions
                     .iter()
                     .map(|(uid, row)| (*uid, row.since))
