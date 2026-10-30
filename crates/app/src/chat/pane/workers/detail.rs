@@ -75,7 +75,10 @@ impl ChatPane {
         let idle = composer
             .as_ref()
             .is_some_and(|composer| super::super::body::composer_idle(composer, window, cx));
-        let cards = Self::cards(&session, well, idle, window, cx);
+        // Bounded by the window, not by the transcript under it, whose
+        // height is what the card leaves: bounded by that, the two would
+        // shrink each other frame by frame.
+        let cards = Self::cards(&session, None, idle, window, cx);
         let card = composer.map(|composer| {
             let blocked = {
                 let composer = composer.read(cx);

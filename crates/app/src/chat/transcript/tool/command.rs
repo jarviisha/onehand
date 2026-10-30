@@ -1,6 +1,7 @@
 //! The command a permission asks to run, as the card and its record draw it.
 
 use super::*;
+use crate::controls::Short as _;
 
 /// The command a permission is asking to run.
 ///
@@ -49,6 +50,13 @@ impl RenderOnce for CommandBlock {
         // for the frame before the list has measured itself, where it is the
         // only answer there is.
         let ceiling = self.well.unwrap_or_else(|| window.viewport_size().height) * COMMAND_SHARE;
+        // **Shown whole up to a bound, then *Show all*, never a scrollbar
+        // the eye has to work**: a command somebody is asked to approve is
+        // read top to bottom. Opened, it takes the panel's share and scrolls
+        // only past that.
+        let opened = window.use_keyed_state(("perm-command-open", key), cx, |_, _| false);
+        let open = *opened.read(cx);
+        let line_count = self.lines.len();
         // The command scrolls inside a `gpui::list` row, so it needs a handle
         // of its own and a mask over it: a bubble listener runs too late there,
         // the transcript having already spent the same wheel delta scrolling
@@ -67,7 +75,22 @@ impl RenderOnce for CommandBlock {
         let more_below = scroll.max_offset().y - scroll.offset().y.abs() > SCROLL_SLACK;
 
         let well = crate::theme::floating_well(cx);
-        plain_box(cx)
+        let toggle = (overflows || open).then(|| {
+            crate::controls::action(("perm-command-all", key))
+                .quiet(cx)
+                .short()
+                .label(match open {
+                    true => "Show less".to_string(),
+                    false => show_all(line_count),
+                })
+                .on_click(move |_, _, cx| {
+                    opened.update(cx, |open, cx| {
+                        *open = !*open;
+                        cx.notify();
+                    })
+                })
+        });
+        let command = plain_box(cx)
             .relative()
             .h_flex()
             .items_start()
@@ -96,7 +119,10 @@ impl RenderOnce for CommandBlock {
                     // newlines**, which is the only kind that holds for a
                     // command of one very long line: one line of a base64 blob
                     // is a screenful of wrapped rows. Past it the box scrolls.
-                    .max_h(COMMAND_H.to_pixels(window.rem_size()).min(ceiling))
+                    .max_h(match open {
+                        true => ceiling,
+                        false => COMMAND_H.to_pixels(window.rem_size()).min(ceiling),
+                    })
                     .overflow_y_scroll()
                     .track_scroll(&scroll)
                     .children(self.lines.into_iter().enumerate().map(|(n, line)| {
@@ -150,10 +176,26 @@ impl RenderOnce for CommandBlock {
                         )),
                 )
             })
-            // Over the fade: the one thing that says how far the command runs.
-            .when(overflows, |block| {
+            // Over the fade, once opened and still longer than the panel's
+            // share: the one thing that says how far the command runs.
+            .when(open && overflows, |block| {
                 block.child(onehand_ui::scrollbar(&scroll).mode(ScrollbarMode::Always))
-            })
+            });
+        div()
+            .v_flex()
+            .w_full()
+            .gap_1()
+            .child(command)
+            .children(toggle)
+    }
+}
+
+/// What opens a command cut at its bound: how many lines it has, when it has
+/// more than one; one long line wrapped is only *Show all*.
+fn show_all(lines: usize) -> String {
+    match lines {
+        0 | 1 => "Show all".to_string(),
+        n => format!("Show all {n} lines"),
     }
 }
 
@@ -184,3 +226,12 @@ pub(in crate::chat::transcript) fn command_cwd(
 
 /// Characters of the working directory the meta line carries.
 pub(super) const MAX_CWD: usize = 48;
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn show_all_says_how_many_lines() {
+        assert_eq!(super::show_all(1), "Show all");
+        assert_eq!(super::show_all(30), "Show all 30 lines");
+    }
+}
