@@ -330,8 +330,18 @@ fn trail(
     held: bool,
     cx: &mut Context<TasksPage>,
 ) -> gpui::Div {
-    let back = onehand_ui::back_link("task-back", "Tasks", cx)
-        .on_click(cx.listener(|page: &mut TasksPage, _, _, cx| page.open_task(None, cx)));
+    let project = row
+        .project
+        .file_name()
+        .map(|name| SharedString::from(name.to_string_lossy().into_owned()));
+    let back = onehand_ui::crumbs(
+        onehand_ui::crumb_link("task-back", "Tasks", cx)
+            .on_click(cx.listener(|page: &mut TasksPage, _, _, cx| page.open_task(None, cx))),
+        project
+            .into_iter()
+            .chain([SharedString::from(row.name.clone())]),
+        cx,
+    );
     let acts = task_acts(row, true);
     let mut acts = acts.into_iter();
     let primary = acts.next().map(|act| {

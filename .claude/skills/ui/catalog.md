@@ -57,6 +57,7 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | An agent's setting picked from what it offers (a mode, a model, an effort): a first choice leaving it to what runs, the values, one not offered marked | `setting_row(id, none_label, offered, current, strict, refused, pick, cx)` (a `choice_track`, capped, *N more*) | `crates/app/src/controls/setting_row.rs` |
 | Tabs that fit their strip, the older ones in a menu | `tab_strip` (the newest that fit at their own widths, the current one among them), `measure_tab` and `tab_width` (each tab's width as last drawn, `TabWidths`), `tab_chip`, `tab_close`, `tab_more` (*N more*, with the picker's caret, opening those left out, `TAB_MENU_CAP` listed), `tab_select` (the Workbench's modes when narrow), `measure_width` | `crates/ui/src/tabs.rs` |
 | A list beside its detail, or one at a time | `list_detail`, `ListWidths`, `back_link` | `crates/ui/src/list_detail.rs` |
+| A page's trail back to the list it was opened from (a task, a workflow, a schedule) | `crumbs` over a `crumb_link` | `crates/ui/src/list_detail.rs` |
 | A line filling an empty panel | `hint` | `crates/ui/src/notice.rs` |
 | A condition standing under a view | `status_line(message, ink)`, in the ink of its state | `crates/ui/src/notice.rs` |
 | Status ink, the middle ink, a dock's surface | `status_ink`, `meta_ink` (`middle_ink` on a fill), `dock_surface` | `crates/ui/src/ink.rs`, `crates/ui/src/surface.rs` |

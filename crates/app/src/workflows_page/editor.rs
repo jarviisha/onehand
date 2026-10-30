@@ -55,13 +55,22 @@ fn column(id: &'static str, child: impl IntoElement) -> gpui::Stateful<gpui::Div
         .child(div().px_6().py_4().child(child))
 }
 
-/// The head across the page: the way back to the cards over the editor's
-/// head, its name, what it is, *Run…* and the ⋯.
-fn head_row(handle: &Entity<WorkflowsPage>, head: Option<AnyElement>, cx: &App) -> AnyElement {
-    let back = back_link("workflows-back", "Workflows", cx)
-        .on_click(click(handle, |page, window, cx| {
-            page.close_workflow_form(window, cx)
-        }));
+/// The head across the page: the trail back to the cards, naming `here`,
+/// over the editor's head, its name, what it is, *Run…* and the ⋯.
+fn head_row(
+    handle: &Entity<WorkflowsPage>,
+    here: SharedString,
+    head: Option<AnyElement>,
+    cx: &App,
+) -> AnyElement {
+    let back = onehand_ui::crumbs(
+        onehand_ui::crumb_link("workflows-back", "Workflows", cx)
+            .on_click(click(handle, |page, window, cx| {
+                page.close_workflow_form(window, cx)
+            })),
+        [here],
+        cx,
+    );
     div()
         .flex_none()
         .v_flex()
@@ -144,6 +153,10 @@ pub(super) fn editor(
         .v_flex()
         .child(head_row(
             handle,
+            match draft.name.read(cx).value().trim() {
+                "" => "Untitled".into(),
+                name => SharedString::from(name.to_string()),
+            },
             Some(editor_head(handle, draft, writing, choices, cx)),
             cx,
         ))
@@ -164,7 +177,7 @@ pub(super) fn unreadable(handle: &Entity<WorkflowsPage>, view: AnyElement, cx: &
     div()
         .size_full()
         .v_flex()
-        .child(head_row(handle, None, cx))
+        .child(head_row(handle, "Cannot be read".into(), None, cx))
         .child(
             div()
                 .h_flex()

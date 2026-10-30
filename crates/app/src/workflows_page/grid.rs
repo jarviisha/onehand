@@ -22,9 +22,10 @@ use onehand_ui::Tall as _;
 use onehand_ui::TallIcon as _;
 use std::path::PathBuf;
 
-/// The least a card takes before the row holds one fewer: as wide as a
-/// project tile on the overview, room for a name and its two lines.
-const CARD_MIN: Rems = rems(14.);
+/// The least a card takes before the row holds one fewer: room for a name,
+/// its two lines, and a foot holding where it runs, its step count, *Run…*
+/// and its ⋯ without cutting any of them.
+const CARD_MIN: Rems = rems(18.);
 
 /// The most cards a row holds, however wide the page.
 const MAX_COLUMNS: usize = 4;

@@ -45,7 +45,7 @@ running, what needs me, and what has finished.
 **The task detail** opens in place of the boxes when a row's text is pressed, read as a page at
 the prose width, its parts plain sections. It shows:
 
-- **a trail**: *Tasks* to go back (Esc too), then what can be done with the task: the most
+- **a trail**: *Tasks* to go back (Esc too) › the project › the workflow, as a breadcrumb, then what can be done with the task: the most
   fitting a primary (a secondary while *Awaiting approval* or the way out holds the view's one
   primary), the next a secondary, the rest in ⋯ (*Retry…* on a finished task, *Answer the
   pull request review…* on an issue's task that can answer one, done with a pull request it

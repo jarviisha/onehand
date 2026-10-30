@@ -273,8 +273,8 @@ height (its dragged height kept).
   in* the path in the code face, or *No schedules match* while a project is picked. Read again
   every minute, its next times with it. The page takes the keys while it shows. *New schedule* is
   its primary (refusing with no project). A row's text opens the schedule in the form.
-- *A schedule's form*, in place of the list, under *Schedules* to go back (Esc too, asking first
-  while it holds changes): a head (the name, *New schedule* until named; when it runs and its
+- *A schedule's form*, in place of the list, under a trail (*Schedules* to go back, Esc too, asking first
+  while it holds changes, › the schedule's name): a head (the name, *New schedule* until named; when it runs and its
   project; ⋯ with *Delete…* for one saved, *Cancel*, *Save* the primary, refusing with the first
   problem); then *Name*, *Project* (a picker) and *On*; *What it starts* (a switch: *A session with
   a prompt*, its *Prompt*, or *A workflow on a brief*, its *Workflow* picker, *Title* and *Brief*,
@@ -295,7 +295,7 @@ height (its dragged height kept).
   *Way out* and the runs as plain sections.
 - *Issues*, a list page (`docs/ui-patterns.md`, *List pages*): a head (*Issues*, then *Refresh*
   and *New issue*, its primary, at the end); the row under it (the search, then *Open* and
-  *Closed* as choices, each its count in a badge on its corner, then pickers for progress, project
+  *Closed* as choices, each its count in a badge after its word, then pickers for progress, project
   and label and *Clear filters* at the row's end), the two kept in place;
   a row is its state mark (open in the success ink, closed in the closed ink), reference, title,
   priority and note, then its labels, project and age in slots at the end, the labels and project
@@ -319,7 +319,7 @@ height (its dragged height kept).
   capped and says so; while the search narrows it, *Showing N of M workflows*, or *No workflows
   match*.
 
-  A card opens its workflow on a page of its own: *Workflows* (back) over its head (its name, how
+  A card opens its workflow on a page of its own: a trail (*Workflows*, back, › its name) over its head (its name, how
   many steps and where it works under it, *Run…*, which refuses until it is saved, a ⋯ with
   *Duplicate*, *Export…* and *Delete…*, then *Cancel* and *Save*, the head's primary, which
   refuses with the first problem and spins while it writes), then three columns parted by hairlines, each scrolling

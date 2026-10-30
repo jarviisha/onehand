@@ -8,10 +8,13 @@
 
 use crate::Quiet as _;
 use crate::Short as _;
-use gpui::{App, Pixels, Rems, Styled as _};
+use gpui::prelude::FluentBuilder as _;
+use gpui::{
+    App, Div, IntoElement, ParentElement as _, Pixels, Rems, SharedString, Styled as _, div,
+};
 use gpui_component::ResizableState;
 use gpui_component::button::Button;
-use gpui_component::{Icon, IconName};
+use gpui_component::{ActiveTheme as _, Icon, IconName, Sizable as _, StyledExt as _};
 use std::ops::Range;
 
 /// The least room a detail is still readable in beside its list.
@@ -89,6 +92,46 @@ pub fn back_link(id: &'static str, list: &'static str, cx: &App) -> Button {
         .flex_none()
         .icon(Icon::new(IconName::ArrowLeft))
         .label(list)
+}
+
+/// The first step of a page's trail ([`crumbs`]): the list the page was
+/// opened from, by name, pressed to go back to it. A button, so the keyboard
+/// reaches it; the caller says what a press does.
+pub fn crumb_link(id: &'static str, list: &'static str, cx: &App) -> Button {
+    crate::action(id).quiet(cx).short().flex_none().label(list)
+}
+
+/// A page's trail, as the library's breadcrumb draws one: `back` (a
+/// [`crumb_link`]), then each of `steps` after a chevron, the steps muted but
+/// the last, which is the page itself. A step that runs long truncates; the
+/// way back never does.
+pub fn crumbs(back: Button, steps: impl IntoIterator<Item = SharedString>, cx: &App) -> Div {
+    let steps: Vec<SharedString> = steps.into_iter().collect();
+    let last = steps.len().saturating_sub(1);
+    let (muted, ink) = (cx.theme().muted_foreground, cx.theme().foreground);
+    div()
+        .h_flex()
+        .items_center()
+        .gap_1()
+        .min_w_0()
+        .text_color(muted)
+        .child(back)
+        .children(steps.into_iter().enumerate().map(move |(i, step)| {
+            div()
+                .h_flex()
+                .items_center()
+                .gap_1()
+                .min_w_0()
+                .child(Icon::new(IconName::ChevronRight).xsmall().text_color(muted))
+                .child(
+                    div()
+                        .min_w_0()
+                        .truncate()
+                        .when(i == last, |step| step.text_color(ink))
+                        .child(step),
+                )
+                .into_any_element()
+        }))
 }
 
 #[cfg(test)]

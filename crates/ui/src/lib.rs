@@ -47,7 +47,7 @@ pub use ink::{
     StatusInk, Tint, control_fill, control_fill_of, faint_rule, meta_ink, middle_ink, neutral_tint,
     status_hue, status_ink, tint, tint_over,
 };
-pub use list_detail::{ListDetail, ListWidths, back_link, list_detail};
+pub use list_detail::{ListDetail, ListWidths, back_link, crumb_link, crumbs, list_detail};
 pub use menu::{
     menu_below, menu_command, menu_item, menu_label, menu_row, menu_still, split_action,
 };
