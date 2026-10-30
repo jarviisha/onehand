@@ -40,7 +40,7 @@ pub(super) fn signal_hint(signal: Option<SessionSignal>) -> &'static str {
 /// solid shape among outlines. A lost agent is the failure shape, and its word
 /// says which failure. A step under the row's text, so the mark reads as a
 /// mark and the title as the thing.
-pub(super) fn status_icon(signal: Option<SessionSignal>, cx: &App) -> gpui::AnyElement {
+pub(crate) fn status_icon(signal: Option<SessionSignal>, cx: &App) -> gpui::AnyElement {
     let ink = crate::theme::status_ink(cx);
     let (icon, color) = match signal {
         Some(SessionSignal::Busy) => {
@@ -65,7 +65,7 @@ pub(super) fn status_icon(signal: Option<SessionSignal>, cx: &App) -> gpui::AnyE
 
 /// The ink a state's word takes on the meta line: its own, for a state that
 /// waits on the person; the line's, for every other.
-fn word_ink(signal: Option<SessionSignal>, cx: &App) -> Option<Hsla> {
+pub(crate) fn word_ink(signal: Option<SessionSignal>, cx: &App) -> Option<Hsla> {
     let ink = crate::theme::status_ink(cx);
     match signal {
         Some(SessionSignal::Lost | SessionSignal::Failed) => Some(ink.danger),
@@ -116,7 +116,7 @@ pub(super) const LABEL_SHAPE_CAP: usize = 120;
 
 /// What a session row is called: the conversation's own name once it has
 /// one, otherwise the agent that runs it.
-pub(super) fn session_label(title: Option<&str>, agent: &str) -> SharedString {
+pub(crate) fn session_label(title: Option<&str>, agent: &str) -> SharedString {
     ellipsize(title.unwrap_or(agent), LABEL_SHAPE_CAP)
 }
 
@@ -194,7 +194,7 @@ fn session_menu(
 }
 
 /// The words of the action that sends a failed turn's prompt again.
-const RESEND: &str = "Send the last prompt again";
+pub(crate) const RESEND: &str = "Send the last prompt again";
 
 /// How a session row stands: the one on screen, the one the keyboard is on.
 pub(super) struct Mark {

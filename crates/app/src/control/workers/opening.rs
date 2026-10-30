@@ -207,10 +207,14 @@ fn ready(
         said.push(format!("turn: {turn} accepted"));
     }
     let answer = said.join("\n");
-    let mut sessions = super::sessions();
-    sessions.workers.insert(open.uid, relation);
-    sessions
-        .requests
-        .answered(open.lead, &open.request, answer.clone());
+    {
+        let mut sessions = super::sessions();
+        sessions.workers.insert(open.uid, relation);
+        sessions
+            .requests
+            .answered(open.lead, &open.request, answer.clone());
+    }
+    // The person's view reads the relation: nothing in a session changed.
+    crate::state::with_shell(open.window, cx, |_, _, cx| cx.notify());
     Ok(answer)
 }

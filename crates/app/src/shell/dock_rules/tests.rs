@@ -72,9 +72,11 @@ fn the_terminal_key_opens_an_empty_dock_rather_than_closing_it() {
 #[test]
 fn a_remembered_panel_off_screen_falls_back_to_the_conversation() {
     use super::super::FocusedPanel as P;
-    assert_eq!(addressed(P::Terminal, false, true), P::Chat);
-    assert_eq!(addressed(P::Workbench, true, false), P::Chat);
-    assert_eq!(addressed(P::Terminal, true, false), P::Terminal);
-    assert_eq!(addressed(P::Workbench, false, true), P::Workbench);
-    assert_eq!(addressed(P::Chat, false, false), P::Chat);
+    assert_eq!(addressed(P::Terminal, false, true, false), P::Chat);
+    assert_eq!(addressed(P::Workbench, true, false, false), P::Chat);
+    assert_eq!(addressed(P::Terminal, true, false, false), P::Terminal);
+    assert_eq!(addressed(P::Workbench, false, true, false), P::Workbench);
+    assert_eq!(addressed(P::Chat, false, false, false), P::Chat);
+    assert_eq!(addressed(P::Workers, false, false, false), P::Chat);
+    assert_eq!(addressed(P::Workers, false, false, true), P::Workers);
 }

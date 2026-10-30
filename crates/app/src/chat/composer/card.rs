@@ -46,19 +46,25 @@ impl Composer {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let (step_down, step_up, take_row) = (session.clone(), session.clone(), session.clone());
+        let compact = self.compact;
         let fast = self
             .fast_control(session, cx)
+            .filter(|_| !compact)
             .map(|fast| self.opens_menu(Overlay::Fast, fast));
         let options_open = self.overlay == Some(Overlay::Options);
         let effort_open = self.overlay == Some(Overlay::Effort);
-        let model = options_action(session, cx).map(|label| {
-            let chip = option_action(label, options_open, session, cx);
-            self.opens_menu(Overlay::Options, chip)
-        });
-        let effort = effort_action(session, cx).map(|label| {
-            let chip = effort_chip(label, effort_open, session, cx);
-            self.opens_menu(Overlay::Effort, chip)
-        });
+        let model = options_action(session, cx)
+            .filter(|_| !compact)
+            .map(|label| {
+                let chip = option_action(label, options_open, session, cx);
+                self.opens_menu(Overlay::Options, chip)
+            });
+        let effort = effort_action(session, cx)
+            .filter(|_| !compact)
+            .map(|label| {
+                let chip = effort_chip(label, effort_open, session, cx);
+                self.opens_menu(Overlay::Effort, chip)
+            });
         // The model and what it runs at sit side by side, each opening its own
         // short menu: one popup holding both outgrew any width a menu can take.
         let options_control = (model.is_some() || effort.is_some()).then(|| {
@@ -213,7 +219,7 @@ impl Composer {
                             .gap_2()
                             .flex_1()
                             .min_w_0()
-                            .child(add)
+                            .when(!compact, |row| row.child(add))
                             // Ahead of the model, because the model chip is the
                             // one thing here that truncates, and anything after
                             // it would be what is pushed off the end.

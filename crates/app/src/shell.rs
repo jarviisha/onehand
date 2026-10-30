@@ -35,6 +35,7 @@ mod roots;
 mod sessions;
 mod settings_page;
 mod storage;
+mod workers;
 mod workflows;
 pub use crate::instance::hold_or_forward;
 pub use boot::{boot, open_or_focus, seed_workspace};
@@ -175,6 +176,8 @@ pub enum FocusedPanel {
     Chat,
     Workbench,
     Terminal,
+    /// The workers' region, in the Workbench's place.
+    Workers,
 }
 
 impl FocusedPanel {
@@ -188,6 +191,7 @@ impl FocusedPanel {
             Self::Chat => "Conversation",
             Self::Workbench => "Workbench",
             Self::Terminal => "Terminal",
+            Self::Workers => "Workers",
         }
     }
 }
@@ -354,6 +358,14 @@ pub struct Shell {
     /// The right dock, kept for the same reason: switching roots swaps its
     /// tabs and its tree.
     workbench: Entity<Workbench>,
+    /// The workers' region, mounted in the right dock in the Workbench's
+    /// place while it shows.
+    workers_panel: Entity<crate::chat::workers_panel::WorkersPanel>,
+    /// Which of the two the right dock holds.
+    right: workers::RightPanel,
+    /// Whether the Workbench was open when the region took its place: what
+    /// hiding the region gives back, and what the layout saves meanwhile.
+    workbench_under: bool,
     /// The bottom dock. Per-root shells, so it follows the selection too.
     terminal: Entity<TerminalPanel>,
     /// The Issues page, made once so it is found as it was left whenever it

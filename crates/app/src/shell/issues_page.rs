@@ -231,6 +231,7 @@ impl Shell {
         self.select_root(idx, window, cx);
         self.workbench
             .update(cx, |panel, cx| panel.open_file(path, window, cx));
+        self.leave_workers(window, cx);
         self.dock.update(cx, |dock, cx| {
             if !dock.is_dock_open(DockPlacement::Right) {
                 dock.toggle_dock(DockPlacement::Right, window, cx);

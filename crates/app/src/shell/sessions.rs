@@ -315,7 +315,15 @@ impl Shell {
         let Some(root) = self.window.workspace.active_root() else {
             return Vec::new();
         };
-        let live: Vec<u64> = root.sessions.iter().map(|s| s.uid).collect();
+        // A worker of a lead in this window is reached through its lead.
+        let live: Vec<u64> = root
+            .sessions
+            .iter()
+            .map(|s| s.uid)
+            .filter(|uid| {
+                crate::control::lead_of(*uid).is_none_or(|lead| self.locate(lead).is_none())
+            })
+            .collect();
         let mut order: Vec<u64> = self
             .mru
             .get(&root.path)
@@ -639,19 +647,7 @@ impl Shell {
     /// showing. For a run somebody picked by hand, who asked for it and is
     /// waiting to watch it, and for a session pressed on the workspace page.
     pub fn show_session(&mut self, uid: u64, window: &mut Window, cx: &mut Context<Self>) {
-        let found = self
-            .window
-            .workspace
-            .roots
-            .iter()
-            .enumerate()
-            .find_map(|(ri, root)| {
-                root.sessions
-                    .iter()
-                    .position(|session| session.uid == uid)
-                    .map(|si| (ri, si))
-            });
-        if let Some((root_idx, session_idx)) = found {
+        if let Some((root_idx, session_idx)) = self.locate(uid) {
             self.select_root_session(root_idx, session_idx, window, cx);
         }
     }
@@ -714,8 +710,8 @@ impl Shell {
         let live = self.dock.read(cx).is_dock_open(DockPlacement::Bottom);
         self.terminal_homes.put_away(live);
         self.set_terminal_visible(false, window, cx);
-        self.page_hid_workbench =
-            self.dock.read(cx).is_dock_open(DockPlacement::Right) || self.stepped_aside;
+        self.hide_workers(window, cx);
+        self.page_hid_workbench = self.workbench_open(cx) || self.stepped_aside;
         self.hide_workbench(window, cx);
     }
 

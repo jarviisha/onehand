@@ -2,6 +2,7 @@ use super::{
     BLOCK_GAP, COMPOSER_COLUMN, COMPOSER_MIN_H, COMPOSER_REST, ChatPane, LIST_HEAD, NARROW_PANEL,
     OverlayRoom, SMOKE, waits_alone,
 };
+use crate::chat::composer::Composer;
 use crate::chat::session::ChatSession;
 use crate::chat::transcript::{self};
 use crate::chat::viewport::{self};
@@ -39,25 +40,56 @@ impl ChatPane {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Vec<gpui::AnyElement> {
+        let composer_idle = composer_idle(&self.composer, window, cx);
+        let mut pinned = Self::cards(session, well, composer_idle, window, cx);
+        // Under the blocking cards and directly over the composer, because that
+        // is where the prompt it holds was written and where it will reappear
+        // if the queue is cancelled.
+        let mut lines: Vec<gpui::AnyElement> = Vec::new();
+        lines.extend(self.connecting_strip(cx).map(IntoElement::into_any_element));
+        lines.extend(self.queued_strip(cx).map(IntoElement::into_any_element));
+        // Last, so it rests on the composer it belongs to: what is staged
+        // waits above the card rather than inside it, where every file added
+        // or taken off moved the field being typed in.
+        lines.extend(self.composer.update(cx, |composer, cx| composer.tray(cx)));
+        // **One surface for all of it, on the card's own fill and lift.** Bare,
+        // these lines floated over the transcript, and a conversation scrolled
+        // behind them ran its words straight through theirs.
+        pinned.extend((!lines.is_empty()).then(|| {
+            div()
+                .v_flex()
+                .gap_2()
+                .w_full()
+                // The card's inset, so the words here start on the edge the
+                // field's do.
+                .p_1p5()
+                .bg(crate::theme::raised(cx))
+                .shadow(crate::theme::composer_lift(cx))
+                .rounded(cx.theme().radius)
+                .children(lines)
+                .into_any_element()
+        }));
+        pinned
+    }
+
+    /// The oldest permission or question session `session` waits on, and how
+    /// many more wait after it. `composer_idle` is whether the composer under
+    /// them is focused and empty, so Enter may answer the card.
+    pub(super) fn cards(
+        session: &Entity<ChatSession>,
+        well: Option<gpui::Pixels>,
+        composer_idle: bool,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Vec<gpui::AnyElement> {
         // A question's free-text box needs a window to be built and the session
         // never has one, so the card's own way to the screen is where it is
         // made. Before the cards are read, since the box is one of them.
-        // Idle means nothing is being put together there: no words and no
-        // staged files, since a prompt of a pasted screenshot alone is one
-        // whose Enter must still send it rather than answer a card.
-        let composer_idle = {
-            let composer = self.composer.read(cx);
-            composer.state.focus_handle(cx).is_focused(window)
-                && composer.text(cx).is_empty()
-                && composer.attachments.is_empty()
-        };
         session.update(cx, |s, cx| {
             s.sync_ask_inputs(window, cx);
             s.sync_perm_focus(composer_idle, window, cx);
         });
-        let Some(chat) = self.active_chat(cx) else {
-            return Vec::new();
-        };
+        let chat = &session.read(cx).chat;
         let mut out: Vec<(usize, gpui::AnyElement)> = chat
             .pending_permissions()
             .into_iter()
@@ -99,33 +131,6 @@ impl ChatPane {
                     1 => "1 more request waits after this one".to_string(),
                     n => format!("{n} more requests wait after this one"),
                 })
-                .into_any_element()
-        }));
-        // Under the blocking cards and directly over the composer, because that
-        // is where the prompt it holds was written and where it will reappear
-        // if the queue is cancelled.
-        let mut lines: Vec<gpui::AnyElement> = Vec::new();
-        lines.extend(self.connecting_strip(cx).map(IntoElement::into_any_element));
-        lines.extend(self.queued_strip(cx).map(IntoElement::into_any_element));
-        // Last, so it rests on the composer it belongs to: what is staged
-        // waits above the card rather than inside it, where every file added
-        // or taken off moved the field being typed in.
-        lines.extend(self.composer.update(cx, |composer, cx| composer.tray(cx)));
-        // **One surface for all of it, on the card's own fill and lift.** Bare,
-        // these lines floated over the transcript, and a conversation scrolled
-        // behind them ran its words straight through theirs.
-        pinned.extend((!lines.is_empty()).then(|| {
-            div()
-                .v_flex()
-                .gap_2()
-                .w_full()
-                // The card's inset, so the words here start on the edge the
-                // field's do.
-                .p_1p5()
-                .bg(crate::theme::raised(cx))
-                .shadow(crate::theme::composer_lift(cx))
-                .rounded(cx.theme().radius)
-                .children(lines)
                 .into_any_element()
         }));
         pinned
@@ -240,6 +245,16 @@ impl ChatPane {
                 ),
         )
     }
+}
+
+/// Whether `composer` is focused with nothing being put together in it: no
+/// words and no staged files, since a prompt of a pasted screenshot alone is
+/// one whose Enter must still send it rather than answer a card.
+pub(super) fn composer_idle(composer: &Entity<Composer>, window: &Window, cx: &App) -> bool {
+    let composer = composer.read(cx);
+    composer.state.focus_handle(cx).is_focused(window)
+        && composer.text(cx).is_empty()
+        && composer.attachments.is_empty()
 }
 
 impl ChatPane {

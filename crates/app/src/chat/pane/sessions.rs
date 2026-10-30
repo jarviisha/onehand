@@ -1,6 +1,7 @@
 use super::fork::StagedFork;
 use super::project_page::EmptyProject;
 use super::{ChatPane, ChatPaneEvent, ProjectFacts, Restart, SessionSignal, switching_away};
+use crate::chat::composer::Composer;
 use crate::chat::conversation::{Conversation, SessionPhase};
 use crate::chat::session::{ChatEvent, ChatSession};
 use gpui::{App, Context, Entity, Focusable, SharedString, Window};
@@ -469,6 +470,9 @@ impl ChatPane {
     pub fn close(&mut self, uid: u64, cx: &mut Context<Self>) {
         self.conversations.remove(&uid);
         crate::control::forget(uid);
+        // A worker closed, or a lead whose workers go back to the rail: their
+        // blocks leave the region, the caret with them first.
+        self.release_workers(cx);
         if self.active == Some(uid) {
             // What the composer still holds is dropped by the next `show`,
             // which treats an unaddressed draft as unaddressed.
@@ -564,8 +568,19 @@ impl ChatPane {
         let Some(session) = self.session() else {
             return;
         };
+        Self::submit_from(&session, &self.composer.clone(), window, cx);
+    }
+
+    /// Send what `composer` holds to `session`, or queue it behind the turn
+    /// that runs.
+    pub(super) fn submit_from(
+        session: &Entity<ChatSession>,
+        composer: &Entity<Composer>,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
         let (text, staged) = {
-            let composer = self.composer.read(cx);
+            let composer = composer.read(cx);
             (composer.text(cx), composer.attachments.clone())
         };
         // Clear only on a prompt that went somewhere -- sent, or queued behind
@@ -581,8 +596,7 @@ impl ChatPane {
             }
         });
         if taken {
-            self.composer
-                .update(cx, |composer, cx| composer.clear(window, cx));
+            composer.update(cx, |composer, cx| composer.clear(window, cx));
         }
     }
 
@@ -622,7 +636,7 @@ impl ChatPane {
         }
     }
 
-    fn cancel(session: &Entity<ChatSession>, cx: &mut Context<Self>) {
+    pub(super) fn cancel(session: &Entity<ChatSession>, cx: &mut App) {
         session.update(cx, |session, cx| {
             session.chat.cancel_turn();
             cx.notify();

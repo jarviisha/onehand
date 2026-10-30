@@ -79,6 +79,16 @@ pub enum ChatPaneEvent {
     /// in the composer, so the third state made the first press do nothing a
     /// presser could see.
     ToggleWorkbench,
+    /// The workers' button in the header, or the hide on the region's strip:
+    /// the region takes the Workbench's place in the window's dock, or gives
+    /// it back.
+    ToggleWorkers,
+    /// The region's maximize, which the shell carries out as it does a
+    /// dock's.
+    MaximizeWorkers,
+    /// *Close* in a worker's block: its session closed as the rail closes
+    /// one, by the shell that owns the row.
+    CloseWorker(u64),
     /// The user pressed the terminal button in the conversation's header.
     ///
     /// Announced rather than acted on for exactly the reasons above, and open

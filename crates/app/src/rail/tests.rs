@@ -2,6 +2,7 @@ use super::model::{
     Filter, Item, Row, SESSION_CAP, Shape, age_label, attention_count, badge, meta, order, rows,
     toggle_attention, visible,
 };
+use super::model::{emptied, fold_workers};
 use super::project::{GitLine, auto_status, project_hint, run_on};
 use super::row::project_key;
 use super::session::{LABEL_SHAPE_CAP, session_label, signal_hint};
@@ -28,6 +29,7 @@ fn seed() -> Vec<Item> {
         background: 0,
         subagents: 0,
         in_turn: false,
+        lead: None,
     };
     vec![
         s(0, 0, 1, "Inspect dashboard", Some(AwaitingUser), 4),
@@ -314,6 +316,7 @@ fn a_group_past_the_cap_says_how_many_more_until_shown_whole() {
             background: 0,
             subagents: 0,
             in_turn: false,
+            lead: None,
         })
         .collect();
     let capped = rows(&many, &shape(Filter::ByProject, "", &|_| true, &|_| false));
@@ -557,4 +560,95 @@ fn a_plain_folder_still_answers_on_hover() {
 fn the_tasks_pill_shows_only_a_count_above_zero() {
     assert_eq!(super::attention_pill(0), None);
     assert_eq!(super::attention_pill(3).as_deref(), Some("3"));
+}
+
+/// The seed with session 1 the lead of 2 (running) and of 7 (failed, in
+/// project 2, a worktree holding nothing else).
+fn with_workers() -> Vec<Item> {
+    let mut items = seed();
+    items[1].lead = Some(1);
+    items.push(Item {
+        root: 2,
+        session: 0,
+        uid: 7,
+        title: "Worker".into(),
+        agent: "claude".into(),
+        signal: Some(SessionSignal::Failed),
+        since: since(3),
+        age: 3,
+        background: 0,
+        subagents: 0,
+        in_turn: false,
+        lead: Some(1),
+    });
+    items
+}
+
+#[test]
+fn a_worker_of_an_open_lead_is_not_listed() {
+    let uids: Vec<u64> = fold_workers(with_workers()).iter().map(|i| i.uid).collect();
+    assert_eq!(uids, vec![1, 6, 3, 4, 5]);
+}
+
+#[test]
+fn the_lead_row_takes_its_most_urgent_worker() {
+    let folded = fold_workers(with_workers());
+    let lead = folded.iter().find(|i| i.uid == 1).unwrap();
+    assert_eq!(lead.signal, Some(SessionSignal::Failed));
+    assert_eq!(lead.age, 3, "the age of the worker whose state it is");
+}
+
+#[test]
+fn a_lead_more_urgent_than_its_workers_keeps_its_own() {
+    let mut items = seed();
+    items[0].signal = Some(SessionSignal::Lost);
+    items[1].lead = Some(1);
+    let folded = fold_workers(items);
+    assert_eq!(folded[0].signal, Some(SessionSignal::Lost));
+    assert_eq!(folded[0].age, 4);
+}
+
+/// Counted before the fold: a waiting worker needs attention even unlisted.
+#[test]
+fn a_waiting_worker_counts_as_needing_attention() {
+    let items = with_workers();
+    assert_eq!(attention_count(&items), 3);
+    assert_eq!(attention_count(&fold_workers(seed())), 2);
+}
+
+/// A worker's lead gone, nothing names it any more: it is listed again.
+#[test]
+fn the_workers_come_back_when_the_lead_goes() {
+    let mut items = with_workers();
+    items.remove(0);
+    for item in &mut items {
+        item.lead = None;
+    }
+    assert_eq!(fold_workers(items).len(), 6);
+}
+
+/// A worker whose lead is not in this list (another window's) stays listed.
+#[test]
+fn a_worker_of_a_lead_not_listed_stays() {
+    let mut items = seed();
+    items[1].lead = Some(99);
+    assert_eq!(fold_workers(items).len(), 6);
+}
+
+#[test]
+fn a_project_left_with_only_hidden_workers_is_emptied() {
+    let had: Vec<usize> = with_workers().iter().map(|i| i.root).collect();
+    let folded = fold_workers(with_workers());
+    assert_eq!(emptied(&had, &folded), vec![2]);
+}
+
+#[test]
+fn the_needs_attention_filter_lists_the_lead_of_a_failed_worker() {
+    let mut items = seed();
+    items[0].signal = None;
+    items[1].lead = Some(1);
+    items[1].signal = Some(SessionSignal::AwaitingUser);
+    let folded = fold_workers(items);
+    let shown = visible(&folded, &PROJECTS, Filter::NeedsAttention, "");
+    assert!(shown.iter().any(|&i| folded[i].uid == 1));
 }

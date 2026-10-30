@@ -33,6 +33,15 @@ run stops and the session becomes an ordinary one. Answering a card the run's ag
 taking over.
 _Avoid_: hijack, adopt
 
+**Lead**:
+A session whose agent controls onehand and opened other sessions to work for it, its workers.
+_Avoid_: parent, manager, orchestrator
+
+**Worker**:
+A session a lead opened with `open_session`, seen through its lead while the lead is open. The
+lead holds it until the person sends it a prompt; *Give back to the lead* returns it.
+_Avoid_: child, subagent, job
+
 ## Agents
 
 **Built-in agent**:

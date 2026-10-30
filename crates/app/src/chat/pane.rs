@@ -37,6 +37,7 @@ mod runs;
 mod sessions;
 mod step_strip;
 mod titles;
+mod workers;
 pub use events::{ChatPaneEvent, ProjectAction, Restart, SessionSignal};
 use header::Archives;
 pub use pages::PageKind;
@@ -224,6 +225,8 @@ impl ProjectFacts {
 pub struct DocksOpen {
     pub terminal: bool,
     pub workbench: bool,
+    /// The workers' region, in the Workbench's place.
+    pub workers: bool,
 }
 
 pub struct ChatPane {
@@ -336,6 +339,8 @@ pub struct ChatPane {
     /// is silent: focus handed to an input that is not on screen leaves the
     /// window with nothing focused at all.
     composer_drawn: bool,
+    /// The workers' region, drawn here and mounted in a dock panel.
+    workers: workers::Workers,
     /// When the turn on screen started, and the ticker keeping its clock true.
     ///
     /// **Stamped here because the model does not carry it.** A turn's start is
@@ -424,6 +429,7 @@ impl ChatPane {
                 git: None,
                 composer_h: Default::default(),
                 composer_drawn: false,
+                workers: workers::Workers::new(),
                 turn_began: None,
                 ticker: None,
             }

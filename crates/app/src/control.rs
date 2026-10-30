@@ -26,6 +26,7 @@ mod workers;
 
 pub(crate) use start::{Started, start_task};
 use start::{start, template};
+pub(crate) use workers::whose::{Worker, give_back, give_back_offered, lead_of, workers_of};
 
 /// Whether a program outside onehand may use the tools. Read by the
 /// listener on every message it answers, so it is shared with that runtime

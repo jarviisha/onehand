@@ -40,9 +40,10 @@ mod row;
 mod search;
 mod session;
 mod workspace;
+pub(crate) use model::{needs_attention, word};
 pub use project::{pick_item, unattended_item};
 pub(crate) use row::page_fill;
-pub(crate) use session::signal_mark;
+pub(crate) use session::{RESEND, session_label, signal_mark, status_icon, word_ink};
 pub(crate) use workspace::ellipsize_front;
 
 /// How far a session row is set in under its project: one mark's slot, the
@@ -148,6 +149,9 @@ impl RailState {
 struct List {
     items: Vec<Item>,
     rows: Vec<Row>,
+    /// Sessions waiting on the person, the workers left out of `items`
+    /// counted too.
+    waiting: usize,
 }
 
 impl List {
@@ -178,11 +182,21 @@ impl List {
                     background: row.background,
                     subagents: row.subagents,
                     in_turn: row.in_turn,
+                    lead: crate::control::lead_of(s.uid),
                 }
             })
             .collect();
+        let waiting = model::attention_count(&items);
+        let had: Vec<usize> = items.iter().map(|item| item.root).collect();
+        let items = model::fold_workers(items);
+        // A worktree holding only hidden workers is theirs, not the person's.
+        let emptied = model::emptied(&had, &items);
         let names: Vec<&str> = roots.iter().map(|root| root.label.as_str()).collect();
-        let order = workspace.display_order();
+        let order: Vec<usize> = workspace
+            .display_order()
+            .into_iter()
+            .filter(|root| !(roots[*root].transient && emptied.contains(root)))
+            .collect();
         let state = shell.rail_state();
         let query = state.search.read(cx).value().to_string();
         let rows = model::rows(
@@ -199,7 +213,11 @@ impl List {
                 },
             },
         );
-        Self { items, rows }
+        Self {
+            items,
+            rows,
+            waiting,
+        }
     }
 
     /// The sessions in the order the list draws them, as project and place.
@@ -307,11 +325,7 @@ pub fn rail(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> impl Int
                 .child(workspace::new_button(shell, window_state, target, cx)),
         )
         .child(pages(shell, cx))
-        .child(search::sessions_header(
-            state,
-            model::attention_count(&list.items),
-            cx,
-        ))
+        .child(search::sessions_header(state, list.waiting, cx))
         .child(
             div()
                 .id("rail-list")

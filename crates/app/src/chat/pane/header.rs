@@ -29,7 +29,7 @@ use std::path::PathBuf;
 const HEADER_NAME_MIN: Rems = rems(8.);
 /// The dot on the terminal button saying a shell is alive behind a closed dock:
 /// small enough to sit on the glyph's corner without covering it.
-const LIVE_DOT: Rems = rems(0.375);
+pub(super) const LIVE_DOT: Rems = rems(0.375);
 
 /// The conversations already had in the project on screen, for the header's
 /// *Open a past conversation* menu.
@@ -223,6 +223,10 @@ impl ChatPane {
             // hold one project's things, and the page stands on none.
             .when(self.page.is_none(), |row| {
                 row.child(self.terminal_control(cx))
+            })
+            // Between the terminal and the Workbench, whose place it takes.
+            .when(self.page.is_none(), |row| {
+                row.children(self.workers_control(cx))
             })
             // The Workbench closed leaves nothing on screen at all -- no strip,
             // no edge, no name -- so without this the file tree and the editor

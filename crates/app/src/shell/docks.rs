@@ -14,14 +14,20 @@ impl Shell {
             FocusedPanel::Terminal
         } else if self.workbench.focus_handle(cx).contains_focused(window, cx) {
             FocusedPanel::Workbench
+        } else if self
+            .workers_panel
+            .focus_handle(cx)
+            .contains_focused(window, cx)
+        {
+            FocusedPanel::Workers
         } else if self.chat.focus_handle(cx).contains_focused(window, cx) {
             FocusedPanel::Chat
         } else {
-            let dock = self.dock.read(cx);
             dock_rules::addressed(
                 self.last_panel,
-                dock.is_dock_open(DockPlacement::Bottom),
-                dock.is_dock_open(DockPlacement::Right),
+                self.dock.read(cx).is_dock_open(DockPlacement::Bottom),
+                self.workbench_open(cx),
+                self.workers_open(cx),
             )
         }
     }
@@ -46,10 +52,10 @@ impl Shell {
     /// show it. Guarded on the pane's side; run on every frame the window draws,
     /// because a dock opens from more places than any one hook sees.
     pub(super) fn sync_docks_open(&mut self, cx: &mut Context<Self>) {
-        let dock = self.dock.read(cx);
         let open = crate::chat::DocksOpen {
-            terminal: dock.is_dock_open(DockPlacement::Bottom),
-            workbench: dock.is_dock_open(DockPlacement::Right),
+            terminal: self.dock.read(cx).is_dock_open(DockPlacement::Bottom),
+            workbench: self.workbench_open(cx),
+            workers: self.workers_open(cx),
         };
         self.chat
             .update(cx, |pane, cx| pane.set_docks_open(open, cx));
@@ -84,7 +90,10 @@ impl Shell {
         PanelLayout {
             // The width the person wants, never one a narrow window drew.
             workbench_w: fallback.workbench_w,
-            workbench_open: dock.is_dock_open(DockPlacement::Right) || self.stepped_aside,
+            // The region is not saved: the Workbench it stands in for is.
+            workbench_open: self.workbench_open(cx)
+                || self.stepped_aside
+                || (self.right == super::workers::RightPanel::Workers && self.workbench_under),
             // The height the person wants, never one a short window drew.
             terminal_h: fallback.terminal_h,
             terminal_open: dock.is_dock_open(DockPlacement::Bottom),
@@ -147,6 +156,9 @@ impl Shell {
         }
         self.last_panel = FocusedPanel::Workbench;
         self.stepped_aside = false;
+        // Taking the region's place, the Workbench takes no focus: the caret
+        // the region held goes to the lead's composer.
+        let replaced = self.leave_workers(window, cx);
         let open = self.dock.read(cx).is_dock_open(DockPlacement::Right);
         self.workbench
             .update(cx, |panel, cx| panel.set_mode(mode, cx));
@@ -155,14 +167,16 @@ impl Shell {
                 dock.toggle_dock(DockPlacement::Right, window, cx)
             });
         }
-        self.workbench
-            .update(cx, |panel, cx| panel.focus_active(window, cx));
+        if !replaced {
+            self.workbench
+                .update(cx, |panel, cx| panel.focus_active(window, cx));
+        }
         cx.notify();
     }
 
     /// Toggle visibility independently of focus, preserving the selected mode.
     pub(super) fn toggle_workbench(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.dock.read(cx).is_dock_open(DockPlacement::Right) {
+        if self.workbench_open(cx) {
             self.hide_workbench(window, cx);
         } else {
             let mode = self.workbench.read(cx).mode();
@@ -173,6 +187,10 @@ impl Shell {
     /// Close the dock and recover focus if its focused content disappears.
     pub(super) fn hide_workbench(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.stepped_aside = false;
+        // The region holds the dock: the Workbench is already away.
+        if self.right == super::workers::RightPanel::Workers {
+            return;
+        }
         self.leave_workbench_focus(window, cx);
         let had_focus = self.workbench.focus_handle(cx).contains_focused(window, cx);
         // A maximized panel cannot be left blown up over a dock that is no
@@ -420,6 +438,7 @@ impl Shell {
             FocusedPanel::Chat => (DockPlacement::Center, self.chat.entity_id()),
             FocusedPanel::Workbench => (DockPlacement::Right, self.workbench.entity_id()),
             FocusedPanel::Terminal => (DockPlacement::Bottom, self.terminal.entity_id()),
+            FocusedPanel::Workers => (DockPlacement::Right, self.workers_panel.entity_id()),
         };
         self.dock
             .update(cx, |dock, cx| zoom_in(dock, placement, id, window, cx));
@@ -430,6 +449,7 @@ impl Shell {
                     .update(cx, |pane, cx| pane.reclaim_focus(window, cx)),
                 FocusedPanel::Workbench => self.workbench.focus_handle(cx).focus(window, cx),
                 FocusedPanel::Terminal => self.terminal.focus_handle(cx).focus(window, cx),
+                FocusedPanel::Workers => self.workers_panel.focus_handle(cx).focus(window, cx),
             }
         }
         self.set_app_maximized(Some(panel), cx);
@@ -445,7 +465,11 @@ impl Shell {
     /// the opposite of what it does. Guarded inside each panel, because this is
     /// called on paths that run whether or not anything changed and a panel
     /// notifying redraws the window.
-    fn set_app_maximized(&mut self, panel: Option<FocusedPanel>, cx: &mut Context<Self>) {
+    pub(super) fn set_app_maximized(
+        &mut self,
+        panel: Option<FocusedPanel>,
+        cx: &mut Context<Self>,
+    ) {
         self.app_maximized = panel;
         let terminal = panel == Some(FocusedPanel::Terminal);
         self.terminal.update(cx, |terminal_panel, cx| {
@@ -454,6 +478,10 @@ impl Shell {
         let workbench = panel == Some(FocusedPanel::Workbench);
         self.workbench.update(cx, |workbench_panel, cx| {
             workbench_panel.set_maximized(workbench, cx);
+        });
+        let workers = panel == Some(FocusedPanel::Workers);
+        self.workers_panel.update(cx, |workers_panel, cx| {
+            workers_panel.set_maximized(workers, cx);
         });
     }
 
@@ -483,6 +511,11 @@ impl Shell {
                 panel.set_zoom(zoom, cx);
             }),
             FocusedPanel::Terminal => self.terminal.update(cx, |panel, cx| {
+                let mut zoom = panel.zoom();
+                step.apply(&mut zoom);
+                panel.set_zoom(zoom, cx);
+            }),
+            FocusedPanel::Workers => self.workers_panel.update(cx, |panel, cx| {
                 let mut zoom = panel.zoom();
                 step.apply(&mut zoom);
                 panel.set_zoom(zoom, cx);
