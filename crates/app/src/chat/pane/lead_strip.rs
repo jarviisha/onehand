@@ -71,6 +71,8 @@ impl ChatPane {
                 .text_size(onehand_ui::tokens::CHROME_TEXT)
                 .text_color(muted)
                 .cursor_pointer()
+                // A press answers the pointer as a line row does: its ink lifts.
+                .hover(|line| line.text_color(cx.theme().foreground))
                 // Kept from the pane, which takes focus on a press: the caret
                 // stays where it was.
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
@@ -95,11 +97,14 @@ impl ChatPane {
                 }))
                 .child(div().flex_1())
                 .children(waiting.map(|name| {
+                    // The name gives way before the words that say what the ink
+                    // means.
                     div()
+                        .h_flex()
                         .min_w_0()
-                        .truncate()
                         .text_color(crate::theme::status_ink(cx).warning)
-                        .child(format!("{name} needs you"))
+                        .child(div().min_w_0().truncate().child(name))
+                        .child(div().flex_none().child("\u{a0}needs you"))
                 }));
         // Narrower than the composer it stands on.
         Some(div().w_full().px_3().child(line).into_any_element())

@@ -135,7 +135,7 @@ ends on *Show all N lines*, which opens it in place; then one surface on the car
 reconnect and the queue as lines, then the staged files as one row of plates (a picture's preview,
 pressed to open it whole in a dialog; a text file opening in the Workbench), faded where cut beside
 *Show all N*. A picture attached to a sent prompt opens the same way. While the session on screen
-leads workers, a strip stands on the card, narrower than it, one line above the card's: *N
+leads workers, the lead's strip stands on the card, narrower than it, one line above the card's: *N
 workers*, a count per state that has any, most urgent first, in its mark and ink, and at the end,
 in the warning ink, *<name> needs you* for the most urgent worker waiting on the person, when one
 does. It stays while the workers' region shows. Pressed, the region shows with the most urgent

@@ -183,10 +183,10 @@ impl Shell {
         true
     }
 
-    /// Say the deck's ages again: it is drawn by the pane, which nothing
-    /// else wakes while every session stands still.
-    pub(crate) fn tick_deck(&self, cx: &mut Context<Self>) {
-        if !self.chat.read(cx).lead_workers().is_empty() {
+    /// Say the workers' list's ages again while it shows: it is drawn by the
+    /// pane, which nothing else wakes while every session stands still.
+    pub(crate) fn tick_worker_ages(&self, cx: &mut Context<Self>) {
+        if self.workers_open(cx) {
             self.chat.update(cx, |_, cx| cx.notify());
         }
     }
