@@ -96,4 +96,6 @@ pub(in crate::control) struct Relation {
     pub(in crate::control) text: Option<String>,
     /// The worker's prompts sent once the lead's last went.
     pub(in crate::control) sent: usize,
+    /// The folders it may write besides its own.
+    pub(in crate::control) dirs: Vec<PathBuf>,
 }

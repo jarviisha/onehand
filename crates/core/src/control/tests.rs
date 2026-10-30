@@ -204,7 +204,11 @@ fn every_tool_refuses_malformed_input() {
 
 #[test]
 fn the_catalogue_lists_every_tool_with_a_schema() {
-    let reply = reply(handle(&mut ready(), &line("tools/list", json!({})), on));
+    let reply = reply(handle(
+        &mut session_ready(),
+        &line("tools/list", json!({})),
+        on,
+    ));
     let tools = reply["result"]["tools"].as_array().unwrap();
     let names: Vec<_> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
     assert_eq!(
@@ -222,7 +226,8 @@ fn the_catalogue_lists_every_tool_with_a_schema() {
             "stop_task",
             "open_file",
             "list_issues",
-            "create_issue"
+            "create_issue",
+            "session_state"
         ]
     );
     for tool in tools {
@@ -663,4 +668,70 @@ fn the_issue_tools_parse_their_input() {
         json!({"title": "t", "labels": ["auto"]})
     ))
     .contains("labels"));
+}
+
+/// A connection past `initialize`, as a session's agent says it is one.
+fn session_ready() -> Conn {
+    let mut conn = Conn::default();
+    let hello = line(
+        "initialize",
+        json!({"_meta": {"onehand": {"session": "t"}}}),
+    );
+    assert!(matches!(handle(&mut conn, &hello, on), Handled::Reply(_)));
+    conn
+}
+
+fn names_listed(conn: &mut Conn, standing: impl Fn(&Peer) -> Standing) -> Vec<String> {
+    let reply = reply(handle(conn, &line("tools/list", json!({})), standing));
+    reply["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|tool| tool["name"].as_str().unwrap().to_string())
+        .collect()
+}
+
+#[test]
+fn session_state_parses_its_handle() {
+    let mut conn = session_ready();
+    let call = match handle(
+        &mut conn,
+        &line(
+            "tools/call",
+            json!({"name": "session_state", "arguments": {"session": "3f2a9c01-7"}}),
+        ),
+        on,
+    ) {
+        Handled::Perform { call, .. } => *call,
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(
+        call,
+        Call::SessionState {
+            session: "3f2a9c01-7".into()
+        }
+    );
+}
+
+/// An outside program owns no worker, so it is never offered one's tools.
+#[test]
+fn an_outside_program_is_not_listed_session_state() {
+    assert!(!names_listed(&mut ready(), on).contains(&"session_state".to_string()));
+}
+
+#[test]
+fn an_outside_program_calling_session_state_is_refused() {
+    let why = refusal(call("session_state", json!({"session": "3f2a9c01-7"})));
+    assert!(why.contains("session's agent"), "{why}");
+}
+
+#[test]
+fn a_session_on_lists_session_state() {
+    assert!(names_listed(&mut session_ready(), on).contains(&"session_state".to_string()));
+}
+
+#[test]
+fn a_set_without_it_does_not_list_it() {
+    let some = |_: &Peer| Standing::Only(vec!["list_issues".into()]);
+    assert!(!names_listed(&mut session_ready(), some).contains(&"session_state".to_string()));
 }

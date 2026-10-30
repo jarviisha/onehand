@@ -419,6 +419,7 @@ impl Chat {
         }
         self.prompts_sent += 1;
         self.cancelled = false;
+        self.cut_off = false;
 
         self.push_user(
             text.to_string(),
@@ -611,6 +612,19 @@ impl Chat {
     /// transcript: an adapter delivers user chunks of its own mid-turn.
     pub fn prompted_beyond(&self, sent: usize) -> bool {
         self.queued.is_some() || self.prompts_sent > sent
+    }
+
+    /// Whether the last turn was cut off by the link being lost, so how it
+    /// ended is not known.
+    pub(crate) fn turn_cut_off(&self) -> bool {
+        self.cut_off
+    }
+
+    /// Take over the prompts the chat this one restarts had sent, `before`:
+    /// a restart builds the chat anew, and a count starting again from
+    /// nothing would read a person's next prompt as nobody's.
+    pub fn carry_sent(&mut self, before: usize) {
+        self.prompts_sent += before;
     }
 
     /// What sending the last prompt again sends: its text, once a turn has

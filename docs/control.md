@@ -79,6 +79,7 @@ answer, and exits.
 | `open_file` | `path` | opens the file in the Workbench and shows the Workbench, without taking focus | what it opened, or why not |
 | `list_issues` | optional `project` | the project's own open issues, as its Issues tab keeps them (a synced project's imported ones too); the calling session's project when none is named | `#<n> — <title>`, one per line |
 | `create_issue` | optional `project`, `title`, optional `body` | writes one issue into the project's own issue file, read again wherever the issues are on screen; an open issue with the same title (case and spaces aside) is not written again. It takes no labels: the issue gets those of the calling session's schedule, so no agent labels its own issue for an unattended run | `Wrote issue #<n>: …`, or `Issue #<n> is already open with that title` |
+| `session_state` | `session`, a worker's handle | for a session's agent, about a worker it opened; never listed to an outside program | the worker's state, one fact per line; `link: closed` once it is gone; or why not |
 
 - **A task a tool starts is driven off screen**, the way an issue's run is: its session is in the
   rail (a schedule's that ends done leaves it, `docs/schedules.md`) and the task on the Tasks page,
@@ -180,6 +181,27 @@ is refused, naming each.
   that never came up, a mode or model refused, a prompt not taken. Only the open's own session is
   closed, ending its agent; its project goes only if the open added it and no session is left on
   it; its folder, its place under the cap and its request id are freed; the answer says why.
+- **`session_state`** reads a worker the caller opened, one fact per line, each from core's own
+  facts rather than the rail's single mark:
+  - `link`: `connecting`, `connected` or `lost`; once the worker's session is gone the whole
+    answer is `link: closed`, the one line that proves it stopped, since closing a session ends
+    its agent.
+  - `turn`: `none`, `running`, `failed: <its words>`, `cancelled` (a person's Stop is not a
+    failure), `lost with the link` (cut off, so how it ended is not known) or `ended`.
+  - `waiting`: the permissions and questions parked, which only a person answers, or `none`.
+  - `activity`: `running:` with the turn, background work by name, subagents and the agent
+    working by itself; `none reported`; or `unknown` while the link is not connected, since a
+    lost link clears what onehand held. `none reported` is enough to send the next turn, never
+    proof the agent stopped.
+  - `held by`: `person` once a prompt of theirs has gone to the agent, else `lead`; a restart of
+    the worker's agent keeps the count it is read from.
+  - `turns`: the lead's last turn number, `ended` once it is over, the link up and the lead still
+    holding the worker, else `not yet ended`.
+  - `mode`, `model`, `dirs`, as in force.
+
+  A handle from an earlier run is refused as such. Anything that is not the caller's own worker,
+  open or closed, or a uid that never was one, gets the same refusal, so a lead learns nothing of
+  sessions that are not its own.
 - **The lead is asked about at every step**, and its closing or being switched off wakes the open
   at once. A lead that went while its worker was opening abandons the open: it fails as above,
   its prompt never sent. A person watching a worker whose open failed is put back on what is

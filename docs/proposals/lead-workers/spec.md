@@ -170,6 +170,8 @@ Kept per lead for the run of the app, with the arguments it came with.
 
 ## 2. `session_state(session)`
 
+Built in PR 3; what is built is in control.md's *A worker*.
+
 For a worker of the caller. A handle from another run is refused as such; a handle of this run
 whose session no longer exists answers `link: closed`, since a uid is never reused within a run.
 Another lead's worker, or a session no lead opened, is refused.

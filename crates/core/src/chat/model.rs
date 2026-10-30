@@ -153,6 +153,9 @@ pub struct Chat {
     /// actually goes out, which is what anything asking "has somebody else
     /// prompted this session" needs.
     pub prompts_sent: usize,
+    /// The turn running when the link was lost, cut off with it: how it
+    /// ended nobody knows. Cleared by the next prompt.
+    cut_off: bool,
     /// The turn was cancelled — a Stop, here or from the remote bridge —
     /// rather than finished by the agent: asked for during it, or said by
     /// its stop reason. Holds until the next prompt goes out.
