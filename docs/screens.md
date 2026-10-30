@@ -130,7 +130,8 @@ onehand* under a heading of its own, *This session*, checked while on, and not o
 unattended run's session. Each chip's
 menu opens just above it, without its tooltip. Above the card: one pinned permission or question,
 the oldest (a subagent's is titled `<name> asks permission` or `<name> asks: <question>`), with
-how many more wait; then one surface on the card's fill and lift holding a
+how many more wait; a permission's command shows whole up to about ten lines, and past them
+ends on *Show all N lines*, which opens it in place; then one surface on the card's fill and lift holding a
 reconnect and the queue as lines, then the staged files as one row of plates (a picture's preview,
 pressed to open it whole in a dialog; a text file opening in the Workbench), faded where cut beside
 *Show all N*. A picture attached to a sent prompt opens the same way. While the session on screen
@@ -139,10 +140,9 @@ card's: *N workers*, a count per state that has any, most urgent first, in its m
 the end the most urgent worker's name, state and age. Pressed, it slides up over the transcript to
 a row per worker (its mark, name, state, age, the lead's last turn and its background count, and
 under them what it waits on in the warning ink, else what it is doing), *Stop* on one whose turn
-runs; pressed again it slides back. A row opens the workers' region at that worker, the caret in
-its block. The pointer leaves the caret where it was; *Show the workers* (`Ctrl+Shift+Y`) opens the
-deck with the keys on its first row, `↑`/`↓` move them, `Enter` opens the row, `Esc` folds the deck
-and gives the caret to the composer. *Run a workflow…* (the `+` menu, the
+runs; pressed again it slides back. A row opens the workers' region with that worker picked. The
+pointer leaves the caret where it was; the keys reach the workers through the region's list.
+*Run a workflow…* (the `+` menu, the
 keymap, the Workflows page's *Run…*) opens the launcher, and an issue's *Run workflow…* its start
 form; both are drawn as `docs/workflows.md` describes.
 
@@ -188,19 +188,29 @@ height (its dragged height kept).
   other away, a caret in the one leaving going to the lead's composer and the one arriving taking
   none; hiding the region gives the Workbench back as it was, and while it shows the layout saves
   the Workbench's state, not the region's. It shows the workers of the lead on screen, follows the lead on screen, and closes on a
-  session without workers or a page. Its strip: *Workers of* the lead's name, maximize, hide. Under
-  it a block per worker, stacked, at most four (the cap). A block's head: its state mark (a
-  spinner while it connects, with nothing under it yet), name, the state's word in its ink, the
-  lead's last turn, *held by you* while the person holds it, *Stop* while a turn runs, and `⋯`
-  (*Give back to the lead* while offered, *Send the last prompt again* after a failure, *Close*);
-  pressing it opens the block, the caret in its composer. One block is open, the first by
-  default: its whole transcript, scrolling, the oldest card it waits on, and a composer with
-  *Send*, *Stop* and *Queue* and nothing else. A folded block shows its transcript's last lines
-  at a fixed height and its oldest card. The open block keeps a minimum of about ten rows and its
-  composer; short of room, the folded blocks drop their last lines first, then the stack scrolls
-  as a whole. A caret in a block that leaves (closed, its lead gone) goes to the lead's composer
-  first. A worker asked for anywhere else (the keys, a toast, the remote bridge) shows its lead
-  with the region at that worker; `Ctrl+Tab` passes over workers. Not saved.
+  session without workers or a page. Its strip: *Workers · N*, maximize, hide.
+  - **The list**, pinned under the strip and never scrolled away: a row per worker, at most four
+    (the cap), as the deck draws them, the picked one in the selected step. Ordered by urgency
+    (failed or disconnected, needs input, running or connecting, done, idle; ties as the lead
+    opened them) when the region opens and when a worker is picked; in between a row that changes
+    state changes in place and does not move. A worker starting to wait moves nothing, picks
+    nothing and opens nothing: its row turns to *Needs input* with the command under it.
+  - **The picked worker's detail** fills the rest, the most urgent picked when the region opens.
+    Its head: its state mark (a spinner while it connects, with nothing under it yet), name, the
+    state's word in its ink, its folder's last component (the whole path on hover), *held by you*
+    while the person holds it, *Write to <name>…* (the name up to its first ` · `), *Stop* while
+    a turn runs, and `⋯` (*Give back to the lead* while offered, *Send the last prompt again* after
+    a failure, *Close*). Under it the oldest card it waits on, then its whole transcript,
+    scrolling, following the newest output. No composer until *Write to …*: then one at the foot,
+    with *Send*, *Stop* and *Queue* and nothing else; sending or `Esc` closes it, the draft kept.
+  - **The keys.** Opened by the pointer the region takes no caret. *Show the workers*
+    (`Ctrl+Shift+Y`) opens it with the caret on the list: `↑`/`↓` pick the row above or below,
+    `Enter` opens *Write to …*, `Esc` gives the caret to the lead's composer. While the caret is
+    in the region, `Alt+Y`/`Alt+A`/`Alt+N` answer the picked worker's card, and nothing when it
+    waits on none.
+  - A caret in a composer that leaves (closed, its lead gone) goes to the lead's composer first. A
+    worker asked for anywhere else (the keys, a toast, the remote bridge) shows its lead with the
+    region at that worker picked; `Ctrl+Tab` passes over workers. Not saved.
 
 ## Pages without a session
 

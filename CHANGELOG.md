@@ -126,11 +126,14 @@ minor bump may break any of them.
   rolled back.
 - A session whose agent opens workers is their lead: the workers leave the rail, the lead's row
   keeps its own state and counts *N workers need you*, and a workers' region in the Workbench's
-  place stacks a block per worker, where you read, answer, stop and write to it. A deck tucked behind the lead's
-  composer counts them and how they stand; pressed, or with `Ctrl+Shift+Y`, it slides up to a row
-  per worker. Writing to a worker takes it from the
-  lead; *Give back to the lead* in its block returns it. A lead closing puts its workers back in
+  place lists every worker, most urgent first, over the picked one's card and live transcript;
+  *Write to …* opens a composer for it only when asked. A deck tucked behind the lead's
+  composer counts them and how they stand; pressed, it slides up to a row per worker, and
+  `Ctrl+Shift+Y` puts the caret on the region's list. Writing to a worker takes it from the lead;
+  *Give back to the lead* in its menu returns it. A lead closing puts its workers back in
   the rail.
+- A permission card shows its command whole up to about ten lines, then *Show all N lines*,
+  rather than in a box that scrolls.
 - A worker is named for what it works on when its lead gives a name, else for its folder, never
   for the first words of its lead's prompt.
 
