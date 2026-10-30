@@ -223,11 +223,28 @@ pub struct Composer {
     /// Where the open menu was drawn last frame. It floats outside the block
     /// that closes it on a press elsewhere, so that press asks this first.
     pub(in crate::chat) menu_bounds: MenuBounds,
+    /// A worker's, under its block: Send, Stop and Queue only, with no menu
+    /// and no completion, whose lists the pane draws for its own composer.
+    compact: bool,
     _subscriptions: Vec<Subscription>,
 }
 
 impl Composer {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        Self::build("Ask the agent…", false, window, cx)
+    }
+
+    /// A composer for a worker's block: see [`Self::compact`]'s field.
+    pub fn compact(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        Self::build("Write to the worker…", true, window, cx)
+    }
+
+    fn build(
+        placeholder: &'static str,
+        compact: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let state = cx.new(|cx| {
             TextareaState::new(window, cx)
                 .auto_grow(1, 8)
@@ -247,13 +264,13 @@ impl Composer {
                 // in the pane, and on a narrow panel it truncated into half a
                 // sentence of instructions -- so the field spent its one line
                 // saying something incompletely that the row below says whole.
-                .placeholder("Ask the agent…")
+                .placeholder(placeholder)
         });
 
         let subscription = cx.subscribe(
             &state,
             |composer: &mut Self, state, event: &InputEvent, cx| {
-                if matches!(event, InputEvent::Change) {
+                if matches!(event, InputEvent::Change) && !composer.compact {
                     let text = state.read(cx).value().to_string();
                     let caret = state.read(cx).cursor();
                     composer.retrigger(&text, caret, cx);
@@ -273,6 +290,7 @@ impl Composer {
             tray_scroll: gpui::ScrollHandle::new(),
             anchors: Default::default(),
             menu_bounds: Default::default(),
+            compact,
             _subscriptions: vec![subscription],
         }
     }
