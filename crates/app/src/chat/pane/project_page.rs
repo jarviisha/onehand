@@ -2,7 +2,6 @@ use super::header::Archives;
 use super::{ChatPane, ChatPaneEvent, ProjectFacts, rel_time};
 use crate::chat::conversation::Conversation;
 use crate::controls::Named as _;
-use crate::controls::Quiet as _;
 use crate::controls::Short as _;
 use crate::controls::text_input;
 use crate::page_parts::{count_of, page_card, page_head, ruled};
@@ -13,10 +12,12 @@ use gpui::{
     SharedString, StatefulInteractiveElement, Styled, Window, div, rems,
 };
 use gpui_component::button::ButtonVariants as _;
+use gpui_component::menu::ContextMenuExt as _;
 use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::chat::ConvMeta;
 use onehand_ui::Tall as _;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 mod schedules_box;
 use schedules_box::schedules_box;
@@ -286,11 +287,7 @@ impl ChatPane {
     /// the history, then what the project needs and is set to, so
     /// what belongs together reads as one object rather than as text loose on
     /// the page.
-    pub(super) fn project_home(
-        &self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> gpui::AnyElement {
+    pub(super) fn project_home(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         // Ahead of whether there is a project: with no agent nothing can be
         // started anywhere, and that is the first thing to put right.
         if crate::state::Shared::global(cx).agents.is_empty() {
@@ -305,7 +302,6 @@ impl ChatPane {
         };
         let now = onehand_core::chat::now_secs();
         let (muted, ring) = (cx.theme().muted_foreground, cx.theme().ring);
-        let danger = crate::theme::status_ink(cx).danger;
         let muted_line = |text: String| div().text_xs().text_color(muted).child(text);
         // Bounded, and the bound says so below. A project worked in for months
         // has more archives than this page is for.
@@ -387,14 +383,37 @@ impl ChatPane {
                     let dir = meta.dir.clone();
                     let name = SharedString::from(meta.title.clone());
                     let group = SharedString::from(format!("home-row-{i}"));
-                    // The keyboard on the row shows its *Delete…* as the
-                    // pointer does, and either way it takes the place of
-                    // the facts it covers.
-                    let keyed =
-                        window.last_input_was_keyboard() && focus.contains_focused(window, cx);
+                    // Resuming is the row's own press; its ⋯ and a
+                    // right-click offer it by name, and the removal.
+                    let pane = cx.entity().downgrade();
+                    let resume = {
+                        let (pane, agent, archive) = (pane.clone(), agent.clone(), archive.clone());
+                        Rc::new(move |_: &gpui::ClickEvent, _: &mut Window, cx: &mut App| {
+                            let _ = pane.update(cx, |_: &mut Self, cx| {
+                                cx.emit(ChatPaneEvent::StartSession {
+                                    agent: Some(agent.clone()),
+                                    resume: Some(archive.clone()),
+                                });
+                            });
+                        })
+                            as Rc<dyn Fn(&gpui::ClickEvent, &mut Window, &mut App)>
+                    };
+                    let delete = Rc::new(
+                        move |_: &gpui::ClickEvent, window: &mut Window, cx: &mut App| {
+                            let (dir, name) = (dir.clone(), name.clone());
+                            let _ = pane.update(cx, |pane: &mut Self, cx| {
+                                pane.confirm_delete(dir, name, window, cx);
+                            });
+                        },
+                    )
+                        as Rc<dyn Fn(&gpui::ClickEvent, &mut Window, &mut App)>;
+                    let acts: Rc<[onehand_ui::RowAct]> = Rc::new([
+                        onehand_ui::RowAct::new("Resume", resume),
+                        onehand_ui::RowAct::new("Delete…", delete).danger(),
+                    ]);
+                    let menu_acts = acts.clone();
                     let row = onehand_ui::row(false, cx)
                         .id(("home", i))
-                        .relative()
                         .h_flex()
                         .items_center()
                         .gap_2()
@@ -424,63 +443,41 @@ impl ChatPane {
                         // own picker: this list crosses every agent that
                         // has worked in the project, and resuming a row
                         // starts a session on the one that held it.
-                        .child(
-                            div()
-                                .flex_none()
-                                .text_xs()
-                                .text_color(muted)
-                                .when(keyed, |facts| facts.invisible())
-                                .group_hover(group.clone(), |facts| facts.invisible())
-                                .child(format!(
-                                    "{} · {}",
-                                    count_of(meta.item_count, "item"),
-                                    meta.agent
-                                )),
-                        )
+                        .child(div().flex_none().text_xs().text_color(muted).child(format!(
+                            "{} · {}",
+                            count_of(meta.item_count, "item"),
+                            meta.agent
+                        )))
                         .on_click(cx.listener(move |_: &mut Self, _, _, cx| {
                             cx.emit(ChatPaneEvent::StartSession {
                                 agent: Some(agent.clone()),
                                 resume: Some(archive.clone()),
                             });
                         }))
-                        // A word rather than a glyph: everything else here
-                        // can be done again, and a deleted conversation
-                        // cannot. Laid over the row's facts rather than
-                        // beside them, so the facts reach the edge; the
-                        // press stops there, or it also opens the row.
+                        // The press on ⋯ stays its own, or it also opens the
+                        // row.
                         .child(
                             div()
-                                .absolute()
-                                .top_0()
-                                .bottom_0()
-                                .right_0()
-                                .h_flex()
-                                .items_center()
+                                .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
+                                    cx.stop_propagation()
+                                })
                                 .child(
                                     onehand_ui::hover_slot(
                                         group,
                                         false,
-                                        crate::controls::action(("home-delete", i))
-                                            .quiet(cx)
-                                            .short()
-                                            .text_color(danger)
-                                            .label("Delete…")
-                                            .tooltip("Delete this conversation")
-                                            .on_click(cx.listener(
-                                                move |pane: &mut Self, _, window, cx| {
-                                                    cx.stop_propagation();
-                                                    pane.confirm_delete(
-                                                        dir.clone(),
-                                                        name.clone(),
-                                                        window,
-                                                        cx,
-                                                    );
-                                                },
-                                            )),
+                                        onehand_ui::row_more(
+                                            format!("home-more-{i}"),
+                                            "Conversation actions",
+                                            acts,
+                                            cx,
+                                        ),
                                     )
                                     .focus(focus),
                                 ),
-                        );
+                        )
+                        .context_menu(move |menu, _, cx| {
+                            onehand_ui::row_menu_items(menu, &menu_acts, cx)
+                        });
                     row.into_any_element()
                 }),
             cx,

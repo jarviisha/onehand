@@ -313,8 +313,10 @@ keyboard focus remains separately visible, but on a list page, whose arrow keys 
 selection itself (*List pages*). Hover actions are also available on keyboard focus, so
 a row whose actions hide at rest is a tab stop; a focus a click leaves does not show them.
 
-A row's actions follow what the person must do next. A row waiting on the person (*Needs
-attention*) keeps its actions drawn, since they are its point. The keys passing a row whose
+A row's actions sit behind a `⋯` (`row_more`), shown on hover, on the keyboard's row and always
+on the current one, and the same items open on a right-click (`row_menu_items`), one list for
+both, a removal last in the danger ink. A row's own press is offered there by name too. A row's actions follow what the person must do next. A row waiting on the person (*Needs
+attention*) keeps its actions drawn as buttons beside its `⋯`, since they are its point. The keys passing a row whose
 content is open on screen, already holding those actions, lay none, so a row the keys only pass
 through stays still.
 

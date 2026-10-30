@@ -282,7 +282,7 @@ impl ChatPane {
             return waiting_hint("Opening the session…".into(), cx).into_any_element();
         }
         let Some(session) = self.session() else {
-            return self.project_home(window, cx);
+            return self.project_home(cx);
         };
         // Copied out rather than borrowed, so recording the connect and drawing
         // the header below are not held up by a borrow of the conversation.
@@ -290,7 +290,7 @@ impl ChatPane {
             .active_chat(cx)
             .map(|chat| (chat.link, chat.activity_status()))
         else {
-            return self.project_home(window, cx);
+            return self.project_home(cx);
         };
         // Set the first time an adapter is actually up and never unset: it is
         // what tells a first connect from a reconnect.
@@ -328,7 +328,7 @@ impl ChatPane {
                 .into_any_element();
         }
         let Some(chat) = self.active_chat(cx) else {
-            return self.project_home(window, cx);
+            return self.project_home(cx);
         };
 
         // Asked of the conversation, on the composer's current contents, so
@@ -364,7 +364,7 @@ impl ChatPane {
         // permission answer has to reach the right one -- hence the typed id
         // rather than a render position.
         let Some(list_state) = self.reproject(room, cx) else {
-            return self.project_home(window, cx);
+            return self.project_home(cx);
         };
         // Asked after the layout, because holding a question at the top is what
         // decides both: the room under the last run, and whether being parked

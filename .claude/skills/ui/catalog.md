@@ -38,6 +38,7 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | A small label, a badge | `badge(text, tint)`: the library's `Tag` at its own size and corner, edged in `badge_edge`, in a `Tint`'s fill and ink (`tint(base, cx)` for a hue, `neutral_tint(cx)` for none) | `crates/ui/src/badge.rs` |
 | A mark down a column (an icon, a state's mark, a dot) | `mark_slot(mark)`: one icon wide, centred, so marks share a line and labels an edge | `crates/ui/src/row.rs` |
 | A row's actions shown on hover | `hover_slot(group, shown, child)`, then `.focus(&row_handle)`: a trailing slot keeping its width, visible while the row named `group` is hovered, while the keyboard holds the row, or while `shown` (selected, or its action running). A hidden slot's controls are not tab stops, so the row itself is one | `crates/ui/src/row_actions.rs` |
+| A row's `⋯` and its right-click, one list of acts for both | `RowAct`, `row_more`, `row_menu_items` (with `context_menu`) | `crates/ui/src/row_actions.rs` |
 | An issue's label | `label_badge(label, cx)`: a badge tinted by the label's kind; `label_tint(label, cx)` the kind's tint, whose ink writes a label inside a line of meta text | `crates/ui/src/badge.rs` |
 | A block held folded | `fold_toggle(id, label, open)`: the chevron first, on the secondary fill, `.short()` | `crates/ui/src/button.rs` |
 | A box on a page | `card_box(cx)`: a control's edge (`input`), no fill, `p_3`, `gap_2` | `crates/ui/src/surface.rs` |

@@ -160,15 +160,6 @@ fn session_menu(
                     .ok();
             }),
         )
-        .item(crate::controls::menu_item("Restart the agent").on_click(
-            move |_, window, cx: &mut App| {
-                restart
-                    .update(cx, |shell: &mut Shell, cx| {
-                        shell.restart_session_at(root_idx, session_idx, window, cx);
-                    })
-                    .ok();
-            },
-        ))
         .item(crate::controls::menu_item("Export as Markdown…").on_click(
             move |_, window, cx: &mut App| {
                 export
@@ -178,6 +169,20 @@ fn session_menu(
                     .ok();
             },
         ))
+        .separator()
+        .item(
+            crate::controls::menu_command(
+                "Restart the agent",
+                Box::new(crate::shell::RestartSession),
+            )
+            .on_click(move |_, window, cx: &mut App| {
+                restart
+                    .update(cx, |shell: &mut Shell, cx| {
+                        shell.restart_session_at(root_idx, session_idx, window, cx);
+                    })
+                    .ok();
+            }),
+        )
         .separator()
         // A plain word: the conversation is kept and can be resumed, so
         // closing takes nothing that cannot come back.

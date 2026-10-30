@@ -251,7 +251,7 @@ height (its dragged height kept).
   under it, *Run check* (spinning while a check runs) and *New session* (primary, with a caret
   picking another agent while more than one is configured) at the end); then, in one column at every width, the box *Past
   conversations* with its count, its rows the overview's (age, title, then items and agent at the
-  edge, *Delete…* laid over them on hover), capped, its wait and empty lines inside it; under
+  edge, then a `⋯` on hover holding *Resume* and *Delete…*, the same on a right-click), capped, its wait and empty lines inside it; under
   it the box *Tasks* (how many need attention, run or wait, each opening the Tasks page
   narrowed to the project; *Nothing running here* at zero); then the box *Schedules* (the
   project's schedules by name with when each runs next, or *off*, each opening the Schedules page

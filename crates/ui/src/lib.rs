@@ -57,7 +57,7 @@ pub use page::{page_head, page_search, page_top};
 pub use prose::{no_code_label, unedged_code};
 pub use resize::{edge_handle, h_resizable, v_resizable};
 pub use row::{mark_slot, row, tree_row};
-pub use row_actions::{HoverSlot, hover_slot};
+pub use row_actions::{HoverSlot, Press, RowAct, hover_slot, row_menu_items, row_more};
 pub use strip::{mode_strip, strip, strip_control, workbench_strip};
 pub use surface::{card_box, dock_surface, scrollbar, well};
 pub use tabs::{

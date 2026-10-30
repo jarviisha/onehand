@@ -39,8 +39,9 @@ running, what needs me, and what has finished.
   older ones were removed since onehand started.
 - **Every box is capped at 50 rows** and says how many more it left out.
 - **The project filter** is a picker in a filter bar above the boxes, kept while the page is left;
-  a project's page sets it. The boxes stand two by two while the column holds two. A row shows its
-  actions while it is pointed at, except under *Needs attention*, whose next action stays drawn.
+  a project's page sets it. The boxes stand two by two while the column holds two. A row's actions
+  are in its `⋯`, shown while it is pointed at, and on a right-click; under *Needs attention* they
+  also stay drawn as buttons.
 
 **The task detail** opens in place of the boxes when a row's text is pressed, read as a page at
 the prose width, its parts plain sections. It shows:
