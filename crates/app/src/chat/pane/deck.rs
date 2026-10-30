@@ -5,25 +5,17 @@
 //!
 //! **The pointer leaves the caret where it was**, in the lead's composer as
 //! a rule: the edge's press is kept from the pane, which would take focus.
-//! *Show the workers* opens it from the keyboard with focus on its first
-//! row; Esc folds it and gives the caret back to the composer.
+//! The keyboard's way to the workers is the region's list.
 
-use super::workers::urgency;
+use super::workers::{WORKER_ROW_H, step, urgency};
 use super::{ChatPane, ChatPaneEvent, SessionSignal};
-use crate::control::Worker;
-use crate::controls::Quiet as _;
-use crate::controls::Short as _;
-use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    Context, FocusHandle, InteractiveElement, IntoElement, MouseButton, ParentElement, Rems,
+    Context, FocusHandle, InteractiveElement, IntoElement, MouseButton, ParentElement,
     StatefulInteractiveElement as _, Styled, Window, div, rems,
 };
 use gpui_component::{ActiveTheme as _, Icon, IconName, Sizable as _, StyledExt as _};
 use std::collections::HashMap;
 use std::time::Instant;
-
-/// A worker's row: its state on one line, what it does or waits on under.
-const DECK_ROW_H: Rems = rems(2.75);
 
 gpui::actions!(workers_deck, [DeckUp, DeckDown, DeckOpen, DeckFold]);
 
@@ -96,18 +88,18 @@ fn summary(signals: &[Option<SessionSignal>]) -> Vec<(Option<SessionSignal>, usi
     counts
 }
 
-/// The row a key moves to among `len`, stopping at either end.
-fn step(row: usize, len: usize, down: bool) -> usize {
-    match down {
-        true => (row + 1).min(len.saturating_sub(1)),
-        false => row.saturating_sub(1),
-    }
-}
-
 impl ChatPane {
     /// Ages by the rail's clock, pushed by the shell as they change.
     pub fn set_since(&mut self, since: HashMap<u64, Instant>) {
         self.deck.since = since;
+    }
+
+    /// Whole minutes worker `uid` has stood as it is, by the rail's clock.
+    pub(super) fn worker_age(&self, uid: u64) -> u64 {
+        self.deck
+            .since
+            .get(&uid)
+            .map_or(0, |at| at.elapsed().as_secs() / 60)
     }
 
     pub(super) fn deck_open(&self) -> bool {
@@ -122,19 +114,6 @@ impl ChatPane {
             self.deck.turns += 1;
             self.deck.pressed = Some((Instant::now(), from));
         }
-        cx.notify();
-    }
-
-    /// *Show the workers*: the deck open, focus on its first row. Only where
-    /// the composer it is tucked behind is drawn, so the focus lands on
-    /// something in the frame.
-    pub fn show_deck(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.lead_workers().is_empty() || !self.composer_drawn {
-            return;
-        }
-        self.press_deck(true, cx);
-        self.deck.row = 0;
-        self.deck.focus.focus(window, cx);
         cx.notify();
     }
 
@@ -188,12 +167,7 @@ impl ChatPane {
         let signals: Vec<Option<SessionSignal>> =
             workers.iter().map(|w| self.signal(w.uid, cx)).collect();
         self.deck.row = self.deck.row.min(workers.len() - 1);
-        let age = |uid: u64| {
-            self.deck
-                .since
-                .get(&uid)
-                .map_or(0, |at| at.elapsed().as_secs() / 60)
-        };
+        let age = |uid: u64| self.worker_age(uid);
         let urgent = workers
             .iter()
             .zip(&signals)
@@ -207,12 +181,22 @@ impl ChatPane {
             .zip(&signals)
             .enumerate()
             .map(|(i, (worker, signal))| {
-                self.deck_row(worker, *signal, age(worker.uid), (i, keyed == Some(i)), cx)
-                    .into_any_element()
+                self.worker_row(
+                    worker,
+                    *signal,
+                    age(worker.uid),
+                    (false, keyed == Some(i)),
+                    "workers-deck-row",
+                    move |pane, _, cx| {
+                        pane.deck.row = i;
+                        pane.deck_open_row(cx);
+                    },
+                    cx,
+                )
             })
             .collect();
         let rem = onehand_ui::tokens::ROW_H;
-        let full = rems(rem.0 + DECK_ROW_H.0 * workers.len() as f32);
+        let full = rems(rem.0 + WORKER_ROW_H.0 * workers.len() as f32);
         let card = div()
             .v_flex()
             .w_full()
@@ -331,106 +315,6 @@ impl ChatPane {
                     crate::rail::age_label(age(uid)),
                 ))
             }))
-    }
-
-    /// A worker's row: its state, age, turn and background count, and under
-    /// them its latest activity or the question it waits on.
-    fn deck_row(
-        &self,
-        worker: &Worker,
-        signal: Option<SessionSignal>,
-        age: u64,
-        (i, keyed): (usize, bool),
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement + use<> {
-        let uid = worker.uid;
-        let muted = cx.theme().muted_foreground;
-        let chat = self.session_of(uid).map(|session| &session.read(cx).chat);
-        let waiting = chat.and_then(|chat| chat.waiting_line());
-        let line = waiting
-            .clone()
-            .or_else(|| chat.and_then(|chat| chat.activity_status()));
-        let in_turn = chat.is_some_and(|chat| chat.busy);
-        let (background, _, _) = self.activity(uid, cx);
-        let mut facts = vec![crate::rail::age_label(age)];
-        facts.extend(worker.turn.map(|turn| format!("turn {turn}")));
-        if background > 0 {
-            facts.push(format!("{background} in background"));
-        }
-        div()
-            .relative()
-            .h_flex()
-            .items_center()
-            .gap_2()
-            .h(DECK_ROW_H)
-            .px_3()
-            // A press here leaves the caret where it was: the deck tracks
-            // its focus for the keys alone.
-            .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
-            .when(keyed, |row| row.child(crate::rail::key_ring(cx)))
-            .child(
-                div()
-                    .id(("workers-deck-row", uid))
-                    .v_flex()
-                    .flex_1()
-                    .min_w_0()
-                    .h_full()
-                    .justify_center()
-                    .cursor_pointer()
-                    .hover(|row| row.text_color(cx.theme().foreground))
-                    .on_click(cx.listener(move |pane: &mut Self, _, _, cx| {
-                        pane.deck.row = i;
-                        pane.deck_open_row(cx);
-                    }))
-                    .child(
-                        div()
-                            .h_flex()
-                            .items_center()
-                            .gap_2()
-                            .min_w_0()
-                            .child(onehand_ui::mark_slot(crate::rail::status_icon(signal, cx)))
-                            .child(
-                                div()
-                                    .min_w_0()
-                                    .truncate()
-                                    .text_color(cx.theme().foreground)
-                                    .child(self.worker_name(uid, cx)),
-                            )
-                            .child(
-                                div()
-                                    .flex_none()
-                                    .text_color(crate::rail::word_ink(signal, cx).unwrap_or(muted))
-                                    .child(crate::rail::word(signal)),
-                            )
-                            .child(div().flex_none().text_color(muted).child(facts.join(" · "))),
-                    )
-                    .children(line.map(|line| {
-                        let ink = match waiting.is_some() {
-                            true => crate::theme::status_ink(cx).warning,
-                            false => muted,
-                        };
-                        // Under the name, past the mark's slot and its gap.
-                        div()
-                            .pl_6()
-                            .min_w_0()
-                            .truncate()
-                            .text_color(ink)
-                            .child(line)
-                    })),
-            )
-            .when(in_turn, |row| {
-                row.child(
-                    crate::controls::action(("workers-deck-stop", uid))
-                        .quiet(cx)
-                        .short()
-                        .label("Stop")
-                        .on_click(cx.listener(move |pane: &mut Self, _, _, cx| {
-                            if let Some(session) = pane.session_of(uid).cloned() {
-                                Self::cancel(&session, cx);
-                            }
-                        })),
-                )
-            })
     }
 }
 

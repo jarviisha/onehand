@@ -1,9 +1,9 @@
-//! One worker's block in the region: its head, and under it the
-//! transcript's tail, or, open, the whole of it with the card it waits on
-//! and a composer of its own.
+//! The picked worker's detail, under the list: its head, the card it waits
+//! on, its whole transcript following the newest output, and its composer
+//! only once *Write to …* asks for it.
 
-use super::{WORKER_OPEN_MIN, WORKER_TAIL_H};
-use crate::chat::pane::{ChatPane, ChatPaneEvent, SessionSignal, body};
+use super::short_name;
+use crate::chat::pane::{ChatPane, ChatPaneEvent, SessionSignal};
 use crate::chat::transcript;
 use crate::chat::viewport;
 use crate::control::Worker;
@@ -12,54 +12,50 @@ use crate::controls::Quiet as _;
 use crate::controls::Short as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, Context, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement as _,
-    Styled, Window, div, list, px,
+    App, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
+    StatefulInteractiveElement as _, Styled, Window, div, list, px,
 };
+use gpui_component::button::ButtonVariants as _;
 use gpui_component::menu::DropdownMenu as _;
 use gpui_component::spinner::Spinner;
+use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme as _, IconName, Sizable as _, StyledExt as _};
 
 impl ChatPane {
-    /// Worker `worker`'s block; `tails` whether a folded one keeps its tail.
-    pub(super) fn worker_block(
+    /// The picked worker's detail, filling what the list leaves.
+    pub(super) fn worker_detail(
         &mut self,
         worker: &Worker,
-        tails: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let uid = worker.uid;
-        let open = self.workers.open == Some(uid);
-        let session = self.session_of(uid).cloned();
         // A worker coming up has nothing to show yet but that it is coming.
         let connecting = !self.worker_ready(uid, cx);
         let head = self.worker_head(worker, connecting, cx);
-        // Its own id, so the same transcript's elements in two blocks are
-        // never one element to the window.
-        let block = div()
-            .id(("worker-block", uid))
+        let detail = div()
+            .id(("worker-detail", uid))
             .v_flex()
-            .w_full()
-            .border_b_1()
-            .border_color(cx.theme().border)
+            .flex_1()
+            .min_h_0()
             .child(head);
+        let session = self.session_of(uid).cloned();
         let Some(session) = session.filter(|_| !connecting) else {
-            return block.flex_none().into_any_element();
+            return detail.into_any_element();
         };
-        let list_state = self.reproject_for(
+        let Some(list_state) = self.reproject_for(
             uid,
             viewport::TopRoom {
                 head: px(0.),
                 floor: px(0.),
             },
             cx,
-        );
-        let Some(list_state) = list_state else {
-            return block.flex_none().into_any_element();
+        ) else {
+            return detail.into_any_element();
         };
         let well = (list_state.viewport_bounds().size.height > px(0.))
             .then(|| list_state.viewport_bounds().size.height);
-        // A block is a dock's width: narrow whatever the window is.
+        // The detail is a dock's width: narrow whatever the window is.
         let room = transcript::Room::new(well, true);
         let this = cx.entity();
         let for_render = session.clone();
@@ -71,10 +67,14 @@ impl ChatPane {
             },
         )
         .size_full();
-        let composer = open.then(|| self.worker_composer(uid, window, cx));
+        let writing = self.workers.writing == Some(uid);
+        let composer = writing.then(|| self.worker_composer(uid, window, cx));
+        // Only an open composer the person left idle hands its card the
+        // caret: with none open the card takes nothing, so a worker starting
+        // to wait never moves the caret.
         let idle = composer
             .as_ref()
-            .is_some_and(|composer| body::composer_idle(composer, window, cx));
+            .is_some_and(|composer| super::super::body::composer_idle(composer, window, cx));
         let cards = Self::cards(&session, well, idle, window, cx);
         let card = composer.map(|composer| {
             let blocked = {
@@ -89,40 +89,39 @@ impl ChatPane {
             })
         });
         let inset = |el: gpui::Div| el.px_3().pb_2();
-        match open {
-            true => block
-                .flex_1()
-                .min_h(WORKER_OPEN_MIN)
-                .child(
-                    // The scrollbar lies over the transcript alone.
-                    div()
-                        .relative()
-                        .flex_1()
-                        .min_h_0()
-                        .child(transcript)
-                        .child(onehand_ui::scrollbar(&list_state)),
-                )
-                .children(cards.into_iter().map(|card| inset(div()).child(card)))
-                .children(card.map(|card| inset(div()).child(card)))
-                .into_any_element(),
-            false => block
-                .flex_none()
-                .when(tails, |block| {
-                    block.child(div().h(WORKER_TAIL_H).overflow_hidden().child(transcript))
-                })
-                .children(
-                    cards
-                        .into_iter()
-                        .take(1)
-                        .map(|card| inset(div()).child(card)),
-                )
-                .into_any_element(),
-        }
+        detail
+            // The oldest card it waits on first, where the eye lands.
+            .children(
+                cards
+                    .into_iter()
+                    .take(1)
+                    .map(|card| inset(div().pt_2()).child(card)),
+            )
+            .child(
+                // The scrollbar lies over the transcript alone.
+                div()
+                    .relative()
+                    .flex_1()
+                    .min_h_0()
+                    .child(transcript)
+                    .child(onehand_ui::scrollbar(&list_state)),
+            )
+            .children(card.map(|card| {
+                inset(div())
+                    // Esc closes it, the draft kept, when the input has no
+                    // use for the key itself.
+                    .on_action(cx.listener(
+                        |pane: &mut Self, _: &gpui_component::input::Escape, window, cx| {
+                            pane.close_writing(window, cx);
+                        },
+                    ))
+                    .child(card)
+            }))
+            .into_any_element()
     }
 
-    /// A block's head: its mark, name and state, who holds it, *Stop* while
-    /// a turn runs, and `⋯`. Pressed, the block opens with the caret in its
-    /// composer.
+    /// The detail's head: its mark, name and state, its folder, who holds
+    /// it, *Write to …*, *Stop* while a turn runs, and `⋯`.
     fn worker_head(
         &self,
         worker: &Worker,
@@ -132,6 +131,7 @@ impl ChatPane {
         let uid = worker.uid;
         let signal = self.signal(uid, cx);
         let name = self.worker_name(uid, cx);
+        let short = SharedString::from(format!("Write to {}…", short_name(&name)));
         let chat = self.session_of(uid).map(|session| &session.read(cx).chat);
         let held = worker
             .sent
@@ -141,6 +141,8 @@ impl ChatPane {
         let in_turn = chat.is_some_and(|chat| chat.busy);
         let give_back = crate::control::give_back_offered(uid, prompts, cx);
         let resend = self.can_resend(uid, cx);
+        let writing = self.workers.writing == Some(uid);
+        let folder = self.conversations.get(&uid).map(|conv| conv.root.clone());
         let muted = cx.theme().muted_foreground;
         let word_ink = crate::rail::word_ink(signal, cx).unwrap_or(muted);
         let mark = match connecting {
@@ -196,55 +198,67 @@ impl ChatPane {
             .gap_2()
             .h(onehand_ui::tokens::ROW_H)
             .px_3()
+            .border_b_1()
+            .border_color(cx.theme().border)
             // Chrome, as the rail's rows: the transcript under it reads larger.
             .text_size(onehand_ui::tokens::CHROME_TEXT)
+            .child(onehand_ui::mark_slot(mark))
             .child(
                 div()
-                    .id(("worker-head", uid))
-                    .h_flex()
-                    .items_center()
-                    .gap_2()
-                    .flex_1()
                     .min_w_0()
-                    .h_full()
-                    .cursor_pointer()
-                    // On the release: the press has already focused the
-                    // panel, so the caret put in the composer here stays.
-                    .on_click(cx.listener(move |pane: &mut Self, _, window, cx| {
-                        pane.open_worker(uid, true, window, cx);
-                    }))
-                    .child(onehand_ui::mark_slot(mark))
-                    .child(
-                        div()
-                            .min_w_0()
-                            .truncate()
-                            .font_medium()
-                            .text_color(cx.theme().foreground)
-                            .child(name),
-                    )
-                    .child(div().flex_none().text_xs().text_color(word_ink).child(
-                        match connecting {
-                            true => "Connecting",
-                            false => crate::rail::word(signal),
-                        },
-                    ))
-                    .children(worker.turn.map(|turn| {
-                        div()
-                            .flex_none()
-                            .text_xs()
-                            .text_color(muted)
-                            .child(format!("turn {turn}"))
-                    }))
-                    .when(held, |head| {
-                        head.child(
-                            div()
-                                .flex_none()
-                                .text_xs()
-                                .text_color(muted)
-                                .child("held by you"),
-                        )
+                    .truncate()
+                    .font_medium()
+                    .text_color(cx.theme().foreground)
+                    .child(name),
+            )
+            .child(
+                div()
+                    .flex_none()
+                    .text_xs()
+                    .text_color(word_ink)
+                    .child(match connecting {
+                        true => "Connecting",
+                        false => crate::rail::word(signal),
                     }),
             )
+            .children(folder.map(|folder| {
+                let full = SharedString::from(folder.display().to_string());
+                let last = folder.file_name().map_or_else(
+                    || full.to_string(),
+                    |last| last.to_string_lossy().into_owned(),
+                );
+                div()
+                    .id(("worker-folder", uid))
+                    .min_w_0()
+                    .truncate()
+                    .text_xs()
+                    .text_color(muted)
+                    .child(last)
+                    .tooltip(onehand_ui::tip(move |window, cx| {
+                        Tooltip::new(full.clone()).build(window, cx)
+                    }))
+            }))
+            .when(held, |head| {
+                head.child(
+                    div()
+                        .flex_none()
+                        .text_xs()
+                        .text_color(muted)
+                        .child("held by you"),
+                )
+            })
+            .child(div().flex_1())
+            .when(!connecting && !writing, |head| {
+                head.child(
+                    crate::controls::action(("worker-write", uid))
+                        .secondary()
+                        .short()
+                        .label(short)
+                        .on_click(cx.listener(move |pane: &mut Self, _, window, cx| {
+                            pane.write_to(uid, window, cx);
+                        })),
+                )
+            })
             .when(in_turn && signal != Some(SessionSignal::Lost), |head| {
                 head.child(
                     crate::controls::action(("worker-stop", uid))

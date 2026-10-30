@@ -1,5 +1,6 @@
-use super::{step, summary};
+use super::summary;
 use crate::chat::pane::SessionSignal::{AwaitingUser, Busy, Failed, UnseenTurn};
+use crate::chat::pane::workers::step;
 
 #[test]
 fn the_summary_counts_each_state_most_urgent_first() {

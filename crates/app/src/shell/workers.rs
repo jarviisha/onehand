@@ -128,6 +128,7 @@ impl Shell {
                     .update(cx, |pane, cx| pane.reclaim_focus(window, cx));
             }
             self.stepped_aside = false;
+            self.chat.update(cx, |pane, cx| pane.workers_shown(cx));
             self.mount_right(RightPanel::Workers, window, cx);
         }
         if !self.dock.read(cx).is_dock_open(DockPlacement::Right) {

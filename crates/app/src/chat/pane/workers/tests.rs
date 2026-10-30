@@ -1,25 +1,10 @@
-use super::{shows_body, tails_fit};
+use super::{short_name, shows_body};
 use onehand_core::chat::Link;
 
-const TAIL: f32 = 72.;
-
 #[test]
-fn every_tail_is_kept_when_there_is_room() {
-    assert!(tails_fit(600., 600., true, 2, TAIL));
-}
-
-/// Measured with its tails and over: they go first.
-#[test]
-fn the_tails_go_first() {
-    assert!(!tails_fit(600., 640., true, 2, TAIL));
-}
-
-/// Dropped, they come back only once they fit again, so the stack never
-/// flips between the two from one frame to the next.
-#[test]
-fn dropped_tails_come_back_only_once_they_fit() {
-    assert!(!tails_fit(600., 500., false, 2, TAIL));
-    assert!(tails_fit(700., 500., false, 2, TAIL));
+fn the_short_name_is_before_the_dot() {
+    assert_eq!(short_name("b · report r1"), "b");
+    assert_eq!(short_name("onehand-sim-b"), "onehand-sim-b");
 }
 
 /// No composer is drawn, so none may take the caret, until the worker is up.
