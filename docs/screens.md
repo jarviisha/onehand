@@ -349,7 +349,8 @@ height (its dragged height kept).
 Settings is a page named in its own head, as the workspace pages are, over a nav column with
 Appearance, Workspace, Agents, Connections and Shortcuts (rows as the rail's page rows), and beside
 it the sub-page, untitled (its nav row names it), opening on its scope as a badge and a hint, its
-groups split by hairlines with semibold headings, not boxes. Every button there is secondary:
+groups in the library's setting-page shape: each a box with an edge, its semibold heading and the
+line about it at the top inside. Every button there is secondary:
 Settings holds no primary. Under the Agents page's rows, each built-in agent installed on the
 machine with no entry of its own gets a line, *<agent> is on this machine*, with *Add* at its end,
 then *Add agent…*; the first row carries the *Default* badge. *Add agent…* and a row's edit mark

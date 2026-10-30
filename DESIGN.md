@@ -201,10 +201,10 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   `rounded_full`. The library's small parts keep its half
   corner (*Components*). A part joined to its container's edge takes its corner there.
 - **Lines** part regions and are a 1px `border`. A **mark** says where the person is, not where
-  a region ends: the one under an open tab is 2px, as a stroke a step heavier than a line. The line under a page's top,
-  a list page's lines across the pane and the line between Settings' groups are a step fainter
-  (`faint_rule`), so a page's top ends on one line whatever its column, the edge-to-edge list reads
-  as one surface, and a group's heading, not its line, says where it starts. A
+  a region ends: the one under an open tab is 2px, as a stroke a step heavier than a line. The line under a page's top and
+  a list page's lines across the pane are a step fainter
+  (`faint_rule`), so a page's top ends on one line whatever its column and the edge-to-edge list
+  reads as one surface. A
   box's edge is a step stronger, a control's edge (`input`).
 
 ## Colour and state

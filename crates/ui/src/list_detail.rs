@@ -95,10 +95,16 @@ pub fn back_link(id: &'static str, list: &'static str, cx: &App) -> Button {
 }
 
 /// The first step of a page's trail ([`crumbs`]): the list the page was
-/// opened from, by name, pressed to go back to it. A button, so the keyboard
-/// reaches it; the caller says what a press does.
+/// opened from, by name, in the muted ink the trail's steps take, pressed to
+/// go back to it. A button, so the keyboard reaches it; the caller says what a
+/// press does.
 pub fn crumb_link(id: &'static str, list: &'static str, cx: &App) -> Button {
-    crate::action(id).quiet(cx).short().flex_none().label(list)
+    crate::action(id)
+        .quiet(cx)
+        .short()
+        .flex_none()
+        .text_color(cx.theme().muted_foreground)
+        .label(list)
 }
 
 /// A page's trail, as the library's breadcrumb draws one: `back` (a

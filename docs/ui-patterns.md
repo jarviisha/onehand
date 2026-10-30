@@ -15,7 +15,8 @@ feature crate views alike; the feature contract still decides what content and a
 
 | Content | Container | Separation |
 |---|---|---|
-| Related settings (Settings), a group inside a form | Plain section | Heading, shared text axis and section gap |
+| Related settings (Settings) | Box | The setting page's group: one edge, its heading inside at the top |
+| A group inside a form | Plain section | Heading, shared text axis and section gap |
 | A group on a page: one thing's facts, a list, a status, what a project is set to | Box | One outer edge in a control's edge, no fill; no nested boxes for its fields |
 | Repeated items to scan or pick | List or table | Stable columns and row states; table hairlines |
 | Repeated items opened one at a time, each with actions of its own (Workflows) | Grid of boxes | A gap; a box's edge raised on hover, never a fill |
@@ -303,8 +304,7 @@ list a search or a filter narrows says how many it shows of how many there are (
 M*). A table is rows split by hairlines, each with one under it, under a head row in
 meta text on the page's own surface, its rows square `row`s at the row inset.
 Rows in a box are parted by a hairline (`ruled`), drawn on a wrapper of the row's own so its
-focus ring moves nothing; so are a Settings group's list rows (`list_rows`), whose group stands in
-no box. A row's trailing facts reach the box's edge; where a row has them, its
+focus ring moves nothing; so are a Settings group's list rows (`list_rows`), inside their group's box. A row's trailing facts reach the box's edge; where a row has them, its
 hover actions are laid over them, hiding them while they show, rather than holding a slot beside
 them. A row without trailing facts keeps its actions in a held slot. Keep metadata and actions in
 stable trailing slots. Multi-line row variants align their primary
