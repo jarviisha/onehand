@@ -268,8 +268,8 @@ Built in PR 5a; what is built is in control.md's *A worker*.
 
 ## 7. The person's view
 
-Built in PR 5a but the deck, which PR 5b builds; what is built is in control.md's *A worker* and
-screens.md's *Rail*, *Agent pane header* and *Docks*.
+Built in PRs 5a and 5b; what is built is in control.md's *A worker* and screens.md's *Rail*,
+*Agent pane header*, *Composer* and *Docks*.
 
 What onehand.md section 8 decided, as built. Contract work in the same pull request: the rail,
 the composer and the docks in `docs/screens.md`, one line for the new region in DESIGN.md's

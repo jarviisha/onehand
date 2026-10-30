@@ -164,6 +164,7 @@ impl Shell {
                     // The visibility button and its shortcut preserve the selected mode.
                     E::ToggleWorkbench => shell.toggle_workbench(window, cx),
                     E::ToggleWorkers => shell.toggle_workers(window, cx),
+                    E::ShowWorker(uid) => shell.show_workers(Some(*uid), true, window, cx),
                     E::MaximizeWorkers => {
                         shell.toggle_maximize_panel(FocusedPanel::Workers, window, cx)
                     }
@@ -281,6 +282,12 @@ impl Shell {
         cx.observe(&chat, |shell: &mut Self, _, cx| {
             let sessions = shell.rail_sessions(cx);
             if sessions != shell.rail_sessions {
+                // The deck says a worker's age by the rail's own clock.
+                let since = sessions
+                    .iter()
+                    .map(|(uid, row)| (*uid, row.since))
+                    .collect();
+                shell.chat.update(cx, |pane, _| pane.set_since(since));
                 shell.rail_sessions = sessions;
                 cx.notify();
             }

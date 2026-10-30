@@ -410,7 +410,7 @@ impl ChatPane {
     }
 
     /// What a worker, or the lead, is called: as the rail names it.
-    fn worker_name(&self, uid: u64, cx: &App) -> String {
+    pub(super) fn worker_name(&self, uid: u64, cx: &App) -> String {
         let agent = self
             .conversations
             .get(&uid)
