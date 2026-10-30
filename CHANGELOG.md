@@ -131,6 +131,8 @@ minor bump may break any of them.
   per worker. Writing to a worker takes it from the
   lead; *Give back to the lead* in its block returns it. A lead closing puts its workers back in
   the rail.
+- A worker is named for its job when its lead gives a name, else for its folder, never for the
+  first words of its lead's prompt.
 
 ### Fixed
 
