@@ -217,3 +217,27 @@ fn another_lead_s_closed_worker_is_not_yours() {
 fn a_uid_never_seen_is_not_yours() {
     assert!(matches!(whose(None, None, 1, false), Whose::NotYours));
 }
+
+/// One worker per folder holds for folders inside each other too: two
+/// agents on `/repo` and `/repo/sub` would write the same files.
+#[test]
+fn a_folder_inside_a_reserved_one_is_refused() {
+    let mut held = Reservations::default();
+    held.take(Path::new("/repo")).unwrap();
+    let why = held.take(Path::new("/repo/sub")).unwrap_err();
+    assert!(why.contains("/repo"), "{why}");
+}
+
+#[test]
+fn a_folder_holding_a_reserved_one_is_refused() {
+    let mut held = Reservations::default();
+    held.take(Path::new("/repo/sub")).unwrap();
+    assert!(held.take(Path::new("/repo")).is_err());
+}
+
+#[test]
+fn a_sibling_with_a_common_prefix_is_free() {
+    let mut held = Reservations::default();
+    held.take(Path::new("/repo")).unwrap();
+    assert!(held.take(Path::new("/repo2")).is_ok());
+}

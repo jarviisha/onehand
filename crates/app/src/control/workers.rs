@@ -32,10 +32,15 @@ pub(super) struct Reservations {
 impl Reservations {
     /// Take `folder` for an open, unless an open or a worker holds it.
     pub(super) fn take(&mut self, folder: &Path) -> Result<(), String> {
-        if self.held.contains_key(folder) {
+        // A folder inside a held one, or holding one, is the same files.
+        if let Some(held) = self
+            .held
+            .keys()
+            .find(|held| held.starts_with(folder) || folder.starts_with(held))
+        {
             return Err(format!(
                 "{} already has a worker opening or open on it",
-                folder.display()
+                held.display()
             ));
         }
         self.held.insert(folder.to_path_buf(), None);
@@ -267,16 +272,18 @@ fn resolve_blocking(
         Target::Project(path) => {
             let top =
                 std::fs::canonicalize(path).map_err(|why| format!("{}: {why}", path.display()))?;
-            // A project that is no checkout is its own folder and nothing more.
-            worker::repo_of_blocking(&top)
-                .map(|repo| Repo {
+            // A project that is no checkout is its own folder and nothing
+            // more; git failing to say refuses the open in its words.
+            match worker::repo_of_blocking(&top)? {
+                Some(repo) => Repo {
                     top: top.clone(),
                     ..repo
-                })
-                .unwrap_or_else(|_| Repo {
+                },
+                None => Repo {
                     common: top.join(".git"),
                     top,
-                })
+                },
+            }
         }
     };
     let writable = worker::writable_blocking(dirs, &repo, home)?;
@@ -290,7 +297,7 @@ fn resolve_blocking(
         Target::Worktree(_) => same.first().cloned().unwrap_or_else(|| repo.top.clone()),
     };
     Ok(Resolved {
-        occupants: occupants::occupants_blocking(&repo.top, skip),
+        occupants: occupants::occupants_blocking(&repo.top, skip, std::process::id()),
         dirs: worker::worker_dirs(&repo, writable),
         folder: repo.top,
         root,

@@ -21,19 +21,32 @@ pub struct Repo {
     pub common: PathBuf,
 }
 
-/// The checkout `dir` is in, and its repository. Blocking.
-pub fn repo_of_blocking(dir: &Path) -> Result<Repo, String> {
-    let ask = |arg: &str| -> Result<PathBuf, String> {
-        let out = output_within(git(dir).args(["rev-parse", arg]), LOCAL_LIMIT)
-            .map_err(|why| format!("git could not be run in {}: {why}", dir.display()))?;
-        if !out.status.success() {
-            return Err(format!(
-                "{} is not a git checkout: {}",
-                dir.display(),
-                git_message(&out.stderr)
-            ));
-        }
-        let said = PathBuf::from(String::from_utf8_lossy(&out.stdout).trim());
+/// The checkout `dir` is in, and its repository: `None` when git says it is
+/// in no checkout at all. Blocking.
+///
+/// **git failing is not "no checkout".** Out of time, missing, or unable to
+/// read the folder, git answered nothing about it, and a caller treating
+/// that as a plain folder would drop the repository's `.git` from what a
+/// worker on a linked worktree may write, and its commits would fail.
+pub fn repo_of_blocking(dir: &Path) -> Result<Option<Repo>, String> {
+    if !dir.is_dir() {
+        return Err(format!("{} is not a folder", dir.display()));
+    }
+    let mut asked = git(dir);
+    asked.args(["rev-parse", "--show-toplevel", "--git-common-dir"]);
+    let out = output_within(&mut asked, LOCAL_LIMIT)
+        .map_err(|why| format!("git could not be run in {}: {why}", dir.display()))?;
+    if !out.status.success() {
+        let said = git_message(&out.stderr);
+        return match said.contains("not a git repository") {
+            true => Ok(None),
+            false => Err(format!("git could not read {}: {said}", dir.display())),
+        };
+    }
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let mut lines = stdout.lines();
+    let mut next = || -> Result<PathBuf, String> {
+        let said = PathBuf::from(lines.next().unwrap_or("").trim());
         let full = if said.is_absolute() {
             said
         } else {
@@ -41,10 +54,10 @@ pub fn repo_of_blocking(dir: &Path) -> Result<Repo, String> {
         };
         std::fs::canonicalize(&full).map_err(|why| format!("{}: {why}", full.display()))
     };
-    Ok(Repo {
-        top: ask("--show-toplevel")?,
-        common: ask("--git-common-dir")?,
-    })
+    Ok(Some(Repo {
+        top: next()?,
+        common: next()?,
+    }))
 }
 
 /// `path` as a worker's folder: the top level of a checkout of a repository
@@ -57,7 +70,8 @@ pub fn worktree_of_blocking(path: &Path, projects: &[PathBuf]) -> Result<Repo, S
         return Err(format!("{} is not a folder", path.display()));
     }
     let real = std::fs::canonicalize(path).map_err(|why| format!("{}: {why}", path.display()))?;
-    let repo = repo_of_blocking(&real)?;
+    let repo = repo_of_blocking(&real)?
+        .ok_or_else(|| format!("{} is not a git checkout", path.display()))?;
     if repo.top != real {
         return Err(format!(
             "{} is inside the checkout at {}; name its top level",
@@ -68,7 +82,7 @@ pub fn worktree_of_blocking(path: &Path, projects: &[PathBuf]) -> Result<Repo, S
     // A project that is no checkout at all simply belongs to no repository.
     let ours = projects
         .iter()
-        .filter_map(|project| repo_of_blocking(project).ok())
+        .filter_map(|project| repo_of_blocking(project).ok().flatten())
         .any(|project| project.common == repo.common);
     if !ours {
         return Err(format!(
