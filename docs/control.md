@@ -229,3 +229,13 @@ is refused, naming each.
   at once. A lead that went while its worker was opening abandons the open: it fails as above,
   its prompt never sent. A person watching a worker whose open failed is put back on what is
   active.
+- **The lead closing or lost** drops its relations: its workers stay open, owned by nobody, and
+  are the person's to close. Switched off, a lead abandons its opens in progress; its open workers
+  keep their relation, unusable until it is switched on again. The cap of four counts workers still
+  open, the ones opening included; one that failed to open gives its place back.
+- **Nothing of a worker is written to disk**: the handle, the relation, the request ids and the
+  worker's transient project last as long as the run of the app. Its conversation is kept as any
+  session's is. A clean quit ends every worker with its agent's process group; a crash may leave
+  one working, which the next `open_session` on its folder finds through the process reading
+  above. After a restart the lead opens new workers, and each picks its job up from what it left
+  in its worktree.
