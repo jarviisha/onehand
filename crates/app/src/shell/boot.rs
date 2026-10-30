@@ -1,6 +1,6 @@
 use super::drafts::answered;
 use super::settings_page::apply_appearance;
-use super::{APP_ID, FocusedPanel, Shell, init_keymap};
+use super::{APP_ID, CloseGuard, FocusedPanel, Shell, init_keymap};
 use crate::chat::ChatPane;
 use crate::settings::{AgentDraft, SettingsPage};
 use crate::state::{OpenWindow, Shared, WorkspaceWindow};
@@ -73,10 +73,10 @@ impl Shell {
         .detach();
         // Closing the window over a workflow being written asks first, as
         // picking another one does: the edit is the page's, and goes with it.
-        {
+        let close_guard: CloseGuard = {
             let page = workflows_page.downgrade();
             let shell = cx.entity().downgrade();
-            window.on_window_should_close(cx, move |window, cx| {
+            std::rc::Rc::new(move |window: &mut Window, cx: &mut gpui::App| {
                 // A save still waiting on its debounce is written now, or the
                 // change made just before closing goes with the window.
                 if let Some(shell) = shell.upgrade() {
@@ -104,7 +104,11 @@ impl Shell {
                     },
                 );
                 false
-            });
+            })
+        };
+        {
+            let guard = close_guard.clone();
+            window.on_window_should_close(cx, move |window, cx| guard(window, cx));
         }
         issues_page.handle(
             &onehand_workbench::Request::SetStorage(workspace.storage_dir.as_deref()),
@@ -496,6 +500,8 @@ impl Shell {
             },
             agent_checks: HashMap::new(),
             held_commands: Default::default(),
+            menu_bar: super::frame::menu_bar(cx),
+            close_guard,
             workspace_name,
             renaming: None,
             rename_input: cx.new(|cx| {
@@ -602,7 +608,13 @@ fn open_window(workspace: Workspace, cx: &mut App) {
             // the generic placeholder no matter how many icons are installed.
             app_id: Some(APP_ID.into()),
             window_min_size: Some(WINDOW_MIN),
-            ..Default::default()
+            // The title bar is the app's, holding its menus, so the window asks
+            // the compositor to leave its decoration to the app; one that will
+            // not keeps its own, and the library's title bar draws no window
+            // controls of its own beside it.
+            #[cfg(target_os = "linux")]
+            window_decorations: Some(gpui::WindowDecorations::Client),
+            ..gpui_component::TitleBar::window_options()
         };
         // Filled in by the window builder below and read out after it, because
         // the shell does not exist until then and the registry entry needs it.
@@ -688,6 +700,8 @@ pub fn boot(cx: &mut App) {
     })
     .detach();
     init_keymap(cx);
+    // After the keymap, whose commands the menus offer.
+    super::frame::install_menus(cx);
     // After the global exists, because that is where the bridge is filed, and
     // before the first window, so a channel that takes a moment to answer has
     // already been asked by the time there is anything to announce.

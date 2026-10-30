@@ -57,6 +57,11 @@ mod commands;
 pub use commands::COMMANDS;
 
 impl Command {
+    /// The action the command dispatches, for a menu that offers it.
+    pub fn action(&self) -> Box<dyn Action> {
+        (self.action)()
+    }
+
     pub fn keys(&self, overrides: &Overrides) -> Vec<String> {
         overrides
             .get(self.id)

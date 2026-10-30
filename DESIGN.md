@@ -48,11 +48,15 @@ a hex literal is a bug even when it looks right, as no theme switch reaches it.
 
 ## Layout
 
-One window hosts one workspace. The Workbench runs the full height; the terminal sits under the
-agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned in any mono font.
+One window hosts one workspace. A title bar holding the app's menus runs along the top and a
+status bar along the foot; between them the Workbench runs the full height and the terminal sits
+under the agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned in any
+mono font.
 
 ```
-┌──────────────────┬────────────────────────────────────┬──────────────────┐
+┌──────────────────────────────────────────────────────────────────────────┐
+│ File  View  Go  Session                                        _  []  x  │
+├──────────────────┬────────────────────────────────────┬──────────────────┤
 │ W Workspace   v <│ Title (...)    past close term wb  │ modes   max hide │
 │ Search...  New v │                                    │                  │
 │ Overview         │ workflow > step > step   Stop      │                  │
@@ -70,12 +74,15 @@ agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned
 │                  ├────────────────────────────────────┤                  │
 │                  │ shell tabs  +                      │                  │
 │ Settings         │ terminal (bottom dock)             │                  │
-└──────────────────┴────────────────────────────────────┴──────────────────┘
+├──────────────────┴────────────────────────────────────┴──────────────────┤
+│ rail  branch                                          terminal  wb       │
+└──────────────────────────────────────────────────────────────────────────┘
         rail                     DockArea
 ```
 
 What each region holds, and in what order, is `docs/screens.md`'s, under the region's name:
 
+- **Title bar**: the app's menus, and the window's own controls where the app decorates it.
 - **Rail**: app chrome outside the dock, from the workspace bar down to *Settings*.
 - **Agent pane header**: the conversation's name, its menu and the dock buttons; chrome alone over
   a page that names itself in its head.
@@ -85,9 +92,10 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   workers' region takes the Workbench's place, never beside it.
 - **Pages without a session**: a project's page, the overview, Tasks, Issues and Workflows.
 - **Settings**: a page of its own, a nav column beside the sub-page it shows.
+- **Status bar**: the rail's toggle and the branch, then the dock toggles.
 - **Persistence**: what the layout saves.
-- **No top bar, no status bar, no right toolbar.** Transient status goes in a toast; modals are
-  `Dialog`s.
+- **Nothing else in the title or status bar, and no right toolbar.** Transient status goes in a
+  toast; modals are `Dialog`s.
 
 ## Transcript
 

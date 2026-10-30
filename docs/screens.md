@@ -7,6 +7,26 @@ these screens are drawn with; `docs/ui-patterns.md` the patterns they repeat; an
 document (`docs/tasks.md`, `docs/workflows.md`, `docs/unattended.md`) its screens' detail. Code
 never cites this file.
 
+## Title bar
+
+The library's `TitleBar`, its whole width a handle to move the window. At its start, the app's
+menus, *File*, *View*, *Go* and *Session*, each item a command the keymap holds, under the name
+the menu gives it and with the key the keymap binds: *File* holds *New session*, *Run a workflow on
+this project…*, *Save the open file* and *Open Settings*; *View* the rail's, the Workbench's and
+the terminal's toggles, *Open Editor*, *Open Markdown*, *Open Neovim*, maximizing the focused panel
+and its zoom; *Go* the rail's search, the composer, Tasks, Schedules and stepping through sessions;
+*Session* *Show the workers*, *Restart the agent* and *Close the session*. A menu offers nothing no
+key reaches. At its end, the window's minimize, maximize and close, drawn by the library where the
+app decorates the window; its close asks first what the compositor's close asks (a workflow
+being written). Nothing else.
+
+## Status bar
+
+The library's `StatusBar` along the window's foot. At its start the rail's toggle and the branch of
+the project on screen; at its end the terminal's and the Workbench's toggles, each an icon alone,
+marked while what it shows is open, and dispatching the command its key does. Nothing else: a
+transient state is a toast.
+
 ## Rail
 
 App chrome outside the dock, so a layout restore cannot lose it, a hairline down its edge. Top to bottom: the workspace bar

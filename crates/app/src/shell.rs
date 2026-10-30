@@ -25,6 +25,7 @@ mod dock_skin;
 mod docks;
 mod drafts;
 mod fork;
+mod frame;
 mod issue_work;
 mod issues_page;
 mod presentation;
@@ -42,6 +43,9 @@ pub use boot::{boot, open_or_focus, seed_workspace};
 pub use drafts::{BranchDraft, Draft, WorktreeDraft};
 pub use workflows::WorkflowLauncher;
 pub(crate) use workflows::{brief, cut_worktree_blocking};
+
+/// Whether the window may close now; it may ask first and close later itself.
+type CloseGuard = std::rc::Rc<dyn Fn(&mut gpui::Window, &mut gpui::App) -> bool>;
 
 gpui::actions!(
     onehand,
@@ -237,6 +241,11 @@ pub struct Shell {
     /// What each agent's last *Test* found, by `settings::check_key`.
     agent_checks: HashMap<String, AgentCheck>,
     held_commands: std::collections::HashSet<&'static str>,
+    /// The app's menus, drawn in the title bar.
+    menu_bar: Entity<gpui_component::menu::AppMenuBar>,
+    /// What closing the window asks first, from the compositor's close and the
+    /// title bar's alike: `true` lets it close.
+    close_guard: CloseGuard,
     /// The workspace-rename field.
     workspace_name: Entity<InputState>,
     /// The session whose name is being edited, if any.

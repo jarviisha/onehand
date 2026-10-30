@@ -229,7 +229,9 @@ impl Render for Shell {
                     }
                 },
             ))
-            .child(body);
+            .child(self.title_bar())
+            .child(body)
+            .child(self.status_bar(cx));
 
         // The library's own sheet, dialog and toast layers are mounted by
         // `Root` itself, beside this view rather than inside it; all the shell
