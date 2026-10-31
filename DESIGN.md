@@ -147,12 +147,13 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   flat. It holds a head, the body, the answers at the end at `.short()` (a hairline under the head,
   padded as a box whose body scrolls, its cut end fading out while more lies below), the
   dismissing one a quiet ghost. A choice is a bare row at rest, on the pointer's fill under the
-  pointer or the keys, and on the selected step when taken, a radio or checkbox drawn in ink at
+  pointer and a control's fill (`secondary`) under the keys, and on the selected step when taken, a radio or checkbox drawn in ink at
   its head (the library's rings vanish on the selected step) and its number with Alt as a `Kbd`, at least
   a field's height; a typed answer sits under the list, with the answers and no line between them,
   as a field with its `Kbd`: edged in `input` on the card's own fill, two
   lines tall at rest and growing as it is written (Shift+Enter a newline), ringed while the keys
-  are on it. A permission's command sits in a well (`muted`), a step off the card. Each answer in a pinned card's footer shows its key beside its words, always in
+  are on it. A permission's command sits in a well a step lighter than the card (`muted` on the dark page,
+  the page's white on the light one, where the card itself is `muted`). Each answer in a pinned card's footer shows its key beside its words, always in
   sight, as that key reaches the card from anywhere in the conversation.
   The card holds the one primary while it shows. A question card always ends on *Skip*; one
   asking a single pick-one question answers on the pick, its primary only for a typed answer.

@@ -282,11 +282,12 @@ impl AskForm<'_> {
                     .min_h(CONTROL_H)
                     // The keyboard's own position, which has to show without
                     // being an answer: an arrow press moves it and settles
-                    // nothing, so it is the pointer's fill rather than the
-                    // taken row's, and no frame.
+                    // nothing, so it is a control's fill rather than the
+                    // taken row's, and no frame. Not the list's hover, which
+                    // on the light page is the card's own grey.
                     .when(
                         !on && cursor == Some(onehand_core::chat::AskRow::Choice(o)),
-                        |row| row.bg(cx.theme().list_hover),
+                        |row| row.bg(cx.theme().secondary),
                     )
                     // **One child, holding the row's own layout.** A `Button`
                     // wraps what it is given in a content box of its own, so a

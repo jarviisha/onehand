@@ -116,11 +116,12 @@ pub(crate) fn waiting_card(cx: &App) -> Hsla {
 
 fn waiting_card_of(theme: &Theme) -> Hsla {
     // Halfway to the secondary grey on the near-black page: the whole step
-    // stood as a heavy slab beside the composer. On the white page the grey
-    // is already only a step off, and half of it would vanish.
+    // stood as a heavy slab beside the composer. On the white page the kit's
+    // secondary is its hairline's own grey, so a card in it swallowed every
+    // edge drawn on it; the muted grey a step lighter keeps them.
     match theme.mode.is_dark() {
         true => theme.background.mix_oklab(theme.secondary, 0.5),
-        false => theme.secondary,
+        false => theme.muted,
     }
 }
 
@@ -137,10 +138,18 @@ pub(crate) fn inset(cx: &App) -> Hsla {
 }
 
 /// A well on a waiting card: the command a pinned permission asks to run.
-/// The library's well, a step lighter than the card on the dark page; sunk to
-/// the page's fill it stood as a dark hole in the card.
+/// A step lighter than the card in either mode (sunk to the near-black page
+/// it stood as a dark hole in the card): the library's well on the dark page,
+/// the page's own white on the light one, where the well is the card's grey.
 pub(crate) fn floating_well(cx: &App) -> Hsla {
-    cx.theme().muted
+    floating_well_of(cx.theme())
+}
+
+fn floating_well_of(theme: &Theme) -> Hsla {
+    match theme.mode.is_dark() {
+        true => theme.muted,
+        false => theme.background,
+    }
 }
 
 /// The composer's lift, in pixels as a hairline is: the tight shadow's blur,
@@ -276,13 +285,34 @@ mod tests {
         }
     }
 
+    /// The hairline under a waiting card's head and the edge of the field in
+    /// it show on the card's fill, in both modes: on the light page the kit's
+    /// secondary grey is its hairline's own, and a card in it lost both.
+    #[test]
+    fn a_waiting_card_keeps_its_hairlines() {
+        for (name, mode) in [("light", ThemeMode::Light), ("dark", ThemeMode::Dark)] {
+            let theme = installed(mode);
+            let card = waiting_card_of(&theme);
+            for (line, ink) in [
+                ("hairline", theme.border),
+                ("field edge", theme.input),
+                ("keyboard row's fill", theme.secondary),
+            ] {
+                assert!(
+                    (card.l - ink.l).abs() >= 0.03,
+                    "{name}: the {line} {ink:?} is lost on the card {card:?}"
+                );
+            }
+        }
+    }
+
     /// The command well stands a step off the waiting card it sits in, in
     /// both modes, or the command reads as loose text on the card.
     #[test]
     fn the_command_well_stands_off_the_waiting_card() {
         for (name, mode) in [("light", ThemeMode::Light), ("dark", ThemeMode::Dark)] {
             let theme = installed(mode);
-            let (card, well) = (waiting_card_of(&theme), theme.muted);
+            let (card, well) = (waiting_card_of(&theme), floating_well_of(&theme));
             assert!(
                 (card.l - well.l).abs() >= 0.02,
                 "{name}: well {well:?} on card {card:?}"
