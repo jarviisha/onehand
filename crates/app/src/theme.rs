@@ -128,7 +128,11 @@ fn waiting_card_of(theme: &Theme) -> Hsla {
 /// The composer card's fill: the page's own, as the card is told apart by its
 /// edge and its lift.
 pub(crate) fn raised(cx: &App) -> Hsla {
-    cx.theme().background
+    raised_of(cx.theme())
+}
+
+fn raised_of(theme: &Theme) -> Hsla {
+    theme.background
 }
 
 /// The fill of a field on the rail, and of a badge in the rail, which has to
@@ -327,11 +331,12 @@ mod tests {
         for (name, mode) in [("light", ThemeMode::Light), ("dark", ThemeMode::Dark)] {
             let theme = installed(mode);
             let card = waiting_card_of(&theme);
-            assert!(
-                (card.l - theme.background.l).abs() >= 0.03,
-                "{name}: card {card:?} on page {:?}",
-                theme.background
-            );
+            for (under, fill) in [("page", theme.background), ("composer", raised_of(&theme))] {
+                assert!(
+                    (card.l - fill.l).abs() >= 0.03,
+                    "{name}: card {card:?} against the {under} {fill:?}"
+                );
+            }
         }
     }
 

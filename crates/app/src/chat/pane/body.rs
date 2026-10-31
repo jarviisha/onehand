@@ -39,7 +39,7 @@ impl ChatPane {
         well: Option<gpui::Pixels>,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> (Vec<gpui::AnyElement>, bool) {
+    ) -> Pinned {
         let composer_idle = composer_idle(&self.composer, window, cx);
         let cards = Self::cards(session, well, composer_idle, window, cx);
         // Over the blocking cards, or directly over the composer when none
@@ -74,7 +74,10 @@ impl ChatPane {
         }));
         let tucked = cards.is_some();
         pinned.extend(cards);
-        (pinned, tucked)
+        Pinned {
+            stack: pinned,
+            tucked,
+        }
     }
 
     /// The oldest permission or question session `session` waits on, under
@@ -100,36 +103,27 @@ impl ChatPane {
         // Two lists merged back into transcript order: the agent can park on a
         // permission and a question at once, and the order they were asked in
         // is the only order that makes sense of them.
-        let first_permission = permissions.first().map(|(idx, _)| *idx);
-        let first_ask = asks.first().map(|(idx, _)| *idx);
         let waiting = (permissions.len() + asks.len()).saturating_sub(1);
         // **One card at a time, the oldest.** Each one stacked over the last
         // took the conversation's whole height by the third, and every one
         // offered Enter while only the focused one would take it. The next
         // takes the same place once this one is answered; the ones behind it
         // peek over its top edge, and its head says how many.
-        let card = match (first_permission, first_ask) {
-            (Some(p), Some(a)) if a < p => Some(Shown::Ask),
-            (Some(_), _) => Some(Shown::Permission),
-            (None, Some(_)) => Some(Shown::Ask),
-            (None, None) => None,
+        let ask = |(idx, a): (usize, _)| {
+            transcript::ask(session, a, TranscriptItemId::Live(idx), waiting, cx).into_any_element()
         };
-        let card = card.map(|shown| match shown {
-            Shown::Permission => {
-                let (idx, p) = permissions[0];
+        let card = match (permissions.first(), asks.first()) {
+            (Some(&(p, _)), Some(&first)) if first.0 < p => ask(first),
+            (Some(&(idx, p)), _) => {
                 transcript::permission(session, p, TranscriptItemId::Live(idx), well, waiting, cx)
                     .into_any_element()
             }
-            Shown::Ask => {
-                let (idx, a) = asks[0];
-                transcript::ask(session, a, TranscriptItemId::Live(idx), waiting, cx)
-                    .into_any_element()
-            }
-        });
+            (None, Some(&first)) => ask(first),
+            (None, None) => return None,
+        };
         // One column with no gap of its own, so the slivers sit on the card
         // they stand behind rather than floating apart in whatever gap the
         // caller keeps between its rows.
-        let card = card?;
         Some(
             div()
                 .v_flex()
@@ -251,22 +245,30 @@ impl ChatPane {
     }
 }
 
-/// Which kind of card is the oldest one waiting.
-enum Shown {
-    Permission,
-    Ask,
+/// What `pinned` stacks over the composer, and whether a waiting card is
+/// among it, its foot to run under the composer.
+pub(super) struct Pinned {
+    pub(super) stack: Vec<gpui::AnyElement>,
+    pub(super) tucked: bool,
 }
 
+/// How far in from the card each sliver behind it stands, as a share of the
+/// stack's gutter per place.
+const PEEK_INSET: f32 = 0.75;
+
+/// How much of the card's own fill each place back keeps, the rest the page's.
+const PEEK_FADE: f32 = 0.5;
+
 /// The sliver of a card waiting `depth` places behind the one shown: its top
-/// edge only, inset a gutter per place and a step darker per place, so the
-/// stack reads as cards behind cards.
+/// edge only, inset a share of the gutter per place and a step nearer the
+/// page's fill per place, so the stack reads as cards behind cards.
 fn peek(depth: usize, cx: &App) -> gpui::AnyElement {
     let theme = cx.theme();
     let fill =
-        crate::theme::waiting_card(cx).mix_oklab(theme.background, 0.5_f32.powi(depth as i32));
+        crate::theme::waiting_card(cx).mix_oklab(theme.background, PEEK_FADE.powi(depth as i32));
     div()
         .h(PEEK_H)
-        .mx(gpui::rems(STACK_GUTTER.0 * 0.75 * depth as f32))
+        .mx(gpui::rems(STACK_GUTTER.0 * PEEK_INSET * depth as f32))
         .bg(fill)
         .border_1()
         .border_b_0()

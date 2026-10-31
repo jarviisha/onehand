@@ -350,7 +350,8 @@ tooltip saying why.
 
 ### Dialogs
 
-A dialog is the library's `Dialog` at its own width, titled through `title_row`, its ✕ muted and
+A dialog is the library's `Dialog` at its own width, titled through `title_row` (15px, a step
+over the chrome rather than the library's 16), its ✕ muted and
 named in its tooltip, over a backdrop that dims the window. Its fields are `field`s, `gap_4`
 apart; what blocks it stands above the footer in the danger ink. Its footer (`footer_row`) sits
 on the right: the dismissing button first, then the one primary action or the danger word, at

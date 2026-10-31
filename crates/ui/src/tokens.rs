@@ -202,7 +202,7 @@ mod tests {
         assert_eq!(
             px(TREE_ROW_FILL) % 2.,
             1.,
-            "the fill is an even number of pixels"
+            "the fill is not an odd number of pixels"
         );
         assert_eq!(
             px(TREE_ROW_ABOVE) + px(TREE_ROW_FILL) + px(TREE_ROW_BELOW),

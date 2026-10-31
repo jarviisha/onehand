@@ -32,16 +32,17 @@ impl ChatPane {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
-        let (pinned, tucked) = self.pinned(session, room.well, window, cx);
+        let super::body::Pinned {
+            stack: pinned,
+            tucked,
+        } = self.pinned(session, room.well, window, cx);
         let lead = self.lead_strip(cx);
         // **A waiting card's foot runs under the composer**, which is drawn
         // after it and opaque, so the composer reads as laid over the card.
-        // The column's gap goes too, or the two would stand apart. Not over
-        // the lead's strip, which tops the composer while workers run and is
-        // no surface to lay over a card.
-        // ponytail: no tuck over the lead strip; tuck under it if workers become common.
-        let tuck =
-            (tucked && lead.is_none()).then(|| -gpui::rems(COLUMN_GAP.0 + transcript::TUCK.0));
+        // The column's gap goes too, or the two would stand apart. While
+        // workers run the lead's strip tops the composer, opaque and edged as
+        // it is, and the card's foot runs under the strip instead.
+        let tuck = tucked.then(|| -gpui::rems(COLUMN_GAP.0 + transcript::TUCK.0));
         let git = self.git.clone();
         let pane = cx.entity();
 

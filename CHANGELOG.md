@@ -49,7 +49,7 @@ minor bump may break any of them.
 ### The window
 
 - The whole interface is redrawn after gpui-kit's components: its own Default Light and Default
-  Dark palette with a blue primary (the terminal keeps VS Code's sixteen colours), its corners,
+  Dark palette with a blue primary (the terminal keeps its own sixteen ANSI colours), its corners,
   its edged buttons and fields, and its tags for states and labels, at an editor's density: 13px
   text (12px for code and the transcript's record), 26 and 22px controls, 24px rows, 35px bars.
 - The window draws its own frame: a title bar holding File, View, Go and Session menus, each item

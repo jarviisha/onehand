@@ -187,6 +187,10 @@ impl RenderOnce for Prompt {
     }
 }
 
+/// How much of the prompt's ink a code span's chip takes on its bubble:
+/// enough to set the span off the grey, not so much it reads as a button.
+const CODE_CHIP_ALPHA: f32 = 0.12;
+
 /// What the user typed, with the spans they fenced in backticks set apart.
 ///
 /// **Drawn as typed, and this is the one exception.** A prompt run through the
@@ -211,7 +215,7 @@ fn prompt_text(text: &str, cx: &App) -> gpui::AnyElement {
         // are still enough to read as one.
         // The bubble's own ink, thinned, so the chip shows on its grey in
         // either theme.
-        background_color: Some(cx.theme().foreground.opacity(0.12)),
+        background_color: Some(cx.theme().foreground.opacity(CODE_CHIP_ALPHA)),
         color: Some(cx.theme().foreground),
         ..Default::default()
     };

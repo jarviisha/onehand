@@ -162,7 +162,8 @@ subagent's is titled `<name> asks permission` or `<name> asks: <question>`, its 
 past them ends on *Show all N lines*, which opens it in place. The staged files' plates (a picture's preview,
 pressed to open it whole in a dialog; a text file opening in the Workbench) fade where cut beside
 *Show all N*. A picture attached to a sent prompt opens the same way. While the session on screen
-leads workers, the lead's strip stands on the card, narrower than it, one line above the card's: *N
+leads workers, the lead's strip stands on the card, narrower than it, one line above the card's
+(a waiting card's foot then runs under the strip rather than the card): *N
 workers*, a count per state that has any, most urgent first, in its mark and ink, and at the end,
 in the warning ink, *<name> needs you* for the most urgent worker waiting on the person, when one
 does. It stays while the workers' region shows. Pressed, the region shows with the most urgent
@@ -357,7 +358,8 @@ dragged height kept).
 ## Settings
 
 Settings is a page named in its own head, as the workspace pages are, over a nav column with
-Appearance, Workspace, Agents, Connections and Shortcuts (rows as the rail's page rows), and beside
+Appearance, Workspace, Agents, Connections and Shortcuts (rows as the rail's page rows, at 22px, a
+step under a list row), and beside
 it the sub-page, untitled (its nav row names it), opening on its scope as a badge and a hint, its
 groups in the library's setting-page shape: each a box with an edge, its semibold heading and the
 line about it at the top inside. Every button there is secondary:

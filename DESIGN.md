@@ -108,7 +108,7 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   diffs, a subagent's card (a fold block where the agent handed work off), answered
   permissions and questions (a line each, those in a row sharing one hairline edge with no fill),
   notices (a remark is a divider: the words centred between two hairlines across the column, in
-  the meta ink) and errors (the neutral card, flat: the alert mark in the danger ink beside the
+  the muted ink) and errors (the neutral card, flat: the alert mark in the danger ink beside the
   words, *Turn failed* over them when a turn ended on it, the restart key for a lost agent), the files the turn changed,
   and, while it runs, the running line (a spinner, its clock, *N running*, what the agent says it
   is doing). A workflow's steps and an interrupted turn are notices, never prompts.
@@ -141,8 +141,8 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
 - **The pinned cards** (a permission, a question) share one neutral shell: an edge in `input` at
   `radius`, no wash, the tone only in the mark and the title (a permission's warning ink). While
   they wait they stand a step off the page (`theme::waiting_card`), lifted, as wide as the
-  composer, their foot tucked under it (`TUCK`) so the composer reads as laid over them, without
-  motion; the ones waiting behind peek over the shown one's top edge as slivers, at most two,
+  composer, their foot tucked under it (`TUCK`, under the lead's strip while it shows) so the
+  composer reads as laid over them, without motion; the ones waiting behind peek over the shown one's top edge as slivers, at most two,
   and its head says *1 of N waiting*. Back in the history the shell is on the page's fill and
   flat. It holds a head, the body, the answers at the end at `.short()` (a hairline under the head,
   padded as a box whose body scrolls, its cut end fading out while more lies below), the

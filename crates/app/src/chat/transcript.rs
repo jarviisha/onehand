@@ -278,15 +278,7 @@ fn notice(
                 // its whole line as its least width, so an adapter's long
                 // error ran out past the column.
                 .child(div().min_w_0().text_color(words).child(text.to_string()))
-                .children(restart.map(|key| {
-                    div()
-                        .h_flex()
-                        .items_center()
-                        .gap_1()
-                        .text_color(words)
-                        .child("Restart the agent with")
-                        .child(key)
-                }))
+                .children(restart.map(|key| restart_line(key).text_color(words)))
                 .children(detail(cx.theme().muted_foreground)),
         )
         .into_any_element()
@@ -326,7 +318,7 @@ fn notice_divider(
     cx: &App,
 ) -> gpui::AnyElement {
     let (ink, rule) = (cx.theme().muted_foreground, cx.theme().border);
-    let line = || div().flex_1().min_w(gpui::rems(1.)).h_px().bg(rule);
+    let line = || div().flex_1().min_w(RULE_MIN_W).h_px().bg(rule);
     div()
         .v_flex()
         .items_center()
@@ -349,17 +341,24 @@ fn notice_divider(
         // On a line of its own, as the details are: beside the words it took
         // their width, and in a narrow dock a lost agent's error wrapped word
         // by word.
-        .children(restart.map(|key| {
-            div()
-                .h_flex()
-                .items_center()
-                .gap_1()
-                .child("Restart the agent with")
-                .child(key)
-        }))
+        .children(restart.map(restart_line))
         .children(detail(ink))
         .into_any_element()
 }
+
+/// The way back to a lost agent: the key the keymap binds now, named.
+fn restart_line(key: gpui_component::kbd::Kbd) -> gpui::Div {
+    div()
+        .h_flex()
+        .items_center()
+        .gap_1()
+        .child("Restart the agent with")
+        .child(key)
+}
+
+/// The least a divider's rule shrinks to beside long words, so the line
+/// still reads as one.
+const RULE_MIN_W: gpui::Rems = gpui::rems(1.);
 
 /// What the agent attached to a failure beside its message: machine text,
 /// folded under the words a person reads first, and opened on request.

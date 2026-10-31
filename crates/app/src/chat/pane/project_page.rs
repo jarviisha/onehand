@@ -8,8 +8,8 @@ use crate::page_parts::{count_of, page_card, page_head, ruled};
 use crate::tokens::PAGE_PROSE;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, Context, Div, FocusHandle, InteractiveElement, IntoElement, ParentElement, Rems,
-    SharedString, StatefulInteractiveElement, Styled, Window, div, rems,
+    App, Context, Div, FocusHandle, InteractiveElement, IntoElement, ParentElement, SharedString,
+    StatefulInteractiveElement, Styled, Window, div,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::menu::ContextMenuExt as _;
@@ -31,11 +31,6 @@ use schedules_box::schedules_box;
 /// the cap cut off is said on screen rather than silently dropped. The list
 /// scrolls as well, because this many rows already outgrows a short window.
 const HOME_ROWS: usize = 8;
-
-/// The slot a conversation's age stands in, the overview row's, so every
-/// title starts on one edge. Wide enough for the longest age, *999d ago*, on
-/// one line: narrower, *20m ago* broke in two.
-const AGE_W: Rems = rems(4.);
 
 /// The project the pane is standing in while no conversation is showing.
 ///
@@ -429,7 +424,7 @@ impl ChatPane {
                         .child(
                             div()
                                 .flex_none()
-                                .w(AGE_W)
+                                .w(crate::page_parts::ROW_LEAD_W)
                                 .whitespace_nowrap()
                                 .text_xs()
                                 .text_color(crate::theme::meta_ink(cx))

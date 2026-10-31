@@ -423,6 +423,10 @@ impl SettingsPage {
     }
 }
 
+/// A row of the Settings page's own list: a step under a list row, as an
+/// editor's settings index stands, since the page beside it carries the weight.
+const NAV_ROW_H: gpui::Rems = gpui::rems(1.375);
+
 /// One row in the nav column.
 ///
 /// A div and not the app's button wrapper, for the reason the rail's rows are:
@@ -439,7 +443,7 @@ fn nav_row(page: SettingsPage, current: SettingsPage, handle: &Entity<Shell>, cx
         .items_center()
         .gap_2()
         .w_full()
-        .h(crate::tokens::ROW_H)
+        .h(NAV_ROW_H)
         .px_2()
         .rounded(cx.theme().radius)
         .cursor_pointer()

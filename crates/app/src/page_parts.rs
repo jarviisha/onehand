@@ -14,6 +14,11 @@ use std::rc::Rc;
 /// the workspace page's issues, or the Tasks page.
 pub(crate) const ALL_PROJECTS: &str = "All projects";
 
+/// The slot a list row's head stands in (an age, a five-digit reference,
+/// *Draft*, a mark), so every title starts on one edge. Wide enough for the
+/// longest age, *999d ago*, on one line.
+pub(crate) const ROW_LEAD_W: Rems = rems(4.);
+
 /// One project as the workspace page lists it.
 pub struct PageProject {
     pub label: SharedString,
