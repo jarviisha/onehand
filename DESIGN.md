@@ -131,11 +131,12 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   the column the table scrolls sideways in its own track while the vertical wheel stays the
   conversation's. Under every table, Copy (as Markdown) and *Open*, which shows it whole in a
   dialog as wide as the window allows.
-- **Calm once it is past**: a failure a later prompt has moved past keeps its words in the
-  muted ink, with no fill; a settled *N failed* drops the danger ink; a refusal's badge is
-  neutral. A live failure is the library's `Destructive` bubble across the column, in the agent's words (*The turn
-  failed: …*), what it attached folded under *Show details* in mono; a lost agent's names the key
-  that restarts it. A failed turn holds until a prompt goes out; a restart does not answer it. An
+- **Calm once it is past**: a failure a later prompt has moved past keeps its mark, title and
+  words in the muted ink; a settled *N failed* drops the danger ink; a refusal's badge is
+  neutral. The failure a turn ended on is the waiting cards' neutral shell, flat and on the
+  page's fill: *Turn failed* after the alert mark, both in the danger ink, then the agent's words
+  in the body ink, what it attached folded under *Show details* in mono; a lost agent's names the
+  key that restarts it. A failed turn holds until a prompt goes out; a restart does not answer it. An
   error that failed no turn (one answering a *Stop*, a resume that fell back) is past at once.
 - **The pinned cards** (a permission, a question) share one neutral shell: an edge in `input` at
   `radius`, no wash, the tone only in the mark and the title (a permission's warning ink). While

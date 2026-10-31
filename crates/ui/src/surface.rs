@@ -2,7 +2,7 @@
 
 use crate::tokens;
 use gpui::{App, Div, Hsla, Styled as _, div};
-use gpui_component::{ActiveTheme as _, Colorize as _, StyledExt as _};
+use gpui_component::{ActiveTheme as _, StyledExt as _};
 
 /// A sunk box of machine text: full width, the muted fill, the theme's corner,
 /// the mono family at [`tokens::CODE_TEXT`], clipped so a long line cannot push
@@ -69,14 +69,4 @@ pub fn card_box(cx: &App) -> Div {
         .rounded(cx.theme().radius)
         .border_1()
         .border_color(cx.theme().input)
-}
-
-/// A box in the library's alert look: an edge and a wash of `tone` mixed into
-/// the page's fill, opaque, for a box that waits on the person (a run's
-/// approval).
-pub fn alert_tone(boxed: Div, tone: Hsla, cx: &App) -> Div {
-    let fill = cx.theme().background;
-    boxed
-        .border_color(tone.mix_oklab(fill, 0.3))
-        .bg(tone.mix_oklab(fill, 0.04))
 }

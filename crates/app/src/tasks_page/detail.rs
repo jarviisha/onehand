@@ -547,10 +547,19 @@ fn review_card(
             .child(button)
             .child(div().text_xs().text_color(muted).child(said))
     };
-    // Waits on the person, so it takes the warning alert's look.
-    onehand_ui::alert_tone(
-        page_card("Awaiting approval", None, open, cx),
-        crate::theme::status_ink(cx).warning,
+    // Waits on the person: the box a page's others are, the warning ink on
+    // its mark and title alone, as a waiting card in a conversation carries it.
+    let warning = crate::theme::status_ink(cx).warning;
+    page_card(
+        div()
+            .h_flex()
+            .items_center()
+            .gap_2()
+            .text_color(warning)
+            .child(Icon::new(IconName::TriangleAlert).small())
+            .child("Awaiting approval"),
+        None,
+        open,
         cx,
     )
     .children(said)

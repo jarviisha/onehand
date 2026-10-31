@@ -14,7 +14,6 @@
 use super::session::ChatSession;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{App, Entity, IntoElement, ParentElement, Styled, Window, div};
-use gpui_component::bubble::{Bubble, BubbleVariant};
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::chat::{ChatItem, NoticeLevel, TranscriptItemId};
 
@@ -245,88 +244,51 @@ fn notice(
         }
         NoticeShape::Failed { past } => past,
     };
-    if past {
-        return div()
-            .h_flex()
-            .items_start()
-            .gap_2()
-            .w_full()
-            .min_w_0()
-            .text_size(TEXT_SM)
-            .text_color(cx.theme().muted_foreground)
-            .child(
-                div()
-                    .h(metrics::LINE_SM)
-                    .flex_none()
-                    .h_flex()
-                    .items_center()
-                    .child(Icon::new(IconName::TriangleAlert).xsmall()),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .v_flex()
-                    .gap_1()
-                    .child(text.to_string())
-                    .children(detail(cx.theme().muted_foreground)),
-            )
-            .into_any_element();
-    }
-    // A failure is the library's destructive bubble across the column, the
-    // mark anchored to the first line so a message that wraps to three lines
-    // does not carry the icon down the middle of itself.
-    let ink = cx.theme().danger;
-    Bubble::new()
-        .with_variant(BubbleVariant::Destructive)
-        .w_full()
-        .max_w_full()
+    // The neutral card the waiting ones use, flat as history is: the tone in
+    // the mark and the title alone, the agent's own words in the body ink
+    // under them. Once a prompt has followed it, its mark and title quiet to
+    // the meta ink: the record of what happened, not an alarm still ringing.
+    let tone = match past {
+        true => cx.theme().muted_foreground,
+        false => crate::theme::status_ink(cx).danger,
+    };
+    parts::floating_card(false, cx)
+        .v_flex()
+        .gap_1()
+        .px_3()
+        .py_2()
+        .text_size(TEXT_SM)
         .child(
             div()
                 .h_flex()
-                .items_start()
+                .items_center()
                 .gap_2()
-                .w_full()
-                .min_w_0()
-                .text_size(TEXT_SM)
-                .child(
-                    // The glyph is held to the first line's height, so a message that
-                    // wraps keeps it beside its first words.
+                .text_color(tone)
+                .font_semibold()
+                .child(Icon::new(IconName::TriangleAlert).xsmall())
+                .child("Turn failed"),
+        )
+        .child(
+            div()
+                .h_flex()
+                .flex_wrap()
+                .items_center()
+                .gap_x_2()
+                .when(past, |words| words.text_color(cx.theme().muted_foreground))
+                // In a box that may shrink: bare text in a flex row measures
+                // its whole line as its least width, so an adapter's long
+                // error ran out past the column.
+                .child(div().min_w_0().child(text.to_string()))
+                .children(restart.map(|key| {
                     div()
-                        .h(metrics::LINE_SM)
-                        .flex_none()
                         .h_flex()
                         .items_center()
-                        .child(Icon::new(IconName::TriangleAlert).xsmall()),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .v_flex()
                         .gap_1()
-                        .child(
-                            div()
-                                .h_flex()
-                                .flex_wrap()
-                                .items_center()
-                                .gap_x_2()
-                                // In a box that may shrink: bare text in a flex row
-                                // measures its whole line as its least width, so an
-                                // adapter's long error ran out past the column.
-                                .child(div().min_w_0().child(text.to_string()))
-                                .children(restart.map(|key| {
-                                    div()
-                                        .h_flex()
-                                        .items_center()
-                                        .gap_1()
-                                        .child("Restart the agent with")
-                                        .child(key)
-                                })),
-                        )
-                        .children(detail(ink)),
-                ),
+                        .child("Restart the agent with")
+                        .child(key)
+                })),
         )
+        .children(detail(cx.theme().muted_foreground))
         .into_any_element()
 }
 

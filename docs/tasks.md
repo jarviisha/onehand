@@ -56,7 +56,7 @@ the prose width. It shows:
 - **Way out**, on an ended task: why it ended and the way out that fits, in the issue's words
   (`next_action`), with *Retry with current settings…* when that is a way out (first for a
   configuration failure);
-- **Awaiting approval**, while the last run waits on one, in the warning alert's look: its answer (its last 60 lines, said
+- **Awaiting approval**, while the last run waits on one, in a page's box with its mark and title in the warning ink: its answer (its last 60 lines, said
   when cut, *Review…* opening all of it), *Revise…* and *Continue* each beside what it starts, and
   *Open session*. It is answered here as on the strip, through the same call: each press carries
   the visit it was drawn from, and one the run no longer waits at shows the new answer instead;

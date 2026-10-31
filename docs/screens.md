@@ -299,7 +299,7 @@ dragged height kept).
   over workflow, step or outcome and project, its actions by state (*Open session*, *Stop*,
   *Resume*, *Retry…*, *Dismiss*) in a `⋯` on hover and on a right-click, under *Needs attention*
   also drawn as buttons beside it; its text opens the task's detail, a page of its own at the
-  prose width: a trail, the title, then *Awaiting approval* in a box in the warning alert's look,
+  prose width: a trail, the title, then *Awaiting approval* in a page's box, its mark and title in the warning ink,
   *Way out*, and the runs on a vertical stepper.
 - *Issues*, a list page (`docs/ui-patterns.md`, *List pages*): a head (*Issues*, then *Refresh*
   and *New issue*, its primary, at the end); the row under it (the search, then *Open* and

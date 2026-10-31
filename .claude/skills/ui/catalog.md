@@ -60,7 +60,7 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | A list beside its detail, or one at a time | `list_detail`, `ListWidths`, `back_link` | `crates/ui/src/list_detail.rs` |
 | A page's trail back to the list it was opened from (a task, a workflow, a schedule) | `crumbs` over a `crumb_link` | `crates/ui/src/list_detail.rs` |
 | A vertical stepper of rows the caller draws (a task's visits, a workflow's steps) | `step_line(first, last, step_dot(StepMark, cx), content, cx)`, `STEP_LINE_H` | `crates/ui/src/stepper.rs` |
-| A box that waits on the person (a run's approval) | `alert_tone(box, tone, cx)` | `crates/ui/src/surface.rs` |
+| A box that waits on the person (a run's approval) | `card_box` with the warning ink on its mark and title, as a waiting card carries it | `crates/app/src/tasks_page/detail.rs` |
 | A line filling an empty panel | `hint` | `crates/ui/src/notice.rs` |
 | A condition standing under a view | `status_line(message, ink)`, in the ink of its state | `crates/ui/src/notice.rs` |
 | Status ink, the middle ink, a dock's surface | `status_ink`, `meta_ink` (`middle_ink` on a fill), `dock_surface` | `crates/ui/src/ink.rs`, `crates/ui/src/surface.rs` |
