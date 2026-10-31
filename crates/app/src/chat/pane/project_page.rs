@@ -16,6 +16,7 @@ use gpui_component::menu::ContextMenuExt as _;
 use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::chat::ConvMeta;
 use onehand_ui::Tall as _;
+use onehand_ui::TallIcon as _;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -32,8 +33,9 @@ use schedules_box::schedules_box;
 const HOME_ROWS: usize = 8;
 
 /// The slot a conversation's age stands in, the overview row's, so every
-/// title starts on one edge.
-const AGE_W: Rems = rems(3.);
+/// title starts on one edge. Wide enough for the longest age, *999d ago*, on
+/// one line: narrower, *20m ago* broke in two.
+const AGE_W: Rems = rems(4.);
 
 /// The project the pane is standing in while no conversation is showing.
 ///
@@ -428,6 +430,7 @@ impl ChatPane {
                             div()
                                 .flex_none()
                                 .w(AGE_W)
+                                .whitespace_nowrap()
                                 .text_xs()
                                 .text_color(crate::theme::meta_ink(cx))
                                 .child(rel_time(now, meta.updated)),
@@ -637,9 +640,11 @@ fn new_session(cx: &mut Context<ChatPane>) -> gpui::AnyElement {
     crate::controls::split_action(
         "project-new-session-menu",
         start,
+        // Square at the head's height: an icon alone under `tall`'s word
+        // padding was left a couple of pixels and drew as a dot.
         crate::controls::action("project-new-session-agent")
             .primary()
-            .tall()
+            .tall_icon()
             .named("Start a session with another agent"),
         cx.theme().background,
         gpui::Anchor::TopRight,
