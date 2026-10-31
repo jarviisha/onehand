@@ -343,7 +343,7 @@ impl IssuesView {
             .overflow_y_scroll()
             .mx_4()
             .mt_3()
-            .text_sm()
+            .text_size(onehand_ui::tokens::CHROME_TEXT)
             .child(head);
         if review.changed && review.sent.is_none() {
             block = block.child(div().text_color(ink.warning).child(ANSWER_CHANGED));

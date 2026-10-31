@@ -159,12 +159,12 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
 | Meta, hints, counts, a small label | `.text_xs()`, in `muted_foreground` when it is meta |
 | A caption inside a small object (an attachment's plate) | `MICRO_TEXT` (11px), a step under the meta size |
 | Machine text | `CODE_TEXT`, in `mono_font_family` |
-| Chrome: a panel's rows, boxes, forms and strips, a menu's rows | `CHROME_TEXT` (14px), the library's control size |
+| Chrome: a panel's rows, boxes, forms and strips, a menu's rows, a `.tall()` control's words | `CHROME_TEXT` (13px), a step under the library's control size |
 | A control's words (`.short()`) | `.text_xs()` |
-| Reading text: the transcript, the composer's field, a document | `.text_sm()`, on the reading leading; the transcript's `TEXT` |
-| The transcript's record: activity, thoughts, notices, a card's question | a step under the reading size, the transcript's `TEXT_SM` (13px) |
+| Reading text: the transcript, the composer's field, a document | 13px on the reading leading: the transcript's `TEXT`, `CHROME_TEXT` elsewhere |
+| The transcript's record: activity, thoughts, notices, a card's question | a step under the reading size, the transcript's `TEXT_SM` (12px) |
 | A heading in reading text | a step up the scale per level, two at most; then the body's size |
-| A page's or an issue's title | `.text_2xl()` |
+| A page's or an issue's title | `.text_lg()` (18px) |
 
 - **Weight carries hierarchy before size does**: `font_medium` for a name in a header,
   `font_semibold` for a page's title and any other title or heading; nothing bolder. A list page's rows,
@@ -319,11 +319,11 @@ draws on (a radio's or a checkbox's ring on the selected step), `choice_mark` dr
 
 **A size names a role, and the role follows the room the control stands in.** A control takes
 one of the library's two sizes. On a page, where there is room and the person reads and types
-what a control holds, it takes `.tall()` (32px; a button is the library's small held at `FIELD_H`): a page's head and a page's
+what a control holds, it takes `.tall()` (26px; a button is the library's small held at `FIELD_H`, its words at `CHROME_TEXT`): a page's head and a page's
 form, its fields, pickers and buttons alike, so a field's words stand at its title's size; a
 dialog holding a form at `DIALOG_FORM` is that room too. In dense chrome (the rail, a dock, a
 strip, a dock's filter bar, a dialog that asks one thing, a row, a box's title row, the composer) it takes
-`.short()` (24px; a button is the library's extra small, a field its small, held at `CONTROL_H`), so it never outweighs what it acts on. An icon alone is
+`.short()` (22px; a button is the library's extra small, a field its small, held at `CONTROL_H`), so it never outweighs what it acts on. An icon alone is
 square at its row's height: `.small()` beside `.short()` peers, `.tall()` beside tall ones.
 `.tall()` (`FIELD_H`) is the ceiling: no control stands taller.
 **What a small object holds scales with the object.** Inside a fixed object smaller than a row of

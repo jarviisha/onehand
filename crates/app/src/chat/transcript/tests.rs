@@ -38,8 +38,8 @@ fn every_step_is_on_the_scale() {
     // Half a step is a step nobody can see, so the ladder skips no rung it
     // does not use and admits no rung between two it does.
     const SCALE: &[f32] = &[
-        2., 4., 6., 8., 10., 12., 13., 14., 16., 18., 20., 24., 28., 32., 40., 44., 62., 64., 92.,
-        320.,
+        2., 4., 6., 8., 10., 12., 13., 14., 16., 18., 20., 22., 24., 28., 32., 40., 44., 62., 64.,
+        92., 320.,
     ];
     for (name, rems) in steps() {
         let px = rems * 16.;

@@ -372,7 +372,7 @@ impl ChatPane {
             // the size a page's title takes.
             return div()
                 .min_w_0()
-                .when(self.page.is_some(), |title| title.text_2xl())
+                .when(self.page.is_some(), |title| title.text_lg())
                 .child(name)
                 .into_any_element();
         }

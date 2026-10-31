@@ -92,10 +92,9 @@ are not steps and stay allowed. A named spacing constant (`BLOCK_GAP`, `TIGHT_GA
 | Write | rem | px |
 |---|---|---|
 | `tokens::MICRO_TEXT` | 0.6875 | 11 |
-| `.text_xs()` | 0.75 | 12 |
-| `tokens::CODE_TEXT` | 0.8125 | 13 |
-| `tokens::CHROME_TEXT` | 0.875 | 14 |
-| `.text_sm()` | 0.875 | 14 |
+| `.text_xs()`, `tokens::CODE_TEXT`, the transcript's `TEXT_SM` | 0.75 | 12 |
+| `tokens::CHROME_TEXT`, the transcript's `TEXT` | 0.8125 | 13 |
+| `.text_sm()` (the library's own size; the app does not write it) | 0.875 | 14 |
 | `.text_base()` | 1 | 16 |
 | `.text_lg()` | 1.125 | 18 |
 | `.text_xl()` | 1.25 | 20 |
@@ -138,13 +137,13 @@ Moving the library's rev means checking this table.
 | Size | Button: height / words / icon / icon–label gap / inset | Input: height / words / inset | Icon alone |
 |---|---|---|---|
 | `.xsmall()`: an icon-only button inside a small object only | 20 / 12 / 12 / 4 / 4 | 20 / 12 / 4 **px** | 12 |
-| `.short()` (`CONTROL_H`): a button the library's extra small, a field its small | 24 / 12 / 12 / 4 / 8 | 24 / 14 / 8 **px** | 14 |
+| `.short()` (`CONTROL_H`): a button the library's extra small, a field its small | 22 / 12 / 12 / 4 / 8 | 22 / 14 / 8 **px** | 14 |
 | `.small()`: an icon-only button beside `.short()` | 24 / 14 / 14 / 4 / 8 | 24 / 14 / 8 **px** | 14 |
-| `.tall()` (`FIELD_H`): the library's small, held taller | 32 / 14 / 14 / 4 / 12 | 32 / 14 / 8 **px** | 16 |
+| `.tall()` (`FIELD_H`): the library's small, held taller | 26 / 13 / 14 / 4 / 12 | 26 / 14 / 8 **px** | 16 |
 
 An icon-only button is square at its height. A button's `.short()` is the library's extra small
-held at `CONTROL_H` and its `.tall()` the library's small held at `FIELD_H`; a field takes the
-library's small at both (`Short` and `Tall` in `crates/ui/src/control_size.rs`); their words, icons and insets are the library's. A builder that
+held at `CONTROL_H` and its `.tall()` the library's small held at `FIELD_H`, its words at
+`CHROME_TEXT`; a field takes the library's small at both (`Short` and `Tall` in `crates/ui/src/control_size.rs`); their words, icons and insets are the library's. A builder that
 sizes the controls it makes (`choice`, `switch`, `picker`) takes one of them as a `ControlSize`.
 
 A field of several lines (`text_area`) is the library's `Textarea`, which takes no size: its text
@@ -168,19 +167,19 @@ All in `onehand_ui::tokens` (`crates/ui/src/tokens.rs`), which the app names
 
 | Token | Value | What |
 |---|---|---|
-| `BAR_H` | 2.75rem | every strip along the top of a region |
+| `BAR_H` | 2.1875rem | every strip along the top of a region: 35px |
 | `TAB_MARK` | 0.125rem | the stroke along the top of a dock's open tab |
-| `MODE_BAR_H` | 2rem | a mode's own bar under the Workbench's strip (the editor's tabs, the reader's bar) |
-| `ROW_H` | 2rem | a list row (the rail, the composer's popup) |
-| `TREE_ROW_H` | 1.5rem | a Workbench tree's row pitch (Files, Markdown) |
-| `TREE_ROW_FILL` | 1.3125rem | a tree row's fill: 21px, odd so the name centres on a whole pixel |
+| `MODE_BAR_H` | 1.875rem | a mode's own bar under the Workbench's strip (the editor's tabs, the reader's bar) |
+| `ROW_H` | 1.5rem | a list row (the rail, the composer's popup): 24px |
+| `TREE_ROW_H` | 1.375rem | a Workbench tree's row pitch (Files, Markdown) |
+| `TREE_ROW_FILL` | 1.1875rem | a tree row's fill: 19px, odd so the name centres on a whole pixel |
 | `TREE_ROW_ABOVE`, `TREE_ROW_BELOW` | 0.0625rem, 0.125rem | the room over and under a tree row's fill; between two fills, their sum |
-| `CONTROL_H` | 1.5rem | a small control: `.short()`, and an icon-only `.small()` button |
-| `FIELD_H` | 2rem | the tallest control, a step over `.short()`: a page's head and form (`.tall()`); nothing stands taller |
+| `CONTROL_H` | 1.375rem | a small control: `.short()`, and an icon-only `.small()` button |
+| `FIELD_H` | 1.625rem | the tallest control, a step over `.short()`: a page's head and form (`.tall()`); nothing stands taller |
 | `SCROLLBAR_THUMB`, `SCROLLBAR_THUMB_ACTIVE` | 4px, 6px | a scrollbar's thumb at rest, and hovered or dragged |
-| `CHROME_TEXT` | 0.875rem | chrome text: a panel's rows, boxes, forms and strips, at the library's control size |
+| `CHROME_TEXT` | 0.8125rem | chrome text: a panel's rows, boxes, forms and strips, a `.tall()` control's words, a document's reading text |
 | `MICRO_TEXT` | 0.6875rem | a caption inside a small object: an attachment's plate |
-| `CODE_TEXT` | 0.8125rem | machine text |
+| `CODE_TEXT` | 0.75rem | machine text |
 | `LEADING` | 1.6 | reading text |
 | `LEADING_TIGHT` | 1.4 | a wrapped title |
 | `PAGE_NARROW` | 35rem | a one-column page |

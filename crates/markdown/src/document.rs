@@ -358,7 +358,7 @@ pub(crate) fn reader(
                             .pl(start)
                             .pr(end)
                             .py(READER_INSET)
-                            .text_sm()
+                            .text_size(tokens::CHROME_TEXT)
                             .line_height(relative(tokens::LEADING))
                             .style(doc_style(rem, cx)),
                     )

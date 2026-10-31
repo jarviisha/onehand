@@ -11,7 +11,9 @@ use gpui_component::ActiveTheme as _;
 /// The height every bar along the top of a region shares: the conversation's
 /// header, the Workbench's mode strip, the rail's workspace bar and foot, and
 /// a page's column heads, so bars side by side line up across the window.
-pub const BAR_H: Rems = rems(2.75);
+/// A small control and a little room over and under it, as an editor's
+/// title bars stand: taller and the bars read as a band of their own.
+pub const BAR_H: Rems = rems(2.1875);
 
 /// The mark saying which tab of a dock's bar is open: a stroke along its
 /// top, a step heavier than a line.
@@ -21,12 +23,13 @@ pub const TAB_MARK: Rems = rems(0.125);
 /// reader's bar. A step under [`BAR_H`], so the second bar reads as the
 /// mode's rather than as the panel's a second time; its controls keep their
 /// size and stand on it with a little room.
-pub const MODE_BAR_H: Rems = rems(2.);
+pub const MODE_BAR_H: Rems = rems(1.875);
 
 /// A single-line list row: a rail row, a choice in the composer's popup. A
-/// Workbench tree takes [`TREE_ROW_H`] instead. The library's sidebar item,
-/// as tall as a medium control, so every list in the window stands at one pitch.
-pub const ROW_H: Rems = rems(2.);
+/// Workbench tree takes [`TREE_ROW_H`] instead. A step over a small control,
+/// so a row holding one keeps a little room round it, and one figure, so
+/// every list in the window stands at one pitch.
+pub const ROW_H: Rems = rems(1.5);
 
 /// A small control the pointer has to hit: a transcript button, a composer
 /// chip, a blocking card's answers.
@@ -36,16 +39,16 @@ pub const ROW_H: Rems = rems(2.);
 /// box, one holding only an icon as tall as the icon, and side by side they
 /// came out about seven pixels apart on the same row.
 ///
-/// The component library's **small** row, carried as a number because the
-/// library hard-codes its row heights in a sizing branch and offers no way to
-/// ask for one. Worth matching exactly: controls a few inches apart with
-/// floors a pixel or two off read as a line of controls that do not agree.
-pub const CONTROL_H: Rems = rems(1.5);
+/// Under the library's small row: at its 24 a strip of chips and a card's
+/// answers stood taller than the chrome text they carry. Every control the
+/// app sizes as small is pinned to this, so controls a few inches apart keep
+/// one floor rather than a library size beside an app one.
+pub const CONTROL_H: Rems = rems(1.375);
 
-/// The library's medium control, as tall as a list's row: a page's head, its
-/// form, its choices and its actions. Set by [`crate::Tall`] over the
-/// library's default size.
-pub const FIELD_H: Rems = rems(2.);
+/// A page's control: its head, its form, its choices and its actions. Under
+/// the library's medium 32, which stood large beside rows of 13px text; set
+/// by [`crate::Tall`] over the library's small size.
+pub const FIELD_H: Rems = rems(1.625);
 
 /// Where a tree row's content starts from a dock's edge, and how far each
 /// level of the tree steps in: Files and Markdown share both, so their trees
@@ -62,14 +65,14 @@ pub const ROW_GUTTER: Rems = rems(0.5);
 
 /// A tree row's pitch (Files, Markdown): tighter than [`ROW_H`], since a tree
 /// is a long run of one-line names scanned down a narrow dock.
-pub const TREE_ROW_H: Rems = rems(1.5);
+pub const TREE_ROW_H: Rems = rems(1.375);
 
 /// A tree row's fill, an odd number of pixels at the base rem. The text
 /// system lays the baseline on a whole pixel, rounding down: at the chrome
 /// size an even fill loses most of a pixel and the name sits a pixel high in
 /// it, an odd one loses about a quarter. Only the base rem lands on whole
 /// pixels; under another zoom the name may still sit a pixel off.
-pub const TREE_ROW_FILL: Rems = rems(1.3125);
+pub const TREE_ROW_FILL: Rems = rems(1.1875);
 
 /// The room over and under a tree row's fill. Rows stack, so every gap between
 /// two fills is the sum and no fill touches its neighbour; split one and two
@@ -88,9 +91,11 @@ pub const SCROLLBAR_W: Pixels = px(16.);
 pub const SCROLLBAR_THUMB: Pixels = px(4.);
 pub const SCROLLBAR_THUMB_ACTIVE: Pixels = px(6.);
 
-/// Chrome text: a panel's rows, boxes, forms and strips, at the library's
-/// own control size (`text_sm`), so a row and the controls in it letter alike.
-pub const CHROME_TEXT: Rems = rems(0.875);
+/// Chrome text: a panel's rows, boxes, forms and strips, and the words on
+/// every control the app sizes, so a row and the controls in it letter
+/// alike. A step under the library's `text_sm`, which read heavy across a
+/// window this full of rows.
+pub const CHROME_TEXT: Rems = rems(0.8125);
 
 /// Text inside a small object, a step under the meta size: a plate's caption.
 /// The floor of chrome is the meta size, but what a small object holds scales
@@ -101,7 +106,7 @@ pub const MICRO_TEXT: Rems = rems(0.6875);
 ///
 /// A step under the secondary size, so what a program printed reads quieter
 /// than what a person or the agent wrote, and one figure wherever it appears.
-pub const CODE_TEXT: Rems = rems(0.8125);
+pub const CODE_TEXT: Rems = rems(0.75);
 
 /// Line height for reading text, as a multiple of its size: set as a ratio so
 /// a well a step smaller keeps the same rhythm as the prose around it.
@@ -194,12 +199,16 @@ mod tests {
 
     #[test]
     fn tree_row_fill_is_odd_and_rows_stack_at_the_pitch() {
-        assert_eq!(px(TREE_ROW_FILL), 21.);
+        assert_eq!(
+            px(TREE_ROW_FILL) % 2.,
+            1.,
+            "the fill is an even number of pixels"
+        );
         assert_eq!(
             px(TREE_ROW_ABOVE) + px(TREE_ROW_FILL) + px(TREE_ROW_BELOW),
-            24.
+            px(TREE_ROW_H)
         );
-        assert_eq!(px(TREE_ROW_H), 24.);
+        assert_eq!(px(TREE_ROW_H), 22.);
     }
 
     #[test]

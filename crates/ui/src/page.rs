@@ -36,7 +36,7 @@ pub fn page_head(
                 .child(
                     div()
                         .truncate()
-                        .text_2xl()
+                        .text_lg()
                         .font_semibold()
                         .child(title.into()),
                 )

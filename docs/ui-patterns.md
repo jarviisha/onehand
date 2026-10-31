@@ -119,8 +119,9 @@ size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in ea
 - **`.tall()` is the ceiling.** No control stands taller than `FIELD_H`; a page gives a field
   room by its size, never by a larger control.
 - **One size, one measure.** A button's `.short()` is the library's extra small held at
-  `CONTROL_H` (24px) and its `.tall()` the library's small held at `FIELD_H` (32px); a field
-  takes the library's small at both heights; their words, icons and insets the library's. A size a component gets wrong is corrected in its shared
+  `CONTROL_H` (22px) and its `.tall()` the library's small held at `FIELD_H` (26px), its words at
+  `CHROME_TEXT`; a field takes the library's small at both heights; their icons and insets the
+  library's. A size a component gets wrong is corrected in its shared
   wrapper, never at the call site. The library's `.small()` is an icon-only button's size, square
   at the same height as `.short()`. `.xsmall()` is no field's or worded button's size: an icon
   takes it, and an icon-only button inside a small object (an attachment's plate), which scales
@@ -372,7 +373,7 @@ tells; an action beside one takes the secondary fill.
 
 A detail shows one thing in full (an issue, a task): a trail naming where it sits, with its
 actions beside it (one primary, one other, `⋯`; an issue's next one secondary and the other a
-ghost, since *New issue* holds its view's primary); its title in `text_2xl` semibold; one line of
+ghost, since *New issue* holds its view's primary); its title in `text_lg` semibold; one line of
 facts in meta text; what it waits on; then its tabs.
 
 ## Behaviour

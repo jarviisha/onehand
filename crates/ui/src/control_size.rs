@@ -6,9 +6,9 @@ use gpui_component::Sizable as _;
 use gpui_component::button::Button;
 use gpui_component::input::Input;
 
-/// A control at the library's medium size, [`tokens::FIELD_H`] high: a page's
-/// head and form, a dialog's footer. Its words, icon and padding are the
-/// library's for that size.
+/// A page's control, [`tokens::FIELD_H`] high: a page's head and form, a
+/// dialog's footer. Built on the library's small size, its words at the
+/// chrome size so a button and the row beside it letter alike.
 pub trait Tall {
     /// The medium size at [`tokens::FIELD_H`].
     fn tall(self) -> Self;
@@ -22,6 +22,7 @@ impl Tall for Button {
             .h(tokens::FIELD_H)
             .min_w(tokens::FIELD_H)
             .px_3()
+            .text_size(tokens::CHROME_TEXT)
     }
 }
 
@@ -51,8 +52,8 @@ impl Tall for Input {
 }
 
 /// A control in dense chrome: a strip, a row, a toolbar, the composer, a
-/// page's filter bar. The library's small size, [`tokens::CONTROL_H`] high,
-/// with its own words, icon and padding for that size.
+/// page's filter bar. [`tokens::CONTROL_H`] high, on the library's
+/// extra-small words, icon and padding.
 pub trait Short {
     /// The small size.
     fn short(self) -> Self;
@@ -71,7 +72,8 @@ impl Short for Button {
 
 impl Short for Input {
     fn short(self) -> Self {
-        self.small()
+        // `Styled::h` by name, for the reason `Tall` gives.
+        gpui::Styled::h(self.small(), tokens::CONTROL_H)
     }
 }
 

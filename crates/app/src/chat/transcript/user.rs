@@ -10,7 +10,7 @@ use gpui::{
     App, Entity, InteractiveElement, IntoElement, ParentElement, RenderOnce, SharedString,
     StatefulInteractiveElement, Styled, StyledImage as _, Window, div, relative,
 };
-use gpui_component::bubble::{Bubble, BubbleVariant};
+use gpui_component::bubble::{Bubble, BubbleContent, BubbleVariant};
 use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::chat::{TranscriptItemId, UserMsg};
 
@@ -162,7 +162,13 @@ impl RenderOnce for Prompt {
             .child(
                 Bubble::new()
                     .with_variant(BubbleVariant::Muted)
-                    .max_w(BUBBLE_MAX)
+                    // The size on the surface itself: the library letters a
+                    // bubble at its own control size, a step over the prose.
+                    .content(
+                        BubbleContent::new()
+                            .max_w(BUBBLE_MAX)
+                            .text_size(super::metrics::TEXT),
+                    )
                     .child(prompt_text(&self.text, cx)),
             )
             .child(

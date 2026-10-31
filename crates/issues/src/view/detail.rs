@@ -139,7 +139,7 @@ pub(super) fn issue_view(
     // The title, the largest words on the issue: the whole of it, wrapped on
     // a title's leading.
     let title = div()
-        .text_2xl()
+        .text_lg()
         .font_semibold()
         .line_height(gpui::relative(LEADING_TIGHT))
         .child(issue.title.clone());
@@ -260,7 +260,7 @@ pub(super) fn issue_view(
                 Some((parsed, _)) => div()
                     .px_4()
                     .py_3()
-                    .text_sm()
+                    .text_size(onehand_ui::tokens::CHROME_TEXT)
                     .line_height(gpui::relative(LEADING))
                     .child(
                         onehand_ui::no_code_label(TextView::new(parsed))
