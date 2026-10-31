@@ -636,19 +636,26 @@ fn ask_form(
     let rows = form.choice_rows(cx);
     let custom = form.custom_row(cx);
     let has_custom = custom.is_some();
+    let tabs = multi_field.then(|| form.tabs(cx));
+    let question = form.question();
+    // A single question is said whole by the head, with no tabs and no line
+    // of its own: an empty body here stood as a blank band between the
+    // head's hairline and the list's.
+    let has_lead = tabs.is_some() || question.is_some();
+    let lead = has_lead.then(|| {
+        card_body()
+            .gap_3()
+            .children(tabs)
+            .children(question.map(|line| {
+                div()
+                    .w_full()
+                    .text_size(TEXT_SM)
+                    .line_height(relative(LEADING_TIGHT))
+                    .child(line)
+            }))
+    });
     let body = card
-        .child(
-            card_body()
-                .gap_3()
-                .children(multi_field.then(|| form.tabs(cx)))
-                .children(form.question().map(|line| {
-                    div()
-                        .w_full()
-                        .text_size(TEXT_SM)
-                        .line_height(relative(LEADING_TIGHT))
-                        .child(line)
-                })),
-        )
+        .children(lead)
         // Only the choices scroll. The tab strip is how the *other* questions
         // are reached and the box below is where an answer nobody offered is
         // written, so both are controls and both stay on the card beside the
@@ -657,12 +664,15 @@ fn ask_form(
         // list is the part that moves, and the lines say where it starts and
         // where it is cut.
         .children((!rows.is_empty()).then(|| {
+            // Without a body over it, the head's own hairline is the one
+            // over the list: a second would double it.
             div()
                 .w_full()
                 .px(CARD_PAD)
                 .pt_2()
-                .border_t_1()
-                .border_color(cx.theme().border)
+                .when(has_lead, |list| {
+                    list.border_t_1().border_color(cx.theme().border)
+                })
                 .child(BlockingBody {
                     target,
                     children: rows,
