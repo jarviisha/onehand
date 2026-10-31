@@ -270,11 +270,9 @@ impl AskForm<'_> {
                     // pick-one row's is, and a destructive one is named by its
                     // danger word rather than by an edge.
                     .selected(on)
-                    // **At rest on a well of its own**, so each choice reads
-                    // as one thing apart from the next. Only at rest: on the
-                    // taken row the library lays the caller's fill over its
-                    // selected step.
-                    .when(!on, |row| row.bg(crate::theme::floating_well(cx)))
+                    // **Bare at rest**, a row of the card as a list's rows are:
+                    // a well under each choice stacked a layer per row on a
+                    // card that is itself a layer.
                     // **A form's field height as the floor.** A longer label
                     // or a description grows the row past it, to about the
                     // two lines the typed answer under the list stands at.
@@ -284,13 +282,11 @@ impl AskForm<'_> {
                     .min_h(CONTROL_H)
                     // The keyboard's own position, which has to show without
                     // being an answer: an arrow press moves it and settles
-                    // nothing, so it is the focus ring rather than a fill.
-                    .border_1()
-                    .border_color(
-                        match !on && cursor == Some(onehand_core::chat::AskRow::Choice(o)) {
-                            true => cx.theme().ring,
-                            false => cx.theme().transparent,
-                        },
+                    // nothing, so it is the pointer's fill rather than the
+                    // taken row's, and no frame.
+                    .when(
+                        !on && cursor == Some(onehand_core::chat::AskRow::Choice(o)),
+                        |row| row.bg(cx.theme().list_hover),
                     )
                     // **One child, holding the row's own layout.** A `Button`
                     // wraps what it is given in a content box of its own, so a
@@ -363,10 +359,11 @@ impl AskForm<'_> {
         // caret, and a row they reach shows it as the choices above do.
         let cursor = self.a.cursor_row(self.active) == Some(onehand_core::chat::AskRow::Custom);
         Some(
-            // **The list's last row, written in rather than picked**, so it
-            // stands as the choices do: on their well, at their inset and
-            // their words' size, with its key on the right. Its own height is
-            // the textarea's, two lines at rest and growing as it is written.
+            // **The list's last row, written in rather than picked**: a field,
+            // edged and sunk a step below the card as any field is, at the
+            // choices' inset and their words' size, with its key on the right.
+            // Its own height is the textarea's, two lines at rest and growing
+            // as it is written.
             div()
                 .h_flex()
                 .items_center()
@@ -378,7 +375,7 @@ impl AskForm<'_> {
                 .border_1()
                 .border_color(match cursor {
                     true => cx.theme().ring,
-                    false => cx.theme().transparent,
+                    false => cx.theme().input,
                 })
                 .child(
                     div().flex_1().min_w_0().child(

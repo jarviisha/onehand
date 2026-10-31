@@ -94,9 +94,8 @@ impl RenderOnce for CommandBlock {
             .relative()
             .h_flex()
             .items_start()
-            // **No edge, and a step of its own**: the card floats on the
-            // well's own grey in the dark palette, so its fill alone sets the
-            // command off the card.
+            // **No edge, and a step of its own**: the page's fill, sunk below
+            // the card, sets the command off it by its fill alone.
             .bg(well)
             .py_2()
             .pl_3()

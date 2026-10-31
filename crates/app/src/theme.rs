@@ -115,7 +115,13 @@ pub(crate) fn waiting_card(cx: &App) -> Hsla {
 }
 
 fn waiting_card_of(theme: &Theme) -> Hsla {
-    theme.secondary
+    // Halfway to the secondary grey on the near-black page: the whole step
+    // stood as a heavy slab beside the composer. On the white page the grey
+    // is already only a step off, and half of it would vanish.
+    match theme.mode.is_dark() {
+        true => theme.background.mix_oklab(theme.secondary, 0.5),
+        false => theme.secondary,
+    }
 }
 
 /// The composer card's fill: the page's own, as the card is told apart by its
@@ -130,10 +136,11 @@ pub(crate) fn inset(cx: &App) -> Hsla {
     cx.theme().background
 }
 
-/// A well on a floating card: the command a pinned permission asks to run.
-/// The library's own well, as its floating surfaces sit on the page's fill.
+/// A well on a waiting card: the command a pinned permission asks to run,
+/// the typed answer to a question. The page's own fill, so it sinks a step
+/// below the card it sits in, as a field does.
 pub(crate) fn floating_well(cx: &App) -> Hsla {
-    cx.theme().muted
+    cx.theme().background
 }
 
 /// The composer's lift, in pixels as a hairline is: the tight shadow's blur,

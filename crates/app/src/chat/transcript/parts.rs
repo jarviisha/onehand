@@ -96,7 +96,7 @@ impl RenderOnce for BlockingBody {
             .absolute()
             .size_0()
         };
-        let surface = cx.theme().popover.alpha(1.);
+        let surface = crate::theme::waiting_card(cx);
 
         div()
             .id(("blocking-body-frame", key))
