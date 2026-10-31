@@ -39,13 +39,14 @@ running, what needs me, and what has finished.
   older ones were removed since onehand started.
 - **Every box is capped at 50 rows** and says how many more it left out.
 - **The project filter** is a picker in a filter bar above the boxes, kept while the page is left;
-  a project's page sets it. The boxes stand two by two while the column holds two. A row shows its
-  actions while it is pointed at, except under *Needs attention*, whose next action stays drawn.
+  a project's page sets it. The boxes stand two by two while the column holds two. A row's actions
+  are in its `⋯`, shown while it is pointed at, and on a right-click; under *Needs attention* they
+  also stay drawn as buttons.
 
 **The task detail** opens in place of the boxes when a row's text is pressed, read as a page at
-the prose width, its parts plain sections. It shows:
+the prose width. It shows:
 
-- **a trail**: *Tasks* to go back (Esc too), then what can be done with the task: the most
+- **a trail**: *Tasks* to go back (Esc too) › the project › the workflow, as a breadcrumb, then what can be done with the task: the most
   fitting a primary (a secondary while *Awaiting approval* or the way out holds the view's one
   primary), the next a secondary, the rest in ⋯ (*Retry…* on a finished task, *Answer the
   pull request review…* on an issue's task that can answer one, done with a pull request it
@@ -55,11 +56,12 @@ the prose width, its parts plain sections. It shows:
 - **Way out**, on an ended task: why it ended and the way out that fits, in the issue's words
   (`next_action`), with *Retry with current settings…* when that is a way out (first for a
   configuration failure);
-- **Awaiting approval**, while the last run waits on one: its answer (its last 60 lines, said
+- **Awaiting approval**, while the last run waits on one, in a page's box with its mark and title in the warning ink: its answer (its last 60 lines, said
   when cut, *Review…* opening all of it), *Revise…* and *Continue* each beside what it starts, and
   *Open session*. It is answered here as on the strip, through the same call: each press carries
   the visit it was drawn from, and one the run no longer waits at shows the new answer instead;
-- **Run N**, the last run's timeline: one line per step visit (the step, why it ended, when it
+- **Run N**, the last run's timeline as a vertical stepper (a dot per visit on a rail, a check once
+  it ended, its number ringed in `info` while it runs): one line per step visit (the step, why it ended, when it
   started and how long it took), each opening onto what it kept or printed (its last 60 lines) and
   the files it changed between its start and end marks, with their added and removed lines.
   Pressing a file shows its line diff in the transcript's diff renderer, cut at 400 lines; a binary

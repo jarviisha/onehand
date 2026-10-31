@@ -4,13 +4,13 @@ use onehand_core::workflow::StepKind;
 #[test]
 fn grid_columns_steps_down() {
     for (width, columns) in [
-        (64., 4),
-        (59., 4),
-        (58.9, 3),
-        (44., 3),
-        (43.9, 2),
-        (29., 2),
-        (28.9, 1),
+        (80., 4),
+        (75., 4),
+        (74.9, 3),
+        (56., 3),
+        (55.9, 2),
+        (37., 2),
+        (36.9, 1),
         (5., 1),
     ] {
         assert_eq!(grid_columns(gpui::rems(width)), columns, "at {width}rem");

@@ -5,10 +5,9 @@ Name the evidence: code inspection, an automated check or the user's observation
 visual judgment verified from a source scan. Each item names the section that owns its rule; read
 the rule, not just the question. For prose-only work, use the contract path in `SKILL.md`.
 
-1. `cargo test -p onehand --locked` passes, its source guards included? They hold what a scan
-   can see (colour, length, spacing, type, corner, shadow, alpha, motion, the button and field
-   wrappers, an edged button, the accent fill as text, icons, citations), each with its limits in
-   `docs/rules-and-gotchas.md` (*Guard coverage*); the items below are what they cannot see.
+1. `cargo test -p onehand --locked` passes? No source guard scans the visual rules (colour,
+   length, spacing, type, corner, shadow, motion, the button and field wrappers, icons), so the
+   items below are checked by review (`docs/rules-and-gotchas.md`, *Guard coverage*).
 2. A same-role component or screen named and compared for height, text axis, ink, icon size and
    slot, spacing, corner and states, and a shared change checked in its callers across app and
    feature crates (`DESIGN.md`, *Principles*)?
@@ -24,7 +23,7 @@ the rule, not just the question. For prose-only work, use the contract path in `
    beside a sentence (`DESIGN.md`, *Components*, *Colour and state*)?
 7. A refusing button through `.refuses(why)` (`DESIGN.md`, *Components*), never `.disabled(`,
    which only a menu item or a switch takes, as `.refuses` does not reach them?
-8. `rounded_full` only on a badge, a dot or a status mark (`DESIGN.md`, *Type, space and shape*)?
+8. `rounded_full` only on a dot or a status mark, a badge at the library's corner (`DESIGN.md`, *Type, space and shape*)?
 9. Every list capped, saying how many it left out, and text that can run long truncating or
    wrapping as its neighbours do (`docs/ui-patterns.md`, *Lists*, *Cuts*)?
 10. Every split or stack reading the measured container, never the window (`docs/ui-patterns.md`,

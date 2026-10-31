@@ -6,11 +6,11 @@ use gpui::{Rems, rems};
 /// larger size the transcript outweighed the panels and controls around it.
 /// Fed to the markdown renderer's heading base as well, so an answer's headings
 /// are scaled off the prose they sit in rather than off the app's base.
-pub(in crate::chat) const TEXT: Rems = rems(0.875);
+pub(in crate::chat) const TEXT: Rems = rems(0.8125);
 /// One step under the reading size: the record of how an answer got made.
 /// Activity lines, a thought's reasoning, code and every well of machine text
 /// take it, so what the agent did reads quieter than what it said.
-pub(in crate::chat) const TEXT_SM: Rems = rems(0.8125);
+pub(in crate::chat) const TEXT_SM: Rems = rems(0.75);
 /// An answer's first two heading levels over its body; below them a heading
 /// is told apart by weight alone, so a deep one never prints smaller than the
 /// prose it names.
@@ -19,7 +19,7 @@ pub(super) const HEADING_2: f32 = 1.125;
 /// How tall a fenced block in an answer stands before it is clipped, rather
 /// than pushing the rest of the answer off the screen; the corner of a block
 /// it clips says how many lines it holds and opens them whole.
-pub(super) const MAX_CODE_BLOCK_H: Rems = rems(22.5);
+pub(super) const MAX_CODE_BLOCK_H: Rems = rems(21.);
 /// The space inside a fenced block's well, round its code.
 pub(super) const CODE_BLOCK_PAD: Rems = rems(0.75);
 /// Space between the paragraphs of one answer: under the space between whole
@@ -47,7 +47,7 @@ pub(in crate::chat) const TURN_GAP: Rems = rems(2.);
 /// Between two blocks of one turn.
 pub(in crate::chat) const BLOCK_GAP: Rems = rems(0.75);
 /// Between the parts of one block.
-pub(super) const PART_GAP: Rems = rems(0.5);
+pub(in crate::chat) const PART_GAP: Rems = rems(0.5);
 /// Between two rows that are read as one list, and between a line and the
 /// caption belonging to it.
 pub(in crate::chat) const TIGHT_GAP: Rems = rems(0.25);
@@ -141,6 +141,10 @@ pub(super) const COMMAND_H: Rems = rems(LINE_SM.0 * 10.);
 /// reaches back through to put the thumb in it: wide enough that the thumb
 /// has room of its own beside the rows.
 pub(super) const CARD_PAD: Rems = rems(1.);
+/// How far a waiting card's lower edge runs under the composer it rests on,
+/// so the composer reads as laid over it; the card holds this much more room
+/// at its foot, so its answers clear the composer's edge.
+pub(in crate::chat) const TUCK: Rems = rems(0.625);
 /// Left and right inside a frame that lays its contents out in columns.
 pub(super) const FRAME_PAD: Rems = rems(0.75);
 /// Width a question's tab label is elided at. Only a *tab* is ever elided.

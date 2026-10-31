@@ -273,6 +273,7 @@ impl Render for SchedulesPage {
         if let Some(draft) = &self.draft {
             let handle = cx.entity();
             let head = form::head(&handle, draft, &self.projects, self.writing, cx);
+            let here = SharedString::from(form::title(draft, cx));
             let body = form::body(&handle, draft, &self.projects, cx);
             // A new form nobody has changed says nothing yet: *Save* refuses
             // and says why on hover.
@@ -312,20 +313,16 @@ impl Render for SchedulesPage {
                                     .w_full()
                                     .max_w(crate::tokens::PAGE_PROSE)
                                     .text_size(crate::tokens::CHROME_TEXT)
-                                    .child(
-                                        div().h_flex().child(
-                                            onehand_ui::back_link(
-                                                "schedules-back",
-                                                "Schedules",
-                                                cx,
-                                            )
-                                            .on_click(
-                                                cx.listener(|page: &mut Self, _, window, cx| {
+                                    .child(onehand_ui::crumbs(
+                                        onehand_ui::crumb_link("schedules-back", "Schedules", cx)
+                                            .on_click(cx.listener(
+                                                |page: &mut Self, _, window, cx| {
                                                     page.close_form(window, cx)
-                                                }),
-                                            ),
-                                        ),
-                                    )
+                                                },
+                                            )),
+                                        [here],
+                                        cx,
+                                    ))
                                     .child(head)
                                     .children(body),
                             ),
@@ -424,7 +421,6 @@ impl Render for SchedulesPage {
                         .child(self.filter_picker(cx))
                         .into_any_element(),
                 ],
-                cx,
             ))
             .child(
                 div()

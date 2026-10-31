@@ -38,8 +38,8 @@ fn every_step_is_on_the_scale() {
     // Half a step is a step nobody can see, so the ladder skips no rung it
     // does not use and admits no rung between two it does.
     const SCALE: &[f32] = &[
-        2., 4., 6., 8., 10., 12., 13., 14., 16., 18., 20., 24., 28., 32., 40., 44., 62., 64., 92.,
-        320.,
+        2., 4., 6., 8., 10., 12., 13., 14., 16., 18., 20., 22., 24., 28., 32., 40., 44., 62., 64.,
+        92., 320.,
     ];
     for (name, rems) in steps() {
         let px = rems * 16.;
@@ -155,4 +155,40 @@ fn a_fixed_failure_is_not_an_alarm() {
     assert!(matches!(mark(Outcome::Recovered), RowMark::Recovered));
     assert!(matches!(mark(Outcome::Failed), RowMark::Failed));
     assert!(matches!(mark(Outcome::Running), RowMark::Running));
+}
+
+/// A remark is a line across the column; an error and the failure a turn
+/// ended on are cards, ringing while live and quiet once past.
+#[test]
+fn a_notice_is_a_divider_only_when_it_is_a_remark() {
+    use onehand_core::chat::NoticeLevel;
+    assert_eq!(notice_shape(NoticeLevel::Info, false), NoticeShape::Divider);
+    assert_eq!(
+        notice_shape(NoticeLevel::Error, false),
+        NoticeShape::Card {
+            failed: false,
+            past: false
+        }
+    );
+    assert_eq!(
+        notice_shape(NoticeLevel::Error, true),
+        NoticeShape::Card {
+            failed: false,
+            past: true
+        }
+    );
+    assert_eq!(
+        notice_shape(NoticeLevel::Failed, false),
+        NoticeShape::Card {
+            failed: true,
+            past: false
+        }
+    );
+    assert_eq!(
+        notice_shape(NoticeLevel::Failed, true),
+        NoticeShape::Card {
+            failed: true,
+            past: true
+        }
+    );
 }

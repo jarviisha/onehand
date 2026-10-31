@@ -15,6 +15,7 @@ use gpui::{
     App, Context, EventEmitter, FocusHandle, InteractiveElement, IntoElement, ParentElement,
     Render, SharedString, StatefulInteractiveElement, Styled, Window, div,
 };
+use gpui_component::menu::ContextMenuExt as _;
 use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::task::{Group, Section};
 use std::path::{Path, PathBuf};
@@ -275,7 +276,7 @@ impl TasksPage {
             .size_full()
             .v_flex()
             .when(!top.is_empty(), |page| {
-                page.child(crate::page_parts::page_top(Some(width), top, cx))
+                page.child(crate::page_parts::page_top(Some(width), top))
             })
             .child(
                 div()
@@ -322,8 +323,9 @@ fn row_said(row: &Row, page: &TasksPage) -> String {
 }
 
 /// One task: its title, then its workflow, where it is and its project,
-/// then what can be done with it from here. Pressing the text opens the
-/// task.
+/// then what can be done with it from here, in its ⋯ and on a right-click.
+/// A row needing attention also keeps those actions drawn as buttons.
+/// Pressing the text opens the task.
 fn task_row(
     key: (&'static str, usize),
     row: Row,
@@ -336,7 +338,18 @@ fn task_row(
     // A row needing attention keeps its next action drawn: that attention is
     // earned. Every other row shows its actions while it is pointed at.
     let earned = row.group.section() == Section::NeedsAttention;
-    let actions = row_actions(&format!("{name}-{i}"), &row, cx);
+    let actions = if earned {
+        row_actions(&format!("{name}-{i}"), &row, cx)
+    } else {
+        Vec::new()
+    };
+    let acts: Rc<[onehand_ui::RowAct]> = task_acts(&row, false)
+        .into_iter()
+        .map(|act| onehand_ui::RowAct::new(act.label(), act.press(&row, cx)))
+        .collect();
+    let more = (!acts.is_empty()).then(|| {
+        onehand_ui::row_more(format!("{name}-more-{i}"), "Task actions", acts.clone(), cx)
+    });
     let group = SharedString::from(format!("{name}-row-{i}"));
     let id = row.id.clone();
     let text = div()
@@ -352,6 +365,7 @@ fn task_row(
             cx.listener(move |page: &mut TasksPage, _, _, cx| page.open_task(Some(id.clone()), cx)),
         );
     onehand_ui::row(false, cx)
+        .id(SharedString::from(format!("{name}-task-{i}")))
         .group(group.clone())
         .h_flex()
         .items_center()
@@ -361,8 +375,10 @@ fn task_row(
         .child(onehand_ui::hover_slot(
             group,
             earned,
-            div().h_flex().gap_1().children(actions),
+            div().h_flex().gap_1().children(actions).children(more),
         ))
+        // The library opens no menu for an empty list.
+        .context_menu(move |menu, _, cx| onehand_ui::row_menu_items(menu, &acts, cx))
         .into_any_element()
 }
 

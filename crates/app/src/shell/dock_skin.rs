@@ -87,9 +87,13 @@ impl DockAreaRenderer for DockSkin {
             .flex()
             .size_full()
             .relative()
-            // A line along the side the Workbench meets the conversation.
+            // A line along the side a dock meets the conversation: the
+            // Workbench's left, the terminal's top.
             .when(dock.is_open() && placement == DockPlacement::Right, |d| {
                 d.border_l_1().border_color(cx.theme().border)
+            })
+            .when(dock.is_open() && placement == DockPlacement::Bottom, |d| {
+                d.border_t_1().border_color(cx.theme().border)
             })
             .child(content)
             .child(handle)

@@ -125,6 +125,7 @@ pub(in crate::chat) fn permission(
     p: &PermItem,
     target: TranscriptItemId,
     well: Option<gpui::Pixels>,
+    waiting: usize,
     cx: &App,
 ) -> impl IntoElement + use<> {
     if let Some(choice) = p.resolved.as_deref() {
@@ -146,22 +147,22 @@ pub(in crate::chat) fn permission(
     let kind = (p.req.kind != ToolKind::Other).then(|| tool_label(p.req.kind));
     let cwd = command_cwd(&session.read(cx).chat.root);
 
+    let warning = crate::theme::status_ink(cx).warning;
     pinned_card(idx.is_some(), cx)
         // The one card that keeps its mark: a grant is the block where a
         // misread costs most.
         .child(card_head(
-            Some(
-                Icon::new(IconName::TriangleAlert).text_color(crate::theme::status_ink(cx).warning),
-            ),
+            Some(Icon::new(IconName::TriangleAlert).text_color(warning)),
             // A subagent's request says whose it is: the agent itself is the
             // one asking otherwise.
             match &p.asker {
                 Some(asker) => format!("{asker} asks permission"),
                 None => "Permission required".to_string(),
             },
+            Some(warning),
             // The only word the protocol offers about *what* is asked for,
             // opposite the heading where the question card keeps its count.
-            kind.map(SharedString::from),
+            super::parts::queue_aside(waiting, kind.map(SharedString::from)),
             cx,
         ))
         .child(
@@ -294,7 +295,7 @@ fn permission_footer(
         PermissionWeight::AllowOnce => 2,
     });
 
-    card_foot(cx).children(options.into_iter().map(|(i, option)| {
+    card_foot().children(options.into_iter().map(|(i, option)| {
         let (id, session) = (option.id.clone(), session.clone());
         let name = option.name.clone();
         // **A key on the one button it answers with**: two refusals share a

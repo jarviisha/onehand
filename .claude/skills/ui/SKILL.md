@@ -112,7 +112,7 @@ Take the path the diff needs; neither path's evidence proves the other complete.
 1. Keep each rule with its owner: DESIGN.md visual roles and the frame, screens.md what each
    region holds, UI patterns layouts and behaviour, tokens.md and catalog.md what is built; this
    skill applies them and is never a second system. No rule rests on another product; the one
-   source the contract names is its palette's, VS Code's keys.
+   source the contract names is its palette's, the component library's own theme.
 2. Follow the changed rule through this skill, tokens.md, catalog.md, checklist.md and
    `AGENTS.md`, resolving contradictions and broken links; preserve feature behaviour unless the
    user asked otherwise, and keep target rules apart from claims about the code. Walk realistic
@@ -127,7 +127,7 @@ Take the path the diff needs; neither path's evidence proves the other complete.
 
 1. **Answer [checklist.md](checklist.md)**: each item yes, no (its file and line) or n/a (why),
    after reading the rule the item names.
-2. **Run the checks**: `cargo test -p onehand --locked` (its guards included),
+2. **Run the checks**: `cargo test -p onehand --locked`,
    `cargo test -p <crate> --locked` for every other crate touched,
    `make clippy CLIPPY_EXTRA="-- -D warnings"` and `make fmt`. Quote any failure.
 3. **Carry the documents** in the same change: what a screen holds or its order to
@@ -138,4 +138,4 @@ Take the path the diff needs; neither path's evidence proves the other complete.
    checked, a changed shared default's callers inspected; failures, fixes, remaining gaps and
    checks run. Hand the user a focused visual check in `make dev` or `make showcase` (both
    themes, narrow and wide containers, zoom, long text, the states that apply), and claim no
-   visual verification: passing guards are not evidence of visual consistency.
+   visual verification: passing tests are not evidence of visual consistency.

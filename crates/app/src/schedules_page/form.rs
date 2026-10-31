@@ -41,6 +41,16 @@ pub(super) fn edit(
     }
 }
 
+/// What the form is called: its name, or what it is while it has none.
+pub(super) fn title(draft: &ScheduleDraft, cx: &App) -> String {
+    let name = draft.name.read(cx).value().trim().to_string();
+    match (name.is_empty(), draft.original.is_some()) {
+        (false, _) => name,
+        (true, false) => "New schedule".to_string(),
+        (true, true) => "Untitled".to_string(),
+    }
+}
+
 /// The form's head: its name, what it is, then ⋯ (*Delete…*) for one
 /// saved, *Cancel* and *Save*, the page's one primary.
 pub(super) fn head(
@@ -50,12 +60,7 @@ pub(super) fn head(
     writing: bool,
     cx: &App,
 ) -> AnyElement {
-    let name = draft.name.read(cx).value().trim().to_string();
-    let title = match (name.is_empty(), draft.original.is_some()) {
-        (false, _) => name,
-        (true, false) => "New schedule".to_string(),
-        (true, true) => "Untitled".to_string(),
-    };
+    let title = title(draft, cx);
     let project = draft
         .project
         .as_ref()

@@ -1,5 +1,5 @@
 use super::fold_key;
-use super::metrics::{CARD_PAD, DETAIL_OPEN_H, FOLD_INDENT, TEXT_SM, TIGHT_GAP};
+use super::metrics::{CARD_PAD, DETAIL_OPEN_H, FOLD_INDENT, TEXT_SM, TIGHT_GAP, TUCK};
 use crate::chat::session::{ChatEvent, ChatSession};
 use crate::controls::Named as _;
 use crate::controls::Quiet as _;
@@ -96,7 +96,7 @@ impl RenderOnce for BlockingBody {
             .absolute()
             .size_0()
         };
-        let surface = cx.theme().popover.alpha(1.);
+        let surface = crate::theme::waiting_card(cx);
 
         div()
             .id(("blocking-body-frame", key))
@@ -232,10 +232,11 @@ pub(super) fn detail_well(body: impl IntoElement) -> gpui::Div {
     div().w_full().min_w_0().pl(FOLD_INDENT).pt_1().child(body)
 }
 
-/// The ink of what runs, and of a way into more: the theme's link hue, the
-/// one the rail marks a running session with.
+/// The ink of what runs, and of a way into more: the library's blue (`info`),
+/// the one the rail marks a running session with. Not `link`, which the
+/// library draws in the prose ink.
 pub(in crate::chat) fn accent(cx: &App) -> gpui::Hsla {
-    cx.theme().link
+    cx.theme().info
 }
 
 /// A disclosure's arrow: one shape that turns as its block opens, so opening
@@ -262,6 +263,16 @@ pub(super) fn chevron_slot(fold: Option<bool>) -> gpui::Div {
 /// While the block runs a spinner stands in the arrow's column, the same
 /// width, so the words neither sit further out than a settled line's nor move
 /// when the work settles.
+/// What a block that folds is drawn in: its fold line first and what it holds
+/// under it, with no edge, no fill and no rule beside it. Every block that
+/// opens (a cluster, a thought, a plan, a subagent, a turn's changes) takes
+/// it. Boxed, a long turn stacked a frame per block and the column read as a
+/// pile of panels; bare, the fold line's arrow and quiet ink are what tell the
+/// work apart from the prose around it.
+pub(super) fn fold_box() -> gpui::Div {
+    div().v_flex().gap_1().w_full().min_w_0()
+}
+
 pub(super) fn fold_line(
     id: impl Into<gpui::ElementId>,
     open: bool,
@@ -487,43 +498,47 @@ pub(super) fn grows(button: Button) -> Button {
 
 /// The surface every card and strip that floats over the composer is built on.
 ///
-/// **One function because there are four of them** — a parked permission, a
-/// parked question, an adapter still connecting, a prompt waiting its turn —
-/// and they arrive in one column, stacked, directly above the composer. Written
-/// out four times they came apart exactly where four copies do: two sat on the
-/// reading surface with a hairline and a single radius while the other two
-/// floated on the raised one with a shadow and a doubled radius, so a
-/// permission parked above a queued prompt read as two unrelated things rather
-/// than as the same kind of interruption twice.
+/// **One function for both parked cards**, a permission and a question, so a
+/// permission parked above a question reads as the same kind of interruption
+/// twice. They rest on the composer, foot tucked under it, at the composer's
+/// corner: one window drawing the two at two corners is a difference nobody
+/// chose.
 ///
-/// It is the **composer's own treatment**, and has to be: these are the boxes
-/// that stack on top of that card and are read as one object with it. The
-/// radius is the theme's named card step for the same reason the composer takes
-/// it — one window drawing its floating surfaces at two corners is a difference
-/// nobody chose.
+/// **Neutral, whatever it asks.** An edge in the control grey at the theme's
+/// corner, and no wash: a tinted card over a flat transcript was the loudest
+/// box on screen even for a question nobody was in a hurry about, so the tone
+/// lives in its mark and title (see [`card_head`]) and the surface stays one
+/// shape for every kind of waiting.
 ///
-/// **The lift only while it is pinned.** A card that floats over the
-/// transcript is set off by the app's shadow; one drawn back in the history is
-/// a block of the column like any other, and a shadow there marks nothing.
+/// **A step off the page and lifted only while it is pinned.** A card waiting
+/// on an answer stands on [`crate::theme::waiting_card`] with the app's shadow,
+/// so it is the most visible thing in the column; one drawn back in the
+/// history is a block of the column like any other, on the page's own fill.
 pub(in crate::chat) fn floating_card(pinned: bool, cx: &App) -> gpui::Div {
+    // Opaque, and not the reading surface: the transcript runs underneath
+    // these and text showing through a box that is asking a question is the
+    // one place in the app that cannot afford it.
+    let fill = match pinned {
+        true => crate::theme::waiting_card(cx),
+        false => cx.theme().background,
+    };
     div()
         .w_full()
         .rounded(cx.theme().radius)
         .border_1()
-        .border_color(cx.theme().border)
-        // Opaque, and not the reading surface: the transcript runs underneath
-        // these and text showing through a box that is asking a question is the
-        // one place in the app that cannot afford it.
-        .bg(cx.theme().popover.alpha(1.))
+        .border_color(cx.theme().input)
+        .bg(fill)
         .when(pinned, |card| card.shadow(crate::tokens::lift(cx)))
 }
 
 /// The shell both pinned cards share: the floating surface holding a head, a
-/// body and a foot, each inset by [`CARD_PAD`] and parted from the next by a
-/// hairline that runs the card's whole width. It clips, so the hairlines end
-/// on the rounded edge rather than a pixel past it.
+/// body and a foot, each inset by [`CARD_PAD`], with no rule between them. A
+/// pinned one keeps [`TUCK`] more at its foot, the part the composer covers.
 pub(super) fn pinned_card(pinned: bool, cx: &App) -> gpui::Div {
-    floating_card(pinned, cx).v_flex().overflow_hidden()
+    floating_card(pinned, cx)
+        .v_flex()
+        .overflow_hidden()
+        .when(pinned, |card| card.pb(TUCK))
 }
 
 /// A pinned card's body, between its head and its foot. The caller sets the
@@ -534,10 +549,13 @@ pub(super) fn card_body() -> gpui::Div {
 
 /// A pinned card's head: what it asks, in the weight that says nothing
 /// proceeds until it is answered, after its mark if it has one, and at the end
-/// what it is about.
+/// what it is about, over a hairline that parts it from the body. `tone` inks
+/// the title as the mark is inked: the one place a waiting card carries its
+/// colour.
 pub(super) fn card_head(
     mark: Option<Icon>,
     title: impl Into<SharedString>,
+    tone: Option<gpui::Hsla>,
     aside: Option<SharedString>,
     cx: &App,
 ) -> gpui::Div {
@@ -547,7 +565,7 @@ pub(super) fn card_head(
         .gap_2()
         .w_full()
         .px(CARD_PAD)
-        .py_3()
+        .py_2p5()
         .border_b_1()
         .border_color(cx.theme().border)
         .children(mark.map(|mark| mark.small().flex_none()))
@@ -558,6 +576,7 @@ pub(super) fn card_head(
                 .truncate()
                 .text_size(TEXT_SM)
                 .font_semibold()
+                .when_some(tone, |title, tone| title.text_color(tone))
                 .child(title.into()),
         )
         .children(aside.map(|word| {
@@ -569,10 +588,20 @@ pub(super) fn card_head(
         }))
 }
 
+/// What a pinned card says at the end of its head: how many wait behind it,
+/// when any do, before what the card is about.
+pub(super) fn queue_aside(waiting: usize, aside: Option<SharedString>) -> Option<SharedString> {
+    match (waiting, aside) {
+        (0, aside) => aside,
+        (n, None) => Some(format!("1 of {} waiting", n + 1).into()),
+        (n, Some(aside)) => Some(format!("1 of {} waiting · {aside}", n + 1).into()),
+    }
+}
+
 /// A pinned card's foot: its answers at the end, wrapping onto a second line
 /// before a label is cut, since a cut grant is one nobody can read the reach
 /// of.
-pub(super) fn card_foot(cx: &App) -> gpui::Div {
+pub(super) fn card_foot() -> gpui::Div {
     div()
         .h_flex()
         .items_center()
@@ -581,259 +610,12 @@ pub(super) fn card_foot(cx: &App) -> gpui::Div {
         .gap_2()
         .w_full()
         .px(CARD_PAD)
-        .py_2()
-        .border_t_1()
-        .border_color(cx.theme().border)
+        .pt_1()
+        .pb_3()
 }
 
-// ── shared bits ─────────────────────────────────────────────────────────────
-
-/// What the fixed slot at the head of an activity row holds.
-///
-/// **Four drawings, one box.** The whole point of the slot is that a step going
-/// from waiting to running to done swaps what is in it and moves nothing else
-/// on the row — so a group of ten rows finishing one at a time is a column of
-/// marks changing in place rather than ten lines of text nudging sideways.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum RowMark {
-    Waiting,
-    Running,
-    Done,
-    /// Something in the run failed and the run went on to succeed anyway.
-    ///
-    /// **Drawn as a settled step.** A run marked red because one of seven
-    /// commands exited non-zero is an alarm for something already dealt with,
-    /// and a reader who has learned that the red mark usually means nothing has
-    /// learned to ignore the one that means something. The count of what went
-    /// wrong is still said, in muted words, at the other end of the row.
-    Recovered,
-    Failed,
-    /// A step somebody refused. Not a failure — nothing went wrong, a decision
-    /// was taken — so it reads like any settled step and says the rest in
-    /// words.
-    Refused,
-}
-
-impl RowMark {
-    /// How a whole run reads: by how it ended, not by its worst moment.
-    pub fn of_run(run: onehand_core::chat::RunOutcome) -> Self {
-        use onehand_core::chat::Outcome;
-        match run.outcome {
-            Outcome::Running => Self::Running,
-            Outcome::Clean => Self::Done,
-            Outcome::Recovered => Self::Recovered,
-            Outcome::Failed => Self::Failed,
-        }
-    }
-
-    pub(super) fn of(status: ToolStatus) -> Self {
-        match status {
-            ToolStatus::Pending => Self::Waiting,
-            ToolStatus::InProgress => Self::Running,
-            ToolStatus::Completed => Self::Done,
-            ToolStatus::Failed => Self::Failed,
-        }
-    }
-
-    /// The glyph at the head of a row: the kind of work it was, or a spinner
-    /// in the accent while it runs. How a settled step ended is said in words
-    /// at the row's end, so the glyph only ever says what the work was.
-    fn draw(self, kind: SharedString, cx: &App) -> gpui::AnyElement {
-        match self {
-            Self::Running => Spinner::new().xsmall().color(accent(cx)).into_any_element(),
-            Self::Waiting | Self::Done | Self::Recovered | Self::Failed | Self::Refused => {
-                Icon::empty()
-                    .path(kind)
-                    .xsmall()
-                    .text_color(cx.theme().muted_foreground)
-                    .into_any_element()
-            }
-        }
-    }
-}
-
-/// One row of an activity block, and the one shape every step takes.
-///
-/// **One anatomy on every row.** Left to right: the arrow's column, the kind
-/// of work (a spinner while it runs), what was done, what it was done to, and
-/// whatever is worth saying at the end. Adding a kind of activity must not add
-/// a column; only what the row opens into differs.
-pub(super) struct ActivityRow {
-    id: gpui::ElementId,
-    mark: RowMark,
-    /// The block's drawing for the sort of work.
-    kind: SharedString,
-    /// What was done, in the reading face: `Read`, `Ran`, `Edited`.
-    verb: SharedString,
-    /// What it was done to, in the machine face. A path arrives split so the
-    /// directory can recede behind the name.
-    object: Option<Object>,
-    /// Whatever the row is worth saying at its end — a line count, a result
-    /// count, an exit code.
-    meta: Option<gpui::AnyElement>,
-    /// A file that is gone, which is the one state that strikes its own name
-    /// out rather than only marking the ends of the row.
-    pub(super) struck: bool,
-    fold: Option<bool>,
-}
-
-/// What a row was pointed at.
-///
-/// **Split at the last separator, because the two halves are read
-/// differently.** A reader scanning a column of paths is looking for the name;
-/// the directory above it is only there for the times two names are the same,
-/// and at one weight it takes the eye first every time it is long. So the
-/// directory recedes a step and the name keeps the reading ink.
-#[derive(Clone)]
-pub(super) struct Object {
-    pub(super) dir: Option<SharedString>,
-    pub(super) name: SharedString,
-    /// The agent's own wording rather than a path or a command: the UI family
-    /// in the middle ink, since mono would claim it is something to type.
-    pub(super) words: bool,
-}
-
-impl Object {
-    /// A path, split; anything else whole.
-    pub(super) fn path(value: impl Into<SharedString>) -> Self {
-        let value: SharedString = value.into();
-        match value.rfind('/') {
-            // A command is not a path and must not be cut at its last slash.
-            Some(_) if value.contains(char::is_whitespace) => Self::plain(value),
-            Some(at) => Self {
-                dir: Some(value[..=at].to_string().into()),
-                name: value[at + 1..].to_string().into(),
-                words: false,
-            },
-            None => Self::plain(value),
-        }
-    }
-
-    pub(super) fn plain(value: impl Into<SharedString>) -> Self {
-        Self {
-            dir: None,
-            name: value.into(),
-            words: false,
-        }
-    }
-
-    /// What the agent said, rather than something to type.
-    pub(super) fn words(value: impl Into<SharedString>) -> Self {
-        Self {
-            words: true,
-            ..Self::plain(value)
-        }
-    }
-}
-
-impl ActivityRow {
-    pub(super) fn new(
-        id: gpui::ElementId,
-        mark: RowMark,
-        kind: SharedString,
-        verb: impl Into<SharedString>,
-    ) -> Self {
-        Self {
-            id,
-            mark,
-            kind,
-            verb: verb.into(),
-            object: None,
-            meta: None,
-            struck: false,
-            fold: None,
-        }
-    }
-
-    pub(super) fn object(mut self, object: Option<Object>) -> Self {
-        self.object = object;
-        self
-    }
-
-    pub(super) fn meta(mut self, meta: Option<gpui::AnyElement>) -> Self {
-        self.meta = meta;
-        self
-    }
-
-    pub(super) fn fold(mut self, fold: Option<bool>) -> Self {
-        self.fold = fold;
-        self
-    }
-}
-
-pub(super) fn activity_row(
-    row: ActivityRow,
-    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-    cx: &App,
-) -> gpui::AnyElement {
-    let interactive = row.fold.is_some();
-    let id = row.id.clone();
-    // **The layout and the ink sit on the row itself, not on a box inside it.**
-    // A hover styles the element whose hitbox the pointer is over, and text
-    // colour cascades *down* -- so a wrapper that hovers over a child which has
-    // already set its own colour changes nothing. Everything that should lift
-    // therefore inherits, and the one thing that should not says so.
-    fn dress<E>(row_div: E, row: ActivityRow, cx: &App) -> E
-    where
-        E: Styled + ParentElement,
-    {
-        let muted = cx.theme().muted_foreground;
-        row_div
-            .h_flex()
-            .items_center()
-            .gap_2()
-            .w_full()
-            .min_w_0()
-            .text_size(TEXT_SM)
-            .text_color(muted)
-            .child(chevron_slot(row.fold))
-            .child(row.mark.draw(row.kind, cx))
-            .child(div().flex_none().whitespace_nowrap().child(row.verb))
-            .children(row.object.map(|object| {
-                div()
-                    .min_w_0()
-                    .h_flex()
-                    .items_center()
-                    .overflow_hidden()
-                    .whitespace_nowrap()
-                    .when(!object.words, |o| {
-                        o.font_family(cx.theme().mono_font_family.clone())
-                    })
-                    .text_color(match (row.struck, object.words) {
-                        (true, _) => muted,
-                        (false, true) => crate::theme::meta_ink(cx),
-                        (false, false) => cx.theme().foreground,
-                    })
-                    .when(row.struck, |o| o.line_through())
-                    .children(object.dir.map(|dir| {
-                        div()
-                            .flex_none()
-                            .text_color(crate::theme::meta_ink(cx))
-                            .child(dir)
-                    }))
-                    .child(div().min_w_0().truncate().child(object.name))
-            }))
-            .children(row.meta)
-    }
-
-    match interactive {
-        // **Ink, and no plate**: a fill behind a row is the row answering as a
-        // surface, and these are lines of a list rather than things on it.
-        true => {
-            let lit = cx.theme().foreground;
-            div()
-                .id(id)
-                .cursor_pointer()
-                .hover(move |row| row.text_color(lit))
-                .on_click(on_click)
-                .map(|row_div| dress(row_div, row, cx))
-                .into_any_element()
-        }
-        // Nothing to open, so nothing to press: a pointer on a row that does
-        // not answer is a promise the row cannot keep.
-        false => dress(div(), row, cx).into_any_element(),
-    }
-}
+mod activity;
+pub(super) use activity::{ActivityRow, Object, RowMark, activity_row};
 
 /// The lines a change added and removed, mono and each side in the ink it
 /// means.

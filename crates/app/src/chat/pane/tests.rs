@@ -259,3 +259,14 @@ fn a_first_connect_gives_the_composer_the_keyboard_parked_on_the_pane() {
     assert!(!caret_to_composer(Link::Connecting, false, true));
     assert!(!caret_to_composer(Link::Lost, false, true));
 }
+
+/// The cards waiting behind the one shown peek as a stack, at most two deep,
+/// so a third and a ninth read the same and the stack never grows tall.
+#[test]
+fn no_more_than_two_cards_peek_behind_the_one_shown() {
+    use super::body::peeks;
+    assert_eq!(peeks(0), 0);
+    assert_eq!(peeks(1), 1);
+    assert_eq!(peeks(2), 2);
+    assert_eq!(peeks(9), 2);
+}

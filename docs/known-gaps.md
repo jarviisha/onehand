@@ -5,19 +5,12 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
 [workflows.md](workflows.md#not-built), [tasks.md](tasks.md#not-built) and
 [unattended.md](unattended.md#not-built-on-purpose).
 
-- **Some status words and the focus ring fall under WCAG AA.** The palette is VS Code's, whose
-  status hues and `focusBorder` are not lightened here. For text: status ink, a tint's words and
-  a diff line's sign on some surfaces they land on, Light Modern's success green lowest of them,
-  and Dark Modern's meta text on the step past the well. For a control: the focus ring at the
-  library's half strength, and whole on the composer in Dark Modern. The floors the ramp's tests
-  hold them at are `HUE_INK` and those of `the_focus_ring_shows_on_every_surface` in
-  `crates/app/src/theme.rs`. Fixing them means changing VS Code's own values, which this palette
-  does not do.
-- **Settings still stands at the old page treatment.** The overview, Tasks, Issues, Workflows,
-  Schedules and a project's page name themselves in their head, group in boxes and give their forms `.tall()`
-  fields; Settings keeps its name in the header, its groups as plain sections parted by
-  hairlines, and its fields and buttons at `.short()`. Moving it means a head per sub-page and
-  every Settings field and button resized together, so one page does not hold both sizes.
+- **Meta text on a well, some status words and the focus ring fall under WCAG AA.** The palette is
+  gpui-kit's own and is not changed here. For text: the library's `muted_foreground` on its
+  `muted` (about 4.4 on the light palette), and status ink, a tint's words and a diff line's sign
+  on some surfaces they land on, held at `HUE_INK` in `crates/app/src/theme.rs`. For a control:
+  the focus ring, the library's grey, at about 2.5 on the light page. Fixing them means changing
+  the library's values, which this palette does not do.
 - **The newest terminal tab is not scrolled into view.** Past the width of the strip a new shell can
   be the active one with its tab off the end of the list: the grid is right, the strip is behind.
   Fixing it means a `ScrollHandle` on the panel, and `scroll_to_item` on a tab that has never been

@@ -252,34 +252,28 @@ pub(crate) fn page_head(
 /// The scope tag for a page whose settings reach every window and workspace.
 pub(crate) const APP: &str = "App";
 
-/// A group of settings on a page.
-///
-/// **No box around it.** The page is one surface and a group is a run of
-/// settings on it; what separates two groups is a hairline and a heading, the
-/// way a document separates sections. A group with no title is the page's
-/// first, sitting directly under the page's own head, and takes no rule --
-/// a line between a heading and the first thing it heads divides what belongs
-/// together; a first group with a title is a [`lead_section`].
+/// A group of settings on a page, in the library's setting-page shape: a box
+/// with an edge at `radius_lg`, its heading and its line about itself at the
+/// top inside it, then its settings. A group with no title is the page's
+/// first, and its box holds only its settings, the page's head naming them.
 pub(crate) fn section(title: Option<&'static str>, about: Option<SharedString>, cx: &App) -> Div {
-    let group = div().v_flex().gap_4().w_full();
+    let group = div()
+        .v_flex()
+        .gap_4()
+        .w_full()
+        .p_4()
+        .rounded(cx.theme().radius_lg)
+        .border_1()
+        .border_color(cx.theme().border);
     match title {
-        Some(title) => group
-            .pt_6()
-            .border_t_1()
-            .border_color(onehand_ui::faint_rule(cx))
-            .child(group_head(title, about, cx)),
+        Some(title) => group.child(group_head(title, about, cx)),
         None => group,
     }
 }
 
-/// The page's first group when it has a title of its own: its heading, and
-/// no rule, which would part it from the page's head it sits under.
+/// The page's first group when it has a title of its own: the same box.
 pub(crate) fn lead_section(title: &'static str, about: Option<SharedString>, cx: &App) -> Div {
-    div()
-        .v_flex()
-        .gap_4()
-        .w_full()
-        .child(group_head(title, about, cx))
+    section(Some(title), about, cx)
 }
 
 /// A group's heading, and its line about itself under it.
@@ -429,6 +423,10 @@ impl SettingsPage {
     }
 }
 
+/// A row of the Settings page's own list: a step under a list row, as an
+/// editor's settings index stands, since the page beside it carries the weight.
+const NAV_ROW_H: gpui::Rems = gpui::rems(1.375);
+
 /// One row in the nav column.
 ///
 /// A div and not the app's button wrapper, for the reason the rail's rows are:
@@ -445,7 +443,7 @@ fn nav_row(page: SettingsPage, current: SettingsPage, handle: &Entity<Shell>, cx
         .items_center()
         .gap_2()
         .w_full()
-        .h(crate::tokens::ROW_H)
+        .h(NAV_ROW_H)
         .px_2()
         .rounded(cx.theme().radius)
         .cursor_pointer()
@@ -536,7 +534,6 @@ fn settings(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         .child(crate::page_parts::page_top(
             None,
             [crate::page_parts::page_head("Settings", None, Vec::new(), cx).into_any_element()],
-            cx,
         ))
         .child(
             div()

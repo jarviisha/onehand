@@ -186,7 +186,7 @@ impl Shell {
             .update(cx, |panel, cx| panel.set_root(path.clone(), cx));
         self.follow_terminal_dock(&path, window, cx);
         // Whether a shell is alive is a fact about the project being arrived at,
-        // not about the window, and the conversation header draws it. The
+        // not about the window, and the status bar draws it. The
         // observers that normally push it only fire when a panel notifies, and
         // switching projects is a moment where nothing did.
         self.sync_terminal_live(cx);

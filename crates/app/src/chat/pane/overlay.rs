@@ -8,6 +8,9 @@ use gpui::prelude::FluentBuilder as _;
 use gpui::{Context, Entity, InteractiveElement, IntoElement, ParentElement, Styled, Window, div};
 use gpui_component::StyledExt;
 
+/// The gap between the overlay's slots: the cards and the composer.
+const COLUMN_GAP: gpui::Rems = gpui::rems(0.5);
+
 impl ChatPane {
     /// The composer and everything stacked on it, floating over the transcript.
     ///
@@ -29,7 +32,17 @@ impl ChatPane {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
-        let pinned = self.pinned(session, room.well, window, cx);
+        let super::body::Pinned {
+            stack: pinned,
+            tucked,
+        } = self.pinned(session, room.well, window, cx);
+        let lead = self.lead_strip(cx);
+        // **A waiting card's foot runs under the composer**, which is drawn
+        // after it and opaque, so the composer reads as laid over the card.
+        // The column's gap goes too, or the two would stand apart. While
+        // workers run the lead's strip tops the composer, opaque and edged as
+        // it is, and the card's foot runs under the strip instead.
+        let tuck = tucked.then(|| -gpui::rems(COLUMN_GAP.0 + transcript::TUCK.0));
         let git = self.git.clone();
         let pane = cx.entity();
 
@@ -42,7 +55,7 @@ impl ChatPane {
             // A step over the gap the cards keep between themselves: a pinned
             // card and the composer are two objects and the cards in a stack
             // are one, so the seam that has to read as a seam is this one.
-            .gap_2()
+            .gap(COLUMN_GAP)
             .w_full()
             // Reading the conversation is a way of saying the popup is done
             // with. It hangs off this whole block rather than off the list, so
@@ -225,16 +238,33 @@ impl ChatPane {
                 // bottom of it, behind it, which is where it was drawn anyway.
                 // The card is the later thing to lose its height, and it can
                 // afford to: nothing measures a parked card by design.
+                // The tuck moves the cards alone: an open popup keeps its gap
+                // and its peek over them, clear of the composer.
                 match (popup, cards) {
                     (Some(popup), Some(cards)) => Some(
                         div()
                             .relative()
                             .w_full()
-                            .child(div().absolute().bottom_0().left_0().right_0().child(cards))
+                            .child(
+                                div()
+                                    .absolute()
+                                    .map(|cards| match tuck {
+                                        Some(tuck) => cards.bottom(tuck),
+                                        None => cards.bottom_0(),
+                                    })
+                                    .left_0()
+                                    .right_0()
+                                    .child(cards),
+                            )
                             .child(popup),
                     ),
                     (Some(popup), None) => Some(div().w_full().child(popup)),
-                    (None, Some(cards)) => Some(div().w_full().child(cards)),
+                    (None, Some(cards)) => Some(
+                        div()
+                            .w_full()
+                            .when_some(tuck, |slot, tuck| slot.mb(tuck))
+                            .child(cards),
+                    ),
                     (None, None) => None,
                 }
             })
@@ -287,7 +317,7 @@ impl ChatPane {
                                     .mx_auto()
                                     // Standing on the composer, its line
                                     // above the card's.
-                                    .children(self.lead_strip(cx))
+                                    .children(lead)
                                     .child({
                                         // A run waiting at an approval holds the
                                         // view's one primary, so Send steps down.

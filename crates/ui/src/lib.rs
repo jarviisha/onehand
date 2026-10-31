@@ -28,6 +28,7 @@ mod prose;
 mod resize;
 mod row;
 mod row_actions;
+mod stepper;
 mod strip;
 mod surface;
 mod tabs;
@@ -47,7 +48,7 @@ pub use ink::{
     StatusInk, Tint, control_fill, control_fill_of, faint_rule, meta_ink, middle_ink, neutral_tint,
     status_hue, status_ink, tint, tint_over,
 };
-pub use list_detail::{ListDetail, ListWidths, back_link, list_detail};
+pub use list_detail::{ListDetail, ListWidths, back_link, crumb_link, crumbs, list_detail};
 pub use menu::{
     menu_below, menu_command, menu_item, menu_label, menu_row, menu_still, split_action,
 };
@@ -57,12 +58,14 @@ pub use page::{page_head, page_search, page_top};
 pub use prose::{no_code_label, unedged_code};
 pub use resize::{edge_handle, h_resizable, v_resizable};
 pub use row::{mark_slot, row, tree_row};
-pub use row_actions::{HoverSlot, hover_slot};
+pub use row_actions::{HoverSlot, Press, RowAct, hover_slot, row_menu_items, row_more};
+pub use stepper::{STEP_LINE_H, StepMark, step_dot, step_line};
 pub use strip::{mode_strip, strip, strip_control, workbench_strip};
 pub use surface::{card_box, dock_surface, scrollbar, well};
 pub use tabs::{
-    Measured, TAB_MAX_W, TAB_MENU_CAP, TabStrip, TabWidths, measure_tab, measure_width, tab_chip,
-    tab_close, tab_more, tab_select, tab_strip, tab_width, unmeasured,
+    Measured, TAB_MAX_W, TAB_MENU_CAP, TabStrip, TabWidths, measure_tab, measure_width, panel_tab,
+    panel_tab_frame, tab_bar, tab_chip, tab_close, tab_more, tab_select, tab_strip, tab_width,
+    unmeasured,
 };
 pub use toggle::toggle;
 pub use tooltip::{put_tooltips_away, tip, tooltip_guard};

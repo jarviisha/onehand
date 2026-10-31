@@ -31,8 +31,8 @@ pub fn strip(cx: &App) -> Div {
 
 /// A bar inside the Workbench: a [`strip`] inset as the tree rows under it
 /// ([`crate::tokens::ROW_INSET`]), so the bar's words and the rows' names
-/// read down one edge. The conversation's header and the terminal's strip
-/// keep the plain one.
+/// read down one edge. The conversation's header keeps the plain one; the
+/// docks' own bars are tab bars ([`crate::tab_bar`]).
 pub fn workbench_strip(cx: &App) -> Div {
     strip(cx).px(crate::tokens::ROW_INSET)
 }

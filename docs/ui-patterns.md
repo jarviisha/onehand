@@ -15,7 +15,8 @@ feature crate views alike; the feature contract still decides what content and a
 
 | Content | Container | Separation |
 |---|---|---|
-| Related settings (Settings), a group inside a form | Plain section | Heading, shared text axis and section gap |
+| Related settings (Settings) | Box | The setting page's group: one edge, its heading inside at the top |
+| A group inside a form | Plain section | Heading, shared text axis and section gap |
 | A group on a page: one thing's facts, a list, a status, what a project is set to | Box | One outer edge in a control's edge, no fill; no nested boxes for its fields |
 | Repeated items to scan or pick | List or table | Stable columns and row states; table hairlines |
 | Repeated items opened one at a time, each with actions of its own (Workflows) | Grid of boxes | A gap; a box's edge raised on hover, never a fill |
@@ -35,9 +36,9 @@ The neutral inks of `DESIGN.md` (*Type, space and shape*), applied on a neutral 
 | Where | Full ink | Middle ink | Muted ink |
 |---|---|---|---|
 | A row in content: a page, a Workbench list, a menu | its name | the detail on its line: a folder, a number, a kind | its meta, trailing or on a line under it; the label over a run of rows |
-| Navigation: the rail, a section nav | the current location, in its fill's paired ink | none | every other row at rest |
+| Navigation: the rail, a section nav | the current location, in its fill's paired ink; every other row at rest in the sidebar's ink | none | a row's second line |
 | A box, a detail | its title, its content | none | its count, its line of facts |
-| A page's head | its name, at the title size | its line of facts | none |
+| A page's head | its name, at the title size | none | its line of facts |
 | A strip | what it names | none | a count beside the name |
 
 Text on a fill, and text that carries meaning, takes the ink `DESIGN.md` names for it (*Type,
@@ -56,7 +57,7 @@ and a word.
 | Compact metadata or a tightly coupled mark and label | `gap_1` |
 | Icon and label in a row the app draws; adjacent controls; parts within a box | `gap_2` |
 | Row inset | `px_2` |
-| Strip inset; box padding | `px_3`, inside the Workbench `tokens::ROW_INSET`; `p_3` |
+| Strip inset; box padding | `px_3`, inside the Workbench `tokens::ROW_INSET` (a tab bar's tabs sit flush); `p_3` |
 | A box whose body scrolls inside it (a pinned card) | `p_4`, a step more so the scrollbar's thumb has room beside the text |
 | Form fields | `gap_4` |
 | Page sections; page outer padding | `gap_6`; `px_8` `py_6` |
@@ -104,11 +105,11 @@ size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in ea
 | Every other button with words: a strip's, a box's, a row's, a secondary action inside dense content (a line of meta text, a transcript block, a chip), a tab, a fold toggle, a pinned card's answers | Button | `.short()`, under a row, so the controls never outweigh what they act on |
 | Every other icon-only button: a strip's, a row's, a copy control, the composer's send | Button | `.small()`, square at `CONTROL_H`, so an icon alone is as tall as a worded peer beside it |
 | A field in a strip or the rail | Input | `.short()`, as tall as the buttons beside it |
-| An icon in a button | Icon | the button's own: `small` in a `.tall()` button and in an icon-only `.small()` one, `xsmall` beside words in a `.short()` one |
+| An icon in a button | Icon | the button's own, as the library sizes it for the button's size |
 | An icon leading a label the app draws: a row, a menu item | Icon | `.small()` |
 | A state's mark leading a row's label (a session's) | Icon | `.xsmall()`, a step under the label |
 | A mark inside a line of meta text | Icon | `.xsmall()` |
-| A badge: a tag standing on its own (a state, a count, *Default*) | Tag | `.small()`, at its own height |
+| A badge: a tag standing on its own (a state, a count, *Default*) | Tag | the library's own size, at its own height |
 | A label inside a line of meta text (an issue row's) | text | its kind's ink (`label_tint`), the one part of the line that truncates; the row's quieter ink on the selected fill |
 | A checkbox, a switch | Checkbox, Switch | `.small()` beside chrome text, at the library's own geometry |
 | A single-line row; a row with a second line | drawn by the app | `ROW_H`; at least `ROW_H` |
@@ -117,15 +118,14 @@ size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in ea
 
 - **`.tall()` is the ceiling.** No control stands taller than `FIELD_H`; a page gives a field
   room by its size, never by a larger control.
-- **One size, one measure.** The library's default stands a button 32px tall, over `.tall()`'s
-  ceiling, so it is never used. `.short()` is the wrapper that gives a Button and
-  an Input the small height with words at `.text_xs()`, so they breathe inside it, and `.tall()`
-  the one that gives both `FIELD_H` at `.text_sm()`, the reading size. A size a component gets wrong is corrected
-  in its shared wrapper, never at the call site. The library's `.small()` is an icon-only
-  button's size, square at the same height as `.short()`; a worded button never takes it, as its
-  words would stand at `.text_sm()`. A control holding a badge keeps it, being the one tall
-  enough. `.xsmall()` is no field's or worded button's size: an icon takes it, and an icon-only
-  button inside a small object (an attachment's plate), which scales with the object it sits on.
+- **One size, one measure.** A button's `.short()` is the library's extra small held at
+  `CONTROL_H` (22px) and its `.tall()` the library's small held at `FIELD_H` (26px), its words at
+  `CHROME_TEXT`; a field takes the library's small at both heights, its words at `CHROME_TEXT`; their icons and insets the
+  library's. A size a component gets wrong is corrected in its shared
+  wrapper, never at the call site. The library's `.small()` is an icon-only button's size, square
+  at the same height as `.short()`. `.xsmall()` is no field's or worded button's size: an icon
+  takes it, and an icon-only button inside a small object (an attachment's plate), which scales
+  with the object it sits on.
 - **One row of actions, one height.** Every control standing in one row of actions (a button, both
   halves of a split action, a field, a picker, a choice, an icon alone) takes the same size, so
   their tops and bottoms meet on one line. The row takes the size its leading role takes, and
@@ -160,14 +160,12 @@ shows a region the strip's own panel hid may lead (the way back to the rail, a l
 Filters belong below the region header with the content they filter. Reserve the action group's
 width while labels truncate; showing hover actions must not move the text beside them.
 
-Inside the Workbench a bar is a `workbench_strip`: padded `tokens::ROW_INSET` rather than `px_3`,
-so its words and the tree rows' names read down one edge. Each Workbench region draws one
-hairline (`border`) where its head ends and its content begins: under the Workbench's own strip,
-under a mode's head (the editor's tabs, the reader's bar, an issue's trail). A mode's own bar
-under the Workbench's strip is a `mode_strip`, `tokens::MODE_BAR_H` tall, a step under the strip
-over it so it reads as the mode's; where two bars stack, only the lower one draws the line over
-the content. The conversation's header and the terminal's strip draw no line and keep
-`px_3`.
+The Workbench's strip, the terminal's and the Editor's file tabs are tab panel bars (`tab_bar`),
+the Editor's at `tokens::MODE_BAR_H`, each with a line under it. Any other bar inside the
+Workbench is a `workbench_strip`, padded `tokens::ROW_INSET` so its words and the tree rows'
+names read down one edge, with a hairline (`border`) where its head ends: the reader's bar is a
+`mode_strip`, `MODE_BAR_H` tall, a step under the strip over it; an issue's trail draws its own.
+The conversation's header draws no line and keeps `px_3`.
 
 ### Cuts
 
@@ -180,7 +178,7 @@ Nothing else is drawn see-through.
 ### Pages
 
 A page takes the agent pane. Every page names itself in its head, in the body (`page_head`): its
-name at the title size, a line of facts under it in the middle ink where it has facts to give, its
+name at the title size, a line of facts under it in the muted ink where it has facts to give, its
 actions at the end; the pane's header above it carries chrome alone. A box's heading identifies its
 own content. A page is one of two kinds, chosen by what it holds, and the kind decides its width
 and its density, never its head:
@@ -196,21 +194,20 @@ A workspace-wide page (the overview, Tasks, Issues, Workflows, Schedules) and Se
 top in place while the rest scrolls under it (`page_top`): the head, then, where the page has them,
 a row of its search and its filters. The top is inset `px_8`, close under the pane's header
 (`pt_2`), its parts `gap_6` apart, in the same column as the body under it (the whole pane on a
-list page, and on Settings, whose name starts on its nav column's edge); under it a `faint_rule`
-line runs the pane's whole width, drawn always, so every page's top ends on one line whatever the
-width of its column.
+list page, and on Settings, whose name starts on its nav column's edge). No line parts the top
+from what scrolls; the head's size says where the page begins.
 
 - **The head.** Its actions are `.tall()`, at one height; its icon-only ghost buttons
   (*Refresh*) stand before its creating action. The creating action (*New session*, Workflows'
   *New*, *New schedule*, *New issue*) is the view's one primary, stepping down to `secondary`
   while a form it opened, or an item floating over the list, is open and holds it. A page that
-  only sets values (Settings) holds no primary, every button on it secondary, and parts its many
-  peer groups by hairlines with semibold headings, as space alone would run them together.
+  only sets values (Settings) holds no primary, every button on it secondary, and stands its many
+  peer groups each in a box, its heading inside.
 - **The row under it.** The search first (`page_search`: `.tall()`, as wide as its cap and
   narrower only when the row runs short), then the filter bar's choices and filters (*Filter
   bars*), kept to the row's end; the row wraps when narrow. A page with filters and no search
   keeps them at the row's end all the same.
-- A table's column names, where a page has them, stay in the top too.
+- A table's column names, where a page has them, head its rows and scroll with them.
 
 A page reached from one of these (a task, a schedule's form, a project's page) scrolls as one
 column under its trail back.
@@ -233,8 +230,8 @@ puts their nav column at its start. Reuse the same column width for the same kin
 The list takes the pane's whole width, a whole list scanned at a glance; its top is every page's.
 
 - **Edges.** Inset `px_6`, its rows' fills on that edge and their words on the top's `px_8`. The
-  top and the foot are each parted from the list by a `faint_rule` line the pane's whole width, so
-  the edge-to-edge list reads as one surface.
+  foot is parted from the list by a `faint_rule` line the pane's whole width, so the edge-to-edge
+  list reads as one surface.
 - **Rows** on one line at `.text_xs()`, no lines between them: the name and the column read down
   the list (the age) in `font_medium`, carried by weight and ink rather than size; the rest at the
   regular weight. Trailing slots drop, least needed first, where the pane is too narrow to leave
@@ -257,10 +254,8 @@ dock's bar that stands over a list and its detail both (the Issues tab) leaves t
 they split the list, so they stand over its rows, under the bar's line.
 
 - where the content splits into a few states that each count (*Open*, *Closed*), those first,
-  each a `choice` at the bar's size, the shown one filled, its count a slim `badge` in the hue of that
-  state (neutral at zero, which has nothing to draw the eye to) hung from its top-right corner, its lower-left corner `2` in from that point each way,
-  over the button's inset and above its words, the choices `gap_6` apart so a count keeps clear
-  of the next;
+  each a `choice` at the bar's size, the shown one filled, its count a `badge` after its word in
+  the hue of that state (neutral at zero, which has nothing to draw the eye to);
 - the filters, kept to the row's end after the choices, wrapping under them when narrow. Each is a
   `picker` at the bar's size with its caret, its label naming what it is set to: a ghost in the muted
   ink while it is where it starts, on the secondary fill in that fill's ink once it narrows the
@@ -277,8 +272,8 @@ kept while the page is left and shown again.
 
 A box groups one thing on a page: edged in a control's edge (`input`) at `radius`, on no fill,
 padded `p_3`, its parts `gap_2` apart (`card_box`). Every fill under a page read as a slab too
-heavy for it or swallowed the fields and lines drawn on it, and the hairline sits too near the
-page's fill in Dark Modern to group anything. Its title row (`card_title`) holds the title in semibold, a
+heavy for it or swallowed the fields and lines drawn on it, and the hairline is too faint to
+group anything. Its title row (`card_title`) holds the title in semibold, a
 muted count, and at most one control at the end, at a fixed height so boxes side by side line up.
 Boxes sit side by side while the measured column holds two, and stack when it does not. A box
 that opens what it shows (a card in a grid) is pressed on its body: it takes the pointer, raises
@@ -302,11 +297,11 @@ inside a box are the box's parts: their fills run to its edge, as the hairlines 
 on hover, on the selected row, on keyboard focus and while their action runs. Every list has a named cap. Its last line, in meta
 text, says why the list is short: a list the cap cut says how many more there are (*N more*); a
 list a search or a filter narrows says how many it shows of how many there are (*Showing N of
-M*). A table is rows split by hairlines, each with one under it, under a head row in
-meta text on the page's own surface, its rows square `row`s at the row inset.
+M*). A table in a box is rows split by hairlines, each with one under it, under a head row in
+meta text on the page's own surface, its rows square `row`s at the row inset; a list page's table
+keeps the list page's rows, with no lines between them.
 Rows in a box are parted by a hairline (`ruled`), drawn on a wrapper of the row's own so its
-focus ring moves nothing; so are a Settings group's list rows (`list_rows`), whose group stands in
-no box. A row's trailing facts reach the box's edge; where a row has them, its
+focus ring moves nothing; so are a Settings group's list rows (`list_rows`), inside their group's box. A row's trailing facts reach the box's edge; where a row has them, its
 hover actions are laid over them, hiding them while they show, rather than holding a slot beside
 them. A row without trailing facts keeps its actions in a held slot. Keep metadata and actions in
 stable trailing slots. Multi-line row variants align their primary
@@ -315,8 +310,10 @@ keyboard focus remains separately visible, but on a list page, whose arrow keys 
 selection itself (*List pages*). Hover actions are also available on keyboard focus, so
 a row whose actions hide at rest is a tab stop; a focus a click leaves does not show them.
 
-A row's actions follow what the person must do next. A row waiting on the person (*Needs
-attention*) keeps its actions drawn, since they are its point. The keys passing a row whose
+A row's actions sit behind a `⋯` (`row_more`), shown on hover, on the keyboard's row and always
+on the current one, and the same items open on a right-click (`row_menu_items`), one list for
+both, a removal last in the danger ink. A row's own press is offered there by name too. A row's actions follow what the person must do next. A row waiting on the person (*Needs
+attention*) keeps its actions drawn as buttons beside its `⋯`, since they are its point. The keys passing a row whose
 content is open on screen, already holding those actions, lay none, so a row the keys only pass
 through stays still.
 
@@ -353,7 +350,8 @@ tooltip saying why.
 
 ### Dialogs
 
-A dialog is the library's `Dialog` at its own width, titled through `title_row`, its ✕ muted and
+A dialog is the library's `Dialog` at its own width, titled through `title_row` (15px, a step
+over the chrome rather than the library's 16), its ✕ muted and
 named in its tooltip, over a backdrop that dims the window. Its fields are `field`s, `gap_4`
 apart; what blocks it stands above the footer in the danger ink. Its footer (`footer_row`) sits
 on the right: the dismissing button first, then the one primary action or the danger word, at
@@ -376,7 +374,7 @@ tells; an action beside one takes the secondary fill.
 
 A detail shows one thing in full (an issue, a task): a trail naming where it sits, with its
 actions beside it (one primary, one other, `⋯`; an issue's next one secondary and the other a
-ghost, since *New issue* holds its view's primary); its title in `text_xl` semibold; one line of
+ghost, since *New issue* holds its view's primary); its title in `text_lg` semibold; one line of
 facts in meta text; what it waits on; then its tabs.
 
 ## Behaviour
@@ -493,8 +491,8 @@ danger tint.
   or sheet opening or closing puts it away; the control just pressed shows none again until the
   pointer moves from where it was pressed, so none stands over the menu it opened. What a row's
   hover actions lie over shows no tooltip while the pointer is on them.
-- **Keyboard focus shows the ring**, only when the keyboard moved it there. A field shows focus by
-  its edge alone, turned the `ring` ink: edgeless at rest, it gains one while focused.
+- **Keyboard focus shows the ring**, only when the keyboard moved it there. A field is edged at
+  rest, and its edge turns the `ring` ink while focused.
 - A dialog, a popup or a floating panel opens with focus on its first field, or on its primary
   action when it has none. A panel floating beside the list it was picked from (the Issues
   page's issue) leaves focus on the list, so ↑ and ↓ keep stepping it. Each closes on Esc, asking first when a form in it holds unsaved

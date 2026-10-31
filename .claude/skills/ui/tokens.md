@@ -9,23 +9,24 @@ and density, use [UI patterns](../../../docs/ui-patterns.md#spacing-and-density)
 
 ## Colour
 
-Read from `cx.theme()`. The ramp in `crates/app/src/theme.rs` writes them for both palettes, with
-contrast tests; the terminal's sixteen colours are `onehand_terminal_ui::ansi`. Roles, the
-palette's source and the key each role takes: `DESIGN.md`, *Colour and state*.
+Read from `cx.theme()`. They are gpui-kit's Default Light and Default Dark as the library ships
+them; `crates/app/src/theme.rs` installs them unchanged, with contrast tests. The terminal's
+sixteen colours are `onehand_terminal_ui::ansi`. Roles: `DESIGN.md`, *Colour and state*.
 
 Slot names that mislead (the library's names, kept because its own controls read them):
 
 | Slot | Holds |
 |---|---|
 | `accent`, `accent_foreground` | the selected fill and its ink: a fill, not a hue |
-| `link` (also `info`) | the accent hue: what runs, and links |
-| `muted` | the well's fill, and the user's bubble |
-| `secondary` | a step past the well: code inside the bubble |
+| `link` | a link, in the prose ink |
+| `info` | what runs |
+| `muted` | the well's fill |
+| `secondary` | a step past the well: a document's code on a dock, an attached file's plate |
 | `button_secondary`, `button_secondary_foreground` | the secondary button's own fill at rest (its pointed-at step under the pointer or pressed) and its ink |
-| `primary` | the primary action: a blue, with white on it |
+| `primary` | the primary action: near black with white on it (light), near white with black on it (dark) |
 | `danger`, `warning`, `success` | fills with white on them; their text is `status_ink(cx)` |
-| `sidebar` | the rail's fill: the side bar's grey, the docks' too, read for a dock through `dock_surface(cx)` |
-| `sidebar_accent` | the rail's hovered row; its chosen row is `rail_chosen(cx)` |
+| `sidebar` | the rail's fill, the docks' too, read for a dock through `dock_surface(cx)` |
+| `sidebar_accent` | the rail's hovered row, and its chosen row through `rail_chosen(cx)` |
 
 Helpers:
 
@@ -36,15 +37,14 @@ Helpers:
 | `dock_surface(cx)` | the Workbench's and the terminal's surface | `crates/ui/src/surface.rs` |
 | `badge_edge(tint)` | a badge's edge: halfway from its `Tint`'s fill to its ink | `crates/ui/src/badge.rs` |
 | `control_fill(cx)` | a ghost control's fill hovered, pressed or chosen; between `list_hover` and `accent` | `crates/ui/src/ink.rs` |
-| `faint_rule(cx)` | a hairline a step fainter, halfway to the surface: the line under a page's top, and a list page's line over its foot | `crates/ui/src/ink.rs` |
-| `field_fill(cx)` (private) | every field's fill: `muted` a step toward `foreground`; drawn by `text_input` and `text_area` | `crates/ui/src/field.rs` |
+| `faint_rule(cx)` | a hairline a step fainter, halfway to the surface: a list page's line over its foot, and the Issues tab's filter bar's line | `crates/ui/src/ink.rs` |
 | `meta_ink(cx)` | the middle ink: a detail beside a name, between prose and muted | `crates/ui/src/ink.rs`; the app says `crate::theme::meta_ink` |
 | `middle_ink(full, meta)` | the same step under another full ink: on a fill, under that fill's paired ink | `crates/ui/src/ink.rs` |
 | `hue_ink(base, cx)` | a hue tempered for ink: code inside prose | `crates/app/src/theme.rs` |
-| `raised(cx)` | the composer card's fill | `crates/app/src/theme.rs` |
-| `inset(cx)` | the rail's search; a badge in the rail | `crates/app/src/theme.rs` |
+| `raised(cx)` | the composer card's fill: the page's | `crates/app/src/theme.rs` |
+| `inset(cx)` | a badge in the rail: the page's fill | `crates/app/src/theme.rs` |
 | `rail_chosen(cx)` | the rail's chosen row | `crates/app/src/theme.rs` |
-| `floating_well(cx)` | a well on a floating card: the command a pinned permission asks to run | `crates/app/src/theme.rs` |
+| `floating_well(cx)` | a well on a floating card, the command a pinned permission asks to run: the library's `muted` | `crates/app/src/theme.rs` |
 
 Inks (roles: `DESIGN.md`, *Type, space and shape*; by place: UI patterns, *Hierarchy*). The three
 neutral ones, for text on a neutral surface:
@@ -53,7 +53,7 @@ neutral ones, for text on a neutral surface:
 |---|---|---|
 | Full | `cx.theme().foreground` | yes |
 | Middle | `meta_ink(cx)`; on a fill, `middle_ink(pair, muted_foreground)` | yes |
-| Muted | `cx.theme().muted_foreground`, which the rail's names take too | yes |
+| Muted | `cx.theme().muted_foreground`, which a rail row's second line takes | yes |
 
 Text on a fill takes the ink paired with it:
 
@@ -61,13 +61,14 @@ Text on a fill takes the ink paired with it:
 |---|---|
 | `primary`, a solid `danger` | `primary_foreground`, `danger_foreground`, set by the button's variant |
 | `button_secondary`; a `quiet` ghost | `button_secondary_foreground`; `secondary_foreground`, set by the builder |
-| a ghost's control fill (hovered, pressed or chosen), under an icon alone (`quiet_icon`) | `secondary_foreground`; at rest, with no fill, the icon is muted |
+| a ghost's hover or selected fill, under an icon alone (`quiet_icon`) | `secondary_foreground`, as at rest |
 | `accent`, the selected row | `accent_foreground` |
 | `rail_chosen(cx)`, the rail's current row | `sidebar_accent_foreground` |
-| `muted` (a well, the bubble) | the neutral inks, as on the surface: a neutral fill, not a paired one |
+| `muted` (a well, the prompt bubble) | the neutral inks, as on the surface: a neutral fill, not a paired one |
+| `primary` (the primary button) | `primary_foreground` |
 | a badge's `Tint` fill | that `Tint`'s `ink` |
 
-Semantic inks, on any surface: `status_ink(cx)` for a state, `link` for a link or what runs,
+Semantic inks, on any surface: `status_ink(cx)` for a state, `link` for a link, `info` for what runs,
 `hue_ink(base, cx)` for code in prose.
 
 ## Spacing
@@ -91,9 +92,9 @@ are not steps and stay allowed. A named spacing constant (`BLOCK_GAP`, `TIGHT_GA
 | Write | rem | px |
 |---|---|---|
 | `tokens::MICRO_TEXT` | 0.6875 | 11 |
-| `.text_xs()` | 0.75 | 12 |
-| `tokens::CODE_TEXT`, `tokens::CHROME_TEXT` | 0.8125 | 13 |
-| `.text_sm()` | 0.875 | 14 |
+| `.text_xs()`, `tokens::CODE_TEXT`, the transcript's `TEXT_SM` | 0.75 | 12 |
+| `tokens::CHROME_TEXT`, the transcript's `TEXT` | 0.8125 | 13 |
+| `.text_sm()` (the library's own size; the app does not write it) | 0.875 | 14 |
 | `.text_base()` | 1 | 16 |
 | `.text_lg()` | 1.125 | 18 |
 | `.text_xl()` | 1.25 | 20 |
@@ -108,14 +109,15 @@ are not steps and stay allowed. A named spacing constant (`BLOCK_GAP`, `TIGHT_GA
 
 | Write | px |
 |---|---|
-| `cx.theme().radius` | 4 (`tokens::CORNER`) |
-| `.rounded_full()` | a badge, a dot, a status mark |
+| `cx.theme().radius` | 6, the library's |
+| `cx.theme().radius_lg` | 8, the library's: large surfaces |
+| `.rounded_full()` | a dot, a status mark |
 
-The theme sets `radius` and `radius_lg` both to `tokens::CORNER`, so the library's tooltips, menus,
-popovers, dialogs and toasts take the one corner too. What the library draws at half its corner
-(`radius_tokens().sm`: checkboxes, `Kbd`, its tabs) comes out at 2px and is left to it. A button
+The theme leaves both at the library's values, so its tooltips, menus, popovers, dialogs and
+toasts take them. What the library draws at half its corner (`radius_tokens().sm`: checkboxes,
+`Kbd`, its tabs) comes out at 3px and is left to it. A button
 (`action`, `ButtonRounded::Medium`) and a text field (`text_input`, `search_input`, `text_area`)
-set `radius` where they are built; a `Tag` takes `rounded_full` through `badge`.
+set `radius` where they are built; a `Tag` keeps the library's corner through `badge`.
 
 ## Elevation
 
@@ -135,17 +137,14 @@ Moving the library's rev means checking this table.
 | Size | Button: height / words / icon / icon–label gap / inset | Input: height / words / inset | Icon alone |
 |---|---|---|---|
 | `.xsmall()`: an icon-only button inside a small object only | 20 / 12 / 12 / 4 / 4 | 20 / 12 / 4 **px** | 12 |
-| `.short()` (`CONTROL_H`) | 24 / 12 / 12 / 4 / 8 | 24 / 12 / 8 **px** | 12 |
-| `.tall()` (`FIELD_H`) | 30 / 14 / 14 / 4 / 12 | 30 / 14 / 8 **px** | 14 |
-| `.small()`: an icon-only button | 24 / 14 / 14 / 4 / 8: never with words | 24 / 14 / 8 **px** | 14 |
-| the library's default | 32 / 14 / 16 / 8 / 10: never used | 32 / 14 / 10 **px** | 16 |
+| `.short()` (`CONTROL_H`): a button the library's extra small, a field its small | 22 / 12 / 12 / 4 / 8 | 22 / 13 / 8 **px** | 14 |
+| `.small()`: an icon-only button beside `.short()` | 24 / 14 / 14 / 4 / 8 | 24 / 14 / 8 **px** | 14 |
+| `.tall()` (`FIELD_H`): the library's small, held taller | 26 / 13 / 14 / 4 / 12 | 26 / 13 / 8 **px** | 16 |
 
-An icon-only button is square at its height, and padding vertically equals its height less its
-words, halved: 4 at `.xsmall()`, 6 at `.short()`, 8 at `.tall()`. `.short()` is the extra small size given the small
-height and inset (`Short` in `crates/ui/src/control_size.rs`), so its words and icon are the extra
-small ones; a field keeps the small size and takes `.text_xs()`. `.tall()` is the small size
-given `FIELD_H` (`Tall`, beside it), so its words and icon stay the small ones. A builder that sizes the controls
-it makes (`choice`, `switch`, `picker`) takes one of them as a `ControlSize`.
+An icon-only button is square at its height. A button's `.short()` is the library's extra small
+held at `CONTROL_H` and its `.tall()` the library's small held at `FIELD_H`, its words at
+`CHROME_TEXT`; a field takes the library's small at both, its words at `CHROME_TEXT` (`Short` and `Tall` in `crates/ui/src/control_size.rs`); their words, icons and insets are the library's. A builder that
+sizes the controls it makes (`choice`, `switch`, `picker`) takes one of them as a `ControlSize`.
 
 A field of several lines (`text_area`) is the library's `Textarea`, which takes no size: its text
 sits at the default's inset, 10 **px**, which no wrapper reaches, so it starts 2px inside a
@@ -155,7 +154,7 @@ Components that keep geometry of their own, centred in their row rather than siz
 
 | Component | Geometry |
 |---|---|
-| `Tag` at `.small()` through `badge` | words 12 set solid (`badge` overrides the library's 10 at 1.25), inset 6 × 4; its height follows its line |
+| `Tag` at its default size through `badge` | words 12 at 1.25, inset 10 × 4; its height follows its line |
 | `Checkbox` | box 12 / 14 / 16 at `.xsmall()` / `.small()` / default; its label 12 / 14 / 16 |
 | `Switch` | track 28 × 16 **px** at `.xsmall()` and `.small()`, 36 × 20 **px** at the default; thumb 12 / 16 **px** |
 | `Kbd` | words 12, inset 4 × 2 |
@@ -168,18 +167,19 @@ All in `onehand_ui::tokens` (`crates/ui/src/tokens.rs`), which the app names
 
 | Token | Value | What |
 |---|---|---|
-| `BAR_H` | 2.75rem | every strip along the top of a region |
-| `MODE_BAR_H` | 2rem | a mode's own bar under the Workbench's strip (the editor's tabs, the reader's bar) |
-| `ROW_H` | 1.875rem | a list row (the rail, the composer's popup) |
-| `TREE_ROW_H` | 1.5rem | a Workbench tree's row pitch (Files, Markdown) |
-| `TREE_ROW_FILL` | 1.3125rem | a tree row's fill: 21px, odd so the name centres on a whole pixel |
+| `BAR_H` | 2.1875rem | every strip along the top of a region: 35px |
+| `TAB_MARK` | 0.125rem | the stroke along the top of a dock's open tab |
+| `MODE_BAR_H` | 1.875rem | a mode's own bar under the Workbench's strip (the editor's tabs, the reader's bar) |
+| `ROW_H` | 1.5rem | a list row (the rail, the composer's popup): 24px |
+| `TREE_ROW_H` | 1.375rem | a Workbench tree's row pitch (Files, Markdown) |
+| `TREE_ROW_FILL` | 1.1875rem | a tree row's fill: 19px, odd so the name centres on a whole pixel |
 | `TREE_ROW_ABOVE`, `TREE_ROW_BELOW` | 0.0625rem, 0.125rem | the room over and under a tree row's fill; between two fills, their sum |
-| `CONTROL_H` | 1.5rem | a small control: `.short()`, and an icon-only `.small()` button |
-| `FIELD_H` | 1.875rem | the tallest control, a step over `.short()`: a page's head and form (`.tall()`); nothing stands taller |
+| `CONTROL_H` | 1.375rem | a small control: `.short()`, and an icon-only `.small()` button |
+| `FIELD_H` | 1.625rem | the tallest control, a step over `.short()`: a page's head and form (`.tall()`); nothing stands taller |
 | `SCROLLBAR_THUMB`, `SCROLLBAR_THUMB_ACTIVE` | 4px, 6px | a scrollbar's thumb at rest, and hovered or dragged |
-| `CHROME_TEXT` | 0.8125rem | chrome text: a panel's rows, boxes, forms and strips |
+| `CHROME_TEXT` | 0.8125rem | chrome text: a panel's rows, boxes, forms and strips, a `.tall()` control's words, a document's reading text |
 | `MICRO_TEXT` | 0.6875rem | a caption inside a small object: an attachment's plate |
-| `CODE_TEXT` | 0.8125rem | machine text |
+| `CODE_TEXT` | 0.75rem | machine text |
 | `LEADING` | 1.6 | reading text |
 | `LEADING_TIGHT` | 1.4 | a wrapped title |
 | `PAGE_NARROW` | 35rem | a one-column page |
@@ -192,16 +192,15 @@ All in `onehand_ui::tokens` (`crates/ui/src/tokens.rs`), which the app names
 | `SCROLLBAR_W` | 16px | room held clear beside text the library's scrollbar scrolls (the transcript's boxes, the Markdown reader) |
 | `lift(cx)` | | the floating shadow |
 
-Equal values kept apart on purpose, each one decision beside its one use: `CHAT_MIN`,
-`NARROW_PANEL` and `MODES_MIN_W` (30rem); `CONTENT_COLUMN` and `COMPOSER_COLUMN` (44rem).
+Equal values kept apart on purpose, each one decision beside its one use: `CHAT_MIN` and
+`NARROW_PANEL` (30rem); `CONTENT_COLUMN` and `COMPOSER_COLUMN` (44rem).
 
 ## Adding a token
 
-- **A colour**: a key's value in both palettes of `Ramp` in `crates/app/src/theme.rs`, from the
-  source `DESIGN.md` names (*Colour and state*), the key beside it and a row in that table, written
-  into its slot in `paint`, its contrast asserted in that file's tests against every surface it lands on.
-  A feature crate reads it through the theme slot. A step between two the ramp holds is derived from
-  them with `mix_oklab`, as `meta_ink` and `tint` are, not written as a value of its own.
+- **A colour**: first a library token for the role. A step no token holds is derived from the
+  tokens with `mix_oklab`, as `meta_ink` and `tint` are, in `crates/app/src/theme.rs` (or
+  `onehand_ui::ink` when a feature crate needs it), its contrast asserted in that file's tests
+  against every surface it lands on; never a value of its own.
 - **A size one module uses**: a `const` of type `Rems` beside its use, its reason in its doc
   comment. A spacing value equals a step.
 - **A size a second module needs**: move the constant into `onehand_ui::tokens` in that

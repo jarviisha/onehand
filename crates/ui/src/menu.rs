@@ -116,7 +116,16 @@ pub fn menu_command(label: impl Into<SharedString>, action: Box<dyn Action>) -> 
             .w_full()
             .gap_3()
             .child(said(&label).flex_1().child(label.clone()))
-            .children(Kbd::binding_for_action(action.as_ref(), None, window))
+            // Bare, as the library's own menu rows letter their keys: no
+            // fill and no edge, so a key reads the same in every menu.
+            .children(
+                Kbd::binding_for_action(action.as_ref(), None, window).map(|key| {
+                    key.p_0()
+                        .flex_nowrap()
+                        .border_0()
+                        .bg(gpui::transparent_white())
+                }),
+            )
     })
 }
 

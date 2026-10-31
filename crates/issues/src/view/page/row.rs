@@ -40,8 +40,9 @@ const ISSUE_ROW_H: Rems = rems(2.5);
 /// sentence leaves the title room to be read.
 const NOTE_MAX: Rems = rems(14.);
 
-/// The widest the labels get, so three long ones leave the title room.
-const LABELS_MAX: Rems = rems(16.);
+/// The labels' column: as wide on every row, so the head names it, and no
+/// wider, so three long ones leave the title room; what runs over is cut.
+const LABELS_W: Rems = rems(12.);
 
 /// The page's width, in rems, below which a row keeps only its title and its
 /// age: the labels and the project would leave the title too little to be
@@ -143,7 +144,7 @@ pub(super) fn issue_row(
     } else if let Some(line) = row.line.clone().filter(|_| row.attention) {
         Some(div().text_color(ink.warning).child(line))
     } else if running {
-        Some(div().text_color(theme.link).child("running"))
+        Some(div().text_color(theme.info).child("running"))
     } else if row.earlier_attention {
         Some(
             div()
@@ -189,7 +190,7 @@ pub(super) fn issue_row(
     let labels = div()
         .h_flex()
         .flex_none()
-        .max_w(LABELS_MAX)
+        .w(LABELS_W)
         .overflow_hidden()
         .gap_1()
         .children(issue.labels.iter().take(ROW_LABELS).map(|label| {
@@ -279,5 +280,43 @@ pub(super) fn issue_row(
         .on_click(cx.listener(move |view, _: &ClickEvent, window, cx| {
             view.pick(root.clone(), number, window, cx)
         }))
+        .into_any_element()
+}
+
+/// The table's head over the rows: each column's name in the meta ink, in
+/// the slots the rows draw theirs in, so every name stands over its column.
+pub(super) fn head_row(columns: bool, cx: &mut Context<IssuesView>) -> AnyElement {
+    let name = |text: &'static str| div().flex_none().child(text);
+    div()
+        // The row's own inset, so the names start where the rows' content does.
+        .px_2()
+        .h(ISSUE_ROW_H)
+        .text_xs()
+        .text_color(meta_ink(cx))
+        .h_flex()
+        .items_center()
+        .gap_3()
+        .child(
+            div()
+                .h_flex()
+                .flex_1()
+                .min_w_0()
+                .items_center()
+                .gap_2()
+                // The state mark's slot, held empty.
+                .child(
+                    div()
+                        .flex_none()
+                        .invisible()
+                        .child(Icon::new(IconName::CircleCheck).small()),
+                )
+                .child(div().flex_none().min_w(REFERENCE_W).child("Issue"))
+                .child(name("Title")),
+        )
+        .when(columns, |head| {
+            head.child(name("Labels").w(LABELS_W))
+                .child(name("Project").w(PROJECT_W))
+        })
+        .child(name("Updated").w(UPDATED_W).h_flex().justify_end())
         .into_any_element()
 }

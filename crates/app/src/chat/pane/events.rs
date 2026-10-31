@@ -64,21 +64,6 @@ pub enum ChatPaneEvent {
     /// window's chrome, and a dock panel has no business reaching outside the
     /// dock to draw it.
     ShowRail,
-    /// The user pressed the Workbench button in the conversation's header.
-    ///
-    /// Announced rather than acted on for the same reason as the rail: the
-    /// Workbench is a dock, the dock is the window's arrangement, and the panel
-    /// sitting in the middle of it does not get to rearrange the window. It
-    /// also does not know which mode the Workbench would come back on, and two
-    /// places deciding that would drift apart.
-    ///
-    /// **Open or closed, and not the third state the key has.** A key has one
-    /// binding to serve every case, so an open-but-unfocused panel is focused
-    /// rather than closed -- there is nothing else to reach it with. A button
-    /// can see the dock, and the caret when it is pressed is almost always back
-    /// in the composer, so the third state made the first press do nothing a
-    /// presser could see.
-    ToggleWorkbench,
     /// The workers' button in the header, or the hide on the region's strip:
     /// the region takes the Workbench's place in the window's dock, or gives
     /// it back.
@@ -92,15 +77,6 @@ pub enum ChatPaneEvent {
     /// *Close* in a worker's block: its session closed as the rail closes
     /// one, by the shell that owns the row.
     CloseWorker(u64),
-    /// The user pressed the terminal button in the conversation's header.
-    ///
-    /// Announced rather than acted on for exactly the reasons above, and open
-    /// or closed for the same one -- with one condition of its own: an open
-    /// dock holding no shell is opened *into* rather than closed, because that
-    /// is what closing the last tab leaves and the press there means "start
-    /// one". The key is `` Ctrl+` ``, unshifted, because the shifted form
-    /// cannot be typed.
-    ToggleTerminal,
     /// Restart the agent on the conversation showing.
     ///
     /// Announced rather than done here even though the pane owns the adapter:

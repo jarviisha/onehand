@@ -23,7 +23,7 @@ use gpui::{
 };
 use gpui_base::dock::{Panel, PanelEvent};
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::{ActiveTheme, IconName, StyledExt};
+use gpui_component::{IconName, StyledExt};
 use onehand_terminal_ui::{Program, PtyTab, TerminalThemeKey, spawn_pty, terminal_palette};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -521,13 +521,14 @@ impl Render for TerminalPanel {
         self.sync_theme(cx);
         div()
             .size_full()
-            // A block of its own, held off the conversation above, the
-            // Workbench beside it and the window's edges by a gap of the
-            // reading surface, so a shell never reads as the conversation
-            // running on. The gap belongs to the panel: a click in it is a
-            // click on the terminal, and the dock's grip runs along its top.
-            .p_2()
-            .bg(cx.theme().background)
+            // Flush with its dock, as the Workbench is with its own: the
+            // dock's line along its top parts it from the conversation, and
+            // its tab bar runs the panel's whole width.
+            .v_flex()
+            .overflow_hidden()
+            // The grid is handed the same surface as its background, so a
+            // shell is the panel rather than a plate laid on it.
+            .bg(crate::theme::dock_surface(cx))
             // Tracked here because this panel is mounted bare. A `TabPanel` calls
             // `track_focus` on the panel it holds, which is what normally puts
             // that handle in the focus tree; without a tab group nothing does,
@@ -536,22 +537,7 @@ impl Render for TerminalPanel {
             // every "which panel is this" question at some other panel.
             .track_focus(&self.focus_handle)
             .key_context("Terminal")
-            .child(
-                // The grid inside is handed the same surface as its
-                // background, so a shell is the block rather than a plate
-                // laid on it. Clipped, or the strip's rule would run through
-                // the corners the radius cuts. Edged in the same line as the
-                // rail and the Workbench.
-                div()
-                    .size_full()
-                    .v_flex()
-                    .rounded(cx.theme().radius)
-                    .border_1()
-                    .border_color(cx.theme().border)
-                    .overflow_hidden()
-                    .bg(crate::theme::dock_surface(cx))
-                    .child(self.body(window, cx)),
-            )
+            .child(self.body(window, cx))
     }
 }
 
@@ -606,12 +592,9 @@ impl TerminalPanel {
             .size_full()
             .v_flex()
             .child(
-                // Drawn here rather than with the library's `TabBar`, whose
-                // variants each bring a plate, a capsule, a ring or a border of
-                // their own: a tab here is a flat label on the dock, the chosen
-                // one on the selected fill, and nothing else. A strip like every
-                // other, the shell below it parted from it by the space.
-                onehand_ui::strip(cx)
+                // The library's tab panel bar: the shells as its tabs, the
+                // chosen one on the tab's fill under the primary's stroke.
+                onehand_ui::tab_bar(cx)
                     .id("terminal-tabs")
                     // The tabs live in a box of their own that scrolls sideways,
                     // and that box is what gives way, so `+` and the controls at
@@ -620,13 +603,11 @@ impl TerminalPanel {
                         div()
                             .id("terminal-tab-list")
                             .h_flex()
-                            .items_center()
-                            .gap_1()
                             .flex_1()
                             .min_w_0()
                             .overflow_x_scroll()
                             .children(labels.into_iter().enumerate().map(|(i, label)| {
-                                onehand_ui::tab_chip(
+                                onehand_ui::panel_tab(
                                     ("terminal-tab", i),
                                     label.clone(),
                                     label,
@@ -663,52 +644,69 @@ impl TerminalPanel {
                     // the panel. The hover fill brings it back on the one about
                     // to be pressed.
                     .child(
-                        onehand_ui::strip_control("add-shell", IconName::Plus, false, cx)
-                            .named("New shell in this project")
-                            .on_click(cx.listener(|panel: &mut Self, _, window, cx| {
-                                panel.open_shell(window, cx);
-                            })),
+                        div().h_flex().items_center().px_1().child(
+                            onehand_ui::strip_control("add-shell", IconName::Plus, false, cx)
+                                .named("New shell in this project")
+                                .on_click(cx.listener(|panel: &mut Self, _, window, cx| {
+                                    panel.open_shell(window, cx);
+                                })),
+                        ),
                     )
-                    // The icon is the state, not the action: the one situation
-                    // where it matters is the panel filling the frame and the
-                    // user looking for the way back.
-                    .child({
-                        let full = self.maximized;
-                        onehand_ui::strip_control(
-                            "maximize-terminal",
-                            match full {
-                                true => IconName::Minimize,
-                                false => IconName::Maximize,
-                            },
-                            false,
-                            cx,
-                        )
-                        .named_with_action(
-                            match full {
-                                true => "Back to the dock",
-                                false => "Fill the window",
-                            },
-                            &crate::shell::ToggleMaximize,
-                            None,
-                        )
-                        .on_click(cx.listener(|_: &mut Self, _, _, cx| {
-                            cx.emit(TerminalPanelEvent::ToggleMaximize);
-                        }))
-                    })
-                    // A minus, as the Workbench's: the shells are not being
-                    // ended, which the cross on every tab is for. `Minus` and
-                    // never `Dash`, whose stroke is written as literal black and
-                    // ignores `text_color`.
                     .child(
-                        onehand_ui::strip_control("hide-terminal", IconName::Minus, false, cx)
-                            .named_with_action(
-                                "Hide the terminal",
-                                &crate::shell::ToggleTerminal,
-                                None,
-                            )
-                            .on_click(cx.listener(|_: &mut Self, _, _, cx| {
-                                cx.emit(TerminalPanelEvent::Hide);
-                            })),
+                        div()
+                            .h_flex()
+                            .items_center()
+                            .gap_1()
+                            // The icon is the state, not the action: the one situation
+                            // where it matters is the panel filling the frame and the
+                            // user looking for the way back.
+                            .child({
+                                let full = self.maximized;
+                                onehand_ui::strip_control(
+                                    "maximize-terminal",
+                                    match full {
+                                        true => IconName::Minimize,
+                                        false => IconName::Maximize,
+                                    },
+                                    false,
+                                    cx,
+                                )
+                                .named_with_action(
+                                    match full {
+                                        true => "Back to the dock",
+                                        false => "Fill the window",
+                                    },
+                                    &crate::shell::ToggleMaximize,
+                                    None,
+                                )
+                                .on_click(cx.listener(
+                                    |_: &mut Self, _, _, cx| {
+                                        cx.emit(TerminalPanelEvent::ToggleMaximize);
+                                    },
+                                ))
+                            })
+                            // A minus, as the Workbench's: the shells are not being
+                            // ended, which the cross on every tab is for. `Minus` and
+                            // never `Dash`, whose stroke is written as literal black and
+                            // ignores `text_color`.
+                            .child(
+                                onehand_ui::strip_control(
+                                    "hide-terminal",
+                                    IconName::Minus,
+                                    false,
+                                    cx,
+                                )
+                                .named_with_action(
+                                    "Hide the terminal",
+                                    &crate::shell::ToggleTerminal,
+                                    None,
+                                )
+                                .on_click(cx.listener(
+                                    |_: &mut Self, _, _, cx| {
+                                        cx.emit(TerminalPanelEvent::Hide);
+                                    },
+                                )),
+                            ),
                     ),
             )
             .children(body.map(|view| {

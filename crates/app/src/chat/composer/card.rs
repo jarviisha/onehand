@@ -33,8 +33,9 @@ impl Composer {
     /// The card: the field and the row of controls under it. What is staged
     /// to go with the text waits above the card, in the tray.
     ///
-    /// **No edge.** Its raised fill and its own lift set it apart from the
-    /// transcript it floats over, and the caret alone shows focus.
+    /// **An edged card with a lift**, as the library draws an input: the
+    /// field's edge says where typing goes, and the lift sets it off the
+    /// transcript it floats over. The caret alone shows focus.
     ///
     /// `waits`: the run driving this session waits at an approval, whose
     /// *Continue* is the view's primary while it does.
@@ -105,6 +106,8 @@ impl Composer {
             .w_full()
             .p_1p5()
             .bg(crate::theme::raised(cx))
+            .border_1()
+            .border_color(cx.theme().input)
             .shadow(lift.clone())
             .rounded(cx.theme().radius)
             // Held always, so the card's keys reach the input wherever the

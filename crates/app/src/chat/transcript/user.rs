@@ -10,6 +10,7 @@ use gpui::{
     App, Entity, InteractiveElement, IntoElement, ParentElement, RenderOnce, SharedString,
     StatefulInteractiveElement, Styled, StyledImage as _, Window, div, relative,
 };
+use gpui_component::bubble::{Bubble, BubbleContent, BubbleVariant};
 use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::chat::{TranscriptItemId, UserMsg};
 
@@ -154,17 +155,20 @@ impl RenderOnce for Prompt {
                     cx.notify();
                 });
             })
+            // The library's muted bubble: a grey surface, so the reader's
+            // own words stand out of a column that is otherwise the agent's
+            // without taking the primary's blue, which is for the one thing to
+            // press.
             .child(
-                div()
-                    .max_w(BUBBLE_MAX)
-                    .px_3()
-                    .py_2()
-                    // **Even corners, the well's fill and no edge.** The side
-                    // it sits on already says whose words these are; the fill
-                    // only has to set them off the page.
-                    .rounded(cx.theme().radius)
-                    .bg(cx.theme().muted)
-                    .text_color(cx.theme().foreground)
+                Bubble::new()
+                    .with_variant(BubbleVariant::Muted)
+                    // The size on the surface itself: the library letters a
+                    // bubble at its own control size, a step over the prose.
+                    .content(
+                        BubbleContent::new()
+                            .max_w(BUBBLE_MAX)
+                            .text_size(super::metrics::TEXT),
+                    )
                     .child(prompt_text(&self.text, cx)),
             )
             .child(
@@ -182,6 +186,10 @@ impl RenderOnce for Prompt {
             )
     }
 }
+
+/// How much of the prompt's ink a code span's chip takes on its bubble:
+/// enough to set the span off the grey, not so much it reads as a button.
+const CODE_CHIP_ALPHA: f32 = 0.12;
 
 /// What the user typed, with the spans they fenced in backticks set apart.
 ///
@@ -205,9 +213,10 @@ fn prompt_text(text: &str, cx: &App) -> gpui::AnyElement {
         // its glyphs and there is no radius on it — the rounded chip this wants
         // would need the text laid out by hand. The fill and the face together
         // are still enough to read as one.
-        // The bubble's step on the well it sits in, so the chip shows on it.
-        background_color: Some(cx.theme().secondary),
-        color: Some(cx.theme().secondary_foreground),
+        // The bubble's own ink, thinned, so the chip shows on its grey in
+        // either theme.
+        background_color: Some(cx.theme().foreground.opacity(CODE_CHIP_ALPHA)),
+        color: Some(cx.theme().foreground),
         ..Default::default()
     };
     let mono = cx.theme().mono_font_family.clone();

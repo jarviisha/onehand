@@ -16,7 +16,7 @@ use gpui::{
     list, px,
 };
 use gpui_component::spinner::Spinner;
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Colorize as _, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::chat::{Link, TranscriptItemId};
 
 impl ChatPane {
@@ -39,22 +39,23 @@ impl ChatPane {
         well: Option<gpui::Pixels>,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> Vec<gpui::AnyElement> {
+    ) -> Pinned {
         let composer_idle = composer_idle(&self.composer, window, cx);
-        let mut pinned = Self::cards(session, well, composer_idle, window, cx);
-        // Under the blocking cards and directly over the composer, because that
-        // is where the prompt it holds was written and where it will reappear
-        // if the queue is cancelled.
+        let cards = Self::cards(session, well, composer_idle, window, cx);
+        // Over the blocking cards, or directly over the composer when none
+        // waits: a card rests on the composer with its foot tucked under it,
+        // so nothing can stand between the two.
         let mut lines: Vec<gpui::AnyElement> = Vec::new();
         lines.extend(self.connecting_strip(cx).map(IntoElement::into_any_element));
         lines.extend(self.queued_strip(cx).map(IntoElement::into_any_element));
-        // Last, so it rests on the composer it belongs to: what is staged
-        // waits above the card rather than inside it, where every file added
+        // Last, nearest the composer it belongs to: what is staged waits
+        // outside the composer rather than inside it, where every file added
         // or taken off moved the field being typed in.
         lines.extend(self.composer.update(cx, |composer, cx| composer.tray(cx)));
         // **One surface for all of it, on the card's own fill and lift.** Bare,
         // these lines floated over the transcript, and a conversation scrolled
         // behind them ran its words straight through theirs.
+        let mut pinned: Vec<gpui::AnyElement> = Vec::new();
         pinned.extend((!lines.is_empty()).then(|| {
             div()
                 .v_flex()
@@ -64,24 +65,31 @@ impl ChatPane {
                 // field's do.
                 .p_1p5()
                 .bg(crate::theme::raised(cx))
+                .border_1()
+                .border_color(cx.theme().input)
                 .shadow(crate::theme::composer_lift(cx))
                 .rounded(cx.theme().radius)
                 .children(lines)
                 .into_any_element()
         }));
-        pinned
+        let tucked = cards.is_some();
+        pinned.extend(cards);
+        Pinned {
+            stack: pinned,
+            tucked,
+        }
     }
 
-    /// The oldest permission or question session `session` waits on, and how
-    /// many more wait after it. `composer_idle` is whether the composer under
-    /// them is focused and empty, so Enter may answer the card.
+    /// The oldest permission or question session `session` waits on, under
+    /// the slivers of those waiting behind it. `composer_idle` is whether the
+    /// composer under them is focused and empty, so Enter may answer the card.
     pub(super) fn cards(
         session: &Entity<ChatSession>,
         well: Option<gpui::Pixels>,
         composer_idle: bool,
         window: &mut Window,
         cx: &mut App,
-    ) -> Vec<gpui::AnyElement> {
+    ) -> Option<gpui::AnyElement> {
         // A question's free-text box needs a window to be built and the session
         // never has one, so the card's own way to the screen is where it is
         // made. Before the cards are read, since the box is one of them.
@@ -90,50 +98,40 @@ impl ChatPane {
             s.sync_perm_focus(composer_idle, window, cx);
         });
         let chat = &session.read(cx).chat;
-        let mut out: Vec<(usize, gpui::AnyElement)> = chat
-            .pending_permissions()
-            .into_iter()
-            .map(|(idx, p)| {
-                (
-                    idx,
-                    transcript::permission(session, p, TranscriptItemId::Live(idx), well, cx)
-                        .into_any_element(),
-                )
-            })
-            .chain(chat.pending_asks().into_iter().map(|(idx, a)| {
-                (
-                    idx,
-                    transcript::ask(session, a, TranscriptItemId::Live(idx), cx).into_any_element(),
-                )
-            }))
-            .collect();
+        let permissions = chat.pending_permissions();
+        let asks = chat.pending_asks();
         // Two lists merged back into transcript order: the agent can park on a
         // permission and a question at once, and the order they were asked in
         // is the only order that makes sense of them.
-        out.sort_by_key(|(idx, _)| *idx);
+        let waiting = (permissions.len() + asks.len()).saturating_sub(1);
         // **One card at a time, the oldest.** Each one stacked over the last
         // took the conversation's whole height by the third, and every one
         // offered Enter while only the focused one would take it. The next
-        // takes the same place once this one is answered.
-        let waiting = out.len().saturating_sub(1);
-        let mut pinned: Vec<gpui::AnyElement> = out
-            .into_iter()
-            .take(1)
-            .map(|(_, element)| element)
-            .collect();
-        pinned.extend((waiting > 0).then(|| {
+        // takes the same place once this one is answered; the ones behind it
+        // peek over its top edge, and its head says how many.
+        let ask = |(idx, a): (usize, _)| {
+            transcript::ask(session, a, TranscriptItemId::Live(idx), waiting, cx).into_any_element()
+        };
+        let card = match (permissions.first(), asks.first()) {
+            (Some(&(p, _)), Some(&first)) if first.0 < p => ask(first),
+            (Some(&(idx, p)), _) => {
+                transcript::permission(session, p, TranscriptItemId::Live(idx), well, waiting, cx)
+                    .into_any_element()
+            }
+            (None, Some(&first)) => ask(first),
+            (None, None) => return None,
+        };
+        // One column with no gap of its own, so the slivers sit on the card
+        // they stand behind rather than floating apart in whatever gap the
+        // caller keeps between its rows.
+        Some(
             div()
-                // On the composer's text edge, as the lines under it are.
-                .px_1p5()
-                .text_xs()
-                .text_color(cx.theme().muted_foreground)
-                .child(match waiting {
-                    1 => "1 more request waits after this one".to_string(),
-                    n => format!("{n} more requests wait after this one"),
-                })
-                .into_any_element()
-        }));
-        pinned
+                .v_flex()
+                .w_full()
+                .children((0..peeks(waiting)).rev().map(|depth| peek(depth + 1, cx)))
+                .child(card)
+                .into_any_element(),
+        )
     }
 
     /// Shown while the adapter is still coming up.
@@ -247,6 +245,47 @@ impl ChatPane {
     }
 }
 
+/// What `pinned` stacks over the composer, and whether a waiting card is
+/// among it, its foot to run under the composer.
+pub(super) struct Pinned {
+    pub(super) stack: Vec<gpui::AnyElement>,
+    pub(super) tucked: bool,
+}
+
+/// How far in from the card each sliver behind it stands, as a share of the
+/// stack's gutter per place.
+const PEEK_INSET: f32 = 0.75;
+
+/// How much of the card's own fill each place back keeps, the rest the page's.
+const PEEK_FADE: f32 = 0.5;
+
+/// The sliver of a card waiting `depth` places behind the one shown: its top
+/// edge only, inset a share of the gutter per place and a step nearer the
+/// page's fill per place, so the stack reads as cards behind cards.
+fn peek(depth: usize, cx: &App) -> gpui::AnyElement {
+    let theme = cx.theme();
+    let fill =
+        crate::theme::waiting_card(cx).mix_oklab(theme.background, PEEK_FADE.powi(depth as i32));
+    div()
+        .h(PEEK_H)
+        .mx(gpui::rems(STACK_GUTTER.0 * PEEK_INSET * depth as f32))
+        .bg(fill)
+        .border_1()
+        .border_b_0()
+        .border_color(theme.input)
+        .rounded_t(theme.radius)
+        .into_any_element()
+}
+
+/// How tall the sliver of a waiting card behind the shown one stands.
+pub(super) const PEEK_H: gpui::Rems = gpui::rems(0.5);
+
+/// How many cards peek behind the one shown when `waiting` more wait: one
+/// sliver each, never more than two, so the stack says "more" without growing.
+pub(super) fn peeks(waiting: usize) -> usize {
+    waiting.min(2)
+}
+
 /// Whether `composer` is focused with nothing being put together in it: no
 /// words and no staged files, since a prompt of a pasted screenshot alone is
 /// one whose Enter must still send it rather than answer a card.
@@ -278,7 +317,7 @@ impl ChatPane {
             return waiting_hint("Opening the session…".into(), cx).into_any_element();
         }
         let Some(session) = self.session() else {
-            return self.project_home(window, cx);
+            return self.project_home(cx);
         };
         // Copied out rather than borrowed, so recording the connect and drawing
         // the header below are not held up by a borrow of the conversation.
@@ -286,7 +325,7 @@ impl ChatPane {
             .active_chat(cx)
             .map(|chat| (chat.link, chat.activity_status()))
         else {
-            return self.project_home(window, cx);
+            return self.project_home(cx);
         };
         // Set the first time an adapter is actually up and never unset: it is
         // what tells a first connect from a reconnect.
@@ -324,7 +363,7 @@ impl ChatPane {
                 .into_any_element();
         }
         let Some(chat) = self.active_chat(cx) else {
-            return self.project_home(window, cx);
+            return self.project_home(cx);
         };
 
         // Asked of the conversation, on the composer's current contents, so
@@ -360,7 +399,7 @@ impl ChatPane {
         // permission answer has to reach the right one -- hence the typed id
         // rather than a render position.
         let Some(list_state) = self.reproject(room, cx) else {
-            return self.project_home(window, cx);
+            return self.project_home(cx);
         };
         // Asked after the layout, because holding a question at the top is what
         // decides both: the room under the last run, and whether being parked

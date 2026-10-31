@@ -32,20 +32,20 @@ impl Shell {
         }
     }
 
-    /// Tell the conversation header whether a shell of the active root is
-    /// running a command.
+    /// Note whether a shell of the active root is running a command.
     ///
-    /// One fact and one reader: the terminal button's dot, which is the only
-    /// thing on screen that can say a command is still going behind a closed
-    /// dock. Runs whenever the terminal panel notifies: on its own changes
-    /// (tabs, project, zoom) and when its watch sees a command start or end,
-    /// since a grid's output reaches the grid and not the panel. The push is
-    /// guarded on the pane's side, because most of those notifies change
-    /// nothing here.
+    /// One fact and one reader: the status bar's terminal dot, which is the
+    /// only thing on screen that can say a command is still going behind a
+    /// closed dock. Runs whenever the terminal panel notifies: on its own
+    /// changes (tabs, project, zoom) and when its watch sees a command start or
+    /// end, since a grid's output reaches the grid and not the panel. Guarded,
+    /// because most of those notifies change nothing here.
     pub(super) fn sync_terminal_live(&mut self, cx: &mut Context<Self>) {
         let live = self.terminal.read(cx).running();
-        self.chat
-            .update(cx, |pane, cx| pane.set_terminal_live(live, cx));
+        if self.terminal_live != live {
+            self.terminal_live = live;
+            cx.notify();
+        }
     }
 
     /// Tell the conversation header which docks are open, so their buttons can

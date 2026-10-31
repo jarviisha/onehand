@@ -242,7 +242,7 @@ pub(super) fn task_detail(
             .gap_1()
             .child(
                 div()
-                    .text_xl()
+                    .text_lg()
                     .font_semibold()
                     .line_height(gpui::relative(LEADING_TIGHT))
                     .child(row.title.clone()),
@@ -330,8 +330,18 @@ fn trail(
     held: bool,
     cx: &mut Context<TasksPage>,
 ) -> gpui::Div {
-    let back = onehand_ui::back_link("task-back", "Tasks", cx)
-        .on_click(cx.listener(|page: &mut TasksPage, _, _, cx| page.open_task(None, cx)));
+    let project = row
+        .project
+        .file_name()
+        .map(|name| SharedString::from(name.to_string_lossy().into_owned()));
+    let back = onehand_ui::crumbs(
+        onehand_ui::crumb_link("task-back", "Tasks", cx)
+            .on_click(cx.listener(|page: &mut TasksPage, _, _, cx| page.open_task(None, cx))),
+        project
+            .into_iter()
+            .chain([SharedString::from(row.name.clone())]),
+        cx,
+    );
     let acts = task_acts(row, true);
     let mut acts = acts.into_iter();
     let primary = acts.next().map(|act| {
@@ -537,37 +547,51 @@ fn review_card(
             .child(button)
             .child(div().text_xs().text_color(muted).child(said))
     };
-    page_card("Awaiting approval", None, open, cx)
-        .children(said)
-        .children(cut)
-        .child(
-            div().h_flex().child(
-                crate::controls::action("task-review-read")
-                    .quiet(cx)
-                    .short()
-                    .label("Review…")
-                    .on_click(move |_, window, cx| {
-                        open_review(&on_read, read.clone(), false, window, cx)
-                    }),
-            ),
-        )
-        .child(answer_row(
-            crate::controls::action("task-review-revise")
+    // Waits on the person: the box a page's others are, the warning ink on
+    // its mark and title alone, as a waiting card in a conversation carries it.
+    let warning = crate::theme::status_ink(cx).warning;
+    page_card(
+        div()
+            .h_flex()
+            .items_center()
+            .gap_2()
+            .text_color(warning)
+            .child(Icon::new(IconName::TriangleAlert).small())
+            .child("Awaiting approval"),
+        None,
+        open,
+        cx,
+    )
+    .children(said)
+    .children(cut)
+    .child(
+        div().h_flex().child(
+            crate::controls::action("task-review-read")
                 .quiet(cx)
                 .short()
-                .label("Revise…")
-                .on_click(move |_, window, cx| open_revise(revised.clone(), window, cx)),
-            review.revise_said(),
-        ))
-        .child(answer_row(
-            crate::controls::action("task-review-continue")
-                .primary()
-                .short()
-                .label("Continue")
-                .on_click(move |_, window, cx| press_continue(&pressed, window, cx)),
-            review.continue_said(),
-        ))
-        .into_any_element()
+                .label("Review…")
+                .on_click(move |_, window, cx| {
+                    open_review(&on_read, read.clone(), false, window, cx)
+                }),
+        ),
+    )
+    .child(answer_row(
+        crate::controls::action("task-review-revise")
+            .quiet(cx)
+            .short()
+            .label("Revise…")
+            .on_click(move |_, window, cx| open_revise(revised.clone(), window, cx)),
+        review.revise_said(),
+    ))
+    .child(answer_row(
+        crate::controls::action("task-review-continue")
+            .primary()
+            .short()
+            .label("Continue")
+            .on_click(move |_, window, cx| press_continue(&pressed, window, cx)),
+        review.continue_said(),
+    ))
+    .into_any_element()
 }
 
 /// `text`'s last lines in a mono well, saying how many were left out.

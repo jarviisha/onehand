@@ -7,6 +7,28 @@ these screens are drawn with; `docs/ui-patterns.md` the patterns they repeat; an
 document (`docs/tasks.md`, `docs/workflows.md`, `docs/unattended.md`) its screens' detail. Code
 never cites this file.
 
+## Title bar
+
+The library's `TitleBar`, its whole width a handle to move the window. At its start, the app's
+menus, *File*, *View*, *Go* and *Session*, each item a command the keymap holds, under the name
+the menu gives it and with the key the keymap binds: *File* holds *New session*, *Run a workflow on
+this project…*, *Save the open file* and *Open Settings*; *View* the rail's, the Workbench's and
+the terminal's toggles, *Open Editor*, *Open Markdown*, *Open Neovim*, maximizing the focused panel
+and its zoom; *Go* the rail's search, the composer, Tasks, Schedules and stepping through sessions;
+*Session* *Show the workers*, *Restart the agent* and *Close the session*. A menu offers nothing no
+key reaches. At its end, the window's minimize, maximize and close, drawn by the library where the
+app decorates the window; its close asks first what the compositor's close asks (a workflow
+being written). Nothing else.
+
+## Status bar
+
+The library's `StatusBar` along the window's foot. At its start the rail's toggle and the branch of
+the project on screen; at its end the terminal's and the Workbench's toggles, each an icon alone,
+marked while what it shows is open (a closed one's glyph in the muted ink), and dispatching the
+command its key does. The terminal's carries an `info` dot while its dock is closed over a shell
+running a command. Nothing else: a
+transient state is a toast.
+
 ## Rail
 
 App chrome outside the dock, so a layout restore cannot lose it, a hairline down its edge. Top to bottom: the workspace bar
@@ -17,9 +39,12 @@ project, else the one on screen, its caret picking *Start in* or *With agent*; *
 each filled while its page shows; *Sessions* with a warning-ink *N need attention* chip (shown above zero or
 while on, toggling that filter and back) and the filter menu (*By project*, *All sessions*, *Needs
 attention*, *Recent activity*) over a hairline; the scrolling list, ending on *Add project…*; a foot
-with *Settings*, a page row like the five above, filled while it shows. Every row at rest is in the
-muted ink; the one where the person is takes its fill and the ink paired with it. A neutral badge
-sinks a step into the surface it sits on, here the inset step.
+with *Settings*, a page row like the five above, filled while it shows. The rail is drawn as the
+library's sidebar draws its items: a row's name in the sidebar's ink and its second line muted, the
+row under the pointer on the sidebar's accent fill, and the one where the person is on that fill
+too, in the ink paired with it and at medium weight. The *Sessions* label is the small muted
+heading the library gives a group. The search is the library's edged field. A neutral badge
+stands on the page's fill.
 
 *By project* lists pinned projects first, a gap between projects. A project row: the fold chevron,
 folder and name, its git line (branch, uncommitted changes, commits ahead and behind, each only
@@ -43,7 +68,7 @@ are flat, the project in place of the agent. A group lists six sessions, then *N
 project with none says *No open sessions*, a search or filter with none *No sessions match*. Each
 state has its own ink, and a mark per thing the person can do, none animated (running is a filled
 dot): failed and disconnected share one, both answered by trying again, their words telling them
-apart. The inks: failed or disconnected danger, needs input warning, running the accent, done unread
+apart. The inks: failed or disconnected danger, needs input warning, running `info`, done unread
 success, idle muted. `↑`/`↓` move the list's row, ringed while the keys move it, `Enter` and `←`/`→`
 act on it, `Alt+↑`/`↓` step through sessions in its order. The tree's order is the user's, set by
 dragging; pinned projects stay on top and sessions never leave their project. `Ctrl+Shift+B` hides
@@ -69,11 +94,10 @@ background: a menu of each item's name, its kind and how long it has run, each r
 one item and never the turn, 12 listed and then *N more*; when an item ends, the transcript keeps a
 notice of how and after how long: *Background work finished after 2m 14s: npm test*, an error when it
 failed, *interrupted* when the agent went away first); past conversations and *Close session*
-(only while a session shows); the terminal, an accent dot on it while its dock is closed over a
-shell running a command; while the session on screen leads workers, its workers, a warning dot on
-it while one waits on the person and the region is closed; last, the Workbench.
-The two dock buttons are filled while their dock is open. On the overview, Tasks, Issues,
-Workflows, Schedules and Settings, which name themselves in their head, it carries no name; none of these has a dots menu or dock buttons. As the pane narrows, the name gives way
+(only while a session shows); last, while the session on screen leads workers, its workers, a
+warning dot on it while one waits on the person and the region is closed. The docks' toggles are
+the status bar's. On the overview, Tasks, Issues,
+Workflows, Schedules and Settings, which name themselves in their head, it carries no name; none of these has a dots menu. As the pane narrows, the name gives way
 first, down to a minimum. Without a session it carries no name, the page naming the project, but
 keeps the project's dots menu, holding the project's actions but *New session* and *Open
 terminal*, which the page and the header already offer.
@@ -91,7 +115,8 @@ are not rolled back. A fork that cannot open is a toast saying why, and its sess
 
 ## Subagent card
 
-Where the agent hands work to a subagent, the transcript draws a bare fold block: no edge, no box.
+Where the agent hands work to a subagent, the transcript draws a fold block, boxed as every
+folding block is.
 Its head is a fold line with a state mark, the subagent's name and its state word (*done*,
 *failed*, *cancelled*, *interrupted*; a spinner while it works), and under it the first line of its
 task in the meta ink, the body inset. While it works the card shows its latest 3 steps behind
@@ -113,8 +138,8 @@ unread.
 
 ## Composer
 
-A card with no edge, set off by its raised fill and lift; the caret alone shows focus, and no line
-is ever added to it (a refusal is Send's tooltip, a failure a toast). The field, then the `+` menu,
+A card edged in the field's edge, set off by its raised fill and lift; the caret alone shows
+focus, and no line is ever added to it (a refusal is Send's tooltip, a failure a toast). The field, then the `+` menu,
 *Fast* (its bolt alone, in the warning ink while fast: a toggle with no caret when its choices
 read as on and off; else a picker with a caret, the value in force on its tooltip), the model and
 effort chips, then *Send*, or *Stop* (solid danger,
@@ -128,14 +153,17 @@ session's agent may use onehand's tools, *Controls onehand* stands before the mo
 in the warning ink, and pressing it switches that off. The `+` menu ends on *Agent controls
 onehand* under a heading of its own, *This session*, checked while on, and not offered in an
 unattended run's session. Each chip's
-menu opens just above it, without its tooltip. Above the card: one pinned permission or question,
-the oldest (a subagent's is titled `<name> asks permission` or `<name> asks: <question>`), with
-how many more wait; a permission's command shows whole up to about ten lines, and past them
-ends on *Show all N lines*, which opens it in place; then one surface on the card's fill and lift holding a
-reconnect and the queue as lines, then the staged files as one row of plates (a picture's preview,
-pressed to open it whole in a dialog; a text file opening in the Workbench), faded where cut beside
+menu opens just above it, without its tooltip. Above the card, top down: one surface on the card's
+fill, edge and lift holding a reconnect and the queue as lines, then the staged files as one row
+of plates (below); then the slivers of the cards waiting behind, at most two; then one pinned
+permission or question, the oldest, as wide as the card and its foot tucked under it (a
+subagent's is titled `<name> asks permission` or `<name> asks: <question>`, its head ending on
+*1 of N waiting* when more wait); a permission's command shows whole up to about ten lines, and
+past them ends on *Show all N lines*, which opens it in place. The staged files' plates (a picture's preview,
+pressed to open it whole in a dialog; a text file opening in the Workbench) fade where cut beside
 *Show all N*. A picture attached to a sent prompt opens the same way. While the session on screen
-leads workers, the lead's strip stands on the card, narrower than it, one line above the card's: *N
+leads workers, the lead's strip stands on the card, narrower than it, one line above the card's
+(a waiting card's foot then runs under the strip rather than the card): *N
 workers*, a count per state that has any, most urgent first, in its mark and ink, and at the end,
 in the warning ink, *<name> needs you* for the most urgent worker waiting on the person, when one
 does. It stays while the workers' region shows. Pressed, the region shows with the most urgent
@@ -147,14 +175,18 @@ form; both are drawn as `docs/workflows.md` describes.
 
 ## Docks
 
-Bare panels on the dock surface with strips of their own, no library tab bars; a hairline runs
-down the Workbench's edge beside the conversation. The terminal is a block edged in a hairline,
-held off its neighbours by a gap, drawn no taller than leaves the conversation a readable
-height (its dragged height kept).
+Bare panels on the dock surface, flush with their docks, each opening on its own tab bar; a
+hairline runs down the Workbench's edge beside the conversation and along the terminal's top
+under it. The terminal is drawn no taller than leaves the conversation a readable height (its
+dragged height kept).
 
-- Strips as tall as the header, a mode's own bar under the Workbench's a step lower. The Workbench's: *← Conversation* while it has the area, the modes
+- Strips as tall as the header, a mode's own bar under the Workbench's a step lower. The
+  Workbench's, the terminal's and the Editor's files are the library's tab panel bars (`tab_bar`):
+  on the tab bar's fill with a line under, the tabs flush and parted by lines, the open one on the
+  tab's fill under a stroke of the primary along its top, the controls at the end. The
+  Workbench's: *← Conversation* while it has the area, the modes as tabs
   (Editor, Markdown, Issues, Plugins only where a Claude Code agent is set up when the window
-  opens, Neovim; a select when narrow), maximize, hide. The terminal's:
+  opens, Neovim; a select under 26rem), maximize, hide. The terminal's:
   shell tabs (each capped in width, scrolling, so none is left out), `+`, maximize, hide. File
   tabs never shrink: the newest that fit stay, the current one among them, and the older ones
   go into an *N more* menu after them.
@@ -165,7 +197,7 @@ height (its dragged height kept).
 - A failed open or save in the Editor or Markdown is a toast; a file changed on disk, a Neovim that
   would not start and a listing that failed stand as a status line under the mode.
 - Plugins: the search and filters a filter bar; a row's actions on hover and on keyboard focus, its
-  switch always; what runs and what waits on a restart under the list, so neither moves it.
+  ⋯ menu also on a right-click (refused while another change runs), its switch always; what runs and what waits on a restart under the list, so neither moves it.
 - The Issues tab: one filter bar over the list and the issue both, a faint line under it: the
   search, the label picker, while the search or a label narrows the list *Clear filters*, and `+`
   (*New issue*, primary, secondary while the form holds that) at the end, the filters wrapping
@@ -202,7 +234,8 @@ height (its dragged height kept).
     state's word in its ink, its folder's last component (the whole path on hover), *held by you*
     while the person holds it, *Write to <name>…* (the name up to its first ` · `), *Stop* while
     a turn runs, and `⋯` (*Give back to the lead* while offered, *Send the last prompt again* after
-    a failure, *Close*). Under it the oldest card it waits on, with how many more wait, bounded by
+    a failure, *Close*). Under it the oldest card it waits on, the ones behind peeking over it and its head saying how
+    many wait, bounded by
     the detail's own height, then its whole transcript,
     scrolling, following the newest output. No composer until *Write to …*: then one at the foot,
     with *Send*, *Stop* and *Queue* and nothing else; sending or `Esc` closes it, the draft kept.
@@ -226,7 +259,7 @@ height (its dragged height kept).
   under it, *Run check* (spinning while a check runs) and *New session* (primary, with a caret
   picking another agent while more than one is configured) at the end); then, in one column at every width, the box *Past
   conversations* with its count, its rows the overview's (age, title, then items and agent at the
-  edge, *Delete…* laid over them on hover), capped, its wait and empty lines inside it; under
+  edge, then a `⋯` on hover holding *Resume* and *Delete…*, the same on a right-click), capped, its wait and empty lines inside it; under
   it the box *Tasks* (how many need attention, run or wait, each opening the Tasks page
   narrowed to the project; *Nothing running here* at zero); then the box *Schedules* (the
   project's schedules by name with when each runs next, or *off*, each opening the Schedules page
@@ -248,8 +281,8 @@ height (its dragged height kept).
   in* the path in the code face, or *No schedules match* while a project is picked. Read again
   every minute, its next times with it. The page takes the keys while it shows. *New schedule* is
   its primary (refusing with no project). A row's text opens the schedule in the form.
-- *A schedule's form*, in place of the list, under *Schedules* to go back (Esc too, asking first
-  while it holds changes): a head (the name, *New schedule* until named; when it runs and its
+- *A schedule's form*, in place of the list, under a trail (*Schedules* to go back, Esc too, asking first
+  while it holds changes, › the schedule's name): a head (the name, *New schedule* until named; when it runs and its
   project; ⋯ with *Delete…* for one saved, *Cancel*, *Save* the primary, refusing with the first
   problem); then *Name*, *Project* (a picker) and *On*; *What it starts* (a switch: *A session with
   a prompt*, its *Prompt*, or *A workflow on a brief*, its *Workflow* picker, *Title* and *Brief*,
@@ -264,14 +297,17 @@ height (its dragged height kept).
   place; then four boxes two by two,
   *Needs attention*, *Running*, *Queued*, *Finished*, each with a count, an empty line and a cap,
   its rows parted by hairlines. A row is the title
-  over workflow, step or outcome and project, with ghost actions by state (*Open session*, *Stop*,
-  *Resume*, *Retry…*, *Dismiss*) shown on hover, kept under *Needs attention*; its text opens the
-  task's detail, a page of its own at the prose width: a trail, the title, then *Awaiting approval*,
-  *Way out* and the runs as plain sections.
+  over workflow, step or outcome and project, its actions by state (*Open session*, *Stop*,
+  *Resume*, *Retry…*, *Dismiss*) in a `⋯` on hover and on a right-click, under *Needs attention*
+  also drawn as buttons beside it; its text opens the task's detail, a page of its own at the
+  prose width: a trail, the title, then *Awaiting approval* in a page's box, its mark and title in the warning ink,
+  *Way out*, and the runs on a vertical stepper.
 - *Issues*, a list page (`docs/ui-patterns.md`, *List pages*): a head (*Issues*, then *Refresh*
   and *New issue*, its primary, at the end); the row under it (the search, then *Open* and
-  *Closed* as choices, each its count in a badge on its corner, then pickers for progress, project
+  *Closed* as choices, each its count in a badge after its word, then pickers for progress, project
   and label and *Clear filters* at the row's end), the two kept in place;
+  the rows a table under a head naming each column (*Issue*, *Title*, *Labels*, *Project*,
+  *Updated*) in the meta ink, drawn only while there are rows;
   a row is its state mark (open in the success ink, closed in the closed ink), reference, title,
   priority and note, then its labels, project and age in slots at the end, the labels and project
   dropped first; *Showing N of M open issues* at the foot. *Reading the issues…* until the first
@@ -285,7 +321,7 @@ height (its dragged height kept).
   The cards stand under *Yours* (the person's own) and *Built in* (the shipped), four to a row
   while the page holds them and fewer as it narrows, down to one. A card is a box: the
   workflow's name, its description cut at two lines, a short mark per step in its kind's ink (an
-  agent's turn the accent, a command muted, an approval warning, what goes to the forge success),
+  agent's turn the primary ink, a command muted, an approval warning, what goes to the forge success),
   and a foot with where it works and how many steps, *Run…* and a ⋯ (*Duplicate* and *Export…*
   on any that reads, *Delete…* on the person's own). An unreadable one names its file and says
   *Cannot be read: …* in the warning ink, its ⋯ holding *Delete…* alone. Hover raises a card's
@@ -294,7 +330,7 @@ height (its dragged height kept).
   capped and says so; while the search narrows it, *Showing N of M workflows*, or *No workflows
   match*.
 
-  A card opens its workflow on a page of its own: *Workflows* (back) over its head (its name, how
+  A card opens its workflow on a page of its own: a trail (*Workflows*, back, › its name) over its head (its name, how
   many steps and where it works under it, *Run…*, which refuses until it is saved, a ⋯ with
   *Duplicate*, *Export…* and *Delete…*, then *Cancel* and *Save*, the head's primary, which
   refuses with the first problem and spins while it writes), then three columns parted by hairlines, each scrolling
@@ -315,16 +351,18 @@ height (its dragged height kept).
   back to the cards over unsaved changes asks first. Along the page's foot, the whole width,
   stands what the editor has to tell: the problems (a name clash among them), each a line, on the
   danger tint led by the warning mark, from the first change on; or, on a shipped workflow, *Built
-  in, read-only: duplicate it to change it* on the accent's tint led by the info mark. A shipped
+  in, read-only: duplicate it to change it* on the primary's tint led by the info mark. A shipped
   workflow opens read-only, *Duplicate to edit* its primary, with no *Save* or *Cancel*; an unreadable file of the person's own opens
   why, with *Delete…*.
 
 ## Settings
 
 Settings is a page named in its own head, as the workspace pages are, over a nav column with
-Appearance, Workspace, Agents, Connections and Shortcuts (rows as the rail's page rows), and beside
+Appearance, Workspace, Agents, Connections and Shortcuts (rows as the rail's page rows, at 22px, a
+step under a list row), and beside
 it the sub-page, untitled (its nav row names it), opening on its scope as a badge and a hint, its
-groups split by hairlines with semibold headings, not boxes. Every button there is secondary:
+groups in the library's setting-page shape: each a box with an edge, its semibold heading and the
+line about it at the top inside. Every button there is secondary:
 Settings holds no primary. Under the Agents page's rows, each built-in agent installed on the
 machine with no entry of its own gets a line, *<agent> is on this machine*, with *Add* at its end,
 then *Add agent…*; the first row carries the *Default* badge. *Add agent…* and a row's edit mark

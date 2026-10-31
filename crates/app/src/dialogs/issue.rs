@@ -443,10 +443,6 @@ pub(crate) fn page_row(
     )
 }
 
-/// The slot a row's head stands in — a five-digit reference, *Draft*, an
-/// age, a mark — so every title starts on one edge.
-const LEAD_W: gpui::Rems = gpui::rems(3.);
-
 /// What both row shapes share: a list row's surface, its head in a slot of
 /// its own in the middle ink, and its truncated title.
 fn row_shell(
@@ -464,7 +460,8 @@ fn row_shell(
         .child(
             div()
                 .flex_none()
-                .w(LEAD_W)
+                .w(crate::page_parts::ROW_LEAD_W)
+                .whitespace_nowrap()
                 .text_xs()
                 .text_color(crate::theme::meta_ink(cx))
                 .child(lead),

@@ -9,7 +9,7 @@
 //! subagent's words its prose, parsed by the same cache as the agent's.
 
 use super::metrics::{FOLD_INDENT, TEXT_SM};
-use super::parts::{ActivityRow, Object, RowMark, activity_row, fold_line, show_more};
+use super::parts::{ActivityRow, Object, RowMark, activity_row, fold_box, fold_line, show_more};
 use super::prose::md_view;
 use super::tool::step_row;
 use crate::chat::session::ChatSession;
@@ -80,13 +80,9 @@ pub(super) fn subagent(
             .child(format!("{n} more"))
     };
 
-    // A fold block like the transcript's others, bare: the line, then what
-    // it holds inset under it.
-    div()
-        .v_flex()
-        .w_full()
-        .min_w_0()
-        .gap_2()
+    // A fold block like the transcript's others: the line, then what it
+    // holds inset under it.
+    fold_box()
         .child(head(card, open, steps, toggle.clone(), cx))
         // The task says what the name cannot; a folded card that has ended is
         // the one line its head is.

@@ -106,13 +106,9 @@ impl ChatPane {
         });
         let inset = |el: gpui::Div| el.px_3().pb_2();
         detail
-            // The oldest card it waits on first, where the eye lands, and how
-            // many more wait after it.
-            .children(
-                cards
-                    .into_iter()
-                    .map(|card| inset(div().pt_2()).child(card)),
-            )
+            // The oldest card it waits on first, where the eye lands, under
+            // the slivers of the ones waiting behind it.
+            .children(cards.map(|cards| inset(div().pt_2()).child(cards)))
             .child(
                 // The scrollbar lies over the transcript alone.
                 div()

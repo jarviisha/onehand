@@ -209,7 +209,6 @@ impl Render for WorkflowsPage {
                 .child(crate::page_parts::page_top(
                     Some(crate::tokens::PAGE_WIDE),
                     grid::head(&handle, &query, cx),
-                    cx,
                 ))
                 .child(
                     div()

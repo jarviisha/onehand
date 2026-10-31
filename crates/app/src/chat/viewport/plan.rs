@@ -170,6 +170,31 @@ pub fn is_pinned(item: &ChatItem) -> bool {
     }
 }
 
+/// Whether a run is the one-line record an answered permission or question
+/// leaves, which the transcript gathers with its neighbours into one box.
+pub fn is_record(chat: &Chat, run: &RunPlan) -> bool {
+    run.strip.is_none()
+        && run.changes.is_none()
+        && matches!(run.members.as_slice(), [target] if matches!(
+            item(chat, *target),
+            Some(ChatItem::Permission(p)) if p.resolved.is_some()
+        ) || matches!(
+            item(chat, *target),
+            Some(ChatItem::Ask(a)) if a.resolved.is_some()
+        ))
+}
+
+/// Where the list must redraw from, given the first run that changed: a
+/// record draws its share of a box its neighbours decide the ends of, so the
+/// record just above a divergence changes too, a record arriving under it
+/// moving that box's foot.
+pub(super) fn with_record_above(chat: &Chat, plan: &[RunPlan], diverged: usize) -> usize {
+    match diverged.checked_sub(1) {
+        Some(above) if plan.get(above).is_some_and(|run| is_record(chat, run)) => above,
+        _ => diverged,
+    }
+}
+
 /// The cadence one un-folded item asks for.
 ///
 /// A settled step nobody has opened is the same index entry a folded strip is —

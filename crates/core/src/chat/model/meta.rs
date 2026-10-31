@@ -29,6 +29,23 @@ const TITLE_MAX_WORDS: usize = 16;
 /// is removed in the two languages commonly used in the app, then the label is
 /// clipped at a word boundary. `None` is reserved for attachment-only turns so
 /// callers can keep the agent-name fallback.
+/// The title without the quote marks at its ends that close nothing: a pair
+/// wrapping the whole of it, or a mark left over from a pair the sentence cut
+/// in half. A pair that closes inside the title (``fix `foo` now``, cut
+/// before *now*) keeps both its marks.
+fn trim_quotes(mut title: &str) -> &str {
+    for mark in ['`', '\'', '"'] {
+        let wrapped = title.len() > 1
+            && title.starts_with(mark)
+            && title.ends_with(mark)
+            && !title[1..title.len() - 1].contains(mark);
+        if wrapped || title.matches(mark).count() % 2 == 1 {
+            title = title.trim_matches(mark).trim();
+        }
+    }
+    title
+}
+
 pub(crate) fn summarize_title(text: &str) -> Option<String> {
     let line = text.lines().map(str::trim).find(|l| !l.is_empty())?;
     let mut title = line
@@ -128,9 +145,9 @@ pub(crate) fn summarize_title(text: &str) -> Option<String> {
         }
     }
 
-    let title = title.trim_matches(|c: char| {
-        c.is_whitespace() || matches!(c, '`' | '\'' | '"' | '.' | '?' | '!' | ';' | ':')
-    });
+    let title = trim_quotes(
+        title.trim_matches(|c: char| c.is_whitespace() || matches!(c, '.' | '?' | '!' | ';' | ':')),
+    );
     if title.is_empty() {
         return None;
     }

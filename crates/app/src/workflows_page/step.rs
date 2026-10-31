@@ -18,20 +18,6 @@ use onehand_core::workflow::{GateKind, Place};
 
 mod settings;
 
-/// How tall a step's line stands, its dot centred on it: the line the rail
-/// runs through from one step to the next.
-const STEP_LINE_H: gpui::Rems = gpui::rems(2.25);
-
-/// A step's dot, its number inside it.
-const DOT: gpui::Rems = gpui::rems(1.375);
-
-/// Where the rail runs: through the dots' centres.
-const RAIL_X: gpui::Rems = gpui::rems(0.6875);
-
-/// Where the rail meets a dot's centre: the line's gutter above it, then
-/// half the line.
-const RAIL_JOIN: gpui::Rems = gpui::rems(1.25);
-
 /// The least a step's id or label takes before the line wraps under the kind.
 const NAME_MIN: gpui::Rems = gpui::rems(10.);
 
@@ -145,7 +131,7 @@ fn step_row(
         .h_flex()
         .items_center()
         .gap_3()
-        .min_h(STEP_LINE_H)
+        .min_h(onehand_ui::STEP_LINE_H)
         .px_2()
         .rounded(cx.theme().radius)
         .cursor_pointer()
@@ -201,64 +187,17 @@ fn step_row(
                     .child(more),
             )
         });
-    // In the ink of the box's own edge: a line to be followed from dot to
-    // dot, which the hairline ink left all but lost on the page.
-    let rail = cx.theme().input;
-    let dot = {
-        let (fill, edge, ink) = match row.open {
-            true => (
-                cx.theme().accent,
-                cx.theme().accent,
-                cx.theme().accent_foreground,
-            ),
-            false => (cx.theme().background, rail, muted),
-        };
-        div()
-            .flex_none()
-            .h(STEP_LINE_H)
-            .h_flex()
-            .items_center()
-            .child(
-                div()
-                    .size(DOT)
-                    .rounded_full()
-                    .border_1()
-                    .border_color(edge)
-                    .bg(fill)
-                    .h_flex()
-                    .justify_center()
-                    .text_xs()
-                    .text_color(ink)
-                    .child(format!("{}", i + 1)),
-            )
+    let mark = match open {
+        true => onehand_ui::StepMark::Picked(i + 1),
+        false => onehand_ui::StepMark::Waiting(i + 1),
     };
-    // The rail in two halves a step draws for itself, into its dot from the
-    // step before and out of it to the next, so it starts and ends on a dot
-    // however tall an open step stands.
-    let half = || {
-        div()
-            .absolute()
-            .left(RAIL_X)
-            .w_0()
-            .border_l_1()
-            .border_color(rail)
-    };
-    let step_line = |content: AnyElement| {
-        div()
-            .relative()
-            .h_flex()
-            .items_start()
-            .gap_2()
-            .when(i > 0, |line| line.child(half().top_0().h(RAIL_JOIN)))
-            .when(!last, |line| line.child(half().top(RAIL_JOIN).bottom_0()))
-            // A gutter above and below each line, inside the step's own
-            // height so the rail runs on through it: the open step's fill and
-            // a hovered neighbour's never touch.
-            .child(div().flex_none().py_0p5().child(dot))
-            .child(div().flex_1().min_w_0().py_0p5().v_flex().child(content))
-            .into_any_element()
-    };
-    step_line(head.into_any_element())
+    onehand_ui::step_line(
+        i == 0,
+        last,
+        onehand_ui::step_dot(mark, cx),
+        head.into_any_element(),
+        cx,
+    )
 }
 
 /// The column the open step's fields stand in, beside the steps: its head

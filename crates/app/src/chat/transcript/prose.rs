@@ -3,7 +3,7 @@ use super::metrics::{
     CODE_BLOCK_PAD, FOLD_INDENT, HEADING_1, HEADING_2, MAX_CODE_BLOCK_H, PARAGRAPH_GAP, TEXT,
     TEXT_SM, TIGHT_GAP,
 };
-use super::parts::{accent, copy_button, copy_turn_button, fold_line, show_more};
+use super::parts::{accent, copy_button, copy_turn_button, fold_box, fold_line, show_more};
 use crate::chat::session::ChatSession;
 use crate::tokens::LEADING;
 use gpui::prelude::FluentBuilder as _;
@@ -219,23 +219,17 @@ pub(super) fn thought(
         (false, None) => line.child("Thought"),
     };
 
-    div()
-        .v_flex()
-        .gap_2()
-        .w_full()
-        .min_w_0()
-        .child(line)
-        .when(open, |block| {
-            block.child(
-                div()
-                    .w_full()
-                    .min_w_0()
-                    .pl(FOLD_INDENT)
-                    .text_size(TEXT_SM)
-                    // What the agent did, a step under what it said: the
-                    // middle ink, readable at length.
-                    .text_color(crate::theme::meta_ink(cx))
-                    .child(md_view(session, &th.md, window, cx)),
-            )
-        })
+    fold_box().child(line).when(open, |block| {
+        block.child(
+            div()
+                .w_full()
+                .min_w_0()
+                .pl(FOLD_INDENT)
+                .text_size(TEXT_SM)
+                // What the agent did, a step under what it said: the
+                // middle ink, readable at length.
+                .text_color(crate::theme::meta_ink(cx))
+                .child(md_view(session, &th.md, window, cx)),
+        )
+    })
 }

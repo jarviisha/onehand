@@ -48,6 +48,24 @@ minor bump may break any of them.
 
 ### The window
 
+- The whole interface is redrawn after gpui-kit's components: its own Default Light and Default
+  Dark palette with a blue primary (the terminal keeps its own sixteen ANSI colours), its corners,
+  its edged buttons and fields, and its tags for states and labels, at an editor's density: 13px
+  text (12px for code and the transcript's record), 26 and 22px controls, 24px rows, 35px bars.
+- The window draws its own frame: a title bar holding File, View, Go and Session menus, each item
+  a command the keymap already binds and showing its key, and a status bar with the rail's
+  toggle, the branch, and the terminal's and the Workbench's toggles (a dot on the terminal's while
+  a command runs behind its closed dock). The conversation's header no longer carries the dock
+  buttons.
+- The rail takes the library's sidebar look. The transcript is flat: the prompt in a grey bubble,
+  folding blocks bare with no box or rule, a run of answered cards under one hairline, a remark
+  or an error as a divider across the column. A waiting permission or question is a neutral
+  card, its tone in its mark and title, as wide as the composer and tucked under it, the ones
+  behind peeking over it; a failed turn and a task's approval take the same neutral shape.
+- Pages open under breadcrumbs, a row's actions sit behind a `⋯` that a right-click opens too,
+  Settings groups stand in boxes, the Issues list has a table head, and a task's runs and a
+  workflow's steps are steppers. The Workbench's modes, the terminal's shells and the editor's
+  files sit on tab bars, the terminal flush with its dock as the Workbench is.
 - Schedules start work by the clock while onehand is open: a session with a prompt, or a workflow
   on a brief, on a project, with its own agent, mode, model, tools and issue labels, at the times a
   cron expression names. A time missed while onehand was closed runs once when it opens, or is
@@ -77,7 +95,6 @@ minor bump may break any of them.
   `Shift+Tab` in the composer steps through the session's modes.
 - Terminal tabs size to their names and scroll; the terminal caches rows and coalesces redraws.
 - The interface font is Be Vietnam Pro, shipped inside the binary in place of Inter.
-- The palette is VS Code's Dark Modern and Light Modern, the rail on its side bar's grey.
 - Copilot is a built-in agent: `copilot --acp`, found on first launch and offered in Settings. Its
   unattended runs ask before each step unless `unattended.mode` names *Autopilot*.
 - The UI library moved to gpui-component 0.8. Code is highlighted in its new dark colours, and
@@ -139,6 +156,8 @@ minor bump may break any of them.
 
 ### Fixed
 
+- A conversation's title taken from its first prompt no longer ends on half of a backtick pair.
+- The rail between a workflow's step dots draws again.
 - A session shown for the first time takes the keyboard in its composer once it connects,
   instead of leaving typing to go nowhere until the composer is clicked.
 - A draft put back in the composer, on switching back to a session or in a fork, keeps the caret

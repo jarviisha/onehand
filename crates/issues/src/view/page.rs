@@ -34,7 +34,7 @@ mod panel;
 mod prs;
 mod row;
 
-use row::issue_row;
+use row::{head_row, issue_row};
 
 /// What the page holds beside what every Issues view does.
 #[derive(Default)]
@@ -516,7 +516,7 @@ impl IssuesView {
             .child(filter_row)
             .children(notices)
             .into_any_element();
-        let top = onehand_ui::page_top(None, [head, filters_and_notices], cx).into_any_element();
+        let top = onehand_ui::page_top(None, [head, filters_and_notices]).into_any_element();
         let rows = div()
             .id("issues-page-list")
             .size_full()
@@ -525,6 +525,9 @@ impl IssuesView {
             .track_scroll(&scroll)
             .px_6()
             .py_2()
+            // The table's head over its rows, only while there are rows to
+            // name the columns of.
+            .children((!rows.is_empty()).then(|| head_row(columns, cx)))
             .children(rows)
             .children(empty.map(|empty| line(empty.to_string())))
             .into_any_element();

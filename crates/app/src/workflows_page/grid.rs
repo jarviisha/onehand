@@ -22,9 +22,10 @@ use onehand_ui::Tall as _;
 use onehand_ui::TallIcon as _;
 use std::path::PathBuf;
 
-/// The least a card takes before the row holds one fewer: as wide as a
-/// project tile on the overview, room for a name and its two lines.
-const CARD_MIN: Rems = rems(14.);
+/// The least a card takes before the row holds one fewer: room for a name,
+/// its two lines, and a foot holding where it runs, its step count, *Run…*
+/// and its ⋯ without cutting any of them.
+const CARD_MIN: Rems = rems(18.);
 
 /// The most cards a row holds, however wide the page.
 const MAX_COLUMNS: usize = 4;
@@ -67,7 +68,7 @@ pub(super) fn tone(kind: &StepKind) -> Tone {
 /// The ink a mark of `tone` is drawn in.
 fn tone_ink(tone: Tone, cx: &App) -> gpui::Hsla {
     match tone {
-        Tone::Agent => cx.theme().primary,
+        Tone::Agent => cx.theme().foreground,
         Tone::Command => cx.theme().muted_foreground,
         Tone::Approval => crate::theme::status_ink(cx).warning,
         Tone::Forge => crate::theme::status_ink(cx).success,

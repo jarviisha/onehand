@@ -31,7 +31,7 @@ const LABELS_SHOWN: usize = 100;
 impl IssuesView {
     /// The page's head over the list, its name with *Refresh* and *New
     /// issue* at its end; and the row under it:
-    /// the search, open or closed, each with its count on its corner, and at
+    /// the search, open or closed, each with its count after its word, and at
     /// the row's end the progress, project and label filters, wrapping when
     /// narrow.
     pub(super) fn page_head(
@@ -179,13 +179,13 @@ impl IssuesView {
         // The page's one primary at rest; what floats over the list (an issue,
         // a form) holds it while it shows, and this steps down under it.
         let covered = self.page.as_ref().is_some_and(|page| page.open);
-        // Open or closed, a choice with its count pinned to its corner in a
-        // badge in the hue of that state, the one its rows' marks take: open
-        // green, closed magenta. The word reads alone; no count before the
-        // first read lands, which would say there are none.
+        // Open or closed, a choice with its count after its word, in a badge
+        // in the hue of that state, the one its rows' marks take: open green,
+        // closed magenta. The word reads alone; no count before the first read
+        // lands, which would say there are none.
         let (open_tint, closed_tint) = (tint(cx.theme().green, cx), tint(cx.theme().magenta, cx));
-        let choose = |pick: bool, name: &'static str, count: usize, cx: &mut Context<Self>| {
-            let button =
+        let choose =
+            |pick: bool, name: &'static str, count: usize, cx: &mut Context<Self>| {
                 choice(
                     ("issues-page-showing", usize::from(pick)),
                     name,
@@ -193,41 +193,22 @@ impl IssuesView {
                     ControlSize::Tall,
                     cx,
                 )
+                .when(!reading, |button| {
+                    // None at all takes no hue: a count of nothing has nothing to
+                    // draw the eye to.
+                    button.child(badge(
+                        count.to_string(),
+                        match (count, pick) {
+                            (0, _) => neutral_tint(cx),
+                            (_, true) => closed_tint,
+                            (_, false) => open_tint,
+                        },
+                    ))
+                })
                 .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
                     view.filter(|f| f.closed = pick, cx)
-                }));
-            div()
-                .relative()
-                .flex_none()
-                .child(button)
-                .when(!reading, |slot| {
-                    // Hung from a point on the button's top-right corner,
-                    // its lower-left corner `2` in from that point each way:
-                    // over the button's inset and above its words, never on
-                    // them. Insets from a point rather than margins, so where
-                    // it lands does not hang on how margins meet a box taken
-                    // out of the flow.
-                    slot.child(
-                        div().absolute().top_0().right_0().size_0().child(
-                            div().absolute().left_neg_2().bottom_neg_2().child(
-                                // A notch slimmer than a badge in a row, as a
-                                // count on a corner is.
-                                // None at all takes no hue: a count of
-                                // nothing has nothing to draw the eye to.
-                                badge(
-                                    count.to_string(),
-                                    match (count, pick) {
-                                        (0, _) => neutral_tint(cx),
-                                        (_, true) => closed_tint,
-                                        (_, false) => open_tint,
-                                    },
-                                )
-                                .py_0p5(),
-                            ),
-                        ),
-                    )
-                })
-        };
+                }))
+            };
         // The head names the page, its counts being on the open and closed
         // choices under it; the way to read again and *New issue* end it.
         let actions = div()
@@ -285,10 +266,8 @@ impl IssuesView {
                         view.clear_narrowing(window, cx)
                     }))
             });
-        // The search leads the row under the head, then open or closed, the
-        // choices `gap_6` apart so a count off one's corner keeps clear of the
-        // next; the filters keep to the row's end, and the row wraps when
-        // narrow.
+        // The search leads the row under the head, then open or closed; the
+        // filters keep to the row's end, and the row wraps when narrow.
         let filters = div()
             .h_flex()
             .flex_wrap()
@@ -300,8 +279,7 @@ impl IssuesView {
                 div()
                     .h_flex()
                     .items_center()
-                    .gap_6()
-                    .pr_4()
+                    .gap_1()
                     .child(choose(false, "Open", listed.open, cx))
                     .child(choose(true, "Closed", listed.closed, cx)),
             )

@@ -105,7 +105,9 @@ pub struct QuestionPick {
 }
 pub(in crate::chat) use image_view::open as show_image;
 use metrics::LINE_H;
-pub(in crate::chat) use metrics::{BLOCK_GAP, CONTENT_COLUMN, TEXT, TEXT_SM, TIGHT_GAP, TURN_GAP};
+pub(in crate::chat) use metrics::{
+    BLOCK_GAP, CONTENT_COLUMN, PART_GAP, TEXT, TEXT_SM, TIGHT_GAP, TUCK, TURN_GAP,
+};
 pub(in crate::chat) use parts::accent;
 pub(crate) use parts::line_counts;
 pub(in crate::chat) use permission::permission;
@@ -169,8 +171,10 @@ pub fn item(
         ChatItem::Thought(th) => thought(session, th, target, window, cx).into_any_element(),
         ChatItem::Tool(t) => tool(session, t, target, cx).into_any_element(),
         ChatItem::Plan(p) => plan(session, p, target, cx).into_any_element(),
-        ChatItem::Permission(p) => permission(session, p, target, room.well, cx).into_any_element(),
-        ChatItem::Ask(a) => ask(session, a, target, cx).into_any_element(),
+        ChatItem::Permission(p) => {
+            permission(session, p, target, room.well, 0, cx).into_any_element()
+        }
+        ChatItem::Ask(a) => ask(session, a, target, 0, cx).into_any_element(),
         ChatItem::Subagent(card) => subagent::subagent(session, card, window, cx),
         ChatItem::Notice {
             text,
@@ -212,18 +216,12 @@ pub fn item(
 
 /// A line the session says about itself.
 ///
-/// A remark stays a caption. A **failure does not**: the two loudest things
-/// this app can say — the turn errored, the agent is gone and here is the key
-/// that brings it back, the one the keymap binds — used to draw at the smallest size in the palest
-/// colour the theme has, quieter than the file path in the tool card above
-/// them. Something that ends the conversation cannot be whispered, so a
-/// failure takes the alert icon, the danger tint and the body size.
-///
-/// It is **not** one of the muted machine wells, and deliberately so: those say
-/// "a machine produced this", and the tint is what carries the meaning here. A
-/// failure sits on a wash of its own danger colour, in the body face, which is
-/// what stops it reading as one more line of the answer without claiming to be
-/// quoted output.
+/// A remark is a divider across the column (see [`notice_shape`]). An error
+/// is not a remark: it may run to a whole stack, and between two rules it read
+/// as one more caption. So an error and the failure a turn ended on are the
+/// waiting cards' neutral shell, flat as history is, the alert mark in the
+/// danger ink, the words in the body ink beside it, and the key that brings a
+/// lost agent back. The failure a turn ended on says so in a title.
 ///
 /// **Only while nothing has been asked since.** A failure a later prompt has
 /// moved past no longer needs the person: it keeps its mark and its words, in
@@ -241,77 +239,30 @@ fn notice(
     let detail = |ink| {
         detail.map(|(session, target, detail)| notice_detail(session, target, detail, ink, cx))
     };
-    if level.is_failure() && past {
-        return div()
-            .h_flex()
-            .items_start()
-            .gap_2()
-            .w_full()
-            .min_w_0()
-            .text_size(TEXT_SM)
-            .text_color(cx.theme().muted_foreground)
-            .child(
-                div()
-                    .h(metrics::LINE_SM)
-                    .flex_none()
-                    .h_flex()
-                    .items_center()
-                    .child(Icon::new(IconName::TriangleAlert).xsmall()),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .v_flex()
-                    .gap_1()
-                    .child(text.to_string())
-                    .children(detail(cx.theme().muted_foreground)),
-            )
-            .into_any_element();
-    }
-    if !level.is_failure() {
-        // **A line down the middle of the column, with nothing around it.** A
-        // remark is the transcript speaking about itself rather than either
-        // side speaking, and the centre is the one lane neither of them uses —
-        // so it needs no box, no rule and no mark to be told apart from the
-        // conversation running past it.
-        return div()
-            .h_flex()
-            .items_center()
-            .justify_center()
-            .w_full()
-            .h(LINE_H)
-            .text_xs()
-            .text_color(cx.theme().muted_foreground)
-            .child(div().min_w_0().truncate().child(text.to_string()))
-            .into_any_element();
-    }
-
-    // A failure is a banner: the full width of the column on the danger tint,
-    // a solid fill and no edge, and the mark anchored to the first line so a
-    // message that wraps to three lines does not carry the icon down the
-    // middle of itself.
-    let tint = onehand_ui::tint(cx.theme().red, cx);
-    div()
+    let (failed, past) = match notice_shape(level, past) {
+        NoticeShape::Divider => return notice_divider(text, restart, detail, cx),
+        NoticeShape::Card { failed, past } => (failed, past),
+    };
+    let (tone, words) = match past {
+        true => (cx.theme().muted_foreground, cx.theme().muted_foreground),
+        false => (crate::theme::status_ink(cx).danger, cx.theme().foreground),
+    };
+    parts::floating_card(false, cx)
         .h_flex()
         .items_start()
         .gap_2()
-        .w_full()
-        .min_w_0()
         .px_3()
         .py_2()
-        .rounded(cx.theme().radius)
-        .bg(tint.fill)
         .text_size(TEXT_SM)
-        .text_color(tint.ink)
         .child(
-            // The glyph is held to the first line's height, so a message that
-            // wraps keeps it beside its first words.
+            // Held to the first line's height, so words that wrap keep the
+            // mark beside their start.
             div()
                 .h(metrics::LINE_SM)
                 .flex_none()
                 .h_flex()
                 .items_center()
+                .text_color(tone)
                 .child(Icon::new(IconName::TriangleAlert).xsmall()),
         )
         .child(
@@ -320,29 +271,94 @@ fn notice(
                 .min_w_0()
                 .v_flex()
                 .gap_1()
-                .child(
-                    div()
-                        .h_flex()
-                        .flex_wrap()
-                        .items_center()
-                        .gap_x_2()
-                        // In a box that may shrink: bare text in a flex row
-                        // measures its whole line as its least width, so an
-                        // adapter's long error ran out past the column.
-                        .child(div().min_w_0().child(text.to_string()))
-                        .children(restart.map(|key| {
-                            div()
-                                .h_flex()
-                                .items_center()
-                                .gap_1()
-                                .child("Restart the agent with")
-                                .child(key)
-                        })),
-                )
-                .children(detail(tint.ink)),
+                .when(failed, |column| {
+                    column.child(div().text_color(tone).font_semibold().child("Turn failed"))
+                })
+                // In a box that may shrink: bare text in a flex row measures
+                // its whole line as its least width, so an adapter's long
+                // error ran out past the column.
+                .child(div().min_w_0().text_color(words).child(text.to_string()))
+                .children(restart.map(|key| restart_line(key).text_color(words)))
+                .children(detail(cx.theme().muted_foreground)),
         )
         .into_any_element()
 }
+
+/// How a notice draws.
+#[derive(Debug, PartialEq)]
+enum NoticeShape {
+    /// Words between two rules across the column.
+    Divider,
+    /// The neutral card: `failed` for the failure a turn ended on, which
+    /// takes a title; `past` once a prompt followed.
+    Card { failed: bool, past: bool },
+}
+
+/// A remark is the session speaking about itself in passing, a line across
+/// the column. An error and the failure a turn ended on are cards: an error
+/// can run long, and between two rules it read as a caption.
+fn notice_shape(level: NoticeLevel, past: bool) -> NoticeShape {
+    match level {
+        NoticeLevel::Info => NoticeShape::Divider,
+        NoticeLevel::Error => NoticeShape::Card {
+            failed: false,
+            past,
+        },
+        NoticeLevel::Failed => NoticeShape::Card { failed: true, past },
+    }
+}
+
+/// A notice as a line across the column: its words centred between two
+/// hairlines, the key that brings a lost agent back after them, and what the
+/// agent attached folded underneath.
+fn notice_divider(
+    text: &str,
+    restart: Option<gpui_component::kbd::Kbd>,
+    detail: impl Fn(gpui::Hsla) -> Option<gpui::AnyElement>,
+    cx: &App,
+) -> gpui::AnyElement {
+    let (ink, rule) = (cx.theme().muted_foreground, cx.theme().border);
+    let line = || div().flex_1().min_w(RULE_MIN_W).h_px().bg(rule);
+    div()
+        .v_flex()
+        .items_center()
+        .gap_1()
+        .w_full()
+        .min_w_0()
+        .text_xs()
+        .text_color(ink)
+        .child(
+            div()
+                .h_flex()
+                .items_center()
+                .gap_2()
+                .w_full()
+                .min_h(LINE_H)
+                .child(line())
+                .child(div().min_w_0().flex_shrink(1.).child(text.to_string()))
+                .child(line()),
+        )
+        // On a line of its own, as the details are: beside the words it took
+        // their width, and in a narrow dock a lost agent's error wrapped word
+        // by word.
+        .children(restart.map(restart_line))
+        .children(detail(ink))
+        .into_any_element()
+}
+
+/// The way back to a lost agent: the key the keymap binds now, named.
+fn restart_line(key: gpui_component::kbd::Kbd) -> gpui::Div {
+    div()
+        .h_flex()
+        .items_center()
+        .gap_1()
+        .child("Restart the agent with")
+        .child(key)
+}
+
+/// The least a divider's rule shrinks to beside long words, so the line
+/// still reads as one.
+const RULE_MIN_W: gpui::Rems = gpui::rems(1.);
 
 /// What the agent attached to a failure beside its message: machine text,
 /// folded under the words a person reads first, and opened on request.

@@ -34,6 +34,7 @@ pub(in crate::chat) fn ask(
     session: &Entity<ChatSession>,
     a: &AskItem,
     target: TranscriptItemId,
+    waiting: usize,
     cx: &App,
 ) -> impl IntoElement + use<> {
     if let Some(answer) = a.resolved.as_deref() {
@@ -59,7 +60,8 @@ pub(in crate::chat) fn ask(
                 Some(asker) => format!("{asker} asks: {}", a.req.message),
                 None => a.req.message.clone(),
             },
-            counter.map(Into::into),
+            None,
+            super::parts::queue_aside(waiting, counter.map(Into::into)),
             cx,
         ))
         // A question replayed from the archive carries an rpc id no running
@@ -268,11 +270,9 @@ impl AskForm<'_> {
                     // pick-one row's is, and a destructive one is named by its
                     // danger word rather than by an edge.
                     .selected(on)
-                    // **At rest on a well of its own**, so each choice reads
-                    // as one thing apart from the next. Only at rest: on the
-                    // taken row the library lays the caller's fill over its
-                    // selected step.
-                    .when(!on, |row| row.bg(crate::theme::floating_well(cx)))
+                    // **Bare at rest**, a row of the card as a list's rows are:
+                    // a well under each choice stacked a layer per row on a
+                    // card that is itself a layer.
                     // **A form's field height as the floor.** A longer label
                     // or a description grows the row past it, to about the
                     // two lines the typed answer under the list stands at.
@@ -282,13 +282,12 @@ impl AskForm<'_> {
                     .min_h(CONTROL_H)
                     // The keyboard's own position, which has to show without
                     // being an answer: an arrow press moves it and settles
-                    // nothing, so it is the focus ring rather than a fill.
-                    .border_1()
-                    .border_color(
-                        match !on && cursor == Some(onehand_core::chat::AskRow::Choice(o)) {
-                            true => cx.theme().ring,
-                            false => cx.theme().transparent,
-                        },
+                    // nothing, so it is a control's fill rather than the
+                    // taken row's, and no frame. Not the list's hover, which
+                    // on the light page is the card's own grey.
+                    .when(
+                        !on && cursor == Some(onehand_core::chat::AskRow::Choice(o)),
+                        |row| row.bg(cx.theme().secondary),
                     )
                     // **One child, holding the row's own layout.** A `Button`
                     // wraps what it is given in a content box of its own, so a
@@ -361,10 +360,12 @@ impl AskForm<'_> {
         // caret, and a row they reach shows it as the choices above do.
         let cursor = self.a.cursor_row(self.active) == Some(onehand_core::chat::AskRow::Custom);
         Some(
-            // **The list's last row, written in rather than picked**, so it
-            // stands as the choices do: on their well, at their inset and
-            // their words' size, with its key on the right. Its own height is
-            // the textarea's, two lines at rest and growing as it is written.
+            // **The list's last row, written in rather than picked**: a field
+            // edged on the card's own fill, at the choices' inset and their
+            // words' size, with its key on the right. Sunk to the page's fill
+            // it stood as a dark hole in the card.
+            // Its own height is the textarea's, two lines at rest and growing
+            // as it is written.
             div()
                 .h_flex()
                 .items_center()
@@ -372,11 +373,10 @@ impl AskForm<'_> {
                 .w_full()
                 .pr_3()
                 .rounded(cx.theme().radius)
-                .bg(crate::theme::floating_well(cx))
                 .border_1()
                 .border_color(match cursor {
                     true => cx.theme().ring,
-                    false => cx.theme().transparent,
+                    false => cx.theme().input,
                 })
                 .child(
                     div().flex_1().min_w_0().child(
@@ -415,7 +415,7 @@ impl AskForm<'_> {
         let can_advance = self.a.may_advance(active);
         let last = self.a.is_last(active);
 
-        card_foot(cx)
+        card_foot()
             .child(
                 crate::controls::action(("ask-skip", idx))
                     .quiet(cx)
@@ -636,29 +636,49 @@ fn ask_form(
     let rows = form.choice_rows(cx);
     let custom = form.custom_row(cx);
     let has_custom = custom.is_some();
+    let tabs = multi_field.then(|| form.tabs(cx));
+    let question = form.question();
+    // A single question is said whole by the head, with no tabs and no line
+    // of its own: an empty body here stood as a blank band between the
+    // head's hairline and the list's.
+    let has_lead = tabs.is_some() || question.is_some();
+    let lead = has_lead.then(|| {
+        card_body()
+            .gap_3()
+            .children(tabs)
+            .children(question.map(|line| {
+                div()
+                    .w_full()
+                    .text_size(TEXT_SM)
+                    .line_height(relative(LEADING_TIGHT))
+                    .child(line)
+            }))
+    });
     let body = card
-        .child(
-            card_body()
-                .gap_3()
-                .children(multi_field.then(|| form.tabs(cx)))
-                .children(form.question().map(|line| {
-                    div()
-                        .w_full()
-                        .text_size(TEXT_SM)
-                        .line_height(relative(LEADING_TIGHT))
-                        .child(line)
-                }))
-                // Only the choices scroll. The tab strip is how the *other*
-                // questions are reached and the box below is where an answer
-                // nobody offered is written, so both are controls and both stay
-                // on the card beside the footer rather than inside the region
-                // that can be scrolled away from.
-                .children((!rows.is_empty()).then_some(BlockingBody {
+        .children(lead)
+        // Only the choices scroll. The tab strip is how the *other* questions
+        // are reached and the box below is where an answer nobody offered is
+        // written, so both are controls and both stay on the card beside the
+        // footer rather than inside the region that can be scrolled away from.
+        // **Between two hairlines**, the one over it as the one under it: the
+        // list is the part that moves, and the lines say where it starts and
+        // where it is cut.
+        .children((!rows.is_empty()).then(|| {
+            // Without a body over it, the head's own hairline is the one
+            // over the list: a second would double it.
+            div()
+                .w_full()
+                .px(CARD_PAD)
+                .pt_2()
+                .when(has_lead, |list| {
+                    list.border_t_1().border_color(cx.theme().border)
+                })
+                .child(BlockingBody {
                     target,
                     children: rows,
                     inset: CARD_PAD,
-                })),
-        )
+                })
+        }))
         // **Under a hairline, apart from the list.** On the choices' well it
         // read as one more choice, and the row the scroll had cut in half just
         // above it read as part of it. Below the line it is with the answers

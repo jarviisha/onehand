@@ -563,7 +563,6 @@ impl WorkspacePage {
             .child(page_top(
                 Some(PAGE_WIDE),
                 [page_head("Overview", None, Vec::new(), cx).into_any_element()],
-                cx,
             ))
             .child(
                 // **The cards scroll as one, from the top.** Cards that fill

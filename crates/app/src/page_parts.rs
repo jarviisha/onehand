@@ -14,6 +14,11 @@ use std::rc::Rc;
 /// the workspace page's issues, or the Tasks page.
 pub(crate) const ALL_PROJECTS: &str = "All projects";
 
+/// The slot a list row's head stands in (an age, a five-digit reference,
+/// *Draft*, a mark), so every title starts on one edge. Wide enough for the
+/// longest age, *999d ago*, on one line.
+pub(crate) const ROW_LEAD_W: Rems = rems(4.);
+
 /// One project as the workspace page lists it.
 pub struct PageProject {
     pub label: SharedString,
@@ -44,7 +49,7 @@ const PAGE_TITLE_H: Rems = rems(1.75);
 /// A box on a page: its title in bold with a muted count beside it, an
 /// optional control at the far end, and whatever it holds below.
 pub(crate) fn page_card(
-    title: impl Into<SharedString>,
+    title: impl IntoElement,
     count: Option<usize>,
     control: Option<gpui::AnyElement>,
     cx: &App,
@@ -73,7 +78,7 @@ pub(crate) fn ruled(rows: impl IntoIterator<Item = AnyElement>, cx: &App) -> Div
 /// A page heading: the title in bold, a muted count beside it and an
 /// optional control at the far end.
 pub(crate) fn card_title(
-    title: impl Into<SharedString>,
+    title: impl IntoElement,
     count: Option<usize>,
     control: Option<gpui::AnyElement>,
     cx: &App,
@@ -86,7 +91,7 @@ pub(crate) fn card_title(
         // The control's own height must not change the title row's, or a card
         // with a filter sits taller than the one beside it.
         .h(PAGE_TITLE_H)
-        .child(div().font_semibold().child(title.into()))
+        .child(div().font_semibold().child(title))
         .children(count.map(|n| div().text_xs().text_color(muted).child(n.to_string())))
         .child(div().flex_1())
         .children(control)

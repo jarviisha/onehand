@@ -69,6 +69,10 @@ const FINDING_LINE: gpui::Rems = gpui::rems(0.75 * crate::tokens::LEADING);
 /// that clear a half-finished rename or worktree still run. The fixed box around
 /// it is what contains that element's `size_full`, which would otherwise take
 /// the whole row away from the name beside it.
+/// A dialog's title: a step over the chrome's 13px rather than the library's
+/// 16, which stood loud over a dialog's own rows at this density.
+const DIALOG_TITLE: gpui::Rems = gpui::rems(0.9375);
+
 pub(crate) fn title_row(name: impl Into<SharedString>, cx: &App) -> impl IntoElement {
     div()
         .h_flex()
@@ -76,7 +80,13 @@ pub(crate) fn title_row(name: impl Into<SharedString>, cx: &App) -> impl IntoEle
         .justify_between()
         .gap_2()
         .w_full()
-        .child(DialogTitle::new().min_w_0().truncate().child(name.into()))
+        .child(
+            DialogTitle::new()
+                .min_w_0()
+                .truncate()
+                .text_size(DIALOG_TITLE)
+                .child(name.into()),
+        )
         .child(
             div().flex_none().size_6().child(
                 DialogClose::new().child(

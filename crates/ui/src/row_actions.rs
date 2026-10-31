@@ -1,11 +1,85 @@
 //! A row's actions, shown only while they are wanted, in a slot that holds
-//! its width so nothing beside it moves when they appear.
+//! its width so nothing beside it moves when they appear; and the ⋯ menu and
+//! right-click menu that offer them, one list for both.
 
+use crate::Named as _;
+use crate::Quiet as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, FocusHandle, InteractiveElement as _, IntoElement, ParentElement as _,
-    RenderOnce, SharedString, Styled as _, Window, div,
+    AnyElement, App, ClickEvent, ElementId, FocusHandle, InteractiveElement as _, IntoElement,
+    ParentElement as _, RenderOnce, SharedString, Styled as _, Window, div,
 };
+use gpui_component::menu::PopupMenu;
+use gpui_component::popover::Popover;
+use gpui_component::{ActiveTheme as _, IconName, Sizable as _};
+use std::rc::Rc;
+
+/// What a press on a row's act runs.
+pub type Press = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
+
+/// One thing a row offers from its ⋯ and from a right-click on it.
+#[derive(Clone)]
+pub struct RowAct {
+    label: SharedString,
+    danger: bool,
+    press: Press,
+}
+
+impl RowAct {
+    pub fn new(label: impl Into<SharedString>, press: Press) -> Self {
+        Self {
+            label: label.into(),
+            danger: false,
+            press,
+        }
+    }
+
+    /// A removal, in the danger ink and after a separator.
+    pub fn danger(mut self) -> Self {
+        self.danger = true;
+        self
+    }
+}
+
+/// `acts` as rows of `menu`, a removal parted from the rest by a separator.
+pub fn row_menu_items(mut menu: PopupMenu, acts: &[RowAct], cx: &App) -> PopupMenu {
+    let danger = cx.theme().danger;
+    for (i, act) in acts.iter().enumerate() {
+        let press = act.press.clone();
+        let label = act.label.clone();
+        if act.danger && i > 0 {
+            menu = menu.separator();
+        }
+        let item = match act.danger {
+            true => crate::menu_row(move |_, _| div().text_color(danger).child(label.clone())),
+            false => crate::menu_item(label),
+        };
+        menu = menu.item(item.on_click(move |event, window, cx| press(event, window, cx)));
+    }
+    menu
+}
+
+/// A row's ⋯: a quiet ellipsis at a row control's size, named `name`,
+/// opening `acts` below it; `key` is unique to the row. The same acts go on
+/// the row's right-click ([`row_menu_items`]), so the two never offer
+/// different things.
+pub fn row_more(
+    key: impl Into<SharedString>,
+    name: &'static str,
+    acts: Rc<[RowAct]>,
+    cx: &App,
+) -> Popover {
+    let key: SharedString = key.into();
+    crate::menu_below(
+        ElementId::Name(format!("{key}-menu").into()),
+        crate::action(ElementId::Name(key))
+            .quiet_icon(false, cx)
+            .small()
+            .icon(IconName::Ellipsis)
+            .named(name),
+        move |menu, _, cx| row_menu_items(menu, &acts, cx),
+    )
+}
 
 /// A row's actions, in a trailing slot that keeps its width: hidden until
 /// the pointer is on the row named `group`, unless `shown` (the selected row,

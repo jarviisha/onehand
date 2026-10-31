@@ -216,6 +216,81 @@ pub fn tab_chip(
         .child(gpui::div().min_w_0().truncate().child(label))
 }
 
+/// A dock's bar of tabs, as the library's tab panel draws one: a strip on
+/// the tab bar's fill with a line under it, its tabs ([`panel_tab`]) flush
+/// with its start and each other, its controls inset at its end. The caller
+/// adds the tabs, then whatever ends the bar.
+pub fn tab_bar(cx: &App) -> gpui::Div {
+    crate::strip(cx)
+        .px_0()
+        .pr_1()
+        .gap_0()
+        .items_stretch()
+        .bg(cx.theme().tab_bar)
+        .border_b_1()
+        .border_color(cx.theme().border)
+}
+
+/// One tab of a [`tab_bar`]: as tall as the bar, parted from the next by a
+/// line, the chosen one on the tab's own fill in its ink with a stroke of the
+/// primary along its top, the rest in the bar's muted ink and inked under
+/// the pointer, truncating with its full `hint` on hover. The caller caps its
+/// width, says what a press does, and adds what follows the name: a mark,
+/// then [`tab_close`].
+pub fn panel_tab(
+    id: impl Into<ElementId>,
+    label: SharedString,
+    hint: SharedString,
+    chosen: bool,
+    cx: &App,
+) -> gpui::Stateful<gpui::Div> {
+    panel_tab_frame(id, chosen, cx)
+        .pl_3()
+        .pr_2()
+        .cursor_pointer()
+        .tooltip(crate::tip(move |window, cx| {
+            Tooltip::new(hint.clone()).build(window, cx)
+        }))
+        .child(gpui::div().min_w_0().truncate().child(label))
+}
+
+/// A [`panel_tab`]'s frame alone, for a tab whose press is a control of its
+/// own (a button the keyboard reaches): the bar's height, the line after it,
+/// the chosen fill and stroke and the inks. The caller insets what it holds.
+pub fn panel_tab_frame(
+    id: impl Into<ElementId>,
+    chosen: bool,
+    cx: &App,
+) -> gpui::Stateful<gpui::Div> {
+    let theme = cx.theme();
+    let lit = theme.tab_active_foreground;
+    gpui::div()
+        .id(id)
+        .relative()
+        .h_flex()
+        .items_center()
+        .flex_none()
+        .h_full()
+        .gap_1()
+        .border_r_1()
+        .border_color(theme.border)
+        .text_size(crate::tokens::CHROME_TEXT)
+        .map(|tab| match chosen {
+            true => tab.bg(theme.tab_active).text_color(lit).child(
+                gpui::div()
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .right_0()
+                    .h(crate::tokens::TAB_MARK)
+                    .bg(theme.primary),
+            ),
+            false => tab
+                .text_color(theme.tab_foreground)
+                .hover(move |tab| tab.text_color(lit)),
+        })
+}
+
 /// The cross closing a tab, always shown, its glyph muted. The caller's press
 /// should stop the click there, or it also picks the tab it closes.
 pub fn tab_close(id: impl Into<ElementId>, hint: &'static str, cx: &App) -> Button {
