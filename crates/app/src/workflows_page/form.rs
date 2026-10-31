@@ -201,7 +201,7 @@ pub(super) fn message_bar(draft: &super::WorkflowDraft, cx: &App) -> Option<AnyE
     let (icon, base, lines) = if draft.shipped {
         (
             IconName::Info,
-            cx.theme().primary,
+            cx.theme().foreground,
             vec!["Built in, read-only: duplicate it to change it".to_string()],
         )
     } else {

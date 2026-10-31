@@ -4,8 +4,9 @@
 //! ## Where every value comes from
 //!
 //! Every colour token is the library's: [`install`] clones the two shipped
-//! configs and changes nothing in their colours, so a library part and the
-//! app's own parts read one palette. The few steps no library token holds (the
+//! configs and changes one colour in them, the primary (see
+//! [`primary_overrides`]), so a library part and the app's own parts read one
+//! palette. The few steps no library token holds (the
 //! composer's lift, a well on a floating card, a hue tempered for ink) are
 //! derived here from those tokens, never written as values of their own. The
 //! terminal's sixteen colours are not the library's: they stay
@@ -58,10 +59,30 @@ pub(crate) fn install(cx: &mut App) {
         config.font_family = Some(crate::fonts::UI_FAMILY.into());
         config.mono_font_family = Some(crate::fonts::MONO_FAMILY.into());
     }
+    primary_overrides(&mut light.colors);
+    primary_overrides(&mut dark.colors);
 
     let theme = Theme::global_mut(cx);
     theme.light_theme = Rc::new(light);
     theme.dark_theme = Rc::new(dark);
+}
+
+/// The one colour the app changes in the kit's palette: the primary, blue in
+/// both modes.
+///
+/// The kit's primary is its neutral at the far end of the ramp, white on the
+/// dark page and near black on the light one, and beside a secondary button
+/// that block outweighed the whole row it stood in. A blue carries "the one
+/// to press" at the weight of its neighbours. Named by the kit's own ramp, so
+/// the value stays the library's colour and no hex is written here.
+fn primary_overrides(colors: &mut gpui_component::ThemeConfigColors) {
+    // Pointed at and pressed both go darker, in either mode: a lighter blue
+    // under white words drops below what small text needs.
+    let (rest, hover, pressed) = ("blue-600", "blue-700", "blue-800");
+    colors.primary = Some(rest.into());
+    colors.primary_hover = Some(hover.into());
+    colors.primary_active = Some(pressed.into());
+    colors.primary_foreground = Some("neutral-50".into());
 }
 
 /// A base hue tempered for use as ink where it is already legible.
@@ -141,7 +162,7 @@ fn composer_shades(dark: bool, ink: Hsla, hairline: Hsla) -> (Hsla, Hsla) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gpui_component::{ThemeColor, ThemeMode};
+    use gpui_component::{ThemeColor, ThemeConfig, ThemeMode};
 
     /// The ratio small text has to clear to be readable.
     const AA: f32 = 4.5;
@@ -199,6 +220,42 @@ mod tests {
         let mut theme = Theme::from(&*colors);
         theme.mode = mode;
         theme
+    }
+
+    /// The palette as [`install`] leaves it: the library's, under the app's
+    /// own overrides.
+    fn installed(mode: ThemeMode) -> Theme {
+        let mut theme = shipped(mode);
+        let mut config = ThemeConfig {
+            mode,
+            ..Default::default()
+        };
+        primary_overrides(&mut config.colors);
+        theme.apply_config(&Rc::new(config));
+        theme
+    }
+
+    /// The primary button's word reads on its own fill in both modes, at
+    /// rest, pointed at and pressed, and the fill is a blue rather than the
+    /// kit's neutral.
+    #[test]
+    fn the_primary_word_reads_on_the_primary_fill() {
+        for (name, mode) in [("light", ThemeMode::Light), ("dark", ThemeMode::Dark)] {
+            let theme = installed(mode);
+            for (state, fill) in [
+                ("rest", theme.primary),
+                ("hover", theme.primary_hover),
+                ("pressed", theme.primary_active),
+            ] {
+                let ratio = contrast(theme.primary_foreground, fill);
+                assert!(ratio >= AA, "{name}: primary word on {state} is {ratio:.2}");
+            }
+            assert!(
+                theme.primary.s > 0.5,
+                "{name}: primary is not a blue but {:?}",
+                theme.primary
+            );
+        }
     }
 
     /// Status words and marks are small, and most of them land inside a well —

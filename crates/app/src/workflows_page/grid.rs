@@ -68,7 +68,7 @@ pub(super) fn tone(kind: &StepKind) -> Tone {
 /// The ink a mark of `tone` is drawn in.
 fn tone_ink(tone: Tone, cx: &App) -> gpui::Hsla {
     match tone {
-        Tone::Agent => cx.theme().primary,
+        Tone::Agent => cx.theme().foreground,
         Tone::Command => cx.theme().muted_foreground,
         Tone::Approval => crate::theme::status_ink(cx).warning,
         Tone::Forge => crate::theme::status_ink(cx).success,

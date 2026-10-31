@@ -14,7 +14,8 @@ differs is a rule of the role it belongs to, written where that role is. A depar
 put right or recorded in `docs/known-gaps.md` with its reason within the change that makes it.
 
 **The palette is gpui-kit's Default Light and Default Dark** (*Colour and state*), as the
-component library ships them (`crate::theme::install`, with its contrast tests). Every colour,
+component library ships them, the primary alone made blue (`crate::theme::install`, with its
+contrast tests). Every colour,
 radius and size is a token read at the call site (see `.claude/skills/ui/tokens.md`);
 a hex literal is a bug even when it looks right, as no theme switch reaches it.
 
@@ -26,7 +27,7 @@ a hex literal is a bug even when it looks right, as no theme switch reaches it.
    take the agent pane and put the docks away; a page opens over a session only when picked.
 2. **Content leads; navigation recedes.** Neutral surfaces carry the layout. Hue identifies a
    state, a link, a label's kind or code in prose, never a decorative section background.
-   Focus and the primary action are greys, as the library's palette has them. Attention is earned: the signals that call for the person
+   Focus is a grey, as the library's palette has it; the primary action is the palette's one blue. Attention is earned: the signals that call for the person
    (a state's hue, a count or badge of what waits, a dot, weight past what the role takes) mark
    only what needs them or has just changed, so a view at rest is calm. Hierarchy and identity are not attention: a heading keeps
    its weight, a list its muted count, a label its kind's hue. Nor is a mode switched on: the
@@ -98,7 +99,7 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
 
 ## Transcript
 
-- **Two sides.** The user's prompt is the library's `Filled` bubble (the primary fill, the `2xl`
+- **Two sides.** The user's prompt is the library's `Muted` bubble (a grey fill, the `2xl`
   corner), against the right edge. Everything the agent produces starts on a shared left axis
   across the column, as the library's ghost bubble draws it. Nothing else is right-aligned.
 - **A centred reading column**, narrowed on small panels, read at the reading size; what is
@@ -216,8 +217,10 @@ takes the library token named for it; a step no token holds is derived in `crate
 not the library's: they stay VS Code's (`onehand_terminal_ui::ansi`), as a program's colours are
 its own. A chart's series and a label's kind take the library's base hues.
 
-The library's surfaces are neutral greys a step apart, its primary is near black on the light
-palette and near white on the dark one, and its focus ring is a grey. On the dark palette its
+The library's surfaces are neutral greys a step apart and its focus ring is a grey. Its primary,
+near black on the light palette and near white on the dark one, outweighed every row it stood in,
+so the app overrides that one colour: the kit's own `blue-600` in both modes, darker under the
+pointer and pressed (`theme::install`). On the dark palette its
 surfaces are near black, so a floating surface is told apart by its edge rather than its shadow.
 Pairs under WCAG AA are in `docs/known-gaps.md`; `crate::theme`'s tests hold each at what it
 reaches.
@@ -234,7 +237,7 @@ reaches.
 | `link` | a link: the library draws it in the prose ink, underlined |
 | `info` | what runs |
 | `list_hover` | hover on a pickable row |
-| `primary` | the single primary action in a view; the prompt bubble's fill, its code spans in its own ink thinned |
+| `primary` | the single primary action in a view, an open tab's mark; blue, the palette's one override |
 | `status_ink()` | danger, warning and success text, and `closed` for what is over and settled (a closed issue) |
 | `popover` | floating surfaces |
 | `theme::raised` | the composer card |
