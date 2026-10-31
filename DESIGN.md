@@ -152,7 +152,7 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   a field's height; a typed answer sits under the list, with the answers and no line between them,
   as a field with its `Kbd`: edged in `input` on the card's own fill, two
   lines tall at rest and growing as it is written (Shift+Enter a newline), ringed while the keys
-  are on it. A permission's command sits in a well on the page's fill, a step below the card. Each answer in a pinned card's footer shows its key beside its words, always in
+  are on it. A permission's command sits in a well (`muted`), a step off the card. Each answer in a pinned card's footer shows its key beside its words, always in
   sight, as that key reaches the card from anywhere in the conversation.
   The card holds the one primary while it shows. A question card always ends on *Skip*; one
   asking a single pick-one question answers on the pick, its primary only for a typed answer.

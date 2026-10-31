@@ -136,11 +136,11 @@ pub(crate) fn inset(cx: &App) -> Hsla {
     cx.theme().background
 }
 
-/// A well on a waiting card: the command a pinned permission asks to run,
-/// the typed answer to a question. The page's own fill, so it sinks a step
-/// below the card it sits in, as a field does.
+/// A well on a waiting card: the command a pinned permission asks to run.
+/// The library's well, a step lighter than the card on the dark page; sunk to
+/// the page's fill it stood as a dark hole in the card.
 pub(crate) fn floating_well(cx: &App) -> Hsla {
-    cx.theme().background
+    cx.theme().muted
 }
 
 /// The composer's lift, in pixels as a hairline is: the tight shadow's blur,
@@ -272,6 +272,20 @@ mod tests {
                 theme.primary.s > 0.5,
                 "{name}: primary is not a blue but {:?}",
                 theme.primary
+            );
+        }
+    }
+
+    /// The command well stands a step off the waiting card it sits in, in
+    /// both modes, or the command reads as loose text on the card.
+    #[test]
+    fn the_command_well_stands_off_the_waiting_card() {
+        for (name, mode) in [("light", ThemeMode::Light), ("dark", ThemeMode::Dark)] {
+            let theme = installed(mode);
+            let (card, well) = (waiting_card_of(&theme), theme.muted);
+            assert!(
+                (card.l - well.l).abs() >= 0.02,
+                "{name}: well {well:?} on card {card:?}"
             );
         }
     }
