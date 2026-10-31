@@ -49,17 +49,19 @@ minor bump may break any of them.
 ### The window
 
 - The whole interface is redrawn after gpui-kit's components: its own Default Light and Default
-  Dark palette (the terminal keeps VS Code's sixteen colours), its corners and type scale, its
-  edged buttons and fields at its control sizes, and its tags for states and labels.
+  Dark palette with a blue primary (the terminal keeps VS Code's sixteen colours), its corners,
+  its edged buttons and fields, and its tags for states and labels, at an editor's density: 13px
+  text (12px for code and the transcript's record), 26 and 22px controls, 24px rows, 35px bars.
 - The window draws its own frame: a title bar holding File, View, Go and Session menus, each item
   a command the keymap already binds and showing its key, and a status bar with the rail's
   toggle, the branch, and the terminal's and the Workbench's toggles (a dot on the terminal's while
   a command runs behind its closed dock). The conversation's header no longer carries the dock
   buttons.
-- The rail takes the library's sidebar look. The transcript sets the prompt in a filled bubble, a
-  failed turn in a destructive one, every folding block (and a run of answered cards) in a box,
-  and a waiting permission in the warning alert's look; the composer and what rests on it are
-  edged.
+- The rail takes the library's sidebar look. The transcript is flat: the prompt in a grey bubble,
+  folding blocks bare with no box or rule, a run of answered cards under one hairline, a remark
+  or an error as a divider across the column. A waiting permission or question is a neutral
+  card, its tone in its mark and title, as wide as the composer and tucked under it, the ones
+  behind peeking over it; a failed turn and a task's approval take the same neutral shape.
 - Pages open under breadcrumbs, a row's actions sit behind a `⋯` that a right-click opens too,
   Settings groups stand in boxes, the Issues list has a table head, and a task's runs and a
   workflow's steps are steppers. The Workbench's modes, the terminal's shells and the editor's

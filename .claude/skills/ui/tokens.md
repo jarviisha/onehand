@@ -64,8 +64,8 @@ Text on a fill takes the ink paired with it:
 | a ghost's hover or selected fill, under an icon alone (`quiet_icon`) | `secondary_foreground`, as at rest |
 | `accent`, the selected row | `accent_foreground` |
 | `rail_chosen(cx)`, the rail's current row | `sidebar_accent_foreground` |
-| `muted` (a well) | the neutral inks, as on the surface: a neutral fill, not a paired one |
-| `primary` (the prompt bubble) | `primary_foreground` |
+| `muted` (a well, the prompt bubble) | the neutral inks, as on the surface: a neutral fill, not a paired one |
+| `primary` (the primary button) | `primary_foreground` |
 | a badge's `Tint` fill | that `Tint`'s `ink` |
 
 Semantic inks, on any surface: `status_ink(cx)` for a state, `link` for a link, `info` for what runs,
