@@ -108,9 +108,7 @@ impl ChatPane {
         detail
             // The oldest card it waits on first, where the eye lands, under
             // the slivers of the ones waiting behind it.
-            .when(!cards.is_empty(), |detail| {
-                detail.child(inset(div().pt_2().v_flex()).children(cards))
-            })
+            .children(cards.map(|cards| inset(div().pt_2()).child(cards)))
             .child(
                 // The scrollbar lies over the transcript alone.
                 div()

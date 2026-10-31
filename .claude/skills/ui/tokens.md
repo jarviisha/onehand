@@ -137,13 +137,13 @@ Moving the library's rev means checking this table.
 | Size | Button: height / words / icon / icon–label gap / inset | Input: height / words / inset | Icon alone |
 |---|---|---|---|
 | `.xsmall()`: an icon-only button inside a small object only | 20 / 12 / 12 / 4 / 4 | 20 / 12 / 4 **px** | 12 |
-| `.short()` (`CONTROL_H`): a button the library's extra small, a field its small | 22 / 12 / 12 / 4 / 8 | 22 / 14 / 8 **px** | 14 |
+| `.short()` (`CONTROL_H`): a button the library's extra small, a field its small | 22 / 12 / 12 / 4 / 8 | 22 / 13 / 8 **px** | 14 |
 | `.small()`: an icon-only button beside `.short()` | 24 / 14 / 14 / 4 / 8 | 24 / 14 / 8 **px** | 14 |
-| `.tall()` (`FIELD_H`): the library's small, held taller | 26 / 13 / 14 / 4 / 12 | 26 / 14 / 8 **px** | 16 |
+| `.tall()` (`FIELD_H`): the library's small, held taller | 26 / 13 / 14 / 4 / 12 | 26 / 13 / 8 **px** | 16 |
 
 An icon-only button is square at its height. A button's `.short()` is the library's extra small
 held at `CONTROL_H` and its `.tall()` the library's small held at `FIELD_H`, its words at
-`CHROME_TEXT`; a field takes the library's small at both (`Short` and `Tall` in `crates/ui/src/control_size.rs`); their words, icons and insets are the library's. A builder that
+`CHROME_TEXT`; a field takes the library's small at both, its words at `CHROME_TEXT` (`Short` and `Tall` in `crates/ui/src/control_size.rs`); their words, icons and insets are the library's. A builder that
 sizes the controls it makes (`choice`, `switch`, `picker`) takes one of them as a `ControlSize`.
 
 A field of several lines (`text_area`) is the library's `Textarea`, which takes no size: its text

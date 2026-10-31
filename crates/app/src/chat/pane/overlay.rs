@@ -237,19 +237,35 @@ impl ChatPane {
                 // bottom of it, behind it, which is where it was drawn anyway.
                 // The card is the later thing to lose its height, and it can
                 // afford to: nothing measures a parked card by design.
-                let slot = match (popup, cards) {
+                // The tuck moves the cards alone: an open popup keeps its gap
+                // and its peek over them, clear of the composer.
+                match (popup, cards) {
                     (Some(popup), Some(cards)) => Some(
                         div()
                             .relative()
                             .w_full()
-                            .child(div().absolute().bottom_0().left_0().right_0().child(cards))
+                            .child(
+                                div()
+                                    .absolute()
+                                    .map(|cards| match tuck {
+                                        Some(tuck) => cards.bottom(tuck),
+                                        None => cards.bottom_0(),
+                                    })
+                                    .left_0()
+                                    .right_0()
+                                    .child(cards),
+                            )
                             .child(popup),
                     ),
                     (Some(popup), None) => Some(div().w_full().child(popup)),
-                    (None, Some(cards)) => Some(div().w_full().child(cards)),
+                    (None, Some(cards)) => Some(
+                        div()
+                            .w_full()
+                            .when_some(tuck, |slot, tuck| slot.mb(tuck))
+                            .child(cards),
+                    ),
                     (None, None) => None,
-                };
-                slot.map(|slot| slot.when_some(tuck, |slot, tuck| slot.mb(tuck)))
+                }
             })
             .child(
                 // What the transcript has to clear: the pinned cards and the

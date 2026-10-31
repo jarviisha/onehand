@@ -349,17 +349,19 @@ fn notice_divider(
                 .min_h(LINE_H)
                 .child(line())
                 .child(div().min_w_0().flex_shrink(1.).child(text.to_string()))
-                .children(restart.map(|key| {
-                    div()
-                        .h_flex()
-                        .flex_none()
-                        .items_center()
-                        .gap_1()
-                        .child("Restart the agent with")
-                        .child(key)
-                }))
                 .child(line()),
         )
+        // On a line of its own, as the details are: beside the words it took
+        // their width, and in a narrow dock a lost agent's error wrapped word
+        // by word.
+        .children(restart.map(|key| {
+            div()
+                .h_flex()
+                .items_center()
+                .gap_1()
+                .child("Restart the agent with")
+                .child(key)
+        }))
         .children(detail(ink))
         .into_any_element()
 }

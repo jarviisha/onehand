@@ -72,7 +72,7 @@ impl ChatPane {
                 .children(lines)
                 .into_any_element()
         }));
-        let tucked = !cards.is_empty();
+        let tucked = cards.is_some();
         pinned.extend(cards);
         (pinned, tucked)
     }
@@ -86,7 +86,7 @@ impl ChatPane {
         composer_idle: bool,
         window: &mut Window,
         cx: &mut App,
-    ) -> Vec<gpui::AnyElement> {
+    ) -> Option<gpui::AnyElement> {
         // A question's free-text box needs a window to be built and the session
         // never has one, so the card's own way to the screen is where it is
         // made. Before the cards are read, since the box is one of them.
@@ -126,15 +126,18 @@ impl ChatPane {
                     .into_any_element()
             }
         });
-        let Some(card) = card else {
-            return Vec::new();
-        };
-        let mut stack: Vec<gpui::AnyElement> = (0..peeks(waiting))
-            .rev()
-            .map(|depth| peek(depth + 1, cx))
-            .collect();
-        stack.push(card);
-        stack
+        // One column with no gap of its own, so the slivers sit on the card
+        // they stand behind rather than floating apart in whatever gap the
+        // caller keeps between its rows.
+        let card = card?;
+        Some(
+            div()
+                .v_flex()
+                .w_full()
+                .children((0..peeks(waiting)).rev().map(|depth| peek(depth + 1, cx)))
+                .child(card)
+                .into_any_element(),
+        )
     }
 
     /// Shown while the adapter is still coming up.
