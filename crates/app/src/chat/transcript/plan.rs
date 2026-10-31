@@ -56,7 +56,7 @@ pub(super) fn plan(
                 .child(format!("{done}/{}", p.entries.len())),
         );
 
-    fold_box(cx).child(line).when(open, |block| {
+    fold_box().child(line).when(open, |block| {
         block.child(
             div()
                 .v_flex()

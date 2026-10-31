@@ -82,7 +82,7 @@ pub(super) fn subagent(
 
     // A fold block like the transcript's others: the line, then what it
     // holds inset under it.
-    fold_box(cx)
+    fold_box()
         .child(head(card, open, steps, toggle.clone(), cx))
         // The task says what the name cannot; a folded card that has ended is
         // the one line its head is.

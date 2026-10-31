@@ -215,18 +215,11 @@ pub fn item(
 
 /// A line the session says about itself.
 ///
-/// A remark stays a caption. A **failure does not**: the two loudest things
-/// this app can say — the turn errored, the agent is gone and here is the key
-/// that brings it back, the one the keymap binds — used to draw at the smallest size in the palest
-/// colour the theme has, quieter than the file path in the tool card above
-/// them. Something that ends the conversation cannot be whispered, so a
-/// failure takes the alert icon, the danger tint and the body size.
-///
-/// It is **not** one of the muted machine wells, and deliberately so: those say
-/// "a machine produced this", and the tint is what carries the meaning here. A
-/// failure sits on a wash of its own danger colour, in the body face, which is
-/// what stops it reading as one more line of the answer without claiming to be
-/// quoted output.
+/// A remark or an error is a divider across the column (see
+/// [`notice_shape`]); an error that still matters takes the danger tone and,
+/// when the agent is gone, the key that brings it back. The failure a turn
+/// ended on is the loudest thing this app says and stands as its own block,
+/// with the alert icon at the body size.
 ///
 /// **Only while nothing has been asked since.** A failure a later prompt has
 /// moved past no longer needs the person: it keeps its mark and its words, in
@@ -244,7 +237,13 @@ fn notice(
     let detail = |ink| {
         detail.map(|(session, target, detail)| notice_detail(session, target, detail, ink, cx))
     };
-    if level.is_failure() && past {
+    let past = match notice_shape(level, past) {
+        NoticeShape::Divider { alarm } => {
+            return notice_divider(text, alarm, restart, detail, cx);
+        }
+        NoticeShape::Failed { past } => past,
+    };
+    if past {
         return div()
             .h_flex()
             .items_start()
@@ -272,24 +271,6 @@ fn notice(
             )
             .into_any_element();
     }
-    if !level.is_failure() {
-        // **A line down the middle of the column, with nothing around it.** A
-        // remark is the transcript speaking about itself rather than either
-        // side speaking, and the centre is the one lane neither of them uses —
-        // so it needs no box, no rule and no mark to be told apart from the
-        // conversation running past it.
-        return div()
-            .h_flex()
-            .items_center()
-            .justify_center()
-            .w_full()
-            .h(LINE_H)
-            .text_xs()
-            .text_color(cx.theme().muted_foreground)
-            .child(div().min_w_0().truncate().child(text.to_string()))
-            .into_any_element();
-    }
-
     // A failure is the library's destructive bubble across the column, the
     // mark anchored to the first line so a message that wraps to three lines
     // does not carry the icon down the middle of itself.
@@ -344,6 +325,78 @@ fn notice(
                         .children(detail(ink)),
                 ),
         )
+        .into_any_element()
+}
+
+/// How a notice draws.
+#[derive(Debug, PartialEq)]
+enum NoticeShape {
+    /// Words between two rules across the column; `alarm` in the danger
+    /// tone, while an error still matters.
+    Divider { alarm: bool },
+    /// The failure a turn ended on, a card; `past` once a prompt followed.
+    Failed { past: bool },
+}
+
+/// A remark and an error are the session speaking about itself, so both are
+/// a line across the column rather than a block of either side's; only the
+/// failure a turn ended on stands as a card. An error rings while it is live
+/// and is a quiet line once past.
+fn notice_shape(level: NoticeLevel, past: bool) -> NoticeShape {
+    match level {
+        NoticeLevel::Info => NoticeShape::Divider { alarm: false },
+        NoticeLevel::Error => NoticeShape::Divider { alarm: !past },
+        NoticeLevel::Failed => NoticeShape::Failed { past },
+    }
+}
+
+/// A notice as a line across the column: its words centred between two
+/// hairlines, the key that brings a lost agent back after them, and what the
+/// agent attached folded underneath.
+fn notice_divider(
+    text: &str,
+    alarm: bool,
+    restart: Option<gpui_component::kbd::Kbd>,
+    detail: impl Fn(gpui::Hsla) -> Option<gpui::AnyElement>,
+    cx: &App,
+) -> gpui::AnyElement {
+    let (ink, rule) = match alarm {
+        true => {
+            let ink = crate::theme::hue_ink(cx.theme().danger, cx);
+            (ink, ink.opacity(0.4))
+        }
+        false => (cx.theme().muted_foreground, cx.theme().border),
+    };
+    let line = || div().flex_1().min_w(gpui::rems(1.)).h_px().bg(rule);
+    div()
+        .v_flex()
+        .items_center()
+        .gap_1()
+        .w_full()
+        .min_w_0()
+        .text_xs()
+        .text_color(ink)
+        .child(
+            div()
+                .h_flex()
+                .items_center()
+                .gap_2()
+                .w_full()
+                .min_h(LINE_H)
+                .child(line())
+                .child(div().min_w_0().flex_shrink(1.).child(text.to_string()))
+                .children(restart.map(|key| {
+                    div()
+                        .h_flex()
+                        .flex_none()
+                        .items_center()
+                        .gap_1()
+                        .child("Restart the agent with")
+                        .child(key)
+                }))
+                .child(line()),
+        )
+        .children(detail(ink))
         .into_any_element()
 }
 

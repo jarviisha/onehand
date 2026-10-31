@@ -514,10 +514,10 @@ pub(super) fn lead_gap(previous: Option<RunKind>, this: RunKind) -> Rems {
     }
 }
 
-/// One record's share of the box a stretch of records is drawn in: the
-/// folding block's look (`fold_box`), split across rows. `first` and `last`
-/// draw the box's ends; a record after another sits a tight step under it,
-/// inside the fill.
+/// One record's share of the edge a stretch of records is drawn in, split
+/// across rows: a hairline and no fill, so an answered card reads as a compact
+/// line of history rather than as one more panel. `first` and `last` draw the
+/// edge's ends; a record after another sits a tight step under it.
 fn record_segment(
     first: bool,
     last: bool,
@@ -525,12 +525,11 @@ fn record_segment(
     cx: &App,
 ) -> gpui::AnyElement {
     use gpui_component::ActiveTheme as _;
-    let radius = cx.theme().radius_lg;
+    let radius = cx.theme().radius;
     div()
         .w_full()
         .min_w_0()
         .px_3()
-        .bg(cx.theme().group_box)
         .border_color(cx.theme().border)
         .border_x_1()
         .map(|box_| match first {

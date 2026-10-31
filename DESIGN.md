@@ -106,13 +106,14 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   wider scrolls inside its well. A scrollbar runs on the panel's edge down to the composer.
 - **One turn, many blocks**: prose, thoughts, plans, activity clusters (tools only), commands,
   diffs, a subagent's card (a fold block where the agent handed work off), answered
-  permissions and questions (a line each, those in a row sharing one box drawn as the folding
-  blocks' are), notices and errors, the files the turn changed,
+  permissions and questions (a line each, those in a row sharing one hairline edge with no fill),
+  notices and errors (a divider: the words centred between two hairlines across the column, in
+  the meta ink, an error that still matters in a tempered danger ink; only the failure a turn
+  ended on stands as a block), the files the turn changed,
   and, while it runs, the running line (a spinner, its clock, *N running*, what the agent says it
   is doing). A workflow's steps and an interrupted turn are notices, never prompts.
-- **Folding blocks open from one line**, the chevron first, in the library's collapsible look: a
-  box on `group_box` with an edge at `radius_lg`, the line at its head and what it holds under it
-  (a cluster, a thought, a plan, a subagent, a turn's changes). What runs is open until done, the
+- **Folding blocks open from one line**, the chevron first, with no box: no edge, no fill and no
+  rule beside what they hold, which sits indented under the line's words (a cluster, a thought, a plan, a subagent, a turn's changes). What runs is open until done, the
   plan stays open, and a reader's fold wins. Long output folds and is capped, an opened cluster
   too, each saying what it holds back. Wells are filled with no edge, their text at
   `CODE_TEXT`. A finished turn ends on Copy (its closing paragraph) and how long it took, said as
@@ -241,7 +242,6 @@ reaches.
 | `status_ink()` | danger, warning and success text, and `closed` for what is over and settled (a closed issue) |
 | `popover` | floating surfaces |
 | `theme::raised` | the composer card |
-| `group_box` | a folding block in the transcript |
 | `secondary` | a document's code on a dock |
 
 - Reading content is the visual anchor; rail and dock chrome remain quieter. A nested container

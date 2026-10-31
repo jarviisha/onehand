@@ -83,7 +83,7 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | A sunk box of machine text | `well` (sets the code text size; callers set padding) | `crates/ui/src/surface.rs` |
 | A mono well on a page | `mono_well`, built on `well` | `crates/app/src/tasks_page/detail.rs` |
 | Shared sizes and the floating shadow | `tokens` | `crates/ui/src/tokens.rs` |
-| A transcript well, a folding block's box, a pinned card, a row's note | `plain_box`, `fold_box`, `floating_card` (its tone for the alert look while pinned), `row_note` | `crates/app/src/chat/transcript/parts.rs` |
+| A transcript well, a folding block (bare: no edge, no fill), a pinned card, a row's note | `plain_box`, `fold_box()`, `floating_card` (its tone for the alert look while pinned), `row_note` | `crates/app/src/chat/transcript/parts.rs` |
 | A prompt, a live failure | the library's `BubbleContent` (filled) and `Bubble` with `BubbleVariant::Destructive` | `crates/app/src/chat/transcript/user.rs`, `transcript.rs` |
 | Transcript sizes | the constants | `crates/app/src/chat/transcript/metrics.rs` |
 | The composer card | `card` | `crates/app/src/chat/composer/card.rs` |

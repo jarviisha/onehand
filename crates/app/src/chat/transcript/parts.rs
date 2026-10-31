@@ -263,22 +263,14 @@ pub(super) fn chevron_slot(fold: Option<bool>) -> gpui::Div {
 /// While the block runs a spinner stands in the arrow's column, the same
 /// width, so the words neither sit further out than a settled line's nor move
 /// when the work settles.
-/// The box a block that folds is drawn in, in the library's collapsible look:
-/// an edge and the group fill, its fold line first and what it holds under it.
-/// Every block that opens (a cluster, a thought, a plan, a subagent, a turn's
-/// changes) takes it, so the column reads as prose with boxes of work in it.
-pub(super) fn fold_box(cx: &App) -> gpui::Div {
-    div()
-        .v_flex()
-        .gap_2()
-        .w_full()
-        .min_w_0()
-        .px_3()
-        .py_2()
-        .rounded(cx.theme().radius_lg)
-        .border_1()
-        .border_color(cx.theme().border)
-        .bg(cx.theme().group_box)
+/// What a block that folds is drawn in: its fold line first and what it holds
+/// under it, with no edge, no fill and no rule beside it. Every block that
+/// opens (a cluster, a thought, a plan, a subagent, a turn's changes) takes
+/// it. Boxed, a long turn stacked a frame per block and the column read as a
+/// pile of panels; bare, the fold line's arrow and quiet ink are what tell the
+/// work apart from the prose around it.
+pub(super) fn fold_box() -> gpui::Div {
+    div().v_flex().gap_1().w_full().min_w_0()
 }
 
 pub(super) fn fold_line(

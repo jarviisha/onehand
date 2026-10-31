@@ -219,7 +219,7 @@ pub(super) fn thought(
         (false, None) => line.child("Thought"),
     };
 
-    fold_box(cx).child(line).when(open, |block| {
+    fold_box().child(line).when(open, |block| {
         block.child(
             div()
                 .w_full()

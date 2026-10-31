@@ -64,7 +64,7 @@ pub fn cluster(
     body: Vec<gpui::AnyElement>,
     cx: &App,
 ) -> gpui::AnyElement {
-    fold_box(cx)
+    fold_box()
         .child(cluster_line(plan, open, on_click, id, cx))
         .when(open, |cluster| {
             cluster.child(
@@ -175,7 +175,7 @@ pub(in crate::chat) fn turn_summary(
         )
         .children(line_counts(changes.added, changes.removed, cx));
 
-    let block = fold_box(cx).child(head);
+    let block = fold_box().child(head);
     if !open {
         return block.into_any_element();
     }
