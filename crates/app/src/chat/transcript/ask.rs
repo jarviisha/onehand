@@ -647,18 +647,28 @@ fn ask_form(
                         .text_size(TEXT_SM)
                         .line_height(relative(LEADING_TIGHT))
                         .child(line)
-                }))
-                // Only the choices scroll. The tab strip is how the *other*
-                // questions are reached and the box below is where an answer
-                // nobody offered is written, so both are controls and both stay
-                // on the card beside the footer rather than inside the region
-                // that can be scrolled away from.
-                .children((!rows.is_empty()).then_some(BlockingBody {
+                })),
+        )
+        // Only the choices scroll. The tab strip is how the *other* questions
+        // are reached and the box below is where an answer nobody offered is
+        // written, so both are controls and both stay on the card beside the
+        // footer rather than inside the region that can be scrolled away from.
+        // **Between two hairlines**, the one over it as the one under it: the
+        // list is the part that moves, and the lines say where it starts and
+        // where it is cut.
+        .children((!rows.is_empty()).then(|| {
+            div()
+                .w_full()
+                .px(CARD_PAD)
+                .pt_2()
+                .border_t_1()
+                .border_color(cx.theme().border)
+                .child(BlockingBody {
                     target,
                     children: rows,
                     inset: CARD_PAD,
-                })),
-        )
+                })
+        }))
         // **Under a hairline, apart from the list.** On the choices' well it
         // read as one more choice, and the row the scroll had cut in half just
         // above it read as part of it. Below the line it is with the answers

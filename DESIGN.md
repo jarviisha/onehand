@@ -149,7 +149,8 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   dismissing one a quiet ghost. A choice is a bare row at rest, on the pointer's fill under the
   pointer and a control's fill (`secondary`) under the keys, and on the selected step when taken, a radio or checkbox drawn in ink at
   its head (the library's rings vanish on the selected step) and its number with Alt as a `Kbd`, at least
-  a field's height; a typed answer sits under the list, with the answers and no line between them,
+  a field's height, the scrolling list of them between two hairlines, one over it and one under it;
+  a typed answer sits under the list, with the answers and no line between them,
   as a field with its `Kbd`: edged in `input` on the card's own fill, two
   lines tall at rest and growing as it is written (Shift+Enter a newline), ringed while the keys
   are on it. A permission's command sits in a well a step lighter than the card (`muted` on the dark page,
