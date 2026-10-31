@@ -34,6 +34,7 @@ pub(in crate::chat) fn ask(
     session: &Entity<ChatSession>,
     a: &AskItem,
     target: TranscriptItemId,
+    waiting: usize,
     cx: &App,
 ) -> impl IntoElement + use<> {
     if let Some(answer) = a.resolved.as_deref() {
@@ -52,14 +53,15 @@ pub(in crate::chat) fn ask(
     // Where the reader is in the form, in words, because the tab strip says
     // which question is open but not how many are left. No mark: the
     // permission card keeps the one mark a pinned card carries.
-    pinned_card(live, None, cx)
+    pinned_card(live, cx)
         .child(card_head(
             None,
             match &a.asker {
                 Some(asker) => format!("{asker} asks: {}", a.req.message),
                 None => a.req.message.clone(),
             },
-            counter.map(Into::into),
+            None,
+            super::parts::queue_aside(waiting, counter.map(Into::into)),
             cx,
         ))
         // A question replayed from the archive carries an rpc id no running
@@ -415,7 +417,7 @@ impl AskForm<'_> {
         let can_advance = self.a.may_advance(active);
         let last = self.a.is_last(active);
 
-        card_foot(cx)
+        card_foot()
             .child(
                 crate::controls::action(("ask-skip", idx))
                     .quiet(cx)

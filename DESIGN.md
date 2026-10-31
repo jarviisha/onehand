@@ -137,13 +137,15 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   failed: …*), what it attached folded under *Show details* in mono; a lost agent's names the key
   that restarts it. A failed turn holds until a prompt goes out; a restart does not answer it. An
   error that failed no turn (one answering a *Stop*, a resume that fell back) is past at once.
-- **The pinned cards** (a permission, a question) share one shell, in the library's alert look
-  while they wait, at `radius_lg` and lifted: a permission the warning alert (an edge and a wash
-  of the warning ink mixed into an opaque fill), a question the neutral one. Back in the history the shell
-  is neutral and flat. It holds a head, the body, the
-  answers at the end at `.short()` (a hairline under the head and over the answers, padded as a box
-  whose body scrolls, its cut end fading out while more lies below), the dismissing one a quiet
-  ghost. A choice is a row on a well
+- **The pinned cards** (a permission, a question) share one neutral shell: an edge in `input` at
+  `radius`, no wash, the tone only in the mark and the title (a permission's warning ink). While
+  they wait they stand a step off the page (`theme::waiting_card`), lifted, as wide as the
+  composer, their foot tucked under it (`TUCK`) so the composer reads as laid over them, without
+  motion; the ones waiting behind peek over the shown one's top edge as slivers, at most two,
+  and its head says *1 of N waiting*. Back in the history the shell is on the page's fill and
+  flat. It holds a head, the body, the answers at the end at `.short()` (no rule between them,
+  padded as a box whose body scrolls, its cut end fading out while more lies below), the
+  dismissing one a quiet ghost. A choice is a row on a well
   of its own at rest and on the selected step when taken, a radio or checkbox drawn in ink at
   its head (the library's rings vanish on the selected step) and its number with Alt as a `Kbd`, at least
   a field's height; a typed answer sits under the hairline, with the answers and no line between them, on the
@@ -196,8 +198,9 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   `onehand_ui::tokens`, others beside their use), its reason in its doc comment.
 - **The library's corners.** What a person presses or what holds content takes `radius`, 6px:
   a control, a field, a row, a chip, a well, a box on a page (`card_box`). A dock and its tab bar's tabs stand square, flush with the dock. A large surface takes
-  `radius_lg`, 8px: the composer, a floating panel, a dialog, a toast, and with them a folding
-  block, a Settings group and a pinned card; the library's own follow. A badge (a `Tag`) takes the library's
+  `radius_lg`, 8px: a floating panel, a dialog, a toast, and a Settings group; the library's own
+  follow. The composer and a pinned card take `radius`, so the card tucked under the composer
+  meets it at one corner. A badge (a `Tag`) takes the library's
   own corner and size, its edge halfway from its fill to its ink (`badge_edge`); inside a line of
   meta text a label is written in its kind's ink instead, unframed. A dot or a status mark is
   `rounded_full`. The library's small parts keep its half
@@ -300,9 +303,9 @@ and the button confirming a removal inside its modal. Nothing that destroys noth
 danger ink.
 
 **The composer is the input surface**, a role of its own rather than a box or a field: a card
-edged in `input` at `radius_lg`, standing off the page on its own fill (`theme::raised`) and lift
-(`composer_lift`), showing focus by the caret alone; what waits on it (the workers' line, the
-strip of queued and staged things) takes the same edge. Its pickers (the model, the effort, the mode, *Fast*, the
+edged in `input` at `radius`, standing off the page on its own fill (`theme::raised`) and a light
+lift (`composer_lift`), showing focus by the caret alone; what waits on it (the workers' line, the
+strip of queued and staged things, over any waiting card) takes the same edge. Its pickers (the model, the effort, the mode, *Fast*, the
 branch) are `.short()` ghosts with a caret whatever they hold (*Fast* is its bolt alone, lit in
 the warning ink while fast, as a mode switched on is, and as a toggle opens no menu and carries none), where a picker elsewhere takes
 the secondary fill once set: each always holds a choice, and a fill on every chip would crowd

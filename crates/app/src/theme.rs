@@ -107,6 +107,17 @@ pub(crate) fn rail_chosen(cx: &App) -> Hsla {
     cx.theme().sidebar_accent
 }
 
+/// The fill of a card that waits on the person, tucked under the composer: a
+/// step off the page, so it reads as a second layer under the composer rather
+/// than as the same surface carried on.
+pub(crate) fn waiting_card(cx: &App) -> Hsla {
+    waiting_card_of(cx.theme())
+}
+
+fn waiting_card_of(theme: &Theme) -> Hsla {
+    theme.secondary
+}
+
 /// The composer card's fill: the page's own, as the card is told apart by its
 /// edge and its lift.
 pub(crate) fn raised(cx: &App) -> Hsla {
@@ -128,8 +139,8 @@ pub(crate) fn floating_well(cx: &App) -> Hsla {
 /// The composer's lift, in pixels as a hairline is: the tight shadow's blur,
 /// then the soft one's drop and blur.
 const COMPOSER_EDGE_BLUR: f32 = 1.5;
-const COMPOSER_DROP: f32 = 4.;
-const COMPOSER_BLUR: f32 = 16.;
+const COMPOSER_DROP: f32 = 2.;
+const COMPOSER_BLUR: f32 = 8.;
 
 /// The composer card's lift: a tight shadow drawn where an edge would be, and a
 /// soft one under it.
@@ -254,6 +265,21 @@ mod tests {
                 theme.primary.s > 0.5,
                 "{name}: primary is not a blue but {:?}",
                 theme.primary
+            );
+        }
+    }
+
+    /// A waiting card stands a step off the page behind it and the composer it
+    /// tucks under, in both modes.
+    #[test]
+    fn a_waiting_card_stands_off_the_composer_and_the_page() {
+        for (name, mode) in [("light", ThemeMode::Light), ("dark", ThemeMode::Dark)] {
+            let theme = installed(mode);
+            let card = waiting_card_of(&theme);
+            assert!(
+                (card.l - theme.background.l).abs() >= 0.03,
+                "{name}: card {card:?} on page {:?}",
+                theme.background
             );
         }
     }

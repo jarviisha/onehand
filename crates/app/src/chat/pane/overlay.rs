@@ -8,6 +8,9 @@ use gpui::prelude::FluentBuilder as _;
 use gpui::{Context, Entity, InteractiveElement, IntoElement, ParentElement, Styled, Window, div};
 use gpui_component::StyledExt;
 
+/// The gap between the overlay's slots: the cards and the composer.
+const COLUMN_GAP: gpui::Rems = gpui::rems(0.5);
+
 impl ChatPane {
     /// The composer and everything stacked on it, floating over the transcript.
     ///
@@ -29,7 +32,16 @@ impl ChatPane {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
-        let pinned = self.pinned(session, room.well, window, cx);
+        let (pinned, tucked) = self.pinned(session, room.well, window, cx);
+        let lead = self.lead_strip(cx);
+        // **A waiting card's foot runs under the composer**, which is drawn
+        // after it and opaque, so the composer reads as laid over the card.
+        // The column's gap goes too, or the two would stand apart. Not over
+        // the lead's strip, which tops the composer while workers run and is
+        // no surface to lay over a card.
+        // ponytail: no tuck over the lead strip; tuck under it if workers become common.
+        let tuck =
+            (tucked && lead.is_none()).then(|| -gpui::rems(COLUMN_GAP.0 + transcript::TUCK.0));
         let git = self.git.clone();
         let pane = cx.entity();
 
@@ -42,7 +54,7 @@ impl ChatPane {
             // A step over the gap the cards keep between themselves: a pinned
             // card and the composer are two objects and the cards in a stack
             // are one, so the seam that has to read as a seam is this one.
-            .gap_2()
+            .gap(COLUMN_GAP)
             .w_full()
             // Reading the conversation is a way of saying the popup is done
             // with. It hangs off this whole block rather than off the list, so
@@ -225,7 +237,7 @@ impl ChatPane {
                 // bottom of it, behind it, which is where it was drawn anyway.
                 // The card is the later thing to lose its height, and it can
                 // afford to: nothing measures a parked card by design.
-                match (popup, cards) {
+                let slot = match (popup, cards) {
                     (Some(popup), Some(cards)) => Some(
                         div()
                             .relative()
@@ -236,7 +248,8 @@ impl ChatPane {
                     (Some(popup), None) => Some(div().w_full().child(popup)),
                     (None, Some(cards)) => Some(div().w_full().child(cards)),
                     (None, None) => None,
-                }
+                };
+                slot.map(|slot| slot.when_some(tuck, |slot, tuck| slot.mb(tuck)))
             })
             .child(
                 // What the transcript has to clear: the pinned cards and the
@@ -287,7 +300,7 @@ impl ChatPane {
                                     .mx_auto()
                                     // Standing on the composer, its line
                                     // above the card's.
-                                    .children(self.lead_strip(cx))
+                                    .children(lead)
                                     .child({
                                         // A run waiting at an approval holds the
                                         // view's one primary, so Send steps down.

@@ -91,8 +91,7 @@ impl ChatPane {
         // shrink each other frame by frame.
         let height = self.workers.detail_height.get();
         let bound = (height > px(0.)).then_some(height);
-        let (cards, waiting) = Self::cards(&session, bound, idle, window, cx);
-        let cards = cards.into_iter().chain(waiting);
+        let cards = Self::cards(&session, bound, idle, window, cx);
         let card = composer.map(|composer| {
             let blocked = {
                 let composer = composer.read(cx);
@@ -107,13 +106,11 @@ impl ChatPane {
         });
         let inset = |el: gpui::Div| el.px_3().pb_2();
         detail
-            // The oldest card it waits on first, where the eye lands, and how
-            // many more wait after it.
-            .children(
-                cards
-                    .into_iter()
-                    .map(|card| inset(div().pt_2()).child(card)),
-            )
+            // The oldest card it waits on first, where the eye lands, under
+            // the slivers of the ones waiting behind it.
+            .when(!cards.is_empty(), |detail| {
+                detail.child(inset(div().pt_2().v_flex()).children(cards))
+            })
             .child(
                 // The scrollbar lies over the transcript alone.
                 div()

@@ -70,7 +70,7 @@ impl ChatPane {
                 .border_x_1()
                 .border_color(cx.theme().input)
                 .shadow(crate::theme::composer_lift(cx))
-                .rounded_t(cx.theme().radius_lg)
+                .rounded_t(cx.theme().radius)
                 .text_size(onehand_ui::tokens::CHROME_TEXT)
                 .text_color(muted)
                 .cursor_pointer()

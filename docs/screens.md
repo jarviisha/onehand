@@ -153,12 +153,14 @@ session's agent may use onehand's tools, *Controls onehand* stands before the mo
 in the warning ink, and pressing it switches that off. The `+` menu ends on *Agent controls
 onehand* under a heading of its own, *This session*, checked while on, and not offered in an
 unattended run's session. Each chip's
-menu opens just above it, without its tooltip. Above the card: one pinned permission or question,
-the oldest (a subagent's is titled `<name> asks permission` or `<name> asks: <question>`); a
-permission's command shows whole up to about ten lines, and past them
-ends on *Show all N lines*, which opens it in place; then one surface on the card's fill, edge and lift holding
-how many more cards wait, a reconnect and the queue as lines, then the staged files as one row of plates (a picture's preview,
-pressed to open it whole in a dialog; a text file opening in the Workbench), faded where cut beside
+menu opens just above it, without its tooltip. Above the card, top down: one surface on the card's
+fill, edge and lift holding a reconnect and the queue as lines, then the staged files as one row
+of plates (below); then the slivers of the cards waiting behind, at most two; then one pinned
+permission or question, the oldest, as wide as the card and its foot tucked under it (a
+subagent's is titled `<name> asks permission` or `<name> asks: <question>`, its head ending on
+*1 of N waiting* when more wait); a permission's command shows whole up to about ten lines, and
+past them ends on *Show all N lines*, which opens it in place. The staged files' plates (a picture's preview,
+pressed to open it whole in a dialog; a text file opening in the Workbench) fade where cut beside
 *Show all N*. A picture attached to a sent prompt opens the same way. While the session on screen
 leads workers, the lead's strip stands on the card, narrower than it, one line above the card's: *N
 workers*, a count per state that has any, most urgent first, in its mark and ink, and at the end,
@@ -231,7 +233,8 @@ dragged height kept).
     state's word in its ink, its folder's last component (the whole path on hover), *held by you*
     while the person holds it, *Write to <name>…* (the name up to its first ` · `), *Stop* while
     a turn runs, and `⋯` (*Give back to the lead* while offered, *Send the last prompt again* after
-    a failure, *Close*). Under it the oldest card it waits on, with how many more wait, bounded by
+    a failure, *Close*). Under it the oldest card it waits on, the ones behind peeking over it and its head saying how
+    many wait, bounded by
     the detail's own height, then its whole transcript,
     scrolling, following the newest output. No composer until *Write to …*: then one at the foot,
     with *Send*, *Stop* and *Queue* and nothing else; sending or `Esc` closes it, the draft kept.

@@ -141,6 +141,10 @@ pub(super) const COMMAND_H: Rems = rems(LINE_SM.0 * 10.);
 /// reaches back through to put the thumb in it: wide enough that the thumb
 /// has room of its own beside the rows.
 pub(super) const CARD_PAD: Rems = rems(1.);
+/// How far a waiting card's lower edge runs under the composer it rests on,
+/// so the composer reads as laid over it; the card holds this much more room
+/// at its foot, so its answers clear the composer's edge.
+pub(in crate::chat) const TUCK: Rems = rems(0.625);
 /// Left and right inside a frame that lays its contents out in columns.
 pub(super) const FRAME_PAD: Rems = rems(0.75);
 /// Width a question's tab label is elided at. Only a *tab* is ever elided.

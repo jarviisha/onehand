@@ -1,5 +1,5 @@
 use super::fold_key;
-use super::metrics::{CARD_PAD, DETAIL_OPEN_H, FOLD_INDENT, TEXT_SM, TIGHT_GAP};
+use super::metrics::{CARD_PAD, DETAIL_OPEN_H, FOLD_INDENT, TEXT_SM, TIGHT_GAP, TUCK};
 use crate::chat::session::{ChatEvent, ChatSession};
 use crate::controls::Named as _;
 use crate::controls::Quiet as _;
@@ -16,7 +16,7 @@ use gpui_component::button::Button;
 use gpui_component::scroll::{ScrollableMask, ScrollbarMode};
 use gpui_component::spinner::Spinner;
 use gpui_component::tag::Tag;
-use gpui_component::{ActiveTheme, Colorize as _, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::acp::{ToolKind, ToolStatus};
 use onehand_core::chat::TranscriptItemId;
 
@@ -498,70 +498,63 @@ pub(super) fn grows(button: Button) -> Button {
 
 /// The surface every card and strip that floats over the composer is built on.
 ///
-/// **One function because there are four of them** — a parked permission, a
-/// parked question, an adapter still connecting, a prompt waiting its turn —
-/// and they arrive in one column, stacked, directly above the composer. Written
-/// out four times they came apart exactly where four copies do: two sat on the
-/// reading surface with a hairline and a single radius while the other two
-/// floated on the raised one with a shadow and a doubled radius, so a
-/// permission parked above a queued prompt read as two unrelated things rather
-/// than as the same kind of interruption twice.
+/// **One function for both parked cards**, a permission and a question, so a
+/// permission parked above a question reads as the same kind of interruption
+/// twice. They rest on the composer, foot tucked under it, at the composer's
+/// corner: one window drawing the two at two corners is a difference nobody
+/// chose.
 ///
-/// It is the **composer's own treatment**, and has to be: these are the boxes
-/// that stack on top of that card and are read as one object with it. The
-/// radius is the theme's named card step for the same reason the composer takes
-/// it — one window drawing its floating surfaces at two corners is a difference
-/// nobody chose.
+/// **Neutral, whatever it asks.** An edge in the control grey at the theme's
+/// corner, and no wash: a tinted card over a flat transcript was the loudest
+/// box on screen even for a question nobody was in a hurry about, so the tone
+/// lives in its mark and title (see [`card_head`]) and the surface stays one
+/// shape for every kind of waiting.
 ///
-/// **The lift and the alert's tone only while it is pinned.** A card that
-/// floats over the transcript waits on an answer, so it takes the library's
-/// alert look and the app's shadow: in `tone`, an edge and a wash of that ink,
-/// or the neutral alert's plain edge without one;
-/// one drawn back in the history is a block of the column like any other, and
-/// neither marks anything there.
-pub(in crate::chat) fn floating_card(
-    pinned: bool,
-    tone: Option<gpui::Hsla>,
-    cx: &App,
-) -> gpui::Div {
+/// **A step off the page and lifted only while it is pinned.** A card waiting
+/// on an answer stands on [`crate::theme::waiting_card`] with the app's shadow,
+/// so it is the most visible thing in the column; one drawn back in the
+/// history is a block of the column like any other, on the page's own fill.
+pub(in crate::chat) fn floating_card(pinned: bool, cx: &App) -> gpui::Div {
     // Opaque, and not the reading surface: the transcript runs underneath
     // these and text showing through a box that is asking a question is the
-    // one place in the app that cannot afford it. So the alert's wash is mixed
-    // into the page's fill rather than laid over it.
-    let fill = cx.theme().popover.alpha(1.);
-    let (edge, fill) = match tone.filter(|_| pinned) {
-        Some(tone) => (tone.mix_oklab(fill, 0.3), tone.mix_oklab(fill, 0.04)),
-        None => (cx.theme().border, fill),
+    // one place in the app that cannot afford it.
+    let fill = match pinned {
+        true => crate::theme::waiting_card(cx),
+        false => cx.theme().background,
     };
     div()
         .w_full()
-        .rounded(cx.theme().radius_lg)
+        .rounded(cx.theme().radius)
         .border_1()
-        .border_color(edge)
+        .border_color(cx.theme().input)
         .bg(fill)
         .when(pinned, |card| card.shadow(crate::tokens::lift(cx)))
 }
 
 /// The shell both pinned cards share: the floating surface holding a head, a
-/// body and a foot, each inset by [`CARD_PAD`] and parted from the next by a
-/// hairline that runs the card's whole width. It clips, so the hairlines end
-/// on the rounded edge rather than a pixel past it.
-pub(super) fn pinned_card(pinned: bool, tone: Option<gpui::Hsla>, cx: &App) -> gpui::Div {
-    floating_card(pinned, tone, cx).v_flex().overflow_hidden()
+/// body and a foot, each inset by [`CARD_PAD`], with no rule between them. A
+/// pinned one keeps [`TUCK`] more at its foot, the part the composer covers.
+pub(super) fn pinned_card(pinned: bool, cx: &App) -> gpui::Div {
+    floating_card(pinned, cx)
+        .v_flex()
+        .overflow_hidden()
+        .when(pinned, |card| card.pb(TUCK))
 }
 
 /// A pinned card's body, between its head and its foot. The caller sets the
 /// gap between what it holds.
 pub(super) fn card_body() -> gpui::Div {
-    div().v_flex().w_full().px(CARD_PAD).py_3()
+    div().v_flex().w_full().px(CARD_PAD).py_2()
 }
 
 /// A pinned card's head: what it asks, in the weight that says nothing
 /// proceeds until it is answered, after its mark if it has one, and at the end
-/// what it is about.
+/// what it is about. `tone` inks the title as the mark is inked: the one place
+/// a waiting card carries its colour.
 pub(super) fn card_head(
     mark: Option<Icon>,
     title: impl Into<SharedString>,
+    tone: Option<gpui::Hsla>,
     aside: Option<SharedString>,
     cx: &App,
 ) -> gpui::Div {
@@ -571,9 +564,8 @@ pub(super) fn card_head(
         .gap_2()
         .w_full()
         .px(CARD_PAD)
-        .py_3()
-        .border_b_1()
-        .border_color(cx.theme().border)
+        .pt_3()
+        .pb_1()
         .children(mark.map(|mark| mark.small().flex_none()))
         .child(
             div()
@@ -582,6 +574,7 @@ pub(super) fn card_head(
                 .truncate()
                 .text_size(TEXT_SM)
                 .font_semibold()
+                .when_some(tone, |title, tone| title.text_color(tone))
                 .child(title.into()),
         )
         .children(aside.map(|word| {
@@ -593,10 +586,20 @@ pub(super) fn card_head(
         }))
 }
 
+/// What a pinned card says at the end of its head: how many wait behind it,
+/// when any do, before what the card is about.
+pub(super) fn queue_aside(waiting: usize, aside: Option<SharedString>) -> Option<SharedString> {
+    match (waiting, aside) {
+        (0, aside) => aside,
+        (n, None) => Some(format!("1 of {} waiting", n + 1).into()),
+        (n, Some(aside)) => Some(format!("1 of {} waiting · {aside}", n + 1).into()),
+    }
+}
+
 /// A pinned card's foot: its answers at the end, wrapping onto a second line
 /// before a label is cut, since a cut grant is one nobody can read the reach
 /// of.
-pub(super) fn card_foot(cx: &App) -> gpui::Div {
+pub(super) fn card_foot() -> gpui::Div {
     div()
         .h_flex()
         .items_center()
@@ -605,9 +608,8 @@ pub(super) fn card_foot(cx: &App) -> gpui::Div {
         .gap_2()
         .w_full()
         .px(CARD_PAD)
-        .py_2()
-        .border_t_1()
-        .border_color(cx.theme().border)
+        .pt_1()
+        .pb_3()
 }
 
 mod activity;

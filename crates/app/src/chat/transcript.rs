@@ -107,7 +107,7 @@ pub struct QuestionPick {
 pub(in crate::chat) use image_view::open as show_image;
 use metrics::LINE_H;
 pub(in crate::chat) use metrics::{
-    BLOCK_GAP, CONTENT_COLUMN, PART_GAP, TEXT, TEXT_SM, TIGHT_GAP, TURN_GAP,
+    BLOCK_GAP, CONTENT_COLUMN, PART_GAP, TEXT, TEXT_SM, TIGHT_GAP, TUCK, TURN_GAP,
 };
 pub(in crate::chat) use parts::accent;
 pub(crate) use parts::line_counts;
@@ -172,8 +172,10 @@ pub fn item(
         ChatItem::Thought(th) => thought(session, th, target, window, cx).into_any_element(),
         ChatItem::Tool(t) => tool(session, t, target, cx).into_any_element(),
         ChatItem::Plan(p) => plan(session, p, target, cx).into_any_element(),
-        ChatItem::Permission(p) => permission(session, p, target, room.well, cx).into_any_element(),
-        ChatItem::Ask(a) => ask(session, a, target, cx).into_any_element(),
+        ChatItem::Permission(p) => {
+            permission(session, p, target, room.well, 0, cx).into_any_element()
+        }
+        ChatItem::Ask(a) => ask(session, a, target, 0, cx).into_any_element(),
         ChatItem::Subagent(card) => subagent::subagent(session, card, window, cx),
         ChatItem::Notice {
             text,
