@@ -107,9 +107,9 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
 - **One turn, many blocks**: prose, thoughts, plans, activity clusters (tools only), commands,
   diffs, a subagent's card (a fold block where the agent handed work off), answered
   permissions and questions (a line each, those in a row sharing one hairline edge with no fill),
-  notices and errors (a divider: the words centred between two hairlines across the column, in
-  the meta ink, an error that still matters in a tempered danger ink; only the failure a turn
-  ended on stands as a block), the files the turn changed,
+  notices (a remark is a divider: the words centred between two hairlines across the column, in
+  the meta ink) and errors (the neutral card, flat: the alert mark in the danger ink beside the
+  words, *Turn failed* over them when a turn ended on it, the restart key for a lost agent), the files the turn changed,
   and, while it runs, the running line (a spinner, its clock, *N running*, what the agent says it
   is doing). A workflow's steps and an interrupted turn are notices, never prompts.
 - **Folding blocks open from one line**, the chevron first, with no box: no edge, no fill and no
@@ -133,9 +133,9 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   dialog as wide as the window allows.
 - **Calm once it is past**: a failure a later prompt has moved past keeps its mark, title and
   words in the muted ink; a settled *N failed* drops the danger ink; a refusal's badge is
-  neutral. The failure a turn ended on is the waiting cards' neutral shell, flat and on the
-  page's fill: *Turn failed* after the alert mark, both in the danger ink, then the agent's words
-  in the body ink, what it attached folded under *Show details* in mono; a lost agent's names the
+  neutral. An error, and the failure a turn ended on, is the waiting cards' neutral shell, flat
+  and on the page's fill: the alert mark in the danger ink, *Turn failed* in it too where a turn
+  ended on it, then the words in the body ink, what it attached folded under *Show details* in mono; a lost agent's names the
   key that restarts it. A failed turn holds until a prompt goes out; a restart does not answer it. An
   error that failed no turn (one answering a *Stop*, a resume that fell back) is past at once.
 - **The pinned cards** (a permission, a question) share one neutral shell: an edge in `input` at

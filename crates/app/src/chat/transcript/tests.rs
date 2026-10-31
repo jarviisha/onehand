@@ -157,30 +157,38 @@ fn a_fixed_failure_is_not_an_alarm() {
     assert!(matches!(mark(Outcome::Running), RowMark::Running));
 }
 
-/// A remark and an error are lines across the column; only the failure a turn
-/// ended on is a card. An error rings while it is live and is a quiet line
-/// once past.
+/// A remark is a line across the column; an error and the failure a turn
+/// ended on are cards, ringing while live and quiet once past.
 #[test]
-fn a_notice_is_a_divider_unless_the_turn_failed_on_it() {
+fn a_notice_is_a_divider_only_when_it_is_a_remark() {
     use onehand_core::chat::NoticeLevel;
-    assert_eq!(
-        notice_shape(NoticeLevel::Info, false),
-        NoticeShape::Divider { alarm: false }
-    );
+    assert_eq!(notice_shape(NoticeLevel::Info, false), NoticeShape::Divider);
     assert_eq!(
         notice_shape(NoticeLevel::Error, false),
-        NoticeShape::Divider { alarm: true }
+        NoticeShape::Card {
+            failed: false,
+            past: false
+        }
     );
     assert_eq!(
         notice_shape(NoticeLevel::Error, true),
-        NoticeShape::Divider { alarm: false }
+        NoticeShape::Card {
+            failed: false,
+            past: true
+        }
     );
     assert_eq!(
         notice_shape(NoticeLevel::Failed, false),
-        NoticeShape::Failed { past: false }
+        NoticeShape::Card {
+            failed: true,
+            past: false
+        }
     );
     assert_eq!(
         notice_shape(NoticeLevel::Failed, true),
-        NoticeShape::Failed { past: true }
+        NoticeShape::Card {
+            failed: true,
+            past: true
+        }
     );
 }

@@ -216,11 +216,12 @@ pub fn item(
 
 /// A line the session says about itself.
 ///
-/// A remark or an error is a divider across the column (see
-/// [`notice_shape`]); an error that still matters takes the danger tone and,
-/// when the agent is gone, the key that brings it back. The failure a turn
-/// ended on is the loudest thing this app says and stands as its own block,
-/// with the alert icon at the body size.
+/// A remark is a divider across the column (see [`notice_shape`]). An error
+/// is not a remark: it may run to a whole stack, and between two rules it read
+/// as one more caption. So an error and the failure a turn ended on are the
+/// waiting cards' neutral shell, flat as history is, the alert mark in the
+/// danger ink, the words in the body ink beside it, and the key that brings a
+/// lost agent back. The failure a turn ended on says so in a title.
 ///
 /// **Only while nothing has been asked since.** A failure a later prompt has
 /// moved past no longer needs the person: it keeps its mark and its words, in
@@ -238,79 +239,80 @@ fn notice(
     let detail = |ink| {
         detail.map(|(session, target, detail)| notice_detail(session, target, detail, ink, cx))
     };
-    let past = match notice_shape(level, past) {
-        NoticeShape::Divider { alarm } => {
-            return notice_divider(text, alarm, restart, detail, cx);
-        }
-        NoticeShape::Failed { past } => past,
+    let (failed, past) = match notice_shape(level, past) {
+        NoticeShape::Divider => return notice_divider(text, restart, detail, cx),
+        NoticeShape::Card { failed, past } => (failed, past),
     };
-    // The neutral card the waiting ones use, flat as history is: the tone in
-    // the mark and the title alone, the agent's own words in the body ink
-    // under them. Once a prompt has followed it, its mark and title quiet to
-    // the meta ink: the record of what happened, not an alarm still ringing.
-    let tone = match past {
-        true => cx.theme().muted_foreground,
-        false => crate::theme::status_ink(cx).danger,
+    let (tone, words) = match past {
+        true => (cx.theme().muted_foreground, cx.theme().muted_foreground),
+        false => (crate::theme::status_ink(cx).danger, cx.theme().foreground),
     };
     parts::floating_card(false, cx)
-        .v_flex()
-        .gap_1()
+        .h_flex()
+        .items_start()
+        .gap_2()
         .px_3()
         .py_2()
         .text_size(TEXT_SM)
         .child(
+            // Held to the first line's height, so words that wrap keep the
+            // mark beside their start.
             div()
+                .h(metrics::LINE_SM)
+                .flex_none()
                 .h_flex()
                 .items_center()
-                .gap_2()
                 .text_color(tone)
-                .font_semibold()
-                .child(Icon::new(IconName::TriangleAlert).xsmall())
-                .child("Turn failed"),
+                .child(Icon::new(IconName::TriangleAlert).xsmall()),
         )
         .child(
             div()
-                .h_flex()
-                .flex_wrap()
-                .items_center()
-                .gap_x_2()
-                .when(past, |words| words.text_color(cx.theme().muted_foreground))
+                .flex_1()
+                .min_w_0()
+                .v_flex()
+                .gap_1()
+                .when(failed, |column| {
+                    column.child(div().text_color(tone).font_semibold().child("Turn failed"))
+                })
                 // In a box that may shrink: bare text in a flex row measures
                 // its whole line as its least width, so an adapter's long
                 // error ran out past the column.
-                .child(div().min_w_0().child(text.to_string()))
+                .child(div().min_w_0().text_color(words).child(text.to_string()))
                 .children(restart.map(|key| {
                     div()
                         .h_flex()
                         .items_center()
                         .gap_1()
+                        .text_color(words)
                         .child("Restart the agent with")
                         .child(key)
-                })),
+                }))
+                .children(detail(cx.theme().muted_foreground)),
         )
-        .children(detail(cx.theme().muted_foreground))
         .into_any_element()
 }
 
 /// How a notice draws.
 #[derive(Debug, PartialEq)]
 enum NoticeShape {
-    /// Words between two rules across the column; `alarm` in the danger
-    /// tone, while an error still matters.
-    Divider { alarm: bool },
-    /// The failure a turn ended on, a card; `past` once a prompt followed.
-    Failed { past: bool },
+    /// Words between two rules across the column.
+    Divider,
+    /// The neutral card: `failed` for the failure a turn ended on, which
+    /// takes a title; `past` once a prompt followed.
+    Card { failed: bool, past: bool },
 }
 
-/// A remark and an error are the session speaking about itself, so both are
-/// a line across the column rather than a block of either side's; only the
-/// failure a turn ended on stands as a card. An error rings while it is live
-/// and is a quiet line once past.
+/// A remark is the session speaking about itself in passing, a line across
+/// the column. An error and the failure a turn ended on are cards: an error
+/// can run long, and between two rules it read as a caption.
 fn notice_shape(level: NoticeLevel, past: bool) -> NoticeShape {
     match level {
-        NoticeLevel::Info => NoticeShape::Divider { alarm: false },
-        NoticeLevel::Error => NoticeShape::Divider { alarm: !past },
-        NoticeLevel::Failed => NoticeShape::Failed { past },
+        NoticeLevel::Info => NoticeShape::Divider,
+        NoticeLevel::Error => NoticeShape::Card {
+            failed: false,
+            past,
+        },
+        NoticeLevel::Failed => NoticeShape::Card { failed: true, past },
     }
 }
 
@@ -319,18 +321,11 @@ fn notice_shape(level: NoticeLevel, past: bool) -> NoticeShape {
 /// agent attached folded underneath.
 fn notice_divider(
     text: &str,
-    alarm: bool,
     restart: Option<gpui_component::kbd::Kbd>,
     detail: impl Fn(gpui::Hsla) -> Option<gpui::AnyElement>,
     cx: &App,
 ) -> gpui::AnyElement {
-    let (ink, rule) = match alarm {
-        true => {
-            let ink = crate::theme::hue_ink(cx.theme().danger, cx);
-            (ink, ink.opacity(0.4))
-        }
-        false => (cx.theme().muted_foreground, cx.theme().border),
-    };
+    let (ink, rule) = (cx.theme().muted_foreground, cx.theme().border);
     let line = || div().flex_1().min_w(gpui::rems(1.)).h_px().bg(rule);
     div()
         .v_flex()
