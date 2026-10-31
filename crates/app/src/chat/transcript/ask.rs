@@ -359,9 +359,10 @@ impl AskForm<'_> {
         // caret, and a row they reach shows it as the choices above do.
         let cursor = self.a.cursor_row(self.active) == Some(onehand_core::chat::AskRow::Custom);
         Some(
-            // **The list's last row, written in rather than picked**: a field,
-            // edged and sunk a step below the card as any field is, at the
-            // choices' inset and their words' size, with its key on the right.
+            // **The list's last row, written in rather than picked**: a field
+            // edged on the card's own fill, at the choices' inset and their
+            // words' size, with its key on the right. Sunk to the page's fill
+            // it stood as a dark hole in the card.
             // Its own height is the textarea's, two lines at rest and growing
             // as it is written.
             div()
@@ -371,7 +372,6 @@ impl AskForm<'_> {
                 .w_full()
                 .pr_3()
                 .rounded(cx.theme().radius)
-                .bg(crate::theme::floating_well(cx))
                 .border_1()
                 .border_color(match cursor {
                     true => cx.theme().ring,

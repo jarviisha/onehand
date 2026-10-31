@@ -544,13 +544,14 @@ pub(super) fn pinned_card(pinned: bool, cx: &App) -> gpui::Div {
 /// A pinned card's body, between its head and its foot. The caller sets the
 /// gap between what it holds.
 pub(super) fn card_body() -> gpui::Div {
-    div().v_flex().w_full().px(CARD_PAD).py_2()
+    div().v_flex().w_full().px(CARD_PAD).py_3()
 }
 
 /// A pinned card's head: what it asks, in the weight that says nothing
 /// proceeds until it is answered, after its mark if it has one, and at the end
-/// what it is about. `tone` inks the title as the mark is inked: the one place
-/// a waiting card carries its colour.
+/// what it is about, over a hairline that parts it from the body. `tone` inks
+/// the title as the mark is inked: the one place a waiting card carries its
+/// colour.
 pub(super) fn card_head(
     mark: Option<Icon>,
     title: impl Into<SharedString>,
@@ -564,8 +565,9 @@ pub(super) fn card_head(
         .gap_2()
         .w_full()
         .px(CARD_PAD)
-        .pt_3()
-        .pb_1()
+        .py_2p5()
+        .border_b_1()
+        .border_color(cx.theme().border)
         .children(mark.map(|mark| mark.small().flex_none()))
         .child(
             div()
