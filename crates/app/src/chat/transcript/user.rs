@@ -162,6 +162,11 @@ impl RenderOnce for Prompt {
             .child(
                 Bubble::new()
                     .with_variant(BubbleVariant::Muted)
+                    // The library caps a bubble at four fifths of its parent,
+                    // but the parent here shrinks to the bubble, so the cap
+                    // wraps even two words. The share above and the content's
+                    // own cap already bound the width.
+                    .max_w_full()
                     // The size on the surface itself: the library letters a
                     // bubble at its own control size, a step over the prose.
                     .content(
