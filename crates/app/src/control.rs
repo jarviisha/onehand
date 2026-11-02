@@ -111,7 +111,7 @@ struct Sessions {
     only: HashMap<u64, Vec<String>>,
     /// The folders workers are opening or open on.
     reserved: workers::Reservations,
-    /// What each lead asked `open_session` for, by its request id.
+    /// What each lead asked `open_worker` for, by its request id.
     requests: workers::requests::Requests,
     /// Each worker's lead, by the worker's uid.
     workers: HashMap<u64, workers::requests::Relation>,
@@ -671,6 +671,19 @@ fn perform_now(
             project,
             agent,
             prompt,
+        } => workers::open_plain(
+            caller.as_ref(),
+            &project,
+            &agent,
+            prompt,
+            &shell,
+            &projects,
+            cx,
+        ),
+        Call::OpenWorker {
+            project,
+            agent,
+            prompt,
             dirs,
             request,
             turn,
@@ -678,7 +691,8 @@ fn perform_now(
             name,
         } => workers::open(
             workers::Open {
-                caller,
+                // Never listed to an outside program, so never called by one.
+                caller: caller.ok_or("`open_worker` is for a session's agent")?,
                 project,
                 agent,
                 prompt,

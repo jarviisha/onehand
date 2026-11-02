@@ -1,4 +1,4 @@
-//! What each lead asked `open_session` for, by the id it gave, and which
+//! What each lead asked `open_worker` for, by the id it gave, and which
 //! worker each lead holds.
 //!
 //! **A retry is not a second worker.** A lead that lost the answer to an open

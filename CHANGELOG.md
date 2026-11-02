@@ -19,6 +19,9 @@ minor bump may break any of them.
   open in the one process.
 - In a Telegram group on `remote.telegram.allowed_chats`, only members whose own ids are listed
   too reach the app. Before, every member of a listed group could prompt and answer permissions.
+- A schedule whose tools let its agent open workers with *Open session* has to switch on *Open
+  worker* instead: `open_session` now opens a session of the person's own, and a schedule's saved
+  tools are not rewritten.
 
 ### Workflows and tasks
 
@@ -154,6 +157,10 @@ minor bump may break any of them.
   rather than in a box that scrolls.
 - A worker is named for what it works on when its lead gives a name, else for its folder, never
   for the first words of its lead's prompt.
+- A session's agent opens workers with `open_worker`. `open_session` now opens a session the
+  person holds as their own, in the rail and beside any session already on the project, for a
+  session's agent as for an outside program, so asking an agent for a new session no longer
+  gives a worker refused on its own folder.
 
 ### Fixed
 

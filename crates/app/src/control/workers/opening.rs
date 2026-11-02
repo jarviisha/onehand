@@ -146,7 +146,7 @@ pub(super) fn lead_here(lead: u64, cx: &App) -> bool {
             || sessions
                 .only
                 .get(&lead)
-                .is_some_and(|tools| tools.iter().any(|tool| tool == "open_session"))
+                .is_some_and(|tools| tools.iter().any(|tool| tool == "open_worker"))
     };
     allowed
         && crate::state::Shared::global(cx)
