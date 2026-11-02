@@ -5,7 +5,7 @@ use super::metrics::{
 };
 use super::parts::{
     ActivityRow, Object, RowMark, accent, activity_row, copy_button, detail_well, line_counts,
-    plain_box, row_note, scrolled, show_more, sideways,
+    plain_box, row_note, scrolled, show_all, show_more, sideways,
 };
 use crate::chat::session::ChatSession;
 use crate::controls::Quiet as _;

@@ -189,15 +189,6 @@ impl RenderOnce for CommandBlock {
     }
 }
 
-/// What opens a command cut at its bound: how many lines it has, when it has
-/// more than one; one long line wrapped is only *Show all*.
-fn show_all(lines: usize) -> String {
-    match lines {
-        0 | 1 => "Show all".to_string(),
-        n => format!("Show all {n} lines"),
-    }
-}
-
 /// The path a permission's command would run in, shortened from the front.
 ///
 /// **From the front, because a path is read from its tail**: the last
@@ -225,12 +216,3 @@ pub(in crate::chat::transcript) fn command_cwd(
 
 /// Characters of the working directory the meta line carries.
 pub(super) const MAX_CWD: usize = 48;
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn show_all_says_how_many_lines() {
-        assert_eq!(super::show_all(1), "Show all");
-        assert_eq!(super::show_all(30), "Show all 30 lines");
-    }
-}

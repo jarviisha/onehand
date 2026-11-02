@@ -104,8 +104,9 @@ terminal*, which the page and the header already offer.
 
 ## A prompt's controls
 
-Under each of the person's prompts, shown while it is pointed at or one of them holds focus: copy,
-then *Fork from here* for an agent that forks (Claude Code, Codex). Fork is absent on the first
+Under a prompt cut at about ten lines, first and always shown: *Show all N lines* (*Show all* for
+one long line), which opens it in place, then *Show less*. Then, shown while the prompt is pointed
+at or one of them holds focus: copy, then *Fork from here* for an agent that forks (Claude Code, Codex). Fork is absent on the first
 prompt, after a turn that did not end on an answer whose id is kept (a tool step, an interruption,
 a failure, a conversation saved before this build), and while the agent has not said it forks.
 Pressing it opens a new session on the same project and agent, beside the original on the rail and

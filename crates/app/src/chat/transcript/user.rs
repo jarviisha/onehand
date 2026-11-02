@@ -4,7 +4,7 @@ use super::metrics::{
     BUBBLE_MAX, BUBBLE_TAIL_GAP, HAIR_GAP, PROMPT_FADE, PROMPT_H, STACK_GAP, THUMB_H, THUMB_W,
     TIGHT_GAP, USER_BUBBLE_MAX, USER_BUBBLE_MAX_NARROW,
 };
-use super::parts::{copy_button, fork_button, show_more};
+use super::parts::{copy_button, fork_button, show_all, show_more};
 use crate::chat::session::ChatSession;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -148,7 +148,7 @@ impl RenderOnce for Prompt {
             })
         });
         let shown = *hovered.read(cx) || focus.is_focused(window) || fork_focus.is_focused(window);
-        // **Cut at a height, the rest behind *Show more***: a long prompt
+        // **Cut at a height, the rest behind *Show all***: a long prompt
         // pasted in pushed everything the agent did with it off the screen.
         // Whether it runs past the cut is last frame's measurement of the
         // whole text, as the pinned cards read their own; the canvas asks
@@ -179,7 +179,10 @@ impl RenderOnce for Prompt {
             let target = self.target;
             show_more(
                 ("prompt-more", key),
-                if open { "Show less" } else { "Show more" },
+                match open {
+                    true => "Show less".to_string(),
+                    false => show_all(self.text.lines().count()),
+                },
                 cx,
             )
             .on_click(move |_, _, cx: &mut App| {
@@ -256,8 +259,8 @@ impl RenderOnce for Prompt {
                 div()
                     .h_flex()
                     .items_center()
-                    // Always shown, unlike the controls beside it: it is
-                    // what says the prompt goes on past the cut.
+                    // Always shown, and first, unlike the controls beside it:
+                    // it is what says the prompt goes on past the cut.
                     .children(toggle)
                     .child(
                         copy_button(copy_id, self.text.clone(), "Copy the prompt", cx)

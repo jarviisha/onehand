@@ -100,7 +100,7 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
 ## Transcript
 
 - **Two sides.** The user's prompt is the library's `Muted` bubble (a grey fill, the `2xl`
-  corner), against the right edge, cut at ten lines under a fade with *Show more* beneath it. Everything the agent produces starts on a shared left axis
+  corner), against the right edge, cut at ten lines under a fade with *Show all N lines* beneath it. Everything the agent produces starts on a shared left axis
   across the column, as the library's ghost bubble draws it. Nothing else is right-aligned.
 - **A centred reading column**, narrowed on small panels, read at the reading size; what is
   wider scrolls inside its well. A scrollbar runs on the panel's edge down to the composer.
