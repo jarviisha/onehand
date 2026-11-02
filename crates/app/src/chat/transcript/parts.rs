@@ -19,6 +19,7 @@ use gpui_component::tag::Tag;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::acp::{ToolKind, ToolStatus};
 use onehand_core::chat::TranscriptItemId;
+use onehand_ui::ShortIcon as _;
 
 /// Height the body of a blocking card may occupy before it scrolls inside
 /// itself.
@@ -149,7 +150,7 @@ impl RenderOnce for BlockingBody {
 fn copy_control(id: impl Into<gpui::ElementId>, tip: &'static str, cx: &App) -> Button {
     crate::controls::action(id)
         .quiet_icon(false, cx)
-        .small()
+        .short_icon()
         .flex_none()
         .icon(IconName::Copy)
         .named(tip)
@@ -167,7 +168,7 @@ pub(super) fn fork_button(
     let session = session.clone();
     crate::controls::action(id)
         .quiet_icon(false, cx)
-        .small()
+        .short_icon()
         .flex_none()
         .icon(Icon::new(crate::icons::Icon::GitFork))
         .named(

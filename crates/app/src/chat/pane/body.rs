@@ -18,6 +18,7 @@ use gpui::{
 use gpui_component::spinner::Spinner;
 use gpui_component::{ActiveTheme, Colorize as _, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::chat::{Link, TranscriptItemId};
+use onehand_ui::ShortIcon as _;
 
 impl ChatPane {
     /// The blocking cards the agent is parked on, drawn just above the composer.
@@ -228,7 +229,7 @@ impl ChatPane {
                 .child(
                     crate::controls::action("drop-queued")
                         .quiet_icon(false, cx)
-                        .small()
+                        .short_icon()
                         .icon(Icon::new(IconName::Close))
                         .named("Remove from the queue")
                         .on_click(cx.listener(|pane: &mut Self, _, _, cx| {
@@ -582,7 +583,7 @@ impl ChatPane {
                                             // tooltip.
                                             crate::controls::action("to-bottom")
                                                 .quiet_icon(false, cx)
-                                                .small()
+                                                .short_icon()
                                                 .rounded(cx.theme().radius)
                                                 .icon(Icon::new(IconName::ChevronDown))
                                                 .named("Jump to the latest activity")

@@ -123,7 +123,7 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   in one slot (a spinner while it runs, so nothing moves as it settles), and takes no focus. A
   path or a command is mono; the agent's own wording, a folder and what the agent did (a
   thought, a command's output, a read or search list) read in the middle ink. One copy control
-  (`.small()`, quiet, named in its tooltip, in a column of its own; a permission's on the line
+  (`.short_icon()`, quiet, named in its tooltip, in a column of its own; a permission's on the line
   under its command, beside where it runs; a prompt's under its bubble, with *Fork from here* beside it, shown while
   the prompt is pointed at or a control holds focus) and one show-more control serve every block. Text
   that scrolls keeps a gutter for its scrollbar.
@@ -331,11 +331,11 @@ form, its fields, pickers and buttons alike, so a field's words stand at its tit
 dialog holding a form at `DIALOG_FORM` is that room too. In dense chrome (the rail, a dock, a
 strip, a dock's filter bar, a dialog that asks one thing, a row, a box's title row, the composer) it takes
 `.short()` (22px; a button is the library's extra small, a field its small, held at `CONTROL_H`), so it never outweighs what it acts on. An icon alone is
-square at its row's height: `.small()` beside `.short()` peers, `.tall()` beside tall ones.
+square at its row's height: `.short_icon()` beside `.short()` peers, `.tall_icon()` beside tall ones.
 `.tall()` (`FIELD_H`) is the ceiling: no control stands taller.
 **What a small object holds scales with the object.** Inside a fixed object smaller than a row of
 controls (an attachment's plate, a thumbnail), an icon-only control takes `.xsmall()` and a caption
-`MICRO_TEXT`, so neither crowds what it sits on; anywhere else `.short()`, `.small()` and the meta
+`MICRO_TEXT`, so neither crowds what it sits on; anywhere else `.short()`, `.short_icon()` and the meta
 size are the floor, and a worded control never takes `.xsmall()`, whose words run to its edges.
 Every control in one row of actions stands at one height. A correction a component needs lives
 in its shared wrapper (`Short`, `Tall`), never at a call site. `docs/ui-patterns.md` (*Control

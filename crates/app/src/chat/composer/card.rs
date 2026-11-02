@@ -19,6 +19,7 @@ use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, Sizable as _, StyledExt};
 use onehand_core::attachment::AttachmentSource;
 use onehand_core::chat::{Level, Meter};
+use onehand_ui::ShortIcon as _;
 
 /// The ring a file dragged over the card draws, in pixels as a hairline is. A
 /// shadow rather than a border, so the card does not shift by its width while
@@ -262,7 +263,7 @@ impl Composer {
                 // since a click flips it and no menu opens.
                 crate::controls::action("fast-toggle")
                     .quiet_icon(false, cx)
-                    .small()
+                    .short_icon()
                     .icon(bolt(toggle.on, cx))
                     .named(match toggle.on {
                         true => "Fast mode is on",
@@ -572,8 +573,8 @@ fn send_controls(
     // The arrow alone: the one control here whose meaning never changes, in a
     // row that runs out of width before anything else in the card does.
     let send = match waits {
-        true => control("send").small().secondary(),
-        false => control("send").primary().small(),
+        true => control("send").short_icon().secondary(),
+        false => control("send").primary().short_icon(),
     }
     .icon(Icon::new(crate::icons::Icon::ArrowUpLight))
     // Named apart from its tooltip, which teaches the keys, and kept while it

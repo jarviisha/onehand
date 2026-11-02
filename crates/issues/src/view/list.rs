@@ -12,11 +12,12 @@ use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{InputEvent, InputState};
 use gpui_component::tag::Tag;
 use gpui_component::tooltip::Tooltip;
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, StyledExt};
 use onehand_core::issues::{self, Issues, LocalIssue};
 use onehand_ui::Named as _;
 use onehand_ui::Quiet as _;
 use onehand_ui::Short as _;
+use onehand_ui::ShortIcon as _;
 use onehand_ui::search_input;
 use onehand_ui::{
     ControlSize, Tint, action, faint_rule, menu_below, menu_item, middle_ink, picker,
@@ -268,7 +269,7 @@ impl IssuesView {
                         action("issues-new")
                             .when(drafting, |button| button.secondary())
                             .when(!drafting, |button| button.primary())
-                            .small()
+                            .short_icon()
                             .icon(Icon::new(IconName::Plus))
                             .named("New issue")
                             .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
@@ -564,7 +565,7 @@ impl IssuesView {
                             .tooltip(format!("Sync with {name} again"))
                     } else {
                         action("issues-sync-now")
-                            .small()
+                            .short_icon()
                             .quiet_icon(false, cx)
                             .icon(Icon::new(IconName::Redo))
                             .loading(syncing)
@@ -575,7 +576,7 @@ impl IssuesView {
             })
             .child(if on {
                 action("issues-sync-pause")
-                    .small()
+                    .short_icon()
                     .quiet_icon(false, cx)
                     .icon(Icon::new(IconName::Pause))
                     .named("Pause auto-sync; links to issues are kept")
@@ -584,7 +585,7 @@ impl IssuesView {
                     )
             } else {
                 action("issues-sync-resume")
-                    .small()
+                    .short_icon()
                     .quiet_icon(false, cx)
                     .icon(Icon::new(IconName::Play))
                     .named(if paused {

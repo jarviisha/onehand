@@ -10,6 +10,7 @@ use gpui::{
     AnyElement, App, Entity, InteractiveElement as _, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement as _, Styled, Window, div,
 };
+use onehand_ui::ShortIcon as _;
 use onehand_ui::Tall as _;
 
 use crate::controls::Named as _;
@@ -79,7 +80,7 @@ fn step_row(
         crate::controls::menu_below(
             ("step-more", i),
             crate::controls::action(("step-more-trigger", i))
-                .small()
+                .short_icon()
                 .quiet_icon(false, cx)
                 .icon(IconName::Ellipsis)
                 .named("Move or remove this step"),
@@ -270,7 +271,7 @@ pub(super) fn step_panel(
               refused: Option<&'static str>| {
         let handle = handle.clone();
         crate::controls::action((id, i))
-            .small()
+            .short_icon()
             .quiet_icon(false, cx)
             .icon(Icon::new(icon))
             .named_with_action(tip, key, Some("WorkflowsPage"))

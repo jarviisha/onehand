@@ -8,12 +8,13 @@ use gpui::{
     Window, div,
 };
 use gpui_component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
+use onehand_ui::ShortIcon as _;
 use std::rc::Rc;
 
 /// A row's menu, built when it opens: the one its ••• and its right-click share.
 type RowMenu = Rc<dyn Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu>;
 use gpui_component::tooltip::Tooltip;
-use gpui_component::{ActiveTheme, Disableable as _, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Disableable as _, Icon, IconName, StyledExt};
 use onehand_ui::Named as _;
 use onehand_ui::Quiet as _;
 use onehand_ui::Short as _;
@@ -70,7 +71,7 @@ impl PluginsView {
             plugin.id
         )))
         .quiet_icon(false, cx)
-        .small()
+        .short_icon()
         .icon(Icon::new(IconName::Ellipsis))
         .named("Where it is on, and removing it")
         .refuses(busy.then_some(ONE_AT_A_TIME));
@@ -576,7 +577,7 @@ impl PluginsView {
             "plugin-install-scope-{}",
             plugin.id
         )))
-        .small()
+        .short_icon()
         .quiet_icon(false, cx)
         .icon(Icon::new(IconName::ChevronDown))
         .named("Install for…")

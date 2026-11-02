@@ -12,7 +12,8 @@ use gpui::{
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::menu::{DropdownMenu as _, PopupMenu};
 use gpui_component::tooltip::Tooltip;
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, StyledExt};
+use onehand_ui::ShortIcon as _;
 
 /// The workspace bar: a letter tile and the workspace's name, the switcher
 /// that opens the workspace menu, and *Hide the rail*.
@@ -69,7 +70,7 @@ pub(super) fn workspace_bar(
         .child(
             crate::controls::action("workspace")
                 .quiet_icon(false, cx)
-                .small()
+                .short_icon()
                 .icon(Icon::new(IconName::ChevronsUpDown))
                 .named("Other workspaces, and opening or starting one")
                 .dropdown_menu_with_anchor(
@@ -80,7 +81,7 @@ pub(super) fn workspace_bar(
         .child(
             crate::controls::action("hide-rail")
                 .quiet_icon(false, cx)
-                .small()
+                .short_icon()
                 .icon(Icon::new(IconName::PanelLeftClose))
                 .named_with_action("Hide the rail", &crate::shell::ToggleRail, None)
                 .on_click(
@@ -265,14 +266,7 @@ pub(super) fn new_button(
         new.secondary().short(),
         crate::controls::action("new-session-target")
             .secondary()
-            .short()
-            // The library sizes the caret's chevron off the button's size,
-            // and at the extra-small one it shrinks to a tick. The height
-            // stays `short`'s, which the button applies over its size.
-            .small()
-            // Square with no padding: `short`'s word padding left the chevron
-            // a few pixels and cut its side off.
-            .px_0()
+            .short_icon()
             .named("Start a session in another project, or with another agent"),
         cx.theme().sidebar,
         Anchor::TopRight,

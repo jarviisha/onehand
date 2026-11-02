@@ -17,6 +17,7 @@ use gpui_component::status_bar::StatusBar;
 use gpui_component::{
     ActiveTheme as _, GlobalState, Icon, IconName, Sizable as _, TitleBar, h_flex,
 };
+use onehand_ui::ShortIcon as _;
 
 /// A menu item: a command's keymap id and the name it takes in the menu, or
 /// `None` for a separator.
@@ -158,7 +159,7 @@ impl Shell {
                       act: Box<dyn gpui::Action>| {
             action(id)
                 .quiet_icon(on, cx)
-                .small()
+                .short_icon()
                 .icon(Icon::new(icon).when(!on, |icon| icon.text_color(muted)))
                 .named(name)
                 .on_click(move |_, window, cx| window.dispatch_action(act.boxed_clone(), cx))

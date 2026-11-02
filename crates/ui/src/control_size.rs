@@ -43,6 +43,24 @@ impl TallIcon for Button {
     }
 }
 
+/// An icon alone beside [`Short`]: square at [`tokens::CONTROL_H`], its
+/// icon at the library's small size.
+///
+/// The library's small icon button is a box of its own a step taller than
+/// `CONTROL_H`, so beside a worded `short` peer it stood two pixels over it;
+/// and `Short` on an icon gave it the extra-small icon, which a chevron reads
+/// as a tick at, and padding meant for words that cut the icon's sides off.
+pub trait ShortIcon {
+    /// Square at [`tokens::CONTROL_H`].
+    fn short_icon(self) -> Self;
+}
+
+impl ShortIcon for Button {
+    fn short_icon(self) -> Self {
+        self.small().size(tokens::CONTROL_H).px_0()
+    }
+}
+
 impl Tall for Input {
     fn tall(self) -> Self {
         // `Styled::h` by name: the field's own `h` sets a multi-line field's

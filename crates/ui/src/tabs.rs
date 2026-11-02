@@ -10,6 +10,7 @@
 use crate::Named as _;
 use crate::Quiet as _;
 use crate::Short as _;
+use crate::ShortIcon as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, ElementId, InteractiveElement as _, ParentElement as _, Rems, SharedString,
@@ -17,7 +18,7 @@ use gpui::{
 };
 use gpui_component::button::Button;
 use gpui_component::tooltip::Tooltip;
-use gpui_component::{ActiveTheme as _, Icon, IconName, Sizable as _, StyledExt as _};
+use gpui_component::{ActiveTheme as _, Icon, IconName, StyledExt as _};
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -296,7 +297,7 @@ pub fn panel_tab_frame(
 pub fn tab_close(id: impl Into<ElementId>, hint: &'static str, cx: &App) -> Button {
     crate::action(id)
         .quiet_icon(false, cx)
-        .small()
+        .short_icon()
         .flex_none()
         .icon(Icon::new(IconName::Close))
         .named(hint)

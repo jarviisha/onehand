@@ -14,6 +14,7 @@ use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, Sizable as _,
 use onehand_core::attachment::{
     AttachmentDelivery, AttachmentKind, AttachmentSource, StagedAttachment,
 };
+use onehand_ui::ShortIcon as _;
 
 /// How far the cut end of the tray fades out over the chips it hides.
 const TRAY_FADE: Rems = rems(3.);
@@ -386,7 +387,7 @@ impl Composer {
                         let name = attachment.name.clone();
                         let remove = crate::controls::action(("remove-managed-attachment", i))
                             .quiet_icon(false, cx)
-                            .small()
+                            .short_icon()
                             .icon(Icon::new(IconName::Close))
                             .named("Remove this attachment")
                             .on_click(cx.listener(move |composer: &mut Self, _, _, cx| {

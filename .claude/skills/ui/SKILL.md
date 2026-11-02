@@ -82,7 +82,7 @@ action(("plugin-update", i)).short().secondary().disabled(busy)
 action(("plugin-update", i)).short().secondary().refuses(busy.then_some("Another change is running"))
 // A row's icon at the extra small size, under the height of a worded peer beside it
 action(("session-more", i)).quiet_icon(false, cx).xsmall().icon(IconName::Ellipsis)
-action(("session-more", i)).quiet_icon(false, cx).small().icon(IconName::Ellipsis)
+action(("session-more", i)).quiet_icon(false, cx).short_icon().icon(IconName::Ellipsis)
 // A page form's button at the library's default size, lettered at the body size
 action("save-workflow").primary().label("Save")
 action("save-workflow").primary().tall().label("Save")
