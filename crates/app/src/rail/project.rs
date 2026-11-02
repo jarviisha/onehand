@@ -6,6 +6,7 @@ use super::session::{signal_hint, status_mark};
 use crate::chat::pane::{ProjectFacts, SessionSignal};
 use crate::controls::Named as _;
 use crate::controls::Quiet as _;
+use crate::controls::Short as _;
 use crate::shell::Shell;
 use crate::state::WorkspaceWindow;
 use gpui::prelude::FluentBuilder as _;
@@ -591,12 +592,16 @@ pub(super) fn project_row(
                         Some(number) => labelled(
                             ("project-auto-name", root_idx),
                             "Open the run's issue",
-                            // Small rather than a meta line's extra small: a
-                            // badge keeps its own height, which the smaller
-                            // control is not tall enough to hold.
+                            // A worded control's size, but as tall as the
+                            // badge it holds rather than its own height: a
+                            // badge keeps its geometry, which stands over
+                            // `CONTROL_H`, and a fixed height either clipped
+                            // it or set the pressable pill apart from the one
+                            // drawn bare.
                             crate::controls::action(("project-auto", root_idx))
                                 .quiet(cx)
-                                .small()
+                                .short()
+                                .h_auto()
                                 .child(pill)
                                 .tooltip(format!("Open issue {number} on the Issues page"))
                                 .on_click(move |_, window, cx: &mut App| {
