@@ -146,48 +146,6 @@ fn forgetting_a_lead_forgets_its_requests() {
     assert_eq!(requests.see(2, "b", &asked("go")), Ok(Seen::Opening(None)));
 }
 
-/// An outside program is told every worker-only argument it named, not
-/// only the first.
-#[test]
-fn an_outside_program_hears_every_worker_input_it_named() {
-    let open = super::Open {
-        caller: None,
-        project: "app".into(),
-        agent: "Claude".into(),
-        prompt: None,
-        dirs: vec!["/run".into()],
-        request: None,
-        turn: Some(1),
-        model: Some("strong".into()),
-        name: Some("a".into()),
-    };
-    let why = super::worker_only(&open).unwrap();
-    assert!(
-        why.contains("`dirs`")
-            && why.contains("`turn`")
-            && why.contains("`model`")
-            && why.contains("`name`"),
-        "{why}"
-    );
-    assert!(!why.contains("`request`"), "{why}");
-}
-
-#[test]
-fn an_outside_program_naming_none_is_let_through() {
-    let open = super::Open {
-        caller: None,
-        project: "app".into(),
-        agent: "Claude".into(),
-        prompt: Some("hi".into()),
-        dirs: Vec::new(),
-        request: None,
-        turn: None,
-        model: None,
-        name: None,
-    };
-    assert_eq!(super::worker_only(&open), None);
-}
-
 use super::requests::Relation;
 use super::state::{Whose, whose};
 

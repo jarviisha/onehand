@@ -61,11 +61,16 @@ pub enum Call {
         project: String,
         agent: String,
         prompt: Option<String>,
+    },
+    OpenWorker {
+        project: String,
+        agent: String,
+        prompt: Option<String>,
         /// Folders outside the project the session's agent may also write.
         dirs: Vec<PathBuf>,
         /// The caller's id for this open: the same id again answers with
         /// the same session rather than opening a second.
-        request: Option<String>,
+        request: String,
         /// The turn number `prompt` is, in the caller's count.
         turn: Option<u64>,
         /// The model the session runs, by the agent's own value.
@@ -217,7 +222,7 @@ pub fn handle(conn: &mut Conn, line: &str, standing: impl Fn(&Peer) -> Standing)
             if !allowed(name) {
                 let why = match standing {
                     _ if outside && SESSION_ONLY.contains(&name) => {
-                        format!("`{name}` is for a session's agent, about a worker it opened")
+                        format!("`{name}` is for a session's agent, about its workers")
                     }
                     Standing::Only(_) => format!("`{name}` is not among this session's tools"),
                     _ => "onehand's tools are switched off for this session".to_string(),
@@ -258,10 +263,11 @@ fn error(id: &Value, code: i64, message: &str) -> String {
 }
 
 /// The tools, in the order they are listed.
-const TOOLS: [&str; 16] = [
+const TOOLS: [&str; 17] = [
     "list_projects",
     "list_agents",
     "open_session",
+    "open_worker",
     "list_workflows",
     "read_workflow",
     "save_workflow",
@@ -279,7 +285,7 @@ const TOOLS: [&str; 16] = [
 
 /// The tools about a session's workers: an outside program owns none, so it
 /// is never offered them.
-const SESSION_ONLY: [&str; 3] = ["session_state", "send_prompt", "cancel_turn"];
+const SESSION_ONLY: [&str; 4] = ["open_worker", "session_state", "send_prompt", "cancel_turn"];
 
 /// The tools' names, in the order they are listed: what a schedule may give
 /// its sessions.
@@ -314,41 +320,55 @@ fn catalogue() -> Vec<Value> {
         (
             "open_session",
             "Open a session on a project with an agent, without showing it, and send it a \
-             first prompt if one is given. It appears in the rail. For a session's agent it \
-             answers once the session is up, on its model, its first prompt accepted, with \
-             the handle the session is named by",
+             first prompt if one is given. It appears in the rail, the person's own, and \
+             shares the project with any session already on it. To hand a job to a worker \
+             you then follow, use open_worker",
+            schema(
+                json!({
+                    "project": text(project),
+                    "agent": text("An agent's name, as list_agents gives it"),
+                    "prompt": text("The session's first prompt"),
+                }),
+                &["project", "agent"],
+            ),
+        ),
+        (
+            "open_worker",
+            "Open a worker: a session that works a job for you on a folder of its own, shown \
+             under you rather than in the rail, which you follow with session_state and give \
+             turns with send_prompt. It answers once the worker is up, on its model, its first \
+             prompt accepted, with the handle it is named by. A folder another session is open \
+             on is refused",
             schema(
                 json!({
                     "project": text(
-                        "A project of the window, by its name or its path; for a session's \
-                         agent, also the top level of a git worktree of a repository one of \
-                         the window's projects belongs to"
+                        "A project of the window, by its name or its path, or the top level of \
+                         a git worktree of a repository one of the window's projects belongs to"
                     ),
                     "agent": text("An agent's name, as list_agents gives it"),
-                    "prompt": text("The session's first prompt"),
+                    "prompt": text("The worker's first prompt"),
                     "dirs": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Absolute folders outside the project the session's \
-                                        agent may also write, for a session's agent only",
+                        "description": "Absolute folders outside the project the worker may \
+                                        also write",
                     },
                     "request": text(
-                        "Your id for this open, required from a session's agent: the same id \
-                         again answers with the session it opened rather than opening another"
+                        "Your id for this open: the same id again answers with the worker it \
+                         opened rather than opening another"
                     ),
                     "turn": {
                         "type": "integer",
                         "minimum": 1,
-                        "description": "The turn number the prompt is, required with a prompt \
-                                        from a session's agent",
+                        "description": "The turn number the prompt is, required with a prompt",
                     },
-                    "model": text("The model the session runs, by the agent's own value"),
+                    "model": text("The model the worker runs, by the agent's own value"),
                     "name": text(
-                        "A short name saying what the session works on, shown wherever it is listed, \
-                         at most 40 characters; for a session's agent only"
+                        "A short name saying what the worker works on, shown wherever it is \
+                         listed, at most 40 characters"
                     ),
                 }),
-                &["project", "agent"],
+                &["project", "agent", "request"],
             ),
         ),
         (
@@ -454,7 +474,7 @@ fn catalogue() -> Vec<Value> {
              and over, what it runs with. It never says the worker stopped: only `link: closed` \
              does",
             schema(
-                json!({"session": text("The worker's handle, as open_session answered it")}),
+                json!({"session": text("The worker's handle, as open_worker answered it")}),
                 &["session"],
             ),
         ),
@@ -466,7 +486,7 @@ fn catalogue() -> Vec<Value> {
              so a lost answer can be retried; the same turn with other text is refused",
             schema(
                 json!({
-                    "session": text("The worker's handle, as open_session answered it"),
+                    "session": text("The worker's handle, as open_worker answered it"),
                     "text": text("The turn's prompt"),
                     "turn": {
                         "type": "integer",
@@ -483,7 +503,7 @@ fn catalogue() -> Vec<Value> {
              Refused while a permission or a question waits on a person, which only they \
              answer, and while a person holds the worker",
             schema(
-                json!({"session": text("The worker's handle, as open_session answered it")}),
+                json!({"session": text("The worker's handle, as open_worker answered it")}),
                 &["session"],
             ),
         ),
@@ -510,7 +530,8 @@ fn parse(name: &str, arguments: &Value) -> Result<Call, String> {
         "open_file" => &["path"],
         "list_issues" => &["project"],
         "create_issue" => &["project", "title", "body"],
-        "open_session" => &[
+        "open_session" => &["project", "agent", "prompt"],
+        "open_worker" => &[
             "project", "agent", "prompt", "dirs", "request", "turn", "model", "name",
         ],
         "read_workflow" => &["workflow"],
@@ -579,8 +600,13 @@ fn parse(name: &str, arguments: &Value) -> Result<Call, String> {
             project: required("project")?,
             agent: required("agent")?,
             prompt: optional("prompt")?,
+        },
+        "open_worker" => Call::OpenWorker {
+            project: required("project")?,
+            agent: required("agent")?,
+            prompt: optional("prompt")?,
             dirs: folders(args.get("dirs"))?,
-            request: optional("request")?,
+            request: required("request")?,
             turn: match args.get("turn") {
                 None | Some(Value::Null) => None,
                 Some(turn) => Some(

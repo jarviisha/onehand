@@ -68,7 +68,8 @@ answer, and exits.
 |---|---|---|---|
 | `list_projects` | none | the window's projects | `name — path — check: yes/no`, one per line |
 | `list_agents` | none | the agents a session can be opened with | one name per line |
-| `open_session` | `project`, `agent`, optional `prompt`; for a session's agent, `request` (required), `turn` (required with `prompt`), optional `model`, `dirs` and `name`, and `project` may also be a worktree's top level | opens a session on the project with that agent, not shown; it appears in the rail; `prompt` is sent once the agent is up. A session's agent opens a worker: see *A worker* below | for an outside program, what it opened; for a session's agent, the worker's handle and what it runs with; or why not |
+| `open_session` | `project`, `agent`, optional `prompt` | opens a session on the project with that agent, not shown; it appears in the rail, the person's own, beside any session already on the project; `prompt` is sent once the agent is up. A session's agent opens one the same way, counted under its cap | what it opened, or why not |
+| `open_worker` | `project`, `agent`, `request`, optional `prompt` (with `turn`), `model`, `dirs` and `name`; `project` may also be a worktree's top level | for a session's agent only, never listed to an outside program: opens a worker, see *A worker* below | the worker's handle and what it runs with, or why not |
 | `list_workflows` | none | the library's workflows | `id — name`; an unreadable file says why |
 | `read_workflow` | `workflow` id | the workflow's file as TOML, a shipped one's too | the TOML, or why not |
 | `save_workflow` | `toml` | `workflow::store::save_text_blocking`: read as a file is (a key onehand does not read refuses), checked as the editor's *Save* is, and refused when another workflow has its name. It goes over the person's own file with its `id`, else into a new file: a shipped workflow is copied, never changed. The library is read again | `Saved <name> as <id>, version <n>`, or every problem, in the editor's words |
@@ -129,13 +130,15 @@ it back and says so.
   connections; an agent that ignores it still cannot call anything while off.
 - **A session's call lands in its own window.** `open_file` resolves a relative path against the
   session's project. `stop_task` refuses the task whose session is calling. A session's tools may
-  have at most four sessions open at once; the fifth `open_session` is refused, naming the four.
+  have at most four sessions open at once, sessions and workers together; the fifth `open_session`
+  or `open_worker` is refused, naming the four.
 
 ## A worker
 
-What a session's agent gets from `open_session` beyond what an outside program does. An outside
-program naming a folder that is no project of the window, or `dirs`, `request`, `turn`, `model` or `name`,
-is refused, naming each.
+What a session's agent opens with `open_worker`: a session that works a job for it, which it
+follows and gives turns. A session the person should hold as their own is opened with
+`open_session` instead, and none of the following holds for it. An outside program is never
+offered `open_worker`, and `open_session` takes none of its further arguments.
 
 - **Its name**: `name`, its spaces collapsed, not empty and at most 40 characters, says what
   the worker works on. It is the worker's title wherever it is listed and the answer's `name:`, saved as
@@ -241,6 +244,6 @@ is refused, naming each.
 - **Nothing of a worker is written to disk**: the handle, the relation, the request ids and the
   worker's transient project last as long as the run of the app. Its conversation is kept as any
   session's is. A clean quit ends every worker with its agent's process group; a crash may leave
-  one working, which the next `open_session` on its folder finds through the process reading
+  one working, which the next `open_worker` on its folder finds through the process reading
   above. After a restart the lead opens new workers, and each picks its job up from what it left
   in its worktree.

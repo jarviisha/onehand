@@ -1,6 +1,7 @@
-//! `open_session`, carried out: a session on a project of the window, or,
-//! for a session's agent, a worker on a worktree of one of their
-//! repositories, with the further folders it may write.
+//! `open_session` and `open_worker`, carried out: a session on a project of
+//! the window, the person's own in the rail, or, for a session's agent, a
+//! worker on a project or a worktree of one of their repositories, with the
+//! further folders it may write.
 //!
 //! **One worker per folder.** A worker never shares its folder with another
 //! session, nor with a process of the person's that already works in it: an
@@ -70,14 +71,14 @@ impl Reservations {
     }
 }
 
-/// What `open_session` was asked.
+/// What `open_worker` was asked.
 pub(super) struct Open {
-    pub(super) caller: Option<(u64, PathBuf)>,
+    pub(super) caller: (u64, PathBuf),
     pub(super) project: String,
     pub(super) agent: String,
     pub(super) prompt: Option<String>,
     pub(super) dirs: Vec<PathBuf>,
-    pub(super) request: Option<String>,
+    pub(super) request: String,
     pub(super) turn: Option<u64>,
     pub(super) model: Option<String>,
     pub(super) name: Option<String>,
@@ -98,8 +99,38 @@ impl Open {
     }
 }
 
-/// Carry out `open`: at once for an outside program, and for a session's
-/// agent once its folder has been checked off the UI thread.
+/// Open a session on a project of the window, the person's own: it appears
+/// in the rail, may share its project, and gets `prompt` once its agent is
+/// up. What a session's agent opens this way counts under its cap.
+pub(super) fn open_plain(
+    caller: Option<&(u64, PathBuf)>,
+    project: &str,
+    agent: &str,
+    prompt: Option<String>,
+    shell: &Entity<Shell>,
+    projects: &[(String, PathBuf)],
+    cx: &mut App,
+) -> Result<String, String> {
+    let spec = agent_named(agent, cx)?;
+    let dir = control::pick_project(projects, project)?.to_path_buf();
+    let name = spec.name.clone();
+    let (_, session) = start(shell, dir, spec, Vec::new(), caller, cx)?;
+    if let Some(prompt) = prompt {
+        send_when_connected(session, prompt, cx);
+    }
+    Ok(format!(
+        "Opened a session with {name} on {project}. It is in the rail, not shown"
+    ))
+}
+
+fn agent_named(agent: &str, cx: &App) -> Result<onehand_core::config::AgentSpec, String> {
+    onehand_core::config::agent_or_first(&crate::state::Shared::global(cx).agents, Some(agent))
+        .cloned()
+        .ok_or_else(|| format!("no agent named {agent}; list_agents names them"))
+}
+
+/// Carry out `open` for a session's agent, once its folder has been checked
+/// off the UI thread. An outside program is never offered the tool.
 pub(super) fn open(
     open: Open,
     window: gpui::AnyWindowHandle,
@@ -108,29 +139,11 @@ pub(super) fn open(
     answer: &mut Option<Answer>,
     cx: &mut App,
 ) -> Result<String, String> {
-    let spec = onehand_core::config::agent_or_first(
-        &crate::state::Shared::global(cx).agents,
-        Some(&open.agent),
-    )
-    .cloned()
-    .ok_or_else(|| format!("no agent named {}; list_agents names them", open.agent))?;
+    let spec = agent_named(&open.agent, cx)?;
     let named = control::pick_project(projects, &open.project).map(Path::to_path_buf);
-    let Some(caller) = open.caller.clone() else {
-        // An outside program opens on a project of the window, as it always
-        // has; a worker's folders are for a session's agent.
-        if let Some(why) = worker_only(&open) {
-            return Err(why);
-        }
-        let dir = named?;
-        let name = spec.name.clone();
-        let (_, session) = start(&shell, dir, spec, Vec::new(), None, cx)?;
-        return Ok(answered(&open, &name, &session, &[], cx));
-    };
+    let caller = open.caller.clone();
     let deadline = std::time::Instant::now() + opening::OPEN_DEADLINE;
-    let request = open
-        .request
-        .clone()
-        .ok_or("`request` is required: your id for this open, so a retry opens nothing twice")?;
+    let request = open.request.clone();
     match (&open.prompt, open.turn) {
         (Some(_), None) => return Err("`turn` is required with a prompt".to_string()),
         (None, Some(_)) => return Err("`turn` goes with a prompt; there is none".to_string()),
@@ -225,29 +238,6 @@ pub(super) fn open(
     })
     .detach();
     Ok(String::new())
-}
-
-/// Why an outside program's `open` is refused: every argument it named
-/// that only a session's agent may, or `None` when it named none.
-fn worker_only(open: &Open) -> Option<String> {
-    let named: Vec<String> = [
-        ("dirs", !open.dirs.is_empty()),
-        ("request", open.request.is_some()),
-        ("turn", open.turn.is_some()),
-        ("model", open.model.is_some()),
-        ("name", open.name.is_some()),
-    ]
-    .iter()
-    .filter(|(_, named)| *named)
-    .map(|(name, _)| format!("`{name}`"))
-    .collect();
-    (!named.is_empty()).then(|| {
-        format!(
-            "{} {} for a session's agent, not an outside program",
-            named.join(", "),
-            if named.len() == 1 { "is" } else { "are" }
-        )
-    })
 }
 
 /// The folder a session's agent named.
@@ -456,8 +446,7 @@ fn sessions_in(folder: &Path, roots: &[(PathBuf, PathBuf, usize)]) -> Vec<PathBu
         .collect()
 }
 
-/// Start `spec` on `dir` off screen, within the caller's cap; the first
-/// prompt of an outside program's open goes from here too.
+/// Start `spec` on `dir` off screen, within the caller's cap.
 fn start(
     shell: &Entity<Shell>,
     dir: PathBuf,
@@ -502,30 +491,6 @@ fn start(
         sessions().opened.entry(*uid).or_default().push(started.0);
     }
     Ok(started)
-}
-
-/// What an open answers: what it opened, and the folders it may write.
-fn answered(
-    open: &Open,
-    name: &str,
-    session: &Entity<ChatSession>,
-    dirs: &[PathBuf],
-    cx: &mut App,
-) -> String {
-    if open.caller.is_none()
-        && let Some(prompt) = open.prompt.clone()
-    {
-        send_when_connected(session.clone(), prompt, cx);
-    }
-    let mut said = format!(
-        "Opened a session with {name} on {}. It is in the rail, not shown",
-        open.project
-    );
-    if !dirs.is_empty() {
-        let dirs: Vec<String> = dirs.iter().map(|dir| dir.display().to_string()).collect();
-        said.push_str(&format!("\ndirs: {}", dirs.join(", ")));
-    }
-    said
 }
 
 /// Send `prompt` as `session`'s first message once its agent is up, as a

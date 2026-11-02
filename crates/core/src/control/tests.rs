@@ -41,6 +41,22 @@ fn performs(name: &str, arguments: Value) -> Call {
     }
 }
 
+/// `call`, as a session's agent makes it.
+fn session_call(name: &str, arguments: Value) -> Handled {
+    handle(
+        &mut session_ready(),
+        &line("tools/call", json!({"name": name, "arguments": arguments})),
+        on,
+    )
+}
+
+fn session_performs(name: &str, arguments: Value) -> Call {
+    match session_call(name, arguments) {
+        Handled::Perform { call, .. } => *call,
+        other => panic!("{name}: {other:?}"),
+    }
+}
+
 /// The text of a tool's refusal, which must be a tool result marked an error.
 fn refusal(handled: Handled) -> String {
     let reply = reply(handled);
@@ -94,15 +110,10 @@ fn every_tool_parses_its_input() {
             project: "app".into(),
             agent: "Claude".into(),
             prompt: None,
-            dirs: Vec::new(),
-            request: None,
-            turn: None,
-            model: None,
-            name: None,
         }
     );
     assert_eq!(
-        performs(
+        session_performs(
             "open_session",
             json!({"project": "app", "agent": "Claude", "prompt": "hi"})
         ),
@@ -110,57 +121,54 @@ fn every_tool_parses_its_input() {
             project: "app".into(),
             agent: "Claude".into(),
             prompt: Some("hi".into()),
-            dirs: Vec::new(),
-            request: None,
-            turn: None,
-            model: None,
-            name: None,
         }
     );
     assert_eq!(
-        performs(
-            "open_session",
-            json!({"project": "/wt", "agent": "Claude", "dirs": ["/run", "/other"]})
+        session_performs(
+            "open_worker",
+            json!({"project": "/wt", "agent": "Claude", "request": "a-1",
+                   "dirs": ["/run", "/other"]})
         ),
-        Call::OpenSession {
+        Call::OpenWorker {
             project: "/wt".into(),
             agent: "Claude".into(),
             prompt: None,
             dirs: vec!["/run".into(), "/other".into()],
-            request: None,
+            request: "a-1".into(),
             turn: None,
             model: None,
             name: None,
         }
     );
     assert_eq!(
-        performs(
-            "open_session",
+        session_performs(
+            "open_worker",
             json!({"project": "/wt", "agent": "Claude", "prompt": "go",
                    "request": "a-1", "turn": 3, "model": "strong"})
         ),
-        Call::OpenSession {
+        Call::OpenWorker {
             project: "/wt".into(),
             agent: "Claude".into(),
             prompt: Some("go".into()),
             dirs: Vec::new(),
-            request: Some("a-1".into()),
+            request: "a-1".into(),
             turn: Some(3),
             model: Some("strong".into()),
             name: None,
         }
     );
     assert_eq!(
-        performs(
-            "open_session",
-            json!({"project": "/wt", "agent": "Claude", "name": "  a ·  review #265 "})
+        session_performs(
+            "open_worker",
+            json!({"project": "/wt", "agent": "Claude", "request": "a-1",
+                   "name": "  a ·  review #265 "})
         ),
-        Call::OpenSession {
+        Call::OpenWorker {
             project: "/wt".into(),
             agent: "Claude".into(),
             prompt: None,
             dirs: Vec::new(),
-            request: None,
+            request: "a-1".into(),
             turn: None,
             model: None,
             name: Some("a · review #265".into()),
@@ -184,54 +192,56 @@ fn every_tool_refuses_malformed_input() {
         ),
         (
             "open_session",
-            json!({"project": "app", "agent": "Claude", "dirs": "/run"}),
-            "`dirs` must be a list of folder paths",
-        ),
-        (
-            "open_session",
-            json!({"project": "app", "agent": "Claude", "dirs": [1]}),
-            "`dirs` must be a list of folder paths",
-        ),
-        (
-            "open_session",
-            json!({"project": "app", "agent": "Claude", "dirs": [""]}),
-            "`dirs` must be a list of folder paths",
-        ),
-        (
-            "open_session",
-            json!({"project": "app", "agent": "Claude", "turn": 0}),
-            "`turn` must be a turn number, a whole number from 1",
-        ),
-        (
-            "open_session",
-            json!({"project": "app", "agent": "Claude", "turn": "1"}),
-            "`turn` must be a turn number, a whole number from 1",
-        ),
-        (
-            "open_session",
-            json!({"project": "app", "agent": "Claude", "model": 3}),
-            "model",
-        ),
-        (
-            "open_session",
-            json!({"project": "app", "agent": "Claude", "name": "   "}),
-            "name",
-        ),
-        (
-            "open_session",
-            json!({"project": "app", "agent": "Claude", "name": 3}),
-            "name",
-        ),
-        (
-            "open_session",
-            json!({"project": "app", "agent": "Claude", "name": "x".repeat(41)}),
-            "`name` must be at most 40 characters",
+            json!({"project": "app", "agent": "Claude", "request": "a-1"}),
+            "`open_session` takes no argument `request`",
         ),
         ("list_agents", json!({"extra": 1}), "extra"),
     ];
     for (name, arguments, named) in cases {
         let why = refusal(call(name, arguments.clone()));
         assert!(why.contains(named), "{name} {arguments}: {why}");
+    }
+    let worker = |extra: Value| {
+        let mut args = json!({"project": "app", "agent": "Claude", "request": "a-1"});
+        args.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        args
+    };
+    let worker_cases = [
+        (json!({"request": null}), "`request` is required"),
+        (
+            json!({"dirs": "/run"}),
+            "`dirs` must be a list of folder paths",
+        ),
+        (
+            json!({"dirs": [1]}),
+            "`dirs` must be a list of folder paths",
+        ),
+        (
+            json!({"dirs": [""]}),
+            "`dirs` must be a list of folder paths",
+        ),
+        (
+            json!({"turn": 0}),
+            "`turn` must be a turn number, a whole number from 1",
+        ),
+        (
+            json!({"turn": "1"}),
+            "`turn` must be a turn number, a whole number from 1",
+        ),
+        (json!({"model": 3}), "model"),
+        (json!({"name": "   "}), "name"),
+        (json!({"name": 3}), "name"),
+        (
+            json!({"name": "x".repeat(41)}),
+            "`name` must be at most 40 characters",
+        ),
+    ];
+    for (extra, named) in worker_cases {
+        let arguments = worker(extra);
+        let why = refusal(session_call("open_worker", arguments.clone()));
+        assert!(why.contains(named), "open_worker {arguments}: {why}");
     }
     // Arguments that are not an object at all.
     assert!(refusal(call("list_agents", json!([1]))).contains("object"));
@@ -252,6 +262,7 @@ fn the_catalogue_lists_every_tool_with_a_schema() {
             "list_projects",
             "list_agents",
             "open_session",
+            "open_worker",
             "list_workflows",
             "read_workflow",
             "save_workflow",
@@ -754,6 +765,17 @@ fn session_state_parses_its_handle() {
 #[test]
 fn an_outside_program_is_not_listed_session_state() {
     assert!(!names_listed(&mut ready(), on).contains(&"session_state".to_string()));
+}
+
+#[test]
+fn an_outside_program_is_not_listed_open_worker_but_a_session_is() {
+    assert!(!names_listed(&mut ready(), on).contains(&"open_worker".to_string()));
+    assert!(names_listed(&mut session_ready(), on).contains(&"open_worker".to_string()));
+    let why = refusal(call(
+        "open_worker",
+        json!({"project": "app", "agent": "Claude", "request": "a-1"}),
+    ));
+    assert!(why.contains("session's agent"), "{why}");
 }
 
 #[test]
