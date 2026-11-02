@@ -255,6 +255,11 @@ pub struct ChatSession {
     /// its first section's, so one set holding both would open a section the
     /// moment the cluster around it opened and there would be no closing it.
     section_open: HashSet<TranscriptItemId>,
+    /// Prompts the user opened past their cut.
+    ///
+    /// **A set of its own, because the section set already keys a turn's
+    /// file list by its prompt**, and one press would open both.
+    prompt_open: HashSet<TranscriptItemId>,
     /// Which turn summaries the user has decided about, and what they decided.
     ///
     /// **A map and not a set, because the default moves.** A summary opens
@@ -386,6 +391,7 @@ impl ChatSession {
                 pinned_keys: (None, false),
                 activity_open: HashMap::new(),
                 section_open: HashSet::new(),
+                prompt_open: HashSet::new(),
                 turn_open: HashMap::new(),
                 file_open: HashMap::new(),
                 subagent_open: HashSet::new(),
@@ -484,6 +490,19 @@ impl ChatSession {
                 }),
             }
         })
+    }
+
+    /// Whether the prompt at `target` is shown whole past its cut.
+    pub fn prompt_is_open(&self, target: TranscriptItemId) -> bool {
+        self.prompt_open.contains(&target)
+    }
+
+    /// Show the prompt at `target` whole, or cut it again.
+    pub fn toggle_prompt(&mut self, target: TranscriptItemId) {
+        if !self.prompt_open.remove(&target) {
+            self.prompt_open.insert(target);
+        }
+        self.chat.fold_changed();
     }
 
     /// Whether the activity run anchored at `anchor` is showing its steps:
@@ -696,6 +715,7 @@ impl ChatSession {
         self.numbering = self.chat.numbering();
         self.activity_open.clear();
         self.section_open.clear();
+        self.prompt_open.clear();
         self.turn_open.clear();
         self.file_open.clear();
         self.chat.fold_changed();
