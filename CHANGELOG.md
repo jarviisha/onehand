@@ -19,6 +19,9 @@ minor bump may break any of them.
   open in the one process.
 - In a Telegram group on `remote.telegram.allowed_chats`, only members whose own ids are listed
   too reach the app. Before, every member of a listed group could prompt and answer permissions.
+- A schedule whose tools let its agent open workers with *Open session* has to switch on *Open
+  worker* instead: `open_session` now opens a session of the person's own, and a schedule's saved
+  tools are not rewritten.
 
 ### Workflows and tasks
 

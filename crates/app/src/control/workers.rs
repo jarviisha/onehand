@@ -3,9 +3,11 @@
 //! worker on a project or a worktree of one of their repositories, with the
 //! further folders it may write.
 //!
-//! **One worker per folder.** A worker never shares its folder with another
-//! session, nor with a process of the person's that already works in it: an
-//! earlier run's worker left behind by a crash is the case this is for. The
+//! **One worker per folder.** A worker never opens on a folder another
+//! session is open on, nor where a process of the person's already works: an
+//! earlier run's worker left behind by a crash is the case this is for. A
+//! session opened later, by the person or with `open_session`, is not held
+//! back: it is the person's own, as one opened by hand is. The
 //! folder is reserved on the UI thread in the same update that checks it,
 //! which nothing else runs beside, so two opens in flight together cannot
 //! both pass.
