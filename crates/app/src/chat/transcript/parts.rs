@@ -226,6 +226,16 @@ pub(super) fn show_more(
         .label(label.into())
 }
 
+/// What opens a block cut at its bound (a permission's command, a prompt):
+/// how many lines it has, when it has more than one; one long line wrapped is
+/// only *Show all*.
+pub(super) fn show_all(lines: usize) -> String {
+    match lines {
+        0 | 1 => "Show all".to_string(),
+        n => format!("Show all {n} lines"),
+    }
+}
+
 /// Where whatever a row opens into is set in to: under the row's glyph, past
 /// the chevron's column.
 pub(super) fn detail_well(body: impl IntoElement) -> gpui::Div {
@@ -702,4 +712,13 @@ pub(super) fn pill(label: impl Into<SharedString>, cx: &App) -> Tag {
         .whitespace_nowrap()
         .overflow_hidden()
         .child(div().min_w_0().truncate().child(label.into()))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn show_all_says_how_many_lines() {
+        assert_eq!(super::show_all(1), "Show all");
+        assert_eq!(super::show_all(30), "Show all 30 lines");
+    }
 }

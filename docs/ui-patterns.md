@@ -171,7 +171,7 @@ The conversation's header draws no line and keeps `px_3`.
 
 What runs past its room is cut by a fade: a gradient from the clear surface to the solid one
 over its end, which says something is cut. It serves a rail name too long for its row, a long
-command folded in the transcript, the conversation where it runs under the composer, and the
+command folded in the transcript, a long prompt cut in its bubble, the conversation where it runs under the composer, and the
 staged files beside *Show all N*. Text inside a row that has no fade truncates on an ellipsis.
 Nothing else is drawn see-through.
 

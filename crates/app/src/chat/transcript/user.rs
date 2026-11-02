@@ -1,9 +1,10 @@
 use super::Room;
+use super::fold_key;
 use super::metrics::{
-    BUBBLE_MAX, BUBBLE_TAIL_GAP, HAIR_GAP, STACK_GAP, THUMB_H, THUMB_W, TIGHT_GAP, USER_BUBBLE_MAX,
-    USER_BUBBLE_MAX_NARROW,
+    BUBBLE_MAX, BUBBLE_TAIL_GAP, HAIR_GAP, PROMPT_FADE, PROMPT_H, STACK_GAP, THUMB_H, THUMB_W,
+    TIGHT_GAP, USER_BUBBLE_MAX, USER_BUBBLE_MAX_NARROW,
 };
-use super::parts::{copy_button, fork_button};
+use super::parts::{copy_button, fork_button, show_all, show_more};
 use crate::chat::session::ChatSession;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -35,14 +36,16 @@ const MAX_ATTACHMENT_ROWS: usize = 8;
 /// message. Both keep the right edge, because the edge is what says whose they
 /// are, and the files come first — they were handed over before the question
 /// was asked about them.
-/// `fork` is the session and the prompt's place, when it can be forked from.
+/// `fork` says whether the prompt can be forked from.
 pub(super) fn user(
     u: &UserMsg,
-    uid: usize,
+    session: &Entity<ChatSession>,
+    target: TranscriptItemId,
     room: Room,
-    fork: Option<(Entity<ChatSession>, TranscriptItemId)>,
+    fork: bool,
     cx: &App,
 ) -> impl IntoElement + use<> {
+    let uid = fold_key(target);
     let over = u.attachments.len().saturating_sub(MAX_ATTACHMENT_ROWS);
     let share = match room.narrow {
         true => USER_BUBBLE_MAX_NARROW,
@@ -100,6 +103,8 @@ pub(super) fn user(
             key: uid,
             text: u.text.clone().into(),
             share,
+            session: session.clone(),
+            target,
             fork,
         }))
 }
@@ -120,7 +125,9 @@ struct Prompt {
     key: usize,
     text: SharedString,
     share: f32,
-    fork: Option<(Entity<ChatSession>, TranscriptItemId)>,
+    session: Entity<ChatSession>,
+    target: TranscriptItemId,
+    fork: bool,
 }
 
 impl RenderOnce for Prompt {
@@ -141,6 +148,50 @@ impl RenderOnce for Prompt {
             })
         });
         let shown = *hovered.read(cx) || focus.is_focused(window) || fork_focus.is_focused(window);
+        // **Cut at a height, the rest behind *Show all***: a long prompt
+        // pasted in pushed everything the agent did with it off the screen.
+        // Whether it runs past the cut is last frame's measurement of the
+        // whole text, as the pinned cards read their own; the canvas asks
+        // for one more frame only when it changed.
+        let open = self.session.read(cx).prompt_is_open(self.target);
+        let tall = window.use_keyed_state(("prompt-height", key), cx, |_, _| gpui::px(0.));
+        let cut = PROMPT_H.to_pixels(window.rem_size());
+        let overflows = *tall.read(cx) > cut;
+        let measure = gpui::canvas(
+            move |bounds, window, cx| {
+                if *tall.read(cx) != bounds.size.height {
+                    tall.update(cx, |h, _| *h = bounds.size.height);
+                    // After this frame: a refresh asked for mid-draw is
+                    // dropped.
+                    window.defer(cx, |window, _| window.refresh());
+                }
+            },
+            |_, _, _, _| {},
+        )
+        .absolute()
+        .top_0()
+        .left_0()
+        .size_full();
+        // The bubble's own surface, which the fade ends on.
+        let surface = cx.theme().semantic_tokens().colors.muted;
+        let toggle = (overflows || open).then(|| {
+            let session = self.session.clone();
+            let target = self.target;
+            show_more(
+                ("prompt-more", key),
+                match open {
+                    true => "Show less".to_string(),
+                    false => show_all(self.text.lines().count()),
+                },
+                cx,
+            )
+            .on_click(move |_, _, cx: &mut App| {
+                session.update(cx, |session, cx| {
+                    session.toggle_prompt(target);
+                    cx.notify();
+                });
+            })
+        });
 
         div()
             .id(("prompt", key))
@@ -148,7 +199,11 @@ impl RenderOnce for Prompt {
             .items_end()
             // The control belongs to the bubble rather than following it.
             .gap(BUBBLE_TAIL_GAP)
-            .max_w(relative(self.share))
+            // A set width, not a cap: shrunk to the bubble, this box left the
+            // bubble's own share of it unresolved while the row was measured,
+            // so the text was measured on one width and drawn wrapped on
+            // another, and spilled over the blocks under it.
+            .w(relative(self.share))
             .on_hover(move |on, _, cx| {
                 hovered.update(cx, |hovered, cx| {
                     *hovered = *on;
@@ -162,10 +217,9 @@ impl RenderOnce for Prompt {
             .child(
                 Bubble::new()
                     .with_variant(BubbleVariant::Muted)
-                    // The library caps a bubble at four fifths of its parent,
-                    // but the parent here shrinks to the bubble, so the cap
-                    // wraps even two words. The share above and the content's
-                    // own cap already bound the width.
+                    // The library caps a bubble at four fifths of its parent;
+                    // the share above and the content's own cap already bound
+                    // the width.
                     .max_w_full()
                     // The size on the surface itself: the library letters a
                     // bubble at its own control size, a step over the prose.
@@ -174,18 +228,46 @@ impl RenderOnce for Prompt {
                             .max_w(BUBBLE_MAX)
                             .text_size(super::metrics::TEXT),
                     )
-                    .child(prompt_text(&self.text, cx)),
+                    .child(
+                        div()
+                            .relative()
+                            .when(!open, |clip| clip.max_h(PROMPT_H).overflow_hidden())
+                            .child(
+                                div()
+                                    .relative()
+                                    .child(prompt_text(&self.text, cx))
+                                    .child(measure),
+                            )
+                            .when(overflows && !open, |clip| {
+                                clip.child(
+                                    div()
+                                        .absolute()
+                                        .bottom_0()
+                                        .left_0()
+                                        .right_0()
+                                        .h(PROMPT_FADE)
+                                        .bg(gpui::linear_gradient(
+                                            180.,
+                                            gpui::linear_color_stop(surface.alpha(0.), 0.),
+                                            gpui::linear_color_stop(surface, 1.),
+                                        )),
+                                )
+                            }),
+                    ),
             )
             .child(
                 div()
                     .h_flex()
                     .items_center()
+                    // Always shown, and first, unlike the controls beside it:
+                    // it is what says the prompt goes on past the cut.
+                    .children(toggle)
                     .child(
                         copy_button(copy_id, self.text.clone(), "Copy the prompt", cx)
                             .when(!shown, |copy| copy.text_color(cx.theme().transparent)),
                     )
-                    .children(self.fork.map(|(session, target)| {
-                        fork_button(fork_id, &session, target, cx)
+                    .children(self.fork.then(|| {
+                        fork_button(fork_id, &self.session, self.target, cx)
                             .when(!shown, |fork| fork.text_color(cx.theme().transparent))
                     })),
             )

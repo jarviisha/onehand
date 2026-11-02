@@ -265,7 +265,14 @@ pub(super) fn new_button(
         new.secondary().short(),
         crate::controls::action("new-session-target")
             .secondary()
+            .short()
+            // The library sizes the caret's chevron off the button's size,
+            // and at the extra-small one it shrinks to a tick. The height
+            // stays `short`'s, which the button applies over its size.
             .small()
+            // Square with no padding: `short`'s word padding left the chevron
+            // a few pixels and cut its side off.
+            .px_0()
             .named("Start a session in another project, or with another agent"),
         cx.theme().sidebar,
         Anchor::TopRight,

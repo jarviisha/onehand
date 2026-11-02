@@ -117,6 +117,12 @@ pub(super) const USER_BUBBLE_MAX_NARROW: f32 = 0.9;
 /// control belongs to the bubble rather than following it, and any wider it
 /// read as a separate thing that happened to be beneath.
 pub(super) const BUBBLE_TAIL_GAP: Rems = rems(0.125);
+/// How tall a prompt stands before *Show more*: ten lines of the reading
+/// size. A height and not a line count, so one long wrapped paragraph is held
+/// to the same box as ten short lines.
+pub(super) const PROMPT_H: Rems = rems(TEXT.0 * crate::tokens::LEADING * 10.);
+/// The fade over the foot of a prompt cut at [`PROMPT_H`].
+pub(super) const PROMPT_FADE: Rems = rems(3.);
 
 /// How much of the panel a permission's command box may take, on a panel too
 /// short for [`COMMAND_H`]: the heading that says what is asked and the

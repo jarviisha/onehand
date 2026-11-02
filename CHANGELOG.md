@@ -62,6 +62,7 @@ minor bump may break any of them.
   or an error as a divider across the column. A waiting permission or question is a neutral
   card, its tone in its mark and title, as wide as the composer and tucked under it, the ones
   behind peeking over it; a failed turn and a task's approval take the same neutral shape.
+- A prompt longer than ten lines is cut under a fade, with *Show all N lines* beneath it to read it whole.
 - Pages open under breadcrumbs, a row's actions sit behind a `⋯` that a right-click opens too,
   Settings groups stand in boxes, the Issues list has a table head, and a task's runs and a
   workflow's steps are steppers. The Workbench's modes, the terminal's shells and the editor's
