@@ -15,13 +15,14 @@ use gpui::{
 };
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::menu::PopupMenu;
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, StyledExt};
 use onehand_core::issues::LocalIssue;
 use onehand_core::task::work::{Act, Around, IssueWork, Next, PrSeen, next_action, pr_named};
 use onehand_ui::Named as _;
 use onehand_ui::Quiet as _;
 use onehand_ui::Refuses as _;
 use onehand_ui::Short as _;
+use onehand_ui::ShortIcon as _;
 use onehand_ui::{action, menu_below, menu_item, menu_row, status_ink};
 use std::path::Path;
 
@@ -398,7 +399,7 @@ fn more_menu(
     // The tab leads to the page, where there is room to work the issue.
     let in_tab = doing.full.is_none();
     let trigger = action("issue-more")
-        .small()
+        .short_icon()
         .quiet_icon(false, cx)
         .loading(doing.publishing || waits)
         .icon(Icon::new(IconName::Ellipsis))

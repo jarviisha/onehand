@@ -18,6 +18,7 @@ use gpui::{
 use gpui_component::button::ButtonVariants;
 use gpui_component::dialog::{Dialog, DialogClose, DialogTitle};
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use onehand_ui::ShortIcon as _;
 use onehand_ui::Tall as _;
 
 mod agent;
@@ -88,10 +89,10 @@ pub(crate) fn title_row(name: impl Into<SharedString>, cx: &App) -> impl IntoEle
                 .child(name.into()),
         )
         .child(
-            div().flex_none().size_6().child(
+            div().flex_none().size(crate::tokens::CONTROL_H).child(
                 DialogClose::new().child(
                     crate::controls::action("dialog-close")
-                        .small()
+                        .short_icon()
                         .quiet_icon(false, cx)
                         .icon(Icon::new(IconName::Close))
                         .named("Close"),

@@ -138,12 +138,12 @@ Moving the library's rev means checking this table.
 |---|---|---|---|
 | `.xsmall()`: an icon-only button inside a small object only | 20 / 12 / 12 / 4 / 4 | 20 / 12 / 4 **px** | 12 |
 | `.short()` (`CONTROL_H`): a button the library's extra small, a field its small | 22 / 12 / 12 / 4 / 8 | 22 / 13 / 8 **px** | 14 |
-| `.small()`: an icon-only button beside `.short()` | 24 / 14 / 14 / 4 / 8 | 24 / 14 / 8 **px** | 14 |
+| `.short_icon()` (`CONTROL_H`): an icon-only button beside `.short()`, the library's small held square | 22 / – / 14 / – / 0 | – | 14 |
 | `.tall()` (`FIELD_H`): the library's small, held taller | 26 / 13 / 14 / 4 / 12 | 26 / 13 / 8 **px** | 16 |
 
 An icon-only button is square at its height. A button's `.short()` is the library's extra small
 held at `CONTROL_H` and its `.tall()` the library's small held at `FIELD_H`, its words at
-`CHROME_TEXT`; a field takes the library's small at both, its words at `CHROME_TEXT` (`Short` and `Tall` in `crates/ui/src/control_size.rs`); their words, icons and insets are the library's. A builder that
+`CHROME_TEXT`; a field takes the library's small at both, its words at `CHROME_TEXT` (`Short`, `ShortIcon`, `Tall` and `TallIcon` in `crates/ui/src/control_size.rs`); their words, icons and insets are the library's. A builder that
 sizes the controls it makes (`choice`, `switch`, `picker`) takes one of them as a `ControlSize`.
 
 A field of several lines (`text_area`) is the library's `Textarea`, which takes no size: its text
@@ -174,7 +174,7 @@ All in `onehand_ui::tokens` (`crates/ui/src/tokens.rs`), which the app names
 | `TREE_ROW_H` | 1.375rem | a Workbench tree's row pitch (Files, Markdown) |
 | `TREE_ROW_FILL` | 1.1875rem | a tree row's fill: 19px, odd so the name centres on a whole pixel |
 | `TREE_ROW_ABOVE`, `TREE_ROW_BELOW` | 0.0625rem, 0.125rem | the room over and under a tree row's fill; between two fills, their sum |
-| `CONTROL_H` | 1.375rem | a small control: `.short()`, and an icon-only `.small()` button |
+| `CONTROL_H` | 1.375rem | a small control: `.short()`, and an icon-only `.short_icon()` button |
 | `FIELD_H` | 1.625rem | the tallest control, a step over `.short()`: a page's head and form (`.tall()`); nothing stands taller |
 | `SCROLLBAR_THUMB`, `SCROLLBAR_THUMB_ACTIVE` | 4px, 6px | a scrollbar's thumb at rest, and hovered or dragged |
 | `CHROME_TEXT` | 0.8125rem | chrome text: a panel's rows, boxes, forms and strips, a `.tall()` control's words, a document's reading text |

@@ -8,8 +8,9 @@ use gpui::{
     div,
 };
 use gpui_component::button::ButtonVariants;
-use gpui_component::{ActiveTheme, Icon, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, StyledExt};
 use onehand_core::config::{AgentSpec, Preset, Runs};
+use onehand_ui::ShortIcon as _;
 use onehand_ui::Tall as _;
 
 /// What a row's code line says an agent runs: a built-in agent's adapter, or
@@ -201,7 +202,7 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
                 )
                 .child(
                     crate::controls::action(("edit-agent", idx))
-                        .small()
+                        .short_icon()
                         .secondary()
                         // Not the bundled `replace`, which is a find-and-replace
                         // mark: it reads as swapping this agent for another one

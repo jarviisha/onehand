@@ -26,6 +26,7 @@ use onehand_core::task::marks::{self, Change};
 use onehand_core::task::work::{
     ANSWER_LINES, Act, Around, PrSeen, UnderReview, Work, last_lines, next_action,
 };
+use onehand_ui::ShortIcon as _;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -375,7 +376,7 @@ fn trail(
     let more = crate::controls::menu_below(
         SharedString::from(format!("task-more-{}", task.id)),
         crate::controls::action("task-more")
-            .small()
+            .short_icon()
             .quiet_icon(false, cx)
             .icon(IconName::Ellipsis)
             .named("More actions")

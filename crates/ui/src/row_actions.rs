@@ -4,6 +4,7 @@
 
 use crate::Named as _;
 use crate::Quiet as _;
+use crate::ShortIcon as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, ClickEvent, ElementId, FocusHandle, InteractiveElement as _, IntoElement,
@@ -11,7 +12,7 @@ use gpui::{
 };
 use gpui_component::menu::PopupMenu;
 use gpui_component::popover::Popover;
-use gpui_component::{ActiveTheme as _, IconName, Sizable as _};
+use gpui_component::{ActiveTheme as _, IconName};
 use std::rc::Rc;
 
 /// What a press on a row's act runs.
@@ -74,7 +75,7 @@ pub fn row_more(
         ElementId::Name(format!("{key}-menu").into()),
         crate::action(ElementId::Name(key))
             .quiet_icon(false, cx)
-            .small()
+            .short_icon()
             .icon(IconName::Ellipsis)
             .named(name),
         move |menu, _, cx| row_menu_items(menu, &acts, cx),

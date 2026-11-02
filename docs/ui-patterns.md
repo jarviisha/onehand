@@ -103,7 +103,7 @@ size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in ea
 | A form in a dialog at `DIALOG_FORM` (the agent form, the workflow launcher, the issue picker): its fields, its pickers and its footer | Button, Input | `.tall()` |
 | A dialog that asks one thing (a rename, a worktree): its fields and footer; a dock's filter bar, its search, choices and pickers | Button, Input | `.short()` |
 | Every other button with words: a strip's, a box's, a row's, a secondary action inside dense content (a line of meta text, a transcript block, a chip), a tab, a fold toggle, a pinned card's answers | Button | `.short()`, under a row, so the controls never outweigh what they act on |
-| Every other icon-only button: a strip's, a row's, a copy control, the composer's send | Button | `.small()`, square at `CONTROL_H`, so an icon alone is as tall as a worded peer beside it |
+| Every other icon-only button: a strip's, a row's, a copy control, a split action's caret beside `.short()`, the composer's send | Button | `.short_icon()`, square at `CONTROL_H`, so an icon alone is as tall as a worded peer beside it |
 | A field in a strip or the rail | Input | `.short()`, as tall as the buttons beside it |
 | An icon in a button | Icon | the button's own, as the library sizes it for the button's size |
 | An icon leading a label the app draws: a row, a menu item | Icon | `.small()` |
@@ -122,8 +122,9 @@ size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in ea
   `CONTROL_H` (22px) and its `.tall()` the library's small held at `FIELD_H` (26px), its words at
   `CHROME_TEXT`; a field takes the library's small at both heights, its words at `CHROME_TEXT`; their icons and insets the
   library's. A size a component gets wrong is corrected in its shared
-  wrapper, never at the call site. The library's `.small()` is an icon-only button's size, square
-  at the same height as `.short()`. `.xsmall()` is no field's or worded button's size: an icon
+  wrapper, never at the call site. An icon-only button beside `.short()` is `.short_icon()`: the
+  library's small icon, held square at `CONTROL_H`, the same height as `.short()`; the library's
+  own small icon button stands a step taller. `.xsmall()` is no field's or worded button's size: an icon
   takes it, and an icon-only button inside a small object (an attachment's plate), which scales
   with the object it sits on.
 - **One row of actions, one height.** Every control standing in one row of actions (a button, both
@@ -132,7 +133,7 @@ size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in ea
   every other control in it follows; a control whose role elsewhere takes another size takes
   the row's here. Only the components that keep their own geometry (below) stand apart, centred.
 - **The hit area is not the icon.** A worded `.short()` button carries the extra small icon
-  beside its words; an icon alone at `.small()` takes the small one, its box no larger than a
+  beside its words; an icon alone at `.short_icon()` takes the small one, its box no larger than a
   worded peer's. Nothing is enlarged to fill its box.
 - **Some components keep their own geometry**: a badge, a checkbox, a switch, a key cap. Centre
   them in their row (`items_center`); never stretch them to the height of the controls beside

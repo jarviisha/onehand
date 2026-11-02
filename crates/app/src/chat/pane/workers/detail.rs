@@ -20,6 +20,7 @@ use gpui_component::menu::DropdownMenu as _;
 use gpui_component::spinner::Spinner;
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme as _, IconName, Sizable as _, StyledExt as _};
+use onehand_ui::ShortIcon as _;
 
 impl ChatPane {
     /// The picked worker's detail, filling what the list leaves.
@@ -164,7 +165,7 @@ impl ChatPane {
         let pane = cx.entity().downgrade();
         let more = crate::controls::action(("worker-more", uid))
             .quiet_icon(false, cx)
-            .small()
+            .short_icon()
             .icon(IconName::Ellipsis)
             .named("More for this worker")
             .dropdown_menu_with_anchor(gpui::Anchor::TopRight, move |menu, _, _| {

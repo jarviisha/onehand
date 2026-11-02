@@ -10,7 +10,8 @@ use gpui::{
 };
 use gpui_component::button::Button;
 use gpui_component::menu::{DropdownMenu as _, PopupMenu};
-use gpui_component::{ActiveTheme, Icon, Sizable as _};
+use gpui_component::{ActiveTheme, Icon};
+use onehand_ui::ShortIcon as _;
 
 /// Names are structural anchors, not content: cap them so a deep path cannot
 /// push a popup's width around. This is the bound for the one place a name is
@@ -236,7 +237,7 @@ pub(super) fn on_hover(
 pub(super) fn row_control(id: impl Into<ElementId>, icon: impl Into<Icon>, cx: &App) -> Button {
     crate::controls::action(id)
         .quiet_icon(false, cx)
-        .small()
+        .short_icon()
         .icon(icon.into())
 }
 
@@ -245,7 +246,7 @@ pub(super) fn row_control(id: impl Into<ElementId>, icon: impl Into<Icon>, cx: &
 pub(super) fn meta_control(id: impl Into<ElementId>, icon: impl Into<Icon>, cx: &App) -> Button {
     crate::controls::action(id)
         .quiet_icon(false, cx)
-        .small()
+        .short_icon()
         .icon(icon.into())
 }
 

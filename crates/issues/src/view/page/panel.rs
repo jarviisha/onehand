@@ -9,9 +9,10 @@ use gpui::{
     InteractiveElement as _, IntoElement, ParentElement, Rems, Render,
     StatefulInteractiveElement as _, Styled, Window, div, rems,
 };
-use gpui_component::{ActiveTheme, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, IconName, StyledExt};
 use onehand_ui::Named as _;
 use onehand_ui::Quiet as _;
+use onehand_ui::ShortIcon as _;
 use onehand_ui::strip;
 use onehand_ui::{action, hint};
 
@@ -68,7 +69,7 @@ impl IssuesView {
             .children(place.map(|place| div().flex_none().child(place)))
             .child(
                 action("issues-page-close")
-                    .small()
+                    .short_icon()
                     .quiet_icon(false, cx)
                     .icon(IconName::Close)
                     .named_with_action("Close", &crate::IssuesClose, Some("Issues"))

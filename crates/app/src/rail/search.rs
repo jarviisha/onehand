@@ -11,7 +11,8 @@ use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{Anchor, Context, IntoElement, ParentElement, Styled, div};
 use gpui_component::menu::DropdownMenu as _;
-use gpui_component::{ActiveTheme, Icon, Selectable as _, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, Selectable as _, StyledExt};
+use onehand_ui::ShortIcon as _;
 
 /// The search field, the library's edged field, with the key that reaches it
 /// from anywhere.
@@ -85,7 +86,7 @@ pub(super) fn sessions_header(
             // narrowed list says so where it is narrowed.
             crate::controls::action("rail-filter")
                 .quiet_icon(filter != Filter::ByProject, cx)
-                .small()
+                .short_icon()
                 .icon(Icon::new(crate::icons::Icon::ListFilter))
                 // Named for what it is; the tooltip says what it holds now.
                 .accessibility_label("Filter sessions")

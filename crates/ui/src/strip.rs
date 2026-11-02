@@ -7,9 +7,10 @@
 //! one a step lower, so the two stacked do not read as the panel's twice.
 
 use crate::Quiet as _;
+use crate::ShortIcon as _;
 use gpui::{App, Div, ElementId, Styled as _, div};
 use gpui_component::button::Button;
-use gpui_component::{ActiveTheme as _, Icon, Sizable as _, StyledExt as _};
+use gpui_component::{ActiveTheme as _, Icon, StyledExt as _};
 
 /// A strip: [`crate::tokens::BAR_H`] tall, inset `px_3`, its parts `gap_2`
 /// apart, lettered at the chrome size in the muted ink. What it names is
@@ -54,7 +55,7 @@ pub fn strip_control(
 ) -> Button {
     crate::action(id)
         .quiet_icon(on, cx)
-        .small()
+        .short_icon()
         .flex_none()
         .icon(icon.into())
 }
