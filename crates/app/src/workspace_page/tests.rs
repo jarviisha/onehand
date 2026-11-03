@@ -34,3 +34,13 @@ fn a_host_tile_says_its_sessions_alone() {
     );
     assert_eq!(holds(&project(None, 0), None), "Looking for open issues…");
 }
+
+/// A host's project on the same path as one here is no filter: picking it
+/// would narrow the page to the local folder's issues.
+#[test]
+fn only_a_project_here_is_a_filter() {
+    let projects = [project(None, 0), project(Some(HostName("vps".into())), 0)];
+    let options: Vec<_> = filter_options(&projects).collect();
+    assert_eq!(options, vec![("app".into(), PathBuf::from("/srv/app"))]);
+    assert_eq!(filter_options(&projects[1..]).count(), 0);
+}

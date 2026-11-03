@@ -148,7 +148,7 @@ impl WorkspacePage {
         self.filter = self
             .filter
             .take()
-            .filter(|only| projects.iter().any(|project| &project.root == only));
+            .filter(|only| filter_options(&projects).any(|(_, root)| &root == only));
         self.projects = projects;
         self.read = None;
         self.failed = Vec::new();
@@ -207,7 +207,7 @@ impl WorkspacePage {
     /// everything it has read. A filter on a project no longer listed goes.
     pub(crate) fn set_projects(&mut self, projects: Vec<PageProject>, cx: &mut Context<Self>) {
         if let Some(only) = &self.filter
-            && !projects.iter().any(|project| &project.root == only)
+            && !filter_options(&projects).any(|(_, root)| &root == only)
         {
             self.filter = None;
             self.refilter();
@@ -467,17 +467,19 @@ impl WorkspacePage {
                 ),
             });
 
-        let unbound = !page.projects.is_empty()
-            && page.projects.iter().all(|project| project.issues.is_none());
+        let unbound = filter_options(&page.projects).next().is_some()
+            && page
+                .projects
+                .iter()
+                .filter(|project| project.host.is_none())
+                .all(|project| project.issues.is_none());
         let this = cx.entity();
         let filter = crate::page_parts::project_filter(
             "workspace-filter",
             page.filter
                 .as_deref()
                 .map(|root| page.label_of(root).into()),
-            page.projects
-                .iter()
-                .map(|project| (project.label.clone(), project.root.clone())),
+            filter_options(&page.projects),
             page.filter.clone(),
             onehand_ui::ControlSize::Short,
             move |only, cx| {
@@ -622,6 +624,18 @@ fn holds(
         (true, None) => "Looking for open issues…".to_string(),
         (true, Some(_)) => "Nothing open".to_string(),
     }
+}
+
+/// The projects the page can be narrowed to, as (name, root): those on this
+/// machine. A host's project has no issues, runs or conversations here, and
+/// its path would narrow the page to a folder of the same path here.
+fn filter_options(
+    projects: &[PageProject],
+) -> impl Iterator<Item = (SharedString, PathBuf)> + use<'_> {
+    projects
+        .iter()
+        .filter(|project| project.host.is_none())
+        .map(|project| (project.label.clone(), project.root.clone()))
 }
 
 #[cfg(test)]
