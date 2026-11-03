@@ -108,9 +108,10 @@ These come from the repository's invariants (AGENTS.md).
   It must never link GPUI: a VPS has no display, and the GUI libraries may not even load there.
 - A rule both front ends share lives in core, not per call site. That covers how a transcript is
   built from agent events (`Chat::apply`), how it is stored (`chat/store.rs`), and how a card is
-  answered.
-- `items.jsonl` stays append-only and is written at every turn end. On a host it is written on the
-  host.
+  answered. On the laptop, a host session's transcript is built by `Chat::apply` too, from the
+  host's journal.
+- `items.jsonl` stays append-only and is written at every turn end. On a host, the journal (below)
+  is append-only too, and written as each entry arrives.
 - Every UI change follows the `ui` skill and the contracts in `DESIGN.md`, `docs/screens.md` and
   `docs/ui-patterns.md`.
 
@@ -122,10 +123,11 @@ These come from the repository's invariants (AGENTS.md).
   binary `onehand-host`) depending on `onehand-core` and never on GPUI. The release tarball ships
   it beside `onehand`. That makes "the host service never links a GUI" something the build
   enforces, not a promise.
-- **Installed side by side, by version.** onehand copies the binary over SSH to
-  `~/.onehand-host/<version>/onehand-host` on the host (like VS Code's `~/.vscode-server`). It keeps
-  its data under `~/.onehand-host/data/`: transcripts in the same store format as the laptop's,
-  mirrors, and its own state.
+- **Installed side by side, by build.** onehand copies the binary over SSH to
+  `~/.onehand-host/<build>/onehand-host` on the host (like VS Code's `~/.vscode-server`), where
+  `<build>` is a hash of the binary itself, so a rebuilt binary is never mistaken for the old one.
+  A copy goes into place only once it runs and names its own build. The service keeps its data
+  under `~/.onehand-host/data/` (mode 0700): each session's journal, mirrors, and its own state.
 - **One per host user.** It runs detached from SSH (it outlives the session that started it),
   holds a lock file, and listens only on a Unix socket in its data directory, with mode 0600, as
   the laptop's control socket does.
@@ -133,20 +135,32 @@ These come from the repository's invariants (AGENTS.md).
   agents and jump hosts all just work) with a command that relays stdio to the socket:
   `onehand-host attach`, the same pattern as today's `--mcp-proxy`. If no service is running, the
   attach command starts one first.
-- **Version handshake.** The first message exchanges versions. When they differ, the laptop
-  installs its own version beside the old one. If the old service has no busy session it restarts
+- **Build handshake.** The first message exchanges builds. When they differ, the laptop
+  installs its own build beside the old one. If the old service has no busy session it restarts
   on the new one. If it has, the laptop says so, waits for those sessions to go idle, and offers
   a restart that names the sessions it would stop. My call: a mismatched service is never killed
   silently.
 - **What it owns:** the ACP connections (core's `acp::connect`, spawned on the host, so the agent's
-  `fs/*` and `terminal/create` requests are served on the host's disk); building and storing each
-  transcript through `Chat::apply` and the store; the PTYs for the terminal dock; and file reads,
-  writes, directory listings and git status for its projects.
+  `fs/*` and `terminal/create` requests are served on the host's disk); each session's **journal**;
+  the PTYs for the terminal dock; and file reads, writes, directory listings and git status for its
+  projects.
+- **The journal is the host's transcript.** It is one append-only JSON line per entry, holding
+  everything that shapes the transcript in the order the host saw it: what the agent sent (its
+  events) and what the person asked (prompts, card answers, cancels, picks). The host does not build
+  a `Chat` of its own. A laptop rebuilds the transcript by replaying the journal through
+  `Chat::apply`, the person's requests included. So the code that draws a local session draws a
+  host session unchanged, and there is one rule for what a transcript is, not two that can drift.
+  (Decided with the owner on 2026-11-03, after step 1a was built this way.)
+- **A restarted service keeps its sessions.** After a crash, or after a restart onto a new build,
+  the service reads its sessions back from their journals. They are listed as ended and can still be
+  read in full. Each one's journal ends with one line saying the service stopped, unless the agent
+  had already ended it. Resuming the agent is the laptop's to do, as it does for a local session.
 
 ### The protocol between laptop and host
 
-- **Same style as the control socket:** JSON-RPC 2.0 over NDJSON, one stream per attach. The
-  builder designs the methods. They must cover:
+- **NDJSON, one stream per attach:** one serde-tagged JSON message per line, with an id to pair
+  an answer with its question. Both ends are ours and ship together, so a JSON-RPC envelope would
+  buy nothing. The builder designs the messages. They must cover:
   - listing projects and sessions;
   - opening a session;
   - sending a prompt and cancelling a turn;
