@@ -49,6 +49,13 @@ minor bump may break any of them.
   takes the run over. The report on the issue is kept until it is delivered, and putting the label
   back answers a review on the pull request.
 
+### Hosts
+
+- The release tarball carries `onehand-host`, a service without a window that runs sessions on
+  another machine reached over SSH. It keeps them going while nobody is attached, and keeps each
+  one's transcript as a journal it replays when a laptop attaches again. onehand installs and
+  updates it on the host itself. The window does not offer hosts yet.
+
 ### The window
 
 - The whole interface is redrawn after gpui-kit's components: its own Default Light and Default

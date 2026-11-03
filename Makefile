@@ -41,7 +41,8 @@ LIVE_CONFIG := $(or $(XDG_CONFIG_HOME),$(HOME)/.config)/onehand/config.toml
 OURS := -p onehand -p onehand-core -p onehand-workbench -p onehand-ui \
 	-p onehand-terminal-ui -p onehand-github -p onehand-telegram \
 	-p onehand-editor \
-	-p onehand-files -p onehand-issues -p onehand-markdown -p onehand-neovim -p onehand-claude-plugins
+	-p onehand-files -p onehand-issues -p onehand-markdown -p onehand-neovim -p onehand-claude-plugins \
+	-p onehand-host
 
 .DEFAULT_GOAL := help
 

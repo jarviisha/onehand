@@ -79,7 +79,7 @@ pub struct SessionOpts {
 pub(crate) const FORK_FAILED: &str = "Could not fork the conversation";
 
 /// How a session is opened.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Opening {
     /// A fresh conversation.
     Fresh,

@@ -101,13 +101,21 @@ jobs:
             libx11-dev libxcb1-dev libasound2-dev
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
 
       # `--locked` for the same reason every CI invocation carries it: the
       # lockfile is the only thing pinning what sits under the UI stack, and a
       # run that silently re-resolved would not be shipping the build this tag
       # was tested as.
+      # The host service is linked statically against musl: it is copied onto
+      # whatever machine a person reaches over SSH, often one with an older C
+      # library than this image, where a glibc build would not even load. It
+      # has no C dependencies, so no musl toolchain is needed beyond the target.
       - name: Build
-        run: cargo build --release --locked
+        run: |
+          cargo build --release --locked -p onehand
+          cargo build --release --locked -p onehand-host --target x86_64-unknown-linux-musl
 
       # Not stripped. The release profile emits no debug info to begin with, and
       # what a strip would remove is the symbol table -- the thing that puts
@@ -118,6 +126,7 @@ jobs:
           name="onehand-${TAG}-linux-x86_64"
           mkdir "$name"
           cp target/release/onehand "$name"/
+          cp target/x86_64-unknown-linux-musl/release/onehand-host "$name"/
           cp assets/onehand.svg "$name"/
           cp scripts/install-desktop.sh "$name"/
           cp README.md CHANGELOG.md LICENSE-MIT LICENSE-APACHE "$name"/

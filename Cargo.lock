@@ -4559,6 +4559,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "onehand-host"
+version = "0.1.0"
+dependencies = [
+ "dirs 5.0.1",
+ "futures",
+ "onehand-core",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "onehand-issues"
 version = "0.1.0"
 dependencies = [

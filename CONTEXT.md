@@ -1,6 +1,6 @@
 # onehand
 
-A desktop host for AI coding agents. This glossary holds the words whose meaning is
+A desktop app that runs AI coding agents. This glossary holds the words whose meaning is
 particular to onehand; general programming terms are left out.
 
 ## Workspace
@@ -264,3 +264,33 @@ What an issue is told when an unattended run ends: the verdict, the run's outcom
 last step ended on. Kept in the task's file until the issue has it, and sent again at every tick
 until it lands.
 _Avoid_: notification, status update
+
+## Hosts
+
+**Host**:
+Another machine onehand reaches over SSH and runs sessions on, named the way `ssh` names it: an
+alias from the person's SSH config, or `user@machine`. It keeps working while the laptop is off.
+_Avoid_: server, remote, cloud, VPS (one kind of host)
+
+**Host service**:
+The onehand process on a host, with no window. It runs that host's sessions and their agents,
+keeps a journal for each, and carries on with nobody attached. One per user on a host.
+_Avoid_: daemon, server, agent (that is what it runs)
+
+**Attach**:
+The laptop connecting to a host service to show its sessions; **detach** is letting go. Only one
+laptop is attached to a host at a time, and the newer attach wins. Detaching never stops anything
+on the host.
+_Avoid_: connect (that is a session reaching its agent), log in
+
+**Journal**:
+A host session's transcript as the host keeps it: one line per entry, only ever added to, holding
+what the agent sent and what the person asked, in order. The laptop rebuilds the conversation by
+replaying it. A host service that restarts reads its sessions back from their journals.
+_Avoid_: log, history, transcript file (that is `items.jsonl` on the laptop)
+
+**Build**:
+Which copy of the host service a host runs, named by a hash of the binary itself. The laptop puts
+its own build on a host beside any other, and restarts the service onto it only when no session
+there is mid-turn.
+_Avoid_: version

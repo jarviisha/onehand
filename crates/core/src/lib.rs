@@ -34,6 +34,7 @@ pub mod control;
 pub mod diff;
 pub mod editor;
 pub mod gitstat;
+pub mod host;
 pub mod instance;
 pub mod issues;
 pub mod preflight;

@@ -44,6 +44,15 @@ pub struct PermItem {
 }
 
 impl PermItem {
+    /// The card records an option's *name*; the wire carries its id.
+    pub(crate) fn option_name(&self, option_id: &str) -> String {
+        self.req
+            .options
+            .iter()
+            .find(|option| option.id == option_id)
+            .map_or_else(|| option_id.to_string(), |option| option.name.clone())
+    }
+
     /// The exact command, whatever the box is showing of it.
     ///
     /// **Never the visible part.** Reading a long command elsewhere is the
@@ -126,6 +135,12 @@ pub enum AskRow {
 }
 
 impl AskItem {
+    /// Record how the question ended.
+    pub(crate) fn settle(&mut self, resolved: String, accepted: bool) {
+        self.resolved = Some(resolved);
+        self.accepted = accepted;
+    }
+
     pub fn new(req: Elicitation) -> Self {
         let n = req.fields.len();
         Self {
@@ -385,6 +400,43 @@ impl AskItem {
             });
         }
         out
+    }
+
+    /// Put back on the card what `answers` (as [`Self::answers`] built them)
+    /// picked and typed; whether any of them could be.
+    pub(crate) fn fill(&mut self, answers: &[(String, ElicitValue)]) -> bool {
+        let mut filled = false;
+        for (key, value) in answers {
+            let Some(i) = self
+                .req
+                .fields
+                .iter()
+                .position(|f| f.key == *key || f.custom_key.as_ref() == Some(key))
+            else {
+                continue;
+            };
+            let f = &self.req.fields[i];
+            let typed = matches!(f.kind, ElicitKind::Text) || f.key != *key;
+            match value {
+                ElicitValue::Text(text) if typed => self.custom[i] = text.clone(),
+                ElicitValue::Text(value) => {
+                    let Some(c) = f.kind.choices().iter().position(|c| c.value == *value) else {
+                        continue;
+                    };
+                    self.picked[i] = vec![c];
+                }
+                ElicitValue::List(values) => {
+                    let choices = f.kind.choices();
+                    self.picked[i] = values
+                        .iter()
+                        .filter_map(|v| choices.iter().position(|c| c.value == *v))
+                        .collect();
+                    self.none[i] = values.is_empty();
+                }
+            }
+            filled = true;
+        }
+        filled
     }
 
     /// The audit-trail line shown once answered — the chosen *labels* (not the
