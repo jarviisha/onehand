@@ -198,7 +198,14 @@ impl Chat {
                 });
                 if let Some(a) = ask {
                     match outcome {
-                        ElicitOutcome::Accept(_) => a.settle("Answered".into(), true),
+                        // The card reads as it did when it was answered live.
+                        ElicitOutcome::Accept(answers) => {
+                            let said = match a.fill(&answers) {
+                                true => a.summary(),
+                                false => "Answered".into(),
+                            };
+                            a.settle(said, true);
+                        }
                         ElicitOutcome::Decline => a.settle("Skipped".into(), false),
                         ElicitOutcome::Cancel => a.settle("Cancelled".into(), false),
                     }

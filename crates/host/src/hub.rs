@@ -265,10 +265,7 @@ impl Hub {
         if dropped {
             self.record(
                 session,
-                Entry::Event(AcpEvent::Error {
-                    text: ATTACHMENTS_DROPPED.into(),
-                    detail: None,
-                }),
+                Entry::Event(AcpEvent::Notice(ATTACHMENTS_DROPPED.into())),
             );
         }
         Ok(())
@@ -441,6 +438,7 @@ async fn drive(hub: Arc<Mutex<Hub>>, id: String, mut events: BoxStream<'static, 
             | AcpEvent::Error { .. }
             | AcpEvent::Interrupted
             | AcpEvent::LoginRequired { .. }
+            | AcpEvent::Notice(_)
             | AcpEvent::Echo(_)) => hub.record(&id, Entry::Event(event)),
         }
     }

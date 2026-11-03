@@ -402,6 +402,43 @@ impl AskItem {
         out
     }
 
+    /// Put back on the card what `answers` (as [`Self::answers`] built them)
+    /// picked and typed; whether any of them could be.
+    pub(crate) fn fill(&mut self, answers: &[(String, ElicitValue)]) -> bool {
+        let mut filled = false;
+        for (key, value) in answers {
+            let Some(i) = self
+                .req
+                .fields
+                .iter()
+                .position(|f| f.key == *key || f.custom_key.as_ref() == Some(key))
+            else {
+                continue;
+            };
+            let f = &self.req.fields[i];
+            let typed = matches!(f.kind, ElicitKind::Text) || f.key != *key;
+            match value {
+                ElicitValue::Text(text) if typed => self.custom[i] = text.clone(),
+                ElicitValue::Text(value) => {
+                    let Some(c) = f.kind.choices().iter().position(|c| c.value == *value) else {
+                        continue;
+                    };
+                    self.picked[i] = vec![c];
+                }
+                ElicitValue::List(values) => {
+                    let choices = f.kind.choices();
+                    self.picked[i] = values
+                        .iter()
+                        .filter_map(|v| choices.iter().position(|c| c.value == *v))
+                        .collect();
+                    self.none[i] = values.is_empty();
+                }
+            }
+            filled = true;
+        }
+        filled
+    }
+
     /// The audit-trail line shown once answered — the chosen *labels* (not the
     /// wire values), comma-joined.
     pub(crate) fn summary(&self) -> String {

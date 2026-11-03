@@ -286,16 +286,15 @@ async fn attachments_are_dropped_and_said() {
     assert!(attachments.is_empty());
     let dir = hub.lock().unwrap().dir.join("sessions").join(&fake.session);
     let journal = journal::read(&dir).unwrap();
-    // In the order the laptop saw them live: its prompt, then the error.
-    assert_eq!(kinds(&journal), ["ready", "request:Prompt", "event:Error"]);
-    let Entry::Event(AcpEvent::Error { text, detail }) = &journal[2].1 else {
-        panic!("the third entry is not the error");
+    // In the order the laptop saw them live: its prompt, then the notice.
+    assert_eq!(kinds(&journal), ["ready", "request:Prompt", "event:Notice"]);
+    let Entry::Event(AcpEvent::Notice(text)) = &journal[2].1 else {
+        panic!("the third entry is not the notice");
     };
     assert_eq!(
         text,
         "Attachments are not sent to a host yet; the prompt went without them"
     );
-    assert!(detail.is_none());
 }
 
 #[tokio::test]

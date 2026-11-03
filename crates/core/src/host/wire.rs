@@ -139,6 +139,7 @@ pub fn busy_after(busy: bool, entry: &Entry) -> bool {
             | AcpEvent::Error { .. }
             | AcpEvent::Interrupted
             | AcpEvent::LoginRequired { .. }
+            | AcpEvent::Notice(_)
             | AcpEvent::Echo(_) => busy,
         },
     }

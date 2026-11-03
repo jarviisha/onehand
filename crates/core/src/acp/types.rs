@@ -655,6 +655,8 @@ pub enum AcpEvent {
     /// `advice` is the agent's own way to log in, as it described it at the
     /// handshake, when it described one.
     LoginRequired { advice: Option<String> },
+    /// Something the host wants the person to know, which is not a failure.
+    Notice(String),
     /// A request this session's person made earlier, replayed from a host's
     /// journal. Applied to the transcript as the request would have been;
     /// never sent.

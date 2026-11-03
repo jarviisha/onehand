@@ -3103,3 +3103,65 @@ fn a_host_replay_sends_the_armed_mode_once_on_the_live_channel() {
         "{sent:?}"
     );
 }
+
+#[test]
+fn a_notice_mid_turn_leaves_the_turn_running_and_failed_nothing() {
+    let (mut chat, _rx) = connected_chat();
+    assert!(chat.submit("look", &[]));
+    chat.apply(AcpEvent::Notice("the prompt went without them".into()));
+    assert!(chat.busy);
+    assert!(matches!(
+        chat.items.last(),
+        Some(ChatItem::Notice { text, level: NoticeLevel::Info, .. })
+            if text == "the prompt went without them"
+    ));
+    chat.apply(AcpEvent::TurnEnded {
+        stop_reason: "end_turn".into(),
+    });
+    assert!(!chat
+        .items
+        .iter()
+        .any(|item| matches!(item, ChatItem::Notice { level, .. } if level.is_failure())));
+}
+
+#[test]
+fn an_echoed_answer_reads_as_the_live_one_did() {
+    let fills: [fn(&mut AskItem); 2] = [
+        |a| {
+            a.toggle(0, 1);
+            a.toggle(1, 0);
+            a.toggle(1, 1);
+        },
+        |a| {
+            a.set_custom(0, "my own".into());
+            // A multi-select passed with nothing picked: none is the answer.
+            a.none[1] = true;
+        },
+    ];
+    for fill in fills {
+        let (mut live, mut rx) = connected_chat();
+        live.apply(AcpEvent::Elicitation(ask_item().req));
+        let at = live.items.len() - 1;
+        let Some(ChatItem::Ask(a)) = live.items.last_mut() else {
+            panic!("no card");
+        };
+        fill(a);
+        live.answer_ask(at, false);
+        let Ok(AcpRequest::ElicitationResponse { rpc_id, outcome }) = rx.try_recv() else {
+            panic!("no answer sent");
+        };
+        let resolved = |chat: &Chat| match chat.items.last() {
+            Some(ChatItem::Ask(a)) => a.resolved.clone(),
+            _ => None,
+        };
+
+        let (mut echoed, _rx) = connected_chat();
+        echoed.apply(AcpEvent::Elicitation(ask_item().req));
+        echoed.apply(AcpEvent::Echo(AcpRequest::ElicitationResponse {
+            rpc_id,
+            outcome,
+        }));
+        assert_eq!(resolved(&echoed), resolved(&live));
+        assert_ne!(resolved(&echoed).as_deref(), Some("Answered"));
+    }
+}
