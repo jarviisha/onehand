@@ -3024,8 +3024,15 @@ fn echoed_cancel_settles_parked_cards_without_sending() {
 }
 
 #[test]
-fn echoed_picks_and_stops_change_nothing() {
+fn echoed_picks_move_the_picker_without_sending_and_stops_change_nothing() {
     let (mut chat, mut rx) = connected_chat();
+    chat.config_options = vec![ConfigOption {
+        id: "model".into(),
+        name: "Model".into(),
+        category: None,
+        current: Some("a".into()),
+        choices: vec![],
+    }];
     chat.apply(AcpEvent::Echo(AcpRequest::SetMode("plan".into())));
     chat.apply(AcpEvent::Echo(AcpRequest::SetConfigOption {
         config_id: "model".into(),
@@ -3034,6 +3041,9 @@ fn echoed_picks_and_stops_change_nothing() {
     chat.apply(AcpEvent::Echo(AcpRequest::StopBackground {
         id: "t1".into(),
     }));
+    assert_eq!(chat.current_mode.as_deref(), Some("plan"));
+    assert_eq!(chat.config_options[0].current.as_deref(), Some("x"));
+    assert!(!chat.picks_waiting());
     assert!(chat.items.is_empty());
     assert!(!chat.busy && !chat.cancelled);
     assert!(rx.try_recv().is_err());

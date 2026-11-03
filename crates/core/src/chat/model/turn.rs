@@ -211,10 +211,14 @@ impl Chat {
                 self.cancel_turn();
                 self.tx = tx;
             }
-            // The agent's own `PickConfirmed` and `Background` events carry these.
-            AcpRequest::SetMode(_)
-            | AcpRequest::SetConfigOption { .. }
-            | AcpRequest::StopBackground { .. } => {}
+            // Where a live pick leaves the picker, with nothing sent and
+            // nothing counted as waiting: the agent answered it long ago.
+            AcpRequest::SetMode(mode) => self.current_mode = Some(mode),
+            AcpRequest::SetConfigOption { config_id, value } => {
+                self.set_config_current(&config_id, &value);
+            }
+            // The agent's own `Background` events carry this.
+            AcpRequest::StopBackground { .. } => {}
         }
     }
 
