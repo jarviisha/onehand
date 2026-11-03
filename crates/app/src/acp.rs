@@ -190,7 +190,6 @@ impl AcpRuntime {
     }
 
     /// Run `work` on this runtime: what must poll tokio I/O and cannot on GPUI's executor.
-    #[expect(dead_code, reason = "the chat pane reads a host session through it")]
     pub(crate) fn spawn(&self, work: impl std::future::Future<Output = ()> + Send + 'static) {
         self.rt.spawn(work);
     }
@@ -212,6 +211,12 @@ impl AcpRuntime {
         self.rt.spawn(async move {
             let id = match start {
                 HostStart::Watch(id) => id,
+                // ponytail: not raced against the events being dropped: the
+                // open is sent to the host on its first poll, and the host
+                // starts the agent whatever happens here after. An open
+                // abandoned mid-way costs one idle agent on the host, still
+                // listed and attachable again; a cancel call on the host
+                // would stop it.
                 HostStart::Open { cwd, spec, opening } => match conn.open(cwd, spec, opening).await
                 {
                     Ok(id) => id,

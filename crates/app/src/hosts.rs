@@ -13,18 +13,23 @@
 use crate::state::Shared;
 use futures::FutureExt as _;
 use futures::channel::oneshot;
-use futures::future::{self, LocalBoxFuture};
+use futures::future::{self, Either, LocalBoxFuture};
 use gpui::App;
 use onehand_core::host::client::{self, HostConn, HostError};
 use onehand_core::host::wire::{Build, HostSession, build_id};
 use onehand_core::workspace::HostName;
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::rc::Rc;
 
 /// Why a host could not be attached.
 #[derive(Clone, Debug)]
+#[expect(
+    dead_code,
+    reason = "the chat pane and the add-project dialog say what it carries"
+)]
 pub(crate) enum HostFailure {
     /// The service's binary is not where this build looks for it.
     Missing(String),
@@ -54,6 +59,10 @@ impl Hosts {
 
 /// The connection to `host`: the one already up, the attempt already under
 /// way, or a new attach (installing the service first when it is not there).
+#[expect(
+    dead_code,
+    reason = "the chat pane and the add-project dialog attach through it"
+)]
 pub(crate) fn conn(
     cx: &App,
     host: &HostName,
@@ -63,6 +72,10 @@ pub(crate) fn conn(
 
 /// A new connection to `host` whose service is restarted onto this build
 /// whatever is mid-turn there: what follows a person agreeing to a `Busy`.
+#[expect(
+    dead_code,
+    reason = "the chat pane and the add-project dialog attach through it"
+)]
 pub(crate) fn restart(
     cx: &App,
     host: &HostName,
@@ -134,9 +147,14 @@ fn failure(host: &HostName, e: HostError) -> HostFailure {
     }
 }
 
+/// What is said when the service's binary is not beside this one.
+const MISSING: &str =
+    "onehand-host is not beside onehand; build it with `cargo build -p onehand-host`";
+
 /// The service's binary, which is built beside this one.
 fn bundled_binary() -> Result<PathBuf, HostFailure> {
-    let exe = std::env::current_exe().map_err(|e| HostFailure::Missing(e.to_string()))?;
+    let exe =
+        std::env::current_exe().map_err(|e| HostFailure::Missing(format!("{MISSING}: {e}")))?;
     bundled_binary_in(exe.parent().unwrap_or(Path::new(".")))
 }
 
@@ -145,10 +163,7 @@ fn bundled_binary_in(dir: &Path) -> Result<PathBuf, HostFailure> {
     if path.is_file() {
         Ok(path)
     } else {
-        Err(HostFailure::Missing(
-            "onehand-host is not beside onehand; build it with `cargo build -p onehand-host`"
-                .into(),
-        ))
+        Err(HostFailure::Missing(MISSING.into()))
     }
 }
 
@@ -163,10 +178,10 @@ enum Slot<C> {
 /// Connections by host, generic over the connection so the reuse can be
 /// tested without one.
 ///
-/// A mutex rather than a `RefCell`: no borrow is ever held across an await,
-/// and a lock cannot panic on a reentrant read the way a borrow would.
+/// `Rc<RefCell>`: the attempts it holds are local futures, read only on the
+/// UI thread, and no borrow is held across an await or a call to `make`.
 struct Slots<C> {
-    map: Arc<Mutex<BTreeMap<HostName, Slot<C>>>>,
+    map: Rc<RefCell<BTreeMap<HostName, Slot<C>>>>,
     /// Whether a ready connection still has its stream.
     alive: fn(&C) -> bool,
 }
@@ -174,7 +189,7 @@ struct Slots<C> {
 impl<C: Clone + 'static> Slots<C> {
     fn new(alive: fn(&C) -> bool) -> Self {
         Self {
-            map: Arc::default(),
+            map: Rc::default(),
             alive,
         }
     }
@@ -182,30 +197,31 @@ impl<C: Clone + 'static> Slots<C> {
     /// The connection to `host`, from `make` unless one is up or under way;
     /// with `fresh`, from `make` whatever is there. A failed attempt leaves
     /// nothing behind, so the next ask tries again.
+    ///
+    /// `fresh` assumes no attempt is under way: one that is goes on, but what
+    /// it ends in is no longer kept.
     fn get(
         &self,
         host: &HostName,
         fresh: bool,
         make: impl FnOnce() -> LocalBoxFuture<'static, Result<C, HostFailure>>,
     ) -> LocalBoxFuture<'static, Result<C, HostFailure>> {
-        let mut map = self.map.lock().unwrap_or_else(|e| e.into_inner());
-        let attempt = match map.get(host) {
-            Some(Slot::Ready(conn)) if !fresh && (self.alive)(conn) => {
-                return future::ready(Ok(conn.clone())).boxed_local();
-            }
-            Some(Slot::Connecting(attempt)) if !fresh => attempt.clone(),
-            Some(Slot::Ready(_)) | Some(Slot::Connecting(_)) | None => {
+        let found = if fresh { None } else { self.reuse(host) };
+        let attempt = match found {
+            Some(Either::Left(conn)) => return future::ready(Ok(conn)).boxed_local(),
+            Some(Either::Right(attempt)) => attempt,
+            None => {
                 let attempt = make().shared();
-                map.insert(host.clone(), Slot::Connecting(attempt.clone()));
+                let slot = Slot::Connecting(attempt.clone());
+                self.map.borrow_mut().insert(host.clone(), slot);
                 attempt
             }
         };
-        drop(map);
         let map = self.map.clone();
         let host = host.clone();
         async move {
             let result = attempt.clone().await;
-            let mut map = map.lock().unwrap_or_else(|e| e.into_inner());
+            let mut map = map.borrow_mut();
             // Only this attempt's own slot: a restart since has replaced it.
             let ours = match map.get(&host) {
                 Some(Slot::Connecting(now)) => now.ptr_eq(&attempt),
@@ -224,6 +240,31 @@ impl<C: Clone + 'static> Slots<C> {
             result
         }
         .boxed_local()
+    }
+
+    /// What `host`'s slot has worth reusing: a live connection, or an attempt
+    /// still under way.
+    ///
+    /// An attempt is polled once to see whether it has ended: a shared future
+    /// settles only when polled, so one whose every waiter went away still
+    /// looks under way after its attach is long over. Ended, it is reused only
+    /// if it left a connection that is still up; a failure nobody heard is
+    /// not handed to the next ask, which tries again.
+    fn reuse(&self, host: &HostName) -> Option<Either<C, Attempt<C>>> {
+        let mut map = self.map.borrow_mut();
+        let conn = match map.get(host)? {
+            Slot::Ready(conn) => conn.clone(),
+            Slot::Connecting(attempt) => match attempt.clone().now_or_never() {
+                None => return Some(Either::Right(attempt.clone())),
+                Some(Ok(conn)) => conn,
+                Some(Err(_)) => return None,
+            },
+        };
+        if !(self.alive)(&conn) {
+            return None;
+        }
+        map.insert(host.clone(), Slot::Ready(conn.clone()));
+        Some(Either::Left(conn))
     }
 }
 

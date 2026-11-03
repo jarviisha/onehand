@@ -53,3 +53,59 @@ fn a_ready_connection_is_reused_and_a_dead_one_made_again() {
     block_on(slots.get(&host, false, make)).ok().unwrap();
     assert_eq!(made.borrow().len(), 2);
 }
+
+/// A failing attach: every call to `make` counted in `made`.
+fn failing(
+    made: &RefCell<usize>,
+) -> impl Fn() -> futures::future::LocalBoxFuture<'static, Result<Fake, HostFailure>> + '_ {
+    move || {
+        *made.borrow_mut() += 1;
+        async { Err(HostFailure::Other("Could not attach to vps: no".into())) }.boxed_local()
+    }
+}
+
+#[test]
+fn a_failed_attach_is_tried_again_on_the_next_ask() {
+    let slots = Slots::new(|c: &Fake| c.0.load(Ordering::SeqCst));
+    let host = HostName("vps".into());
+    let made = RefCell::new(0);
+    assert!(block_on(slots.get(&host, false, failing(&made))).is_err());
+    assert!(block_on(slots.get(&host, false, failing(&made))).is_err());
+    assert_eq!(*made.borrow(), 2);
+}
+
+/// **Nobody awaiting an attach does not make it the answer.** The person who
+/// asked went away mid-attach; whoever asks next must not be handed the
+/// failure it ended in.
+#[test]
+fn a_finished_attach_nobody_awaited_is_not_handed_out() {
+    let slots = Slots::new(|c: &Fake| c.0.load(Ordering::SeqCst));
+    let host = HostName("vps".into());
+    let made = RefCell::new(0);
+    drop(slots.get(&host, false, failing(&made)));
+    assert!(block_on(slots.get(&host, false, failing(&made))).is_err());
+    assert_eq!(*made.borrow(), 2);
+}
+
+#[test]
+fn a_late_attach_leaves_a_restart_in_its_place() {
+    let slots = Slots::new(|c: &Fake| c.0.load(Ordering::SeqCst));
+    let host = HostName("vps".into());
+    let (send, late) = futures::channel::oneshot::channel::<Fake>();
+    let first = slots.get(&host, false, || {
+        async move { Ok(late.await.unwrap()) }.boxed_local()
+    });
+    let restarted = Arc::new(AtomicBool::new(true));
+    let fresh = Fake(restarted.clone());
+    block_on(slots.get(&host, true, || async move { Ok(fresh) }.boxed_local()))
+        .ok()
+        .unwrap();
+    send.send(Fake(Arc::new(AtomicBool::new(true))))
+        .ok()
+        .unwrap();
+    block_on(first).ok().unwrap();
+    let now = block_on(slots.get(&host, false, || panic!("made again")))
+        .ok()
+        .unwrap();
+    assert!(Arc::ptr_eq(&now.0, &restarted));
+}

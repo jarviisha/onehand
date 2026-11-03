@@ -24,10 +24,6 @@ mod features;
 mod fonts;
 #[cfg(test)]
 mod guards;
-#[expect(
-    dead_code,
-    reason = "the chat pane and the add-project dialog attach through it"
-)]
 mod hosts;
 mod icons;
 mod instance;
