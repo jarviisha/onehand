@@ -97,11 +97,14 @@ pub(crate) fn start(
             ChatEvent::AwaitingUser(_) => Input::AwaitingUser,
             ChatEvent::Disconnected => Input::Disconnected,
             ChatEvent::PickRefused(why) => Input::PickRefused(why.clone()),
-            // Between-turn work, a refused stop and a fork asked for move no run.
+            // Between-turn work, a refused stop, a fork asked for and what a
+            // host says of its session move no run.
             ChatEvent::OpenFile(_)
             | ChatEvent::CycleEnded
             | ChatEvent::StopRefused(_)
-            | ChatEvent::Fork(_) => return,
+            | ChatEvent::Fork(_)
+            | ChatEvent::HostSession(_)
+            | ChatEvent::HostBusy { .. } => return,
         };
         feed(&id, input, cx);
     });

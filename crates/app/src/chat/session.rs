@@ -21,7 +21,13 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+pub(crate) use host::{HostBegin, OnHost};
+use host::{Source, host_events, new_chat};
+
 mod cards;
+mod host;
+#[cfg(test)]
+mod tests;
 
 /// Emitted when the transcript changed in a way the hosting pane cares about.
 /// Say something on the desktop, outside the app's own window.
@@ -142,6 +148,14 @@ pub enum ChatEvent {
     /// Fork the conversation from the prompt at this place. A new session is
     /// the shell's to make.
     Fork(onehand_core::chat::TranscriptItemId),
+    /// The host named the session this one reads.
+    HostSession(onehand_core::host::wire::HostSession),
+    /// The host runs another build, with these sessions mid-turn, so it was
+    /// not attached; whether to restart it is the person's to say.
+    HostBusy {
+        build: onehand_core::host::wire::Build,
+        busy: Vec<onehand_core::host::wire::HostSession>,
+    },
 }
 
 /// The widget behind one question field's free-text box, and the subscription
@@ -177,7 +191,10 @@ pub struct ChatSession {
     pub started: std::time::Instant,
     /// What this session's agent's proxy to onehand's tools speaks for; let
     /// go with the session, and with it the agent's way in.
-    _token: crate::control::Token,
+    /// None on a host: an agent there has no way to this machine's socket.
+    _token: Option<crate::control::Token>,
+    /// Whether the agent runs on a host, where a fork is not offered yet.
+    pub(crate) on_host: bool,
     /// Parsed markdown, keyed by [`MdId`]; the `usize` is how many bytes of the
     /// model's `source` are already in the state.
     ///
@@ -339,49 +356,66 @@ fn quiet_save(mut quiet: Duration, cx: &mut Context<ChatSession>) -> Task<()> {
 impl ChatSession {
     /// Spawn `spec` against `root` and start folding its events into a fresh
     /// transcript.
-    pub fn spawn(
+    ///
+    /// On a host, the events come from the host's session once the host is
+    /// attached; the folder is the host's, so nothing here scans it, writes
+    /// its transcript or hands its agent a way into onehand.
+    pub(crate) fn spawn(
         uid: u64,
         root: PathBuf,
         spec: &AgentSpec,
         opening: onehand_core::acp::Opening,
         dirs: Vec<PathBuf>,
+        on_host: Option<OnHost>,
         cx: &mut App,
     ) -> Entity<Self> {
-        let (events, started, token) =
-            Shared::global(cx)
-                .acp
-                .connect(spec, root.clone(), opening, dirs);
-        token.claim(uid);
+        let host = on_host.is_some();
+        let (source, started, token) = match on_host {
+            None => {
+                let (events, started, token) =
+                    Shared::global(cx)
+                        .acp
+                        .connect(spec, root.clone(), opening, dirs);
+                token.claim(uid);
+                (Source::Local(events), started, Some(token))
+            }
+            Some(on_host) => {
+                let attaching = Box::pin(crate::hosts::conn(cx, &on_host.host));
+                let begin = (on_host, root.clone(), spec.clone(), opening);
+                (
+                    Source::Host(Box::new((attaching, begin))),
+                    std::time::Instant::now(),
+                    None,
+                )
+            }
+        };
         let seen = spec.clone();
 
         cx.new(|cx| {
             // `@`-mention candidates. Bounded and off the UI loop: a deep tree
             // must not stall the first frame.
-            cx.spawn({
-                let root = root.clone();
-                async move |session, cx| {
-                    let files = cx
-                        .background_executor()
-                        .spawn(async move { completion::scan_files(&root, MAX_MENTION_FILES) })
-                        .await;
-                    let _ = session.update(cx, |session: &mut Self, cx| {
-                        session.chat.set_files(files);
-                        cx.notify();
-                    });
-                }
-            })
-            .detach();
+            if !host {
+                cx.spawn({
+                    let root = root.clone();
+                    async move |session, cx| {
+                        let files = cx
+                            .background_executor()
+                            .spawn(async move { completion::scan_files(&root, MAX_MENTION_FILES) })
+                            .await;
+                        let _ = session.update(cx, |session: &mut Self, cx| {
+                            session.chat.set_files(files);
+                            cx.notify();
+                        });
+                    }
+                })
+                .detach();
+            }
 
-            let mut chat = Chat::new(
-                uid,
-                root,
-                spec.name.clone(),
-                Some(onehand_core::chat::conversations_dir()),
-            );
-            chat.login_hint = spec.login_hint();
+            let chat = new_chat(uid, root, spec, host);
             Self {
                 chat,
                 started,
+                on_host: host,
                 _token: token,
                 md: HashMap::new(),
                 images: RefCell::new(HashMap::new()),
@@ -398,7 +432,13 @@ impl ChatSession {
                 numbering: 0,
                 _quiet_save: None,
                 _pump: cx.spawn(async move |session, cx| {
-                    let mut events = events;
+                    let mut events = match source {
+                        Source::Local(events) => events,
+                        Source::Host(pending) => {
+                            let (attaching, begin) = *pending;
+                            host_events(attaching.await, begin, &session, cx).await
+                        }
+                    };
                     while let Some(first) = events.next().await {
                         let delivered = session.update(cx, |session: &mut Self, cx| {
                             // **Every event already waiting, in one update.** A

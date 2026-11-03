@@ -200,7 +200,6 @@ impl AcpRuntime {
     /// Nothing of the laptop's launch runs: the agent is started on the host,
     /// by what the host finds on its own `PATH`, and without this machine's
     /// variables.
-    #[expect(dead_code, reason = "the chat pane reads a host session through it")]
     pub(crate) fn host_events(
         &self,
         conn: HostConn,
@@ -269,7 +268,6 @@ impl AcpRuntime {
 }
 
 /// How a host session's events begin.
-#[expect(dead_code, reason = "the chat pane reads a host session through it")]
 pub(crate) enum HostStart {
     /// Start a new session on the host.
     Open {
@@ -282,7 +280,6 @@ pub(crate) enum HostStart {
 }
 
 /// What a person reads of a host refusing to open a session.
-#[expect(dead_code, reason = "the chat pane reads a host session through it")]
 fn said(e: HostError) -> String {
     match e {
         HostError::Unreachable(why) | HostError::Protocol(why) | HostError::Unsupported(why) => why,
@@ -315,6 +312,15 @@ impl Stream for Events {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<AcpEvent>> {
         self.rx.poll_next_unpin(cx)
     }
+}
+
+/// Events that say only that `why` ended them, for a session that never
+/// reached an agent.
+pub(crate) fn ended(why: String) -> Events {
+    let (rx, mut tx, _alive) = events();
+    // A fresh channel has room, so this one send never waits.
+    let _ = tx.try_send(AcpEvent::Disconnected(why));
+    rx
 }
 
 /// A new pair: the events the UI holds, and the forwarder's two ends.

@@ -254,6 +254,9 @@ impl Shell {
                     }
                     E::ShowTasks(filter) => shell.show_tasks(filter.clone(), window, cx),
                     E::ShowSchedules(only) => shell.show_schedules(only.clone(), window, cx),
+                    // Not asked yet: the session already says it was not
+                    // attached, and why.
+                    E::HostBusy { .. } => {}
                     E::RunCheck => {
                         if let Some(root) = shell.window.workspace.active_root() {
                             let root = root.path.clone();

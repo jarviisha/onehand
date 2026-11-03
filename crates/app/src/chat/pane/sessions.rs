@@ -3,11 +3,13 @@ use super::project_page::EmptyProject;
 use super::{ChatPane, ChatPaneEvent, ProjectFacts, Restart, SessionSignal, switching_away};
 use crate::chat::composer::Composer;
 use crate::chat::conversation::{Conversation, SessionPhase};
-use crate::chat::session::{ChatEvent, ChatSession};
+use crate::chat::session::{ChatEvent, ChatSession, HostBegin, OnHost};
 use gpui::{App, Context, Entity, Focusable, SharedString, Window};
 use onehand_core::acp::Opening;
 use onehand_core::chat::{Chat, ConvMeta};
 use onehand_core::config::AgentSpec;
+use onehand_core::host::wire::HostSession;
+use onehand_core::workspace::HostName;
 use std::collections::hash_map::Entry;
 use std::path::PathBuf;
 
@@ -15,11 +17,12 @@ impl ChatPane {
     /// Show `uid`'s conversation, spawning its adapter the first time.
     ///
     /// Lazy on purpose: a workspace with a dozen roots must not launch a dozen
-    /// agent processes at boot.
+    /// agent processes at boot. `host` is the host the project lives on.
     pub fn show(
         &mut self,
         uid: u64,
         root: PathBuf,
+        host: Option<HostName>,
         spec: &AgentSpec,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -33,6 +36,10 @@ impl ChatPane {
             .take_if(|(pending, _)| *pending == uid)
             .map(|(_, archive)| archive);
         let fork = self.take_fork(uid);
+        let watch = self
+            .pending_watch
+            .take_if(|(pending, _)| *pending == uid)
+            .map(|(_, id)| id);
         // An entry in the map *is* "already being set up", whatever phase it has
         // reached. Before there was one entry there were three maps and three
         // checks, and two quick selections of the same session could both pass
@@ -40,7 +47,10 @@ impl ChatPane {
         // nothing, and the conversation it belonged to archiving itself on the
         // way out.
         if let Entry::Vacant(slot) = self.conversations.entry(uid) {
-            slot.insert(Conversation::opening(root.clone(), spec.clone()));
+            slot.insert(Conversation {
+                host: host.map(|host| (host, None)),
+                ..Conversation::opening(root.clone(), spec.clone())
+            });
             // **A new session connects; it does not ask.** Every session in this
             // app is minted by an explicit action -- the rail's *New*, a
             // project's menu, the project page -- and each of those is a request
@@ -53,9 +63,10 @@ impl ChatPane {
             // Nothing went with it: the project page lists that project's
             // archives above the button that starts a session, and a session
             // already running reaches the same picker from its header menu.
-            match fork {
-                Some(staged) => self.connect_as(uid, Start::Fork(staged), cx),
-                None => {
+            match (fork, watch) {
+                (Some(staged), _) => self.connect_as(uid, Start::Fork(staged), cx),
+                (None, Some(id)) => self.connect_as(uid, Start::Watch(id), cx),
+                (None, None) => {
                     let stored = asked_for.as_deref().and_then(onehand_core::chat::load);
                     self.connect(uid, stored, cx);
                 }
@@ -180,6 +191,18 @@ impl ChatPane {
             return;
         };
         let (root, spec, dirs) = (conv.root.clone(), conv.spec.clone(), conv.dirs.clone());
+        // On a host, a session the host has named is read again; one it has
+        // not opens anew.
+        let on_host = conv.host.as_ref().map(|(host, known)| OnHost {
+            host: host.clone(),
+            begin: match (&start, known) {
+                (Start::Watch(id), _) => HostBegin::Watch(id.clone()),
+                (Start::Fresh | Start::Resume(_) | Start::Fork(_), Some(id)) => {
+                    HostBegin::Rewatch(id.clone())
+                }
+                (Start::Fresh | Start::Resume(_) | Start::Fork(_), None) => HostBegin::Open,
+            },
+        });
         // What the old session had sent, counted on: who prompted a worker is
         // read from it, and the new chat would start it from nothing.
         let sent_before = conv
@@ -201,7 +224,7 @@ impl ChatPane {
             root.clone(),
             &spec,
             match &start {
-                Start::Fresh => Opening::Fresh,
+                Start::Fresh | Start::Watch(_) => Opening::Fresh,
                 Start::Resume(stored) => Opening::Resume(stored.session_id.clone()),
                 Start::Fork(staged) => Opening::Fork {
                     from: staged.from.clone(),
@@ -209,6 +232,7 @@ impl ChatPane {
                 },
             },
             dirs,
+            on_host,
             cx,
         );
         if sent_before > 0 {
@@ -224,7 +248,7 @@ impl ChatPane {
         // parses the markdown being adopted, and a transcript whose blocks
         // are unparsed draws its own source.
         match start {
-            Start::Fresh => {}
+            Start::Fresh | Start::Watch(_) => {}
             Start::Resume(stored) => session.update(cx, |session, cx| session.adopt(stored, cx)),
             Start::Fork(staged) => {
                 session.update(cx, |session, cx| session.adopt_fork(staged.seed, cx));
@@ -303,6 +327,26 @@ impl ChatPane {
                     }
                     ChatEvent::StopRefused(why) => {
                         cx.emit(ChatPaneEvent::StopRefused(why.clone()));
+                    }
+                    ChatEvent::HostSession(id) => {
+                        if let Some((_, known)) = pane
+                            .conversations
+                            .get_mut(&uid)
+                            .and_then(|conv| conv.host.as_mut())
+                        {
+                            *known = Some(id.clone());
+                        }
+                    }
+                    ChatEvent::HostBusy { build, busy } => {
+                        if let Some((host, _)) =
+                            pane.conversations.get(&uid).and_then(|c| c.host.as_ref())
+                        {
+                            cx.emit(ChatPaneEvent::HostBusy {
+                                host: host.clone(),
+                                build: build.clone(),
+                                busy: busy.clone(),
+                            });
+                        }
                     }
                 }
                 cx.notify();
@@ -556,6 +600,16 @@ impl ChatPane {
         self.pending_resume = Some((uid, archive));
     }
 
+    /// Open the next showing of `uid`, a session in a host project, onto the
+    /// host session `id`, read as the host keeps it.
+    #[expect(
+        dead_code,
+        reason = "a host project's page opens its sessions through it"
+    )]
+    pub fn watch_next(&mut self, uid: u64, id: HostSession) {
+        self.pending_watch = Some((uid, id));
+    }
+
     pub(super) fn active_chat<'a>(&self, cx: &'a App) -> Option<&'a Chat> {
         Some(&self.active_conversation()?.session()?.read(cx).chat)
     }
@@ -784,4 +838,6 @@ enum Start {
     Resume(onehand_core::chat::ConversationSnapshot),
     /// As a fork of another.
     Fork(StagedFork),
+    /// On a host session the host already keeps.
+    Watch(HostSession),
 }

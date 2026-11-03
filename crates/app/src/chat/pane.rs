@@ -279,6 +279,9 @@ pub struct ChatPane {
     /// Taken on use, so a conversation picked once cannot be resumed again by a
     /// later switch back to that session.
     pending_resume: Option<(u64, PathBuf)>,
+    /// The host session the next showing of a session reads, taken on use
+    /// as the archive above is.
+    pending_watch: Option<(u64, onehand_core::host::wire::HostSession)>,
     /// A fork read off disk, waiting for the session the shell mints for it.
     pending_fork: Option<fork::StagedFork>,
     /// Whether the window's rail is hidden, so this pane can offer the way
@@ -416,6 +419,7 @@ impl ChatPane {
                 page: None,
                 archives: None,
                 pending_resume: None,
+                pending_watch: None,
                 pending_fork: None,
                 rail_hidden: false,
                 background_menu: std::cell::Cell::new(None),

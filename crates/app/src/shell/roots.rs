@@ -178,6 +178,7 @@ impl Shell {
         let session = root
             .active_session()
             .map(|session| (session.uid, session.spec.clone()));
+        let host = root.on_host().cloned();
         // Editor tabs and the file tree are per root, so the Workbench follows
         // the selection rather than mixing two projects' state.
         self.workbench
@@ -216,7 +217,7 @@ impl Shell {
             return;
         };
         self.chat.update(cx, |pane, cx| {
-            pane.show(uid, path.clone(), &spec, window, cx);
+            pane.show(uid, path.clone(), host, &spec, window, cx);
             pane.release_workers(cx);
             if region_caret {
                 pane.reclaim_focus(window, cx);

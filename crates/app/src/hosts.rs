@@ -26,10 +26,6 @@ use std::rc::Rc;
 
 /// Why a host could not be attached.
 #[derive(Clone, Debug)]
-#[expect(
-    dead_code,
-    reason = "the chat pane and the add-project dialog say what it carries"
-)]
 pub(crate) enum HostFailure {
     /// The service's binary is not where this build looks for it.
     Missing(String),
@@ -59,10 +55,6 @@ impl Hosts {
 
 /// The connection to `host`: the one already up, the attempt already under
 /// way, or a new attach (installing the service first when it is not there).
-#[expect(
-    dead_code,
-    reason = "the chat pane and the add-project dialog attach through it"
-)]
 pub(crate) fn conn(
     cx: &App,
     host: &HostName,
