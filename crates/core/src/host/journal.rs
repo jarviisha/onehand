@@ -40,26 +40,36 @@ impl Journal {
         let mut line = serde_json::to_vec(entry).map_err(io::Error::other)?;
         line.push(b'\n');
         let len = self.file.metadata()?.len();
-        land(&mut self.file, &line, |file| {
-            // Best effort: a file that cannot be cut back keeps the torn line,
-            // which costs only that seq.
-            let _ = file.set_len(len);
-        })?;
-        let seq = self.next;
-        self.next += 1;
-        Ok(seq)
+        land(&mut self.file, &mut self.next, len, &line)
     }
 }
 
-/// Write `line` whole to `file`, or call `undo` to take back what part of it
-/// landed: a torn first line would hide every entry from a watch, which starts
-/// at seq 0.
-fn land<W: Write>(file: &mut W, line: &[u8], undo: impl FnOnce(&mut W)) -> io::Result<()> {
-    let landed = file.write_all(line).and_then(|()| file.flush());
-    if landed.is_err() {
-        undo(file);
+/// A journal file cut back to `len`.
+trait Cut {
+    fn cut(&mut self, len: u64) -> io::Result<()>;
+}
+
+impl Cut for File {
+    fn cut(&mut self, len: u64) -> io::Result<()> {
+        self.set_len(len)
     }
-    landed
+}
+
+/// Write `line` whole to `file`, which is `len` long, and return its seq,
+/// `next`. What part of a line that failed landed is cut back: a torn first
+/// line would hide every entry from a watch, which starts at seq 0. A file
+/// that cannot be cut back gets the torn line ended instead, as `open` does,
+/// so it costs its seq alone and the next entry does not fuse with it.
+fn land<W: Write + Cut>(file: &mut W, next: &mut u64, len: u64, line: &[u8]) -> io::Result<u64> {
+    if let Err(e) = file.write_all(line).and_then(|()| file.flush()) {
+        if file.cut(len).is_err() && file.write_all(b"\n").is_ok() {
+            *next += 1;
+        }
+        return Err(e);
+    }
+    let seq = *next;
+    *next += 1;
+    Ok(seq)
 }
 
 /// Every readable entry in `dir/journal.jsonl` with its seq, in order. A line that does not parse is skipped.

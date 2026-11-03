@@ -68,10 +68,12 @@ fn torn_last_line_costs_only_itself() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// A file that takes `room` more bytes, then fails, as a full disk does mid-write.
+/// A file that takes `room` more bytes, then fails, as a full disk does
+/// mid-write; and that cannot be cut back when `stuck`.
 struct Full {
     bytes: Vec<u8>,
     room: usize,
+    stuck: bool,
 }
 
 impl Write for Full {
@@ -90,13 +92,40 @@ impl Write for Full {
     }
 }
 
+impl Cut for Full {
+    fn cut(&mut self, len: u64) -> std::io::Result<()> {
+        if self.stuck {
+            // Room again for the newline that ends the torn line.
+            self.room = 1;
+            return Err(std::io::Error::other("cannot cut"));
+        }
+        self.bytes.truncate(len as usize);
+        Ok(())
+    }
+}
+
 #[test]
 fn a_failed_append_leaves_no_partial_line() {
     let mut file = Full {
         bytes: b"{\"a\":1}\n".to_vec(),
         room: 4,
+        stuck: false,
     };
-    let landed = land(&mut file, b"{\"b\":2}\n", |f| f.bytes.truncate(8));
-    assert!(landed.is_err());
+    let mut next = 1;
+    assert!(land(&mut file, &mut next, 8, b"{\"b\":2}\n").is_err());
     assert_eq!(file.bytes, b"{\"a\":1}\n");
+    assert_eq!(next, 1);
+}
+
+#[test]
+fn a_line_that_cannot_be_cut_back_is_ended_and_counted() {
+    let mut file = Full {
+        bytes: b"{\"a\":1}\n".to_vec(),
+        room: 4,
+        stuck: true,
+    };
+    let mut next = 1;
+    assert!(land(&mut file, &mut next, 8, b"{\"b\":2}\n").is_err());
+    assert_eq!(file.bytes, b"{\"a\":1}\n{\"b\"\n");
+    assert_eq!(next, 2);
 }

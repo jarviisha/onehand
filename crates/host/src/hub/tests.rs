@@ -429,3 +429,30 @@ async fn a_directory_without_its_session_file_is_skipped() {
     let (hub, _opened) = hub_on(dir);
     assert!(hub.lock().unwrap().list().is_empty());
 }
+
+#[tokio::test]
+async fn an_ended_session_holds_no_open_journal() {
+    let (hub, opened) = hub("no-handle");
+    let fake = open(&hub, &opened, true);
+    let left = open(&hub, &opened, true);
+    settle().await;
+    let Fake { events, .. } = fake;
+    drop(events);
+    opened.lock().unwrap().remove(0);
+    settle().await;
+    {
+        let hub = hub.lock().unwrap();
+        assert!(hub.sessions[&left.session].journal.is_some());
+        let ended = hub.sessions.values().find(|s| s.ended).unwrap();
+        assert!(
+            ended.journal.is_none(),
+            "an ended session keeps its journal open"
+        );
+    }
+    let dir = hub.lock().unwrap().dir.clone();
+    drop(hub);
+    let (hub, _opened) = hub_on(dir);
+    let hub = hub.lock().unwrap();
+    assert_eq!(hub.sessions.len(), 2);
+    assert!(hub.sessions.values().all(|s| s.journal.is_none()));
+}

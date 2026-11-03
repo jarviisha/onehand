@@ -46,7 +46,9 @@ struct Record {
 
 struct Session {
     dir: PathBuf,
-    journal: Journal,
+    /// Open until the session ends, and none after: a host keeps every session
+    /// it ever ran, and a handle each would run it out of files.
+    journal: Option<Journal>,
     cwd: PathBuf,
     agent: String,
     /// The agent's request channel, once it is up and until it ends.
@@ -88,9 +90,10 @@ impl Hub {
         };
         for dir in dirs.flatten().map(|d| d.path()) {
             let Some(id) = dir.file_name().and_then(|n| n.to_str()).map(str::to_owned) else {
+                log(&format!("{} skipped: its name is not UTF-8", dir.display()));
                 continue;
             };
-            match load(&dir) {
+            match load(&id, &dir) {
                 Ok(session) => {
                     self.sessions.insert(id, session);
                 }
@@ -140,7 +143,7 @@ impl Hub {
             id.clone(),
             Session {
                 dir,
-                journal,
+                journal: Some(journal),
                 cwd,
                 agent: agent.name,
                 tx: None,
@@ -261,7 +264,12 @@ impl Hub {
             return;
         };
         s.busy = busy_after(s.busy, &entry);
-        let seq = match s.journal.append(&entry) {
+        let Some(journal) = &mut s.journal else {
+            return log(&format!(
+                "session {session}: an entry came after the session ended"
+            ));
+        };
+        let seq = match journal.append(&entry) {
             Ok(seq) => seq,
             Err(e) => {
                 log(&format!(
@@ -294,30 +302,25 @@ impl Hub {
             s.ended = true;
             s.busy = false;
             s.tx = None;
+            s.journal = None;
         }
     }
 }
 
 const ENDED: &str = "this session has ended";
 
-/// A session read back from `dir`, ended; an error if it has no readable record.
-fn load(dir: &Path) -> Result<Session, String> {
+/// Session `id` read back from `dir`, ended; an error if it has no readable
+/// record. A journal that cannot be ended here is said in the log, and the
+/// session listed all the same: its entries are still there to watch.
+fn load(id: &str, dir: &Path) -> Result<Session, String> {
     let bytes = fs::read(dir.join(RECORD)).map_err(|e| format!("{RECORD}: {e}"))?;
     let record: Record = serde_json::from_slice(&bytes).map_err(|e| format!("{RECORD}: {e}"))?;
-    let entries = journal::read(dir).map_err(|e| format!("journal: {e}"))?;
-    let mut journal = Journal::open(dir).map_err(|e| format!("journal: {e}"))?;
-    let ended = matches!(
-        entries.last(),
-        Some((_, Entry::Event(AcpEvent::Disconnected(_))))
-    );
-    if !ended {
-        journal
-            .append(&Entry::Event(AcpEvent::Disconnected(STOPPED.into())))
-            .map_err(|e| format!("journal: {e}"))?;
+    if let Err(e) = end_journal(dir) {
+        log(&format!("session {id}: its journal was not ended: {e}"));
     }
     Ok(Session {
         dir: dir.to_path_buf(),
-        journal,
+        journal: None,
         cwd: record.cwd,
         agent: record.agent,
         tx: None,
@@ -325,6 +328,18 @@ fn load(dir: &Path) -> Result<Session, String> {
         busy: false,
         ended: true,
     })
+}
+
+/// End the journal in `dir` with `STOPPED` unless it already ends in a `Disconnected`.
+fn end_journal(dir: &Path) -> std::io::Result<()> {
+    let ended = matches!(
+        journal::read(dir)?.last(),
+        Some((_, Entry::Event(AcpEvent::Disconnected(_))))
+    );
+    if !ended {
+        Journal::open(dir)?.append(&Entry::Event(AcpEvent::Disconnected(STOPPED.into())))?;
+    }
+    Ok(())
 }
 
 fn unknown(session: &str) -> String {
