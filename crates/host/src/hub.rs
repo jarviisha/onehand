@@ -15,7 +15,7 @@ use futures::StreamExt as _;
 use onehand_core::acp::{AcpEvent, AcpRequest, Opening, ReqTx, SessionOpts};
 use onehand_core::config::{AgentSpec, Launch};
 use onehand_core::host::journal::{self, Journal, Mark};
-use onehand_core::host::wire::{busy_after, Entry, FromHost, Readiness, SessionInfo};
+use onehand_core::host::wire::{busy_after, Entry, FromHost, HostSession, Readiness, SessionInfo};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -63,7 +63,7 @@ pub(crate) struct Hub {
     /// `PATH` as the user's login shell has it, which agents are found and run with.
     path: Option<OsString>,
     connector: Connector,
-    sessions: BTreeMap<String, Session>,
+    sessions: BTreeMap<HostSession, Session>,
     counter: u64,
 }
 
@@ -88,13 +88,13 @@ impl Hub {
             Err(e) => return log(&format!("earlier sessions not read: {e}")),
         };
         for dir in dirs.flatten().map(|d| d.path()) {
-            let Some(id) = dir.file_name().and_then(|n| n.to_str()).map(str::to_owned) else {
+            let Some(id) = dir.file_name().and_then(|n| n.to_str()) else {
                 log(&format!("{} skipped: its name is not UTF-8", dir.display()));
                 continue;
             };
-            match load(&id, &dir) {
+            match load(id, &dir) {
                 Ok(session) => {
-                    self.sessions.insert(id, session);
+                    self.sessions.insert(HostSession(id.to_owned()), session);
                 }
                 Err(e) => log(&format!("session {id} skipped: {e}")),
             }
@@ -107,7 +107,7 @@ impl Hub {
         cwd: PathBuf,
         mut agent: AgentSpec,
         opening: Opening,
-    ) -> Result<String, String> {
+    ) -> Result<HostSession, String> {
         // The laptop clears it already; its variables name the laptop's paths.
         agent.env.clear();
         // Only the id is taken with the hub locked: the launch and the files
@@ -161,14 +161,14 @@ impl Hub {
     }
 
     /// `<unix secs>-<counter>`, skipping one whose directory a run before this one left.
-    fn fresh_id(&mut self) -> (String, PathBuf) {
+    fn fresh_id(&mut self) -> (HostSession, PathBuf) {
         let secs = unix_secs();
         loop {
             self.counter += 1;
             let id = format!("{secs}-{}", self.counter);
             let dir = self.dir.join("sessions").join(&id);
             if !dir.exists() {
-                return (id, dir);
+                return (HostSession(id), dir);
             }
         }
     }
@@ -178,7 +178,7 @@ impl Hub {
     /// replay holds up no other session; what lands meanwhile is read after.
     pub(crate) fn watch(
         hub: &Mutex<Hub>,
-        session: &str,
+        session: &HostSession,
         sink: UnboundedSender<FromHost>,
     ) -> Result<(), String> {
         let dir = lock(hub).unwatch(session)?;
@@ -195,7 +195,7 @@ impl Hub {
 
     /// Stop passing `session` live entries on, for a watch that will replay
     /// them; where its journal is.
-    fn unwatch(&mut self, session: &str) -> Result<PathBuf, String> {
+    fn unwatch(&mut self, session: &HostSession) -> Result<PathBuf, String> {
         let s = self
             .sessions
             .get_mut(session)
@@ -209,9 +209,9 @@ impl Hub {
     /// Called with the hub locked, so no entry lands between the two.
     fn replay(
         &mut self,
-        session: &str,
+        session: &HostSession,
         sink: UnboundedSender<FromHost>,
-        entries: Vec<(u64, Entry)>,
+        entries: journal::Entries,
         mark: Mark,
     ) -> Result<(), String> {
         let s = self
@@ -220,15 +220,16 @@ impl Hub {
             .ok_or_else(|| unknown(session))?;
         let (since, _) = journal::read_from(&s.dir, mark).map_err(unreadable)?;
         let replay = FromHost::Replay {
-            session: session.to_string(),
+            session: session.clone(),
         };
         if sink.send(replay).is_err() {
             return Ok(());
         }
-        for (seq, entry) in entries.into_iter().chain(since) {
+        for (seq, at, entry) in entries.into_iter().chain(since) {
             let line = FromHost::Entry {
-                session: session.to_string(),
+                session: session.clone(),
                 seq,
+                at,
                 entry,
             };
             if sink.send(line).is_err() {
@@ -240,7 +241,11 @@ impl Hub {
     }
 
     /// Hand `request` to the agent, then journal it.
-    pub(crate) fn request(&mut self, session: &str, request: AcpRequest) -> Result<(), String> {
+    pub(crate) fn request(
+        &mut self,
+        session: &HostSession,
+        request: AcpRequest,
+    ) -> Result<(), String> {
         let s = self.sessions.get(session).ok_or_else(|| unknown(session))?;
         if s.ended {
             return Err(ENDED.into());
@@ -298,9 +303,9 @@ impl Hub {
         }
     }
 
-    /// Journal `entry`, then pass it to the watcher unless it is a request,
-    /// which the one attached laptop applied itself when it sent it.
-    fn record(&mut self, session: &str, entry: Entry) {
+    /// Journal `entry` at this second, then pass it to the watcher unless it
+    /// is a request, which the one attached laptop applied itself when it sent it.
+    fn record(&mut self, session: &HostSession, entry: Entry) {
         let Some(s) = self.sessions.get_mut(session) else {
             return;
         };
@@ -310,7 +315,8 @@ impl Hub {
                 "session {session}: an entry came after the session ended"
             ));
         };
-        let seq = match journal.append(&entry) {
+        let at = unix_secs();
+        let seq = match journal.append(at, &entry) {
             Ok(seq) => seq,
             Err(e) => {
                 log(&format!(
@@ -328,8 +334,9 @@ impl Hub {
         }
         if let Some(watcher) = &s.watcher {
             let line = FromHost::Entry {
-                session: session.to_string(),
+                session: session.clone(),
                 seq,
+                at,
                 entry,
             };
             if watcher.send(line).is_err() {
@@ -338,7 +345,7 @@ impl Hub {
         }
     }
 
-    fn end(&mut self, session: &str) {
+    fn end(&mut self, session: &HostSession) {
         if let Some(s) = self.sessions.get_mut(session) {
             s.ended = true;
             s.busy = false;
@@ -384,7 +391,8 @@ fn end_journal(dir: &Path) -> std::io::Result<()> {
         Some(Entry::Event(AcpEvent::Disconnected(_)))
     );
     if !ended {
-        Journal::open(dir)?.append(&Entry::Event(AcpEvent::Disconnected(STOPPED.into())))?;
+        let stopped = Entry::Event(AcpEvent::Disconnected(STOPPED.into()));
+        Journal::open(dir)?.append(unix_secs(), &stopped)?;
     }
     Ok(())
 }
@@ -393,12 +401,12 @@ fn unreadable(e: std::io::Error) -> String {
     format!("Could not read this session's journal: {e}")
 }
 
-fn unknown(session: &str) -> String {
+fn unknown(session: &HostSession) -> String {
     format!("there is no session {session} on this host")
 }
 
 /// Journal each of the agent's events until its stream ends, then mark the session ended.
-async fn drive(hub: Arc<Mutex<Hub>>, id: String, mut events: BoxStream<'static, AcpEvent>) {
+async fn drive(hub: Arc<Mutex<Hub>>, id: HostSession, mut events: BoxStream<'static, AcpEvent>) {
     let mut said_why = false;
     while let Some(event) = events.next().await {
         let mut hub = lock(&hub);
@@ -447,6 +455,8 @@ async fn drive(hub: Arc<Mutex<Hub>>, id: String, mut events: BoxStream<'static, 
             | AcpEvent::LoginRequired { .. }
             | AcpEvent::Notice(_)
             | AcpEvent::Echo(_)) => hub.record(&id, Entry::Event(event)),
+            // A journal line carries its own time.
+            AcpEvent::At(_) => {}
         }
     }
     let mut hub = lock(&hub);

@@ -23,7 +23,9 @@ use tokio::io::{
 use tokio::process::{Child, Command};
 use tokio::sync::{mpsc, oneshot};
 
-use super::wire::{build_id, Call, Entry, FromHost, Question, Readiness, Reply, SessionInfo};
+use super::wire::{
+    build_id, Build, Call, Entry, FromHost, HostSession, Question, Readiness, Reply, SessionInfo,
+};
 use crate::acp::{AcpEvent, AcpRequest, Opening};
 use crate::config::AgentSpec;
 
@@ -35,7 +37,10 @@ pub enum HostError {
     /// The host is not one this build can run on (`uname -sm` said this).
     Unsupported(String),
     /// The host runs another build, with these sessions mid-turn; it was left alone.
-    Busy { build: String, busy: Vec<String> },
+    Busy {
+        build: Build,
+        busy: Vec<HostSession>,
+    },
     /// The host refused a call or answered something unexpected, or the
     /// binary to install could not be read here.
     Protocol(String),
@@ -152,7 +157,7 @@ pub async fn install(addr: &HostAddr, binary: &Path) -> Result<String, HostError
     if present {
         return Ok(path);
     }
-    run(addr, &copy_command(&dir, &build), &bytes).await?;
+    run(addr, &copy_command(&dir, &build.0), &bytes).await?;
     Ok(path)
 }
 
@@ -191,7 +196,7 @@ fn copy_command(dir: &str, build: &str) -> String {
 
 /// Attach, say hello, and settle the build: same build → connected; other build with nothing busy
 /// → `Shutdown` it and attach again once; other build busy → `Busy`.
-pub async fn connect(addr: &HostAddr, remote: &str, build: &str) -> Result<HostConn, HostError> {
+pub async fn connect(addr: &HostAddr, remote: &str, build: &Build) -> Result<HostConn, HostError> {
     let (conn, said) = attach(addr, remote)?;
     match reached(settle(&conn, build).await, said).await? {
         Settled::Same => return Ok(conn),
@@ -262,9 +267,9 @@ enum Settled {
 
 /// Say hello as `build`; a service on another build with nothing mid-turn is
 /// told to shut down, so the next attach starts this one.
-async fn settle(conn: &HostConn, build: &str) -> Result<Settled, HostError> {
+async fn settle(conn: &HostConn, build: &Build) -> Result<Settled, HostError> {
     let (theirs, busy) = hello(conn, build).await?;
-    if theirs == build {
+    if theirs == *build {
         return Ok(Settled::Same);
     }
     if !busy.is_empty() {
@@ -276,9 +281,9 @@ async fn settle(conn: &HostConn, build: &str) -> Result<Settled, HostError> {
 
 /// Say hello once more after a restart: another build now is a fault, and is
 /// never shut down a second time.
-async fn settle_again(conn: &HostConn, build: &str) -> Result<(), HostError> {
+async fn settle_again(conn: &HostConn, build: &Build) -> Result<(), HostError> {
     let (theirs, busy) = hello(conn, build).await?;
-    if theirs == build {
+    if theirs == *build {
         Ok(())
     } else if !busy.is_empty() {
         Err(busy_host(theirs, busy))
@@ -290,24 +295,24 @@ async fn settle_again(conn: &HostConn, build: &str) -> Result<(), HostError> {
 }
 
 /// Say hello as `build`; the host's build, and its sessions mid-turn.
-async fn hello(conn: &HostConn, build: &str) -> Result<(String, Vec<String>), HostError> {
+async fn hello(conn: &HostConn, build: &Build) -> Result<(Build, Vec<HostSession>), HostError> {
     let hello = Call::Hello {
-        build: build.to_string(),
+        build: build.clone(),
     };
     conn.ask_for(hello, |a| a.welcome).await
 }
 
 /// A host on build `build` that was left alone for the sessions in `busy`.
-fn busy_host(build: String, busy: Vec<String>) -> HostError {
+fn busy_host(build: Build, busy: Vec<HostSession>) -> HostError {
     HostError::Busy { build, busy }
 }
 
 /// What an answer carries, in the slot of its kind; every other slot is empty.
 /// A call takes the slot it expects, and finds any other answer unexpected.
 struct Answer {
-    welcome: Option<(String, Vec<String>)>,
+    welcome: Option<(Build, Vec<HostSession>)>,
     sessions: Option<Vec<SessionInfo>>,
-    opened: Option<String>,
+    opened: Option<HostSession>,
     done: Option<()>,
 }
 
@@ -332,8 +337,8 @@ impl Answer {
 /// What a caller asks of the task that owns the stream.
 enum Cmd {
     Ask(Call, oneshot::Sender<Result<Reply, HostError>>),
-    Watch(String, events::UnboundedSender<AcpEvent>),
-    Request(String, AcpRequest),
+    Watch(HostSession, events::UnboundedSender<AcpEvent>),
+    Request(HostSession, AcpRequest),
     /// Let go of every call whose caller stopped waiting.
     Forget,
 }
@@ -342,9 +347,9 @@ enum Cmd {
 enum Pending {
     Caller(oneshot::Sender<Result<Reply, HostError>>),
     /// A refused watch ends that watch; an answered one ends its replay.
-    Watch(String, events::UnboundedSender<AcpEvent>),
+    Watch(HostSession, events::UnboundedSender<AcpEvent>),
     /// A refused request is said in the session it was for.
-    Request(String),
+    Request(HostSession),
 }
 
 /// Who reads a session, and how far its replay has got.
@@ -362,6 +367,8 @@ struct Watcher {
     replaying: bool,
     /// The last `Ready` the replay brought, given with a live channel once it ends.
     ready: Option<Readiness>,
+    /// The time this watcher last said with `At`.
+    said_at: Option<u64>,
 }
 
 impl Watcher {
@@ -372,6 +379,7 @@ impl Watcher {
             last: None,
             replaying: true,
             ready: None,
+            said_at: None,
         }
     }
 
@@ -445,7 +453,7 @@ impl HostConn {
         cwd: PathBuf,
         mut agent: AgentSpec,
         opening: Opening,
-    ) -> Result<String, HostError> {
+    ) -> Result<HostSession, HostError> {
         // The laptop's variables mean nothing on the host and may be secrets.
         agent.env.clear();
         let open = Call::Open {
@@ -457,14 +465,15 @@ impl HostConn {
     }
 
     /// The session as a local one reads: `Ready` → `Connected` (with a `tx` whose requests go to the
-    /// host), `Event(e)` → `e`, `Request(r)` → `Echo(r)`. A `Ready` in the replay is held back, and
+    /// host), `Event(e)` → `e`, `Request(r)` → `Echo(r)`, each after an `At` when its journal
+    /// second is known and not the one last said. A `Ready` in the replay is held back, and
     /// its one `Connected` follows the replay's last event; a replay that ended the session gives
     /// none. Ends with `Disconnected`: the
     /// session's own, or the stream closing ("lost the connection to <host>"), or the host taken
     /// ("<host> was attached from another machine").
-    pub fn watch(&self, session: &str) -> impl Stream<Item = AcpEvent> + Send + 'static {
+    pub fn watch(&self, session: &HostSession) -> impl Stream<Item = AcpEvent> + Send + 'static {
         let (tx, rx) = events::unbounded();
-        if let Err(e) = self.cmds.send(Cmd::Watch(session.to_string(), tx)) {
+        if let Err(e) = self.cmds.send(Cmd::Watch(session.clone(), tx)) {
             if let Cmd::Watch(_, tx) = e.0 {
                 let _ = tx.unbounded_send(AcpEvent::Disconnected(
                     "the connection to the host is closed".into(),
@@ -497,10 +506,11 @@ async fn pump<R, W>(
     let _child = child;
     let mut lines = BufReader::new(read).lines();
     let mut pending: HashMap<u64, Pending> = HashMap::new();
-    let mut watchers: HashMap<String, Watcher> = HashMap::new();
+    let mut watchers: HashMap<HostSession, Watcher> = HashMap::new();
     // Each session's request channel, kept weakly so a replayed `Ready` reuses
     // the one still in use without keeping it alive.
-    let mut forwarders: HashMap<String, mpsc::WeakUnboundedSender<AcpRequest>> = HashMap::new();
+    let mut forwarders: HashMap<HostSession, mpsc::WeakUnboundedSender<AcpRequest>> =
+        HashMap::new();
     // Ids start at 1: the host answers a line it cannot read with id 0.
     let mut next = 1_u64;
     let why = loop {
@@ -560,7 +570,7 @@ async fn pump<R, W>(
                         }
                         (Some(Pending::Request(_)), Ok(_)) | (None, _) => {}
                     },
-                    FromHost::Entry { session, seq, entry } => {
+                    FromHost::Entry { session, seq, at, entry } => {
                         let Some(w) = watchers.get_mut(&session) else { continue };
                         if !w.takes(seq) {
                             continue;
@@ -580,6 +590,11 @@ async fn pump<R, W>(
                             }
                             Entry::Request(request) => AcpEvent::Echo(request),
                         };
+                        // 0 is a line that kept no time: the chat stamps it now.
+                        if at != 0 && w.said_at != Some(at) {
+                            w.said_at = Some(at);
+                            let _ = w.tx.unbounded_send(AcpEvent::At(at));
+                        }
                         // A session that ended says so once, and its watch ends with it.
                         if w.tx.unbounded_send(event).is_err() || ended {
                             watchers.remove(&session);
@@ -667,20 +682,20 @@ fn refuse_queued(cmds: &mut mpsc::UnboundedReceiver<Cmd>, why: &str) {
 
 /// The session's request channel to the host: the one a `Chat` still holds, or a new one.
 fn live(
-    forwarders: &mut HashMap<String, mpsc::WeakUnboundedSender<AcpRequest>>,
+    forwarders: &mut HashMap<HostSession, mpsc::WeakUnboundedSender<AcpRequest>>,
     me: &mpsc::WeakUnboundedSender<Cmd>,
-    session: &str,
+    session: &HostSession,
 ) -> crate::acp::ReqTx {
     if let Some(tx) = forwarders.get(session).and_then(|w| w.upgrade()) {
         return tx;
     }
-    let tx = forward(me, session.to_string());
-    forwarders.insert(session.to_string(), tx.downgrade());
+    let tx = forward(me, session.clone());
+    forwarders.insert(session.clone(), tx.downgrade());
     tx
 }
 
 /// A request channel for `session` whose requests go to the host.
-fn forward(me: &mpsc::WeakUnboundedSender<Cmd>, session: String) -> crate::acp::ReqTx {
+fn forward(me: &mpsc::WeakUnboundedSender<Cmd>, session: HostSession) -> crate::acp::ReqTx {
     let (tx, mut rx) = mpsc::unbounded_channel();
     if let Some(cmds) = me.upgrade() {
         tokio::spawn(async move {

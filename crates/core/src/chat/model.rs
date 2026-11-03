@@ -129,6 +129,10 @@ pub struct Chat {
     /// each submitted prompt, seeded from the archive's `updated` on resume.
     /// Drives the rail session row's relative-time label. Runtime-only.
     pub(crate) last_activity: Option<u64>,
+    /// The unix second a host replay last said its events happened at
+    /// (`AcpEvent::At`), which the stamps `apply` writes read in place of the
+    /// clock; only the next `At` moves it. A local agent never says one.
+    clock: Option<u64>,
     /// Where this conversation is between adopting an archive and knowing what
     /// the agent's replay actually delivered. See [`Replay`].
     replay: Replay,
@@ -299,6 +303,11 @@ impl Chat {
         chat.agent = agent;
         chat.store = store;
         chat
+    }
+
+    /// When the event being applied happened: the host's word for it, or now.
+    fn event_time(&self) -> u64 {
+        self.clock.unwrap_or_else(crate::chat::store::now_secs)
     }
 
     /// The transcript's current revision. See the field.

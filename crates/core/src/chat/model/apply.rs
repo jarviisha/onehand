@@ -4,7 +4,6 @@ use super::items::{
 };
 use super::{Chat, Link, Replay};
 use crate::acp::{AcpEvent, PlanEntry, ToolCall, ToolCallUpdate, ToolContent, ToolStatus};
-use crate::chat::store;
 
 /// What applying one event did, for the front end that has to react to it.
 ///
@@ -160,8 +159,9 @@ impl Chat {
                 | AcpEvent::SubagentEnded { .. }
                 | AcpEvent::InChild { .. }
                 | AcpEvent::StopRefused { .. }
+                | AcpEvent::At(_)
         );
-        let event_at = (!metadata).then(store::now_secs);
+        let event_at = (!metadata).then(|| self.event_time());
         if let Some(event_at) = event_at {
             self.last_activity = Some(event_at);
         }
@@ -219,7 +219,8 @@ impl Chat {
             | AcpEvent::SubagentSpawned { .. }
             | AcpEvent::SubagentEnded { .. }
             | AcpEvent::InChild { .. }
-            | AcpEvent::StopRefused { .. } => {}
+            | AcpEvent::StopRefused { .. }
+            | AcpEvent::At(_) => {}
             _ => self.user_chunk_open = false,
         }
         match event {
@@ -314,7 +315,7 @@ impl Chat {
                     self.finalize_thought();
                     self.user_chunk_open = false;
                     self.items.push(line);
-                    self.last_activity = Some(store::now_secs());
+                    self.last_activity = Some(self.event_time());
                     self.touch();
                 }
             }
@@ -324,12 +325,13 @@ impl Chat {
             | AcpEvent::SubagentEnded { .. }
             | AcpEvent::InChild { .. }) => {
                 if self.apply_subagent(event) {
-                    self.last_activity = Some(store::now_secs());
+                    self.last_activity = Some(self.event_time());
                     self.touch();
                 }
             }
             AcpEvent::StopRefused { why } => stop_refused = Some(why),
             AcpEvent::Echo(request) => self.echo(request),
+            AcpEvent::At(secs) => self.clock = Some(secs),
             AcpEvent::Notice(text) => {
                 self.finalize_thought();
                 self.items.push(ChatItem::notice(text));
@@ -435,7 +437,7 @@ impl Chat {
                         None,
                     ));
                 }
-                self.finish_active_turn(event_at.unwrap_or_else(store::now_secs));
+                self.finish_active_turn(event_at.unwrap_or_else(|| self.event_time()));
                 self.busy = false;
                 self.finalize_thought();
                 // A turn that ends with unanswered permission cards (a

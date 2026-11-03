@@ -198,7 +198,7 @@ fn what_runs_starts_open_and_the_plan_always_does() {
     assert!(PlanItem::new(Vec::new()).is_open());
 
     let mut chat = Chat::default();
-    chat.push_user("go".into(), Vec::new());
+    chat.push_user("go".into(), Vec::new(), crate::chat::store::now_secs());
     chat.apply(AcpEvent::ThoughtChunk("hm".into()));
     let thinking = |chat: &Chat| match &chat.items[1] {
         ChatItem::Thought(th) => (th.is_running(), th.is_open()),
@@ -242,7 +242,7 @@ fn the_closing_paragraph_is_the_last_one() {
         "```rust\nx\n\ny\n```"
     );
     let mut chat = Chat::default();
-    chat.push_user("go".into(), Vec::new());
+    chat.push_user("go".into(), Vec::new(), crate::chat::store::now_secs());
     chat.apply(AcpEvent::AgentChunk {
         text: "First.\n\nThen this.".into(),
         message: None,
@@ -335,7 +335,7 @@ fn plan_updates_replace_in_place_per_turn() {
         status: st,
     };
     let mut chat = Chat::default();
-    chat.push_user("go".into(), Vec::new());
+    chat.push_user("go".into(), Vec::new(), crate::chat::store::now_secs());
     chat.apply(AcpEvent::Plan(vec![entry("a", PlanStatus::Pending)]));
     chat.toggle_tool(TranscriptItemId::Live(1)); // user closes the card
     chat.apply(AcpEvent::Plan(vec![
@@ -358,7 +358,7 @@ fn plan_updates_replace_in_place_per_turn() {
         "the user's close wins over a running step"
     );
 
-    chat.push_user("next".into(), Vec::new());
+    chat.push_user("next".into(), Vec::new(), crate::chat::store::now_secs());
     chat.apply(AcpEvent::Plan(vec![entry("c", PlanStatus::Pending)]));
     let count = chat
         .items
@@ -638,7 +638,11 @@ fn user_prompt_keeps_unreplayed_history() {
     // must keep the loaded history (it is the only copy of the
     // conversation), while real replayed content still consumes it.
     let mut chat = resumed_chat(1);
-    chat.push_user("new prompt".into(), Vec::new());
+    chat.push_user(
+        "new prompt".into(),
+        Vec::new(),
+        crate::chat::store::now_secs(),
+    );
     assert_eq!(chat.history.len(), 1, "history must survive a user prompt");
     assert!(!chat.replay_pending());
     // And the prompt is added to the conversation, not written as the whole
@@ -800,7 +804,11 @@ fn a_replay_that_delivered_more_is_kept() {
             message: None,
         });
     }
-    chat.push_user("carry on".into(), Vec::new());
+    chat.push_user(
+        "carry on".into(),
+        Vec::new(),
+        crate::chat::store::now_secs(),
+    );
 
     assert!(chat.history.is_empty(), "the shorter copy is not put back");
     let write = chat.flush().unwrap();
@@ -821,7 +829,11 @@ fn a_bounded_transcript_never_rewrites_the_file() {
             message: None,
         });
     }
-    chat.push_user("carry on".into(), Vec::new());
+    chat.push_user(
+        "carry on".into(),
+        Vec::new(),
+        crate::chat::store::now_secs(),
+    );
 
     let write = chat.flush().unwrap();
     assert!(!write.rewrite, "the file is longer than what is on screen");
@@ -833,7 +845,11 @@ fn a_bounded_transcript_never_rewrites_the_file() {
 #[test]
 fn a_restart_carries_the_mark() {
     let mut chat = resumed_chat(2);
-    chat.push_user("and one more".into(), Vec::new());
+    chat.push_user(
+        "and one more".into(),
+        Vec::new(),
+        crate::chat::store::now_secs(),
+    );
 
     let snapshot = chat.take_snapshot().expect("there is a conversation");
     assert_eq!(snapshot.items.len(), 3);
@@ -2879,7 +2895,7 @@ fn an_update_with_nothing_to_read_for_an_unknown_id_draws_no_card() {
 #[test]
 fn a_merged_answer_keeps_its_latest_id() {
     let mut chat = Chat::default();
-    chat.push_user("go".into(), Vec::new());
+    chat.push_user("go".into(), Vec::new(), crate::chat::store::now_secs());
     let chunk = |text: &str, message: Option<&str>| AcpEvent::AgentChunk {
         text: text.into(),
         message: message.map(String::from),
@@ -3164,4 +3180,36 @@ fn an_echoed_answer_reads_as_the_live_one_did() {
         assert_eq!(resolved(&echoed), resolved(&live));
         assert_ne!(resolved(&echoed).as_deref(), Some("Answered"));
     }
+}
+
+#[test]
+fn a_replayed_prompt_and_turn_end_keep_the_journal_s_times() {
+    let (mut chat, _rx) = connected_chat();
+    chat.apply(AcpEvent::At(1000));
+    chat.apply(AcpEvent::Echo(AcpRequest::Prompt {
+        text: "build it".into(),
+        attachments: vec![],
+    }));
+    chat.apply(AcpEvent::At(1060));
+    chat.apply(AcpEvent::TurnEnded {
+        stop_reason: "end_turn".into(),
+    });
+    let Some(ChatItem::User(user)) = chat.items.iter().find(|i| matches!(i, ChatItem::User(_)))
+    else {
+        panic!("no user item");
+    };
+    assert_eq!(user.sent_at, Some(1000));
+    assert_eq!(user.completed_at, Some(1060));
+    assert_eq!(chat.last_activity, Some(1060));
+}
+
+#[test]
+fn a_prompt_typed_after_a_replay_is_stamped_now() {
+    let (mut chat, _rx) = connected_chat();
+    chat.apply(AcpEvent::At(1000));
+    assert!(chat.submit("go on", &[]));
+    let Some(ChatItem::User(user)) = chat.items.last() else {
+        panic!("no user item");
+    };
+    assert!(user.sent_at.is_some_and(|at| at > 1000));
 }

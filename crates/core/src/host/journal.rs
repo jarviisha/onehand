@@ -1,10 +1,12 @@
-//! A host session's journal: every entry of the session, one JSON line each,
-//! appended and never rewritten. A line's number is its seq, so a torn last
+//! A host session's journal: every entry of the session, one JSON line each
+//! with the unix second it was journaled at, appended and never rewritten. A line's number is its seq, so a torn last
 //! line costs that entry alone and no later seq shifts.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read as _, Seek as _, SeekFrom, Write};
 use std::path::Path;
+
+use serde::{Deserialize, Serialize};
 
 use super::wire::Entry;
 
@@ -13,6 +15,22 @@ const FILE: &str = "journal.jsonl";
 /// How far `last` first reaches back from a journal's end; it doubles until
 /// it holds a whole line.
 const TAIL_CHUNK: u64 = 4096;
+
+/// One journal line.
+#[derive(Serialize, Deserialize)]
+struct Line<E> {
+    at: u64,
+    entry: E,
+}
+
+/// A line read back, with its time; a bare entry, as lines were before they
+/// kept their time, reads with `at` 0.
+fn parse(line: &[u8]) -> Option<(u64, Entry)> {
+    match serde_json::from_slice::<Line<Entry>>(line) {
+        Ok(Line { at, entry }) => Some((at, entry)),
+        Err(_) => serde_json::from_slice(line).ok().map(|entry| (0, entry)),
+    }
+}
 
 pub struct Journal {
     file: File,
@@ -49,9 +67,10 @@ impl Journal {
         })
     }
 
-    /// Append one entry as one line, flushed; returns its seq (0-based line number).
-    pub fn append(&mut self, entry: &Entry) -> io::Result<u64> {
-        let mut line = serde_json::to_vec(entry).map_err(io::Error::other)?;
+    /// Append one entry, journaled at unix second `at`, as one line, flushed;
+    /// returns its seq (0-based line number).
+    pub fn append(&mut self, at: u64, entry: &Entry) -> io::Result<u64> {
+        let mut line = serde_json::to_vec(&Line { at, entry }).map_err(io::Error::other)?;
         line.push(b'\n');
         land(&mut self.file, &mut self.next, &mut self.len, &line)
     }
@@ -100,6 +119,9 @@ fn land<W: Write + Cut>(
     Ok(seq)
 }
 
+/// Entries read back, each with its seq and the unix second it was journaled at.
+pub type Entries = Vec<(u64, u64, Entry)>;
+
 /// Where a read of a journal stopped: the seq and the byte offset of the
 /// next line it did not read.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -108,15 +130,16 @@ pub struct Mark {
     at: u64,
 }
 
-/// Every readable entry in `dir/journal.jsonl` with its seq, in order. A line that does not parse is skipped.
-pub fn read(dir: &Path) -> io::Result<Vec<(u64, Entry)>> {
+/// Every readable entry in `dir/journal.jsonl` with its seq and time, in
+/// order. A line that does not parse is skipped.
+pub fn read(dir: &Path) -> io::Result<Entries> {
     Ok(read_from(dir, Mark::default())?.0)
 }
 
-/// Every readable entry on the whole lines from `from` on, with its seq, and
-/// where they end. A line its newline has not yet ended is left for the next
+/// Every readable entry on the whole lines from `from` on, with its seq and
+/// time, and where they end. A line its newline has not yet ended is left for the next
 /// read: it may still be being written, and is torn if it never is.
-pub fn read_from(dir: &Path, from: Mark) -> io::Result<(Vec<(u64, Entry)>, Mark)> {
+pub fn read_from(dir: &Path, from: Mark) -> io::Result<(Entries, Mark)> {
     let mut file = match File::open(dir.join(FILE)) {
         Ok(file) => file,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok((Vec::new(), from)),
@@ -134,8 +157,8 @@ pub fn read_from(dir: &Path, from: Mark) -> io::Result<(Vec<(u64, Entry)>, Mark)
         .clone()
         .enumerate()
         .filter_map(|(i, line)| {
-            let entry = serde_json::from_slice(&line[..line.len() - 1]).ok()?;
-            Some((from.seq + i as u64, entry))
+            let (at, entry) = parse(&line[..line.len() - 1])?;
+            Some((from.seq + i as u64, at, entry))
         })
         .collect();
     let end = Mark {
@@ -169,7 +192,7 @@ pub fn last(dir: &Path) -> io::Result<Option<Entry>> {
             if start > 0 && lines.peek().is_none() {
                 break;
             }
-            if let Ok(entry) = serde_json::from_slice(line) {
+            if let Some((_, entry)) = parse(line) {
                 return Ok(Some(entry));
             }
         }

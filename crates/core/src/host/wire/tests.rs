@@ -33,8 +33,8 @@ fn other_entries_keep_the_busy_state_they_were_given() {
 
 #[test]
 fn build_id_is_fnv1a_64() {
-    assert_eq!(build_id(b""), "cbf29ce484222325");
-    assert_eq!(build_id(b"a"), "af63dc4c8601ec8c");
+    assert_eq!(build_id(b"").0, "cbf29ce484222325");
+    assert_eq!(build_id(b"a").0, "af63dc4c8601ec8c");
 }
 
 #[test]
@@ -52,8 +52,9 @@ fn an_open_ask_and_an_entry_line_round_trip() {
     assert_eq!(serde_json::to_string(&back).unwrap(), json);
 
     let line = FromHost::Entry {
-        session: "s1".into(),
+        session: HostSession("s1".into()),
         seq: 3,
+        at: 1_700_000_000,
         entry: Entry::Event(AcpEvent::AgentChunk {
             text: "hello".into(),
             message: Some("m".into()),
