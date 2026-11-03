@@ -49,7 +49,7 @@ impl ChatPane {
         // way out.
         if let Entry::Vacant(slot) = self.conversations.entry(uid) {
             slot.insert(Conversation {
-                host: host.map(|host| (host, None)),
+                host: opening_host(host, watch.as_ref(), fork.is_some()),
                 ..Conversation::opening(root.clone(), spec.clone())
             });
             // **A new session connects; it does not ask.** Every session in this
@@ -871,6 +871,17 @@ pub(super) fn host_begin(
             (HostBegin::Open, start)
         }
     }
+}
+
+/// The host a session in a host project opens on, with the host session it
+/// watches when that is known before it starts: so a second press on the
+/// same listed session finds this one at once. A fork opens its own.
+pub(super) fn opening_host(
+    host: Option<HostName>,
+    watch: Option<&HostSession>,
+    forking: bool,
+) -> Option<(HostName, Option<HostSession>)> {
+    host.map(|host| (host, watch.filter(|_| !forking).cloned()))
 }
 
 /// How a session's conversation starts.
