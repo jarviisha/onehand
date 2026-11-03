@@ -195,7 +195,8 @@ impl Shell {
             .window
             .workspace
             .active_root()
-            .and_then(|root| self.window.git.get(&root.path))
+            .and_then(|root| root.local_path())
+            .and_then(|path| self.window.git.get(path))
             .map(|status| status.branch.clone());
         StatusBar::new().left(h_flex().gap_1().children(branch.map(|branch| {
             h_flex()

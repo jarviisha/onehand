@@ -6,7 +6,7 @@ use gpui_component::WindowExt as _;
 use gpui_component::input::InputState;
 use gpui_component::notification::Notification;
 use onehand_core::config::{WorkspaceConfig, WorkspaceLoad};
-use onehand_core::workspace::{self, Workspace};
+use onehand_core::workspace::{self, HostName, Workspace};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -507,7 +507,9 @@ const CLOSE_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
 pub(super) enum Thing {
     Name,
     Order,
-    Pin(PathBuf),
+    /// A root's pin, by its host (none for this machine) and path: a local
+    /// root and a host root may share a path.
+    Pin(Option<HostName>, PathBuf),
     Unattended(PathBuf),
     Check(PathBuf),
 }

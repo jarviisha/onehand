@@ -178,7 +178,8 @@ impl Shell {
             .window
             .workspace
             .active_root()
-            .map(|root| root.path.clone());
+            .and_then(|root| root.local_path())
+            .map(Path::to_path_buf);
         self.workflows_page
             .update(cx, |page, cx| page.set_projects(projects, selected, cx));
     }

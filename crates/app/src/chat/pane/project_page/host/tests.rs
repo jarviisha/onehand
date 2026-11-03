@@ -1,4 +1,4 @@
-use super::{host_rows, is_newest, watching_uid};
+use super::{host_rows, is_newest, place, watching_uid};
 use onehand_core::host::wire::{HostSession, SessionInfo};
 use onehand_core::workspace::HostName;
 use std::path::Path;
@@ -66,4 +66,19 @@ fn a_host_session_already_watched_in_its_folder_is_found() {
     };
     assert_eq!(watching_uid(convs(), app, &host, &id), Some(6));
     assert_eq!(watching_uid(convs()[..5].to_vec(), app, &host, &id), None);
+}
+
+/// A folder on a host is named on its host, never shortened with this
+/// machine's home; one here is shortened with it.
+#[test]
+fn the_place_line_names_a_host_folder_on_its_host() {
+    let home = Path::new("/home/me");
+    let vps = HostName("vps".into());
+    assert_eq!(
+        place(Some(&vps), Path::new("/home/me/app"), Some(home)),
+        "vps:/home/me/app"
+    );
+    assert_eq!(place(None, Path::new("/home/me/app"), Some(home)), "~/app");
+    assert_eq!(place(None, Path::new("/srv/app"), Some(home)), "/srv/app");
+    assert_eq!(place(None, Path::new("/srv/app"), None), "/srv/app");
 }

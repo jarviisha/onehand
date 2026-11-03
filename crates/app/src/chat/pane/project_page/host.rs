@@ -33,6 +33,21 @@ const HOST_SESSIONS_CAP: usize = 50;
 /// the first answer lands, then the list or why there is none.
 pub(in crate::chat::pane) type Listed = Option<Result<Vec<SessionInfo>, String>>;
 
+/// Where the page's folder is, as its head says it: `<host>:<path>` for one
+/// on a host, whose path this machine's home says nothing about; else the
+/// path, shortened to `~/` under `home`.
+pub(super) fn place(host: Option<&HostName>, path: &Path, home: Option<&Path>) -> String {
+    match host {
+        Some(host) => format!("{host}:{}", path.display()),
+        None => home
+            .and_then(|home| path.strip_prefix(home).ok())
+            .map_or_else(
+                || path.display().to_string(),
+                |rest| format!("~/{}", rest.display()),
+            ),
+    }
+}
+
 /// The sessions of `list` run in `cwd`, newest first, at most `cap` of them,
 /// and how many more there are.
 pub(super) fn host_rows<'a>(

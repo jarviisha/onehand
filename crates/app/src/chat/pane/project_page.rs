@@ -341,12 +341,11 @@ impl ChatPane {
 
         let root = project.path.clone();
         let checking = crate::task::checking(&root, cx);
-        let path = std::env::home_dir()
-            .and_then(|home| project.path.strip_prefix(&home).ok())
-            .map_or_else(
-                || project.path.display().to_string(),
-                |rest| format!("~/{}", rest.display()),
-            );
+        let path = host::place(
+            project.host.as_ref(),
+            &project.path,
+            std::env::home_dir().as_deref(),
+        );
         let place = std::iter::once(path)
             .chain(self.git.as_ref().map(ToString::to_string))
             .collect::<Vec<_>>()
@@ -503,8 +502,11 @@ impl ChatPane {
         ))
         .children((hidden > 0).then(|| muted_line(format!("{hidden} more"))));
 
-        let tasks = tasks_box(&project.path, cx);
-        let schedules = schedules_box(&project.path, cx);
+        // Tasks and schedules are this machine's, found by a folder here: a
+        // folder on a host has none, and one here of the same path is not it.
+        let local = project.host.is_none();
+        let tasks = local.then(|| tasks_box(&project.path, cx));
+        let schedules = local.then(|| schedules_box(&project.path, cx));
         // What the project is set to: its check command, the shell's field.
         let settings = project.check_input.as_ref().map(|input| {
             page_card("Settings", None, None, cx).child(onehand_ui::field(
@@ -528,8 +530,8 @@ impl ChatPane {
                 }
                 None => history,
             })
-            .child(tasks)
-            .child(schedules)
+            .children(tasks)
+            .children(schedules)
             .children(settings);
 
         div()

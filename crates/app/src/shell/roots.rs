@@ -512,22 +512,22 @@ impl Shell {
         let Some(root) = self.window.workspace.roots.get(root_idx) else {
             return;
         };
-        let (path, pinned) = (root.path.clone(), !root.pinned);
+        let (at, pinned) = ((root.host.clone(), root.path.clone()), !root.pinned);
         self.window.workspace.toggle_pin(root_idx);
         // Put back, alone, if its write fails: pinning is its own thing, and
         // it goes back to the pin as last saved.
         self.save_change(
-            Thing::Pin(path.clone()),
+            Thing::Pin(at.0.clone(), at.1.clone()),
             WorkspaceChange {
-                before: (path.clone(), !pinned),
-                after: (path, pinned),
-                put: |shell, (path, pinned), _, cx| {
+                before: (at.clone(), !pinned),
+                after: (at, pinned),
+                put: |shell, ((host, path), pinned), _, cx| {
                     if let Some(root) = shell
                         .window
                         .workspace
                         .roots
                         .iter_mut()
-                        .find(|root| root.path == path)
+                        .find(|root| root.host == host && root.path == path)
                     {
                         root.pinned = pinned;
                     }
