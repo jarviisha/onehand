@@ -119,6 +119,7 @@ fn check(ask: &Ask, cx: &mut App) {
                     | AcpEvent::TerminalOutput { .. }
                     | AcpEvent::TerminalExit { .. }
                     | AcpEvent::TurnEnded { .. }
+                    | AcpEvent::Echo(_)
                     // The refusal it comes ahead of ends the check, in words.
                     | AcpEvent::LoginRequired { .. } => {}
                 }

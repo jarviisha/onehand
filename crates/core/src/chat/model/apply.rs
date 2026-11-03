@@ -329,6 +329,7 @@ impl Chat {
                 }
             }
             AcpEvent::StopRefused { why } => stop_refused = Some(why),
+            AcpEvent::Echo(request) => self.echo(request),
             AcpEvent::Permission(mut req) => {
                 self.consume_replay();
                 self.finalize_thought();

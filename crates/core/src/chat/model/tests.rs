@@ -2,7 +2,7 @@ use super::meta::TITLE_MAX_CHARS;
 use super::*;
 use crate::acp::ConfigChoice;
 use crate::acp::{
-    AcpEvent, AcpRequest, ConfigOption, ElicitKind, ElicitValue, Elicitation, Mode,
+    AcpEvent, AcpRequest, ConfigOption, ElicitKind, ElicitOutcome, ElicitValue, Elicitation, Mode,
     PermissionRequest, PlanEntry, PlanStatus, ToolCall, ToolContent, ToolStatus,
 };
 use crate::attachment::StagedAttachment;
@@ -2933,4 +2933,101 @@ fn the_waiting_line_names_the_oldest_card() {
         chat.waiting_line().as_deref(),
         Some("Explorer asks permission: rm -rf build")
     );
+}
+
+/// A chat that has taken `Connected`, with the receiving end of its channel:
+/// whatever a test sees there was sent to the agent.
+fn connected_chat() -> (Chat, tokio::sync::mpsc::UnboundedReceiver<AcpRequest>) {
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut chat = Chat::default();
+    chat.apply(AcpEvent::Connected {
+        tx,
+        resumed: false,
+        forkable: false,
+    });
+    (chat, rx)
+}
+
+#[test]
+fn echoed_prompt_is_a_user_message_and_a_busy_turn() {
+    let (mut chat, mut rx) = connected_chat();
+    chat.apply(AcpEvent::Echo(AcpRequest::Prompt {
+        text: "build it".into(),
+        attachments: vec![],
+    }));
+    assert!(matches!(chat.items.last(), Some(ChatItem::User(u)) if u.text == "build it"));
+    assert!(chat.busy);
+    assert!(rx.try_recv().is_err(), "an echo is never sent");
+}
+
+#[test]
+fn echoed_permission_answer_resolves_the_card_by_rpc_id() {
+    let (mut chat, mut rx) = connected_chat();
+    chat.apply(AcpEvent::Permission(permission("run it")));
+    chat.apply(AcpEvent::Echo(AcpRequest::PermissionResponse {
+        rpc_id: serde_json::json!(7),
+        option_id: Some("allow-1".into()),
+    }));
+    assert!(matches!(
+        chat.items.last(),
+        Some(ChatItem::Permission(p)) if p.resolved.as_deref() == Some("Allow once")
+    ));
+    assert!(chat.pending_permissions().is_empty());
+    assert!(rx.try_recv().is_err());
+}
+
+#[test]
+fn echoed_question_answer_settles_the_card() {
+    let ask = || {
+        let (mut chat, rx) = connected_chat();
+        chat.apply(AcpEvent::Elicitation(ask_item().req));
+        (chat, rx)
+    };
+    let (mut chat, mut rx) = ask();
+    chat.apply(AcpEvent::Echo(AcpRequest::ElicitationResponse {
+        rpc_id: serde_json::json!(1),
+        outcome: ElicitOutcome::Decline,
+    }));
+    assert!(matches!(
+        chat.items.last(),
+        Some(ChatItem::Ask(a)) if a.resolved.as_deref() == Some("Skipped") && !a.accepted
+    ));
+    assert!(rx.try_recv().is_err());
+
+    let (mut chat, mut rx) = ask();
+    chat.apply(AcpEvent::Echo(AcpRequest::ElicitationResponse {
+        rpc_id: serde_json::json!(1),
+        outcome: ElicitOutcome::Accept(vec![]),
+    }));
+    assert!(matches!(
+        chat.items.last(),
+        Some(ChatItem::Ask(a)) if a.resolved.as_deref() == Some("Answered") && a.accepted
+    ));
+    assert!(rx.try_recv().is_err());
+}
+
+#[test]
+fn echoed_cancel_settles_parked_cards_without_sending() {
+    let (mut chat, mut rx) = connected_chat();
+    chat.apply(AcpEvent::Permission(permission("run it")));
+    chat.apply(AcpEvent::Echo(AcpRequest::Cancel));
+    assert!(chat.cancelled);
+    assert!(chat.pending_permissions().is_empty());
+    assert!(chat.tx.is_some(), "the channel is still there to use");
+    assert!(rx.try_recv().is_err());
+}
+
+#[test]
+fn echoed_picks_and_stops_change_nothing() {
+    let (mut chat, mut rx) = connected_chat();
+    chat.apply(AcpEvent::Echo(AcpRequest::SetMode("plan".into())));
+    chat.apply(AcpEvent::Echo(AcpRequest::SetConfigOption {
+        config_id: "model".into(),
+        value: "x".into(),
+    }));
+    chat.apply(AcpEvent::Echo(AcpRequest::StopBackground {
+        id: "t1".into(),
+    }));
+    assert!(chat.items.is_empty());
+    assert!(rx.try_recv().is_err());
 }

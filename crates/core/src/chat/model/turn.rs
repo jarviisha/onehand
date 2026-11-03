@@ -85,14 +85,7 @@ impl Chat {
         if p.resolved.is_some() {
             return;
         }
-        // The card records the option's *name*; the wire carries its id.
-        let name = p
-            .req
-            .options
-            .iter()
-            .find(|option| option.id == option_id)
-            .map(|option| option.name.clone())
-            .unwrap_or_else(|| option_id.to_string());
+        let name = p.option_name(option_id);
         let rpc_id = p.req.rpc_id.clone();
 
         if let Some(tx) = &self.tx {
@@ -169,13 +162,63 @@ impl Chat {
         } else {
             ElicitOutcome::Accept(a.answers())
         };
-        let (rpc_id, summary) = (a.req.rpc_id.clone(), a.summary());
-        a.resolved = Some(if skip { "Skipped".into() } else { summary });
-        a.accepted = !skip;
+        let rpc_id = a.req.rpc_id.clone();
+        let summary = a.summary();
+        a.settle(if skip { "Skipped".into() } else { summary }, !skip);
         if let Some(tx) = &self.tx {
             let _ = tx.send(AcpRequest::ElicitationResponse { rpc_id, outcome });
         }
         self.touch();
+    }
+
+    /// Apply a request this session's person made earlier, replayed from a
+    /// journal: the transcript changes as it did then and nothing is sent.
+    pub(super) fn echo(&mut self, request: AcpRequest) {
+        match request {
+            AcpRequest::Prompt { text, .. } => {
+                self.cancelled = false;
+                self.cut_off = false;
+                self.push_user(text, Vec::new());
+                self.busy = true;
+            }
+            AcpRequest::PermissionResponse { rpc_id, option_id } => {
+                let at = self.items.iter().position(|it| {
+                    matches!(it, ChatItem::Permission(p) if p.resolved.is_none() && p.req.rpc_id == rpc_id)
+                });
+                let Some((at, ChatItem::Permission(p))) = at.map(|at| (at, &self.items[at])) else {
+                    return;
+                };
+                let name = match option_id {
+                    Some(id) => p.option_name(&id),
+                    None => "Cancelled".into(),
+                };
+                self.resolve_permission(at, name);
+            }
+            AcpRequest::ElicitationResponse { rpc_id, outcome } => {
+                let ask = self.items.iter_mut().find_map(|it| match it {
+                    ChatItem::Ask(a) if a.resolved.is_none() && a.req.rpc_id == rpc_id => Some(a),
+                    _ => None,
+                });
+                if let Some(a) = ask {
+                    match outcome {
+                        ElicitOutcome::Accept(_) => a.settle("Answered".into(), true),
+                        ElicitOutcome::Decline => a.settle("Skipped".into(), false),
+                        ElicitOutcome::Cancel => a.settle("Cancelled".into(), false),
+                    }
+                    self.touch();
+                }
+            }
+            AcpRequest::Cancel => {
+                // Nothing is sent: the channel is set aside while the cards settle.
+                let tx = self.tx.take();
+                self.cancel_turn();
+                self.tx = tx;
+            }
+            // The agent's own `PickConfirmed` and `Background` events carry these.
+            AcpRequest::SetMode(_)
+            | AcpRequest::SetConfigOption { .. }
+            | AcpRequest::StopBackground { .. } => {}
+        }
     }
 
     /// Stop the in-flight turn.

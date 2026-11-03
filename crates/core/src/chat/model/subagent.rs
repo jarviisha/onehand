@@ -135,6 +135,7 @@ impl Chat {
             | AcpEvent::Error { .. }
             | AcpEvent::Interrupted
             | AcpEvent::LoginRequired { .. }
+            | AcpEvent::Echo(_)
             | AcpEvent::Disconnected(_) => false,
         }
     }
@@ -269,6 +270,7 @@ fn step(items: &mut Vec<ChatItem>, event: AcpEvent) -> bool {
         | AcpEvent::Error { .. }
         | AcpEvent::Interrupted
         | AcpEvent::LoginRequired { .. }
+        | AcpEvent::Echo(_)
         | AcpEvent::Disconnected(_) => return false,
     }
     true

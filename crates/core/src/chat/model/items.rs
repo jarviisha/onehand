@@ -44,6 +44,15 @@ pub struct PermItem {
 }
 
 impl PermItem {
+    /// The card records an option's *name*; the wire carries its id.
+    pub(crate) fn option_name(&self, option_id: &str) -> String {
+        self.req
+            .options
+            .iter()
+            .find(|option| option.id == option_id)
+            .map_or_else(|| option_id.to_string(), |option| option.name.clone())
+    }
+
     /// The exact command, whatever the box is showing of it.
     ///
     /// **Never the visible part.** Reading a long command elsewhere is the
@@ -126,6 +135,12 @@ pub enum AskRow {
 }
 
 impl AskItem {
+    /// Record how the question ended.
+    pub(crate) fn settle(&mut self, resolved: String, accepted: bool) {
+        self.resolved = Some(resolved);
+        self.accepted = accepted;
+    }
+
     pub fn new(req: Elicitation) -> Self {
         let n = req.fields.len();
         Self {
