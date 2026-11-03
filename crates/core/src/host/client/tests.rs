@@ -887,3 +887,18 @@ async fn restart_on_our_build_sends_no_shutdown() {
     assert!(restarted.is_ok(), "{:?}", restarted.err());
     assert_eq!(shutdowns, 0);
 }
+
+#[tokio::test]
+async fn a_connection_says_it_is_closed_once_its_stream_ends() {
+    let (conn, host) = pair();
+    assert!(!conn.is_closed());
+    drop(host);
+    // The pump notices the end on its next read.
+    for _ in 0..100 {
+        if conn.is_closed() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("the connection never said it was closed");
+}

@@ -21,6 +21,8 @@ use futures::channel::{mpsc, oneshot};
 use futures::{SinkExt as _, Stream, StreamExt as _};
 use onehand_core::acp::{self, AcpEvent};
 use onehand_core::config::AgentSpec;
+use onehand_core::host::client::{HostConn, HostError};
+use onehand_core::host::wire::HostSession;
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -187,6 +189,44 @@ impl AcpRuntime {
         self.start(spec, cwd, acp::Opening::Fresh, Vec::new(), Vec::new())
     }
 
+    /// Run `work` on this runtime: what must poll tokio I/O and cannot on GPUI's executor.
+    #[expect(dead_code, reason = "the chat pane reads a host session through it")]
+    pub(crate) fn spawn(&self, work: impl std::future::Future<Output = ()> + Send + 'static) {
+        self.rt.spawn(work);
+    }
+
+    /// A host session's events, read as a local session's are; beside them,
+    /// the host session's id once it is known, for the pane to keep.
+    ///
+    /// Nothing of the laptop's launch runs: the agent is started on the host,
+    /// by what the host finds on its own `PATH`, and without this machine's
+    /// variables.
+    #[expect(dead_code, reason = "the chat pane reads a host session through it")]
+    pub(crate) fn host_events(
+        &self,
+        conn: HostConn,
+        start: HostStart,
+    ) -> (Events, oneshot::Receiver<HostSession>) {
+        let (rx, mut tx, alive) = events();
+        let (told, session) = oneshot::channel();
+        self.rt.spawn(async move {
+            let id = match start {
+                HostStart::Watch(id) => id,
+                HostStart::Open { cwd, spec, opening } => match conn.open(cwd, spec, opening).await
+                {
+                    Ok(id) => id,
+                    Err(e) => {
+                        let _ = tx.send(AcpEvent::Disconnected(said(e))).await;
+                        return;
+                    }
+                },
+            };
+            let _ = told.send(id.clone());
+            forward(conn.watch(&id), tx, alive).await;
+        });
+        (rx, session)
+    }
+
     /// Spawn an adapter and forward its events, with no reference to the parked
     /// one either way.
     fn start(
@@ -220,6 +260,28 @@ impl AcpRuntime {
         });
 
         rx
+    }
+}
+
+/// How a host session's events begin.
+#[expect(dead_code, reason = "the chat pane reads a host session through it")]
+pub(crate) enum HostStart {
+    /// Start a new session on the host.
+    Open {
+        cwd: PathBuf,
+        spec: AgentSpec,
+        opening: acp::Opening,
+    },
+    /// Read one the host already keeps.
+    Watch(HostSession),
+}
+
+/// What a person reads of a host refusing to open a session.
+#[expect(dead_code, reason = "the chat pane reads a host session through it")]
+fn said(e: HostError) -> String {
+    match e {
+        HostError::Unreachable(why) | HostError::Protocol(why) | HostError::Unsupported(why) => why,
+        HostError::Busy { build, .. } => format!("the host runs another build ({build})"),
     }
 }
 

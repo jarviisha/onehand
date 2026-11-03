@@ -396,6 +396,12 @@ impl HostConn {
         take(Answer::of(reply)).ok_or(unexpected)
     }
 
+    /// Whether the task that owns the stream has ended: nothing asked of this
+    /// connection will be answered again, and a new attach is needed.
+    pub fn is_closed(&self) -> bool {
+        self.cmds.is_closed()
+    }
+
     pub async fn list(&self) -> Result<Vec<SessionInfo>, HostError> {
         self.ask_for(Call::List, |a| a.sessions).await
     }
