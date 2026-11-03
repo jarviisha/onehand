@@ -159,29 +159,33 @@ impl Hub {
         let Some(tx) = s.tx.clone() else {
             return Err("the agent is still starting".into());
         };
-        let request = match request {
-            AcpRequest::Prompt { text, attachments } if !attachments.is_empty() => {
-                self.record(
-                    session,
-                    Entry::Event(AcpEvent::Error {
-                        text: ATTACHMENTS_DROPPED.into(),
-                        detail: None,
-                    }),
-                );
+        let (request, dropped) = match request {
+            AcpRequest::Prompt { text, attachments } if !attachments.is_empty() => (
                 AcpRequest::Prompt {
                     text,
                     attachments: vec![],
-                }
-            }
+                },
+                true,
+            ),
             request @ (AcpRequest::Prompt { .. }
             | AcpRequest::Cancel
             | AcpRequest::PermissionResponse { .. }
             | AcpRequest::ElicitationResponse { .. }
             | AcpRequest::SetMode(_)
             | AcpRequest::SetConfigOption { .. }
-            | AcpRequest::StopBackground { .. }) => request,
+            | AcpRequest::StopBackground { .. }) => (request, false),
         };
+        // The request first, then what is said of it, the order the laptop sees live.
         self.record(session, Entry::Request(request.clone()));
+        if dropped {
+            self.record(
+                session,
+                Entry::Event(AcpEvent::Error {
+                    text: ATTACHMENTS_DROPPED.into(),
+                    detail: None,
+                }),
+            );
+        }
         tx.send(request).map_err(|_| ENDED.to_string())
     }
 

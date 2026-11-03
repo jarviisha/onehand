@@ -7,6 +7,8 @@ use std::process::{Command, ExitCode, Stdio};
 use std::time::Duration;
 
 use onehand_core::instance::socket_path;
+
+use crate::serve::{open_log, private_dir};
 use tokio::io::AsyncWriteExt as _;
 use tokio::net::UnixStream;
 
@@ -42,15 +44,20 @@ pub(crate) async fn run(dir: PathBuf) -> ExitCode {
 }
 
 /// Start `serve` in a process group of its own, so it outlives this SSH
-/// session, then connect once it listens.
+/// session, then connect once it listens. Its stderr goes to `host.log`,
+/// where what the agents' client prints there is kept beside the service's own lines.
 async fn start_and_connect(dir: &Path, socket: &Path) -> std::io::Result<UnixStream> {
+    let stderr = match private_dir(dir).and_then(|()| open_log(dir)) {
+        Ok(log) => Stdio::from(log),
+        Err(_) => Stdio::null(),
+    };
     Command::new(std::env::current_exe()?)
         .arg("serve")
         .env("ONEHAND_HOST_DIR", dir)
         .process_group(0)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(stderr)
         .spawn()?;
     let mut waited = Duration::ZERO;
     loop {

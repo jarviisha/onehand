@@ -19,7 +19,7 @@ use tokio::io::{
 use tokio::process::{Child, Command};
 use tokio::sync::{mpsc, oneshot};
 
-use super::wire::{build_id, Ask, Call, Entry, Line, Reply, SessionInfo, PROTOCOL};
+use super::wire::{build_id, Ask, Call, Entry, Line, Reply, SessionInfo};
 use crate::acp::{AcpEvent, AcpRequest, Opening};
 use crate::config::AgentSpec;
 
@@ -130,33 +130,51 @@ pub async fn install(addr: &HostAddr, binary: &Path) -> Result<String, HostError
     let path = format!("{dir}/onehand-host");
     let probe = run(
         addr,
-        &format!("uname -sm && if test -x {path}; then echo present; fi"),
+        &format!("echo {PROBE} && uname -sm && if test -x {path}; then echo present; fi"),
         &[],
     )
     .await?;
-    let mut lines = probe.lines();
-    let system = lines.next().unwrap_or("").trim();
+    let (system, present) = probed(&probe);
     if system != SUPPORTED {
         return Err(HostError::Unsupported(system.to_string()));
     }
-    if lines.next() == Some("present") {
+    if present {
         return Ok(path);
     }
     run(addr, &copy_command(&dir, &build), &bytes).await?;
     Ok(path)
 }
 
+/// The line the probe prints first, so whatever the host's startup files print
+/// before it cannot be read as the answer.
+const PROBE: &str = "__ONEHAND_PROBE__";
+
+/// The probe's answer: `uname -sm` as the host said it, and whether that build is there.
+fn probed(out: &str) -> (&str, bool) {
+    let lines: Vec<&str> = out.lines().map(str::trim).collect();
+    let Some(at) = lines.iter().rposition(|l| *l == PROBE) else {
+        return ("", false);
+    };
+    let system = lines.get(at + 1).copied().unwrap_or("");
+    (system, lines.get(at + 2) == Some(&"present"))
+}
+
 /// What writes the binary on stdin into `dir`. It is written beside its place
 /// and moved there only once it names itself `build`: ssh dying mid-copy
 /// leaves `cat` a short file and a clean exit, and a short file left in place
-/// would pass for that build from then on.
+/// would pass for that build from then on. A copy that does not run at all
+/// (a C library older than the one it was built against) says what the host
+/// said of it instead.
 fn copy_command(dir: &str, build: &str) -> String {
     let path = format!("{dir}/onehand-host");
     let tmp = format!("{path}.tmp");
     format!(
         "mkdir -p {dir} && cat > {tmp} && chmod 755 {tmp} && \
-         if test \"$({tmp} --build-id)\" = {build}; then mv {tmp} {path}; \
-         else rm -f {tmp}; echo 'the copy arrived cut short' >&2; exit 1; fi"
+         if said=$({tmp} --build-id 2>&1); then \
+           if test \"$said\" = {build}; then mv {tmp} {path}; \
+           else rm -f {tmp}; echo 'the copy arrived cut short' >&2; exit 1; fi; \
+         else ended=$?; rm -f {tmp}; \
+           echo \"onehand-host does not run on this host (exit $ended): $said\" >&2; exit 1; fi"
     )
 }
 
@@ -274,14 +292,9 @@ async fn settle_again(conn: &HostConn, build: &str) -> Result<(), HostError> {
 async fn hello(conn: &HostConn, build: &str) -> Result<(String, Vec<String>), HostError> {
     let hello = Call::Hello {
         build: build.to_string(),
-        protocol: PROTOCOL,
     };
     match conn.ask(hello).await? {
-        Reply::Welcome {
-            build,
-            protocol: _,
-            busy,
-        } => Ok((build, busy)),
+        Reply::Welcome { build, busy } => Ok((build, busy)),
         other @ (Reply::Sessions(_) | Reply::Opened { .. } | Reply::Done) => {
             Err(unexpected(&other))
         }
@@ -302,10 +315,43 @@ enum Cmd {
 /// Who waits on an answer.
 enum Pending {
     Caller(oneshot::Sender<Result<Reply, HostError>>),
-    /// A refused watch ends that watch.
-    Watch(events::UnboundedSender<AcpEvent>),
+    /// A refused watch ends that watch; an answered one ends its replay.
+    Watch(String, events::UnboundedSender<AcpEvent>),
     /// A refused request is said in the session it was for.
     Request(String),
+}
+
+/// Who reads a session, and how far its replay has got.
+struct Watcher {
+    tx: events::UnboundedSender<AcpEvent>,
+    /// The seq last handed on: none until the replay's first entry, seq 0.
+    /// Anything else is left over from an earlier watch of the session.
+    last: Option<u64>,
+    /// Until the host answers the watch, what comes is the replay, and what a
+    /// chat sends while it applies the replay answers things long settled.
+    replaying: bool,
+    /// The `Ready` the replay brought, given again with a live channel once it ends.
+    ready: Option<(bool, bool)>,
+}
+
+impl Watcher {
+    /// Whether `seq` is the next entry this watcher should see.
+    fn takes(&mut self, seq: u64) -> bool {
+        let next = match self.last {
+            None => seq == 0,
+            Some(last) => seq > last,
+        };
+        if next {
+            self.last = Some(seq);
+        }
+        next
+    }
+}
+
+/// A request channel whose requests go nowhere: what a replayed `Ready` hands
+/// a chat, so the replay cannot make it answer the host again.
+fn closed() -> crate::acp::ReqTx {
+    mpsc::unbounded_channel().0
 }
 
 #[derive(Clone)]
@@ -375,9 +421,10 @@ impl HostConn {
     }
 
     /// The session as a local one reads: `Ready` → `Connected` (with a `tx` whose requests go to the
-    /// host), `Event(e)` → `e`, `Request(r)` → `Echo(r)`. Ends with `Disconnected` when the stream
-    /// closes ("lost the connection to <host>") or the host was taken ("<host> was attached from
-    /// another machine").
+    /// host), `Event(e)` → `e`, `Request(r)` → `Echo(r)`. A `Ready` in the replay comes with a closed
+    /// `tx`, and the live one follows the replay's last event. Ends with `Disconnected`: the
+    /// session's own, or the stream closing ("lost the connection to <host>"), or the host taken
+    /// ("<host> was attached from another machine").
     pub fn watch(&self, session: &str) -> impl Stream<Item = AcpEvent> + Send + 'static {
         let (tx, rx) = events::unbounded();
         if let Err(e) = self.cmds.send(Cmd::Watch(session.to_string(), tx)) {
@@ -413,7 +460,7 @@ async fn serve<R, W>(
     let _child = child;
     let mut lines = BufReader::new(read).lines();
     let mut pending: HashMap<u64, Pending> = HashMap::new();
-    let mut watchers: HashMap<String, events::UnboundedSender<AcpEvent>> = HashMap::new();
+    let mut watchers: HashMap<String, Watcher> = HashMap::new();
     // Each session's request channel, kept weakly so a replayed `Ready` reuses
     // the one still in use without keeping it alive.
     let mut forwarders: HashMap<String, mpsc::WeakUnboundedSender<AcpRequest>> = HashMap::new();
@@ -434,43 +481,59 @@ async fn serve<R, W>(
                         (Some(Pending::Caller(tx)), result) => {
                             let _ = tx.send(result.map_err(HostError::Protocol));
                         }
-                        (Some(Pending::Watch(tx)), Err(why)) => {
-                            // A watch already replaced has been told it ended.
-                            let before = watchers.len();
-                            watchers.retain(|_, w| !w.same_receiver(&tx));
-                            if watchers.len() < before {
-                                let _ = tx.unbounded_send(AcpEvent::Disconnected(why));
+                        (Some(Pending::Watch(session, tx)), result) => {
+                            // A watch already replaced, or ended, has been told so.
+                            let Some(w) = watchers.get_mut(&session).filter(|w| w.tx.same_receiver(&tx))
+                            else { continue };
+                            match result {
+                                Ok(_) => {
+                                    w.replaying = false;
+                                    if let Some((resumed, forkable)) = w.ready.take() {
+                                        let tx = live(&mut forwarders, &me, &session);
+                                        let _ = w.tx.unbounded_send(AcpEvent::Connected { tx, resumed, forkable });
+                                    }
+                                }
+                                Err(why) => {
+                                    let _ = tx.unbounded_send(AcpEvent::Disconnected(why));
+                                    watchers.remove(&session);
+                                }
                             }
                         }
                         (Some(Pending::Request(session)), Err(why)) => {
                             if let Some(w) = watchers.get(&session) {
-                                let _ = w.unbounded_send(AcpEvent::Error {
+                                let _ = w.tx.unbounded_send(AcpEvent::Error {
                                     text: why,
                                     detail: None,
                                 });
                             }
                         }
-                        (Some(Pending::Watch(_) | Pending::Request(_)), Ok(_)) | (None, _) => {}
+                        (Some(Pending::Request(_)), Ok(_)) | (None, _) => {}
                     },
-                    Line::Entry { session, seq: _, entry } => {
-                        let Some(w) = watchers.get(&session) else { continue };
+                    Line::Entry { session, seq, entry } => {
+                        let Some(w) = watchers.get_mut(&session) else { continue };
+                        if !w.takes(seq) {
+                            continue;
+                        }
+                        let mut ended = false;
                         let event = match entry {
+                            Entry::Ready { resumed, forkable } if w.replaying => {
+                                w.ready = Some((resumed, forkable));
+                                AcpEvent::Connected { tx: closed(), resumed, forkable }
+                            }
                             Entry::Ready { resumed, forkable } => {
-                                let tx = match forwarders.get(&session).and_then(|w| w.upgrade()) {
-                                    Some(tx) => tx,
-                                    None => {
-                                        let tx = forward(&me, session.clone());
-                                        forwarders.insert(session.clone(), tx.downgrade());
-                                        tx
-                                    }
-                                };
+                                let tx = live(&mut forwarders, &me, &session);
                                 AcpEvent::Connected { tx, resumed, forkable }
                             }
-                            Entry::Event(event) => event,
+                            Entry::Event(event) => {
+                                ended = matches!(event, AcpEvent::Disconnected(_));
+                                event
+                            }
                             Entry::Request(request) => AcpEvent::Echo(request),
                         };
-                        if w.unbounded_send(event).is_err() {
+                        // A session that ended says so once, and its watch ends with it.
+                        if w.tx.unbounded_send(event).is_err() || ended {
                             watchers.remove(&session);
+                            forwarders.remove(&session);
                         }
                     }
                 }
@@ -480,18 +543,21 @@ async fn serve<R, W>(
                 let (call, waiter) = match cmd {
                     Cmd::Ask(call, tx) => (call, Pending::Caller(tx)),
                     Cmd::Watch(session, tx) => {
+                        let watcher = Watcher { tx: tx.clone(), last: None, replaying: true, ready: None };
                         // A second watch of a session replaces the first.
-                        if let Some(old) = watchers.insert(session.clone(), tx.clone()) {
-                            let _ = old.unbounded_send(AcpEvent::Disconnected(
+                        if let Some(old) = watchers.insert(session.clone(), watcher) {
+                            let _ = old.tx.unbounded_send(AcpEvent::Disconnected(
                                 "this session is now watched elsewhere".into(),
                             ));
                         }
-                        (Call::Watch { session }, Pending::Watch(tx))
+                        (Call::Watch { session: session.clone() }, Pending::Watch(session, tx))
                     }
-                    Cmd::Request(session, request) => (
-                        Call::Request { session: session.clone(), request },
-                        Pending::Request(session),
-                    ),
+                    Cmd::Request(session, request) => {
+                        if watchers.get(&session).is_some_and(|w| w.replaying) {
+                            continue;
+                        }
+                        (Call::Request { session: session.clone(), request }, Pending::Request(session))
+                    }
                 };
                 let id = next;
                 next += 1;
@@ -505,14 +571,14 @@ async fn serve<R, W>(
         }
     };
     for (_, w) in watchers {
-        let _ = w.unbounded_send(AcpEvent::Disconnected(why.clone()));
+        let _ = w.tx.unbounded_send(AcpEvent::Disconnected(why.clone()));
     }
     for (_, waiter) in pending {
         match waiter {
             Pending::Caller(tx) => {
                 let _ = tx.send(Err(HostError::Unreachable(why.clone())));
             }
-            Pending::Watch(_) | Pending::Request(_) => {}
+            Pending::Watch(..) | Pending::Request(_) => {}
         }
     }
     refuse_queued(&mut cmds, &why);
@@ -532,6 +598,20 @@ fn refuse_queued(cmds: &mut mpsc::UnboundedReceiver<Cmd>, why: &str) {
             Cmd::Request(..) => {}
         }
     }
+}
+
+/// The session's request channel to the host: the one a chat still holds, or a new one.
+fn live(
+    forwarders: &mut HashMap<String, mpsc::WeakUnboundedSender<AcpRequest>>,
+    me: &mpsc::WeakUnboundedSender<Cmd>,
+    session: &str,
+) -> crate::acp::ReqTx {
+    if let Some(tx) = forwarders.get(session).and_then(|w| w.upgrade()) {
+        return tx;
+    }
+    let tx = forward(me, session.to_string());
+    forwarders.insert(session.to_string(), tx.downgrade());
+    tx
 }
 
 /// A request channel for `session` whose requests go to the host.

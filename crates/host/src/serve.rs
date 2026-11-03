@@ -15,7 +15,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use futures::StreamExt as _;
 use onehand_core::acp;
-use onehand_core::host::wire::{Ask, Call, Line, Reply, PROTOCOL};
+use onehand_core::host::wire::{Ask, Call, Line, Reply};
 use onehand_core::instance::{hold_lock, holding, socket_path};
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
 use tokio::net::unix::OwnedWriteHalf;
@@ -64,11 +64,7 @@ pub(crate) async fn run(dir: PathBuf, build: String) -> ExitCode {
         );
         return ExitCode::FAILURE;
     }
-    match OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(dir.join("host.log"))
-    {
+    match open_log(&dir) {
         Ok(file) => {
             let _ = LOG.set(Mutex::new(file));
         }
@@ -86,7 +82,11 @@ pub(crate) async fn run(dir: PathBuf, build: String) -> ExitCode {
     let path = login_path().await;
     let connector: Connector = Arc::new(|launch, opts| acp::connect(launch, opts).boxed());
     let hub = Arc::new(Mutex::new(Hub::new(dir, path, connector)));
+    accept(listener, hub, build).await
+}
 
+/// Take each attach as it comes, telling the one before it that it was taken over.
+async fn accept(listener: UnixListener, hub: Arc<Mutex<Hub>>, build: String) -> ! {
     let mut current: Option<(UnboundedSender<Line>, JoinHandle<()>)> = None;
     loop {
         let stream = match listener.accept().await {
@@ -116,9 +116,17 @@ pub(crate) async fn run(dir: PathBuf, build: String) -> ExitCode {
     }
 }
 
+/// `host.log` in `dir`, for appending.
+pub(crate) fn open_log(dir: &Path) -> std::io::Result<File> {
+    OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join("host.log"))
+}
+
 /// Make `dir`, and every folder it needs, readable by this user alone: the
 /// journals in it hold whole transcripts.
-fn private_dir(dir: &Path) -> std::io::Result<()> {
+pub(crate) fn private_dir(dir: &Path) -> std::io::Result<()> {
     fs::DirBuilder::new()
         .recursive(true)
         .mode(0o700)
@@ -242,7 +250,6 @@ fn answer(hub: &Arc<Mutex<Hub>>, build: &str, out: &UnboundedSender<Line>, line:
             let busy = hub.lock().unwrap_or_else(|e| e.into_inner()).list();
             Ok(Reply::Welcome {
                 build: build.to_string(),
-                protocol: PROTOCOL,
                 busy: busy
                     .into_iter()
                     .filter(|s| s.busy)

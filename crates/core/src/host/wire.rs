@@ -8,9 +8,6 @@ use serde::{Deserialize, Serialize};
 use crate::acp::{AcpEvent, AcpRequest, Opening};
 use crate::config::AgentSpec;
 
-/// The wire's version: a laptop and a host must agree on it to talk.
-pub const PROTOCOL: u32 = 1;
-
 /// What the laptop sends, one per line.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Ask {
@@ -23,7 +20,6 @@ pub struct Ask {
 pub enum Call {
     Hello {
         build: String,
-        protocol: u32,
     },
     Shutdown,
     List,
@@ -47,7 +43,6 @@ pub enum Reply {
     /// `busy` holds the ids of the sessions that are mid-turn.
     Welcome {
         build: String,
-        protocol: u32,
         busy: Vec<String>,
     },
     Sessions(Vec<SessionInfo>),
@@ -144,10 +139,7 @@ pub fn busy_after(busy: bool, entry: &Entry) -> bool {
 
 /// The build id of a host binary: FNV-1a 64 over its bytes, as 16 hex digits.
 pub fn build_id(bytes: &[u8]) -> String {
-    let hash = bytes.iter().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
-        (h ^ u64::from(*b)).wrapping_mul(0x0000_0100_0000_01b3)
-    });
-    format!("{hash:016x}")
+    format!("{:016x}", crate::chat::store::fnv1a(bytes))
 }
 
 #[cfg(test)]

@@ -196,7 +196,6 @@ fn fake_host(theirs: &str, busy: Vec<String>) -> (HostConn, tokio::task::JoinHan
             let reply = match call {
                 Call::Hello { .. } => Reply::Welcome {
                     build: theirs.clone(),
-                    protocol: PROTOCOL,
                     busy: busy.clone(),
                 },
                 Call::Shutdown => {
@@ -328,7 +327,7 @@ async fn a_refused_request_is_said_as_an_error() {
 }
 
 #[tokio::test]
-async fn a_replayed_ready_reuses_the_request_channel() {
+async fn a_live_ready_reuses_the_request_channel() {
     let (conn, mut host) = pair();
     let mut events = conn.watch("s1");
     host.watched().await;
@@ -345,6 +344,131 @@ async fn a_replayed_ready_reuses_the_request_channel() {
         panic!("no second Connected");
     };
     assert!(first.same_channel(&second));
+}
+
+#[tokio::test]
+async fn a_session_that_ends_ends_its_watch() {
+    let (conn, mut host) = pair();
+    let mut events = conn.watch("s1");
+    host.watched().await;
+    host.entry(
+        0,
+        Entry::Event(AcpEvent::Disconnected("the agent died".into())),
+    )
+    .await;
+    assert!(matches!(
+        events.next().await,
+        Some(AcpEvent::Disconnected(why)) if why == "the agent died"
+    ));
+    drop(host);
+    assert!(events.next().await.is_none());
+}
+
+fn chunk(text: &str) -> Entry {
+    Entry::Event(AcpEvent::AgentChunk {
+        text: text.into(),
+        message: None,
+    })
+}
+
+async fn next_chunk(events: &mut (impl Stream<Item = AcpEvent> + Unpin)) -> String {
+    match events.next().await {
+        Some(AcpEvent::AgentChunk { text, .. }) => text,
+        other => panic!("not a chunk: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn watching_again_skips_what_the_first_watch_had_in_flight() {
+    let (conn, mut host) = pair();
+    let ready = Entry::Ready {
+        resumed: false,
+        forkable: false,
+    };
+    let mut first = conn.watch("s1");
+    host.watched().await;
+    host.entry(0, ready.clone()).await;
+    host.entry(1, chunk("a")).await;
+    assert!(matches!(
+        first.next().await,
+        Some(AcpEvent::Connected { .. })
+    ));
+    assert_eq!(next_chunk(&mut first).await, "a");
+
+    let mut second = conn.watch("s1");
+    let Ask { id, .. } = host.ask().await;
+    // Sent live to the first watch before the host read the second.
+    host.entry(2, chunk("b")).await;
+    for (seq, entry) in [(0, ready), (1, chunk("a")), (2, chunk("b"))] {
+        host.entry(seq, entry).await;
+    }
+    host.answer(id, Reply::Done).await;
+    host.entry(3, chunk("c")).await;
+    assert!(matches!(
+        second.next().await,
+        Some(AcpEvent::Connected { .. })
+    ));
+    assert_eq!(next_chunk(&mut second).await, "a");
+    assert_eq!(next_chunk(&mut second).await, "b");
+    assert!(matches!(
+        second.next().await,
+        Some(AcpEvent::Connected { .. })
+    ));
+    assert_eq!(next_chunk(&mut second).await, "c");
+}
+
+#[tokio::test]
+async fn what_a_replay_makes_the_chat_send_never_reaches_the_host() {
+    let (conn, mut host) = pair();
+    let mut events = conn.watch("s1");
+    let Ask { id, .. } = host.ask().await;
+    host.entry(
+        0,
+        Entry::Ready {
+            resumed: false,
+            forkable: false,
+        },
+    )
+    .await;
+    host.entry(
+        1,
+        Entry::Event(AcpEvent::TurnEnded {
+            stop_reason: "end_turn".into(),
+        }),
+    )
+    .await;
+    // What a chat does with a replayed turn end that left a card open.
+    let Some(AcpEvent::Connected { tx: replayed, .. }) = events.next().await else {
+        panic!("no Connected");
+    };
+    let _ = replayed.send(AcpRequest::PermissionResponse {
+        rpc_id: serde_json::json!(1),
+        option_id: None,
+    });
+    assert!(matches!(
+        events.next().await,
+        Some(AcpEvent::TurnEnded { .. })
+    ));
+    host.answer(id, Reply::Done).await;
+    let Some(AcpEvent::Connected { tx: live, .. }) = events.next().await else {
+        panic!("no live Connected after the replay");
+    };
+    let _ = replayed.send(AcpRequest::PermissionResponse {
+        rpc_id: serde_json::json!(1),
+        option_id: None,
+    });
+    live.send(AcpRequest::Cancel).unwrap();
+    let Ask { call, .. } = host.ask().await;
+    assert!(
+        matches!(
+            call,
+            Call::Request {
+                request: AcpRequest::Cancel,
+                ..
+            }
+        ),
+        "{call:?}"
+    );
 }
 
 #[tokio::test]
@@ -414,4 +538,29 @@ async fn a_cut_short_copy_is_never_installed() {
     assert!(!Path::new(&dir).join("onehand-host").exists());
     assert!(!Path::new(&dir).join("onehand-host.tmp").exists());
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn a_copy_that_cannot_run_here_says_why_and_is_never_installed() {
+    let dir = install_dir("old-glibc");
+    // What a binary built against a newer C library prints as it fails to load.
+    let script = b"#!/bin/sh\necho \"version 'GLIBC_2.39' not found\" >&2\nexit 1\n";
+    let copied = run(&HERE, &copy_command(&dir, "abc"), script).await;
+    assert!(
+        matches!(&copied, Err(HostError::Unreachable(why))
+            if why.contains("GLIBC_2.39") && !why.contains("cut short")),
+        "{copied:?}"
+    );
+    assert!(!Path::new(&dir).join("onehand-host").exists());
+    assert!(!Path::new(&dir).join("onehand-host.tmp").exists());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn the_probe_is_read_after_its_marker_whatever_an_rc_file_prints() {
+    let out = format!("Welcome to the box!\n{PROBE}\nLinux x86_64\npresent\n");
+    assert_eq!(probed(&out), ("Linux x86_64", true));
+    let out = format!("{PROBE} is a word too\n{PROBE}\nDarwin arm64\n");
+    assert_eq!(probed(&out), ("Darwin arm64", false));
+    assert_eq!(probed("banner only\n"), ("", false));
 }

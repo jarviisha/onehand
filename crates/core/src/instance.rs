@@ -63,15 +63,8 @@ fn socket_path_in(dir: &Path, runtime: Option<&Path>) -> PathBuf {
     if beside.as_os_str().len() <= MAX_SOCKET_PATH {
         return beside;
     }
-    // FNV-1a, written out because std's hasher may change between releases,
-    // and the second launch can be a different build from the first.
-    let hash = dir
-        .as_os_str()
-        .as_bytes()
-        .iter()
-        .fold(0xcbf29ce484222325u64, |h, b| {
-            (h ^ u64::from(*b)).wrapping_mul(0x100000001b3)
-        });
+    // A stable hash, because the second launch can be a different build from the first.
+    let hash = crate::chat::store::fnv1a(dir.as_os_str().as_bytes());
     let runtime = runtime
         .map(Path::to_path_buf)
         .unwrap_or_else(std::env::temp_dir);
