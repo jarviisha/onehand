@@ -731,3 +731,24 @@ async fn a_card_answered_during_a_rewatch_reaches_the_host() {
         "{call:?}"
     );
 }
+
+#[tokio::test(start_paused = true)]
+async fn an_unanswered_hello_ends_at_its_deadline() {
+    let (conn, mut host) = pair();
+    let said = tokio::spawn({
+        let conn = conn.clone();
+        async move { hello(&conn, "ours").await }
+    });
+    let Question { id, call } = host.ask().await;
+    assert!(matches!(call, Call::Hello { .. }));
+    assert!(matches!(
+        said.await.unwrap(),
+        Err(HostError::Protocol(why)) if why == "the host did not answer within 30 s"
+    ));
+    // Its answer, come late, is let go, and the connection still serves.
+    host.answer(id, Reply::Done).await;
+    let listing = tokio::spawn(async move { conn.list().await });
+    let Question { id, .. } = host.ask().await;
+    host.answer(id, Reply::Sessions(vec![])).await;
+    assert!(listing.await.unwrap().unwrap().is_empty());
+}

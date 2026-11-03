@@ -71,6 +71,10 @@ const SHUTDOWN_WAIT: Duration = Duration::from_secs(10);
 /// How long a failed attach gets to finish saying why on stderr.
 const STDERR_WAIT: Duration = Duration::from_secs(2);
 
+/// How long a call waits on its answer. A watch's answer waits as long as its
+/// replay runs, and has no deadline.
+const ASK_WAIT: Duration = Duration::from_secs(30);
+
 /// How much of what an attach says on stderr is kept; the rest is read and dropped.
 const STDERR_KEEP: u64 = 8 * 1024;
 
@@ -330,6 +334,8 @@ enum Cmd {
     Ask(Call, oneshot::Sender<Result<Reply, HostError>>),
     Watch(String, events::UnboundedSender<AcpEvent>),
     Request(String, AcpRequest),
+    /// Let go of every call whose caller stopped waiting.
+    Forget,
 }
 
 /// Who waits on an answer.
@@ -410,7 +416,17 @@ impl HostConn {
         let (tx, rx) = oneshot::channel();
         let lost = || HostError::Unreachable("the connection to the host is closed".into());
         self.cmds.send(Cmd::Ask(call, tx)).map_err(|_| lost())?;
-        rx.await.map_err(|_| lost())?
+        match tokio::time::timeout(ASK_WAIT, rx).await {
+            Ok(answer) => answer.map_err(|_| lost())?,
+            Err(_) => {
+                // Dropping `rx` closed its slot; the task lets it go.
+                let _ = self.cmds.send(Cmd::Forget);
+                Err(HostError::Protocol(format!(
+                    "the host did not answer within {} s",
+                    ASK_WAIT.as_secs()
+                )))
+            }
+        }
     }
 
     /// Ask `call`, and take from its answer the slot `take` names.
@@ -575,6 +591,13 @@ async fn pump<R, W>(
             cmd = cmds.recv() => {
                 let Some(cmd) = cmd else { return };
                 let (call, waiter) = match cmd {
+                    Cmd::Forget => {
+                        pending.retain(|_, p| match p {
+                            Pending::Caller(tx) => !tx.is_closed(),
+                            Pending::Watch(..) | Pending::Request(_) => true,
+                        });
+                        continue;
+                    }
                     Cmd::Ask(call, tx) => (call, Pending::Caller(tx)),
                     Cmd::Watch(session, tx) => {
                         let watcher = Watcher::new(tx.clone());
@@ -637,7 +660,7 @@ fn refuse_queued(cmds: &mut mpsc::UnboundedReceiver<Cmd>, why: &str) {
             Cmd::Watch(_, tx) => {
                 let _ = tx.unbounded_send(AcpEvent::Disconnected(why.to_string()));
             }
-            Cmd::Request(..) => {}
+            Cmd::Request(..) | Cmd::Forget => {}
         }
     }
 }
