@@ -84,7 +84,15 @@ pub(crate) fn is_dir(
     let host = host.clone();
     async move {
         match rx.await {
-            Ok(found) => found.map_err(|e| failure(&host, e)),
+            Ok(found) => found.map_err(|e| {
+                let why = match e {
+                    HostError::Unreachable(why)
+                    | HostError::Protocol(why)
+                    | HostError::Unsupported(why) => why,
+                    HostError::Busy { build, .. } => format!("it runs another build ({build})"),
+                };
+                HostFailure::Other(format!("Could not ask {host} about the folder: {why}"))
+            }),
             Err(_) => Err(HostFailure::Other(format!(
                 "Could not ask {host} about the folder: the question was dropped"
             ))),

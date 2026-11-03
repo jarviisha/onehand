@@ -575,7 +575,18 @@ pub(super) fn project_row(
                 .font_normal()
                 .text_color(meta_ink)
                 .when_some(host, |row, host| {
-                    row.child(div().min_w_0().max_w(MAX_BRANCH_W).truncate().child(host))
+                    let place = path.clone();
+                    row.child(
+                        div()
+                            .id(("project-host", root_idx))
+                            .min_w_0()
+                            .max_w(MAX_BRANCH_W)
+                            .truncate()
+                            .tooltip(covered_tip(&key, move |window, cx| {
+                                Tooltip::new(place.clone()).build(window, cx)
+                            }))
+                            .child(host),
+                    )
                 })
                 .when_some(git, |row, git| {
                     let branch = git.branch.clone();

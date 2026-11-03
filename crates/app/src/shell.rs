@@ -267,6 +267,8 @@ pub struct Shell {
     branch_draft: Option<BranchDraft>,
     /// The add-a-project-on-a-host form, while it is up.
     host_project: Option<host_project::HostProjectDraft>,
+    /// The restart questions asked of hosts, and the form's attaches.
+    host_flow: host_project::HostFlow,
     /// The open-issue picker, while it is on screen. Opened from a project's
     /// menu, which is gone by the time the list arrives, so this being `Some`
     /// is what puts the dialog up — like the rename and the worktree forms.

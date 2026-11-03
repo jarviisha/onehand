@@ -5,13 +5,14 @@ use super::Shell;
 use super::confirm::Confirm;
 use crate::dialogs::{add_refusal, busy_body};
 use crate::hosts::{self, HostFailure};
-use futures::FutureExt as _;
 use gpui::{AppContext as _, Context, Entity, Focusable as _, Subscription, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::input::{InputEvent, InputState};
 use onehand_core::host::wire::HostSession;
 use onehand_core::workspace::HostName;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::rc::{Rc, Weak};
 
 /// The add-a-project-on-a-host form, while it is up. `Some` on the shell is
 /// what puts it on screen.
@@ -24,13 +25,102 @@ pub(crate) struct HostProjectDraft {
     /// What the last *Add* ran into. Cleared by the next keystroke, because
     /// the reader has started answering it.
     pub(crate) error: Option<String>,
-    /// Attaching to the host and asking it about the folder.
-    pub(crate) busy: bool,
+    /// The attach under way, by [`HostFlow::attempt`]: attaching to the host
+    /// and asking it about the folder.
+    attempt: Option<u64>,
     _typing: [Subscription; 2],
 }
 
-/// What a failed attach says once the form is gone.
-fn said(failure: HostFailure) -> String {
+impl HostProjectDraft {
+    pub(crate) fn busy(&self) -> bool {
+        self.attempt.is_some()
+    }
+}
+
+/// What waits on a yes to a host's restart question.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Want {
+    /// The session that was not attached, restarted.
+    Session(u64),
+    /// The form's *Add*, carried on.
+    Add,
+}
+
+/// The restart questions on screen, one per host, and the count that tells
+/// one attach of the form from the next.
+#[derive(Default)]
+pub(super) struct HostFlow {
+    /// What each host's question answers for. `alive` is dropped with the
+    /// question: its answer holds the one strong count, and the dialog drops
+    /// the answer when it goes, however it was put away.
+    asked: BTreeMap<HostName, Asked>,
+    attempts: u64,
+}
+
+struct Asked {
+    uids: Vec<u64>,
+    add: bool,
+    alive: Weak<()>,
+}
+
+impl HostFlow {
+    /// Add `want` to the question on screen for `host`; or, when there is
+    /// none, start one and hand back what keeps it alive, for the question's
+    /// answer to hold.
+    fn join(&mut self, host: &HostName, want: Want) -> Option<Rc<()>> {
+        let live = self
+            .asked
+            .get(host)
+            .is_some_and(|asked| asked.alive.strong_count() > 0);
+        let fresh = (!live).then(|| {
+            let alive = Rc::new(());
+            let asked = Asked {
+                uids: Vec::new(),
+                add: false,
+                alive: Rc::downgrade(&alive),
+            };
+            self.asked.insert(host.clone(), asked);
+            alive
+        });
+        let asked = self.asked.get_mut(host)?;
+        match want {
+            Want::Session(uid) => asked.uids.push(uid),
+            Want::Add => asked.add = true,
+        }
+        fresh
+    }
+
+    /// What `host`'s question answered for, once: its sessions, and whether
+    /// the form's *Add* waits on it.
+    fn take(&mut self, host: &HostName) -> Option<(Vec<u64>, bool)> {
+        self.asked.remove(host).map(|asked| (asked.uids, asked.add))
+    }
+
+    /// A new attach of the form's.
+    fn attempt(&mut self) -> u64 {
+        self.attempts += 1;
+        self.attempts
+    }
+}
+
+/// Whether an attach's answer is for the form's attach under way: a form
+/// cancelled and opened again has another, or none.
+fn landed_on(current: Option<u64>, landed: u64) -> bool {
+    current == Some(landed)
+}
+
+/// Whether a yes still has to restart the service: an earlier yes may have
+/// put it on this build already, and restarting it again would stop what
+/// that one started.
+fn needs_restart<C>(attached: &Result<C, HostFailure>) -> bool {
+    match attached {
+        Err(HostFailure::Busy { .. }) => true,
+        Ok(_) | Err(HostFailure::Missing(_) | HostFailure::Other(_)) => false,
+    }
+}
+
+/// What a restart that failed says.
+fn restart_failure(failure: HostFailure) -> String {
     match failure {
         HostFailure::Missing(why) | HostFailure::Other(why) => why,
         HostFailure::Busy { host, .. } => {
@@ -83,7 +173,7 @@ impl Shell {
             host,
             folder,
             error: None,
-            busy: false,
+            attempt: None,
             _typing: typing,
         });
         cx.notify();
@@ -98,21 +188,15 @@ impl Shell {
     }
 
     /// Attach to the host the form names, ask it whether the folder is
-    /// there, and add the project when it is; with `fresh`, restart the
-    /// host's service onto this build first, as the person agreed to.
+    /// there, and add the project when it is.
     ///
     /// The form stays up until the host answers, so what went wrong is shown
     /// against the names that caused it.
-    pub(crate) fn commit_host_project(
-        &mut self,
-        fresh: bool,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(draft) = self.host_project.as_mut() else {
+    pub(crate) fn commit_host_project(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(draft) = self.host_project.as_ref() else {
             return;
         };
-        if draft.busy {
+        if draft.busy() {
             return;
         }
         let host = draft.host.read(cx).value().trim().to_string();
@@ -120,14 +204,14 @@ impl Shell {
         if add_refusal(&host, &folder).is_some() {
             return;
         }
-        draft.error = None;
-        draft.busy = true;
+        let attempt = self.host_flow.attempt();
+        if let Some(draft) = self.host_project.as_mut() {
+            draft.error = None;
+            draft.attempt = Some(attempt);
+        }
         cx.notify();
         let (host, path) = (HostName(host), PathBuf::from(folder));
-        let attaching = match fresh {
-            true => hosts::restart(cx, &host).boxed_local(),
-            false => hosts::conn(cx, &host).boxed_local(),
-        };
+        let attaching = hosts::conn(cx, &host);
         cx.spawn_in(window, async move |shell, cx| {
             let found = match attaching.await {
                 Ok(conn) => {
@@ -141,28 +225,34 @@ impl Shell {
             };
             shell
                 .update_in(cx, |shell: &mut Self, window, cx| {
-                    shell.host_project_found(host, path, found, window, cx)
+                    shell.host_project_found(attempt, host, path, found, window, cx)
                 })
                 .ok();
         })
         .detach();
     }
 
-    /// What the host said about the folder the form names.
+    /// What the host said about the folder the form names, on attach
+    /// `attempt`.
     fn host_project_found(
         &mut self,
+        attempt: u64,
         host: HostName,
         path: PathBuf,
         found: Result<bool, HostFailure>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // Only the form this was started from: one cancelled and opened
-        // again since is not waiting on it.
-        let Some(draft) = self.host_project.as_mut().filter(|draft| draft.busy) else {
+        // Only the attach the form on screen is waiting on: a form cancelled
+        // and opened again since has started another, or none.
+        let Some(draft) = self
+            .host_project
+            .as_mut()
+            .filter(|draft| landed_on(draft.attempt, attempt))
+        else {
             return;
         };
-        draft.busy = false;
+        draft.attempt = None;
         match found {
             Ok(true) => {
                 self.host_project = None;
@@ -175,12 +265,7 @@ impl Shell {
             // Closes nothing: the form waits under the question, and a yes
             // carries on with the same names.
             Err(HostFailure::Busy { host, busy }) => {
-                self.confirm(
-                    restart_ask(&host, &busy),
-                    window,
-                    cx,
-                    |shell, window, cx| shell.commit_host_project(true, window, cx),
-                );
+                self.offer_restart(host, &busy, Want::Add, window, cx);
             }
         }
         cx.notify();
@@ -197,22 +282,92 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.offer_restart(host, busy, Want::Session(uid), window, cx);
+    }
+
+    /// Ask whether to restart `host`'s service for `want`, or add `want` to
+    /// the question already asking it: one yes answers for every session
+    /// and form that waits on that host.
+    fn offer_restart(
+        &mut self,
+        host: HostName,
+        busy: &[HostSession],
+        want: Want,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(alive) = self.host_flow.join(&host, want) else {
+            return;
+        };
         let ask = restart_ask(&host, busy);
-        self.confirm(ask, window, cx, move |_, window, cx| {
-            let restarting = hosts::restart(cx, &host);
-            cx.spawn_in(window, async move |shell, cx| {
-                let restarted = restarting.await;
-                shell
-                    .update_in(cx, |shell: &mut Self, window, cx| match restarted {
-                        Ok(_) => shell.restart_now(uid, window, cx),
-                        Err(failure) => window.push_notification(
-                            crate::toast::failed("Restarting the host service", said(failure)),
-                            cx,
-                        ),
-                    })
-                    .ok();
-            })
-            .detach();
+        self.confirm(ask, window, cx, move |shell, window, cx| {
+            // Held here, so the question counts as asked while it is up.
+            let _ = &alive;
+            shell.restart_agreed(&host, window, cx);
         });
     }
+
+    /// The person said yes to restarting `host`'s service. Attached first,
+    /// and restarted only if it is still busy: an earlier yes may have
+    /// restarted it already.
+    fn restart_agreed(&mut self, host: &HostName, window: &mut Window, cx: &mut Context<Self>) {
+        let Some((uids, add)) = self.host_flow.take(host) else {
+            return;
+        };
+        let attaching = hosts::conn(cx, host);
+        let host = host.clone();
+        cx.spawn_in(window, async move |shell, cx| {
+            let mut attached = attaching.await;
+            if needs_restart(&attached) {
+                let Ok(restarting) = cx.update(|_, cx| hosts::restart(cx, &host)) else {
+                    return;
+                };
+                attached = restarting.await;
+            }
+            shell
+                .update_in(cx, |shell: &mut Self, window, cx| {
+                    shell.restart_landed(uids, add, attached.map(drop), window, cx)
+                })
+                .ok();
+        })
+        .detach();
+    }
+
+    /// The service is on this build, or could not be put there: carry on
+    /// with what waited on it, or say why not.
+    fn restart_landed(
+        &mut self,
+        uids: Vec<u64>,
+        add: bool,
+        done: Result<(), HostFailure>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match done {
+            Ok(()) => {
+                for uid in uids {
+                    self.restart_now(uid, window, cx);
+                }
+                if add {
+                    self.commit_host_project(window, cx);
+                }
+            }
+            // Said once: on the form, when it waits on this and is still up,
+            // else in a toast.
+            Err(failure) => {
+                let why = restart_failure(failure);
+                match self.host_project.as_mut().filter(|_| add) {
+                    Some(draft) => draft.error = Some(why),
+                    None => window.push_notification(
+                        crate::toast::failed("Restarting the host service", why),
+                        cx,
+                    ),
+                }
+            }
+        }
+        cx.notify();
+    }
 }
+
+#[cfg(test)]
+mod tests;

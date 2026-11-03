@@ -67,7 +67,7 @@ pub fn add_host_project(shell: &Shell, window: &Window, cx: &mut Context<Shell>)
         return Dialog::new(cx);
     };
     let (host, folder) = (draft.host.clone(), draft.folder.clone());
-    let (error, busy) = (draft.error.clone(), draft.busy);
+    let (error, busy) = (draft.error.clone(), draft.busy());
     let refusal = match busy {
         true => Some(ATTACHING),
         false => add_refusal(&host.read(cx).value(), &folder.read(cx).value()),
@@ -120,7 +120,7 @@ pub fn add_host_project(shell: &Shell, window: &Window, cx: &mut Context<Shell>)
                         .refuses(refusal)
                         .on_click(
                             cx.listener(|shell: &mut Shell, _: &ClickEvent, window, cx| {
-                                shell.commit_host_project(false, window, cx);
+                                shell.commit_host_project(window, cx);
                             }),
                         ),
                 ),

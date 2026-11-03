@@ -122,7 +122,7 @@ pub(super) async fn host_events(
             if let Err((_, carried, _, _)) = decided {
                 carry(carried, session, cx);
             }
-            return crate::acp::ended(said(failure, session, cx));
+            return crate::acp::ended(ending_for(failure, session, cx));
         }
     };
     let start = match decided {
@@ -191,7 +191,11 @@ async fn list(conn: HostConn, cx: &mut AsyncApp) -> Result<Vec<SessionInfo>, Hos
 
 /// The sentence a failed attach ends the session on. A busy host is also
 /// told to the pane, which asks whether to restart it.
-fn said(failure: HostFailure, session: &WeakEntity<ChatSession>, cx: &mut AsyncApp) -> String {
+fn ending_for(
+    failure: HostFailure,
+    session: &WeakEntity<ChatSession>,
+    cx: &mut AsyncApp,
+) -> String {
     match failure {
         HostFailure::Missing(why) | HostFailure::Other(why) => why,
         HostFailure::Busy { host, busy } => {
