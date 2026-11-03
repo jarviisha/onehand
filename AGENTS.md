@@ -38,6 +38,8 @@ The features that span core and app, each as built:
 - [docs/control.md](docs/control.md): the socket beside the instance lock, a second launch, and
   onehand's tools for an outside program or a session's agent.
 - [docs/schedules.md](docs/schedules.md): schedules, the clock, and the tasks they start.
+- [docs/hosts.md](docs/hosts.md): host projects, the host service, attaching, builds and the
+  journal a host session is read back from.
 
 Everything else (chat pane, Workbench, rail, terminal, persistence, config) keeps its reasons in
 the comments beside its code, starting from each module's header; `crates/app/src/lib.rs` and

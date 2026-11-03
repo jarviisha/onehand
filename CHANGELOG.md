@@ -54,7 +54,13 @@ minor bump may break any of them.
 - The release tarball carries `onehand-host`, a service without a window that runs sessions on
   another machine reached over SSH. It keeps them going while nobody is attached, and keeps each
   one's transcript as a journal it replays when a laptop attaches again. onehand installs and
-  updates it on the host itself. The window does not offer hosts yet.
+  updates it on the host itself.
+- A project can live on a host: *Add a project on a host…* on the rail names the host and the
+  folder there. Its sessions run on the host and show in the chat pane, read back from the
+  host's journal with their times; its page lists the host's sessions on that folder, and a
+  host on another build asks before its service is restarted. Files, the editor, git and the
+  terminal on a host, and onehand's tools, workflows, tasks, issues and unattended runs for a
+  host project, are not built yet.
 
 ### The window
 

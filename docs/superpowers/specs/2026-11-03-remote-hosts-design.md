@@ -1,6 +1,6 @@
 # Remote hosts: sessions that live on a machine reached over SSH
 
-Status: design, not built. Decided with the owner on 2026-11-03.
+Status: design, decided with the owner on 2026-11-03; step 1 built (see *Order of work*).
 
 ## Why
 
@@ -321,6 +321,10 @@ These form a sequence, and each step is useful on its own:
 
 1. The host service and the protocol for sessions only: install, start, attach, version handshake,
    sessions and transcripts that survive a detach. A host project appears with its sessions.
+   Built in two parts: 1a, the host service and the laptop's client (built); 1b, host projects in
+   the window (built). Two calls changed on the way: the laptop keeps no copy of a host session's
+   transcript yet (that waits for step 3), and a host root is kept as `<host>:<path>` in the
+   workspace file. As built: `docs/hosts.md`.
 2. The rest of a host project: file tree, editor, git status, terminal dock.
 3. The host UI: picking or typing a host, opening a folder on it, cloning, showing a host that is
    not connected.

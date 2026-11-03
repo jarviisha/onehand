@@ -45,8 +45,8 @@ project, else the one on screen, its caret picking *Start in* or *With agent*; *
 (a pill counting tasks that need attention, none at zero), *Issues*, *Workflows* and *Schedules*,
 each filled while its page shows; *Sessions* with a warning-ink *N need attention* chip (shown above zero or
 while on, toggling that filter and back) and the filter menu (*By project*, *All sessions*, *Needs
-attention*, *Recent activity*) over a hairline; the scrolling list, ending on *Add project…*; a foot
-with *Settings*, a page row like the five above, filled while it shows. The rail is drawn as the
+attention*, *Recent activity*) over a hairline; the scrolling list, ending on *Add project…* and, under it with no gap, *Add a project on a
+host…*, which opens the form naming the host and its folder there; a foot with *Settings*, a page row like the five above, filled while it shows. The rail is drawn as the
 library's sidebar draws its items: a row's name in the sidebar's ink and its second line muted, the
 row under the pointer on the sidebar's accent fill, and the one where the person is on that fill
 too, in the ink paired with it and at medium weight. The *Sessions* label is the small muted
@@ -57,7 +57,9 @@ stands on the page's fill.
 folder and name, its git line (branch, uncommitted changes, commits ahead and behind, each only
 above zero and named in full on hover), the pin, the unattended pill (*auto*, *auto · N*, *auto · N
 waiting*; a run's pill opens its issue on the Issues page), and while folded its sessions' most
-urgent state. Narrowed, the name keeps a minimum and the branch gives way first. Its chevron alone
+urgent state. A project on a host has no git line and no unattended pill: the host's name stands
+first in the row's meta, in the meta ink, and its hover's last line reads `<host>:<path>`.
+Narrowed, the name keeps a minimum and the branch, or the host, gives way first. Its chevron alone
 folds it (not during a search); the rest of the row shows the project's last session, or its page,
 which then fills the row. `+` and `⋯` show on hover and on the keyboard's row, right-click opens the
 same menu. A session row, indented under its project: its state mark, title and `⋯` (on hover, on
@@ -100,8 +102,8 @@ ends); a spacer; *N in background* (only while the session's agent has work runn
 background: a menu of each item's name, its kind and how long it has run, each row stopping that
 one item and never the turn, 12 listed and then *N more*; when an item ends, the transcript keeps a
 notice of how and after how long: *Background work finished after 2m 14s: npm test*, an error when it
-failed, *interrupted* when the agent went away first); past conversations and *Close session*
-(only while a session shows); last, while the session on screen leads workers, its workers, a
+failed, *interrupted* when the agent went away first); past conversations (not on a host session, whose
+conversations are not kept on this machine) and *Close session* (only while a session shows); last, while the session on screen leads workers, its workers, a
 warning dot on it while one waits on the person and the region is closed. The docks' toggles are
 the title bar's. On the overview, Tasks, Issues,
 Workflows, Schedules and Settings, which name themselves in their head, it carries no name; none of these has a dots menu. As the pane narrows, the name gives way
@@ -223,6 +225,8 @@ dragged height kept).
   and *Activity N* (the history). Sections are parted by space, not rules. ⋯ ▸ *Open in Issues* and
   *Review…* open it on the Issues page, the latter with its review open.
 - Hiding a dock keeps its buffers and processes; the terminal's open state follows the project.
+- On a project on a host, the Workbench (with no modes in its strip) and the terminal each show
+  the hint *Files and terminals on a host come later* in place of their content.
 - **The workers' region**, in the Workbench's place and never beside it: opening one puts the
   other away, a caret in the one leaving going to the lead's composer and the one arriving taking
   none; hiding the region gives the Workbench back as it was, and while it shows the layout saves

@@ -42,6 +42,7 @@
 ## Decisions this plan makes (the owner reviews these)
 
 - **Where hosts persist.** A host root is persisted as a parallel `hosts` map in `onehand-workspace.toml` (path → host), following the precedent of `pinned`, `unattended` and `checks`. `roots` stays a list of paths, so older files still read.
+  - Superseded in Task 3's review: a path-keyed map lost a local root beside a host root on the same path at reload. A host root is written as the string `<host>:<path>` in `roots`, `pinned`, `unattended` and `checks` (`root_key`, `parse_root_key` in `crates/core/src/workspace.rs`); older files still read.
 - **Root identity is `(host, path)`.** `add_root` dedupes on the pair, and a host path is never canonicalized.
   - The app's per-root maps are keyed by path alone, but none of them is used for a host root. They are git, workbench, terminal and checks, all skipped.
   - A local `/srv/app` beside a host `/srv/app` therefore shares only the rail's fold state and MRU order. This is a known gap, written in `docs/known-gaps.md`.
