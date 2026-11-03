@@ -39,12 +39,27 @@ impl Journal {
     pub fn append(&mut self, entry: &Entry) -> io::Result<u64> {
         let mut line = serde_json::to_vec(entry).map_err(io::Error::other)?;
         line.push(b'\n');
-        self.file.write_all(&line)?;
-        self.file.flush()?;
+        let len = self.file.metadata()?.len();
+        land(&mut self.file, &line, |file| {
+            // Best effort: a file that cannot be cut back keeps the torn line,
+            // which costs only that seq.
+            let _ = file.set_len(len);
+        })?;
         let seq = self.next;
         self.next += 1;
         Ok(seq)
     }
+}
+
+/// Write `line` whole to `file`, or call `undo` to take back what part of it
+/// landed: a torn first line would hide every entry from a watch, which starts
+/// at seq 0.
+fn land<W: Write>(file: &mut W, line: &[u8], undo: impl FnOnce(&mut W)) -> io::Result<()> {
+    let landed = file.write_all(line).and_then(|()| file.flush());
+    if landed.is_err() {
+        undo(file);
+    }
+    landed
 }
 
 /// Every readable entry in `dir/journal.jsonl` with its seq, in order. A line that does not parse is skipped.
