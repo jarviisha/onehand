@@ -348,7 +348,7 @@ struct Watcher {
     /// Anything else is left over from an earlier watch of the session.
     last: Option<u64>,
     /// Until the host answers the watch, what comes is the replay, whose
-    /// `Ready` hands the chat a closed channel: what it sends while it applies
+    /// `Ready` hands the `Chat` a closed channel: what it sends while it applies
     /// the replay answers things long settled.
     replaying: bool,
     /// The `Ready` the replay brought, given again with a live channel once it ends.
@@ -370,7 +370,7 @@ impl Watcher {
 }
 
 /// A request channel whose requests go nowhere: what a replayed `Ready` hands
-/// a chat, so the replay cannot make it answer the host again.
+/// a `Chat`, so the replay cannot make it answer the host again.
 fn dead_channel() -> crate::acp::ReqTx {
     mpsc::unbounded_channel().0
 }
@@ -568,7 +568,7 @@ async fn pump<R, W>(
                         (Call::Watch { session: session.clone() }, Pending::Watch(session, tx))
                     }
                     // Only a live channel reaches here, held by someone who meant it:
-                    // a replay hands its chat a closed one.
+                    // a replay hands its `Chat` a closed one.
                     Cmd::Request(session, request) => {
                         (Call::Request { session: session.clone(), request }, Pending::Request(session))
                     }
@@ -624,7 +624,7 @@ fn refuse_queued(cmds: &mut mpsc::UnboundedReceiver<Cmd>, why: &str) {
     }
 }
 
-/// The session's request channel to the host: the one a chat still holds, or a new one.
+/// The session's request channel to the host: the one a `Chat` still holds, or a new one.
 fn live(
     forwarders: &mut HashMap<String, mpsc::WeakUnboundedSender<AcpRequest>>,
     me: &mpsc::WeakUnboundedSender<Cmd>,

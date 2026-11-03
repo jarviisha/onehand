@@ -437,7 +437,7 @@ async fn what_a_replay_makes_the_chat_send_never_reaches_the_host() {
         }),
     )
     .await;
-    // What a chat does with a replayed turn end that left a card open.
+    // What a `Chat` does with a replayed turn end that left a card open.
     let Some(AcpEvent::Connected { tx: replayed, .. }) = events.next().await else {
         panic!("no Connected");
     };
