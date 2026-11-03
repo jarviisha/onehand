@@ -467,12 +467,7 @@ impl WorkspacePage {
                 ),
             });
 
-        let unbound = filter_options(&page.projects).next().is_some()
-            && page
-                .projects
-                .iter()
-                .filter(|project| project.host.is_none())
-                .all(|project| project.issues.is_none());
+        let unbound = keeps_no_issues(&page.projects);
         let this = cx.entity();
         let filter = crate::page_parts::project_filter(
             "workspace-filter",
@@ -624,6 +619,13 @@ fn holds(
         (true, None) => "Looking for open issues…".to_string(),
         (true, Some(_)) => "Nothing open".to_string(),
     }
+}
+
+/// Whether no project keeps an issue file: the workspace is bound to no
+/// folder. A host's project never has one here, so a workspace of host
+/// projects alone keeps none either.
+fn keeps_no_issues(projects: &[PageProject]) -> bool {
+    !projects.is_empty() && projects.iter().all(|project| project.issues.is_none())
 }
 
 /// The projects the page can be narrowed to, as (name, root): those on this

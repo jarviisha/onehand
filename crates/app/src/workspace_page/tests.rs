@@ -44,3 +44,16 @@ fn only_a_project_here_is_a_filter() {
     assert_eq!(options, vec![("app".into(), PathBuf::from("/srv/app"))]);
     assert_eq!(filter_options(&projects[1..]).count(), 0);
 }
+
+#[test]
+fn a_workspace_keeps_no_issues_when_no_project_has_a_file() {
+    let host = project(Some(HostName("vps".into())), 0);
+    let here = PageProject {
+        issues: Some(PathBuf::from("/s/issues/app.json")),
+        ..project(None, 0)
+    };
+    assert!(keeps_no_issues(std::slice::from_ref(&host)));
+    assert!(!keeps_no_issues(std::slice::from_ref(&here)));
+    assert!(!keeps_no_issues(&[here, host]));
+    assert!(!keeps_no_issues(&[]));
+}
