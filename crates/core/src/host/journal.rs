@@ -3,16 +3,22 @@
 //! line costs that entry alone and no later seq shifts.
 
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, Write};
+use std::io::{self, Read as _, Seek as _, SeekFrom, Write};
 use std::path::Path;
 
 use super::wire::Entry;
 
 const FILE: &str = "journal.jsonl";
 
+/// How far `last` first reaches back from a journal's end; it doubles until
+/// it holds a whole line.
+const TAIL_CHUNK: u64 = 4096;
+
 pub struct Journal {
     file: File,
     next: u64,
+    /// The file's length, kept here so an append need not ask the file.
+    len: u64,
 }
 
 impl Journal {
@@ -26,64 +32,140 @@ impl Journal {
             Err(e) => return Err(e),
         };
         let mut next = existing.iter().filter(|b| **b == b'\n').count() as u64;
+        let mut len = existing.len() as u64;
         let mut file = OpenOptions::new().create(true).append(true).open(path)?;
         if existing.last().is_some_and(|b| *b != b'\n') {
             // A torn tail still counts as a line, and must not fuse with the next entry.
             file.write_all(b"\n")?;
             next += 1;
+            len += 1;
         }
-        Ok(Journal { file, next })
+        Ok(Journal { file, next, len })
     }
 
     /// Append one entry as one line, flushed; returns its seq (0-based line number).
     pub fn append(&mut self, entry: &Entry) -> io::Result<u64> {
         let mut line = serde_json::to_vec(entry).map_err(io::Error::other)?;
         line.push(b'\n');
-        let len = self.file.metadata()?.len();
-        land(&mut self.file, &mut self.next, len, &line)
+        land(&mut self.file, &mut self.next, &mut self.len, &line)
     }
 }
 
-/// A journal file cut back to `len`.
+/// A journal file that can say its length and be cut back.
 trait Cut {
+    fn size(&mut self) -> io::Result<u64>;
     fn cut(&mut self, len: u64) -> io::Result<()>;
 }
 
 impl Cut for File {
+    fn size(&mut self) -> io::Result<u64> {
+        Ok(self.metadata()?.len())
+    }
+
     fn cut(&mut self, len: u64) -> io::Result<()> {
         self.set_len(len)
     }
 }
 
 /// Write `line` whole to `file`, which is `len` long, and return its seq,
-/// `next`. What part of a line that failed landed is cut back: a torn first
-/// line would hide every entry from a watch, which starts at seq 0. A file
-/// that cannot be cut back gets the torn line ended instead, as `open` does,
-/// so it costs its seq alone and the next entry does not fuse with it.
-fn land<W: Write + Cut>(file: &mut W, next: &mut u64, len: u64, line: &[u8]) -> io::Result<u64> {
+/// `next`; both move on past it. What part of a line that failed landed is
+/// cut back, so a watch never meets half an entry. A file that cannot be cut
+/// back gets the torn line ended instead, as `open` does, so it costs its seq
+/// alone and the next entry does not fuse with it.
+fn land<W: Write + Cut>(
+    file: &mut W,
+    next: &mut u64,
+    len: &mut u64,
+    line: &[u8],
+) -> io::Result<u64> {
     if let Err(e) = file.write_all(line).and_then(|()| file.flush()) {
-        if file.cut(len).is_err() && file.write_all(b"\n").is_ok() {
+        if file.cut(*len).is_err() && file.write_all(b"\n").is_ok() {
             *next += 1;
+            if let Ok(size) = file.size() {
+                *len = size;
+            }
         }
         return Err(e);
     }
     let seq = *next;
     *next += 1;
+    *len += line.len() as u64;
     Ok(seq)
+}
+
+/// Where a read of a journal stopped: the seq and the byte offset of the
+/// next line it did not read.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Mark {
+    seq: u64,
+    at: u64,
 }
 
 /// Every readable entry in `dir/journal.jsonl` with its seq, in order. A line that does not parse is skipped.
 pub fn read(dir: &Path) -> io::Result<Vec<(u64, Entry)>> {
-    let text = match fs::read(dir.join(FILE)) {
-        Ok(bytes) => bytes,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+    Ok(read_from(dir, Mark::default())?.0)
+}
+
+/// Every readable entry on the whole lines from `from` on, with its seq, and
+/// where they end. A line its newline has not yet ended is left for the next
+/// read: it may still be being written, and is torn if it never is.
+pub fn read_from(dir: &Path, from: Mark) -> io::Result<(Vec<(u64, Entry)>, Mark)> {
+    let mut file = match File::open(dir.join(FILE)) {
+        Ok(file) => file,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok((Vec::new(), from)),
         Err(e) => return Err(e),
     };
-    Ok(text
-        .split(|b| *b == b'\n')
+    file.seek(SeekFrom::Start(from.at))?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)?;
+    let whole = bytes
+        .iter()
+        .rposition(|b| *b == b'\n')
+        .map_or(0, |at| at + 1);
+    let lines = bytes[..whole].split_inclusive(|b| *b == b'\n');
+    let entries = lines
+        .clone()
         .enumerate()
-        .filter_map(|(seq, line)| Some((seq as u64, serde_json::from_slice(line).ok()?)))
-        .collect())
+        .filter_map(|(i, line)| {
+            let entry = serde_json::from_slice(&line[..line.len() - 1]).ok()?;
+            Some((from.seq + i as u64, entry))
+        })
+        .collect();
+    let end = Mark {
+        seq: from.seq + lines.count() as u64,
+        at: from.at + whole as u64,
+    };
+    Ok((entries, end))
+}
+
+/// The entry on the journal's last whole line, read from the file's end
+/// alone; none for a missing or empty journal, or a last line that does not
+/// parse. A torn tail after it is passed over.
+pub fn last(dir: &Path) -> io::Result<Option<Entry>> {
+    let mut file = match File::open(dir.join(FILE)) {
+        Ok(file) => file,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    let size = file.metadata()?.len();
+    let mut reach = TAIL_CHUNK;
+    loop {
+        let start = size.saturating_sub(reach);
+        file.seek(SeekFrom::Start(start))?;
+        let mut tail = Vec::new();
+        (&mut file).take(size - start).read_to_end(&mut tail)?;
+        let line = tail.iter().rposition(|b| *b == b'\n').and_then(|end| {
+            match tail[..end].iter().rposition(|b| *b == b'\n') {
+                Some(before) => Some(&tail[before + 1..end]),
+                None => (start == 0).then(|| &tail[..end]),
+            }
+        });
+        match line {
+            Some(line) => return Ok(serde_json::from_slice(line).ok()),
+            None if start == 0 => return Ok(None),
+            None => reach *= 2,
+        }
+    }
 }
 
 #[cfg(test)]

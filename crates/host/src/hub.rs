@@ -14,7 +14,7 @@ use futures::stream::BoxStream;
 use futures::StreamExt as _;
 use onehand_core::acp::{AcpEvent, AcpRequest, Opening, ReqTx, SessionOpts};
 use onehand_core::config::{AgentSpec, Launch};
-use onehand_core::host::journal::{self, Journal};
+use onehand_core::host::journal::{self, Journal, Mark};
 use onehand_core::host::wire::{busy_after, Entry, FromHost, Readiness, SessionInfo};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::UnboundedSender;
@@ -110,16 +110,21 @@ impl Hub {
     ) -> Result<String, String> {
         // The laptop clears it already; its variables name the laptop's paths.
         agent.env.clear();
-        let mut this = lock(hub);
-        let mut launch = agent.launch(this.path.as_deref())?;
-        if let Some(path) = &this.path {
+        // Only the id is taken with the hub locked: the launch and the files
+        // touch the disk, which would hold up every other session.
+        let (path, connector) = {
+            let this = lock(hub);
+            (this.path.clone(), this.connector.clone())
+        };
+        let mut launch = agent.launch(path.as_deref())?;
+        if let Some(path) = &path {
             // A declared agent's command, and whatever it runs in turn, is found
             // on this PATH too, not only a preset's binary.
             launch
                 .env
                 .insert(0, ("PATH".into(), path.to_string_lossy().into_owned()));
         }
-        let (id, dir) = this.fresh_id();
+        let (id, dir) = lock(hub).fresh_id();
         let journal = Journal::open(&dir)
             .map_err(|e| format!("Could not start this session's journal: {e}"))?;
         // Before the agent starts, so a service started again can list every session it ran.
@@ -137,8 +142,8 @@ impl Hub {
             mcp_servers: vec![],
             dirs: vec![],
         };
-        let events = (this.connector)(launch, opts);
-        this.sessions.insert(
+        let events = connector(launch, opts);
+        lock(hub).sessions.insert(
             id.clone(),
             Session {
                 dir,
@@ -151,7 +156,6 @@ impl Hub {
                 ended: false,
             },
         );
-        drop(this);
         tokio::spawn(drive(hub.clone(), id.clone(), events));
         Ok(id)
     }
@@ -169,25 +173,52 @@ impl Hub {
         }
     }
 
-    /// Send `Replay` and every entry so far to `sink`, then live entries except `Request`.
+    /// Send `Replay` and every entry so far to `sink`, then live entries
+    /// except `Request`. The journal is read with the hub unlocked, so a long
+    /// replay holds up no other session; what lands meanwhile is read after.
     pub(crate) fn watch(
+        hub: &Mutex<Hub>,
+        session: &str,
+        sink: UnboundedSender<FromHost>,
+    ) -> Result<(), String> {
+        let dir = lock(hub).unwatch(session)?;
+        let (entries, mark) = journal::read_from(&dir, Mark::default()).map_err(unreadable)?;
+        lock(hub).replay(session, sink, entries, mark)
+    }
+
+    /// Stop passing `session` live entries on, for a watch that will replay
+    /// them; where its journal is.
+    fn unwatch(&mut self, session: &str) -> Result<PathBuf, String> {
+        let s = self
+            .sessions
+            .get_mut(session)
+            .ok_or_else(|| unknown(session))?;
+        s.watcher = None;
+        Ok(s.dir.clone())
+    }
+
+    /// Send `Replay`, `entries` (the journal up to `mark`) and whatever was
+    /// journaled after `mark` to `sink`, then make it the session's watcher.
+    /// Called with the hub locked, so no entry lands between the two.
+    fn replay(
         &mut self,
         session: &str,
         sink: UnboundedSender<FromHost>,
+        entries: Vec<(u64, Entry)>,
+        mark: Mark,
     ) -> Result<(), String> {
         let s = self
             .sessions
             .get_mut(session)
             .ok_or_else(|| unknown(session))?;
-        let entries = journal::read(&s.dir)
-            .map_err(|e| format!("Could not read this session's journal: {e}"))?;
+        let (since, _) = journal::read_from(&s.dir, mark).map_err(unreadable)?;
         let replay = FromHost::Replay {
             session: session.to_string(),
         };
         if sink.send(replay).is_err() {
             return Ok(());
         }
-        for (seq, entry) in entries {
+        for (seq, entry) in entries.into_iter().chain(since) {
             let line = FromHost::Entry {
                 session: session.to_string(),
                 seq,
@@ -201,7 +232,7 @@ impl Hub {
         Ok(())
     }
 
-    /// Journal `request`, then hand it to the agent.
+    /// Hand `request` to the agent, then journal it.
     pub(crate) fn request(&mut self, session: &str, request: AcpRequest) -> Result<(), String> {
         let s = self.sessions.get(session).ok_or_else(|| unknown(session))?;
         if s.ended {
@@ -226,8 +257,11 @@ impl Hub {
             | AcpRequest::SetConfigOption { .. }
             | AcpRequest::StopBackground { .. }) => (request, false),
         };
+        // Journaled only once the agent has it. The hub is locked throughout,
+        // so nothing the agent says of it is journaled ahead of it.
+        tx.send(request.clone()).map_err(|_| ENDED.to_string())?;
         // The request first, then what is said of it, the order the laptop sees live.
-        self.record(session, Entry::Request(request.clone()));
+        self.record(session, Entry::Request(request));
         if dropped {
             self.record(
                 session,
@@ -237,7 +271,7 @@ impl Hub {
                 }),
             );
         }
-        tx.send(request).map_err(|_| ENDED.to_string())
+        Ok(())
     }
 
     pub(crate) fn list(&self) -> Vec<SessionInfo> {
@@ -342,13 +376,17 @@ fn load(id: &str, dir: &Path) -> Result<Session, String> {
 /// End the journal in `dir` with `STOPPED` unless it already ends in a `Disconnected`.
 fn end_journal(dir: &Path) -> std::io::Result<()> {
     let ended = matches!(
-        journal::read(dir)?.last(),
-        Some((_, Entry::Event(AcpEvent::Disconnected(_))))
+        journal::last(dir)?,
+        Some(Entry::Event(AcpEvent::Disconnected(_)))
     );
     if !ended {
         Journal::open(dir)?.append(&Entry::Event(AcpEvent::Disconnected(STOPPED.into())))?;
     }
     Ok(())
+}
+
+fn unreadable(e: std::io::Error) -> String {
+    format!("Could not read this session's journal: {e}")
 }
 
 fn unknown(session: &str) -> String {

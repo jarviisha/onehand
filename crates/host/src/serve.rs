@@ -272,7 +272,7 @@ fn answer(hub: &Arc<Mutex<Hub>>, build: &str, out: &UnboundedSender<FromHost>, l
             agent,
             opening,
         } => Hub::open(hub, cwd, agent, opening).map(|session| Reply::Opened { session }),
-        Call::Watch { session } => lock(hub).watch(&session, out.clone()).map(|()| Reply::Done),
+        Call::Watch { session } => Hub::watch(hub, &session, out.clone()).map(|()| Reply::Done),
         Call::Request { session, request } => {
             lock(hub).request(&session, request).map(|()| Reply::Done)
         }

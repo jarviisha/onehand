@@ -85,7 +85,7 @@ fn open(hub: &Arc<Mutex<Hub>>, opened: &Opened, ready: bool) -> Fake {
 
 fn watch(hub: &Arc<Mutex<Hub>>, session: &str) -> mpsc::UnboundedReceiver<FromHost> {
     let (sink, lines) = mpsc::unbounded_channel();
-    hub.lock().unwrap().watch(session, sink).unwrap();
+    Hub::watch(hub, session, sink).unwrap();
     lines
 }
 
@@ -469,4 +469,50 @@ async fn a_watch_marks_its_replay_even_when_the_journal_is_empty() {
         Ok(FromHost::Replay { session }) if session == fake.session
     ));
     assert!(lines.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn what_lands_while_a_replay_is_read_is_sent_once() {
+    let (hub, opened) = hub("relock");
+    let fake = open(&hub, &opened, true);
+    fake.push(chunk("a"));
+    settle().await;
+    // The steps of a watch, with an entry landing between the read, which
+    // runs with the hub unlocked, and the replay.
+    let dir = hub.lock().unwrap().unwatch(&fake.session).unwrap();
+    let (read, mark) = journal::read_from(&dir, journal::Mark::default()).unwrap();
+    fake.push(chunk("b"));
+    settle().await;
+    let (sink, mut lines) = mpsc::unbounded_channel();
+    hub.lock()
+        .unwrap()
+        .replay(&fake.session, sink, read, mark)
+        .unwrap();
+    fake.push(chunk("c"));
+    let got = entries(&mut lines, 4).await;
+    assert_eq!(
+        got.iter().map(|(s, _)| *s).collect::<Vec<_>>(),
+        [0, 1, 2, 3]
+    );
+    settle().await;
+    assert!(lines.try_recv().is_err(), "an entry was sent twice");
+}
+
+#[tokio::test]
+async fn a_request_the_agent_cannot_take_is_not_journaled() {
+    let (hub, opened) = hub("unsent");
+    let Fake {
+        session,
+        events,
+        requests,
+    } = open(&hub, &opened, true);
+    settle().await;
+    // The agent's side went away, though its stream has not ended yet.
+    drop(requests);
+    let refused = hub.lock().unwrap().request(&session, prompt("go"));
+    assert_eq!(refused, Err("this session has ended".to_string()));
+    let dir = hub.lock().unwrap().dir.join("sessions").join(&session);
+    assert_eq!(kinds(&journal::read(&dir).unwrap()), ["ready"]);
+    assert!(!hub.lock().unwrap().list()[0].busy);
+    drop(events);
 }

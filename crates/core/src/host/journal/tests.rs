@@ -93,6 +93,10 @@ impl Write for Full {
 }
 
 impl Cut for Full {
+    fn size(&mut self) -> std::io::Result<u64> {
+        Ok(self.bytes.len() as u64)
+    }
+
     fn cut(&mut self, len: u64) -> std::io::Result<()> {
         if self.stuck {
             // Room again for the newline that ends the torn line.
@@ -112,9 +116,10 @@ fn a_failed_append_leaves_no_partial_line() {
         stuck: false,
     };
     let mut next = 1;
-    assert!(land(&mut file, &mut next, 8, b"{\"b\":2}\n").is_err());
+    let mut len = 8;
+    assert!(land(&mut file, &mut next, &mut len, b"{\"b\":2}\n").is_err());
     assert_eq!(file.bytes, b"{\"a\":1}\n");
-    assert_eq!(next, 1);
+    assert_eq!((next, len), (1, 8));
 }
 
 #[test]
@@ -125,7 +130,120 @@ fn a_line_that_cannot_be_cut_back_is_ended_and_counted() {
         stuck: true,
     };
     let mut next = 1;
-    assert!(land(&mut file, &mut next, 8, b"{\"b\":2}\n").is_err());
+    let mut len = 8;
+    assert!(land(&mut file, &mut next, &mut len, b"{\"b\":2}\n").is_err());
     assert_eq!(file.bytes, b"{\"a\":1}\n{\"b\"\n");
-    assert_eq!(next, 2);
+    assert_eq!((next, len), (2, 13));
+}
+
+#[test]
+fn a_landed_line_moves_the_length_on() {
+    let mut file = Full {
+        bytes: b"{\"a\":1}\n".to_vec(),
+        room: 64,
+        stuck: false,
+    };
+    let (mut next, mut len) = (1, 8);
+    assert_eq!(
+        land(&mut file, &mut next, &mut len, b"{\"b\":2}\n").unwrap(),
+        1
+    );
+    assert_eq!((next, len), (2, 16));
+}
+
+#[test]
+fn appending_keeps_the_length_without_asking_the_file() {
+    let dir = scratch("len");
+    let mut j = Journal::open(&dir).unwrap();
+    j.append(&chunk("a")).unwrap();
+    j.append(&chunk("b")).unwrap();
+    let on_disk = std::fs::metadata(dir.join("journal.jsonl")).unwrap().len();
+    assert_eq!(j.len, on_disk);
+    drop(j);
+    assert_eq!(Journal::open(&dir).unwrap().len, on_disk);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn last_of_a_missing_or_empty_journal_is_none() {
+    let dir = scratch("last-empty");
+    assert!(last(&dir).unwrap().is_none());
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("journal.jsonl"), b"").unwrap();
+    assert!(last(&dir).unwrap().is_none());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn last_skips_a_torn_tail() {
+    let dir = scratch("last-torn");
+    let mut j = Journal::open(&dir).unwrap();
+    j.append(&chunk("a")).unwrap();
+    j.append(&chunk("b")).unwrap();
+    drop(j);
+    let mut f = std::fs::OpenOptions::new()
+        .append(true)
+        .open(dir.join("journal.jsonl"))
+        .unwrap();
+    f.write_all(br#"{"event":{"agent_chunk":"#).unwrap();
+    drop(f);
+    let got = last(&dir).unwrap().unwrap();
+    assert_eq!(
+        serde_json::to_string(&got).unwrap(),
+        serde_json::to_string(&chunk("b")).unwrap()
+    );
+    // A torn line alone is no whole line.
+    std::fs::write(dir.join("journal.jsonl"), br#"{"event":"#).unwrap();
+    assert!(last(&dir).unwrap().is_none());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn last_reaches_back_over_many_chunks() {
+    let dir = scratch("last-long");
+    let mut j = Journal::open(&dir).unwrap();
+    for i in 0..50 {
+        j.append(&chunk(&format!("{i}{}", "x".repeat(1000))))
+            .unwrap();
+    }
+    // Longer than a chunk on its own, and a torn tail longer than one after it.
+    let long = "y".repeat(3 * TAIL_CHUNK as usize);
+    j.append(&chunk(&long)).unwrap();
+    drop(j);
+    let mut f = std::fs::OpenOptions::new()
+        .append(true)
+        .open(dir.join("journal.jsonl"))
+        .unwrap();
+    f.write_all("z".repeat(2 * TAIL_CHUNK as usize).as_bytes())
+        .unwrap();
+    drop(f);
+    let got = last(&dir).unwrap().unwrap();
+    assert_eq!(
+        serde_json::to_string(&got).unwrap(),
+        serde_json::to_string(&chunk(&long)).unwrap()
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn reading_on_from_a_mark_gives_each_whole_line_once() {
+    let dir = scratch("mark");
+    let mut j = Journal::open(&dir).unwrap();
+    j.append(&chunk("a")).unwrap();
+    j.append(&chunk("b")).unwrap();
+    // A line still being written: no newline yet.
+    let mut f = std::fs::OpenOptions::new()
+        .append(true)
+        .open(dir.join("journal.jsonl"))
+        .unwrap();
+    f.write_all(br#"{"event":{"ThoughtChunk""#).unwrap();
+    let (first, mark) = read_from(&dir, Mark::default()).unwrap();
+    assert_eq!(first.iter().map(|(s, _)| *s).collect::<Vec<_>>(), [0, 1]);
+    f.write_all(b":\"c\"}}\n").unwrap();
+    drop(f);
+    j.append(&chunk("d")).unwrap();
+    let (rest, end) = read_from(&dir, mark).unwrap();
+    assert_eq!(rest.iter().map(|(s, _)| *s).collect::<Vec<_>>(), [2, 3]);
+    assert!(read_from(&dir, end).unwrap().0.is_empty());
+    let _ = std::fs::remove_dir_all(&dir);
 }
