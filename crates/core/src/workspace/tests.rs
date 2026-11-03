@@ -561,3 +561,18 @@ fn only_a_folder_on_this_machine_has_a_local_path() {
     assert_eq!(ws.roots[here].local_path(), Some(Path::new("/tmp")));
     assert_eq!(ws.roots[there].local_path(), None);
 }
+
+/// A host name may hold colons of its own (an IPv6 address, bare or in
+/// brackets after a user); the path is what follows the first `:/`.
+#[test]
+fn a_host_name_with_colons_round_trips_through_its_key() {
+    for host in ["fe80::1", "user@[fe80::1]", "vps"] {
+        let host = HostName(host.into());
+        let key = root_key(Some(&host), Path::new("/srv/app"));
+        assert_eq!(
+            parse_root_key(&key),
+            (Some(host.clone()), PathBuf::from("/srv/app")),
+            "{key:?}"
+        );
+    }
+}

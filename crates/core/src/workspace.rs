@@ -17,7 +17,9 @@ use std::path::{Path, PathBuf};
 
 /// The name of a host a project can live on: what `ssh` is given, except that
 /// `local` is this machine, reached without ssh.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 #[serde(transparent)]
 pub struct HostName(pub String);
 
@@ -123,13 +125,18 @@ fn root_key_of(root: &ProjectRoot) -> PathBuf {
 }
 
 /// The inverse of [`root_key`]: an entry that is not absolute and has a host
-/// name before its first `:` is a folder on that host.
+/// name before its first `:/` is a folder on that host. A host path always
+/// starts with `/`, and a host name may hold colons of its own (an IPv6
+/// address), so the split is there and not at the first `:`.
 fn parse_root_key(stored: &Path) -> (Option<HostName>, PathBuf) {
     let text = stored.to_string_lossy();
     if !stored.is_absolute() {
-        if let Some((host, path)) = text.split_once(':') {
-            if !host.is_empty() {
-                return (Some(HostName(host.into())), PathBuf::from(path));
+        if let Some(at) = text.find(":/") {
+            if at > 0 {
+                return (
+                    Some(HostName(text[..at].into())),
+                    PathBuf::from(&text[at + 1..]),
+                );
             }
         }
     }
