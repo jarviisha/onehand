@@ -2957,6 +2957,8 @@ fn echoed_prompt_is_a_user_message_and_a_busy_turn() {
     }));
     assert!(matches!(chat.items.last(), Some(ChatItem::User(u)) if u.text == "build it"));
     assert!(chat.busy);
+    assert_eq!(chat.prompts_sent, 1);
+    assert!(!chat.cancelled);
     assert!(rx.try_recv().is_err(), "an echo is never sent");
 }
 
@@ -3012,6 +3014,10 @@ fn echoed_cancel_settles_parked_cards_without_sending() {
     chat.apply(AcpEvent::Permission(permission("run it")));
     chat.apply(AcpEvent::Echo(AcpRequest::Cancel));
     assert!(chat.cancelled);
+    assert!(matches!(
+        chat.items.last(),
+        Some(ChatItem::Permission(p)) if p.resolved.as_deref() == Some("Cancelled")
+    ));
     assert!(chat.pending_permissions().is_empty());
     assert!(chat.tx.is_some(), "the channel is still there to use");
     assert!(rx.try_recv().is_err());
@@ -3029,5 +3035,18 @@ fn echoed_picks_and_stops_change_nothing() {
         id: "t1".into(),
     }));
     assert!(chat.items.is_empty());
+    assert!(!chat.busy && !chat.cancelled);
+    assert!(rx.try_recv().is_err());
+}
+
+#[test]
+fn echoed_permission_answer_for_an_unknown_rpc_id_changes_nothing() {
+    let (mut chat, mut rx) = connected_chat();
+    chat.apply(AcpEvent::Permission(permission("run it")));
+    chat.apply(AcpEvent::Echo(AcpRequest::PermissionResponse {
+        rpc_id: serde_json::json!(99),
+        option_id: Some("allow-1".into()),
+    }));
+    assert_eq!(chat.pending_permissions().len(), 1);
     assert!(rx.try_recv().is_err());
 }

@@ -176,10 +176,7 @@ impl Chat {
     pub(super) fn echo(&mut self, request: AcpRequest) {
         match request {
             AcpRequest::Prompt { text, .. } => {
-                self.cancelled = false;
-                self.cut_off = false;
-                self.push_user(text, Vec::new());
-                self.busy = true;
+                self.begin_turn(text, Vec::new());
             }
             AcpRequest::PermissionResponse { rpc_id, option_id } => {
                 let at = self.items.iter().position(|it| {
@@ -482,11 +479,7 @@ impl Chat {
         if self.tx.as_ref().is_none_or(|tx| tx.send(request).is_err()) {
             return false;
         }
-        self.prompts_sent += 1;
-        self.cancelled = false;
-        self.cut_off = false;
-
-        self.push_user(
+        self.begin_turn(
             text.to_string(),
             staged
                 .iter()
@@ -494,8 +487,17 @@ impl Chat {
                 .map(StagedAttachment::snapshot)
                 .collect(),
         );
-        self.busy = true;
         true
+    }
+
+    /// The local half of sending a prompt, shared by a live send and a replayed
+    /// one so the two cannot drift.
+    fn begin_turn(&mut self, text: String, attachments: Vec<AttachmentSnapshot>) {
+        self.prompts_sent += 1;
+        self.cancelled = false;
+        self.cut_off = false;
+        self.push_user(text, attachments);
+        self.busy = true;
     }
 
     pub(crate) fn push_user(&mut self, text: String, attachments: Vec<AttachmentSnapshot>) {
