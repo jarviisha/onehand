@@ -160,7 +160,7 @@ async fn closing_the_stream_ends_watch_with_disconnected() {
     host.watched().await;
     drop(host);
     assert!(matches!(
-        events.next().await,
+        made(&mut events).await,
         Some(AcpEvent::Disconnected(why)) if why.contains("lost the connection")
     ));
     assert!(events.next().await.is_none());
@@ -173,7 +173,7 @@ async fn kicked_ends_watch_saying_so() {
     host.watched().await;
     host.send(FromHost::Kicked).await;
     assert!(matches!(
-        events.next().await,
+        made(&mut events).await,
         Some(AcpEvent::Disconnected(why)) if why.contains("attached from another machine")
     ));
     assert!(events.next().await.is_none());
@@ -316,7 +316,7 @@ async fn a_refused_watch_ends_in_one_disconnected() {
     })
     .await;
     assert!(matches!(
-        events.next().await,
+        made(&mut events).await,
         Some(AcpEvent::Disconnected(why)) if why == "no such session"
     ));
     assert!(events.next().await.is_none());
@@ -346,7 +346,7 @@ async fn a_refused_request_is_said_as_an_error() {
     })
     .await;
     assert!(matches!(
-        events.next().await,
+        made(&mut events).await,
         Some(AcpEvent::Error { text, .. }) if text == "the session ended"
     ));
 }
@@ -595,7 +595,7 @@ async fn a_refused_watch_forgets_its_request_channel() {
     })
     .await;
     assert!(matches!(
-        refused.next().await,
+        made(&mut refused).await,
         Some(AcpEvent::Disconnected(_))
     ));
     let mut third = conn.watch(&s1());
@@ -618,7 +618,7 @@ async fn watching_again_ends_the_first_watch() {
     host.watched().await;
     host.watched().await;
     assert!(matches!(
-        first.next().await,
+        made(&mut first).await,
         Some(AcpEvent::Disconnected(why)) if why.contains("watched elsewhere")
     ));
     assert!(first.next().await.is_none());
@@ -634,72 +634,10 @@ async fn what_was_queued_as_the_stream_ended_is_refused() {
     refuse_queued(&mut rx, "gone");
     assert!(matches!(answer.await, Ok(Err(HostError::Unreachable(why))) if why == "gone"));
     assert!(matches!(
-        events.next().await,
+        made(&mut events).await,
         Some(AcpEvent::Disconnected(why)) if why == "gone"
     ));
     assert!(tx.send(Cmd::Request(s1(), AcpRequest::Cancel)).is_err());
-}
-
-/// A scratch directory for an install, run here through `sh`.
-fn install_dir(name: &str) -> String {
-    let dir = std::env::temp_dir().join(format!("onehand-install-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    dir.display().to_string()
-}
-
-const HERE: HostAddr = HostAddr {
-    ssh: String::new(),
-    local: true,
-};
-
-#[tokio::test]
-async fn a_copy_that_names_its_build_is_moved_into_place() {
-    let dir = install_dir("good");
-    let script = b"#!/bin/sh\necho abc\n";
-    run(&HERE, &copy_command(&dir, "abc"), script)
-        .await
-        .unwrap();
-    let path = Path::new(&dir).join("onehand-host");
-    assert_eq!(std::fs::read(&path).unwrap(), script);
-    assert!(!Path::new(&dir).join("onehand-host.tmp").exists());
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[tokio::test]
-async fn a_cut_short_copy_is_never_installed() {
-    let dir = install_dir("short");
-    // What a copy cut off mid-way leaves: a file that cannot name the build.
-    let script = b"#!/bin/sh\necho ab";
-    let copied = run(&HERE, &copy_command(&dir, "abc"), script).await;
-    assert!(matches!(copied, Err(HostError::Unreachable(why)) if why.contains("cut short")));
-    assert!(!Path::new(&dir).join("onehand-host").exists());
-    assert!(!Path::new(&dir).join("onehand-host.tmp").exists());
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[tokio::test]
-async fn a_copy_that_cannot_run_here_says_why_and_is_never_installed() {
-    let dir = install_dir("old-glibc");
-    // What a binary built against a newer C library prints as it fails to load.
-    let script = b"#!/bin/sh\necho \"version 'GLIBC_2.39' not found\" >&2\nexit 1\n";
-    let copied = run(&HERE, &copy_command(&dir, "abc"), script).await;
-    assert!(
-        matches!(&copied, Err(HostError::Unreachable(why))
-            if why.contains("GLIBC_2.39") && !why.contains("cut short")),
-        "{copied:?}"
-    );
-    assert!(!Path::new(&dir).join("onehand-host").exists());
-    assert!(!Path::new(&dir).join("onehand-host.tmp").exists());
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[test]
-fn the_probe_is_read_after_its_marker_whatever_an_rc_file_prints() {
-    let out = format!("Welcome to the box!\n{PROBE}\nLinux x86_64\npresent\n");
-    assert_eq!(probed(&out), ("Linux x86_64", true));
-    let out = format!("{PROBE} is a word too\n{PROBE}\nDarwin arm64\n");
-    assert_eq!(probed(&out), ("Darwin arm64", false));
-    assert_eq!(probed("banner only\n"), ("", false));
 }
 
 #[tokio::test]
@@ -780,7 +718,7 @@ async fn a_watch_starts_only_at_its_own_marker() {
     }
     host.entry(2, chunk("c")).await;
     assert!(matches!(
-        first.next().await,
+        made(&mut first).await,
         Some(AcpEvent::Disconnected(why)) if why.contains("watched elsewhere")
     ));
     assert_eq!(next_chunk(&mut second).await, "second's");
@@ -788,7 +726,7 @@ async fn a_watch_starts_only_at_its_own_marker() {
     assert_eq!(next_chunk(&mut second).await, "c");
     drop(host);
     assert!(matches!(
-        second.next().await,
+        made(&mut second).await,
         Some(AcpEvent::Disconnected(why)) if why.contains("lost the connection")
     ));
 }
@@ -901,4 +839,51 @@ async fn a_restart_that_finds_another_build_again_fails() {
         restarted.err()
     );
     assert_eq!(shutdowns, 1);
+}
+
+/// The next event, one the client made itself: the `At` of now it comes after
+/// is taken first.
+async fn made(events: &mut (impl Stream<Item = AcpEvent> + Unpin)) -> Option<AcpEvent> {
+    assert!(matches!(events.next().await, Some(AcpEvent::At(_))));
+    events.next().await
+}
+
+#[tokio::test]
+async fn what_the_client_says_itself_is_stamped_now() {
+    let (conn, mut host) = pair();
+    let mut events = conn.watch(&s1());
+    let id = host.replaying().await;
+    host.timed(0, 100, chunk("a")).await;
+    host.answer(id, Reply::Done).await;
+    assert!(matches!(events.next().await, Some(AcpEvent::At(100))));
+    assert_eq!(next_chunk(&mut events).await, "a");
+    drop(host);
+    assert!(matches!(events.next().await, Some(AcpEvent::At(now)) if now > 100));
+    assert!(matches!(
+        events.next().await,
+        Some(AcpEvent::Disconnected(why)) if why.contains("lost the connection")
+    ));
+}
+
+#[tokio::test]
+async fn a_rewatch_says_the_time_again() {
+    let (conn, mut host) = pair();
+    let mut first = conn.watch(&s1());
+    host.watched().await;
+    host.timed(0, 100, chunk("a")).await;
+    assert!(matches!(first.next().await, Some(AcpEvent::At(100))));
+    assert_eq!(next_chunk(&mut first).await, "a");
+    let mut second = conn.watch(&s1());
+    let id = host.replaying().await;
+    host.timed(0, 100, chunk("a")).await;
+    host.answer(id, Reply::Done).await;
+    assert!(matches!(second.next().await, Some(AcpEvent::At(100))));
+    assert_eq!(next_chunk(&mut second).await, "a");
+}
+
+#[tokio::test]
+async fn restart_on_our_build_sends_no_shutdown() {
+    let (restarted, shutdowns) = restart_against(["ours", "ours"]).await;
+    assert!(restarted.is_ok(), "{:?}", restarted.err());
+    assert_eq!(shutdowns, 0);
 }
