@@ -1,8 +1,8 @@
-//! ACP data model only — no transport, no serde.
-//! `AcpRequest` flows UI→worker; `AcpEvent` flows worker→UI. Keeping this layer
-//! serde-free means the on-disk transcript mirror (Phase 4) can own its own
-//! serialization without coupling.
+//! ACP data model only — no transport.
+//! `AcpRequest` flows UI→worker; `AcpEvent` flows worker→UI. Every type is
+//! serialisable, so a host can carry them as JSON.
 
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::PathBuf;
 use tokio::sync::mpsc;
@@ -13,13 +13,13 @@ pub type ReqTx = mpsc::UnboundedSender<AcpRequest>;
 pub type ReqRx = mpsc::UnboundedReceiver<AcpRequest>;
 
 /// A staged prompt attachment (a file the user added with 📎).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Attachment {
     pub path: PathBuf,
 }
 
 /// A request from the UI into the ACP worker for one session.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AcpRequest {
     /// Send a user prompt, starting a turn.
     Prompt {
@@ -47,14 +47,14 @@ pub enum AcpRequest {
 }
 
 /// A slash command advertised by the agent (`available_commands_update`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SlashCommand {
     pub name: String,
     pub description: String,
 }
 
 /// A session mode the agent offers (the composer mode selector).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Mode {
     pub id: String,
     pub name: String,
@@ -70,7 +70,7 @@ impl std::fmt::Display for Mode {
 /// from `configOptions` in `session/new` and `config_option_update`. The session
 /// *mode* is handled separately via the standard `modes` field, so the `"mode"`
 /// group is dropped at parse time.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConfigOption {
     /// The option's stable id (e.g. `"model"`, `"effort"`).
     pub id: String,
@@ -85,7 +85,7 @@ pub struct ConfigOption {
 }
 
 /// One selectable value within a [`ConfigOption`].
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct ConfigChoice {
     pub value: String,
     pub name: String,
@@ -108,7 +108,7 @@ impl std::fmt::Display for ConfigChoice {
 
 /// How full the agent's context is, with the account's rate limit when the
 /// adapter reports one.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Usage {
     pub used: u64,
     pub size: u64,
@@ -122,7 +122,7 @@ pub struct Usage {
 }
 
 /// The account's rate limit as the adapter last reported it.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RateLimit {
     pub status: LimitStatus,
     /// Fraction used; the adapter may omit it, and it can pass 1.
@@ -133,7 +133,7 @@ pub struct RateLimit {
     pub kind: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LimitStatus {
     Allowed,
     Warning,
@@ -141,7 +141,7 @@ pub enum LimitStatus {
 }
 
 /// A change in the agent's background work.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BackgroundReport {
     Spawned {
         id: String,
@@ -155,7 +155,7 @@ pub enum BackgroundReport {
 }
 
 /// How a piece of background work ended, by the adapter's own word.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BackgroundEnd {
     Completed,
     Failed,
@@ -165,14 +165,14 @@ pub enum BackgroundEnd {
 // ── Plan (ACP `plan` update — Claude Code's TodoWrite) ──────────────────────
 
 /// One entry of the agent's plan/checklist.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlanEntry {
     pub content: String,
     pub status: PlanStatus,
 }
 
 /// Lifecycle of a plan entry.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PlanStatus {
     Pending,
     InProgress,
@@ -199,7 +199,7 @@ impl PlanStatus {
 // ── Tool calls ──────────────────────────────────
 
 /// The category of a tool call — drives the badge icon + role color.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ToolKind {
     Read,
     Edit,
@@ -242,7 +242,7 @@ impl ToolKind {
 }
 
 /// Lifecycle of a tool call (maps to the status lozenge).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ToolStatus {
     Pending,
     InProgress,
@@ -270,7 +270,7 @@ impl ToolStatus {
 }
 
 /// A piece of a tool call's content (rendered inside its card).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ToolContent {
     /// Generic text output (a command's stdout, a result blob).
     Text(String),
@@ -286,11 +286,28 @@ pub enum ToolContent {
     /// An inline image result (decoded bytes). `Arc`d so
     /// clones of the (potentially large) payload are cheap and so the render
     /// layer can key its texture cache by pointer identity.
-    Image(std::sync::Arc<Vec<u8>>),
+    Image(#[serde(with = "base64_bytes")] std::sync::Arc<Vec<u8>>),
+}
+
+/// Image bytes travel as a base64 string, not a JSON array of numbers.
+mod base64_bytes {
+    use serde::{Deserialize, Deserializer, Serializer};
+    use std::sync::Arc;
+
+    pub(super) fn serialize<S: Serializer>(b: &Arc<Vec<u8>>, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&crate::acp::base64_encode(b))
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Arc<Vec<u8>>, D::Error> {
+        let text = String::deserialize(d)?;
+        crate::acp::base64_decode(&text)
+            .map(Arc::new)
+            .ok_or_else(|| serde::de::Error::custom("invalid base64"))
+    }
 }
 
 /// A tool call surfaced by the agent.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolCall {
     pub id: String,
     /// The exact ACP title. For Claude Code Bash calls this remains the raw
@@ -305,7 +322,7 @@ pub struct ToolCall {
 }
 
 /// An in-place update to an existing [`ToolCall`] (only set fields change).
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolCallUpdate {
     pub id: String,
     pub status: Option<ToolStatus>,
@@ -317,7 +334,7 @@ pub struct ToolCallUpdate {
 // ── Permission (permission buttons) ─────────────────────────────
 
 /// One choice the agent offers for a permission request.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PermissionOption {
     pub id: String,
     pub name: String,
@@ -332,7 +349,7 @@ pub struct PermissionOption {
 /// yes is a fact about the protocol, not a styling opinion, and a renderer
 /// deciding it from the raw string is a renderer that reads `allow_always` as
 /// "allow" and offers the widest grant on the card as its most obvious button.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PermissionWeight {
     /// Grant, for this call only.
     AllowOnce,
@@ -376,7 +393,7 @@ impl PermissionRequest {
 }
 
 /// How a subagent's session ended, as the adapter reports it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SubagentEnd {
     Completed,
     Failed,
@@ -386,7 +403,7 @@ pub enum SubagentEnd {
 
 /// A parked permission request awaiting a user choice. `rpc_id` is the raw
 /// JSON-RPC id the worker must echo back in its response.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PermissionRequest {
     pub rpc_id: Value,
     pub tool_call_id: Option<String>,
@@ -415,7 +432,7 @@ pub struct PermissionRequest {
 // forms — hence the generic field model rather than an AskUserQuestion-shaped one.
 
 /// One selectable choice of an [`ElicitField`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ElicitChoice {
     /// The value written back into the response (the schema's `const`).
     pub value: String,
@@ -472,7 +489,7 @@ impl ElicitChoice {
 }
 
 /// What one [`ElicitField`] asks for.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ElicitKind {
     /// Exactly one of the choices.
     Select(Vec<ElicitChoice>),
@@ -495,7 +512,7 @@ impl ElicitKind {
 }
 
 /// One question of an elicitation form.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ElicitField {
     /// The schema property name — the key the answer goes back under.
     pub key: String,
@@ -512,7 +529,7 @@ pub struct ElicitField {
 
 /// A parked `elicitation/create` awaiting the user's answers. `rpc_id` is the
 /// raw JSON-RPC id the worker must echo back, exactly as for a permission.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Elicitation {
     pub rpc_id: Value,
     pub tool_call_id: Option<String>,
@@ -524,14 +541,14 @@ pub struct Elicitation {
 }
 
 /// One answer value in the response `content` map.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ElicitValue {
     Text(String),
     List(Vec<String>),
 }
 
 /// How the user settled an elicitation.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ElicitOutcome {
     /// Answered — `(key, value)` pairs folded into the response `content`.
     Accept(Vec<(String, ElicitValue)>),
@@ -543,10 +560,11 @@ pub enum ElicitOutcome {
 
 /// An event from the ACP worker out to the UI. `Message` wraps this with the
 /// session uid so the app routes it to the right chat.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AcpEvent {
     /// Handshake complete and a session exists. Carries the request channel so
     /// the UI can start sending prompts.
+    #[serde(skip)]
     Connected {
         tx: ReqTx,
         resumed: bool,
@@ -643,90 +661,4 @@ pub enum AcpEvent {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn option(kind: &str) -> PermissionOption {
-        PermissionOption {
-            id: "id".into(),
-            name: "name".into(),
-            kind: kind.into(),
-        }
-    }
-
-    /// The two grants are *not* the same answer, and the classification is the
-    /// only thing that keeps them apart: they share a prefix, so any test of
-    /// the raw string that is cheap enough to write inline is a test that reads
-    /// "allow for ever" as "allow".
-    #[test]
-    fn the_two_grants_are_told_apart() {
-        assert_eq!(option("allow_once").weight(), PermissionWeight::AllowOnce);
-        assert_eq!(
-            option("allow_always").weight(),
-            PermissionWeight::AllowAlways
-        );
-    }
-
-    #[test]
-    fn a_refusal_and_an_unknown_kind_both_land_on_deny() {
-        assert_eq!(option("reject_once").weight(), PermissionWeight::Deny);
-        assert_eq!(option("reject_always").weight(), PermissionWeight::Deny);
-        // An adapter this build has never met offers something it cannot
-        // classify; the safe reading of an unreadable option is "no".
-        assert_eq!(option("allow_on_tuesdays").weight(), PermissionWeight::Deny);
-        assert_eq!(option("").weight(), PermissionWeight::Deny);
-    }
-
-    #[test]
-    fn the_refusal_key_refuses_once_whatever_order_the_agent_lists_them_in() {
-        let request = |kinds: &[&str]| PermissionRequest {
-            rpc_id: Value::Null,
-            tool_call_id: None,
-            kind: ToolKind::Other,
-            title: String::new(),
-            child: None,
-            options: kinds
-                .iter()
-                .map(|kind| PermissionOption {
-                    id: kind.to_string(),
-                    name: kind.to_string(),
-                    kind: kind.to_string(),
-                })
-                .collect(),
-        };
-        let keyed =
-            |kinds: &[&str], weight| request(kinds).keyed(weight).map(|option| option.id.clone());
-        let deny = PermissionWeight::Deny;
-        assert_eq!(
-            keyed(&["reject_always", "reject_once"], deny).as_deref(),
-            Some("reject_once")
-        );
-        assert_eq!(
-            keyed(&["reject_always"], deny).as_deref(),
-            Some("reject_always")
-        );
-        assert_eq!(
-            keyed(&["allow_always", "allow_once"], PermissionWeight::AllowOnce).as_deref(),
-            Some("allow_once")
-        );
-        assert_eq!(keyed(&["allow_once"], PermissionWeight::AllowAlways), None);
-    }
-
-    #[test]
-    fn a_choice_that_throws_work_away_is_read_off_its_label() {
-        let choice = |label: &str| ElicitChoice {
-            value: "v".into(),
-            label: label.into(),
-            description: None,
-        };
-        assert!(choice("Drop them").is_destructive());
-        assert!(choice("Delete the migrations").is_destructive());
-        assert!(choice("Overwrite").is_destructive());
-        assert!(!choice("Backfill them").is_destructive());
-        assert!(!choice("Leave them").is_destructive());
-        // Whole words only, or half the vocabulary of a safe option reads as a
-        // warning.
-        assert!(!choice("Undroppable columns").is_destructive());
-        assert!(!choice("Removable media").is_destructive());
-    }
-}
+mod tests;
