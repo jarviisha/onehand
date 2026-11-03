@@ -99,6 +99,8 @@ async fn entries(lines: &mut mpsc::UnboundedReceiver<FromHost>, n: usize) -> Vec
             .expect("the sink is open");
         match line {
             FromHost::Entry { seq, entry, .. } => out.push((seq, entry)),
+            // Each watch's replay starts with one.
+            FromHost::Replay { .. } => {}
             FromHost::Answer { .. } | FromHost::Kicked => panic!("a sink only carries entries"),
         }
     }
@@ -455,4 +457,16 @@ async fn an_ended_session_holds_no_open_journal() {
     let hub = hub.lock().unwrap();
     assert_eq!(hub.sessions.len(), 2);
     assert!(hub.sessions.values().all(|s| s.journal.is_none()));
+}
+
+#[tokio::test]
+async fn a_watch_marks_its_replay_even_when_the_journal_is_empty() {
+    let (hub, opened) = hub("marked");
+    let fake = open(&hub, &opened, false);
+    let mut lines = watch(&hub, &fake.session);
+    assert!(matches!(
+        lines.try_recv(),
+        Ok(FromHost::Replay { session }) if session == fake.session
+    ));
+    assert!(lines.try_recv().is_err());
 }

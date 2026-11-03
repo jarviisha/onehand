@@ -169,7 +169,7 @@ impl Hub {
         }
     }
 
-    /// Send every entry so far to `sink`, then live entries except `Request`.
+    /// Send `Replay` and every entry so far to `sink`, then live entries except `Request`.
     pub(crate) fn watch(
         &mut self,
         session: &str,
@@ -181,6 +181,12 @@ impl Hub {
             .ok_or_else(|| unknown(session))?;
         let entries = journal::read(&s.dir)
             .map_err(|e| format!("Could not read this session's journal: {e}"))?;
+        let replay = FromHost::Replay {
+            session: session.to_string(),
+        };
+        if sink.send(replay).is_err() {
+            return Ok(());
+        }
         for (seq, entry) in entries {
             let line = FromHost::Entry {
                 session: session.to_string(),

@@ -344,35 +344,39 @@ enum Pending {
 /// Who reads a session, and how far its replay has got.
 struct Watcher {
     tx: events::UnboundedSender<AcpEvent>,
-    /// The seq last handed on: none until the replay's first entry, seq 0.
-    /// Anything else is left over from an earlier watch of the session.
+    /// Whether this watch's `Replay` has come. Until it does, what comes for
+    /// the session is left over from an earlier watch of it.
+    started: bool,
+    /// The seq last handed on, none before the replay's first entry, which is
+    /// taken whatever its seq: the journal's first lines may be unreadable.
     last: Option<u64>,
-    /// Until the host answers the watch, what comes is the replay, whose
-    /// `Ready` hands the `Chat` a closed channel: what it sends while it applies
-    /// the replay answers things long settled.
+    /// Until the host answers the watch, what comes is the replay. Its `Ready`
+    /// gives the `Chat` no channel, so nothing the `Chat` does while it
+    /// applies the replay reaches the host, which settled all of it long ago.
     replaying: bool,
-    /// The `Ready` the replay brought, given again with a live channel once it ends.
+    /// The last `Ready` the replay brought, given with a live channel once it ends.
     ready: Option<Readiness>,
 }
 
 impl Watcher {
+    fn new(tx: events::UnboundedSender<AcpEvent>) -> Self {
+        Watcher {
+            tx,
+            started: false,
+            last: None,
+            replaying: true,
+            ready: None,
+        }
+    }
+
     /// Whether `seq` is the next entry this watcher should see.
     fn takes(&mut self, seq: u64) -> bool {
-        let next = match self.last {
-            None => seq == 0,
-            Some(last) => seq > last,
-        };
+        let next = self.started && self.last.is_none_or(|last| seq > last);
         if next {
             self.last = Some(seq);
         }
         next
     }
-}
-
-/// A request channel whose requests go nowhere: what a replayed `Ready` hands
-/// a `Chat`, so the replay cannot make it answer the host again.
-fn dead_channel() -> crate::acp::ReqTx {
-    mpsc::unbounded_channel().0
 }
 
 #[derive(Clone)]
@@ -437,8 +441,9 @@ impl HostConn {
     }
 
     /// The session as a local one reads: `Ready` → `Connected` (with a `tx` whose requests go to the
-    /// host), `Event(e)` → `e`, `Request(r)` → `Echo(r)`. A `Ready` in the replay comes with a closed
-    /// `tx`, and the live one follows the replay's last event. Ends with `Disconnected`: the
+    /// host), `Event(e)` → `e`, `Request(r)` → `Echo(r)`. A `Ready` in the replay is held back, and
+    /// its one `Connected` follows the replay's last event; a replay that ended the session gives
+    /// none. Ends with `Disconnected`: the
     /// session's own, or the stream closing ("lost the connection to <host>"), or the host taken
     /// ("<host> was attached from another machine").
     pub fn watch(&self, session: &str) -> impl Stream<Item = AcpEvent> + Send + 'static {
@@ -493,6 +498,19 @@ async fn pump<R, W>(
                 let Ok(said) = serde_json::from_str::<FromHost>(&text) else { continue };
                 match said {
                     FromHost::Kicked => break format!("{host} was attached from another machine"),
+                    FromHost::Replay { session } => {
+                        let Some(w) = watchers.get_mut(&session) else { continue };
+                        // The host answers watches in order, each after its
+                        // replay: while an earlier watch of the session is
+                        // unanswered, this replay is that watch's.
+                        let earlier = pending.values().any(|p| matches!(
+                            p,
+                            Pending::Watch(s, tx) if *s == session && !w.tx.same_receiver(tx)
+                        ));
+                        if !earlier {
+                            w.started = true;
+                        }
+                    }
                     FromHost::Answer { id, result } => match (pending.remove(&id), result) {
                         (Some(Pending::Caller(tx)), result) => {
                             let _ = tx.send(result.map_err(HostError::Protocol));
@@ -512,6 +530,7 @@ async fn pump<R, W>(
                                 Err(why) => {
                                     let _ = tx.unbounded_send(AcpEvent::Disconnected(why));
                                     watchers.remove(&session);
+                                    forwarders.remove(&session);
                                 }
                             }
                         }
@@ -534,7 +553,7 @@ async fn pump<R, W>(
                         let event = match entry {
                             Entry::Ready(ready) if w.replaying => {
                                 w.ready = Some(ready);
-                                connected(dead_channel(), ready)
+                                continue;
                             }
                             Entry::Ready(ready) => {
                                 connected(live(&mut forwarders, &me, &session), ready)
@@ -558,7 +577,7 @@ async fn pump<R, W>(
                 let (call, waiter) = match cmd {
                     Cmd::Ask(call, tx) => (call, Pending::Caller(tx)),
                     Cmd::Watch(session, tx) => {
-                        let watcher = Watcher { tx: tx.clone(), last: None, replaying: true, ready: None };
+                        let watcher = Watcher::new(tx.clone());
                         // A second watch of a session replaces the first.
                         if let Some(old) = watchers.insert(session.clone(), watcher) {
                             let _ = old.tx.unbounded_send(AcpEvent::Disconnected(
@@ -567,8 +586,7 @@ async fn pump<R, W>(
                         }
                         (Call::Watch { session: session.clone() }, Pending::Watch(session, tx))
                     }
-                    // Only a live channel reaches here, held by someone who meant it:
-                    // a replay hands its `Chat` a closed one.
+                    // Only a live channel reaches here: a replay hands its `Chat` none.
                     Cmd::Request(session, request) => {
                         (Call::Request { session: session.clone(), request }, Pending::Request(session))
                     }

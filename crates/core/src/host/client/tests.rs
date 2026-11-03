@@ -39,10 +39,20 @@ impl Host {
         .await;
     }
 
-    /// Read the `Watch` a `watch` sends, and answer it.
-    async fn watched(&mut self) {
+    /// Read the `Watch` a `watch` sends, and start its replay; its id.
+    async fn replaying(&mut self) -> u64 {
         let Question { id, call } = self.ask().await;
         assert!(matches!(call, Call::Watch { session } if session == "s1"));
+        self.send(FromHost::Replay {
+            session: "s1".into(),
+        })
+        .await;
+        id
+    }
+
+    /// Read the `Watch` a `watch` sends, and answer it on an empty replay.
+    async fn watched(&mut self) {
+        let id = self.replaying().await;
         self.answer(id, Reply::Done).await;
     }
 }
@@ -399,15 +409,15 @@ async fn watching_again_skips_what_the_first_watch_had_in_flight() {
     let Question { id, .. } = host.ask().await;
     // Sent live to the first watch before the host read the second.
     host.entry(2, chunk("b")).await;
+    host.send(FromHost::Replay {
+        session: "s1".into(),
+    })
+    .await;
     for (seq, entry) in [(0, ready), (1, chunk("a")), (2, chunk("b"))] {
         host.entry(seq, entry).await;
     }
     host.answer(id, Reply::Done).await;
     host.entry(3, chunk("c")).await;
-    assert!(matches!(
-        second.next().await,
-        Some(AcpEvent::Connected { .. })
-    ));
     assert_eq!(next_chunk(&mut second).await, "a");
     assert_eq!(next_chunk(&mut second).await, "b");
     assert!(matches!(
@@ -418,10 +428,101 @@ async fn watching_again_skips_what_the_first_watch_had_in_flight() {
 }
 
 #[tokio::test]
+async fn a_replay_whose_first_line_is_unreadable_is_delivered_whole() {
+    let (conn, mut host) = pair();
+    let mut events = conn.watch("s1");
+    let id = host.replaying().await;
+    // Line 0 was torn, or is an entry this build cannot read.
+    host.entry(1, chunk("a")).await;
+    host.entry(
+        2,
+        Entry::Event(AcpEvent::Disconnected("the agent died".into())),
+    )
+    .await;
+    host.answer(id, Reply::Done).await;
+    assert_eq!(next_chunk(&mut events).await, "a");
+    assert!(matches!(
+        events.next().await,
+        Some(AcpEvent::Disconnected(why)) if why == "the agent died"
+    ));
+    drop(host);
+    assert!(events.next().await.is_none());
+}
+
+#[tokio::test]
+async fn a_replay_gives_one_live_connected_after_its_last_event() {
+    let (conn, mut host) = pair();
+    let mut events = conn.watch("s1");
+    let id = host.replaying().await;
+    host.entry(
+        0,
+        Entry::Ready(Readiness {
+            resumed: true,
+            forkable: true,
+        }),
+    )
+    .await;
+    host.entry(1, chunk("a")).await;
+    host.entry(
+        2,
+        Entry::Event(AcpEvent::TurnEnded {
+            stop_reason: "end_turn".into(),
+        }),
+    )
+    .await;
+    host.answer(id, Reply::Done).await;
+    assert_eq!(next_chunk(&mut events).await, "a");
+    assert!(matches!(
+        events.next().await,
+        Some(AcpEvent::TurnEnded { .. })
+    ));
+    let Some(AcpEvent::Connected {
+        tx,
+        resumed: true,
+        forkable: true,
+    }) = events.next().await
+    else {
+        panic!("no live Connected after the replay");
+    };
+    tx.send(AcpRequest::Cancel).unwrap();
+    let Question { call, .. } = host.ask().await;
+    assert!(
+        matches!(&call, Call::Request { session, request: AcpRequest::Cancel } if session == "s1"),
+        "{call:?}"
+    );
+    host.entry(3, chunk("b")).await;
+    assert_eq!(next_chunk(&mut events).await, "b");
+}
+
+#[tokio::test]
+async fn a_replay_that_ended_the_session_gives_no_connected() {
+    let (conn, mut host) = pair();
+    let mut events = conn.watch("s1");
+    let id = host.replaying().await;
+    host.entry(
+        0,
+        Entry::Ready(Readiness {
+            resumed: false,
+            forkable: false,
+        }),
+    )
+    .await;
+    host.entry(1, Entry::Event(AcpEvent::Disconnected("gone".into())))
+        .await;
+    host.answer(id, Reply::Done).await;
+    assert!(matches!(
+        events.next().await,
+        Some(AcpEvent::Disconnected(why)) if why == "gone"
+    ));
+    drop(host);
+    assert!(events.next().await.is_none());
+}
+
+#[tokio::test]
 async fn what_a_replay_makes_the_chat_send_never_reaches_the_host() {
     let (conn, mut host) = pair();
     let mut events = conn.watch("s1");
-    let Question { id, .. } = host.ask().await;
+    let id = host.replaying().await;
     host.entry(
         0,
         Entry::Ready(Readiness {
@@ -437,14 +538,8 @@ async fn what_a_replay_makes_the_chat_send_never_reaches_the_host() {
         }),
     )
     .await;
-    // What a `Chat` does with a replayed turn end that left a card open.
-    let Some(AcpEvent::Connected { tx: replayed, .. }) = events.next().await else {
-        panic!("no Connected");
-    };
-    let _ = replayed.send(AcpRequest::PermissionResponse {
-        rpc_id: serde_json::json!(1),
-        option_id: None,
-    });
+    // The replay hands the `Chat` no channel, so the card cancels its
+    // replayed turn end would send have nowhere to go.
     assert!(matches!(
         events.next().await,
         Some(AcpEvent::TurnEnded { .. })
@@ -453,10 +548,6 @@ async fn what_a_replay_makes_the_chat_send_never_reaches_the_host() {
     let Some(AcpEvent::Connected { tx: live, .. }) = events.next().await else {
         panic!("no live Connected after the replay");
     };
-    let _ = replayed.send(AcpRequest::PermissionResponse {
-        rpc_id: serde_json::json!(1),
-        option_id: None,
-    });
     live.send(AcpRequest::Cancel).unwrap();
     let Question { call, .. } = host.ask().await;
     assert!(
@@ -468,6 +559,42 @@ async fn what_a_replay_makes_the_chat_send_never_reaches_the_host() {
             }
         ),
         "{call:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_refused_watch_forgets_its_request_channel() {
+    let (conn, mut host) = pair();
+    let mut first = conn.watch("s1");
+    host.watched().await;
+    let ready = Entry::Ready(Readiness {
+        resumed: false,
+        forkable: false,
+    });
+    host.entry(0, ready.clone()).await;
+    let Some(AcpEvent::Connected { tx: held, .. }) = first.next().await else {
+        panic!("no Connected");
+    };
+    let mut refused = conn.watch("s1");
+    let Question { id, .. } = host.ask().await;
+    host.send(FromHost::Answer {
+        id,
+        result: Err("no such session".into()),
+    })
+    .await;
+    assert!(matches!(
+        refused.next().await,
+        Some(AcpEvent::Disconnected(_))
+    ));
+    let mut third = conn.watch("s1");
+    host.watched().await;
+    host.entry(1, ready).await;
+    let Some(AcpEvent::Connected { tx, .. }) = third.next().await else {
+        panic!("no Connected");
+    };
+    assert!(
+        !tx.same_channel(&held),
+        "a refused watch kept the old channel"
     );
 }
 

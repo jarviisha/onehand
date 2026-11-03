@@ -227,7 +227,7 @@ async fn connection(
             Some(line) = lines.recv() => {
                 let kicked = match &line {
                     FromHost::Kicked => true,
-                    FromHost::Answer { .. } | FromHost::Entry { .. } => false,
+                    FromHost::Answer { .. } | FromHost::Replay { .. } | FromHost::Entry { .. } => false,
                 };
                 if send(&mut write, &line).await.is_err() || kicked {
                     return;

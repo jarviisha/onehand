@@ -3060,3 +3060,46 @@ fn echoed_permission_answer_for_an_unknown_rpc_id_changes_nothing() {
     assert_eq!(chat.pending_permissions().len(), 1);
     assert!(rx.try_recv().is_err());
 }
+
+#[test]
+fn a_host_replay_sends_the_armed_mode_once_on_the_live_channel() {
+    let mut chat = Chat::default();
+    chat.arm_prefs(Some("plan".into()), vec![]);
+    // What a host watch yields: the replay with no `Connected`, then the one
+    // live `Connected` last.
+    chat.apply(AcpEvent::Modes {
+        current: Some("default".into()),
+        available: vec![
+            Mode {
+                id: "default".into(),
+                name: "Default".into(),
+            },
+            Mode {
+                id: "plan".into(),
+                name: "Plan".into(),
+            },
+        ],
+    });
+    chat.apply(AcpEvent::Echo(AcpRequest::Prompt {
+        text: "go".into(),
+        attachments: vec![],
+    }));
+    chat.apply(AcpEvent::Permission(permission("run it")));
+    chat.apply(AcpEvent::TurnEnded {
+        stop_reason: "end_turn".into(),
+    });
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    chat.apply(AcpEvent::Connected {
+        tx,
+        resumed: true,
+        forkable: false,
+    });
+    let mut sent = Vec::new();
+    while let Ok(request) = rx.try_recv() {
+        sent.push(request);
+    }
+    assert!(
+        matches!(sent.as_slice(), [AcpRequest::SetMode(m)] if m == "plan"),
+        "{sent:?}"
+    );
+}

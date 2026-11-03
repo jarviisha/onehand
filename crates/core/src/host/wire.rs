@@ -60,6 +60,9 @@ pub enum FromHost {
         id: u64,
         result: Result<Reply, String>,
     },
+    /// What follows for `session` is a watch's replay, from the journal's
+    /// first readable entry; it runs until that watch's answer.
+    Replay { session: String },
     Entry {
         session: String,
         seq: u64,
