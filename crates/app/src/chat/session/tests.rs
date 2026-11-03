@@ -1,4 +1,4 @@
-use super::host::{Carried, host_restart, new_chat};
+use super::host::{Carried, Restarted, host_restart, new_chat};
 use crate::acp::HostStart;
 use onehand_core::acp::Opening;
 use onehand_core::chat::ChatItem;
@@ -33,12 +33,14 @@ fn carried() -> Carried {
 #[test]
 fn restart_rewatches_a_running_host_session() {
     let info = listed(false);
-    let (start, carry) = host_restart(
-        Some(&info),
+    let Restarted::Begin(start, carry) = host_restart(
+        Ok(Some(&info)),
         carried(),
         PathBuf::from("/srv/app"),
         AgentSpec::default(),
-    );
+    ) else {
+        panic!("the host listed it");
+    };
     assert!(
         matches!(&start, HostStart::Watch(id) if id.0 == "h-1"),
         "a running session is watched"
@@ -52,12 +54,14 @@ fn restart_rewatches_a_running_host_session() {
 #[test]
 fn restart_resumes_an_ended_host_session() {
     let info = listed(true);
-    let (start, carry) = host_restart(
-        Some(&info),
+    let Restarted::Begin(start, carry) = host_restart(
+        Ok(Some(&info)),
         carried(),
         PathBuf::from("/srv/app"),
         AgentSpec::default(),
-    );
+    ) else {
+        panic!("the host listed it");
+    };
     assert!(matches!(
         &start,
         HostStart::Open { opening: Opening::Resume(id), cwd, .. }
@@ -67,15 +71,17 @@ fn restart_resumes_an_ended_host_session() {
     assert!(carry.stored.is_some());
     assert_eq!(carry.sent, 2);
 
-    let (start, _) = host_restart(
-        None,
+    let Restarted::Begin(start, _) = host_restart(
+        Ok(None),
         Carried {
             stored: None,
             sent: 0,
         },
         PathBuf::from("/srv/app"),
         AgentSpec::default(),
-    );
+    ) else {
+        panic!("the host listed none");
+    };
     assert!(matches!(
         &start,
         HostStart::Open {
@@ -83,6 +89,24 @@ fn restart_resumes_an_ended_host_session() {
             ..
         }
     ));
+}
+
+/// A host that cannot say what it runs ends the restart, saying why, rather
+/// than open a second session beside one that may still run; what was
+/// carried comes back to be kept on screen.
+#[test]
+fn a_restart_the_host_cannot_list_for_ends_on_the_error() {
+    let (why, carry) = match host_restart(
+        Err("Could not read the sessions on box: timed out".into()),
+        carried(),
+        PathBuf::from("/srv/app"),
+        AgentSpec::default(),
+    ) {
+        Restarted::Begin(..) => panic!("a restart the host could not list for must not begin"),
+        Restarted::Ended(why, carry) => (why, carry),
+    };
+    assert!(why.contains("box"), "{why}");
+    assert!(carry.stored.is_some());
 }
 
 /// A host session's transcript is the host's to keep: nothing of it is

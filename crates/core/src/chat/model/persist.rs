@@ -229,11 +229,16 @@ impl Chat {
         let has_card = stash.iter().any(|it| matches!(it, ChatItem::Subagent(_)));
         if replayed < stash.len() || self.bounded || has_card {
             self.persisted = stash.len();
-            // A notice the replay said again is already in the copy put back.
-            self.items.retain(|it| {
-                matches!(it, ChatItem::Notice { .. })
-                    && !stash.iter().any(|kept| same_notice(kept, it))
-            });
+            self.items
+                .retain(|it| matches!(it, ChatItem::Notice { .. }));
+            // The failure the copy put back stands on is said there already;
+            // the replay saying it again goes, once. Every other notice is
+            // this resume's own news and stays.
+            let again = super::turn::standing_failure(stash.iter().rev())
+                .and_then(|standing| self.items.iter().position(|it| same_notice(it, standing)));
+            if let Some(again) = again {
+                self.items.remove(again);
+            }
             self.history = stash;
             self.numbering = self.numbering.wrapping_add(1);
             self.touch();

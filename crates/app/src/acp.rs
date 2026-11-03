@@ -280,7 +280,7 @@ pub(crate) enum HostStart {
 }
 
 /// What a person reads of a host refusing to open a session.
-fn said(e: HostError) -> String {
+pub(crate) fn said(e: HostError) -> String {
     match e {
         HostError::Unreachable(why) | HostError::Protocol(why) | HostError::Unsupported(why) => why,
         HostError::Busy { build, .. } => format!("the host runs another build ({build})"),

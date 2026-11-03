@@ -3314,3 +3314,42 @@ fn a_resume_onto_a_failed_conversation_says_its_failure_once() {
         assert!(chat.failed(), "replay {replay:?}, said again: {again}");
     }
 }
+
+/// A resume that fails the way the last one did says so again: the copy put
+/// back holds the old line, and this resume's own is news, not a repeat.
+#[test]
+fn a_resume_that_fails_again_keeps_its_own_notice() {
+    let said = "Loading the session failed: gone; starting a fresh one";
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut chat = Chat::new(1, PathBuf::from("/r"), "Claude".into(), None);
+    chat.resume_from(ConversationSnapshot {
+        session_id: "sid-1".into(),
+        title: None,
+        updated: 1,
+        prefs: Prefs::default(),
+        items: vec![
+            ChatItem::User(UserMsg::text("go".to_string())),
+            ChatItem::Agent(Md::parse("done")),
+            ChatItem::failure(said, NoticeLevel::Error, None),
+        ],
+        written: 3,
+        complete: true,
+    });
+    chat.apply(AcpEvent::UserChunk("go".into()));
+    chat.apply(AcpEvent::Error {
+        text: said.into(),
+        detail: None,
+    });
+    chat.apply(AcpEvent::Connected {
+        tx,
+        resumed: false,
+        forkable: false,
+    });
+    assert_eq!(chat.history.len(), 3, "the copy is put back");
+    let again = chat
+        .items
+        .iter()
+        .filter(|it| matches!(it, ChatItem::Notice { text, .. } if text == said))
+        .count();
+    assert_eq!(again, 1, "and this resume's own line stays beside it");
+}

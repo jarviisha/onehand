@@ -13,7 +13,7 @@ use gpui::{AsyncApp, WeakEntity};
 use onehand_core::acp::Opening;
 use onehand_core::chat::{Chat, ConversationSnapshot};
 use onehand_core::config::AgentSpec;
-use onehand_core::host::client::HostConn;
+use onehand_core::host::client::{HostConn, HostError};
 use onehand_core::host::wire::{HostSession, SessionInfo};
 use onehand_core::workspace::HostName;
 use std::path::PathBuf;
@@ -61,24 +61,39 @@ pub(super) fn new_chat(uid: u64, root: PathBuf, spec: &AgentSpec, on_host: bool)
     chat
 }
 
+/// What a restart on a host comes to.
+pub(super) enum Restarted {
+    /// It begins so, with what was carried to adopt, if anything.
+    Begin(HostStart, Option<Carried>),
+    /// It ends on why, with what was carried to keep on screen.
+    Ended(String, Carried),
+}
+
 /// How a restarted host session begins, given what the host lists for the
 /// session it was on: read again while the host runs it, with nothing
 /// carried, since its journal is the whole transcript; otherwise opened on
 /// the agent's own conversation (or a fresh one), with what was carried to
 /// adopt until the agent's replay lands.
+///
+/// A host that could not say what it runs ends the restart on why, with what
+/// was carried handed back to keep on screen: opening anyway could start a
+/// second session beside one that still runs.
 pub(super) fn host_restart(
-    info: Option<&SessionInfo>,
+    listed: Result<Option<&SessionInfo>, String>,
     carried: Carried,
     cwd: PathBuf,
     spec: AgentSpec,
-) -> (HostStart, Option<Carried>) {
-    match info {
-        Some(info) if !info.ended => (HostStart::Watch(info.session.clone()), None),
-        Some(_) | None => {
+) -> Restarted {
+    match listed {
+        Err(why) => Restarted::Ended(why, carried),
+        Ok(Some(info)) if !info.ended => {
+            Restarted::Begin(HostStart::Watch(info.session.clone()), None)
+        }
+        Ok(Some(_) | None) => {
             let opening = carried.stored.as_ref().map_or(Opening::Fresh, |stored| {
                 Opening::Resume(stored.session_id.clone())
             });
-            (HostStart::Open { cwd, spec, opening }, Some(carried))
+            Restarted::Begin(HostStart::Open { cwd, spec, opening }, Some(carried))
         }
     }
 }
@@ -102,25 +117,39 @@ pub(super) async fn host_events(
     let attaching = cx.update(|cx| crate::hosts::conn(cx, &host));
     let conn = match attaching.await {
         Ok(conn) => conn,
-        Err(failure) => return crate::acp::ended(said(failure, session, cx)),
+        Err(failure) => {
+            // No journal follows, so a re-watch's copy is kept on screen.
+            if let Err((_, carried, _, _)) = decided {
+                carry(carried, session, cx);
+            }
+            return crate::acp::ended(said(failure, session, cx));
+        }
     };
     let start = match decided {
         Ok(start) => start,
         Err((id, carried, cwd, spec)) => {
-            let listed = list(conn.clone(), cx).await;
-            let found = listed.iter().find(|info| info.session == id);
-            let (start, carry) = host_restart(found, carried, cwd, spec);
-            if let Some(Carried { stored, sent }) = carry {
-                let _ = session.update(cx, |session, cx| {
-                    if sent > 0 {
-                        session.chat.carry_sent(sent);
+            let listed = list(conn.clone(), cx).await.map_err(|e| {
+                format!(
+                    "Could not read the sessions on {host}: {}",
+                    crate::acp::said(e)
+                )
+            });
+            let found = listed
+                .as_ref()
+                .map(|listed| listed.iter().find(|info| info.session == id))
+                .map_err(Clone::clone);
+            match host_restart(found, carried, cwd, spec) {
+                Restarted::Begin(start, carried) => {
+                    if let Some(carried) = carried {
+                        carry(carried, session, cx);
                     }
-                    if let Some(stored) = stored {
-                        session.adopt(stored, cx);
-                    }
-                });
+                    start
+                }
+                Restarted::Ended(why, carried) => {
+                    carry(carried, session, cx);
+                    return crate::acp::ended(why);
+                }
             }
-            start
         }
     };
     let (events, told) = cx.update(|cx| Shared::global(cx).acp.host_events(conn, start));
@@ -132,15 +161,32 @@ pub(super) async fn host_events(
     events
 }
 
-/// What the host lists, read on the ACP runtime; nothing when it cannot say.
-async fn list(conn: HostConn, cx: &mut AsyncApp) -> Vec<SessionInfo> {
+/// Put what a restart took back into the session: the prompts it had sent
+/// and the conversation it showed.
+fn carry(Carried { stored, sent }: Carried, session: &WeakEntity<ChatSession>, cx: &mut AsyncApp) {
+    let _ = session.update(cx, |session, cx| {
+        if sent > 0 {
+            session.chat.carry_sent(sent);
+        }
+        if let Some(stored) = stored {
+            session.adopt(stored, cx);
+        }
+    });
+}
+
+/// What the host lists, read on the ACP runtime.
+async fn list(conn: HostConn, cx: &mut AsyncApp) -> Result<Vec<SessionInfo>, HostError> {
     let (tx, rx) = oneshot::channel();
     cx.update(|cx| {
         Shared::global(cx).acp.spawn(async move {
             let _ = tx.send(conn.list().await);
         })
     });
-    rx.await.ok().and_then(Result::ok).unwrap_or_default()
+    rx.await.unwrap_or_else(|_| {
+        Err(HostError::Unreachable(
+            "the question to the host was dropped".into(),
+        ))
+    })
 }
 
 /// The sentence a failed attach ends the session on. A busy host is also
