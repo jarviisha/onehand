@@ -103,6 +103,27 @@ impl HostFlow {
     }
 }
 
+/// Mark the form busy on a fresh attempt while a restart it waits on runs,
+/// when it waits on one and is still up: the attempt the restart lands on.
+fn hold(flow: &mut HostFlow, add: bool, form: Option<&mut Option<u64>>) -> Option<u64> {
+    let form = form.filter(|_| add)?;
+    let attempt = flow.attempt();
+    *form = Some(attempt);
+    Some(attempt)
+}
+
+/// Let the form go from `held` as its restart lands, if that is still the
+/// attempt it waits on: `true` when the form is the one that waited.
+fn release(form: &mut Option<u64>, held: Option<u64>) -> bool {
+    match held {
+        Some(held) if landed_on(*form, held) => {
+            *form = None;
+            true
+        }
+        Some(_) | None => false,
+    }
+}
+
 /// Whether an attach's answer is for the form's attach under way: a form
 /// cancelled and opened again has another, or none.
 fn landed_on(current: Option<u64>, landed: u64) -> bool {
@@ -314,6 +335,14 @@ impl Shell {
         let Some((uids, add)) = self.host_flow.take(host) else {
             return;
         };
+        // The form waits through the restart as through its own attach: its
+        // *Add* loading and refused, and what lands matched to this attempt.
+        let held = hold(
+            &mut self.host_flow,
+            add,
+            self.host_project.as_mut().map(|draft| &mut draft.attempt),
+        );
+        cx.notify();
         let attaching = hosts::conn(cx, host);
         let host = host.clone();
         cx.spawn_in(window, async move |shell, cx| {
@@ -326,7 +355,7 @@ impl Shell {
             }
             shell
                 .update_in(cx, |shell: &mut Self, window, cx| {
-                    shell.restart_landed(uids, add, attached.map(drop), window, cx)
+                    shell.restart_landed(uids, held, attached.map(drop), window, cx)
                 })
                 .ok();
         })
@@ -334,15 +363,20 @@ impl Shell {
     }
 
     /// The service is on this build, or could not be put there: carry on
-    /// with what waited on it, or say why not.
+    /// with what waited on it, or say why not. `held` is the form's attempt
+    /// when its *Add* waited; a form cancelled or opened again since did not.
     fn restart_landed(
         &mut self,
         uids: Vec<u64>,
-        add: bool,
+        held: Option<u64>,
         done: Result<(), HostFailure>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let add = self
+            .host_project
+            .as_mut()
+            .is_some_and(|draft| release(&mut draft.attempt, held));
         match done {
             Ok(()) => {
                 for uid in uids {
@@ -352,8 +386,8 @@ impl Shell {
                     self.commit_host_project(window, cx);
                 }
             }
-            // Said once: on the form, when it waits on this and is still up,
-            // else in a toast.
+            // Said once: on the form, when it waited on this and is still
+            // up, else in a toast.
             Err(failure) => {
                 let why = restart_failure(failure);
                 match self.host_project.as_mut().filter(|_| add) {
