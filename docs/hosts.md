@@ -66,7 +66,8 @@ Every attach opens by exchanging builds (`client::connect`):
   sessions by the host's ids and how many more, and that restarting stops them; *Restart* or
   keep. A yes attaches again, restarts the service whatever is mid-turn only if the host is still
   busy (`client::restart`), then restarts each session that waited, lists the page again and
-  carries on with the form's *Add*. A failed restart says why once: inline on a form still up,
+  carries on with the form's *Add*, unless that form was put away or added its project since
+  (a form opened again is never added by an older yes). A failed restart says why once: inline on a form still up,
   else a toast, *Restarting the host service failed: …*. Kept, the session that asked ends on
   *<host> runs another build of the host service, with sessions mid-turn*, and its next restart
   asks again.
@@ -89,8 +90,9 @@ Every attach opens by exchanging builds (`client::connect`):
 - **Kept in `onehand-workspace.toml` as `<host>:<path>`**, one string in `roots` and, keyed the
   same way, in `pinned`, `unattended` and `checks` (`root_key`, `parse_root_key`,
   `crates/core/src/workspace.rs`). An entry that is not absolute and has a host before its first
-  `:` is a host root, so a file written before hosts still reads, and a local and a host folder on
-  one path are two projects that both survive a reload. Restarting onehand shows the project again;
+  `:/` is a host root, so a file written before hosts still reads, a host named by an IPv6 address
+  (`fe80::1`, `user@[fe80::1]`) keeps its colons, and a local and a host folder on one path are two
+  projects that both survive a reload. Restarting onehand shows the project again;
   it attaches when it is shown, as a session connects lazily.
 
 ## Sessions
@@ -103,16 +105,19 @@ Every attach opens by exchanging builds (`client::connect`):
 - **The project's page lists the host's sessions on that folder** (`HostConn::list`, filtered by
   folder; `crates/app/src/chat/pane/project_page/host.rs`), newest first, capped at 50
   (`HOST_SESSIONS_CAP`), read each time the page shows and on its *Refresh*. A press attaches the
-  session in the chat pane, or shows the session already watching it; what the page draws is in
-  [screens.md](screens.md#pages-without-a-session).
+  session in the chat pane, or shows the session already watching it. The page's head names the
+  folder `<host>:<path>`, and it has no *Tasks*, *Schedules* or *Settings* box, which are this
+  machine's; what the page draws is in [screens.md](screens.md#pages-without-a-session).
 - **Shown in the chat pane through the same code as a local session**
   (`crates/app/src/chat/session/host.rs`): the host's events stand in for a local adapter's.
   Prompts, cancels, card answers and picks go to the host and into its journal.
 - **Restart** re-watches the session if the host still runs it, its journal being the whole
   transcript. A session the host has ended opens a new host session resuming the agent's own
   conversation (`Opening::Resume` with the agent's session id from the transcript), or a fresh one
-  when there is none, with the old transcript kept on screen until the agent's replay lands. A
-  host that cannot say what it runs ends the restart on *Could not read the sessions on <host>: …*
+  when there is none, with the old transcript kept on screen until the agent's replay lands. One
+  the host has ended with nothing on screen to carry (a session pressed on the page whose attach a
+  service restart ended first) is read from its journal instead, so it shows rather than a blank
+  new one; its next Restart resumes it. A host that cannot say what it runs ends the restart on *Could not read the sessions on <host>: …*
   rather than risk a second session beside one still running.
 - **Nothing of a host session is written on this machine:** its chat has no store, so the host's
   journal is the only copy, and the header's past conversations, which are this machine's, are not

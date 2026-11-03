@@ -45,8 +45,10 @@ project, else the one on screen, its caret picking *Start in* or *With agent*; *
 (a pill counting tasks that need attention, none at zero), *Issues*, *Workflows* and *Schedules*,
 each filled while its page shows; *Sessions* with a warning-ink *N need attention* chip (shown above zero or
 while on, toggling that filter and back) and the filter menu (*By project*, *All sessions*, *Needs
-attention*, *Recent activity*) over a hairline; the scrolling list, ending on *Add project…* and, under it with no gap, *Add a project on a
-host…*, which opens the form naming the host and its folder there; a foot with *Settings*, a page row like the five above, filled while it shows. The rail is drawn as the
+attention*, *Recent activity*) over a hairline; the scrolling list, ending on *Add project…* and,
+under it with no gap, *Add a project on a host…*, which opens the form naming the host and its
+folder there; a foot with *Settings*, a page row like the five above, filled while it shows. The
+rail is drawn as the
 library's sidebar draws its items: a row's name in the sidebar's ink and its second line muted, the
 row under the pointer on the sidebar's accent fill, and the one where the person is on that fill
 too, in the ink paired with it and at medium weight. The *Sessions* label is the small muted
@@ -102,8 +104,9 @@ ends); a spacer; *N in background* (only while the session's agent has work runn
 background: a menu of each item's name, its kind and how long it has run, each row stopping that
 one item and never the turn, 12 listed and then *N more*; when an item ends, the transcript keeps a
 notice of how and after how long: *Background work finished after 2m 14s: npm test*, an error when it
-failed, *interrupted* when the agent went away first); past conversations (not on a host session, whose
-conversations are not kept on this machine) and *Close session* (only while a session shows); last, while the session on screen leads workers, its workers, a
+failed, *interrupted* when the agent went away first); past conversations (not on a host session,
+whose conversations are not kept on this machine) and *Close session* (only while a session
+shows); last, while the session on screen leads workers, its workers, a
 warning dot on it while one waits on the person and the region is closed. The docks' toggles are
 the title bar's. On the overview, Tasks, Issues,
 Workflows, Schedules and Settings, which name themselves in their head, it carries no name; none of these has a dots menu. As the pane narrows, the name gives way
@@ -278,14 +281,16 @@ dragged height kept).
   narrowed to the project; *No schedules here* at none; capped at five; reading and a failed read
   said as on the page); then the box *Settings*
   (its *Check command* field). The page scrolls as one.
-- A project on a host shows the same page, *Refresh* (a quiet icon) before *New session* in its
-  head, and in place of *Past conversations* the box *Sessions on <host>* with its count: a row
-  per session the host keeps in that folder, newest first (its agent, then *started 3m ago* or
-  *started just now*, and *running*, in the running ink while mid-turn, or *ended* at the edge), a
-  press attaching to it in the pane, or showing the session already attached to it there; capped at 50 with *N more on this host*. *Attaching to <host>…* with a spinner while
-  it waits; *No sessions on <host> for this folder yet* at none; a failure says why in the warning
-  ink with *Try again* (secondary); a host on another build asks whether to restart its service,
-  and a yes lists again.
+- A project on a host shows the same head, its path written `<host>:<path>` (never shortened to
+  `~/`) with no git line, and *Refresh* (a quiet icon) before *New session*; under it one box,
+  *Sessions on <host>* with its count, in place of *Past conversations*, and neither *Tasks*,
+  *Schedules* nor *Settings*, which are this machine's: a row per session the host keeps in that
+  folder, newest first (its agent, then *started 3m ago* or *started just now*, and *running*, in
+  the running ink while mid-turn, or *ended* at the edge), a press attaching to it in the pane, or
+  showing the session already attached to it there; capped at 50 with *N more on this host*.
+  *Attaching to <host>…* with a spinner while it waits; *No sessions on <host> for this folder
+  yet* at none; a failure says why in the warning ink with *Try again* (secondary); a host on
+  another build asks whether to restart its service, and a yes lists again.
 - *Workspace overview* shows, under its head (*Overview*), across all projects, the boxes *Waiting
   on you* (runs waiting for an answer or an approval, and sessions waiting, failed, finished or
   lost) and *Working*, then *Projects* as a grid of tiles (not drawn without projects), then the

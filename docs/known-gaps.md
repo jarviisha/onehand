@@ -294,6 +294,6 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   whose attach was turned down in the moment the question closed after *Keep* ends on the busy
   line without being asked; its next restart asks again. Remembering a *Keep* per host would
   quiet the page, and holding the question until its close has finished would catch the late one.
-- **The rows of a host project's sessions take no keyboard focus**, as the Tasks and Schedules
-  boxes' rows beside them do not; they are reached by pointer only. Making each box row a tab
+- **The rows of a host project's sessions take no keyboard focus**, as the rows of a local
+  project page's Tasks and Schedules boxes do not; they are reached by pointer only. Making each box row a tab
   stop with `Enter` opening it would fix all three.
