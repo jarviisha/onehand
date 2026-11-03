@@ -72,7 +72,7 @@ impl Hub {
     ) -> Result<String, String> {
         // The laptop clears it already; its variables name the laptop's paths.
         agent.env.clear();
-        let mut this = hub.lock().unwrap();
+        let mut this = hub.lock().unwrap_or_else(|e| e.into_inner());
         let mut launch = agent.launch(this.path.as_deref())?;
         if let Some(path) = &this.path {
             // A declared agent's command, and whatever it runs in turn, is found
@@ -259,7 +259,7 @@ fn unknown(session: &str) -> String {
 async fn drive(hub: Arc<Mutex<Hub>>, id: String, mut events: BoxStream<'static, AcpEvent>) {
     let mut said_why = false;
     while let Some(event) = events.next().await {
-        let mut hub = hub.lock().unwrap();
+        let mut hub = hub.lock().unwrap_or_else(|e| e.into_inner());
         match event {
             AcpEvent::Connected {
                 tx,
@@ -306,7 +306,7 @@ async fn drive(hub: Arc<Mutex<Hub>>, id: String, mut events: BoxStream<'static, 
             | AcpEvent::Echo(_)) => hub.record(&id, Entry::Event(event)),
         }
     }
-    let mut hub = hub.lock().unwrap();
+    let mut hub = hub.lock().unwrap_or_else(|e| e.into_inner());
     if !said_why {
         hub.record(&id, Entry::Event(AcpEvent::Disconnected(CLOSED.into())));
     }

@@ -36,7 +36,9 @@ pub(crate) async fn run(dir: PathBuf) -> ExitCode {
     let mut stdout = tokio::io::stdout();
     let _ = tokio::io::copy(&mut from, &mut stdout).await;
     let _ = stdout.flush().await;
-    ExitCode::SUCCESS
+    // The service has closed its side. Exit now: returning would wait on the
+    // stdin read, which sits on a blocking thread and ends only when stdin does.
+    std::process::exit(0);
 }
 
 /// Start `serve` in a process group of its own, so it outlives this SSH

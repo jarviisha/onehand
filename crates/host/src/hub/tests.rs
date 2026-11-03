@@ -209,10 +209,10 @@ async fn live_requests_are_not_echoed() {
         .unwrap()
         .request(&fake.session, prompt("go"))
         .unwrap();
-    match fake.request().await {
-        AcpRequest::Prompt { text, .. } => assert_eq!(text, "go"),
-        other => panic!("the agent got {other:?}"),
-    }
+    let AcpRequest::Prompt { text, .. } = fake.request().await else {
+        panic!("the agent got something other than the prompt");
+    };
+    assert_eq!(text, "go");
     settle().await;
     assert!(
         lines.try_recv().is_err(),
@@ -253,13 +253,11 @@ async fn card_parked_while_detached_is_answerable_after() {
             },
         )
         .unwrap();
-    match fake.request().await {
-        AcpRequest::PermissionResponse { rpc_id, option_id } => {
-            assert_eq!(rpc_id, json!(7));
-            assert_eq!(option_id.as_deref(), Some("allow"));
-        }
-        other => panic!("the agent got {other:?}"),
-    }
+    let AcpRequest::PermissionResponse { rpc_id, option_id } = fake.request().await else {
+        panic!("the agent got something other than the answer");
+    };
+    assert_eq!(rpc_id, json!(7));
+    assert_eq!(option_id.as_deref(), Some("allow"));
 }
 
 #[tokio::test]
@@ -279,26 +277,22 @@ async fn attachments_are_dropped_and_said() {
             },
         )
         .unwrap();
-    match fake.request().await {
-        AcpRequest::Prompt { text, attachments } => {
-            assert_eq!(text, "look");
-            assert!(attachments.is_empty());
-        }
-        other => panic!("the agent got {other:?}"),
-    }
+    let AcpRequest::Prompt { text, attachments } = fake.request().await else {
+        panic!("the agent got something other than the prompt");
+    };
+    assert_eq!(text, "look");
+    assert!(attachments.is_empty());
     let dir = hub.lock().unwrap().dir.join("sessions").join(&fake.session);
     let journal = journal::read(&dir).unwrap();
     assert_eq!(kinds(&journal), ["ready", "event:Error", "request:Prompt"]);
-    match &journal[1].1 {
-        Entry::Event(AcpEvent::Error { text, detail }) => {
-            assert_eq!(
-                text,
-                "Attachments are not sent to a host yet; the prompt went without them"
-            );
-            assert!(detail.is_none());
-        }
-        other => panic!("journaled {other:?}"),
-    }
+    let Entry::Event(AcpEvent::Error { text, detail }) = &journal[1].1 else {
+        panic!("the second entry is not the error");
+    };
+    assert_eq!(
+        text,
+        "Attachments are not sent to a host yet; the prompt went without them"
+    );
+    assert!(detail.is_none());
 }
 
 #[tokio::test]

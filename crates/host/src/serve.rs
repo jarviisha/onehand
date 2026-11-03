@@ -7,7 +7,7 @@ use std::ffi::OsString;
 use std::fs::{self, File, OpenOptions};
 use std::io::Write as _;
 use std::os::unix::ffi::OsStringExt as _;
-use std::os::unix::fs::PermissionsExt as _;
+use std::os::unix::fs::{DirBuilderExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
 use std::process::{ExitCode, Stdio};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -16,7 +16,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use futures::StreamExt as _;
 use onehand_core::acp;
 use onehand_core::host::wire::{Ask, Call, Line, Reply, PROTOCOL};
-use onehand_core::instance::{hold_lock, socket_path};
+use onehand_core::instance::{hold_lock, holding, socket_path};
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
 use tokio::net::unix::OwnedWriteHalf;
 use tokio::net::{UnixListener, UnixStream};
@@ -34,7 +34,10 @@ pub(crate) fn log(message: &str) {
         .map_or(0, |d| d.as_secs());
     match LOG.get() {
         Some(file) => {
-            let _ = writeln!(file.lock().unwrap(), "{secs} {message}");
+            let _ = writeln!(
+                file.lock().unwrap_or_else(|e| e.into_inner()),
+                "{secs} {message}"
+            );
         }
         None => eprintln!("onehand-host: {message}"),
     }
@@ -44,13 +47,22 @@ pub(crate) fn log(message: &str) {
 const KICK_GRACE: Duration = Duration::from_secs(2);
 
 pub(crate) async fn run(dir: PathBuf, build: String) -> ExitCode {
-    if let Err(e) = fs::create_dir_all(&dir) {
+    if let Err(e) = private_dir(&dir) {
         eprintln!("onehand-host: cannot make {}: {e}", dir.display());
         return ExitCode::FAILURE;
     }
     if hold_lock(&dir).is_err() {
         // Another service already runs on this directory, which is what was wanted.
         return ExitCode::SUCCESS;
+    }
+    if !holding() {
+        // Without the lock this process cannot know a socket there is stale,
+        // so it must not pull it from under a service that may own it.
+        eprintln!(
+            "onehand-host: no lock could be taken on {}; not serving",
+            dir.display()
+        );
+        return ExitCode::FAILURE;
     }
     match OpenOptions::new()
         .create(true)
@@ -62,7 +74,7 @@ pub(crate) async fn run(dir: PathBuf, build: String) -> ExitCode {
         }
         Err(e) => eprintln!("onehand-host: no log: {e}"),
     }
-    let listener = match bind(&socket_path(&dir)) {
+    let listener = match bind(&dir) {
         Ok(listener) => listener,
         Err(e) => {
             log(&format!("cannot listen: {e}"));
@@ -90,7 +102,7 @@ pub(crate) async fn run(dir: PathBuf, build: String) -> ExitCode {
                 task.abort();
                 let _ = task.await;
             }
-            hub.lock().unwrap().unwatch_all();
+            hub.lock().unwrap_or_else(|e| e.into_inner()).unwatch_all();
         }
         let (out, lines) = mpsc::unbounded_channel();
         let task = tokio::spawn(connection(
@@ -104,8 +116,29 @@ pub(crate) async fn run(dir: PathBuf, build: String) -> ExitCode {
     }
 }
 
-/// Listen on `socket`, clearing one a dead service left, open to this user alone.
-fn bind(socket: &Path) -> std::io::Result<UnixListener> {
+/// Make `dir`, and every folder it needs, readable by this user alone: the
+/// journals in it hold whole transcripts.
+fn private_dir(dir: &Path) -> std::io::Result<()> {
+    fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(dir)?;
+    fs::set_permissions(dir, fs::Permissions::from_mode(0o700))
+}
+
+/// Listen on the socket in `dir`, clearing one a dead service left, open to
+/// this user alone.
+fn bind(dir: &Path) -> std::io::Result<UnixListener> {
+    let socket = socket_path(dir);
+    if !socket.starts_with(dir) {
+        // A path too long for a socket address puts it in a shared folder,
+        // where it would be open to others between the bind and the chmod.
+        return Err(std::io::Error::other(format!(
+            "{} is too long a path for the socket; set ONEHAND_HOST_DIR to a shorter one",
+            dir.display()
+        )));
+    }
+    let socket = socket.as_path();
     match fs::remove_file(socket) {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -124,20 +157,34 @@ async fn login_path() -> Option<OsString> {
         return own;
     };
     let output = tokio::process::Command::new(shell)
-        .args(["-ilc", r#"printf %s "$PATH""#])
+        .args(["-ilc", &format!(r#"printf '\n{MARKER}%s' "$PATH""#)])
         .stdin(Stdio::null())
         .stderr(Stdio::null())
         .kill_on_drop(true)
         .output();
     match tokio::time::timeout(Duration::from_secs(10), output).await {
-        Ok(Ok(out)) if out.status.success() && !out.stdout.is_empty() => {
-            Some(OsString::from_vec(out.stdout))
-        }
+        Ok(Ok(out)) if out.status.success() => match after_marker(&out.stdout) {
+            Some(path) => Some(OsString::from_vec(path.to_vec())),
+            None => {
+                log("the login shell gave no PATH; using the service's own");
+                own
+            }
+        },
         Ok(Ok(_)) | Ok(Err(_)) | Err(_) => {
             log("the login shell gave no PATH; using the service's own");
             own
         }
     }
+}
+
+/// What a login shell's output says after its last marker, so whatever its
+/// startup files print before cannot end up in PATH.
+const MARKER: &str = "__ONEHAND_PATH__";
+
+fn after_marker(output: &[u8]) -> Option<&[u8]> {
+    let marker = MARKER.as_bytes();
+    let at = output.windows(marker.len()).rposition(|w| w == marker)?;
+    Some(&output[at + marker.len()..]).filter(|path| !path.is_empty())
 }
 
 /// Serve one attach: its asks in, its answers and the entries it watches out.
@@ -158,6 +205,9 @@ async fn connection(
                 if exit {
                     flush(&mut write, &mut lines).await;
                     log("shut down by request");
+                    // ponytail: exit skips kill_on_drop, so agent children are left
+                    // to end on their own when their stdin closes; kill them here
+                    // if an adapter is ever seen to outlive it.
                     std::process::exit(0);
                 }
             }
@@ -174,7 +224,7 @@ async fn connection(
     }
     // The laptop went away: say what was already queued, then stop watching for it.
     flush(&mut write, &mut lines).await;
-    hub.lock().unwrap().unwatch_all();
+    hub.lock().unwrap_or_else(|e| e.into_inner()).unwatch_all();
 }
 
 /// Answer one line; whether the service should now exit.
@@ -189,7 +239,7 @@ fn answer(hub: &Arc<Mutex<Hub>>, build: &str, out: &UnboundedSender<Line>, line:
     let mut exit = false;
     let result = match call {
         Call::Hello { .. } => {
-            let busy = hub.lock().unwrap().list();
+            let busy = hub.lock().unwrap_or_else(|e| e.into_inner()).list();
             Ok(Reply::Welcome {
                 build: build.to_string(),
                 protocol: PROTOCOL,
@@ -204,7 +254,9 @@ fn answer(hub: &Arc<Mutex<Hub>>, build: &str, out: &UnboundedSender<Line>, line:
             exit = true;
             Ok(Reply::Done)
         }
-        Call::List => Ok(Reply::Sessions(hub.lock().unwrap().list())),
+        Call::List => Ok(Reply::Sessions(
+            hub.lock().unwrap_or_else(|e| e.into_inner()).list(),
+        )),
         Call::Open {
             cwd,
             agent,
@@ -212,12 +264,12 @@ fn answer(hub: &Arc<Mutex<Hub>>, build: &str, out: &UnboundedSender<Line>, line:
         } => Hub::open(hub, cwd, agent, opening).map(|session| Reply::Opened { session }),
         Call::Watch { session } => hub
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .watch(&session, out.clone())
             .map(|()| Reply::Done),
         Call::Request { session, request } => hub
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .request(&session, request)
             .map(|()| Reply::Done),
     };
@@ -245,3 +297,6 @@ async fn send(write: &mut OwnedWriteHalf, line: &Line) -> std::io::Result<()> {
     text.push('\n');
     write.write_all(text.as_bytes()).await
 }
+
+#[cfg(test)]
+mod tests;

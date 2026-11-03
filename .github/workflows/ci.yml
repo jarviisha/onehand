@@ -88,6 +88,16 @@ jobs:
             exit 1
           fi
 
+      # The host service runs on a machine with no display, so it is held to
+      # the same rule as the core it is built from.
+      - name: Host stays framework-free
+        run: |
+          if cargo tree --locked -p onehand-host -i gpui-pre > /dev/null 2>&1; then
+            echo "::error::onehand-host has picked up a gpui dependency"
+            cargo tree --locked -p onehand-host -i gpui-pre
+            exit 1
+          fi
+
   app:
     name: App tests
     runs-on: ubuntu-latest
