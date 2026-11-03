@@ -116,6 +116,7 @@ fn workspace_sources() -> Vec<(String, String)> {
         "crates/editor/src",
         "crates/files/src",
         "crates/github/src",
+        "crates/host/src",
         "crates/issues/src",
         "crates/markdown/src",
         "crates/neovim/src",

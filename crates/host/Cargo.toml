@@ -1,0 +1,18 @@
+[package]
+name = "onehand-host"
+version = "0.1.0"
+edition = "2021"
+description = "The service that keeps onehand sessions alive on a host reached over SSH"
+license = "MIT OR Apache-2.0"
+
+# Built from core alone: this runs on a machine with no display, so it must
+# never link a GUI framework.
+
+[dependencies]
+onehand-core = { path = "../core" }
+tokio = { version = "1", features = [
+    "rt-multi-thread", "macros", "net", "io-std", "io-util", "process", "sync", "time",
+] }
+futures = "0.3"
+serde_json = "1"
+dirs = "5"

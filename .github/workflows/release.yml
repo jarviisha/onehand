@@ -107,7 +107,7 @@ jobs:
       # run that silently re-resolved would not be shipping the build this tag
       # was tested as.
       - name: Build
-        run: cargo build --release --locked
+        run: cargo build --release --locked -p onehand -p onehand-host
 
       # Not stripped. The release profile emits no debug info to begin with, and
       # what a strip would remove is the symbol table -- the thing that puts
@@ -118,6 +118,7 @@ jobs:
           name="onehand-${TAG}-linux-x86_64"
           mkdir "$name"
           cp target/release/onehand "$name"/
+          cp target/release/onehand-host "$name"/
           cp assets/onehand.svg "$name"/
           cp scripts/install-desktop.sh "$name"/
           cp README.md CHANGELOG.md LICENSE-MIT LICENSE-APACHE "$name"/

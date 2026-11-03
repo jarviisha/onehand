@@ -125,6 +125,7 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
 | `crates/workbench` | `onehand-workbench` | the Workbench mode contract: `WorkbenchModeSpec`, `ModeId`, `WorkbenchMode`, `Request`, `Ask` |
 | `crates/terminal-ui` | `onehand-terminal-ui` | PTY/grid ownership shared by the terminal dock and Neovim |
 | `crates/editor`, `files`, `markdown`, `neovim`, `issues`, `claude-plugins` | `onehand-<name>` | the Workbench modes, one crate each (Files lives inside Editor; `claude-plugins` is the Plugins mode, which manages Claude Code's plugins); composed in `crates/app/src/features.rs` |
+| `crates/host` | `onehand-host` | the service that runs sessions on a host reached over SSH; built from core alone, never links GPUI |
 | `crates/github`, `crates/telegram` | `onehand-github`, `onehand-telegram` | the GitHub `Connector` and the Telegram `RemoteChannel`, implementing core's traits; composed in `crates/app/src/features.rs` |
 | `vendor/gpui-terminal` | `gpui-terminal` | vendored terminal grid + our `onehand patch` interaction layer |
 
