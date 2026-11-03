@@ -1,4 +1,4 @@
-use super::host::{host_restart, new_chat};
+use super::host::{Carried, host_restart, new_chat};
 use crate::acp::HostStart;
 use onehand_core::acp::Opening;
 use onehand_core::chat::ChatItem;
@@ -16,13 +16,26 @@ fn listed(ended: bool) -> SessionInfo {
     }
 }
 
-/// A host session the host still runs is read again, not opened anew.
+/// What was carried from the session being restarted: a snapshot of a
+/// conversation the agent knows as `acp-1`, and two prompts sent.
+fn carried() -> Carried {
+    let mut chat = new_chat(1, PathBuf::from("/srv/app"), &AgentSpec::default(), true);
+    chat.session_id = Some("acp-1".into());
+    Carried {
+        stored: chat.take_snapshot(),
+        sent: 2,
+    }
+}
+
+/// A host session the host still runs is read again, not opened anew, and
+/// nothing is carried into it: its journal is the whole transcript, prompts
+/// and all.
 #[test]
 fn restart_rewatches_a_running_host_session() {
     let info = listed(false);
-    let start = host_restart(
+    let (start, carry) = host_restart(
         Some(&info),
-        Opening::Resume("acp-1".into()),
+        carried(),
         PathBuf::from("/srv/app"),
         AgentSpec::default(),
     );
@@ -30,16 +43,18 @@ fn restart_rewatches_a_running_host_session() {
         matches!(&start, HostStart::Watch(id) if id.0 == "h-1"),
         "a running session is watched"
     );
+    assert!(carry.is_none(), "nothing adopted, no prompts carried");
 }
 
 /// One that ended, or that the host no longer lists, opens a new host session
-/// on the agent's own conversation, or a fresh one when there is none.
+/// on the agent's own conversation, which is adopted until its replay lands;
+/// with none, a fresh one.
 #[test]
 fn restart_resumes_an_ended_host_session() {
     let info = listed(true);
-    let start = host_restart(
+    let (start, carry) = host_restart(
         Some(&info),
-        Opening::Resume("acp-1".into()),
+        carried(),
         PathBuf::from("/srv/app"),
         AgentSpec::default(),
     );
@@ -48,10 +63,16 @@ fn restart_resumes_an_ended_host_session() {
         HostStart::Open { opening: Opening::Resume(id), cwd, .. }
             if id == "acp-1" && cwd.as_path() == std::path::Path::new("/srv/app")
     ));
+    let carry = carry.expect("an open carries what the restart took");
+    assert!(carry.stored.is_some());
+    assert_eq!(carry.sent, 2);
 
-    let start = host_restart(
+    let (start, _) = host_restart(
         None,
-        Opening::Fresh,
+        Carried {
+            stored: None,
+            sent: 0,
+        },
         PathBuf::from("/srv/app"),
         AgentSpec::default(),
     );

@@ -3,7 +3,7 @@ use super::project_page::EmptyProject;
 use super::{ChatPane, ChatPaneEvent, ProjectFacts, Restart, SessionSignal, switching_away};
 use crate::chat::composer::Composer;
 use crate::chat::conversation::{Conversation, SessionPhase};
-use crate::chat::session::{ChatEvent, ChatSession, HostBegin, OnHost};
+use crate::chat::session::{Carried, ChatEvent, ChatSession, HostBegin, OnHost};
 use gpui::{App, Context, Entity, Focusable, SharedString, Window};
 use onehand_core::acp::Opening;
 use onehand_core::chat::{Chat, ConvMeta};
@@ -191,23 +191,24 @@ impl ChatPane {
             return;
         };
         let (root, spec, dirs) = (conv.root.clone(), conv.spec.clone(), conv.dirs.clone());
-        // On a host, a session the host has named is read again; one it has
-        // not opens anew.
-        let on_host = conv.host.as_ref().map(|(host, known)| OnHost {
-            host: host.clone(),
-            begin: match (&start, known) {
-                (Start::Watch(id), _) => HostBegin::Watch(id.clone()),
-                (Start::Fresh | Start::Resume(_) | Start::Fork(_), Some(id)) => {
-                    HostBegin::Rewatch(id.clone())
-                }
-                (Start::Fresh | Start::Resume(_) | Start::Fork(_), None) => HostBegin::Open,
-            },
-        });
         // What the old session had sent, counted on: who prompted a worker is
         // read from it, and the new chat would start it from nothing.
-        let sent_before = conv
+        let mut sent_before = conv
             .session()
             .map_or(0, |session| session.read(cx).chat.prompts_sent);
+        let (on_host, start) = match &conv.host {
+            None => (None, start),
+            Some((host, known)) => {
+                let (begin, start) = host_begin(start, known.as_ref(), sent_before);
+                // A re-watch counts the prompts again as its journal replays
+                // them; what it carries is for an open in its place.
+                if matches!(begin, HostBegin::Rewatch(..)) {
+                    sent_before = 0;
+                }
+                let host = host.clone();
+                (Some(OnHost { host, begin }), start)
+            }
+        };
         // Its names too: a worker's stand-in is never saved, and a name its
         // lead gave is not written down until a turn ends.
         let titles = conv.session().map(|session| {
@@ -224,8 +225,10 @@ impl ChatPane {
             root.clone(),
             &spec,
             match &start {
-                Start::Fresh | Start::Watch(_) => Opening::Fresh,
-                Start::Resume(stored) => Opening::Resume(stored.session_id.clone()),
+                Start::Fresh | Start::Watch(_) | Start::Restart(None) => Opening::Fresh,
+                Start::Resume(stored) | Start::Restart(Some(stored)) => {
+                    Opening::Resume(stored.session_id.clone())
+                }
                 Start::Fork(staged) => Opening::Fork {
                     from: staged.from.clone(),
                     message: staged.message.clone(),
@@ -248,8 +251,10 @@ impl ChatPane {
         // parses the markdown being adopted, and a transcript whose blocks
         // are unparsed draws its own source.
         match start {
-            Start::Fresh | Start::Watch(_) => {}
-            Start::Resume(stored) => session.update(cx, |session, cx| session.adopt(stored, cx)),
+            Start::Fresh | Start::Watch(_) | Start::Restart(None) => {}
+            Start::Resume(stored) | Start::Restart(Some(stored)) => {
+                session.update(cx, |session, cx| session.adopt(stored, cx))
+            }
             Start::Fork(staged) => {
                 session.update(cx, |session, cx| session.adopt_fork(staged.seed, cx));
                 if let Some(conv) = self.conversations.get_mut(&uid) {
@@ -507,9 +512,9 @@ impl ChatPane {
         let stored = self
             .session_of(uid)
             .and_then(|s| s.update(cx, |s, _| s.chat.take_snapshot()));
-        // `connect` drops the old adapter before spawning the new one, so
+        // `connect_as` drops the old adapter before spawning the new one, so
         // nothing here has to take the session apart first.
-        self.connect(uid, stored, cx);
+        self.connect_as(uid, Start::Restart(stored), cx);
         Restart::Restarted
     }
 
@@ -831,8 +836,35 @@ impl ChatPane {
     }
 }
 
+/// How a session in a host project begins on the host, given how its
+/// conversation starts, the host session it was on and the prompts it sent;
+/// with the start that is left for the pane to adopt at once.
+///
+/// Only a restart reads the host session again. What it took from the old
+/// session rides with the re-watch, adopted only if the host has ended the
+/// session and a new one opens in its place: a re-watch replays the whole
+/// journal, prompts and all, and a copy adopted beside it is shown twice.
+pub(super) fn host_begin(
+    start: Start,
+    known: Option<&HostSession>,
+    sent: usize,
+) -> (HostBegin, Start) {
+    match (start, known) {
+        (Start::Watch(id), _) => (HostBegin::Watch(id), Start::Fresh),
+        (Start::Restart(stored), Some(id)) => (
+            HostBegin::Rewatch(id.clone(), Carried { stored, sent }),
+            Start::Fresh,
+        ),
+        // Adopted as a local fork is, so the refusal ends it as a failed one.
+        (start @ Start::Fork(_), _) => (HostBegin::Refuse("Not on a host yet"), start),
+        (start @ (Start::Fresh | Start::Resume(_) | Start::Restart(_)), _) => {
+            (HostBegin::Open, start)
+        }
+    }
+}
+
 /// How a session's conversation starts.
-enum Start {
+pub(super) enum Start {
     Fresh,
     /// On a saved conversation, resumed.
     Resume(onehand_core::chat::ConversationSnapshot),
@@ -840,4 +872,7 @@ enum Start {
     Fork(StagedFork),
     /// On a host session the host already keeps.
     Watch(HostSession),
+    /// Again on what it was on, the conversation taken from the session
+    /// being replaced: a restart.
+    Restart(Option<onehand_core::chat::ConversationSnapshot>),
 }

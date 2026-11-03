@@ -11,14 +11,12 @@ use crate::state::Shared;
 use futures::channel::oneshot;
 use gpui::{AsyncApp, WeakEntity};
 use onehand_core::acp::Opening;
-use onehand_core::chat::Chat;
+use onehand_core::chat::{Chat, ConversationSnapshot};
 use onehand_core::config::AgentSpec;
 use onehand_core::host::client::HostConn;
 use onehand_core::host::wire::{HostSession, SessionInfo};
 use onehand_core::workspace::HostName;
-use std::future::Future;
 use std::path::PathBuf;
-use std::pin::Pin;
 
 /// Which host a session runs on, and how its events begin there.
 pub(crate) struct OnHost {
@@ -33,18 +31,25 @@ pub(crate) enum HostBegin {
     /// The host session named, read whatever state it is in.
     Watch(HostSession),
     /// The host session named, read again while the host still runs it;
-    /// otherwise a new one, opened as the session's opening says.
-    Rewatch(HostSession),
+    /// otherwise a new one, on what was carried.
+    Rewatch(HostSession, Carried),
+    /// Nothing begins, for this reason.
+    Refuse(&'static str),
 }
 
-/// The attach to a host, under way.
-pub(super) type Attaching = Pin<Box<dyn Future<Output = Result<HostConn, HostFailure>>>>;
+/// What a restart took from the session it replaces, for a host session
+/// opened in place of one the host has ended.
+pub(crate) struct Carried {
+    pub(crate) stored: Option<ConversationSnapshot>,
+    /// The prompts the old session had sent.
+    pub(crate) sent: usize,
+}
 
 /// Where a session's events come from.
 pub(super) enum Source {
     Local(Events),
-    /// The attach, then what to begin once it lands.
-    Host(Box<(Attaching, (OnHost, PathBuf, AgentSpec, Opening))>),
+    /// The host, and what to begin there once it is attached.
+    Host(Box<(OnHost, PathBuf, AgentSpec, Opening)>),
 }
 
 /// The transcript model a session starts from. A host session's transcript is
@@ -57,43 +62,65 @@ pub(super) fn new_chat(uid: u64, root: PathBuf, spec: &AgentSpec, on_host: bool)
 }
 
 /// How a restarted host session begins, given what the host lists for the
-/// session it was on: read again while the host runs it, otherwise opened as
-/// `opening` says (the agent's own conversation resumed, or a fresh one).
+/// session it was on: read again while the host runs it, with nothing
+/// carried, since its journal is the whole transcript; otherwise opened on
+/// the agent's own conversation (or a fresh one), with what was carried to
+/// adopt until the agent's replay lands.
 pub(super) fn host_restart(
     info: Option<&SessionInfo>,
-    opening: Opening,
+    carried: Carried,
     cwd: PathBuf,
     spec: AgentSpec,
-) -> HostStart {
+) -> (HostStart, Option<Carried>) {
     match info {
-        Some(info) if !info.ended => HostStart::Watch(info.session.clone()),
-        Some(_) | None => HostStart::Open { cwd, spec, opening },
+        Some(info) if !info.ended => (HostStart::Watch(info.session.clone()), None),
+        Some(_) | None => {
+            let opening = carried.stored.as_ref().map_or(Opening::Fresh, |stored| {
+                Opening::Resume(stored.session_id.clone())
+            });
+            (HostStart::Open { cwd, spec, opening }, Some(carried))
+        }
     }
 }
 
-/// The events of a host session, once `attached` has landed; a failure is
-/// the one `Disconnected` that says why.
+/// The events of a host session, once its host is attached; a refusal or a
+/// failure is the one `Disconnected` that says why.
 pub(super) async fn host_events(
-    attached: Result<HostConn, HostFailure>,
     (on_host, cwd, spec, opening): (OnHost, PathBuf, AgentSpec, Opening),
     session: &WeakEntity<ChatSession>,
     cx: &mut AsyncApp,
 ) -> Events {
-    let conn = match attached {
+    let OnHost { host, begin } = on_host;
+    // Either the start, known already, or what a re-watch decides on once
+    // the host has said what it runs.
+    let decided = match begin {
+        HostBegin::Refuse(why) => return crate::acp::ended(why.into()),
+        HostBegin::Open => Ok(HostStart::Open { cwd, spec, opening }),
+        HostBegin::Watch(id) => Ok(HostStart::Watch(id)),
+        HostBegin::Rewatch(id, carried) => Err((id, carried, cwd, spec)),
+    };
+    let attaching = cx.update(|cx| crate::hosts::conn(cx, &host));
+    let conn = match attaching.await {
         Ok(conn) => conn,
         Err(failure) => return crate::acp::ended(said(failure, session, cx)),
     };
-    let start = match on_host.begin {
-        HostBegin::Open => HostStart::Open { cwd, spec, opening },
-        HostBegin::Watch(id) => HostStart::Watch(id),
-        HostBegin::Rewatch(id) => {
+    let start = match decided {
+        Ok(start) => start,
+        Err((id, carried, cwd, spec)) => {
             let listed = list(conn.clone(), cx).await;
-            host_restart(
-                listed.iter().find(|info| info.session == id),
-                opening,
-                cwd,
-                spec,
-            )
+            let found = listed.iter().find(|info| info.session == id);
+            let (start, carry) = host_restart(found, carried, cwd, spec);
+            if let Some(Carried { stored, sent }) = carry {
+                let _ = session.update(cx, |session, cx| {
+                    if sent > 0 {
+                        session.chat.carry_sent(sent);
+                    }
+                    if let Some(stored) = stored {
+                        session.adopt(stored, cx);
+                    }
+                });
+            }
+            start
         }
     };
     let (events, told) = cx.update(|cx| Shared::global(cx).acp.host_events(conn, start));

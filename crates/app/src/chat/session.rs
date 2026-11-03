@@ -21,7 +21,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-pub(crate) use host::{HostBegin, OnHost};
+pub(crate) use host::{Carried, HostBegin, OnHost};
 use host::{Source, host_events, new_chat};
 
 mod cards;
@@ -380,10 +380,9 @@ impl ChatSession {
                 (Source::Local(events), started, Some(token))
             }
             Some(on_host) => {
-                let attaching = Box::pin(crate::hosts::conn(cx, &on_host.host));
                 let begin = (on_host, root.clone(), spec.clone(), opening);
                 (
-                    Source::Host(Box::new((attaching, begin))),
+                    Source::Host(Box::new(begin)),
                     std::time::Instant::now(),
                     None,
                 )
@@ -434,10 +433,7 @@ impl ChatSession {
                 _pump: cx.spawn(async move |session, cx| {
                     let mut events = match source {
                         Source::Local(events) => events,
-                        Source::Host(pending) => {
-                            let (attaching, begin) = *pending;
-                            host_events(attaching.await, begin, &session, cx).await
-                        }
+                        Source::Host(begin) => host_events(*begin, &session, cx).await,
                     };
                     while let Some(first) = events.next().await {
                         let delivered = session.update(cx, |session: &mut Self, cx| {

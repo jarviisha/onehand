@@ -229,9 +229,12 @@ impl Chat {
         let has_card = stash.iter().any(|it| matches!(it, ChatItem::Subagent(_)));
         if replayed < stash.len() || self.bounded || has_card {
             self.persisted = stash.len();
+            // A notice the replay said again is already in the copy put back.
+            self.items.retain(|it| {
+                matches!(it, ChatItem::Notice { .. })
+                    && !stash.iter().any(|kept| same_notice(kept, it))
+            });
             self.history = stash;
-            self.items
-                .retain(|it| matches!(it, ChatItem::Notice { .. }));
             self.numbering = self.numbering.wrapping_add(1);
             self.touch();
         } else {
@@ -246,6 +249,8 @@ impl Chat {
                 }) => Some(ChatItem::failure(text.clone(), *level, detail.clone())),
                 _ => None,
             };
+            // Unless the replay said it again itself.
+            let failure = failure.filter(|f| !self.items.iter().any(|said| same_notice(said, f)));
             self.items.extend(failure);
             self.rewrite = true;
             self.persisted = 0;
@@ -334,5 +339,14 @@ impl Chat {
 impl Drop for Chat {
     fn drop(&mut self) {
         self.save_blocking();
+    }
+}
+
+/// Whether `a` and `b` say the same line: what a replay says again of a
+/// conversation's own notices, at whatever level it says it.
+fn same_notice(a: &ChatItem, b: &ChatItem) -> bool {
+    match (a, b) {
+        (ChatItem::Notice { text: a, .. }, ChatItem::Notice { text: b, .. }) => a == b,
+        _ => false,
     }
 }

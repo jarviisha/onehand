@@ -3213,3 +3213,104 @@ fn a_prompt_typed_after_a_replay_is_stamped_now() {
     };
     assert!(user.sent_at.is_some_and(|at| at > 1000));
 }
+
+/// A host session read again from its journal starts from an empty chat: the
+/// journal is the whole transcript, prompts included, so each item lands
+/// once and each prompt counts once.
+#[test]
+fn a_journal_replay_into_an_empty_chat_holds_each_item_once() {
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut chat = Chat::new(1, PathBuf::from("/srv/app"), "Claude".into(), None);
+    chat.apply(AcpEvent::Echo(AcpRequest::Prompt {
+        text: "go".into(),
+        attachments: vec![],
+    }));
+    chat.apply(AcpEvent::AgentChunk {
+        text: "done".into(),
+        message: None,
+    });
+    chat.apply(AcpEvent::TurnEnded {
+        stop_reason: "end_turn".into(),
+    });
+    chat.apply(AcpEvent::Connected {
+        tx,
+        resumed: false,
+        forkable: false,
+    });
+    let users = chat
+        .history
+        .iter()
+        .chain(&chat.items)
+        .filter(|it| matches!(it, ChatItem::User(u) if u.text == "go"))
+        .count();
+    let agents = chat
+        .history
+        .iter()
+        .chain(&chat.items)
+        .filter(|it| matches!(it, ChatItem::Agent(_)))
+        .count();
+    assert_eq!((users, agents), (1, 1));
+    assert_eq!(chat.prompts_sent, 1);
+}
+
+/// A new host session resuming an ended conversation that failed: whichever
+/// copy wins, its replay or the adopted one, the failure is said once.
+#[test]
+fn a_resume_onto_a_failed_conversation_says_its_failure_once() {
+    let failed = "The turn failed: rate limited";
+    let adopted = || ConversationSnapshot {
+        session_id: "sid-1".into(),
+        title: None,
+        updated: 1,
+        prefs: Prefs::default(),
+        items: vec![
+            ChatItem::User(UserMsg::text("go".to_string())),
+            ChatItem::Agent(Md::parse("half")),
+            ChatItem::failure(failed, NoticeLevel::Failed, None),
+        ],
+        written: 3,
+        complete: true,
+    };
+    // A replay that delivers all of it, and one that comes up short; each
+    // with and without the failure said again on the way.
+    for (replay, again) in [
+        (vec!["go", "half"], false),
+        (vec!["go"], false),
+        (vec!["go", "half"], true),
+        (vec!["go"], true),
+    ] {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut chat = Chat::new(1, PathBuf::from("/srv/app"), "Claude".into(), None);
+        chat.resume_from(adopted());
+        for (n, text) in replay.iter().enumerate() {
+            chat.apply(if n == 0 {
+                AcpEvent::UserChunk((*text).into())
+            } else {
+                AcpEvent::AgentChunk {
+                    text: (*text).into(),
+                    message: None,
+                }
+            });
+        }
+        if again {
+            chat.apply(AcpEvent::Error {
+                text: failed.into(),
+                detail: None,
+            });
+        }
+        chat.apply(AcpEvent::Notice("resumed on the host".into()));
+        chat.apply(AcpEvent::Connected {
+            tx,
+            resumed: true,
+            forkable: false,
+        });
+        let failures = chat
+            .history
+            .iter()
+            .chain(&chat.items)
+            .filter(|it| matches!(it, ChatItem::Notice { text, .. } if text == failed))
+            .count();
+        assert_eq!(failures, 1, "replay {replay:?}, said again: {again}");
+        assert!(chat.failed(), "replay {replay:?}, said again: {again}");
+    }
+}
