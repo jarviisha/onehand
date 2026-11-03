@@ -5,6 +5,10 @@
 //! One task owns the attach's stdin and stdout. It hands each answer to the
 //! caller that asked by the ask's id, and each journal entry to whoever
 //! watches that session.
+//!
+//! Like `acp::connect`, everything here is polled on a tokio runtime: the
+//! attach is a tokio child process and its task is spawned with
+//! `tokio::spawn`. The caller owns that runtime; this module starts none.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -19,7 +23,7 @@ use tokio::io::{
 use tokio::process::{Child, Command};
 use tokio::sync::{mpsc, oneshot};
 
-use super::wire::{build_id, Ask, Call, Entry, Line, Reply, SessionInfo};
+use super::wire::{build_id, Call, Entry, FromHost, Question, Readiness, Reply, SessionInfo};
 use crate::acp::{AcpEvent, AcpRequest, Opening};
 use crate::config::AgentSpec;
 
@@ -37,9 +41,12 @@ pub enum HostError {
     Protocol(String),
 }
 
-/// How to reach a host: the `ssh` destination, and `local` for running the relay directly (tests, smoke).
+/// How to reach a host.
 pub struct HostAddr {
+    /// The `ssh` destination, which also names the host in what is said of it.
     pub ssh: String,
+    /// Run the relay directly through `sh` rather than over ssh: how the
+    /// smoke run and the tests reach a host on this machine.
     pub local: bool,
 }
 
@@ -244,7 +251,7 @@ async fn reached<T>(
     }
 }
 
-pub(crate) enum Settled {
+enum Settled {
     Same,
     Restarted,
 }
@@ -257,17 +264,10 @@ async fn settle(conn: &HostConn, build: &str) -> Result<Settled, HostError> {
         return Ok(Settled::Same);
     }
     if !busy.is_empty() {
-        return Err(HostError::Busy {
-            build: theirs,
-            busy,
-        });
+        return Err(busy_host(theirs, busy));
     }
-    match conn.ask(Call::Shutdown).await? {
-        Reply::Done => Ok(Settled::Restarted),
-        other @ (Reply::Welcome { .. } | Reply::Sessions(_) | Reply::Opened { .. }) => {
-            Err(unexpected(&other))
-        }
-    }
+    conn.ask_for(Call::Shutdown, |a| a.done).await?;
+    Ok(Settled::Restarted)
 }
 
 /// Say hello once more after a restart: another build now is a fault, and is
@@ -277,10 +277,7 @@ async fn settle_again(conn: &HostConn, build: &str) -> Result<(), HostError> {
     if theirs == build {
         Ok(())
     } else if !busy.is_empty() {
-        Err(HostError::Busy {
-            build: theirs,
-            busy,
-        })
+        Err(busy_host(theirs, busy))
     } else {
         Err(HostError::Protocol(format!(
             "the host came back on build {theirs}, not {build}"
@@ -293,16 +290,39 @@ async fn hello(conn: &HostConn, build: &str) -> Result<(String, Vec<String>), Ho
     let hello = Call::Hello {
         build: build.to_string(),
     };
-    match conn.ask(hello).await? {
-        Reply::Welcome { build, busy } => Ok((build, busy)),
-        other @ (Reply::Sessions(_) | Reply::Opened { .. } | Reply::Done) => {
-            Err(unexpected(&other))
-        }
-    }
+    conn.ask_for(hello, |a| a.welcome).await
 }
 
-fn unexpected(reply: &Reply) -> HostError {
-    HostError::Protocol(format!("unexpected answer: {reply:?}"))
+/// A host on build `build` that was left alone for the sessions in `busy`.
+fn busy_host(build: String, busy: Vec<String>) -> HostError {
+    HostError::Busy { build, busy }
+}
+
+/// What an answer carries, in the slot of its kind; every other slot is empty.
+/// A call takes the slot it expects, and finds any other answer unexpected.
+struct Answer {
+    welcome: Option<(String, Vec<String>)>,
+    sessions: Option<Vec<SessionInfo>>,
+    opened: Option<String>,
+    done: Option<()>,
+}
+
+impl Answer {
+    fn of(reply: Reply) -> Self {
+        let mut answer = Answer {
+            welcome: None,
+            sessions: None,
+            opened: None,
+            done: None,
+        };
+        match reply {
+            Reply::Welcome { build, busy } => answer.welcome = Some((build, busy)),
+            Reply::Sessions(sessions) => answer.sessions = Some(sessions),
+            Reply::Opened { session } => answer.opened = Some(session),
+            Reply::Done => answer.done = Some(()),
+        }
+        answer
+    }
 }
 
 /// What a caller asks of the task that owns the stream.
@@ -332,7 +352,7 @@ struct Watcher {
     /// the replay answers things long settled.
     replaying: bool,
     /// The `Ready` the replay brought, given again with a live channel once it ends.
-    ready: Option<(bool, bool)>,
+    ready: Option<Readiness>,
 }
 
 impl Watcher {
@@ -351,7 +371,7 @@ impl Watcher {
 
 /// A request channel whose requests go nowhere: what a replayed `Ready` hands
 /// a chat, so the replay cannot make it answer the host again.
-fn closed() -> crate::acp::ReqTx {
+fn dead_channel() -> crate::acp::ReqTx {
     mpsc::unbounded_channel().0
 }
 
@@ -368,7 +388,7 @@ impl HostConn {
         W: AsyncWrite + Unpin + Send + 'static,
     {
         let (cmds, rx) = mpsc::unbounded_channel();
-        tokio::spawn(serve(host, read, write, child, cmds.downgrade(), rx));
+        tokio::spawn(pump(host, read, write, child, cmds.downgrade(), rx));
         Self { cmds }
     }
 
@@ -389,13 +409,15 @@ impl HostConn {
         rx.await.map_err(|_| lost())?
     }
 
+    /// Ask `call`, and take from its answer the slot `take` names.
+    async fn ask_for<T>(&self, call: Call, take: fn(Answer) -> Option<T>) -> Result<T, HostError> {
+        let reply = self.ask(call).await?;
+        let unexpected = HostError::Protocol(format!("unexpected answer: {reply:?}"));
+        take(Answer::of(reply)).ok_or(unexpected)
+    }
+
     pub async fn list(&self) -> Result<Vec<SessionInfo>, HostError> {
-        match self.ask(Call::List).await? {
-            Reply::Sessions(sessions) => Ok(sessions),
-            other @ (Reply::Welcome { .. } | Reply::Opened { .. } | Reply::Done) => {
-                Err(unexpected(&other))
-            }
-        }
+        self.ask_for(Call::List, |a| a.sessions).await
     }
 
     pub async fn open(
@@ -406,19 +428,12 @@ impl HostConn {
     ) -> Result<String, HostError> {
         // The laptop's variables mean nothing on the host and may be secrets.
         agent.env.clear();
-        match self
-            .ask(Call::Open {
-                cwd,
-                agent,
-                opening,
-            })
-            .await?
-        {
-            Reply::Opened { session } => Ok(session),
-            other @ (Reply::Welcome { .. } | Reply::Sessions(_) | Reply::Done) => {
-                Err(unexpected(&other))
-            }
-        }
+        let open = Call::Open {
+            cwd,
+            agent,
+            opening,
+        };
+        self.ask_for(open, |a| a.opened).await
     }
 
     /// The session as a local one reads: `Ready` → `Connected` (with a `tx` whose requests go to the
@@ -446,7 +461,7 @@ impl HostConn {
 
 /// The task that owns the stream. It ends when the stream does, or when
 /// nothing is left that could ask or read anything of it.
-async fn serve<R, W>(
+async fn pump<R, W>(
     host: String,
     read: R,
     mut write: W,
@@ -475,10 +490,10 @@ async fn serve<R, W>(
                     Ok(None) | Err(_) => break format!("lost the connection to {host}"),
                 };
                 // A line this build cannot read is skipped rather than fatal.
-                let Ok(line) = serde_json::from_str::<Line>(&text) else { continue };
-                match line {
-                    Line::Kicked => break format!("{host} was attached from another machine"),
-                    Line::Answer { id, result } => match (pending.remove(&id), result) {
+                let Ok(said) = serde_json::from_str::<FromHost>(&text) else { continue };
+                match said {
+                    FromHost::Kicked => break format!("{host} was attached from another machine"),
+                    FromHost::Answer { id, result } => match (pending.remove(&id), result) {
                         (Some(Pending::Caller(tx)), result) => {
                             let _ = tx.send(result.map_err(HostError::Protocol));
                         }
@@ -489,9 +504,9 @@ async fn serve<R, W>(
                             match result {
                                 Ok(_) => {
                                     w.replaying = false;
-                                    if let Some((resumed, forkable)) = w.ready.take() {
+                                    if let Some(ready) = w.ready.take() {
                                         let tx = live(&mut forwarders, &me, &session);
-                                        let _ = w.tx.unbounded_send(AcpEvent::Connected { tx, resumed, forkable });
+                                        let _ = w.tx.unbounded_send(connected(tx, ready));
                                     }
                                 }
                                 Err(why) => {
@@ -510,20 +525,19 @@ async fn serve<R, W>(
                         }
                         (Some(Pending::Request(_)), Ok(_)) | (None, _) => {}
                     },
-                    Line::Entry { session, seq, entry } => {
+                    FromHost::Entry { session, seq, entry } => {
                         let Some(w) = watchers.get_mut(&session) else { continue };
                         if !w.takes(seq) {
                             continue;
                         }
                         let mut ended = false;
                         let event = match entry {
-                            Entry::Ready { resumed, forkable } if w.replaying => {
-                                w.ready = Some((resumed, forkable));
-                                AcpEvent::Connected { tx: closed(), resumed, forkable }
+                            Entry::Ready(ready) if w.replaying => {
+                                w.ready = Some(ready);
+                                connected(dead_channel(), ready)
                             }
-                            Entry::Ready { resumed, forkable } => {
-                                let tx = live(&mut forwarders, &me, &session);
-                                AcpEvent::Connected { tx, resumed, forkable }
+                            Entry::Ready(ready) => {
+                                connected(live(&mut forwarders, &me, &session), ready)
                             }
                             Entry::Event(event) => {
                                 ended = matches!(event, AcpEvent::Disconnected(_));
@@ -562,7 +576,7 @@ async fn serve<R, W>(
                 let id = next;
                 next += 1;
                 pending.insert(id, waiter);
-                let Ok(mut text) = serde_json::to_string(&Ask { id, call }) else { continue };
+                let Ok(mut text) = serde_json::to_string(&Question { id, call }) else { continue };
                 text.push('\n');
                 // A write that fails means the stream is gone, which the read
                 // side is about to say.
@@ -582,6 +596,16 @@ async fn serve<R, W>(
         }
     }
     refuse_queued(&mut cmds, &why);
+}
+
+/// A `Ready` as a local agent says it, with `tx` as its request channel.
+fn connected(tx: crate::acp::ReqTx, ready: Readiness) -> AcpEvent {
+    let Readiness { resumed, forkable } = ready;
+    AcpEvent::Connected {
+        tx,
+        resumed,
+        forkable,
+    }
 }
 
 /// Answer what was queued as the stream ended: no more is read.

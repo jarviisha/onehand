@@ -39,7 +39,7 @@ fn build_id_is_fnv1a_64() {
 
 #[test]
 fn an_open_ask_and_an_entry_line_round_trip() {
-    let ask = Ask {
+    let ask = Question {
         id: 7,
         call: Call::Open {
             cwd: "/srv/app".into(),
@@ -48,10 +48,10 @@ fn an_open_ask_and_an_entry_line_round_trip() {
         },
     };
     let json = serde_json::to_string(&ask).unwrap();
-    let back: Ask = serde_json::from_str(&json).unwrap();
+    let back: Question = serde_json::from_str(&json).unwrap();
     assert_eq!(serde_json::to_string(&back).unwrap(), json);
 
-    let line = Line::Entry {
+    let line = FromHost::Entry {
         session: "s1".into(),
         seq: 3,
         entry: Entry::Event(AcpEvent::AgentChunk {
@@ -60,6 +60,6 @@ fn an_open_ask_and_an_entry_line_round_trip() {
         }),
     };
     let json = serde_json::to_string(&line).unwrap();
-    let back: Line = serde_json::from_str(&json).unwrap();
+    let back: FromHost = serde_json::from_str(&json).unwrap();
     assert_eq!(serde_json::to_string(&back).unwrap(), json);
 }

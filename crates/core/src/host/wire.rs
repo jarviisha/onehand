@@ -10,7 +10,7 @@ use crate::config::AgentSpec;
 
 /// What the laptop sends, one per line.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Ask {
+pub struct Question {
     pub id: u64,
     pub call: Call,
 }
@@ -55,7 +55,7 @@ pub enum Reply {
 /// What the host sends, one per line.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Line {
+pub enum FromHost {
     Answer {
         id: u64,
         result: Result<Reply, String>,
@@ -73,12 +73,16 @@ pub enum Line {
 #[serde(rename_all = "snake_case")]
 pub enum Entry {
     /// The agent came up: `AcpEvent::Connected` without its channel.
-    Ready {
-        resumed: bool,
-        forkable: bool,
-    },
+    Ready(Readiness),
     Event(AcpEvent),
     Request(AcpRequest),
+}
+
+/// What an agent that came up says of its session.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Readiness {
+    pub resumed: bool,
+    pub forkable: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -93,7 +97,7 @@ pub struct SessionInfo {
 /// Whether a session is mid-turn after `entry`, given whether it was before.
 pub fn busy_after(busy: bool, entry: &Entry) -> bool {
     match entry {
-        Entry::Ready { .. } => busy,
+        Entry::Ready(_) => busy,
         Entry::Request(request) => match request {
             AcpRequest::Prompt { .. } => true,
             AcpRequest::Cancel

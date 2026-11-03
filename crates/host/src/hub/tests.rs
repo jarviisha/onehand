@@ -7,7 +7,7 @@ use onehand_core::acp::types::ReqRx;
 use onehand_core::acp::{AcpEvent, AcpRequest, Attachment, Opening, PermissionRequest};
 use onehand_core::config::{AgentSpec, PresetId};
 use onehand_core::host::journal;
-use onehand_core::host::wire::{Entry, Line};
+use onehand_core::host::wire::{Entry, FromHost, Readiness};
 use serde_json::json;
 use tokio::sync::mpsc;
 
@@ -83,14 +83,14 @@ fn open(hub: &Arc<Mutex<Hub>>, opened: &Opened, ready: bool) -> Fake {
     fake
 }
 
-fn watch(hub: &Arc<Mutex<Hub>>, session: &str) -> mpsc::UnboundedReceiver<Line> {
+fn watch(hub: &Arc<Mutex<Hub>>, session: &str) -> mpsc::UnboundedReceiver<FromHost> {
     let (sink, lines) = mpsc::unbounded_channel();
     hub.lock().unwrap().watch(session, sink).unwrap();
     lines
 }
 
 /// The next `n` entries a sink gets, as (seq, entry).
-async fn entries(lines: &mut mpsc::UnboundedReceiver<Line>, n: usize) -> Vec<(u64, Entry)> {
+async fn entries(lines: &mut mpsc::UnboundedReceiver<FromHost>, n: usize) -> Vec<(u64, Entry)> {
     let mut out = Vec::new();
     while out.len() < n {
         let line = tokio::time::timeout(Duration::from_secs(5), lines.recv())
@@ -98,8 +98,8 @@ async fn entries(lines: &mut mpsc::UnboundedReceiver<Line>, n: usize) -> Vec<(u6
             .expect("an entry arrived in time")
             .expect("the sink is open");
         match line {
-            Line::Entry { seq, entry, .. } => out.push((seq, entry)),
-            Line::Answer { .. } | Line::Kicked => panic!("a sink only carries entries"),
+            FromHost::Entry { seq, entry, .. } => out.push((seq, entry)),
+            FromHost::Answer { .. } | FromHost::Kicked => panic!("a sink only carries entries"),
         }
     }
     out
@@ -420,10 +420,10 @@ async fn a_directory_without_its_session_file_is_skipped() {
     let dir = scratch("no-session-file");
     let stray = dir.join("sessions").join("1-1");
     let mut j = Journal::open(&stray).unwrap();
-    j.append(&Entry::Ready {
+    j.append(&Entry::Ready(Readiness {
         resumed: false,
         forkable: false,
-    })
+    }))
     .unwrap();
     drop(j);
     let (hub, _opened) = hub_on(dir);

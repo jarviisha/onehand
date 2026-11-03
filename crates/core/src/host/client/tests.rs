@@ -11,19 +11,19 @@ struct Host {
 }
 
 impl Host {
-    async fn ask(&mut self) -> Ask {
+    async fn ask(&mut self) -> Question {
         let line = self.asks.next_line().await.unwrap().unwrap();
         serde_json::from_str(&line).unwrap()
     }
 
-    async fn send(&mut self, line: Line) {
+    async fn send(&mut self, line: FromHost) {
         let mut text = serde_json::to_string(&line).unwrap();
         text.push('\n');
         self.out.write_all(text.as_bytes()).await.unwrap();
     }
 
     async fn entry(&mut self, seq: u64, entry: Entry) {
-        self.send(Line::Entry {
+        self.send(FromHost::Entry {
             session: "s1".into(),
             seq,
             entry,
@@ -32,7 +32,7 @@ impl Host {
     }
 
     async fn answer(&mut self, id: u64, reply: Reply) {
-        self.send(Line::Answer {
+        self.send(FromHost::Answer {
             id,
             result: Ok(reply),
         })
@@ -41,7 +41,7 @@ impl Host {
 
     /// Read the `Watch` a `watch` sends, and answer it.
     async fn watched(&mut self) {
-        let Ask { id, call } = self.ask().await;
+        let Question { id, call } = self.ask().await;
         assert!(matches!(call, Call::Watch { session } if session == "s1"));
         self.answer(id, Reply::Done).await;
     }
@@ -67,10 +67,10 @@ async fn watch_maps_entries_to_events() {
     host.watched().await;
     host.entry(
         0,
-        Entry::Ready {
+        Entry::Ready(Readiness {
             resumed: false,
             forkable: true,
-        },
+        }),
     )
     .await;
     host.entry(
@@ -114,17 +114,17 @@ async fn requests_on_tx_go_to_the_host() {
     host.watched().await;
     host.entry(
         0,
-        Entry::Ready {
+        Entry::Ready(Readiness {
             resumed: true,
             forkable: false,
-        },
+        }),
     )
     .await;
     let Some(AcpEvent::Connected { tx, .. }) = events.next().await else {
         panic!("no Connected");
     };
     tx.send(AcpRequest::Cancel).unwrap();
-    let Ask { call, .. } = host.ask().await;
+    let Question { call, .. } = host.ask().await;
     assert!(matches!(
         call,
         Call::Request { session, request: AcpRequest::Cancel } if session == "s1"
@@ -149,7 +149,7 @@ async fn kicked_ends_watch_saying_so() {
     let (conn, mut host) = pair();
     let mut events = conn.watch("s1");
     host.watched().await;
-    host.send(Line::Kicked).await;
+    host.send(FromHost::Kicked).await;
     assert!(matches!(
         events.next().await,
         Some(AcpEvent::Disconnected(why)) if why.contains("attached from another machine")
@@ -168,7 +168,7 @@ async fn open_clears_env() {
     };
     let opened =
         tokio::spawn(async move { conn.open("/w".into(), agent, Opening::Fresh).await.unwrap() });
-    let Ask { id, call } = host.ask().await;
+    let Question { id, call } = host.ask().await;
     let Call::Open { agent, .. } = call else {
         panic!("not an Open: {call:?}");
     };
@@ -192,7 +192,7 @@ fn fake_host(theirs: &str, busy: Vec<String>) -> (HostConn, tokio::task::JoinHan
     let fake = tokio::spawn(async move {
         let mut shutdowns = 0;
         while let Ok(Some(line)) = host.asks.next_line().await {
-            let Ask { id, call } = serde_json::from_str(&line).unwrap();
+            let Question { id, call } = serde_json::from_str(&line).unwrap();
             let reply = match call {
                 Call::Hello { .. } => Reply::Welcome {
                     build: theirs.clone(),
@@ -284,8 +284,8 @@ async fn pending_calls_fail_when_the_stream_closes() {
 async fn a_refused_watch_ends_in_one_disconnected() {
     let (conn, mut host) = pair();
     let mut events = conn.watch("s1");
-    let Ask { id, .. } = host.ask().await;
-    host.send(Line::Answer {
+    let Question { id, .. } = host.ask().await;
+    host.send(FromHost::Answer {
         id,
         result: Err("no such session".into()),
     })
@@ -304,18 +304,18 @@ async fn a_refused_request_is_said_as_an_error() {
     host.watched().await;
     host.entry(
         0,
-        Entry::Ready {
+        Entry::Ready(Readiness {
             resumed: false,
             forkable: false,
-        },
+        }),
     )
     .await;
     let Some(AcpEvent::Connected { tx, .. }) = events.next().await else {
         panic!("no Connected");
     };
     tx.send(AcpRequest::Cancel).unwrap();
-    let Ask { id, .. } = host.ask().await;
-    host.send(Line::Answer {
+    let Question { id, .. } = host.ask().await;
+    host.send(FromHost::Answer {
         id,
         result: Err("the session ended".into()),
     })
@@ -331,10 +331,10 @@ async fn a_live_ready_reuses_the_request_channel() {
     let (conn, mut host) = pair();
     let mut events = conn.watch("s1");
     host.watched().await;
-    let ready = Entry::Ready {
+    let ready = Entry::Ready(Readiness {
         resumed: false,
         forkable: false,
-    };
+    });
     host.entry(0, ready.clone()).await;
     host.entry(1, ready).await;
     let Some(AcpEvent::Connected { tx: first, .. }) = events.next().await else {
@@ -381,10 +381,10 @@ async fn next_chunk(events: &mut (impl Stream<Item = AcpEvent> + Unpin)) -> Stri
 #[tokio::test]
 async fn watching_again_skips_what_the_first_watch_had_in_flight() {
     let (conn, mut host) = pair();
-    let ready = Entry::Ready {
+    let ready = Entry::Ready(Readiness {
         resumed: false,
         forkable: false,
-    };
+    });
     let mut first = conn.watch("s1");
     host.watched().await;
     host.entry(0, ready.clone()).await;
@@ -396,7 +396,7 @@ async fn watching_again_skips_what_the_first_watch_had_in_flight() {
     assert_eq!(next_chunk(&mut first).await, "a");
 
     let mut second = conn.watch("s1");
-    let Ask { id, .. } = host.ask().await;
+    let Question { id, .. } = host.ask().await;
     // Sent live to the first watch before the host read the second.
     host.entry(2, chunk("b")).await;
     for (seq, entry) in [(0, ready), (1, chunk("a")), (2, chunk("b"))] {
@@ -421,13 +421,13 @@ async fn watching_again_skips_what_the_first_watch_had_in_flight() {
 async fn what_a_replay_makes_the_chat_send_never_reaches_the_host() {
     let (conn, mut host) = pair();
     let mut events = conn.watch("s1");
-    let Ask { id, .. } = host.ask().await;
+    let Question { id, .. } = host.ask().await;
     host.entry(
         0,
-        Entry::Ready {
+        Entry::Ready(Readiness {
             resumed: false,
             forkable: false,
-        },
+        }),
     )
     .await;
     host.entry(
@@ -458,7 +458,7 @@ async fn what_a_replay_makes_the_chat_send_never_reaches_the_host() {
         option_id: None,
     });
     live.send(AcpRequest::Cancel).unwrap();
-    let Ask { call, .. } = host.ask().await;
+    let Question { call, .. } = host.ask().await;
     assert!(
         matches!(
             call,
@@ -572,17 +572,17 @@ async fn a_card_answered_during_a_rewatch_reaches_the_host() {
     host.watched().await;
     host.entry(
         0,
-        Entry::Ready {
+        Entry::Ready(Readiness {
             resumed: false,
             forkable: false,
-        },
+        }),
     )
     .await;
     let Some(AcpEvent::Connected { tx, .. }) = first.next().await else {
         panic!("no Connected");
     };
     let _second = conn.watch("s1");
-    let Ask { call, .. } = host.ask().await;
+    let Question { call, .. } = host.ask().await;
     assert!(matches!(call, Call::Watch { .. }), "{call:?}");
     // The second watch is still replaying: its Watch has no answer yet.
     tx.send(AcpRequest::PermissionResponse {
@@ -590,7 +590,7 @@ async fn a_card_answered_during_a_rewatch_reaches_the_host() {
         option_id: Some("allow".into()),
     })
     .unwrap();
-    let Ask { call, .. } = tokio::time::timeout(Duration::from_secs(5), host.ask())
+    let Question { call, .. } = tokio::time::timeout(Duration::from_secs(5), host.ask())
         .await
         .expect("the answer reached the host");
     assert!(

@@ -15,7 +15,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use futures::StreamExt as _;
 use onehand_core::acp;
-use onehand_core::host::wire::{Ask, Call, Line, Reply};
+use onehand_core::host::wire::{Call, FromHost, Question, Reply};
 use onehand_core::instance::{hold_lock, holding, socket_path};
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
 use tokio::net::unix::OwnedWriteHalf;
@@ -23,24 +23,29 @@ use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle;
 
-use crate::hub::{Connector, Hub};
+use crate::hub::{lock, Connector, Hub};
 
 static LOG: OnceLock<Mutex<File>> = OnceLock::new();
 
 /// One line in `host.log`, or on stderr before the service has opened it.
 pub(crate) fn log(message: &str) {
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs());
     match LOG.get() {
         Some(file) => {
             let _ = writeln!(
                 file.lock().unwrap_or_else(|e| e.into_inner()),
-                "{secs} {message}"
+                "{} {message}",
+                unix_secs()
             );
         }
         None => eprintln!("onehand-host: {message}"),
     }
+}
+
+/// Seconds since the Unix epoch, or 0 on a clock set before it.
+pub(crate) fn unix_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
 }
 
 /// How long the old attach gets to take its `Kicked` before it is cut off.
@@ -89,7 +94,7 @@ pub(crate) async fn run(dir: PathBuf, build: String) -> ExitCode {
 
 /// Take each attach as it comes, telling the one before it that it was taken over.
 async fn accept(listener: UnixListener, hub: Arc<Mutex<Hub>>, build: String) -> ! {
-    let mut current: Option<(UnboundedSender<Line>, JoinHandle<()>)> = None;
+    let mut current: Option<(UnboundedSender<FromHost>, JoinHandle<()>)> = None;
     loop {
         let stream = match listener.accept().await {
             Ok((stream, _)) => stream,
@@ -99,12 +104,12 @@ async fn accept(listener: UnixListener, hub: Arc<Mutex<Hub>>, build: String) -> 
             }
         };
         if let Some((out, mut task)) = current.take() {
-            let _ = out.send(Line::Kicked);
+            let _ = out.send(FromHost::Kicked);
             if tokio::time::timeout(KICK_GRACE, &mut task).await.is_err() {
                 task.abort();
                 let _ = task.await;
             }
-            hub.lock().unwrap_or_else(|e| e.into_inner()).unwatch_all();
+            lock(&hub).unwatch_all();
         }
         let (out, lines) = mpsc::unbounded_channel();
         let task = tokio::spawn(connection(
@@ -172,15 +177,13 @@ async fn login_path() -> Option<OsString> {
         .stderr(Stdio::null())
         .kill_on_drop(true)
         .output();
-    match tokio::time::timeout(Duration::from_secs(10), output).await {
-        Ok(Ok(out)) if out.status.success() => match after_marker(&out.stdout) {
-            Some(path) => Some(OsString::from_vec(path.to_vec())),
-            None => {
-                log("the login shell gave no PATH; using the service's own");
-                own
-            }
-        },
-        Ok(Ok(_)) | Ok(Err(_)) | Err(_) => {
+    let path = match tokio::time::timeout(Duration::from_secs(10), output).await {
+        Ok(Ok(out)) if out.status.success() => after_marker(&out.stdout).map(<[u8]>::to_vec),
+        Ok(Ok(_)) | Ok(Err(_)) | Err(_) => None,
+    };
+    match path {
+        Some(path) => Some(OsString::from_vec(path)),
+        None => {
             log("the login shell gave no PATH; using the service's own");
             own
         }
@@ -202,8 +205,8 @@ async fn connection(
     stream: UnixStream,
     hub: Arc<Mutex<Hub>>,
     build: String,
-    out: UnboundedSender<Line>,
-    mut lines: UnboundedReceiver<Line>,
+    out: UnboundedSender<FromHost>,
+    mut lines: UnboundedReceiver<FromHost>,
 ) {
     let (read, mut write) = stream.into_split();
     let mut asks = BufReader::new(read).lines();
@@ -223,8 +226,8 @@ async fn connection(
             }
             Some(line) = lines.recv() => {
                 let kicked = match &line {
-                    Line::Kicked => true,
-                    Line::Answer { .. } | Line::Entry { .. } => false,
+                    FromHost::Kicked => true,
+                    FromHost::Answer { .. } | FromHost::Entry { .. } => false,
                 };
                 if send(&mut write, &line).await.is_err() || kicked {
                     return;
@@ -234,13 +237,13 @@ async fn connection(
     }
     // The laptop went away: say what was already queued, then stop watching for it.
     flush(&mut write, &mut lines).await;
-    hub.lock().unwrap_or_else(|e| e.into_inner()).unwatch_all();
+    lock(&hub).unwatch_all();
 }
 
 /// Answer one line; whether the service should now exit.
-fn answer(hub: &Arc<Mutex<Hub>>, build: &str, out: &UnboundedSender<Line>, line: &str) -> bool {
-    let Ok(Ask { id, call }) = serde_json::from_str::<Ask>(line) else {
-        let _ = out.send(Line::Answer {
+fn answer(hub: &Arc<Mutex<Hub>>, build: &str, out: &UnboundedSender<FromHost>, line: &str) -> bool {
+    let Ok(Question { id, call }) = serde_json::from_str::<Question>(line) else {
+        let _ = out.send(FromHost::Answer {
             id: 0,
             result: Err("unreadable request".into()),
         });
@@ -249,7 +252,7 @@ fn answer(hub: &Arc<Mutex<Hub>>, build: &str, out: &UnboundedSender<Line>, line:
     let mut exit = false;
     let result = match call {
         Call::Hello { .. } => {
-            let busy = hub.lock().unwrap_or_else(|e| e.into_inner()).list();
+            let busy = lock(hub).list();
             Ok(Reply::Welcome {
                 build: build.to_string(),
                 busy: busy
@@ -263,31 +266,23 @@ fn answer(hub: &Arc<Mutex<Hub>>, build: &str, out: &UnboundedSender<Line>, line:
             exit = true;
             Ok(Reply::Done)
         }
-        Call::List => Ok(Reply::Sessions(
-            hub.lock().unwrap_or_else(|e| e.into_inner()).list(),
-        )),
+        Call::List => Ok(Reply::Sessions(lock(hub).list())),
         Call::Open {
             cwd,
             agent,
             opening,
         } => Hub::open(hub, cwd, agent, opening).map(|session| Reply::Opened { session }),
-        Call::Watch { session } => hub
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .watch(&session, out.clone())
-            .map(|()| Reply::Done),
-        Call::Request { session, request } => hub
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .request(&session, request)
-            .map(|()| Reply::Done),
+        Call::Watch { session } => lock(hub).watch(&session, out.clone()).map(|()| Reply::Done),
+        Call::Request { session, request } => {
+            lock(hub).request(&session, request).map(|()| Reply::Done)
+        }
     };
-    let _ = out.send(Line::Answer { id, result });
+    let _ = out.send(FromHost::Answer { id, result });
     exit
 }
 
 /// Write every line already queued.
-async fn flush(write: &mut OwnedWriteHalf, lines: &mut UnboundedReceiver<Line>) {
+async fn flush(write: &mut OwnedWriteHalf, lines: &mut UnboundedReceiver<FromHost>) {
     while let Ok(line) = lines.try_recv() {
         if send(write, &line).await.is_err() {
             return;
@@ -295,7 +290,7 @@ async fn flush(write: &mut OwnedWriteHalf, lines: &mut UnboundedReceiver<Line>) 
     }
 }
 
-async fn send(write: &mut OwnedWriteHalf, line: &Line) -> std::io::Result<()> {
+async fn send(write: &mut OwnedWriteHalf, line: &FromHost) -> std::io::Result<()> {
     let mut text = match serde_json::to_string(line) {
         Ok(text) => text,
         Err(e) => {

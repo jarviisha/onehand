@@ -32,13 +32,13 @@ impl Laptop {
     }
 
     async fn ask(&mut self, id: u64, call: Call) {
-        let mut text = serde_json::to_string(&Ask { id, call }).unwrap();
+        let mut text = serde_json::to_string(&Question { id, call }).unwrap();
         text.push('\n');
         self.write.write_all(text.as_bytes()).await.unwrap();
     }
 
     /// The next line, or `None` once the service closed this stream.
-    async fn line(&mut self) -> Option<Line> {
+    async fn line(&mut self) -> Option<FromHost> {
         let next = tokio::time::timeout(Duration::from_secs(5), self.lines.next_line());
         let text = next.await.expect("a line in time").unwrap()?;
         Some(serde_json::from_str(&text).unwrap())
@@ -91,7 +91,7 @@ async fn a_watch_is_answered_after_its_replay_and_a_second_attach_kicks_the_firs
             },
         )
         .await;
-    let Some(Line::Answer {
+    let Some(FromHost::Answer {
         id: 1,
         result: Ok(Reply::Opened { session }),
     }) = first.line().await
@@ -108,27 +108,27 @@ async fn a_watch_is_answered_after_its_replay_and_a_second_attach_kicks_the_firs
     first.ask(2, Call::Watch { session }).await;
     assert!(matches!(
         first.line().await,
-        Some(Line::Entry { seq: 0, .. })
+        Some(FromHost::Entry { seq: 0, .. })
     ));
     assert!(matches!(
         first.line().await,
-        Some(Line::Entry { seq: 1, .. })
+        Some(FromHost::Entry { seq: 1, .. })
     ));
     assert!(matches!(
         first.line().await,
-        Some(Line::Answer {
+        Some(FromHost::Answer {
             id: 2,
             result: Ok(Reply::Done)
         })
     ));
 
     let mut second = Laptop::new(&socket).await;
-    assert!(matches!(first.line().await, Some(Line::Kicked)));
+    assert!(matches!(first.line().await, Some(FromHost::Kicked)));
     assert!(first.line().await.is_none());
     second.ask(1, Call::Hello { build: "b1".into() }).await;
     assert!(matches!(
         second.line().await,
-        Some(Line::Answer { id: 1, result: Ok(Reply::Welcome { build, busy }) })
+        Some(FromHost::Answer { id: 1, result: Ok(Reply::Welcome { build, busy }) })
             if build == "b1" && busy.is_empty()
     ));
     service.abort();
@@ -140,7 +140,7 @@ async fn a_watch_is_answered_after_its_replay_and_a_second_attach_kicks_the_firs
 async fn shutdown_answers_done_and_asks_for_the_exit() {
     let dir = std::env::temp_dir().join(format!("onehand-shutdown-{}", std::process::id()));
     let (out, mut lines) = mpsc::unbounded_channel();
-    let ask = serde_json::to_string(&Ask {
+    let ask = serde_json::to_string(&Question {
         id: 7,
         call: Call::Shutdown,
     })
@@ -148,7 +148,7 @@ async fn shutdown_answers_done_and_asks_for_the_exit() {
     assert!(answer(&hub_in(&dir), "b1", &out, &ask));
     assert!(matches!(
         lines.try_recv(),
-        Ok(Line::Answer {
+        Ok(FromHost::Answer {
             id: 7,
             result: Ok(Reply::Done)
         })

@@ -8,19 +8,18 @@ use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use futures::stream::BoxStream;
 use futures::StreamExt as _;
 use onehand_core::acp::{AcpEvent, AcpRequest, Opening, ReqTx, SessionOpts};
 use onehand_core::config::{AgentSpec, Launch};
 use onehand_core::host::journal::{self, Journal};
-use onehand_core::host::wire::{busy_after, Entry, Line, SessionInfo};
+use onehand_core::host::wire::{busy_after, Entry, FromHost, Readiness, SessionInfo};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::serve::log;
+use crate::serve::{log, unix_secs};
 
 /// How a session's agent is reached: `acp::connect` in production, a fake in tests.
 pub(crate) type Connector =
@@ -54,7 +53,7 @@ struct Session {
     /// The agent's request channel, once it is up and until it ends.
     tx: Option<ReqTx>,
     /// The laptop watching this session, if one is.
-    watcher: Option<UnboundedSender<Line>>,
+    watcher: Option<UnboundedSender<FromHost>>,
     busy: bool,
     ended: bool,
 }
@@ -111,7 +110,7 @@ impl Hub {
     ) -> Result<String, String> {
         // The laptop clears it already; its variables name the laptop's paths.
         agent.env.clear();
-        let mut this = hub.lock().unwrap_or_else(|e| e.into_inner());
+        let mut this = lock(hub);
         let mut launch = agent.launch(this.path.as_deref())?;
         if let Some(path) = &this.path {
             // A declared agent's command, and whatever it runs in turn, is found
@@ -159,9 +158,7 @@ impl Hub {
 
     /// `<unix secs>-<counter>`, skipping one whose directory a run before this one left.
     fn fresh_id(&mut self) -> (String, PathBuf) {
-        let secs = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |d| d.as_secs());
+        let secs = unix_secs();
         loop {
             self.counter += 1;
             let id = format!("{secs}-{}", self.counter);
@@ -176,7 +173,7 @@ impl Hub {
     pub(crate) fn watch(
         &mut self,
         session: &str,
-        sink: UnboundedSender<Line>,
+        sink: UnboundedSender<FromHost>,
     ) -> Result<(), String> {
         let s = self
             .sessions
@@ -185,7 +182,7 @@ impl Hub {
         let entries = journal::read(&s.dir)
             .map_err(|e| format!("Could not read this session's journal: {e}"))?;
         for (seq, entry) in entries {
-            let line = Line::Entry {
+            let line = FromHost::Entry {
                 session: session.to_string(),
                 seq,
                 entry,
@@ -279,14 +276,14 @@ impl Hub {
             }
         };
         let live = match &entry {
-            Entry::Ready { .. } | Entry::Event(_) => true,
+            Entry::Ready(_) | Entry::Event(_) => true,
             Entry::Request(_) => false,
         };
         if !live {
             return;
         }
         if let Some(watcher) = &s.watcher {
-            let line = Line::Entry {
+            let line = FromHost::Entry {
                 session: session.to_string(),
                 seq,
                 entry,
@@ -305,6 +302,12 @@ impl Hub {
             s.journal = None;
         }
     }
+}
+
+/// The hub, taken back from a task that panicked holding it, so one
+/// session's panic does not stop every other.
+pub(crate) fn lock(hub: &Mutex<Hub>) -> MutexGuard<'_, Hub> {
+    hub.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 const ENDED: &str = "this session has ended";
@@ -350,7 +353,7 @@ fn unknown(session: &str) -> String {
 async fn drive(hub: Arc<Mutex<Hub>>, id: String, mut events: BoxStream<'static, AcpEvent>) {
     let mut said_why = false;
     while let Some(event) = events.next().await {
-        let mut hub = hub.lock().unwrap_or_else(|e| e.into_inner());
+        let mut hub = lock(&hub);
         match event {
             AcpEvent::Connected {
                 tx,
@@ -360,7 +363,7 @@ async fn drive(hub: Arc<Mutex<Hub>>, id: String, mut events: BoxStream<'static, 
                 if let Some(s) = hub.sessions.get_mut(&id) {
                     s.tx = Some(tx);
                 }
-                hub.record(&id, Entry::Ready { resumed, forkable });
+                hub.record(&id, Entry::Ready(Readiness { resumed, forkable }));
             }
             event @ AcpEvent::Disconnected(_) => {
                 said_why = true;
@@ -397,7 +400,7 @@ async fn drive(hub: Arc<Mutex<Hub>>, id: String, mut events: BoxStream<'static, 
             | AcpEvent::Echo(_)) => hub.record(&id, Entry::Event(event)),
         }
     }
-    let mut hub = hub.lock().unwrap_or_else(|e| e.into_inner());
+    let mut hub = lock(&hub);
     if !said_why {
         hub.record(&id, Entry::Event(AcpEvent::Disconnected(CLOSED.into())));
     }
