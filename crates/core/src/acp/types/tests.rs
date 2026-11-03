@@ -1,5 +1,13 @@
 use super::*;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
+
+fn option(kind: &str) -> PermissionOption {
+    PermissionOption {
+        id: "id".into(),
+        name: "name".into(),
+        kind: kind.into(),
+    }
+}
 
 fn sample_permission() -> PermissionRequest {
     PermissionRequest {
@@ -118,14 +126,6 @@ fn an_opening_round_trips() {
         from: "s".into(),
         message: "m".into(),
     });
-}
-
-fn option(kind: &str) -> PermissionOption {
-    PermissionOption {
-        id: "id".into(),
-        name: "name".into(),
-        kind: kind.into(),
-    }
 }
 
 /// The two grants are *not* the same answer, and the classification is the
