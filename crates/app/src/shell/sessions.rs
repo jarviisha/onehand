@@ -618,7 +618,7 @@ impl Shell {
     }
 
     /// Restart session `uid`'s adapter, no question asked.
-    fn restart_now(&mut self, uid: u64, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn restart_now(&mut self, uid: u64, window: &mut Window, cx: &mut Context<Self>) {
         match self.chat.update(cx, |pane, cx| pane.restart(uid, cx)) {
             crate::chat::pane::Restart::Restarted => {
                 window.push_notification(crate::toast::info("Restarting the agent"), cx);

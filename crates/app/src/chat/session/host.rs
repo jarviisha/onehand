@@ -194,8 +194,8 @@ async fn list(conn: HostConn, cx: &mut AsyncApp) -> Result<Vec<SessionInfo>, Hos
 fn said(failure: HostFailure, session: &WeakEntity<ChatSession>, cx: &mut AsyncApp) -> String {
     match failure {
         HostFailure::Missing(why) | HostFailure::Other(why) => why,
-        HostFailure::Busy { host, build, busy } => {
-            let _ = session.update(cx, |_, cx| cx.emit(ChatEvent::HostBusy { build, busy }));
+        HostFailure::Busy { host, busy } => {
+            let _ = session.update(cx, |_, cx| cx.emit(ChatEvent::HostBusy { busy }));
             format!("{host} runs another build of the host service, with sessions mid-turn")
         }
     }

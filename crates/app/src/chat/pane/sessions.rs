@@ -346,13 +346,13 @@ impl ChatPane {
                             *known = Some(id.clone());
                         }
                     }
-                    ChatEvent::HostBusy { build, busy } => {
+                    ChatEvent::HostBusy { busy } => {
                         if let Some((host, _)) =
                             pane.conversations.get(&uid).and_then(|c| c.host.as_ref())
                         {
                             cx.emit(ChatPaneEvent::HostBusy {
+                                uid,
                                 host: host.clone(),
-                                build: build.clone(),
                                 busy: busy.clone(),
                             });
                         }

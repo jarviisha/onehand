@@ -16,7 +16,7 @@ use futures::channel::oneshot;
 use futures::future::{self, Either, LocalBoxFuture};
 use gpui::App;
 use onehand_core::host::client::{self, HostConn, HostError};
-use onehand_core::host::wire::{Build, HostSession, build_id};
+use onehand_core::host::wire::{HostSession, build_id};
 use onehand_core::workspace::HostName;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -33,7 +33,6 @@ pub(crate) enum HostFailure {
     /// alone until the person agrees to stop them.
     Busy {
         host: HostName,
-        build: Build,
         busy: Vec<HostSession>,
     },
     /// A sentence a person reads, naming the host.
@@ -64,15 +63,33 @@ pub(crate) fn conn(
 
 /// A new connection to `host` whose service is restarted onto this build
 /// whatever is mid-turn there: what follows a person agreeing to a `Busy`.
-#[expect(
-    dead_code,
-    reason = "the chat pane and the add-project dialog attach through it"
-)]
 pub(crate) fn restart(
     cx: &App,
     host: &HostName,
 ) -> impl Future<Output = Result<HostConn, HostFailure>> + use<> {
     attach_with(cx, host, true)
+}
+
+/// Whether `path` is a folder on `host`, asked over `conn` on the ACP runtime.
+pub(crate) fn is_dir(
+    cx: &App,
+    host: &HostName,
+    conn: HostConn,
+    path: PathBuf,
+) -> impl Future<Output = Result<bool, HostFailure>> + use<> {
+    let (tx, rx) = oneshot::channel();
+    Shared::global(cx).acp.spawn(async move {
+        let _ = tx.send(conn.is_dir(&path).await);
+    });
+    let host = host.clone();
+    async move {
+        match rx.await {
+            Ok(found) => found.map_err(|e| failure(&host, e)),
+            Err(_) => Err(HostFailure::Other(format!(
+                "Could not ask {host} about the folder: the question was dropped"
+            ))),
+        }
+    }
 }
 
 fn attach_with(
@@ -131,9 +148,8 @@ fn failure(host: &HostName, e: HostError) -> HostFailure {
         HostError::Unsupported(uname) => HostFailure::Other(format!(
             "{host} is not a machine this build runs on: {uname}"
         )),
-        HostError::Busy { build, busy } => HostFailure::Busy {
+        HostError::Busy { busy, .. } => HostFailure::Busy {
             host: host.clone(),
-            build,
             busy,
         },
     }

@@ -260,8 +260,10 @@ pub(super) enum Row {
         hidden: usize,
     },
     NoMatch,
-    /// The list's last row: the way to grow it.
+    /// The way to grow the list.
     AddProject,
+    /// The list's last row: the way to grow it with a folder on a host.
+    AddHostProject,
 }
 
 /// What the rows are built from, besides the sessions.
@@ -318,7 +320,7 @@ pub(super) fn rows(items: &[Item], shape: &Shape) -> Vec<Row> {
     if rows.is_empty() && (searching || shape.filter != Filter::ByProject) {
         rows.push(Row::NoMatch);
     }
-    rows.push(Row::AddProject);
+    rows.extend([Row::AddProject, Row::AddHostProject]);
     rows
 }
 
@@ -358,7 +360,8 @@ pub(super) fn order(rows: &[Row]) -> Vec<usize> {
             | Row::Empty
             | Row::More { .. }
             | Row::NoMatch
-            | Row::AddProject => None,
+            | Row::AddProject
+            | Row::AddHostProject => None,
         })
         .collect()
 }

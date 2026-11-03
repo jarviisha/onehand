@@ -26,6 +26,7 @@ mod docks;
 mod drafts;
 mod fork;
 mod frame;
+mod host_project;
 mod issue_work;
 mod issues_page;
 mod presentation;
@@ -264,6 +265,8 @@ pub struct Shell {
     /// open. `Some` is what puts it on screen, the same as the rename above.
     worktree_draft: Option<WorktreeDraft>,
     branch_draft: Option<BranchDraft>,
+    /// The add-a-project-on-a-host form, while it is up.
+    host_project: Option<host_project::HostProjectDraft>,
     /// The open-issue picker, while it is on screen. Opened from a project's
     /// menu, which is gone by the time the list arrives, so this being `Some`
     /// is what puts the dialog up — like the rename and the worktree forms.

@@ -178,12 +178,11 @@ pub enum ChatPaneEvent {
     /// Run the check command of the project on screen, as a task.
     RunCheck,
     /// `host` runs another build of the host service, with `busy` mid-turn,
-    /// so a session there was not attached. Restarting the service stops
+    /// so session `uid` there was not attached. Restarting the service stops
     /// them, which is the person's to agree to, in a dialog of the shell's.
-    #[expect(dead_code, reason = "the shell's dialog that asks reads them")]
     HostBusy {
+        uid: u64,
         host: onehand_core::workspace::HostName,
-        build: onehand_core::host::wire::Build,
         busy: Vec<onehand_core::host::wire::HostSession>,
     },
 }

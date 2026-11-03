@@ -153,7 +153,6 @@ pub enum ChatEvent {
     /// The host runs another build, with these sessions mid-turn, so it was
     /// not attached; whether to restart it is the person's to say.
     HostBusy {
-        build: onehand_core::host::wire::Build,
         busy: Vec<onehand_core::host::wire::HostSession>,
     },
 }

@@ -254,9 +254,9 @@ impl Shell {
                     }
                     E::ShowTasks(filter) => shell.show_tasks(filter.clone(), window, cx),
                     E::ShowSchedules(only) => shell.show_schedules(only.clone(), window, cx),
-                    // Not asked yet: the session already says it was not
-                    // attached, and why.
-                    E::HostBusy { .. } => {}
+                    E::HostBusy { uid, host, busy } => {
+                        shell.ask_host_restart(*uid, host.clone(), busy, window, cx)
+                    }
                     E::RunCheck => {
                         let active = shell.window.workspace.active_root;
                         if let Some(root) = shell.local_root(active).map(|p| p.to_path_buf()) {
@@ -507,6 +507,7 @@ impl Shell {
             }),
             worktree_draft: None,
             branch_draft: None,
+            host_project: None,
             issue_picker: None,
             dialog_return: None,
             label_input: cx.new(|cx| InputState::new(window, cx).placeholder("bug")),

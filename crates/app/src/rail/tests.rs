@@ -208,7 +208,7 @@ fn the_attention_chip_toggles_back_to_the_filter_it_replaced() {
 }
 
 #[test]
-fn the_tree_draws_open_projects_with_their_sessions_and_ends_on_add_project() {
+fn the_tree_draws_open_projects_with_their_sessions_and_ends_on_the_add_rows() {
     let s = seed();
     let open = |root: usize| root != 0;
     assert_eq!(
@@ -238,6 +238,7 @@ fn the_tree_draws_open_projects_with_their_sessions_and_ends_on_add_project() {
             },
             Row::Empty,
             Row::AddProject,
+            Row::AddHostProject,
         ]
     );
 }
@@ -265,10 +266,14 @@ fn a_search_opens_every_project_that_matches_and_drops_the_rest() {
                 flat: false
             },
             Row::AddProject,
+            Row::AddHostProject,
         ]
     );
     let none = rows_for(&s, "nothing like this");
-    assert_eq!(none, vec![Row::NoMatch, Row::AddProject]);
+    assert_eq!(
+        none,
+        vec![Row::NoMatch, Row::AddProject, Row::AddHostProject]
+    );
 }
 
 fn rows_for(s: &[Item], query: &str) -> Vec<Row> {
@@ -294,6 +299,7 @@ fn a_flat_list_names_no_projects_and_says_when_nothing_matches() {
                 flat: true
             },
             Row::AddProject,
+            Row::AddHostProject,
         ]
     );
     let quiet: Vec<Item> = seed()
@@ -308,7 +314,7 @@ fn a_flat_list_names_no_projects_and_says_when_nothing_matches() {
             &quiet,
             &shape(Filter::NeedsAttention, "", &|_| true, &|_| false)
         ),
-        vec![Row::NoMatch, Row::AddProject]
+        vec![Row::NoMatch, Row::AddProject, Row::AddHostProject]
     );
 }
 

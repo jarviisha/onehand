@@ -22,8 +22,8 @@ use onehand_ui::{badge, mark_slot};
 /// What a project row says on hover: the whole of everything the row cuts.
 ///
 /// The full name first, then the branch, the counts in words, and the root's
-/// path -- the last because the label is a folder name and two projects can
-/// share one.
+/// path (`host:path` for a folder on a host) -- the last because the label is a
+/// folder name and two projects can share one.
 pub(super) fn project_hint(
     label: &str,
     git: Option<&GitLine>,
@@ -460,7 +460,14 @@ pub(super) fn project_row(
     let status = local.and_then(|path| window_state.git.get(path));
     let facts = ProjectFacts::of(root, status.is_some());
     let git = status.map(GitLine::of);
-    let path = SharedString::from(root.path.display().to_string());
+    // A folder on a host is named with the host, as ssh names one.
+    let path = SharedString::from(match root.on_host() {
+        Some(host) => format!("{host}:{}", root.path.display()),
+        None => root.path.display().to_string(),
+    });
+    let host = root
+        .on_host()
+        .map(|host| SharedString::from(host.to_string()));
     let mut hint = project_hint(
         &root.label,
         git.as_ref(),
@@ -556,9 +563,9 @@ pub(super) fn project_row(
             })),
         )
         .child(
-            // Shrinks, by its branch alone: everything else on it keeps its
-            // width, and the branch truncates once the name is down to its
-            // minimum.
+            // Shrinks, by its host or its branch alone: everything else on it
+            // keeps its width, and that one truncates once the name is down to
+            // its minimum. A folder on a host has no branch here.
             div()
                 .h_flex()
                 .items_center()
@@ -567,6 +574,9 @@ pub(super) fn project_row(
                 .text_xs()
                 .font_normal()
                 .text_color(meta_ink)
+                .when_some(host, |row, host| {
+                    row.child(div().min_w_0().max_w(MAX_BRANCH_W).truncate().child(host))
+                })
                 .when_some(git, |row, git| {
                     let branch = git.branch.clone();
                     row.child(

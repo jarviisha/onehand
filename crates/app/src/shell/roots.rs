@@ -367,6 +367,22 @@ impl Shell {
         cx.notify();
     }
 
+    /// Add `path` on `host` as a project and select it, or select it if it is
+    /// one already. No `git status` is asked: the folder is not on this machine.
+    pub(crate) fn open_host_root(
+        &mut self,
+        host: onehand_core::workspace::HostName,
+        path: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let idx = self.window.workspace.add_host_root(host, path);
+        self.window.workspace.select_root(idx);
+        self.show_active_session(window, cx);
+        self.save_workspace(window, cx);
+        cx.notify();
+    }
+
     /// Remove a project root, and everything the window keeps for it.
     ///
     /// Asked about in a modal first while the root has sessions or unsaved
