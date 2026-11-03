@@ -55,11 +55,14 @@ minor bump may break any of them.
   Dark palette with a blue primary (the terminal keeps its own sixteen ANSI colours), its corners,
   its edged buttons and fields, and its tags for states and labels, at an editor's density: 13px
   text (12px for code and the transcript's record), 26 and 22px controls, 24px rows, 35px bars.
-- The window draws its own frame: a title bar holding File, View, Go and Session menus, each item
-  a command the keymap already binds and showing its key, and a status bar with the rail's
-  toggle, the branch, and the terminal's and the Workbench's toggles (a dot on the terminal's while
-  a command runs behind its closed dock). The conversation's header no longer carries the dock
-  buttons.
+- The window draws its own frame: a title bar holding onehand's mark and name, File, View, Go and
+  Session menus (each item a command the keymap already binds and showing its key), the search
+  over sessions and projects, moved up from the rail, and the terminal's and the Workbench's
+  toggles, lit while their dock is open (a dot on the terminal's while a command runs behind its
+  closed dock); and a status bar with the branch. The conversation's header no longer carries the
+  dock buttons.
+- The rail's workspace strip opens the workspace menu wherever it is pressed, and *New* fills its
+  row.
 - The rail takes the library's sidebar look. The transcript is flat: the prompt in a grey bubble,
   folding blocks bare with no box or rule, a run of answered cards under one hairline, a remark
   or an error as a divider across the column. A waiting permission or question is a neutral

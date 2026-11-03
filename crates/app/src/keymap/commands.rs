@@ -172,7 +172,7 @@ pub const COMMANDS: &[Command] = &[
     ),
     command!(
         "focus_rail_search",
-        "Search sessions and projects in the rail",
+        "Search sessions and projects",
         ["ctrl-k"],
         crate::rail::FocusRailSearch,
         "Shell && !Terminal && !Dialog",

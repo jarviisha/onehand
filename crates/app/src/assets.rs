@@ -14,8 +14,19 @@ use std::borrow::Cow;
 
 pub struct Assets;
 
+/// The app's own mark, drawn in its colours as an image rather than tinted as
+/// an icon: the title bar's start. Its own file, sized as it is drawn: gpui
+/// rasterises an SVG image at the size the file declares (twice over, for
+/// smoothness), and the 256px app icon shrunk to 16px came out blurred.
+pub(crate) const LOGO: &str = "onehand/logo.svg";
+
 impl AssetSource for Assets {
     fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
+        if path == LOGO {
+            return Ok(Some(Cow::Borrowed(include_bytes!(
+                "../../../assets/onehand-mark.svg"
+            ))));
+        }
         if let Some(bytes) = crate::icons::embedded(path) {
             return Ok(Some(Cow::Borrowed(bytes)));
         }
@@ -28,6 +39,7 @@ impl AssetSource for Assets {
     fn list(&self, path: &str) -> Result<Vec<SharedString>> {
         let mut paths = gpui_kit_assets::Assets.list(path)?;
         paths.extend(crate::icons::Picked.list(path)?);
+        paths.extend(LOGO.starts_with(path).then(|| SharedString::from(LOGO)));
         paths.extend(
             crate::icons::all_paths()
                 .into_iter()

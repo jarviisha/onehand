@@ -62,6 +62,7 @@ Text on a fill takes the ink paired with it:
 | `primary`, a solid `danger` | `primary_foreground`, `danger_foreground`, set by the button's variant |
 | `button_secondary`; a `quiet` ghost | `button_secondary_foreground`; `secondary_foreground`, set by the builder |
 | a ghost's hover or selected fill, under an icon alone (`quiet_icon`) | `secondary_foreground`, as at rest |
+| none, a title bar dock toggle (`panel_toggle`) | its glyph `foreground` while its dock is open, `muted_foreground` while closed |
 | `accent`, the selected row | `accent_foreground` |
 | `rail_chosen(cx)`, the rail's current row | `sidebar_accent_foreground` |
 | `muted` (a well, the prompt bubble) | the neutral inks, as on the surface: a neutral fill, not a paired one |
@@ -185,6 +186,7 @@ All in `onehand_ui::tokens` (`crates/ui/src/tokens.rs`), which the app names
 | `PAGE_NARROW` | 35rem | a one-column page |
 | `PAGE_PROSE` | 48rem | an editor, or one thing read in full |
 | `PAGE_WIDE` | 64rem | boxes side by side, a table |
+| `TITLE_SEARCH_W` | 24rem | the widest the title bar's search grows |
 | `DIALOG_FORM` | 40rem | a dialog that holds a form (the agent form, one that starts a run), its controls `.tall()`, never wider than the window less its margins |
 | `ROW_INSET` | 1rem | where a tree row's content starts from a dock's edge (Files, Markdown), and a Workbench bar's words |
 | `ROW_GUTTER` | 0.5rem | how far a tree row's fill stands off the dock's side edges, inside `ROW_INSET` |

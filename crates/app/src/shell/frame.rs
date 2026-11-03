@@ -1,23 +1,31 @@
 //! The window's frame around the rail and the dock: the title bar, holding the
-//! app's menus, and the status bar along the foot.
+//! app's mark, its menus, the search over the rail's sessions and the docks'
+//! toggles, and the status bar along the foot, holding the branch.
 //!
 //! **The menus hold only the keymap's commands.** Each item is a command the
 //! window already answers by a key, named for the menu and dispatched as that
 //! command's action, so a menu never offers something no key reaches and the
 //! key it shows is the one the keymap binds, overrides included.
 
-use super::{Shell, ToggleRail, ToggleTerminal, ToggleWorkbenchVisibility};
+use super::{Shell, ToggleTerminal, ToggleWorkbenchVisibility};
 use crate::controls::{Named as _, Quiet as _, action};
 use crate::keymap::{CLOSE_SESSION, COMMANDS, NEW_SESSION, RESTART};
 use gpui::prelude::FluentBuilder as _;
-use gpui::{App, Entity, IntoElement, Menu, MenuItem, ParentElement as _, Styled as _, div};
+use gpui::{
+    App, Entity, InteractiveElement as _, IntoElement, Menu, MenuItem, ParentElement as _,
+    Styled as _, div,
+};
 use gpui_component::dock::DockPlacement;
 use gpui_component::menu::AppMenuBar;
 use gpui_component::status_bar::StatusBar;
 use gpui_component::{
-    ActiveTheme as _, GlobalState, Icon, IconName, Sizable as _, TitleBar, h_flex,
+    ActiveTheme as _, GlobalState, Icon, IconName, Sizable as _, StyledExt as _, TitleBar, h_flex,
 };
 use onehand_ui::ShortIcon as _;
+
+/// The title bar's menus at the chrome size: `CHROME_TEXT` over the library's
+/// `text_sm` (0.875rem).
+const MENU_TEXT: f32 = crate::tokens::CHROME_TEXT.0 / 0.875;
 
 /// A menu item: a command's keymap id and the name it takes in the menu, or
 /// `None` for a separator.
@@ -123,12 +131,54 @@ pub(super) fn menu_bar(cx: &mut App) -> Entity<AppMenuBar> {
 }
 
 impl Shell {
-    /// The title bar: the app's menus. The window's own controls are the
-    /// library's, drawn where the window is decorated by the app.
-    pub(super) fn title_bar(&self) -> impl IntoElement + use<> {
+    /// The title bar: the app's mark and name, then its menus, at the start;
+    /// the search over the rail's sessions and projects centred in the room
+    /// left; the terminal's and the Workbench's toggles at the end. The
+    /// window's own controls are the library's, drawn where the window is
+    /// decorated by the app.
+    pub(super) fn title_bar(&self, cx: &mut gpui::Context<Self>) -> impl IntoElement + use<> {
         let guard = self.close_guard.clone();
         TitleBar::new()
-            .child(h_flex().items_center().child(self.menu_bar.clone()))
+            .child(
+                h_flex()
+                    .flex_none()
+                    .items_center()
+                    .gap_1p5()
+                    .mr_3()
+                    .child(gpui::img(crate::assets::LOGO).size_4().flex_none())
+                    .child(
+                        div()
+                            .text_size(crate::tokens::CHROME_TEXT)
+                            .font_medium()
+                            .child("onehand"),
+                    ),
+            )
+            // The library letters its menu buttons at its control size (`text_sm`)
+            // with no way in, so the bar is laid out a step down to the chrome
+            // size. The open menus come along: a deferred draw keeps the rem in
+            // force where it was made, so their rows letter at the chrome size
+            // too, as every other menu's do.
+            // Its buttons also take the arrow cursor, which every other button
+            // here does not, so a pane painted over them asks for the pointer:
+            // drawn last, its cursor wins, and with nothing to occlude a press
+            // still reaches the menu under it.
+            .child(crate::zoom::scaled(
+                MENU_TEXT,
+                h_flex()
+                    .relative()
+                    .items_center()
+                    .child(self.menu_bar.clone())
+                    .child(div().absolute().inset_0().cursor_pointer()),
+            ))
+            .child(
+                h_flex()
+                    .flex_1()
+                    .min_w_0()
+                    .justify_center()
+                    .px_2()
+                    .child(crate::rail::search_field(self.rail_state(), cx)),
+            )
+            .child(self.dock_toggles(cx))
             // The library's close removes the window outright; this one asks
             // what the compositor's close asks first.
             .on_close_window(move |_, window, cx| {
@@ -138,59 +188,47 @@ impl Shell {
             })
     }
 
-    /// The status bar: the rail's toggle and the branch of the project on
-    /// screen at the start, the terminal's and the Workbench's toggles at the end.
-    pub(super) fn status_bar(&self, cx: &App) -> impl IntoElement + use<> {
+    /// The status bar: the branch of the project on screen. The rail's own
+    /// *Hide the rail*, the agent pane's way back and the key toggle the rail.
+    pub(super) fn status_bar(&self) -> impl IntoElement + use<> {
         let branch = self
             .window
             .workspace
             .active_root()
             .and_then(|root| self.window.git.get(&root.path))
             .map(|status| status.branch.clone());
-        // Dispatched as the command is, from where the keys are, so the
-        // shell answers a press here exactly as it answers the key. A closed
-        // panel's glyph takes the muted ink: on the dark bar the selected
-        // fill alone is too near the bar's own to say which are open.
-        let muted = cx.theme().muted_foreground;
-        let toggle = |id: &'static str,
-                      icon: IconName,
-                      name: &'static str,
-                      on: bool,
-                      act: Box<dyn gpui::Action>| {
-            action(id)
-                .quiet_icon(on, cx)
-                .short_icon()
-                .icon(Icon::new(icon).when(!on, |icon| icon.text_color(muted)))
-                .named(name)
-                .on_click(move |_, window, cx| window.dispatch_action(act.boxed_clone(), cx))
-        };
+        StatusBar::new().left(h_flex().gap_1().children(branch.map(|branch| {
+            h_flex()
+                .gap_1()
+                .child(Icon::new(crate::icons::Icon::GitBranch).small())
+                .child(branch)
+        })))
+    }
+
+    /// The terminal's and the Workbench's toggles, at the title bar's end. The
+    /// title bar drags the window from a press and opens the window's menu
+    /// from a right press, so either stops here before the bar: a nudge
+    /// presses the toggle rather than moving the window.
+    fn dock_toggles(&self, cx: &App) -> impl IntoElement + use<> {
         let terminal = self.dock.read(cx).is_dock_open(DockPlacement::Bottom);
         let workbench = self.workbench_open(cx);
         let live = self.terminal_live;
-        StatusBar::new()
-            .left(toggle(
-                "status-rail",
-                IconName::PanelLeft,
-                "Show or hide the rail",
-                !self.rail_hidden,
-                Box::new(ToggleRail),
-            ))
-            .left(h_flex().gap_1().children(branch.map(|branch| {
-                h_flex()
-                    .gap_1()
-                    .child(Icon::new(crate::icons::Icon::GitBranch).small())
-                    .child(branch)
-            })))
+        h_flex()
+            .flex_none()
+            .gap_1()
+            .pr_2()
+            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .on_mouse_down(gpui::MouseButton::Right, |_, _, cx| cx.stop_propagation())
             // A command still running behind a closed dock is the one fact
             // the icon cannot carry, so a dot in the running ink rides its
             // corner while the dock is closed; an open terminal shows the
             // command itself.
-            .right(
+            .child(
                 div()
                     .relative()
                     .flex_none()
-                    .child(toggle(
-                        "status-terminal",
+                    .child(panel_toggle(
+                        "title-terminal",
                         IconName::PanelBottom,
                         match live {
                             true => {
@@ -200,6 +238,7 @@ impl Shell {
                         },
                         terminal,
                         Box::new(ToggleTerminal),
+                        cx,
                     ))
                     .when(live && !terminal, |toggle| {
                         toggle.child(
@@ -213,14 +252,43 @@ impl Shell {
                         )
                     }),
             )
-            .right(toggle(
-                "status-workbench",
+            .child(panel_toggle(
+                "title-workbench",
                 IconName::PanelRight,
                 "Show or hide the Workbench",
                 workbench,
                 Box::new(ToggleWorkbenchVisibility),
+                cx,
             ))
     }
+}
+
+/// A panel's toggle: an icon alone, its glyph in the foreground ink while
+/// what it shows is open and in the muted ink while it is closed.
+///
+/// Dispatched as the command is, from where the keys are, so the shell
+/// answers a press here exactly as it answers the key. The ink alone says
+/// which are open, with no fill at rest: a fill sat heavy beside the window's
+/// own controls, and the hover fill stays the press's. Its tooltip shows the
+/// key, as every control a key reaches does.
+fn panel_toggle(
+    id: &'static str,
+    icon: IconName,
+    name: &'static str,
+    on: bool,
+    act: Box<dyn gpui::Action>,
+    cx: &App,
+) -> impl IntoElement + use<> {
+    let ink = match on {
+        true => cx.theme().foreground,
+        false => cx.theme().muted_foreground,
+    };
+    action(id)
+        .quiet(cx)
+        .short_icon()
+        .icon(Icon::new(icon).text_color(ink))
+        .named_with_action(name, &*act, None)
+        .on_click(move |_, window, cx| window.dispatch_action(act.boxed_clone(), cx))
 }
 
 #[cfg(test)]

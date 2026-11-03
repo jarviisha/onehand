@@ -34,7 +34,7 @@ impl Shell {
 
     /// Note whether a shell of the active root is running a command.
     ///
-    /// One fact and one reader: the status bar's terminal dot, which is the
+    /// One fact and one reader: the title bar's terminal dot, which is the
     /// only thing on screen that can say a command is still going behind a
     /// closed dock. Runs whenever the terminal panel notifies: on its own
     /// changes (tabs, project, zoom) and when its watch sees a command start or

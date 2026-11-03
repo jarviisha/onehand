@@ -171,9 +171,14 @@ pub fn menu_command(label: impl Into<SharedString>, action: Box<dyn Action>) -> 
 ///
 /// It must also differ from the trigger's own id, since the popover wraps the
 /// trigger and two nested elements under one id collide.
+///
+/// The trigger is a button, or another of the library's pressable elements (a
+/// sidebar header); a trigger that has to fill its slot gets `flex_1` or
+/// `w_full` through the popover's `trigger_style`, which styles the wrapper
+/// its parent lays out.
 pub fn menu_below(
     id: impl Into<ElementId>,
-    trigger: Button,
+    trigger: impl gpui_component::Selectable + IntoElement + 'static,
     build: impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static,
 ) -> Popover {
     let build = Rc::new(build);
@@ -235,6 +240,9 @@ pub fn menu_below(
 /// one button that does two things depending on where it is pressed. Drawn in
 /// the surface's own colour it reads as a cut through the control rather
 /// than an edge on it, so no button gains an edge.
+///
+/// It keeps its own width; a caller that wants it to fill a row widens the
+/// joined pair and grows `main`, so the caret stays square.
 pub fn split_action(
     id: impl Into<ElementId>,
     main: Button,
@@ -242,7 +250,7 @@ pub fn split_action(
     surface: gpui::Hsla,
     anchor: Anchor,
     build: impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static,
-) -> impl IntoElement {
+) -> gpui::Div {
     div()
         .h_flex()
         .items_center()
