@@ -3,7 +3,7 @@
 //! `target/debug/onehand-host`, opens a session on `$ACP_CMD` (space-split, as
 //! `acp_smoke` reads it), sends one prompt, prints events for 3 s and exits
 //! mid-turn with the session id. `watch <session>` attaches again and prints
-//! every event until `TurnEnded`, exiting 1 on `Disconnected`. `--local` runs
+//! every event until `TurnEnded` and for 1 s after, exiting 1 on `Disconnected`. `--local` runs
 //! the relay directly, not over ssh.
 //!
 //! The agent runs in the session's cwd, so the paths in `ACP_CMD` must be
@@ -76,7 +76,18 @@ async fn watch(conn: &HostConn, session: &str) -> Result<(), String> {
     while let Some(event) = stream.next().await {
         show(&event);
         if matches!(event, AcpEvent::TurnEnded { .. }) {
-            return Ok(());
+            // A replayed turn end comes ahead of the watch's one `Connected`.
+            let grace = tokio::time::sleep(Duration::from_secs(1));
+            tokio::pin!(grace);
+            loop {
+                tokio::select! {
+                    () = &mut grace => return Ok(()),
+                    event = stream.next() => match event {
+                        Some(event) => show(&event),
+                        None => return Ok(()),
+                    },
+                }
+            }
         }
         if matches!(event, AcpEvent::Disconnected(_)) {
             return Err("the session disconnected before its turn ended".into());
