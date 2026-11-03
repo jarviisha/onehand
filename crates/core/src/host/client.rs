@@ -327,8 +327,9 @@ struct Watcher {
     /// The seq last handed on: none until the replay's first entry, seq 0.
     /// Anything else is left over from an earlier watch of the session.
     last: Option<u64>,
-    /// Until the host answers the watch, what comes is the replay, and what a
-    /// chat sends while it applies the replay answers things long settled.
+    /// Until the host answers the watch, what comes is the replay, whose
+    /// `Ready` hands the chat a closed channel: what it sends while it applies
+    /// the replay answers things long settled.
     replaying: bool,
     /// The `Ready` the replay brought, given again with a live channel once it ends.
     ready: Option<(bool, bool)>,
@@ -552,10 +553,9 @@ async fn serve<R, W>(
                         }
                         (Call::Watch { session: session.clone() }, Pending::Watch(session, tx))
                     }
+                    // Only a live channel reaches here, held by someone who meant it:
+                    // a replay hands its chat a closed one.
                     Cmd::Request(session, request) => {
-                        if watchers.get(&session).is_some_and(|w| w.replaying) {
-                            continue;
-                        }
                         (Call::Request { session: session.clone(), request }, Pending::Request(session))
                     }
                 };

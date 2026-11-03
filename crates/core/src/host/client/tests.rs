@@ -564,3 +564,43 @@ fn the_probe_is_read_after_its_marker_whatever_an_rc_file_prints() {
     assert_eq!(probed(&out), ("Darwin arm64", false));
     assert_eq!(probed("banner only\n"), ("", false));
 }
+
+#[tokio::test]
+async fn a_card_answered_during_a_rewatch_reaches_the_host() {
+    let (conn, mut host) = pair();
+    let mut first = conn.watch("s1");
+    host.watched().await;
+    host.entry(
+        0,
+        Entry::Ready {
+            resumed: false,
+            forkable: false,
+        },
+    )
+    .await;
+    let Some(AcpEvent::Connected { tx, .. }) = first.next().await else {
+        panic!("no Connected");
+    };
+    let _second = conn.watch("s1");
+    let Ask { call, .. } = host.ask().await;
+    assert!(matches!(call, Call::Watch { .. }), "{call:?}");
+    // The second watch is still replaying: its Watch has no answer yet.
+    tx.send(AcpRequest::PermissionResponse {
+        rpc_id: serde_json::json!(7),
+        option_id: Some("allow".into()),
+    })
+    .unwrap();
+    let Ask { call, .. } = tokio::time::timeout(Duration::from_secs(5), host.ask())
+        .await
+        .expect("the answer reached the host");
+    assert!(
+        matches!(
+            call,
+            Call::Request {
+                request: AcpRequest::PermissionResponse { .. },
+                ..
+            }
+        ),
+        "{call:?}"
+    );
+}
