@@ -123,12 +123,14 @@ impl WorkspacePage {
         self.shown = onehand_core::issues::open_across(kept, PAGE_ISSUES);
     }
 
-    /// What `root` is called here, or its folder's name for a project this
-    /// window does not hold — a run's project can be in another window.
+    /// What `root`, a folder on this machine, is called here, or its
+    /// folder's name for a project this window does not hold — a run's
+    /// project can be in another window. Never a host's project of the same
+    /// path: every caller names a run, a conversation or an issue file here.
     fn label_of(&self, root: &Path) -> String {
         self.projects
             .iter()
-            .find(|project| project.root == root)
+            .find(|project| project.host.is_none() && project.root == root)
             .map(|project| project.label.to_string())
             .or_else(|| {
                 root.file_name()
@@ -343,28 +345,7 @@ impl WorkspacePage {
             .take(PAGE_PROJECTS)
             .enumerate()
             .map(|(i, project)| {
-                // `None` while the issues are still being read, which is a
-                // wait and not an answer of none.
-                let open = page.read.as_ref().map(|read| {
-                    read.iter()
-                        .find(|(root, _)| *root == project.root)
-                        .map_or(0, |(_, issues)| {
-                            issues.listed().iter().filter(|issue| issue.open).count()
-                        })
-                });
-                let sessions = project.sessions.len();
-                let holds: Vec<String> = [
-                    (sessions > 0).then(|| count_of(sessions, "session")),
-                    open.filter(|n| *n > 0).map(|n| count_of(n, "open issue")),
-                ]
-                .into_iter()
-                .flatten()
-                .collect();
-                let holds = match (holds.is_empty(), open) {
-                    (false, _) => holds.join(" · "),
-                    (true, None) => "Looking for open issues…".to_string(),
-                    (true, Some(_)) => "Nothing open".to_string(),
-                };
+                let holds = holds(project, page.read.as_deref());
                 let rollup = SessionSignal::most_urgent(
                     project.sessions.iter().filter_map(|(uid, _)| signal(*uid)),
                 );
@@ -605,3 +586,43 @@ impl Render for WorkspacePage {
         self.page(window, cx)
     }
 }
+
+/// What a project's tile says it holds: its sessions and open issues.
+/// `read` is `None` while the issues are still being read, which is a wait and
+/// not an answer of none. A host's project has no issue file here, and what is
+/// read under its path is a folder of the same path here: it says its sessions
+/// alone.
+fn holds(
+    project: &PageProject,
+    read: Option<&[(PathBuf, onehand_core::issues::Issues)]>,
+) -> String {
+    let sessions = project.sessions.len();
+    if project.host.is_some() {
+        return match sessions {
+            0 => "No sessions".to_string(),
+            n => count_of(n, "session"),
+        };
+    }
+    let open = read.map(|read| {
+        read.iter()
+            .find(|(root, _)| *root == project.root)
+            .map_or(0, |(_, issues)| {
+                issues.listed().iter().filter(|issue| issue.open).count()
+            })
+    });
+    let holds: Vec<String> = [
+        (sessions > 0).then(|| count_of(sessions, "session")),
+        open.filter(|n| *n > 0).map(|n| count_of(n, "open issue")),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    match (holds.is_empty(), open) {
+        (false, _) => holds.join(" · "),
+        (true, None) => "Looking for open issues…".to_string(),
+        (true, Some(_)) => "Nothing open".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests;
