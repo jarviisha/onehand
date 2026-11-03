@@ -25,13 +25,15 @@ use crate::config::AgentSpec;
 
 #[derive(Debug)]
 pub enum HostError {
-    /// ssh could not run, or the host refused us.
+    /// ssh could not run, the host refused us, or the connection to it was
+    /// lost; with what ssh said on stderr when an attach ended before it answered.
     Unreachable(String),
     /// The host is not one this build can run on (`uname -sm` said this).
     Unsupported(String),
     /// The host runs another build, with these sessions mid-turn; it was left alone.
     Busy { build: String, busy: Vec<String> },
-    /// The stream broke or the host answered something unexpected.
+    /// The host refused a call or answered something unexpected, or the
+    /// binary to install could not be read here.
     Protocol(String),
 }
 
@@ -62,6 +64,9 @@ const SHUTDOWN_WAIT: Duration = Duration::from_secs(10);
 /// How long a failed attach gets to finish saying why on stderr.
 const STDERR_WAIT: Duration = Duration::from_secs(2);
 
+/// How much of what an attach says on stderr is kept; the rest is read and dropped.
+const STDERR_KEEP: u64 = 8 * 1024;
+
 /// `cmd` run on the host, or here through `sh` when `local`; the same text
 /// either way, so the two cannot drift apart in their quoting.
 fn command(addr: &HostAddr, cmd: &str) -> Command {
@@ -71,7 +76,8 @@ fn command(addr: &HostAddr, cmd: &str) -> Command {
         command
     } else {
         let mut command = Command::new("ssh");
-        command.args(SSH_OPTS).arg(&addr.ssh);
+        // `--` so a destination cannot be read as an option.
+        command.args(SSH_OPTS).arg("--").arg(&addr.ssh);
         command
     };
     command.arg(cmd).kill_on_drop(true);
@@ -86,10 +92,11 @@ async fn run(addr: &HostAddr, cmd: &str, input: &[u8]) -> Result<String, HostErr
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| HostError::Unreachable(format!("ssh: {e}")))?;
-    if let Some(mut stdin) = child.stdin.take() {
-        // A write that fails means the command already ended; its status says why.
-        let _ = stdin.write_all(input).await;
-    }
+    let written = match child.stdin.take() {
+        // Dropped once written, so the command reads its end.
+        Some(mut stdin) => stdin.write_all(input).await,
+        None => Ok(()),
+    };
     let out = child
         .wait_with_output()
         .await
@@ -102,6 +109,12 @@ async fn run(addr: &HostAddr, cmd: &str, input: &[u8]) -> Result<String, HostErr
             why
         }));
     }
+    if let Err(e) = written {
+        return Err(HostError::Unreachable(format!(
+            "the copy to {} was cut short: {e}",
+            addr.ssh
+        )));
+    }
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
@@ -111,8 +124,9 @@ async fn run(addr: &HostAddr, cmd: &str, input: &[u8]) -> Result<String, HostErr
 pub async fn install(addr: &HostAddr, binary: &Path) -> Result<String, HostError> {
     let bytes = tokio::fs::read(binary)
         .await
-        .map_err(|e| HostError::Unreachable(format!("{}: {e}", binary.display())))?;
-    let dir = format!("~/.onehand-host/{}", build_id(&bytes));
+        .map_err(|e| HostError::Protocol(format!("{}: {e}", binary.display())))?;
+    let build = build_id(&bytes);
+    let dir = format!("~/.onehand-host/{build}");
     let path = format!("{dir}/onehand-host");
     let probe = run(
         addr,
@@ -128,24 +142,29 @@ pub async fn install(addr: &HostAddr, binary: &Path) -> Result<String, HostError
     if lines.next() == Some("present") {
         return Ok(path);
     }
-    // Written beside its place and moved there whole, so a copy cut short is
-    // never the one an attach runs.
-    run(
-        addr,
-        &format!(
-            "mkdir -p {dir} && cat > {path}.tmp && chmod 755 {path}.tmp && mv {path}.tmp {path}"
-        ),
-        &bytes,
-    )
-    .await?;
+    run(addr, &copy_command(&dir, &build), &bytes).await?;
     Ok(path)
+}
+
+/// What writes the binary on stdin into `dir`. It is written beside its place
+/// and moved there only once it names itself `build`: ssh dying mid-copy
+/// leaves `cat` a short file and a clean exit, and a short file left in place
+/// would pass for that build from then on.
+fn copy_command(dir: &str, build: &str) -> String {
+    let path = format!("{dir}/onehand-host");
+    let tmp = format!("{path}.tmp");
+    format!(
+        "mkdir -p {dir} && cat > {tmp} && chmod 755 {tmp} && \
+         if test \"$({tmp} --build-id)\" = {build}; then mv {tmp} {path}; \
+         else rm -f {tmp}; echo 'the copy arrived cut short' >&2; exit 1; fi"
+    )
 }
 
 /// Attach, say hello, and settle the build: same build → connected; other build with nothing busy
 /// → `Shutdown` it and attach again once; other build busy → `Busy`.
 pub async fn connect(addr: &HostAddr, remote: &str, build: &str) -> Result<HostConn, HostError> {
-    let (conn, settled) = attached(addr, remote, build).await?;
-    match settled {
+    let (conn, said) = attach(addr, remote)?;
+    match reached(settle(&conn, build).await, said).await? {
         Settled::Same => return Ok(conn),
         Settled::Restarted => {
             // The old service closes the stream as it exits; the next attach
@@ -153,21 +172,17 @@ pub async fn connect(addr: &HostAddr, remote: &str, build: &str) -> Result<HostC
             let _ = tokio::time::timeout(SHUTDOWN_WAIT, conn.cmds.closed()).await;
         }
     }
-    match attached(addr, remote, build).await? {
-        (conn, Settled::Same) => Ok(conn),
-        (_, Settled::Restarted) => Err(HostError::Protocol(format!(
-            "{} did not come back on build {build}",
-            addr.ssh
-        ))),
-    }
+    let (conn, said) = attach(addr, remote)?;
+    reached(settle_again(&conn, build).await, said).await?;
+    Ok(conn)
 }
 
-/// One attach, settled; a failure to reach the host says what ssh said.
-async fn attached(
+/// Start `<remote> attach`, and what it says on stderr, as far as it has once
+/// it ends or has said `STDERR_KEEP` bytes.
+fn attach(
     addr: &HostAddr,
     remote: &str,
-    build: &str,
-) -> Result<(HostConn, Settled), HostError> {
+) -> Result<(HostConn, oneshot::Receiver<String>), HostError> {
     let mut child = command(addr, &format!("{remote} attach"))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -179,14 +194,27 @@ async fn attached(
     else {
         return Err(HostError::Unreachable("ssh gave no pipes".into()));
     };
-    let said = tokio::spawn(async move {
+    let (tell, said) = oneshot::channel();
+    tokio::spawn(async move {
         let mut text = Vec::new();
-        let _ = stderr.read_to_end(&mut text).await;
-        String::from_utf8_lossy(&text).trim().to_string()
+        let _ = (&mut stderr).take(STDERR_KEEP).read_to_end(&mut text).await;
+        let _ = tell.send(String::from_utf8_lossy(&text).trim().to_string());
+        // Read on so a talkative attach never blocks on a full pipe.
+        let _ = tokio::io::copy(&mut stderr, &mut tokio::io::sink()).await;
     });
-    let conn = HostConn::start(addr.ssh.clone(), read, write, Some(child));
-    match settle(&conn, build).await {
-        Ok(settled) => Ok((conn, settled)),
+    Ok((
+        HostConn::start(addr.ssh.clone(), read, write, Some(child)),
+        said,
+    ))
+}
+
+/// `result`, with a host that could not be reached explained by what ssh
+/// said, when it said anything.
+async fn reached<T>(
+    result: Result<T, HostError>,
+    said: oneshot::Receiver<String>,
+) -> Result<T, HostError> {
+    match result {
         Err(HostError::Unreachable(why)) => {
             let said = match tokio::time::timeout(STDERR_WAIT, said).await {
                 Ok(Ok(said)) if !said.is_empty() => said,
@@ -194,7 +222,7 @@ async fn attached(
             };
             Err(HostError::Unreachable(said))
         }
-        Err(e) => Err(e),
+        Ok(_) | Err(_) => result,
     }
 }
 
@@ -206,33 +234,55 @@ pub(crate) enum Settled {
 /// Say hello as `build`; a service on another build with nothing mid-turn is
 /// told to shut down, so the next attach starts this one.
 async fn settle(conn: &HostConn, build: &str) -> Result<Settled, HostError> {
+    let (theirs, busy) = hello(conn, build).await?;
+    if theirs == build {
+        return Ok(Settled::Same);
+    }
+    if !busy.is_empty() {
+        return Err(HostError::Busy {
+            build: theirs,
+            busy,
+        });
+    }
+    match conn.ask(Call::Shutdown).await? {
+        Reply::Done => Ok(Settled::Restarted),
+        other @ (Reply::Welcome { .. } | Reply::Sessions(_) | Reply::Opened { .. }) => {
+            Err(unexpected(&other))
+        }
+    }
+}
+
+/// Say hello once more after a restart: another build now is a fault, and is
+/// never shut down a second time.
+async fn settle_again(conn: &HostConn, build: &str) -> Result<(), HostError> {
+    let (theirs, busy) = hello(conn, build).await?;
+    if theirs == build {
+        Ok(())
+    } else if !busy.is_empty() {
+        Err(HostError::Busy {
+            build: theirs,
+            busy,
+        })
+    } else {
+        Err(HostError::Protocol(format!(
+            "the host came back on build {theirs}, not {build}"
+        )))
+    }
+}
+
+/// Say hello as `build`; the host's build, and its sessions mid-turn.
+async fn hello(conn: &HostConn, build: &str) -> Result<(String, Vec<String>), HostError> {
     let hello = Call::Hello {
         build: build.to_string(),
         protocol: PROTOCOL,
     };
     match conn.ask(hello).await? {
         Reply::Welcome {
-            build: theirs,
+            build,
             protocol: _,
             busy,
-        } => {
-            if theirs == build {
-                return Ok(Settled::Same);
-            }
-            if !busy.is_empty() {
-                return Err(HostError::Busy {
-                    build: theirs,
-                    busy,
-                });
-            }
-        }
+        } => Ok((build, busy)),
         other @ (Reply::Sessions(_) | Reply::Opened { .. } | Reply::Done) => {
-            return Err(unexpected(&other))
-        }
-    }
-    match conn.ask(Call::Shutdown).await? {
-        Reply::Done => Ok(Settled::Restarted),
-        other @ (Reply::Welcome { .. } | Reply::Sessions(_) | Reply::Opened { .. }) => {
             Err(unexpected(&other))
         }
     }
@@ -364,6 +414,9 @@ async fn serve<R, W>(
     let mut lines = BufReader::new(read).lines();
     let mut pending: HashMap<u64, Pending> = HashMap::new();
     let mut watchers: HashMap<String, events::UnboundedSender<AcpEvent>> = HashMap::new();
+    // Each session's request channel, kept weakly so a replayed `Ready` reuses
+    // the one still in use without keeping it alive.
+    let mut forwarders: HashMap<String, mpsc::WeakUnboundedSender<AcpRequest>> = HashMap::new();
     // Ids start at 1: the host answers a line it cannot read with id 0.
     let mut next = 1_u64;
     let why = loop {
@@ -382,8 +435,12 @@ async fn serve<R, W>(
                             let _ = tx.send(result.map_err(HostError::Protocol));
                         }
                         (Some(Pending::Watch(tx)), Err(why)) => {
-                            let _ = tx.unbounded_send(AcpEvent::Disconnected(why));
+                            // A watch already replaced has been told it ended.
+                            let before = watchers.len();
                             watchers.retain(|_, w| !w.same_receiver(&tx));
+                            if watchers.len() < before {
+                                let _ = tx.unbounded_send(AcpEvent::Disconnected(why));
+                            }
                         }
                         (Some(Pending::Request(session)), Err(why)) => {
                             if let Some(w) = watchers.get(&session) {
@@ -398,11 +455,17 @@ async fn serve<R, W>(
                     Line::Entry { session, seq: _, entry } => {
                         let Some(w) = watchers.get(&session) else { continue };
                         let event = match entry {
-                            Entry::Ready { resumed, forkable } => AcpEvent::Connected {
-                                tx: forward(&me, session.clone()),
-                                resumed,
-                                forkable,
-                            },
+                            Entry::Ready { resumed, forkable } => {
+                                let tx = match forwarders.get(&session).and_then(|w| w.upgrade()) {
+                                    Some(tx) => tx,
+                                    None => {
+                                        let tx = forward(&me, session.clone());
+                                        forwarders.insert(session.clone(), tx.downgrade());
+                                        tx
+                                    }
+                                };
+                                AcpEvent::Connected { tx, resumed, forkable }
+                            }
                             Entry::Event(event) => event,
                             Entry::Request(request) => AcpEvent::Echo(request),
                         };
@@ -418,7 +481,11 @@ async fn serve<R, W>(
                     Cmd::Ask(call, tx) => (call, Pending::Caller(tx)),
                     Cmd::Watch(session, tx) => {
                         // A second watch of a session replaces the first.
-                        watchers.insert(session.clone(), tx.clone());
+                        if let Some(old) = watchers.insert(session.clone(), tx.clone()) {
+                            let _ = old.unbounded_send(AcpEvent::Disconnected(
+                                "this session is now watched elsewhere".into(),
+                            ));
+                        }
                         (Call::Watch { session }, Pending::Watch(tx))
                     }
                     Cmd::Request(session, request) => (
@@ -446,6 +513,23 @@ async fn serve<R, W>(
                 let _ = tx.send(Err(HostError::Unreachable(why.clone())));
             }
             Pending::Watch(_) | Pending::Request(_) => {}
+        }
+    }
+    refuse_queued(&mut cmds, &why);
+}
+
+/// Answer what was queued as the stream ended: no more is read.
+fn refuse_queued(cmds: &mut mpsc::UnboundedReceiver<Cmd>, why: &str) {
+    cmds.close();
+    while let Ok(cmd) = cmds.try_recv() {
+        match cmd {
+            Cmd::Ask(_, tx) => {
+                let _ = tx.send(Err(HostError::Unreachable(why.to_string())));
+            }
+            Cmd::Watch(_, tx) => {
+                let _ = tx.unbounded_send(AcpEvent::Disconnected(why.to_string()));
+            }
+            Cmd::Request(..) => {}
         }
     }
 }
