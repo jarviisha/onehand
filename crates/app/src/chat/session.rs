@@ -21,7 +21,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-pub(crate) use host::{Carried, HostBegin, OnHost, list as host_list};
+pub(crate) use host::{Carried, HostBegin, OnHost, busy_line, list as host_list};
 use host::{Source, host_events, new_chat};
 
 mod cards;

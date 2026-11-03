@@ -200,7 +200,13 @@ fn ending_for(
         HostFailure::Missing(why) | HostFailure::Other(why) => why,
         HostFailure::Busy { host, busy } => {
             let _ = session.update(cx, |_, cx| cx.emit(ChatEvent::HostBusy { busy }));
-            format!("{host} runs another build of the host service, with sessions mid-turn")
+            busy_line(&host)
         }
     }
+}
+
+/// What is said of `host` running another build with sessions mid-turn,
+/// wherever an attach to it was turned down for it.
+pub(crate) fn busy_line(host: &HostName) -> String {
+    format!("{host} runs another build of the host service, with sessions mid-turn")
 }

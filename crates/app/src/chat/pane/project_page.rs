@@ -54,6 +54,8 @@ pub(super) struct EmptyProject {
     pub(super) listed: host::Listed,
     /// Whether an ask of the host is under way.
     pub(super) listing: bool,
+    /// The newest ask of the host, so an older answer landing late is dropped.
+    pub(super) asked: u64,
     /// What the page's own menu needs to know about the project and cannot
     /// work out: they live in the workspace tree and in a `git status` sweep,
     /// and both are the shell's. Pushed rather than asked for, like everything

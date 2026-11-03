@@ -1,5 +1,6 @@
-use super::host_rows;
+use super::{host_rows, is_newest, watching_uid};
 use onehand_core::host::wire::{HostSession, SessionInfo};
+use onehand_core::workspace::HostName;
 use std::path::Path;
 
 fn info(id: &str, cwd: &str) -> SessionInfo {
@@ -37,4 +38,32 @@ fn host_sessions_are_listed_for_their_folder_newest_first() {
     let (rows, left_out) = host_rows(&list, Path::new("/srv/none"), 2);
     assert!(rows.is_empty());
     assert_eq!(left_out, 0);
+}
+
+#[test]
+fn only_the_newest_ask_is_answered() {
+    assert!(is_newest(3, 3));
+    assert!(!is_newest(2, 3));
+}
+
+#[test]
+fn a_host_session_already_watched_in_its_folder_is_found() {
+    let host = HostName("box".into());
+    let id = HostSession("100-1".into());
+    let on = |id: &str| Some((host.clone(), Some(HostSession(id.into()))));
+    let (a, b, unknown) = (on("100-1"), on("200-2"), Some((host.clone(), None)));
+    let other_host = Some((HostName("else".into()), Some(id.clone())));
+    let (app, srv) = (Path::new("/srv/app"), Path::new("/srv/other"));
+    let convs = || {
+        [
+            (1, srv, a.as_ref()),
+            (2, app, other_host.as_ref()),
+            (3, app, unknown.as_ref()),
+            (4, app, None),
+            (5, app, b.as_ref()),
+            (6, app, a.as_ref()),
+        ]
+    };
+    assert_eq!(watching_uid(convs(), app, &host, &id), Some(6));
+    assert_eq!(watching_uid(convs()[..5].to_vec(), app, &host, &id), None);
 }

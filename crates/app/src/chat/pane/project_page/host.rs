@@ -54,7 +54,35 @@ fn started(id: &HostSession) -> (u64, u64) {
     (secs.parse().unwrap_or(0), n.parse().unwrap_or(0))
 }
 
+/// Whether an answer to ask `asked` is for the page's newest ask, `latest`.
+fn is_newest(asked: u64, latest: u64) -> bool {
+    asked == latest
+}
+
+/// The session among `convs` (each by uid, folder and host) already on host
+/// session `id` of `host`, in the folder `root`.
+fn watching_uid<'a>(
+    convs: impl IntoIterator<Item = (u64, &'a Path, Option<&'a (HostName, Option<HostSession>)>)>,
+    root: &Path,
+    host: &HostName,
+    id: &HostSession,
+) -> Option<u64> {
+    convs.into_iter().find_map(|(uid, folder, on)| {
+        let on = on?;
+        (folder == root && &on.0 == host && on.1.as_ref() == Some(id)).then_some(uid)
+    })
+}
+
 impl ChatPane {
+    /// The session in `root` on `host` already attached to host session `id`.
+    pub fn watching(&self, root: &Path, host: &HostName, id: &HostSession) -> Option<u64> {
+        let convs = self
+            .conversations
+            .iter()
+            .map(|(uid, conv)| (*uid, conv.root.as_path(), conv.host.as_ref()));
+        watching_uid(convs, root, host, id)
+    }
+
     /// Ask the host the page stands on for its sessions, off the UI loop.
     /// What was listed stays on screen until the answer lands.
     pub fn list_host_sessions(&mut self, cx: &mut Context<Self>) {
@@ -64,8 +92,13 @@ impl ChatPane {
         let Some(host) = project.host.clone() else {
             return;
         };
+        // From the pane, not the page: a page made again for the same folder
+        // must not take an answer meant for the one before it.
+        self.host_asks += 1;
+        let asked = self.host_asks;
+        project.asked = asked;
         project.listing = true;
-        let path = project.path.clone();
+        cx.notify();
         let attaching = crate::hosts::conn(cx, &host);
         cx.spawn(async move |pane, cx| {
             let listed = match attaching.await {
@@ -80,12 +113,12 @@ impl ChatPane {
                 Err(failure) => Err(failure),
             };
             let _ = pane.update(cx, |pane: &mut Self, cx| {
-                // Only for the folder it was asked about: an attach can take
-                // long enough for the page to have moved to another project.
+                // Only the newest ask: an attach can take long enough for the
+                // page to have moved to another project, or to have asked again.
                 let Some(project) = pane
                     .empty
                     .as_mut()
-                    .filter(|project| project.path == path && project.host.as_ref() == Some(&host))
+                    .filter(|project| is_newest(asked, project.asked))
                 else {
                     return;
                 };
@@ -96,9 +129,7 @@ impl ChatPane {
                     // The shell asks whether to restart the service; a yes
                     // lists again.
                     Err(HostFailure::Busy { host, busy }) => {
-                        let why = format!(
-                            "{host} runs another build of the host service, with sessions mid-turn"
-                        );
+                        let why = crate::chat::session::busy_line(&host);
                         cx.emit(ChatPaneEvent::HostBusy {
                             uid: None,
                             host,
@@ -124,7 +155,6 @@ pub(super) fn refresh(host: &HostName, listing: bool, cx: &mut Context<ChatPane>
         .named(format!("Refresh the sessions on {host}"))
         .on_click(cx.listener(|pane: &mut ChatPane, _, _, cx| {
             pane.list_host_sessions(cx);
-            cx.notify();
         }))
         .into_any_element()
 }
@@ -180,7 +210,6 @@ pub(super) fn host_sessions(
                         .loading(listing)
                         .on_click(cx.listener(|pane: &mut ChatPane, _, _, cx| {
                             pane.list_host_sessions(cx);
-                            cx.notify();
                         })),
                 ),
         ),
@@ -194,7 +223,7 @@ pub(super) fn host_sessions(
         rows.into_iter().enumerate().map(|(i, info)| {
             let agent = SharedString::from(info.agent.clone());
             let session = info.session.clone();
-            let since = onehand_core::age(now, started(&info.session).0);
+            let since = onehand_core::rel_time(now, started(&info.session).0);
             let (state, ink) = match info.busy {
                 true => ("running", running),
                 false if info.ended => ("ended", muted),

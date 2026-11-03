@@ -535,6 +535,17 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // Shown again rather than opened twice: two sessions on one host
+        // session would both send to it.
+        let ws = &self.window.workspace;
+        let open = ws.roots.get(ws.active_root).and_then(|root| {
+            let host = root.host.as_ref()?;
+            self.chat.read(cx).watching(&root.path, host, &id)
+        });
+        if let Some(uid) = open.filter(|uid| self.locate(*uid).is_some()) {
+            self.show_session(uid, window, cx);
+            return;
+        }
         let idx = agent_index(Some(agent), cx);
         let Some(spec) = Shared::global(cx).agents.get(idx).cloned() else {
             return;

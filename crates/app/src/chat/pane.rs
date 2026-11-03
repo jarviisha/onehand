@@ -246,6 +246,9 @@ pub struct ChatPane {
     /// maps this replaced could disagree with one another, is on
     /// [`Conversation`].
     conversations: HashMap<u64, Conversation>,
+    /// How many times a project page has asked a host for its sessions,
+    /// which numbers each ask.
+    host_asks: u64,
     active: Option<u64>,
     composer: Entity<Composer>,
     /// This pane's window, so a turn ending can ask whether *this* window is
@@ -416,6 +419,7 @@ impl ChatPane {
             Self {
                 focus_handle: cx.focus_handle(),
                 conversations: HashMap::new(),
+                host_asks: 0,
                 active: None,
                 composer,
                 zoom: crate::zoom::Zoom::default(),
