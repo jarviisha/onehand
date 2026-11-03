@@ -461,9 +461,6 @@ pub struct WorkspaceConfig {
     /// The command a workflow's work must pass before it goes further, by
     /// root: onehand runs it itself rather than taking the agent's word.
     pub checks: std::collections::BTreeMap<PathBuf, String>,
-    /// The host each root lives on, by path for the reason pins are; a root
-    /// not listed is a folder on this machine.
-    pub hosts: std::collections::BTreeMap<PathBuf, crate::workspace::HostName>,
 }
 
 /// The window's panel arrangement, as far as anything outside the front end

@@ -102,6 +102,34 @@ impl ProjectRoot {
     }
 }
 
+/// How a root is written in the workspace file: its path, or `host:path` for a
+/// folder on a host. A local root is stored absolute, so the two never read
+/// alike.
+fn root_key(host: Option<&HostName>, path: &Path) -> PathBuf {
+    match host {
+        Some(host) => PathBuf::from(format!("{host}:{}", path.display())),
+        None => path.to_path_buf(),
+    }
+}
+
+fn root_key_of(root: &ProjectRoot) -> PathBuf {
+    root_key(root.host.as_ref(), &root.path)
+}
+
+/// The inverse of [`root_key`]: an entry that is not absolute and has a host
+/// name before its first `:` is a folder on that host.
+fn parse_root_key(stored: &Path) -> (Option<HostName>, PathBuf) {
+    let text = stored.to_string_lossy();
+    if !stored.is_absolute() {
+        if let Some((host, path)) = text.split_once(':') {
+            if !host.is_empty() {
+                return (Some(HostName(host.into())), PathBuf::from(path));
+            }
+        }
+    }
+    (None, stored.to_path_buf())
+}
+
 /// The folder's display label — its final path component, else the whole path.
 pub fn label_for(path: &Path) -> String {
     path.file_name()
@@ -220,11 +248,11 @@ impl Workspace {
     /// aliases) and `active_root` follows its path through the dedup, clamped
     /// in-bounds.
     pub fn from_config(cfg: WorkspaceConfig, storage_dir: PathBuf) -> Self {
-        // A path listed in `hosts` is a folder on that host: it means nothing
-        // here, so it is kept as typed.
-        let key = |path: PathBuf| match cfg.hosts.get(&path) {
-            Some(host) => (Some(host.clone()), path),
-            None => (None, normalize_root(path)),
+        // A host's folder means nothing here, so it is kept as typed; a local
+        // one is normalized.
+        let key = |stored: PathBuf| match parse_root_key(&stored) {
+            (Some(host), path) => (Some(host), path),
+            (None, path) => (None, normalize_root(path)),
         };
         let active_key = cfg.roots.get(cfg.active_root).cloned().map(key);
         let mut roots: Vec<ProjectRoot> = Vec::new();
@@ -239,19 +267,20 @@ impl Workspace {
         // Pins are stored as paths rather than indices, so a root added or
         // removed elsewhere in the file cannot silently move a pin onto a
         // different project.
-        let pinned: Vec<PathBuf> = cfg.pinned.into_iter().map(normalize_root).collect();
-        let unattended: Vec<PathBuf> = cfg.unattended.into_iter().map(normalize_root).collect();
-        let checks: Vec<(PathBuf, String)> = cfg
+        let pinned: Vec<_> = cfg.pinned.into_iter().map(key).collect();
+        let unattended: Vec<_> = cfg.unattended.into_iter().map(key).collect();
+        let checks: Vec<_> = cfg
             .checks
             .into_iter()
-            .map(|(path, check)| (normalize_root(path), check))
+            .map(|(path, check)| (key(path), check))
             .collect();
         for root in &mut roots {
-            root.pinned = pinned.contains(&root.path);
-            root.unattended = unattended.contains(&root.path);
+            let own = (root.host.clone(), root.path.clone());
+            root.pinned = pinned.contains(&own);
+            root.unattended = unattended.contains(&own);
             root.check = checks
                 .iter()
-                .find(|(path, _)| *path == root.path)
+                .find(|(k, _)| *k == own)
                 .map(|(_, check)| check.clone());
         }
         let active_root = active_key
@@ -288,26 +317,22 @@ impl Workspace {
             .unwrap_or(0);
         WorkspaceConfig {
             name: self.name.clone(),
-            roots: kept.iter().map(|r| r.path.clone()).collect(),
+            roots: kept.iter().map(|r| root_key_of(r)).collect(),
             active_root,
             layout: self.layout,
             pinned: kept
                 .iter()
                 .filter(|root| root.pinned)
-                .map(|root| root.path.clone())
+                .map(|root| root_key_of(root))
                 .collect(),
             unattended: kept
                 .iter()
                 .filter(|root| root.unattended)
-                .map(|root| root.path.clone())
+                .map(|root| root_key_of(root))
                 .collect(),
             checks: kept
                 .iter()
-                .filter_map(|root| Some((root.path.clone(), root.check.clone()?)))
-                .collect(),
-            hosts: kept
-                .iter()
-                .filter_map(|root| Some((root.path.clone(), root.host.clone()?)))
+                .filter_map(|root| Some((root_key_of(root), root.check.clone()?)))
                 .collect(),
         }
     }
@@ -458,10 +483,11 @@ impl Workspace {
 
     /// Add a project root and make it active. Returns its index.
     ///
-    /// The path is normalized first, and adding a folder that's already a root
-    /// (directly, or via a symlink/`..` alias) *selects* it instead of creating
-    /// a twin — every per-root map in the app is keyed by this path, so twins
-    /// would silently share terminals/layouts/editors while splitting sessions.
+    /// The path is normalized first, and adding a folder on this machine that's
+    /// already a root (directly, or via a symlink/`..` alias) *selects* it
+    /// instead of creating a twin; a root on a host with the same path is
+    /// another root, so only `(None, path)` is compared. Twins of one local folder would
+    /// share terminals/layouts/editors while splitting sessions.
     pub fn add_root(&mut self, path: impl Into<PathBuf>) -> usize {
         self.add_found(None, normalize_root(path.into()))
     }

@@ -345,7 +345,6 @@ fn from_config_dedupes_and_follows_active_path() {
         pinned: Vec::new(),
         unattended: Vec::new(),
         checks: Default::default(),
-        hosts: Default::default(),
     };
     let ws = Workspace::from_config(cfg, PathBuf::from("/store"));
     assert_eq!(ws.roots.len(), 2);
@@ -398,7 +397,6 @@ fn a_nonsense_layout_is_clamped_but_its_flags_are_kept() {
         pinned: Vec::new(),
         unattended: Vec::new(),
         checks: Default::default(),
-        hosts: Default::default(),
     };
     let ws = Workspace::from_config(cfg, PathBuf::from("/store"));
     assert!(ws.layout.workbench_w >= 120.0);
@@ -436,7 +434,6 @@ fn from_config_clamps_out_of_bounds_active() {
         pinned: Vec::new(),
         unattended: Vec::new(),
         checks: Default::default(),
-        hosts: Default::default(),
     };
     let ws = Workspace::from_config(cfg, PathBuf::from("/store"));
     assert_eq!(ws.active_root, 0);
@@ -488,16 +485,31 @@ fn add_and_close_session_tracks_active() {
 #[test]
 fn a_host_root_round_trips_through_the_workspace_file() {
     let mut ws = Workspace::seeded("/local");
-    let i = ws.add_host_root(HostName("vps".into()), PathBuf::from("~/work/app/"));
+    let i = ws.add_host_root(HostName("vps".into()), PathBuf::from("/srv/app/"));
     ws.roots[i].pinned = true;
+    ws.roots[i].check = Some("make test".into());
     let text = toml::to_string(&ws.to_config()).unwrap();
+    assert!(text.contains("\"vps:/srv/app/\""), "{text}");
     let back = Workspace::from_config(toml::from_str(&text).unwrap(), PathBuf::from("/s"));
     let root = &back.roots[1];
     assert_eq!(root.on_host(), Some(&HostName("vps".into())));
-    assert_eq!(root.path, PathBuf::from("~/work/app/"));
+    assert_eq!(root.path, PathBuf::from("/srv/app/"));
     assert_eq!(root.label, "app");
     assert!(root.pinned);
+    assert_eq!(root.check.as_deref(), Some("make test"));
     assert!(back.roots[0].on_host().is_none());
+}
+
+#[test]
+fn a_local_and_a_host_root_on_one_path_both_survive_a_reload() {
+    let mut ws = Workspace::seeded("/srv/app");
+    let i = ws.add_host_root(HostName("vps".into()), PathBuf::from("/srv/app"));
+    ws.roots[i].pinned = true;
+    let text = toml::to_string(&ws.to_config()).unwrap();
+    let back = Workspace::from_config(toml::from_str(&text).unwrap(), PathBuf::from("/s"));
+    assert_eq!(back.roots.len(), 2);
+    assert!(back.roots[0].on_host().is_none() && !back.roots[0].pinned);
+    assert!(back.roots[1].on_host().is_some() && back.roots[1].pinned);
 }
 
 #[test]
@@ -528,7 +540,6 @@ fn adding_the_same_host_root_twice_selects_it() {
 #[test]
 fn a_workspace_file_without_hosts_still_reads() {
     let cfg: WorkspaceConfig = toml::from_str("roots = [\"/a\"]\n").unwrap();
-    assert!(cfg.hosts.is_empty());
     let ws = Workspace::from_config(cfg, PathBuf::from("/s"));
     assert!(ws.roots[0].on_host().is_none());
 }
