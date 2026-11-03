@@ -4,4 +4,5 @@
 //! in it. `wire` is what crosses between the two; `journal` is what the host
 //! keeps. Both ends link them, and neither needs a GUI.
 
+pub mod journal;
 pub mod wire;
