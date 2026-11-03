@@ -73,7 +73,8 @@ pub(super) enum Restarted {
 /// session it was on: read again while the host runs it, with nothing
 /// carried, since its journal is the whole transcript; otherwise opened on
 /// the agent's own conversation (or a fresh one), with what was carried to
-/// adopt until the agent's replay lands.
+/// adopt until the agent's replay lands. An ended one with nothing carried
+/// is read from its journal instead, so it is shown rather than replaced.
 ///
 /// A host that could not say what it runs ends the restart on why, with what
 /// was carried handed back to keep on screen: opening anyway could start a
@@ -87,6 +88,12 @@ pub(super) fn host_restart(
     match listed {
         Err(why) => Restarted::Ended(why, carried),
         Ok(Some(info)) if !info.ended => {
+            Restarted::Begin(HostStart::Watch(info.session.clone()), None)
+        }
+        // Ended with nothing carried: the session never showed here (the
+        // restart that ended it came first), so its journal is read rather
+        // than a blank one opened.
+        Ok(Some(info)) if carried.stored.is_none() => {
             Restarted::Begin(HostStart::Watch(info.session.clone()), None)
         }
         Ok(Some(_) | None) => {

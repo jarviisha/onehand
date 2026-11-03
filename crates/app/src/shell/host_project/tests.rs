@@ -74,3 +74,17 @@ fn the_form_waits_through_the_restart_its_add_asked_for() {
     assert!(reopened.is_some());
     assert!(!release(&mut reopened, None));
 }
+
+#[test]
+fn a_cancelled_form_is_not_carried_on_by_an_old_yes() {
+    let (a, b) = (HostName("a".into()), HostName("b".into()));
+    let mut flow = HostFlow::default();
+    let _asked_a = flow.join(&a, Want::Add);
+    let _asked_b = flow.join(&b, Want::Session(1));
+    assert!(flow.join(&b, Want::Add).is_none());
+    flow.forget_add();
+    // The questions stay up for the sessions they hold; the form is off them,
+    // so a form opened again is not committed by a yes asked for this one.
+    assert_eq!(flow.take(&a), Some((vec![], false)));
+    assert_eq!(flow.take(&b), Some((vec![1], false)));
+}

@@ -100,6 +100,14 @@ impl HostFlow {
         self.asked.remove(host).map(|asked| (asked.uids, asked.add))
     }
 
+    /// The form went away: no question on screen carries its *Add* on, so
+    /// a form opened again is never committed by a yes asked for this one.
+    fn forget_add(&mut self) {
+        for asked in self.asked.values_mut() {
+            asked.add = false;
+        }
+    }
+
     /// A new attach of the form's.
     fn attempt(&mut self) -> u64 {
         self.attempts += 1;
@@ -205,8 +213,10 @@ impl Shell {
     }
 
     /// Put the form away. An attach under way goes on, and what it finds is
-    /// dropped: it is about a form no longer there.
+    /// dropped: it is about a form no longer there. So is a restart question
+    /// it waits on, for the form.
     pub(crate) fn cancel_host_project(&mut self, cx: &mut Context<Self>) {
+        self.host_flow.forget_add();
         if self.host_project.take().is_some() {
             cx.notify();
         }
@@ -281,6 +291,7 @@ impl Shell {
         match found {
             Ok(true) => {
                 self.host_project = None;
+                self.host_flow.forget_add();
                 self.open_host_root(host, path, window, cx);
             }
             Ok(false) => {

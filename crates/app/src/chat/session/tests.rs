@@ -91,6 +91,31 @@ fn restart_resumes_an_ended_host_session() {
     ));
 }
 
+/// One the host lists as ended, with nothing carried (a session pressed on
+/// the project page and restarted by a host service restart before it ever
+/// showed), is read from its journal rather than opened blank; a later
+/// Restart resumes it from what that journal showed.
+#[test]
+fn restart_reads_an_ended_host_session_when_nothing_was_carried() {
+    let info = listed(true);
+    let Restarted::Begin(start, carry) = host_restart(
+        Ok(Some(&info)),
+        Carried {
+            stored: None,
+            sent: 0,
+        },
+        PathBuf::from("/srv/app"),
+        AgentSpec::default(),
+    ) else {
+        panic!("the host listed it");
+    };
+    assert!(
+        matches!(&start, HostStart::Watch(id) if id.0 == "h-1"),
+        "an ended session with nothing carried is read from its journal"
+    );
+    assert!(carry.is_none(), "its journal is the whole transcript");
+}
+
 /// A host that cannot say what it runs ends the restart, saying why, rather
 /// than open a second session beside one that may still run; what was
 /// carried comes back to be kept on screen.
