@@ -399,8 +399,8 @@ impl Hub {
   the `tx` it put in `Connected`. Runtime: `#[tokio::test]`. `dir`: a fresh temp dir per test,
   following the existing core tests' pattern for temp dirs.
   - `opened_session_streams_ready_then_events`: push `Connected`, `SessionId("s")` and
-    `AgentChunk`, then `watch`. The sink gets `Entry` seq 0 `Ready`, 1 `Event(SessionId)`,
-    2 `Event(AgentChunk)`.
+    `AgentChunk`, then `watch`. The sink gets `Replay`, then `Entry` seq 0 `Ready`,
+    1 `Event(SessionId)`, 2 `Event(AgentChunk)`.
   - `detach_mid_turn_loses_nothing`: watch, `request(Prompt)`, then drop the sink receiver. Push
     three `AgentChunk`s and `TurnEnded`, then watch with a new sink. It receives all six entries,
     the `Request(Prompt)` included, and `list()` shows `busy == false`.

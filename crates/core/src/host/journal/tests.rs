@@ -93,10 +93,6 @@ impl Write for Full {
 }
 
 impl Cut for Full {
-    fn size(&mut self) -> std::io::Result<u64> {
-        Ok(self.bytes.len() as u64)
-    }
-
     fn cut(&mut self, len: u64) -> std::io::Result<()> {
         if self.stuck {
             // Room again for the newline that ends the torn line.
@@ -116,10 +112,10 @@ fn a_failed_append_leaves_no_partial_line() {
         stuck: false,
     };
     let mut next = 1;
-    let mut len = 8;
+    let mut len = Some(8);
     assert!(land(&mut file, &mut next, &mut len, b"{\"b\":2}\n").is_err());
     assert_eq!(file.bytes, b"{\"a\":1}\n");
-    assert_eq!((next, len), (1, 8));
+    assert_eq!((next, len), (1, Some(8)));
 }
 
 #[test]
@@ -130,10 +126,18 @@ fn a_line_that_cannot_be_cut_back_is_ended_and_counted() {
         stuck: true,
     };
     let mut next = 1;
-    let mut len = 8;
+    let mut len = Some(8);
     assert!(land(&mut file, &mut next, &mut len, b"{\"b\":2}\n").is_err());
     assert_eq!(file.bytes, b"{\"a\":1}\n{\"b\"\n");
-    assert_eq!((next, len), (2, 13));
+    assert_eq!((next, len), (2, None));
+    // Its length no longer known, a later failed line is never cut back to
+    // a stale length (which would cut into the line ended above); with no
+    // room for its newline either, the next line fuses with it as one.
+    file.stuck = false;
+    file.room = 3;
+    assert!(land(&mut file, &mut next, &mut len, b"{\"c\":3}\n").is_err());
+    assert_eq!(file.bytes, b"{\"a\":1}\n{\"b\"\n{\"c");
+    assert_eq!((next, len), (2, None));
 }
 
 #[test]
@@ -143,12 +147,12 @@ fn a_landed_line_moves_the_length_on() {
         room: 64,
         stuck: false,
     };
-    let (mut next, mut len) = (1, 8);
+    let (mut next, mut len) = (1, Some(8));
     assert_eq!(
         land(&mut file, &mut next, &mut len, b"{\"b\":2}\n").unwrap(),
         1
     );
-    assert_eq!((next, len), (2, 16));
+    assert_eq!((next, len), (2, Some(16)));
 }
 
 #[test]
@@ -158,9 +162,9 @@ fn appending_keeps_the_length_without_asking_the_file() {
     j.append(&chunk("a")).unwrap();
     j.append(&chunk("b")).unwrap();
     let on_disk = std::fs::metadata(dir.join("journal.jsonl")).unwrap().len();
-    assert_eq!(j.len, on_disk);
+    assert_eq!(j.len, Some(on_disk));
     drop(j);
-    assert_eq!(Journal::open(&dir).unwrap().len, on_disk);
+    assert_eq!(Journal::open(&dir).unwrap().len, Some(on_disk));
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -245,5 +249,34 @@ fn reading_on_from_a_mark_gives_each_whole_line_once() {
     let (rest, end) = read_from(&dir, mark).unwrap();
     assert_eq!(rest.iter().map(|(s, _)| *s).collect::<Vec<_>>(), [2, 3]);
     assert!(read_from(&dir, end).unwrap().0.is_empty());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn last_steps_back_over_lines_it_cannot_read() {
+    let dir = scratch("last-unreadable");
+    let mut j = Journal::open(&dir).unwrap();
+    j.append(&chunk("a")).unwrap();
+    j.append(&Entry::Event(AcpEvent::Disconnected("gone".into())))
+        .unwrap();
+    drop(j);
+    let mut f = std::fs::OpenOptions::new()
+        .append(true)
+        .open(dir.join("journal.jsonl"))
+        .unwrap();
+    // A newer build's entry, longer than the first reach, then an empty line.
+    let newer = format!(
+        "{{\"future\":\"{}\"}}\n\n",
+        "f".repeat(3 * TAIL_CHUNK as usize)
+    );
+    f.write_all(newer.as_bytes()).unwrap();
+    drop(f);
+    assert!(matches!(
+        last(&dir).unwrap(),
+        Some(Entry::Event(AcpEvent::Disconnected(why))) if why == "gone"
+    ));
+    // Nothing readable at all.
+    std::fs::write(dir.join("journal.jsonl"), b"{\"future\":1}\n\n").unwrap();
+    assert!(last(&dir).unwrap().is_none());
     let _ = std::fs::remove_dir_all(&dir);
 }

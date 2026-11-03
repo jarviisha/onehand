@@ -182,7 +182,14 @@ impl Hub {
         sink: UnboundedSender<FromHost>,
     ) -> Result<(), String> {
         let dir = lock(hub).unwatch(session)?;
-        let (entries, mark) = journal::read_from(&dir, Mark::default()).map_err(unreadable)?;
+        let read = || journal::read_from(&dir, Mark::default());
+        // Off the runtime's own threads where it has others to give, so a long
+        // read stalls no other task; a single-threaded runtime has none.
+        let read = match tokio::runtime::Handle::try_current().map(|h| h.runtime_flavor()) {
+            Ok(tokio::runtime::RuntimeFlavor::MultiThread) => tokio::task::block_in_place(read),
+            Ok(_) | Err(_) => read(),
+        };
+        let (entries, mark) = read.map_err(unreadable)?;
         lock(hub).replay(session, sink, entries, mark)
     }
 

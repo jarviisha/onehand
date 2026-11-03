@@ -17,8 +17,10 @@ const TAIL_CHUNK: u64 = 4096;
 pub struct Journal {
     file: File,
     next: u64,
-    /// The file's length, kept here so an append need not ask the file.
-    len: u64,
+    /// The file's length, kept here so an append need not ask the file;
+    /// none once a failed line could not be cut back, after which it is
+    /// never cut back again.
+    len: Option<u64>,
 }
 
 impl Journal {
@@ -40,7 +42,11 @@ impl Journal {
             next += 1;
             len += 1;
         }
-        Ok(Journal { file, next, len })
+        Ok(Journal {
+            file,
+            next,
+            len: Some(len),
+        })
     }
 
     /// Append one entry as one line, flushed; returns its seq (0-based line number).
@@ -51,17 +57,12 @@ impl Journal {
     }
 }
 
-/// A journal file that can say its length and be cut back.
+/// A journal file cut back to `len`.
 trait Cut {
-    fn size(&mut self) -> io::Result<u64>;
     fn cut(&mut self, len: u64) -> io::Result<()>;
 }
 
 impl Cut for File {
-    fn size(&mut self) -> io::Result<u64> {
-        Ok(self.metadata()?.len())
-    }
-
     fn cut(&mut self, len: u64) -> io::Result<()> {
         self.set_len(len)
     }
@@ -71,25 +72,31 @@ impl Cut for File {
 /// `next`; both move on past it. What part of a line that failed landed is
 /// cut back, so a watch never meets half an entry. A file that cannot be cut
 /// back gets the torn line ended instead, as `open` does, so it costs its seq
-/// alone and the next entry does not fuse with it.
+/// alone and the next entry does not fuse with it; its length is then not
+/// known, and no later line is cut back, so no seq can drift.
+// ponytail: after one failed cut-back every later failed append costs a torn
+// line and a seq; reopening the journal learns the length again.
 fn land<W: Write + Cut>(
     file: &mut W,
     next: &mut u64,
-    len: &mut u64,
+    len: &mut Option<u64>,
     line: &[u8],
 ) -> io::Result<u64> {
     if let Err(e) = file.write_all(line).and_then(|()| file.flush()) {
-        if file.cut(*len).is_err() && file.write_all(b"\n").is_ok() {
-            *next += 1;
-            if let Ok(size) = file.size() {
-                *len = size;
+        let cut = len.is_some_and(|len| file.cut(len).is_ok());
+        if !cut {
+            *len = None;
+            if file.write_all(b"\n").is_ok() {
+                *next += 1;
             }
         }
         return Err(e);
     }
     let seq = *next;
     *next += 1;
-    *len += line.len() as u64;
+    if let Some(len) = len {
+        *len += line.len() as u64;
+    }
     Ok(seq)
 }
 
@@ -138,9 +145,10 @@ pub fn read_from(dir: &Path, from: Mark) -> io::Result<(Vec<(u64, Entry)>, Mark)
     Ok((entries, end))
 }
 
-/// The entry on the journal's last whole line, read from the file's end
-/// alone; none for a missing or empty journal, or a last line that does not
-/// parse. A torn tail after it is passed over.
+/// The last entry in the journal that parses, read from the file's end
+/// alone: whole lines this build cannot read (a newer build's entry, a torn
+/// line ended later) are stepped over, as is a torn tail. None for a missing
+/// or empty journal, or one with no line that parses.
 pub fn last(dir: &Path) -> io::Result<Option<Entry>> {
     let mut file = match File::open(dir.join(FILE)) {
         Ok(file) => file,
@@ -154,17 +162,21 @@ pub fn last(dir: &Path) -> io::Result<Option<Entry>> {
         file.seek(SeekFrom::Start(start))?;
         let mut tail = Vec::new();
         (&mut file).take(size - start).read_to_end(&mut tail)?;
-        let line = tail.iter().rposition(|b| *b == b'\n').and_then(|end| {
-            match tail[..end].iter().rposition(|b| *b == b'\n') {
-                Some(before) => Some(&tail[before + 1..end]),
-                None => (start == 0).then(|| &tail[..end]),
+        let whole = tail.iter().rposition(|b| *b == b'\n').unwrap_or(0);
+        let mut lines = tail[..whole].split(|b| *b == b'\n').rev().peekable();
+        while let Some(line) = lines.next() {
+            // Read from mid-file, the first line may have begun before `start`.
+            if start > 0 && lines.peek().is_none() {
+                break;
             }
-        });
-        match line {
-            Some(line) => return Ok(serde_json::from_slice(line).ok()),
-            None if start == 0 => return Ok(None),
-            None => reach *= 2,
+            if let Ok(entry) = serde_json::from_slice(line) {
+                return Ok(Some(entry));
+            }
         }
+        if start == 0 {
+            return Ok(None);
+        }
+        reach *= 2;
     }
 }
 

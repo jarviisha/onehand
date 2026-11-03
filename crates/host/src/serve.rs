@@ -214,6 +214,8 @@ async fn connection(
         tokio::select! {
             ask = asks.next_line() => {
                 let Ok(Some(ask)) = ask else { break };
+                // Answered whole, a Watch after its replay, before the next ask
+                // is read: the laptop tells whose replay is whose by that order.
                 let exit = answer(&hub, &build, &out, &ask);
                 if exit {
                     flush(&mut write, &mut lines).await;

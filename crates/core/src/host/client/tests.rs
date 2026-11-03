@@ -752,3 +752,36 @@ async fn an_unanswered_hello_ends_at_its_deadline() {
     host.answer(id, Reply::Sessions(vec![])).await;
     assert!(listing.await.unwrap().unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn a_watch_starts_only_at_its_own_marker() {
+    let (conn, mut host) = pair();
+    let mut first = conn.watch("s1");
+    let mut second = conn.watch("s1");
+    let Question { id: one, .. } = host.ask().await;
+    let Question { id: two, .. } = host.ask().await;
+    // As the host sends them: each watch's replay, then its answer, in turn.
+    // Told apart by their text, so the test sees whose replay was taken.
+    for (id, text) in [(one, "first's"), (two, "second's")] {
+        host.send(FromHost::Replay {
+            session: "s1".into(),
+        })
+        .await;
+        host.entry(0, chunk(text)).await;
+        host.entry(1, chunk("b")).await;
+        host.answer(id, Reply::Done).await;
+    }
+    host.entry(2, chunk("c")).await;
+    assert!(matches!(
+        first.next().await,
+        Some(AcpEvent::Disconnected(why)) if why.contains("watched elsewhere")
+    ));
+    assert_eq!(next_chunk(&mut second).await, "second's");
+    assert_eq!(next_chunk(&mut second).await, "b");
+    assert_eq!(next_chunk(&mut second).await, "c");
+    drop(host);
+    assert!(matches!(
+        second.next().await,
+        Some(AcpEvent::Disconnected(why)) if why.contains("lost the connection")
+    ));
+}
