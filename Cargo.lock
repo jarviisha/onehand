@@ -4565,6 +4565,7 @@ dependencies = [
  "dirs 5.0.1",
  "futures",
  "onehand-core",
+ "serde",
  "serde_json",
  "tokio",
 ]

@@ -6,7 +6,8 @@
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
-use std::path::PathBuf;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -16,6 +17,7 @@ use onehand_core::acp::{AcpEvent, AcpRequest, Opening, ReqTx, SessionOpts};
 use onehand_core::config::{AgentSpec, Launch};
 use onehand_core::host::journal::{self, Journal};
 use onehand_core::host::wire::{busy_after, Entry, Line, SessionInfo};
+use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::serve::log;
@@ -29,6 +31,18 @@ const ATTACHMENTS_DROPPED: &str =
 
 /// What a session's stream ending says when the agent did not say why.
 const CLOSED: &str = "The agent's connection closed";
+
+/// What ends a session a service before this one left running.
+const STOPPED: &str = "The host service stopped while this session was running";
+
+/// `dir/sessions/<id>/session.json`: what a service started again needs to list the session.
+const RECORD: &str = "session.json";
+
+#[derive(Serialize, Deserialize)]
+struct Record {
+    cwd: PathBuf,
+    agent: String,
+}
 
 struct Session {
     dir: PathBuf,
@@ -63,6 +77,28 @@ impl Hub {
         }
     }
 
+    /// Take back every session a service before this one left under
+    /// `dir/sessions/`, each ended: its agent went with that service. One the
+    /// journal does not show ending is ended here, so each watch of it ends once.
+    pub(crate) fn load(&mut self) {
+        let dirs = match fs::read_dir(self.dir.join("sessions")) {
+            Ok(dirs) => dirs,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
+            Err(e) => return log(&format!("earlier sessions not read: {e}")),
+        };
+        for dir in dirs.flatten().map(|d| d.path()) {
+            let Some(id) = dir.file_name().and_then(|n| n.to_str()).map(str::to_owned) else {
+                continue;
+            };
+            match load(&dir) {
+                Ok(session) => {
+                    self.sessions.insert(id, session);
+                }
+                Err(e) => log(&format!("session {id} skipped: {e}")),
+            }
+        }
+    }
+
     /// Start a session: journal under `dir/sessions/<id>/`, agent driven on a spawned task.
     pub(crate) fn open(
         hub: &Arc<Mutex<Hub>>,
@@ -84,6 +120,15 @@ impl Hub {
         let (id, dir) = this.fresh_id();
         let journal = Journal::open(&dir)
             .map_err(|e| format!("Could not start this session's journal: {e}"))?;
+        // Before the agent starts, so a service started again can list every session it ran.
+        let record = Record {
+            cwd: cwd.clone(),
+            agent: agent.name.clone(),
+        };
+        serde_json::to_vec(&record)
+            .map_err(std::io::Error::other)
+            .and_then(|bytes| fs::write(dir.join(RECORD), bytes))
+            .map_err(|e| format!("Could not record this session: {e}"))?;
         let opts = SessionOpts {
             cwd: cwd.clone(),
             opening,
@@ -254,6 +299,33 @@ impl Hub {
 }
 
 const ENDED: &str = "this session has ended";
+
+/// A session read back from `dir`, ended; an error if it has no readable record.
+fn load(dir: &Path) -> Result<Session, String> {
+    let bytes = fs::read(dir.join(RECORD)).map_err(|e| format!("{RECORD}: {e}"))?;
+    let record: Record = serde_json::from_slice(&bytes).map_err(|e| format!("{RECORD}: {e}"))?;
+    let entries = journal::read(dir).map_err(|e| format!("journal: {e}"))?;
+    let mut journal = Journal::open(dir).map_err(|e| format!("journal: {e}"))?;
+    let ended = matches!(
+        entries.last(),
+        Some((_, Entry::Event(AcpEvent::Disconnected(_))))
+    );
+    if !ended {
+        journal
+            .append(&Entry::Event(AcpEvent::Disconnected(STOPPED.into())))
+            .map_err(|e| format!("journal: {e}"))?;
+    }
+    Ok(Session {
+        dir: dir.to_path_buf(),
+        journal,
+        cwd: record.cwd,
+        agent: record.agent,
+        tx: None,
+        watcher: None,
+        busy: false,
+        ended: true,
+    })
+}
 
 fn unknown(session: &str) -> String {
     format!("there is no session {session} on this host")

@@ -337,3 +337,95 @@ async fn unknown_preset_fails_open() {
     assert_eq!(got, Err(want));
     assert!(hub.lock().unwrap().list().is_empty());
 }
+
+/// A hub on `dir` as it is, the way a service started again finds it.
+fn hub_on(dir: PathBuf) -> (Arc<Mutex<Hub>>, Opened) {
+    let opened: Opened = Arc::default();
+    let seen = opened.clone();
+    let connector: Connector = Arc::new(move |_launch, _opts| {
+        let (tx, rx) = fmpsc::unbounded();
+        seen.lock().unwrap().push(tx);
+        rx.boxed()
+    });
+    let mut hub = Hub::new(dir, None, connector);
+    hub.load();
+    (Arc::new(Mutex::new(hub)), opened)
+}
+
+#[tokio::test]
+async fn a_restarted_hub_lists_and_replays_earlier_sessions() {
+    let (hub, opened) = hub("restart");
+    let fake = open(&hub, &opened, true);
+    fake.push(AcpEvent::SessionId("s".into()));
+    fake.push(chunk("hi"));
+    settle().await;
+    let dir = hub.lock().unwrap().dir.clone();
+    drop(hub);
+
+    let (hub, _opened) = hub_on(dir);
+    let list = hub.lock().unwrap().list();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].session, fake.session);
+    assert_eq!(list[0].cwd, PathBuf::from("/tmp"));
+    assert_eq!(list[0].agent, "Fake");
+    assert!(list[0].ended);
+    assert!(!list[0].busy);
+
+    let mut lines = watch(&hub, &fake.session);
+    let got = entries(&mut lines, 4).await;
+    assert_eq!(
+        kinds(&got),
+        [
+            "ready",
+            "event:SessionId",
+            "event:AgentChunk",
+            "event:Disconnected"
+        ]
+    );
+    let Entry::Event(AcpEvent::Disconnected(why)) = &got[3].1 else {
+        panic!("the last entry is not the end");
+    };
+    assert_eq!(
+        why,
+        "The host service stopped while this session was running"
+    );
+    settle().await;
+    assert!(
+        lines.try_recv().is_err(),
+        "the session ended more than once"
+    );
+
+    let refused = hub.lock().unwrap().request(&fake.session, prompt("go"));
+    assert_eq!(refused, Err("this session has ended".to_string()));
+}
+
+#[tokio::test]
+async fn a_session_that_had_ended_is_not_ended_twice() {
+    let (hub, opened) = hub("ended-twice");
+    let fake = open(&hub, &opened, true);
+    fake.push(AcpEvent::Disconnected("the agent died".into()));
+    settle().await;
+    let dir = hub.lock().unwrap().dir.clone();
+    drop(hub);
+    let sessions = dir.join("sessions").join(&fake.session);
+    let before = journal::read(&sessions).unwrap().len();
+
+    let (hub, _opened) = hub_on(dir);
+    assert!(hub.lock().unwrap().list()[0].ended);
+    assert_eq!(journal::read(&sessions).unwrap().len(), before);
+}
+
+#[tokio::test]
+async fn a_directory_without_its_session_file_is_skipped() {
+    let dir = scratch("no-session-file");
+    let stray = dir.join("sessions").join("1-1");
+    let mut j = Journal::open(&stray).unwrap();
+    j.append(&Entry::Ready {
+        resumed: false,
+        forkable: false,
+    })
+    .unwrap();
+    drop(j);
+    let (hub, _opened) = hub_on(dir);
+    assert!(hub.lock().unwrap().list().is_empty());
+}

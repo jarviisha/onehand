@@ -81,7 +81,9 @@ pub(crate) async fn run(dir: PathBuf, build: String) -> ExitCode {
     // Bound first, so an attach waiting on the socket connects while this runs.
     let path = login_path().await;
     let connector: Connector = Arc::new(|launch, opts| acp::connect(launch, opts).boxed());
-    let hub = Arc::new(Mutex::new(Hub::new(dir, path, connector)));
+    let mut hub = Hub::new(dir, path, connector);
+    hub.load();
+    let hub = Arc::new(Mutex::new(hub));
     accept(listener, hub, build).await
 }
 
