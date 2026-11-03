@@ -351,7 +351,7 @@ impl ChatPane {
                             pane.conversations.get(&uid).and_then(|c| c.host.as_ref())
                         {
                             cx.emit(ChatPaneEvent::HostBusy {
-                                uid,
+                                uid: Some(uid),
                                 host: host.clone(),
                                 busy: busy.clone(),
                             });
@@ -583,8 +583,11 @@ impl ChatPane {
         self.empty = root.map(|(label, path, host)| EmptyProject {
             label,
             path,
-            // A folder on a host keeps none of its conversations here.
+            // A folder on a host keeps none of its conversations here; the
+            // host lists its sessions instead.
             history: host.is_some().then(Vec::new),
+            listed: None,
+            listing: false,
             host,
             // They arrive from the shell a moment later, on the same switch
             // that brought this page up. Defaulting to "not pinned, not a
@@ -595,6 +598,7 @@ impl ChatPane {
             rows: super::project_page::home_rows(cx),
         });
         self.scan_project_history(cx);
+        self.list_host_sessions(cx);
         // Going to no session at all is still leaving the one that was showing,
         // and the draft has to be put down here too: a prompt left in the box
         // while passing through an empty project would otherwise be sitting
@@ -616,10 +620,6 @@ impl ChatPane {
 
     /// Open the next showing of `uid`, a session in a host project, onto the
     /// host session `id`, read as the host keeps it.
-    #[expect(
-        dead_code,
-        reason = "a host project's page opens its sessions through it"
-    )]
     pub fn watch_next(&mut self, uid: u64, id: HostSession) {
         self.pending_watch = Some((uid, id));
     }

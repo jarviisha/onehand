@@ -129,6 +129,12 @@ pub enum ChatPaneEvent {
         agent: Option<SharedString>,
         resume: Option<PathBuf>,
     },
+    /// Start a session in the project on screen, a host's, attached to the
+    /// host session `session`, which `agent` runs.
+    WatchHostSession {
+        agent: SharedString,
+        session: onehand_core::host::wire::HostSession,
+    },
     /// Open Settings on its Agents page — the no-agent state's way to where an
     /// agent is set up. Settings is the shell's, as every page is.
     OpenAgentSettings,
@@ -178,10 +184,11 @@ pub enum ChatPaneEvent {
     /// Run the check command of the project on screen, as a task.
     RunCheck,
     /// `host` runs another build of the host service, with `busy` mid-turn,
-    /// so session `uid` there was not attached. Restarting the service stops
+    /// so session `uid` there was not attached, or, with no `uid`, the
+    /// project page could not list its sessions. Restarting the service stops
     /// them, which is the person's to agree to, in a dialog of the shell's.
     HostBusy {
-        uid: u64,
+        uid: Option<u64>,
         host: onehand_core::workspace::HostName,
         busy: Vec<onehand_core::host::wire::HostSession>,
     },

@@ -20,6 +20,7 @@ use onehand_ui::TallIcon as _;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+mod host;
 mod schedules_box;
 use schedules_box::schedules_box;
 
@@ -48,6 +49,11 @@ pub(super) struct EmptyProject {
     /// still running, which is a different thing from a project that has none:
     /// one is a wait and the other is an answer.
     pub(super) history: Option<Vec<ConvMeta>>,
+    /// What the host said about its sessions in the folder, for one on a
+    /// host; `None` until it has answered.
+    pub(super) listed: host::Listed,
+    /// Whether an ask of the host is under way.
+    pub(super) listing: bool,
     /// What the page's own menu needs to know about the project and cannot
     /// work out: they live in the workspace tree and in a `git status` sweep,
     /// and both are the shell's. Pushed rather than asked for, like everything
@@ -364,6 +370,12 @@ impl ChatPane {
                         .into_any_element()
                 })
                 .into_iter()
+                .chain(
+                    project
+                        .host
+                        .as_ref()
+                        .map(|host| host::refresh(host, project.listing, cx)),
+                )
                 .chain([new_session(cx)])
                 .collect(),
             cx,
@@ -508,7 +520,12 @@ impl ChatPane {
             .v_flex()
             .gap_4()
             .w_full()
-            .child(history)
+            .child(match &project.host {
+                Some(host) => {
+                    host::host_sessions(host, &project.path, &project.listed, project.listing, cx)
+                }
+                None => history,
+            })
             .child(tasks)
             .child(schedules)
             .children(settings);

@@ -214,6 +214,9 @@ impl Shell {
                         // session in front of it.
                         let _ = shell.start_session(agent.clone(), resume.clone(), window, cx);
                     }
+                    E::WatchHostSession { agent, session } => {
+                        shell.watch_host_session(agent.clone(), session.clone(), window, cx)
+                    }
                     // Said the same way every other failed write is said, and
                     // for a stronger reason: a workspace that will not save can
                     // be described again, a conversation cannot.

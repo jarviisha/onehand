@@ -175,7 +175,7 @@ fn carry(Carried { stored, sent }: Carried, session: &WeakEntity<ChatSession>, c
 }
 
 /// What the host lists, read on the ACP runtime.
-async fn list(conn: HostConn, cx: &mut AsyncApp) -> Result<Vec<SessionInfo>, HostError> {
+pub(crate) async fn list(conn: HostConn, cx: &mut AsyncApp) -> Result<Vec<SessionInfo>, HostError> {
     let (tx, rx) = oneshot::channel();
     cx.update(|cx| {
         Shared::global(cx).acp.spawn(async move {

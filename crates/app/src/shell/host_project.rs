@@ -44,6 +44,8 @@ enum Want {
     Session(u64),
     /// The form's *Add*, carried on.
     Add,
+    /// The project page's list of the host's sessions, asked again.
+    Page,
 }
 
 /// The restart questions on screen, one per host, and the count that tells
@@ -86,6 +88,8 @@ impl HostFlow {
         match want {
             Want::Session(uid) => asked.uids.push(uid),
             Want::Add => asked.add = true,
+            // Every landed restart lists the page again.
+            Want::Page => {}
         }
         fresh
     }
@@ -292,18 +296,20 @@ impl Shell {
         cx.notify();
     }
 
-    /// Session `uid` was not attached because `host` runs another build with
-    /// `busy` mid-turn: ask whether to restart its service, and on a yes,
-    /// restart it and then the session.
+    /// Session `uid` was not attached, or with no `uid` the project page
+    /// could not list, because `host` runs another build with `busy`
+    /// mid-turn: ask whether to restart its service, and on a yes, restart it
+    /// and then the session, or list the page again.
     pub(super) fn ask_host_restart(
         &mut self,
-        uid: u64,
+        uid: Option<u64>,
         host: HostName,
         busy: &[HostSession],
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.offer_restart(host, busy, Want::Session(uid), window, cx);
+        let want = uid.map_or(Want::Page, Want::Session);
+        self.offer_restart(host, busy, want, window, cx);
     }
 
     /// Ask whether to restart `host`'s service for `want`, or add `want` to
@@ -382,6 +388,9 @@ impl Shell {
                 for uid in uids {
                     self.restart_now(uid, window, cx);
                 }
+                // A page on a host lists again whichever restart it waited
+                // on: its sessions are what a restart changes.
+                self.chat.update(cx, |pane, cx| pane.list_host_sessions(cx));
                 if add {
                     self.commit_host_project(window, cx);
                 }

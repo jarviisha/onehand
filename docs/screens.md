@@ -274,6 +274,14 @@ dragged height kept).
   narrowed to the project; *No schedules here* at none; capped at five; reading and a failed read
   said as on the page); then the box *Settings*
   (its *Check command* field). The page scrolls as one.
+- A project on a host shows the same page, *Refresh* (a quiet icon) before *New session* in its
+  head, and in place of *Past conversations* the box *Sessions on <host>* with its count: a row
+  per session the host keeps in that folder, newest first (its agent, then *started <age>* and
+  *running*, in the running ink while mid-turn, or *ended* at the edge), a press attaching to it in
+  the pane; capped at 50 with *N more on this host*. *Attaching to <host>…* with a spinner while
+  it waits; *No sessions on <host> for this folder yet* at none; a failure says why in the warning
+  ink with *Try again* (secondary); a host on another build asks whether to restart its service,
+  and a yes lists again.
 - *Workspace overview* shows, under its head (*Overview*), across all projects, the boxes *Waiting
   on you* (runs waiting for an answer or an approval, and sessions waiting, failed, finished or
   lost) and *Working*, then *Projects* as a grid of tiles (not drawn without projects), then the

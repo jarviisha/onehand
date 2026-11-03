@@ -6,6 +6,7 @@ use gpui_component::WindowExt as _;
 use gpui_component::dock::DockPlacement;
 use onehand_core::config::AgentSpec;
 use onehand_core::gitstat;
+use onehand_core::host::wire::HostSession;
 use std::path::PathBuf;
 
 impl Shell {
@@ -520,15 +521,31 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<u64> {
-        let idx = agent
-            .and_then(|name| {
-                Shared::global(cx)
-                    .agents
-                    .iter()
-                    .position(|spec| spec.name == name.as_ref())
-            })
-            .unwrap_or(0);
+        let idx = agent_index(agent, cx);
         self.spawn_session(idx, resume, window, cx)
+    }
+
+    /// Start a session on the active root, a host's, attached to the host
+    /// session `id` that `agent` runs there; the default agent stands in for
+    /// one no longer configured, as for an archive.
+    pub(super) fn watch_host_session(
+        &mut self,
+        agent: SharedString,
+        id: HostSession,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let idx = agent_index(Some(agent), cx);
+        let Some(spec) = Shared::global(cx).agents.get(idx).cloned() else {
+            return;
+        };
+        let Some(uid) = self.mint_session(spec, window, cx) else {
+            return;
+        };
+        // Before it is shown, which is what starts it.
+        self.chat.update(cx, |pane, _| pane.watch_next(uid, id));
+        self.show_active_session(window, cx);
+        cx.notify();
     }
 
     /// Add a session running `spec` on the active root, not yet shown, and
@@ -862,4 +879,15 @@ pub(super) fn page_roots_in(
         .filter(|root| listed(root, Reach::Local))
         .map(|root| root.path.clone())
         .collect()
+}
+
+/// Which of the configured agents is called `name`, the first when none is.
+fn agent_index(name: Option<SharedString>, cx: &App) -> usize {
+    name.and_then(|name| {
+        Shared::global(cx)
+            .agents
+            .iter()
+            .position(|spec| spec.name == name.as_ref())
+    })
+    .unwrap_or(0)
 }
