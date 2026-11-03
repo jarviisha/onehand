@@ -42,6 +42,8 @@ pub(super) struct EmptyProject {
     /// Where it is, which is what its archived conversations are keyed by --
     /// and what tells one scan's answer from another's.
     pub(super) path: PathBuf,
+    /// The host the folder is on; `None` for one on this machine.
+    pub(super) host: Option<onehand_core::workspace::HostName>,
     /// Its past conversations, across every agent. `None` while the scan is
     /// still running, which is a different thing from a project that has none:
     /// one is a wait and the other is an answer.
@@ -139,7 +141,12 @@ impl ChatPane {
     /// question. The resume picker inside a session is the narrower one -- there
     /// the agent is already chosen, because the session it belongs to has one.
     pub(super) fn scan_project_history(&mut self, cx: &mut Context<Self>) {
-        let Some(path) = self.empty.as_ref().map(|project| project.path.clone()) else {
+        let Some(path) = self
+            .empty
+            .as_ref()
+            .filter(|project| project.host.is_none())
+            .map(|project| project.path.clone())
+        else {
             return;
         };
         let scan = path.clone();

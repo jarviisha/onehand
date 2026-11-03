@@ -224,7 +224,7 @@ impl Shell {
             .workspace
             .roots
             .iter()
-            .position(|root| path.starts_with(&root.path))
+            .position(|root| root.local_path().is_some_and(|root| path.starts_with(root)))
         else {
             return;
         };

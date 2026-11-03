@@ -92,6 +92,31 @@ pub enum Call {
     },
 }
 
+impl Call {
+    /// The project the call names, if it names one.
+    pub fn project(&self) -> Option<&str> {
+        match self {
+            Call::StartWorkflow { project, .. }
+            | Call::StartIssue { project, .. }
+            | Call::OpenSession { project, .. }
+            | Call::OpenWorker { project, .. } => Some(project),
+            Call::ListTasks { project }
+            | Call::ListIssues { project }
+            | Call::CreateIssue { project, .. } => project.as_deref(),
+            Call::ListProjects
+            | Call::ListAgents
+            | Call::ListWorkflows
+            | Call::ReadWorkflow { .. }
+            | Call::SaveWorkflow { .. }
+            | Call::StopTask { .. }
+            | Call::OpenFile { .. }
+            | Call::SessionState { .. }
+            | Call::SendPrompt { .. }
+            | Call::CancelTurn { .. } => None,
+        }
+    }
+}
+
 /// Who a connection speaks for, fixed by its `initialize`.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Peer {

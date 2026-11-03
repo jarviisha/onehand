@@ -285,7 +285,11 @@ impl Shell {
             .workspace
             .roots
             .iter()
-            .filter(|root| root.path.starts_with(folder))
+            // A host's folder of the same path is not this worktree.
+            .filter(|root| {
+                root.local_path()
+                    .is_some_and(|path| path.starts_with(folder))
+            })
             .map(|root| {
                 let terminals = self.terminal.read(cx).shells_in(&root.path);
                 let mut what = Vec::new();

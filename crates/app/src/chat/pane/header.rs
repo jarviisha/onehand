@@ -179,7 +179,14 @@ impl ChatPane {
             // exactly what the centre of the window shows when there is no
             // session — offering it there too would be saying one thing twice
             // within an inch of itself.
-            .when(live, |header| header.child(self.history_control(cx)))
+            // Nor on a host's session: the conversations it lists are this
+            // machine's.
+            .when(
+                live && self
+                    .active_conversation()
+                    .is_none_or(|conv| conv.host.is_none()),
+                |header| header.child(self.history_control(cx)),
+            )
             // Only while there is a session to end, and *before* the docks
             // rather than last: the cluster reads outward from the name by
             // what each control is about -- this and the past conversations
@@ -538,6 +545,7 @@ fn project_menu(
         unattended,
         check: _,
         asks,
+        local,
     }: ProjectFacts,
     pane: Entity<ChatPane>,
 ) -> impl Fn(
@@ -587,10 +595,13 @@ fn project_menu(
             crate::controls::menu_item("Copy project path")
                 .on_click(act(ProjectAction::CopyPath, pane.clone())),
         )
-        .item(
-            crate::controls::menu_item("Refresh Git status")
-                .on_click(act(ProjectAction::RefreshGit, pane.clone())),
-        )
+        // A folder on a host has no `git status` to read here.
+        .when(local, |menu| {
+            menu.item(
+                crate::controls::menu_item("Refresh Git status")
+                    .on_click(act(ProjectAction::RefreshGit, pane.clone())),
+            )
+        })
         .separator()
         .item(
             crate::controls::menu_row(move |_, _| {

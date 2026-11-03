@@ -858,3 +858,12 @@ fn an_outside_program_is_offered_neither() {
         assert!(why.contains("session's agent"), "{name}: {why}");
     }
 }
+
+#[test]
+fn a_call_names_its_project_or_none() {
+    let issues = Call::ListIssues {
+        project: Some("app".into()),
+    };
+    assert_eq!(issues.project(), Some("app"));
+    assert_eq!(Call::ListProjects.project(), None);
+}

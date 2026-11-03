@@ -722,9 +722,7 @@ impl Shell {
             .display_order()
             .into_iter()
             .map(|idx| &workspace.roots[idx])
-            // A run's own worktree is not a project anybody chose, and its
-            // issues are the project's it was cut from.
-            .filter(|root| !root.transient)
+            .filter(|root| listed(root))
             .map(|root| crate::page_parts::PageProject {
                 label: SharedString::from(root.label.clone()),
                 root: root.path.clone(),
@@ -765,16 +763,9 @@ impl Shell {
         self.chat.read(cx).showing_page()
     }
 
-    /// The projects the pages list, as paths: every project but a run's own
-    /// worktree.
+    /// The projects the pages list, as paths.
     pub fn page_roots(&self) -> Vec<std::path::PathBuf> {
-        self.window
-            .workspace
-            .roots
-            .iter()
-            .filter(|root| !root.transient)
-            .map(|root| root.path.clone())
-            .collect()
+        page_roots_in(&self.window.workspace)
     }
 
     /// Show session `uid`, in whichever window holds it — bringing that window
@@ -815,4 +806,24 @@ impl Shell {
     pub fn answer_tail(&self, uid: u64, cx: &App) -> Option<String> {
         self.chat.read(cx).answer_tail(uid, cx)
     }
+}
+
+/// Whether the pages (Tasks, Issues, Workflows, the workspace page) list a
+/// project. A run's own worktree is not a project anybody chose, and its
+/// issues are the project's it was cut from. A folder on a host has no issue
+/// files, runs or checks this machine can reach.
+fn listed(root: &onehand_core::workspace::ProjectRoot) -> bool {
+    !root.transient && root.on_host().is_none()
+}
+
+/// The projects the pages list, as paths.
+pub(super) fn page_roots_in(
+    workspace: &onehand_core::workspace::Workspace,
+) -> Vec<std::path::PathBuf> {
+    workspace
+        .roots
+        .iter()
+        .filter(|root| listed(root))
+        .map(|root| root.path.clone())
+        .collect()
 }

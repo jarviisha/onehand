@@ -96,6 +96,12 @@ impl ProjectRoot {
         self.host.as_ref()
     }
 
+    /// The folder on this machine; `None` for a root on a host, whose path
+    /// names nothing here for git, a shell or a file read to reach.
+    pub fn local_path(&self) -> Option<&Path> {
+        self.host.is_none().then_some(self.path.as_path())
+    }
+
     /// Read the active session, if any. Index is kept in-bounds by mutators.
     pub fn active_session(&self) -> Option<&Session> {
         self.sessions.get(self.active_session)

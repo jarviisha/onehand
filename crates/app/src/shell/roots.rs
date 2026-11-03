@@ -8,6 +8,9 @@ use gpui_component::dock::DockPlacement;
 use onehand_core::gitstat;
 use std::path::{Path, PathBuf};
 
+/// Why the Workbench and the terminal have nothing for a project on a host.
+const ON_HOST_LATER: &str = "Files and terminals on a host come later";
+
 impl Shell {
     /// Tell the project page what the selected project is, beyond its name.
     ///
@@ -20,7 +23,7 @@ impl Shell {
         let Some(root) = self.window.workspace.active_root() else {
             return;
         };
-        let status = self.window.git.get(&root.path);
+        let status = root.local_path().and_then(|path| self.window.git.get(path));
         let facts = crate::chat::pane::ProjectFacts {
             asks: !self
                 .removal_losses(self.window.workspace.active_root, cx)
@@ -169,6 +172,10 @@ impl Shell {
             // has no project the spare could still turn out to be for.
             self._pending_warm = None;
             Shared::global(cx).acp.drop_warm();
+            // Nor is there a host project for either dock to be refusing.
+            self.workbench
+                .update(cx, |panel, cx| panel.refuse(None, cx));
+            self.terminal.update(cx, |panel, cx| panel.refuse(None, cx));
             return;
         };
         let label = SharedString::from(root.label.clone());
@@ -179,12 +186,25 @@ impl Shell {
             .active_session()
             .map(|session| (session.uid, session.spec.clone()));
         let host = root.on_host().cloned();
+        let local = root.local_path().map(Path::to_path_buf);
         // Editor tabs and the file tree are per root, so the Workbench follows
-        // the selection rather than mixing two projects' state.
-        self.workbench
-            .update(cx, |panel, cx| panel.set_root(path.clone(), cx));
-        self.terminal
-            .update(cx, |panel, cx| panel.set_root(path.clone(), cx));
+        // the selection rather than mixing two projects' state. A folder on a
+        // host has neither here: both panels say so instead of keeping the
+        // last project's.
+        match &local {
+            Some(path) => {
+                self.workbench
+                    .update(cx, |panel, cx| panel.set_root(path.clone(), cx));
+                self.terminal
+                    .update(cx, |panel, cx| panel.set_root(path.clone(), cx));
+            }
+            None => {
+                self.workbench
+                    .update(cx, |panel, cx| panel.refuse(Some(ON_HOST_LATER), cx));
+                self.terminal
+                    .update(cx, |panel, cx| panel.refuse(Some(ON_HOST_LATER), cx));
+            }
+        }
         self.follow_terminal_dock(&path, window, cx);
         // Whether a shell is alive is a fact about the project being arrived at,
         // not about the window, and the title bar draws it. The
@@ -199,20 +219,22 @@ impl Shell {
             // conversation is that project's own past ones, and they are keyed
             // by where the project is rather than by what it is called.
             self.chat.update(cx, |pane, cx| {
-                pane.clear_active(Some((label, path.clone())), window, cx)
+                pane.clear_active(Some((label, path.clone(), host)), window, cx)
             });
             // After, never before: `clear_active` builds the page's state fresh
             // for the project being arrived at, so anything pushed into the old
             // one is thrown away with it.
             self.sync_project_facts(cx);
-            self.show_check_input(&path, window, cx);
+            self.show_check_input(local.as_deref(), window, cx);
             // Nothing is running on this project and the page now on screen is
             // a list of past conversations over a *New session* button, so the
             // next thing asked of it is almost certainly a session. Start the
             // agent against this root now: bringing one up costs seconds that
             // are entirely the adapter's and the SDK's, and spending them while
             // the user reads the page is spending them for free.
-            self.warm_default_agent(path, cx);
+            if let Some(local) = local {
+                self.warm_default_agent(local, cx);
+            }
             self.sync_agent_started(cx);
             return;
         };
@@ -296,15 +318,21 @@ impl Shell {
             .map(|root| root.path.clone())
     }
 
-    /// The project on screen, its name and path.
+    /// The project on screen, its name and path, when it is on this machine.
     pub(crate) fn on_screen(&self) -> Option<(String, PathBuf)> {
         let root = self.window.workspace.active_root()?;
-        Some((root.label.clone(), root.path.clone()))
+        Some((root.label.clone(), root.local_path()?.to_path_buf()))
     }
 
     /// Open `path` in the Workbench and show the Workbench, without moving
     /// focus: a tool card's link and a tool's call land here alike.
     pub(crate) fn open_file(&mut self, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
+        // A host session's paths name files on the host, not here.
+        let active = self.window.workspace.active_root();
+        if active.is_some_and(|root| root.on_host().is_some()) {
+            window.push_notification(crate::toast::info(ON_HOST_LATER), cx);
+            return;
+        }
         // Another panel maximized would hide the Workbench the file opens in:
         // it is put back first, so the file is seen where it was asked for.
         if self
@@ -348,10 +376,10 @@ impl Shell {
         let Some(root) = self.window.workspace.roots.get(idx) else {
             return;
         };
-        let (path, label) = (root.path.clone(), root.label.clone());
+        let (host, path, label) = (root.host.clone(), root.path.clone(), root.label.clone());
         let losses = self.removal_losses(idx, cx);
         if losses.is_empty() {
-            self.drop_root(&path, window, cx);
+            self.drop_root(host.as_ref(), &path, window, cx);
             return;
         }
         let ask = Confirm {
@@ -365,10 +393,11 @@ impl Shell {
             act: "Remove",
             ..Default::default()
         };
-        // By path, not by index: the tree can be reordered while the question
-        // is open, and the answer has to land on the project it was about.
+        // By host and path, not by index: the tree can be reordered while the
+        // question is open, and the answer has to land on the project it was
+        // about, not on a folder of the same path elsewhere.
         self.confirm(ask, window, cx, move |shell, window, cx| {
-            shell.drop_root(&path, window, cx)
+            shell.drop_root(host.as_ref(), &path, window, cx)
         });
     }
 
@@ -380,7 +409,9 @@ impl Shell {
             return Vec::new();
         };
         let live = root.sessions.len();
-        let unsaved = self.workbench.read(cx).unsaved_in(&root.path, cx);
+        let unsaved = root
+            .local_path()
+            .map_or(0, |path| self.workbench.read(cx).unsaved_in(path, cx));
         let mut losses = Vec::new();
         if live > 0 {
             let s = if live == 1 { "session" } else { "sessions" };
@@ -393,14 +424,20 @@ impl Shell {
         losses
     }
 
-    /// Remove the root at `path`, the question already answered.
-    fn drop_root(&mut self, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
+    /// Remove the root at `path` on `host`, the question already answered.
+    fn drop_root(
+        &mut self,
+        host: Option<&onehand_core::workspace::HostName>,
+        path: &Path,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(idx) = self
             .window
             .workspace
             .roots
             .iter()
-            .position(|r| r.path == path)
+            .position(|r| r.on_host() == host && r.path == path)
         else {
             return;
         };
@@ -428,18 +465,22 @@ impl Shell {
                 pane.close(uid, cx);
             }
         });
-        self.workbench
-            .update(cx, |panel, cx| panel.forget_root(&path, cx));
-        self.issues_page.forget_root(&path, cx);
-        self.terminal
-            .update(cx, |panel, cx| panel.forget_root(&path, cx));
-        self.window.git.remove(&path);
+        // A folder on a host was never given any of these, and what is filed
+        // under its path belongs to a folder of the same path here.
+        if self.local_root(idx).is_some() {
+            self.workbench
+                .update(cx, |panel, cx| panel.forget_root(&path, cx));
+            self.issues_page.forget_root(&path, cx);
+            self.terminal
+                .update(cx, |panel, cx| panel.forget_root(&path, cx));
+            self.window.git.remove(&path);
+            // Its field goes with it: kept, the same folder added back found the
+            // old command in a field its project no longer had.
+            self.check_inputs.remove(&path);
+            self.terminal_homes.forget(&path);
+        }
         self.mru.remove(&path);
         self.folds.remove(&path);
-        // Its field goes with it: kept, the same folder added back found the
-        // old command in a field its project no longer had.
-        self.check_inputs.remove(&path);
-        self.terminal_homes.forget(&path);
         // A cycle's frozen order can name sessions that no longer exist.
         self.tab_cycle = None;
 
@@ -529,33 +570,42 @@ impl Shell {
         let Some(root) = self.window.workspace.roots.get(root_idx) else {
             return;
         };
-        let path = root.path.display().to_string();
+        let path = match root.on_host() {
+            Some(host) => format!("{host}:{}", root.path.display()),
+            None => root.path.display().to_string(),
+        };
         cx.write_to_clipboard(gpui::ClipboardItem::new_string(path.clone()));
         window.push_notification(crate::toast::info(format!("Copied {path}")), cx);
     }
 
-    /// Where the project at `root` sits in this window's list of roots.
+    /// The folder of root `idx` on this machine; `None` for a root on a host,
+    /// which nothing here may read, run in or scan.
+    pub(crate) fn local_root(&self, idx: usize) -> Option<&Path> {
+        self.window.workspace.roots.get(idx)?.local_path()
+    }
+
+    /// Where the project at `root`, a folder on this machine, sits in this
+    /// window's list of roots. Never a root on a host of the same path: every
+    /// caller names a folder here, which work here is about to read.
     pub(super) fn root_index(&self, root: &Path) -> Option<usize> {
         self.window
             .workspace
             .roots
             .iter()
-            .position(|r| r.path == root)
+            .position(|r| r.local_path() == Some(root))
     }
 
-    /// Whether `root` is one of this window's projects.
+    /// Whether `root`, a folder on this machine, is one of this window's
+    /// projects.
     pub fn holds_root(&self, root: &Path) -> bool {
-        self.window.workspace.roots.iter().any(|r| r.path == root)
+        self.root_index(root).is_some()
     }
 
     /// The check command of the project at `root`, if it has one.
     pub fn check_of(&self, root: &Path) -> Option<String> {
-        self.window
-            .workspace
-            .roots
-            .iter()
-            .find(|r| r.path == root)
-            .and_then(|r| r.check.clone())
+        self.window.workspace.roots[self.root_index(root)?]
+            .check
+            .clone()
     }
 
     /// Re-read everything derived from the files on disk.
@@ -585,13 +635,7 @@ impl Shell {
     /// its tokio wrapper: tokio's process driver is not running under GPUI, so
     /// the async path would panic looking for a reactor.
     pub fn refresh_git(&mut self, cx: &mut Context<Self>) {
-        let roots = self
-            .window
-            .workspace
-            .roots
-            .iter()
-            .map(|root| root.path.clone())
-            .collect::<Vec<_>>();
+        let roots = git_roots(&self.window.workspace);
 
         // Two refreshes can be in flight at once -- a turn ends while the
         // window is being activated, say -- and `git status` on a big repo does
@@ -695,4 +739,13 @@ impl Shell {
         }
         cx.notify();
     }
+}
+
+/// The roots a `git status` sweep reads: those on this machine.
+pub(super) fn git_roots(workspace: &onehand_core::workspace::Workspace) -> Vec<PathBuf> {
+    workspace
+        .roots
+        .iter()
+        .filter_map(|root| root.local_path().map(Path::to_path_buf))
+        .collect()
 }

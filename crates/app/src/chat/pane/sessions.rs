@@ -27,6 +27,7 @@ impl ChatPane {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let on_host = host.is_some();
         // Taken before the map is touched, and taken whatever happens next: a
         // request to open onto one particular archive belongs to the one `show`
         // it was made for, and a session switched away from and back to must not
@@ -81,8 +82,11 @@ impl ChatPane {
         self.active = Some(uid);
         // The header's menu is about the project, so it follows the project
         // rather than the session: switching between two sessions of one root
-        // reads the same list and does not re-read it.
-        self.follow_archives(&root, cx);
+        // reads the same list and does not re-read it. A host's session lists
+        // nothing of this machine's.
+        if !on_host {
+            self.follow_archives(&root, cx);
+        }
         if window.is_window_active()
             && let Some(conv) = self.conversations.get_mut(&uid)
         {
@@ -560,23 +564,28 @@ impl ChatPane {
     /// about the pane except which one it is offering.
     pub fn clear_active(
         &mut self,
-        root: Option<(SharedString, PathBuf)>,
+        root: Option<(SharedString, PathBuf, Option<HostName>)>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let standing_in = self.empty.as_ref().map(|project| &project.path);
+        let standing_in = self
+            .empty
+            .as_ref()
+            .map(|project| (&project.path, &project.host));
         let unchanged = self.active.is_none()
             && self.page.is_none()
-            && standing_in == root.as_ref().map(|(_, path)| path);
+            && standing_in == root.as_ref().map(|(_, path, host)| (path, host));
         if unchanged {
             return;
         }
         self.leave_page(window, cx);
         self.page = None;
-        self.empty = root.map(|(label, path)| EmptyProject {
+        self.empty = root.map(|(label, path, host)| EmptyProject {
             label,
             path,
-            history: None,
+            // A folder on a host keeps none of its conversations here.
+            history: host.is_some().then(Vec::new),
+            host,
             // They arrive from the shell a moment later, on the same switch
             // that brought this page up. Defaulting to "not pinned, not a
             // repository, no switch offered" is what a menu drawn in that

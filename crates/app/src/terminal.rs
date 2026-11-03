@@ -114,6 +114,9 @@ fn place_of(ids: &[u64], id: u64) -> Option<usize> {
 pub struct TerminalPanel {
     focus_handle: FocusHandle,
     root: Option<PathBuf>,
+    /// Why there is no root to start a shell in, where that is not simply
+    /// that no project is selected.
+    refused: Option<&'static str>,
     shells: HashMap<PathBuf, RootShells>,
     /// Surfaced when a shell cannot be started at all.
     status: Option<String>,
@@ -150,6 +153,7 @@ impl TerminalPanel {
         cx.new(|cx| Self {
             focus_handle: cx.focus_handle(),
             root: None,
+            refused: None,
             shells: HashMap::new(),
             status: None,
             zoom: crate::zoom::Zoom::default(),
@@ -228,6 +232,15 @@ impl TerminalPanel {
 
     pub fn set_root(&mut self, root: PathBuf, cx: &mut Context<Self>) {
         self.root = Some(root);
+        self.refused = None;
+        cx.notify();
+    }
+
+    /// Point at no root, saying `why` where a shell would be: a project on a
+    /// host has no folder here to start one in. `None` is no project at all.
+    pub fn refuse(&mut self, why: Option<&'static str>, cx: &mut Context<Self>) {
+        self.root = None;
+        self.refused = why;
         cx.notify();
     }
 
@@ -553,7 +566,7 @@ impl TerminalPanel {
         // shell map, and it is the one case with nothing for a strip to sit
         // over: no project means no shell to start and nowhere to start it.
         if self.root.is_none() {
-            return onehand_ui::hint("No project selected", cx);
+            return onehand_ui::hint(self.refused.unwrap_or("No project selected"), cx);
         }
 
         let set = self.active_set().filter(|set| !set.tabs.is_empty());

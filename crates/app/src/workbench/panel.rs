@@ -55,6 +55,9 @@ pub struct Workbench {
     active: usize,
     /// The root every mode is pointed at. `None` before any root is active.
     root: Option<PathBuf>,
+    /// Why the project on screen has nothing here, drawn in place of the
+    /// modes: a folder on a host has no files on this machine.
+    refused: Option<&'static str>,
     /// Reading size for the body. Per panel, not per root: the dock's own
     /// sizes are per window here, and a zoom that reset itself on every root
     /// switch would be the odd one out.
@@ -104,6 +107,7 @@ impl Workbench {
                 modes,
                 focus_handle: cx.focus_handle(),
                 root: None,
+                refused: None,
                 zoom,
                 maximized: false,
                 fills_area: false,
@@ -289,6 +293,7 @@ impl Workbench {
 
     /// Point every mode at a project root.
     pub fn set_root(&mut self, root: PathBuf, cx: &mut Context<Self>) {
+        self.refuse(None, cx);
         if self.root.as_ref() == Some(&root) {
             return;
         }
@@ -297,6 +302,15 @@ impl Workbench {
             mode.set_root(&root, cx);
         }
         cx.notify();
+    }
+
+    /// Say `why` in place of the modes, or stop saying it. The modes keep the
+    /// root they had, so coming back to it finds it as it was.
+    pub fn refuse(&mut self, why: Option<&'static str>, cx: &mut Context<Self>) {
+        if self.refused != why {
+            self.refused = why;
+            cx.notify();
+        }
     }
 
     /// Tell every mode where this window's workspace keeps its files.
@@ -409,7 +423,10 @@ impl Render for Workbench {
         // The mode strip is chrome and keeps its size; only the work below it
         // scales. A zoomed-in editor whose own tab bar grew with it wastes the
         // room the zoom was asking for.
-        let body = self.modes[self.active].view().into_any_element();
+        let body = match self.refused {
+            Some(why) => onehand_ui::hint(why, cx),
+            None => self.modes[self.active].view().into_any_element(),
+        };
         // A measured glyph grid is sized by the font it was configured with and
         // not by the rem base around it, so a mode that says so is left alone:
         // wrapping it in the scale would stretch the box while the cell stayed

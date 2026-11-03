@@ -258,8 +258,8 @@ impl Shell {
                     // attached, and why.
                     E::HostBusy { .. } => {}
                     E::RunCheck => {
-                        if let Some(root) = shell.window.workspace.active_root() {
-                            let root = root.path.clone();
+                        let active = shell.window.workspace.active_root;
+                        if let Some(root) = shell.local_root(active).map(|p| p.to_path_buf()) {
                             shell.run_check(root, window, cx);
                         }
                     }

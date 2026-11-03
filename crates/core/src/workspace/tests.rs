@@ -552,3 +552,12 @@ fn the_host_named_local_is_this_machine() {
     assert!(!HostName("vps".into()).addr().local);
     assert_eq!(HostName("vps".into()).to_string(), "vps");
 }
+
+#[test]
+fn only_a_folder_on_this_machine_has_a_local_path() {
+    let mut ws = Workspace::seeded("/tmp");
+    let here = 0;
+    let there = ws.add_host_root(HostName("vps".into()), PathBuf::from("/tmp"));
+    assert_eq!(ws.roots[here].local_path(), Some(Path::new("/tmp")));
+    assert_eq!(ws.roots[there].local_path(), None);
+}

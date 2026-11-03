@@ -161,7 +161,10 @@ impl Shell {
             .workspace
             .roots
             .iter()
-            .filter_map(|root| Some((root.path.clone(), self.issues_file(&root.path)?)))
+            .filter_map(|root| {
+                let path = root.local_path()?;
+                Some((path.to_path_buf(), self.issues_file(path)?))
+            })
             .collect();
         // The rule the project menu offers *Work an issue…* by: a repository,
         // not a run's own worktree, with unattended runs set up.
@@ -171,8 +174,10 @@ impl Shell {
             .workspace
             .roots
             .iter()
-            .filter(|root| set_up && !root.transient && self.window.git.contains_key(&root.path))
-            .map(|root| root.path.clone())
+            .filter(|root| set_up && !root.transient)
+            .filter_map(|root| root.local_path())
+            .filter(|path| self.window.git.contains_key(*path))
+            .map(Path::to_path_buf)
             .collect();
         let mut works = crate::task::issue_works(&kept, cx);
         // Whether a retry with current settings would run an ended task with

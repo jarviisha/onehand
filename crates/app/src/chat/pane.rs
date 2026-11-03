@@ -205,6 +205,10 @@ pub struct ProjectFacts {
     pub check: bool,
     /// Removing it asks first, which its menu's ellipsis says.
     pub asks: bool,
+    /// On this machine, so there is a terminal to open and a `git status` to
+    /// refresh. A folder on a host has neither, nor a repository, a check or
+    /// an unattended switch.
+    pub local: bool,
 }
 
 impl ProjectFacts {
@@ -213,12 +217,14 @@ impl ProjectFacts {
     /// both build these and a copy in each is two answers to "is the switch
     /// offered here".
     pub fn of(root: &onehand_core::workspace::ProjectRoot, is_repo: bool) -> Self {
+        let local = root.on_host().is_none();
         Self {
             pinned: root.pinned,
-            is_repo,
-            unattended: (!root.transient).then_some(root.unattended),
-            check: root.check.is_some(),
+            is_repo: local && is_repo,
+            unattended: (local && !root.transient).then_some(root.unattended),
+            check: local && root.check.is_some(),
             asks: false,
+            local,
         }
     }
 }
