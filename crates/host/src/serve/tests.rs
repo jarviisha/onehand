@@ -162,3 +162,26 @@ async fn shutdown_answers_done_and_asks_for_the_exit() {
         })
     ));
 }
+
+#[tokio::test]
+async fn probe_answers_whether_a_folder_is_there() {
+    let dir = std::env::temp_dir().join(format!("onehand-probe-{}", std::process::id()));
+    fs::create_dir_all(&dir).unwrap();
+    let (out, mut lines) = mpsc::unbounded_channel();
+    for (path, want) in [(dir.clone(), true), (dir.join("missing"), false)] {
+        let ask = serde_json::to_string(&Question {
+            id: 3,
+            call: Call::Probe { path },
+        })
+        .unwrap();
+        assert!(!answer(&hub_in(&dir), &Build("b1".into()), &out, &ask));
+        assert!(matches!(
+            lines.try_recv(),
+            Ok(FromHost::Answer {
+                id: 3,
+                result: Ok(Reply::Probed { is_dir })
+            }) if is_dir == want
+        ));
+    }
+    let _ = fs::remove_dir_all(&dir);
+}

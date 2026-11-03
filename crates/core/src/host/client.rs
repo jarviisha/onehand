@@ -211,6 +211,46 @@ pub async fn connect(addr: &HostAddr, remote: &str, build: &Build) -> Result<Hos
     Ok(conn)
 }
 
+/// Attach and, unless the host already runs `build`, shut its service down
+/// whatever is mid-turn there, then attach again: what to do once the person
+/// has agreed to stop the sessions a `Busy` named.
+pub async fn restart(addr: &HostAddr, remote: &str, build: &Build) -> Result<HostConn, HostError> {
+    restart_over(|| attach(addr, remote), build).await
+}
+
+/// `restart`, attaching with `attach`.
+async fn restart_over(
+    mut attach: impl FnMut() -> Result<(HostConn, oneshot::Receiver<String>), HostError>,
+    build: &Build,
+) -> Result<HostConn, HostError> {
+    let (conn, said) = attach()?;
+    let stop = async {
+        let (theirs, _) = hello(&conn, build).await?;
+        if theirs == *build {
+            return Ok(false);
+        }
+        conn.ask_for(Call::Shutdown, |a| a.done).await?;
+        Ok(true)
+    };
+    if !reached(stop.await, said).await? {
+        return Ok(conn);
+    }
+    let _ = tokio::time::timeout(SHUTDOWN_WAIT, conn.cmds.closed()).await;
+    let (conn, said) = attach()?;
+    let again = async {
+        let (theirs, _) = hello(&conn, build).await?;
+        if theirs == *build {
+            Ok(())
+        } else {
+            Err(HostError::Protocol(format!(
+                "the host came back on build {theirs}, not {build}"
+            )))
+        }
+    };
+    reached(again.await, said).await?;
+    Ok(conn)
+}
+
 /// Start `<remote> attach`, and what it says on stderr, as far as it has once
 /// it ends or has said `STDERR_KEEP` bytes.
 fn attach(
@@ -314,6 +354,7 @@ struct Answer {
     sessions: Option<Vec<SessionInfo>>,
     opened: Option<HostSession>,
     done: Option<()>,
+    probed: Option<bool>,
 }
 
 impl Answer {
@@ -323,12 +364,14 @@ impl Answer {
             sessions: None,
             opened: None,
             done: None,
+            probed: None,
         };
         match reply {
             Reply::Welcome { build, busy } => answer.welcome = Some((build, busy)),
             Reply::Sessions(sessions) => answer.sessions = Some(sessions),
             Reply::Opened { session } => answer.opened = Some(session),
             Reply::Done => answer.done = Some(()),
+            Reply::Probed { is_dir } => answer.probed = Some(is_dir),
         }
         answer
     }
@@ -396,6 +439,8 @@ impl Watcher {
 #[derive(Clone)]
 pub struct HostConn {
     cmds: mpsc::UnboundedSender<Cmd>,
+    /// The `ssh` destination, which names the host in what is said of it.
+    host: String,
 }
 
 impl HostConn {
@@ -406,18 +451,18 @@ impl HostConn {
         W: AsyncWrite + Unpin + Send + 'static,
     {
         let (cmds, rx) = mpsc::unbounded_channel();
-        tokio::spawn(pump(host, read, write, child, cmds.downgrade(), rx));
-        Self { cmds }
+        tokio::spawn(pump(host.clone(), read, write, child, cmds.downgrade(), rx));
+        Self { cmds, host }
     }
 
-    /// A connection over a pipe, with no ssh behind it.
+    /// A connection over a pipe, with no ssh behind it, to a host named `vps`.
     #[cfg(test)]
     fn over<R, W>(read: R, write: W) -> Self
     where
         R: AsyncRead + Unpin + Send + 'static,
         W: AsyncWrite + Unpin + Send + 'static,
     {
-        Self::start("test".into(), read, write, None)
+        Self::start("vps".into(), read, write, None)
     }
 
     async fn ask(&self, call: Call) -> Result<Reply, HostError> {
@@ -448,6 +493,16 @@ impl HostConn {
         self.ask_for(Call::List, |a| a.sessions).await
     }
 
+    /// Whether `path` is a folder on the host.
+    pub async fn is_dir(&self, path: &Path) -> Result<bool, HostError> {
+        let probe = Call::Probe {
+            path: path.to_path_buf(),
+        };
+        self.ask_for(probe, |a| a.probed).await
+    }
+
+    /// Start a session on the host. What goes wrong names the host, as an
+    /// agent missing there would otherwise read as missing here.
     pub async fn open(
         &self,
         cwd: PathBuf,
@@ -461,7 +516,12 @@ impl HostConn {
             agent,
             opening,
         };
-        self.ask_for(open, |a| a.opened).await
+        let on = |why| format!("On {}: {why}", self.host);
+        self.ask_for(open, |a| a.opened).await.map_err(|e| match e {
+            HostError::Unreachable(why) => HostError::Unreachable(on(why)),
+            HostError::Protocol(why) => HostError::Protocol(on(why)),
+            e @ (HostError::Unsupported(_) | HostError::Busy { .. }) => e,
+        })
     }
 
     /// The session as a local one reads: `Ready` → `Connected` (with a `tx` whose requests go to the

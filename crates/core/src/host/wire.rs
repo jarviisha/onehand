@@ -58,6 +58,10 @@ pub enum Call {
         session: HostSession,
         request: AcpRequest,
     },
+    /// Whether `path` is a folder on the host.
+    Probe {
+        path: PathBuf,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -73,6 +77,9 @@ pub enum Reply {
         session: HostSession,
     },
     Done,
+    Probed {
+        is_dir: bool,
+    },
 }
 
 /// What the host sends, one per line.

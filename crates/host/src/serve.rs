@@ -283,6 +283,9 @@ fn answer(
         Call::Request { session, request } => {
             lock(hub).request(&session, request).map(|()| Reply::Done)
         }
+        Call::Probe { path } => Ok(Reply::Probed {
+            is_dir: fs::metadata(path).is_ok_and(|m| m.is_dir()),
+        }),
     };
     let _ = out.send(FromHost::Answer { id, result });
     exit

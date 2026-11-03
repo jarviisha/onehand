@@ -1,4 +1,6 @@
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use tokio::io::{BufReader, DuplexStream, Lines, ReadHalf, WriteHalf};
 
@@ -804,4 +806,99 @@ async fn watch_says_the_time_before_entries_whose_second_changed() {
     assert_eq!(next_chunk(&mut events).await, "b");
     assert!(matches!(events.next().await, Some(AcpEvent::At(105))));
     assert_eq!(next_chunk(&mut events).await, "c");
+}
+
+#[tokio::test]
+async fn open_errors_name_the_host() {
+    let (conn, mut host) = pair();
+    let opening = tokio::spawn(async move {
+        conn.open("/w".into(), AgentSpec::default(), Opening::Fresh)
+            .await
+    });
+    let Question { id, .. } = host.ask().await;
+    host.send(FromHost::Answer {
+        id,
+        result: Err("`claude` is not on this machine — install it there".into()),
+    })
+    .await;
+    let opened = opening.await.unwrap();
+    assert!(
+        matches!(&opened, Err(HostError::Protocol(why))
+            if why == "On vps: `claude` is not on this machine — install it there"),
+        "{opened:?}"
+    );
+}
+
+#[tokio::test]
+async fn is_dir_asks_the_host() {
+    let (conn, mut host) = pair();
+    let probing = tokio::spawn(async move { conn.is_dir(Path::new("/srv/app")).await });
+    let Question { id, call } = host.ask().await;
+    assert!(
+        matches!(&call, Call::Probe { path } if path == Path::new("/srv/app")),
+        "{call:?}"
+    );
+    host.answer(id, Reply::Probed { is_dir: true }).await;
+    assert!(probing.await.unwrap().unwrap());
+}
+
+/// A service on build `theirs`, with `busy` mid-turn, as one attach finds
+/// it: it answers every `Hello`, and exits on `Shutdown`, counted in `shutdowns`.
+fn service(theirs: &str, busy: Vec<HostSession>, shutdowns: Arc<AtomicUsize>) -> HostConn {
+    let (conn, mut host) = pair();
+    let theirs = build(theirs);
+    tokio::spawn(async move {
+        while let Ok(Some(line)) = host.asks.next_line().await {
+            let Question { id, call } = serde_json::from_str(&line).unwrap();
+            match call {
+                Call::Hello { .. } => {
+                    let welcome = Reply::Welcome {
+                        build: theirs.clone(),
+                        busy: busy.clone(),
+                    };
+                    host.answer(id, welcome).await;
+                }
+                Call::Shutdown => {
+                    shutdowns.fetch_add(1, Ordering::SeqCst);
+                    host.answer(id, Reply::Done).await;
+                    return;
+                }
+                other => panic!("unexpected {other:?}"),
+            }
+        }
+    });
+    conn
+}
+
+/// Restart onto `ours` against services that come up on `builds` in turn,
+/// each with a session mid-turn; the restart's end and the shutdowns sent.
+async fn restart_against(builds: [&'static str; 2]) -> (Result<HostConn, HostError>, usize) {
+    let shutdowns = Arc::new(AtomicUsize::new(0));
+    let mut builds = builds.into_iter();
+    let count = shutdowns.clone();
+    let dial = move || {
+        let (_, said) = oneshot::channel();
+        let theirs = builds.next().expect("no more than two attaches");
+        Ok((service(theirs, vec![s1()], count.clone()), said))
+    };
+    let restarted = restart_over(dial, &build("ours")).await;
+    (restarted, shutdowns.load(Ordering::SeqCst))
+}
+
+#[tokio::test]
+async fn restart_shuts_down_a_busy_host_and_reattaches() {
+    let (restarted, shutdowns) = restart_against(["old", "ours"]).await;
+    assert!(restarted.is_ok(), "{:?}", restarted.err());
+    assert_eq!(shutdowns, 1);
+}
+
+#[tokio::test]
+async fn a_restart_that_finds_another_build_again_fails() {
+    let (restarted, shutdowns) = restart_against(["old", "old"]).await;
+    assert!(
+        matches!(&restarted, Err(HostError::Protocol(why)) if why.contains("old")),
+        "{:?}",
+        restarted.err()
+    );
+    assert_eq!(shutdowns, 1);
 }
