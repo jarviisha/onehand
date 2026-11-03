@@ -83,8 +83,8 @@ pub(crate) enum WorkspacePageEvent {
         uid: u64,
         window: gpui::AnyWindowHandle,
     },
-    /// Select the project at this root.
-    ShowProject(PathBuf),
+    /// Select the project at this root, on this host or here.
+    ShowProject(Option<onehand_core::workspace::HostName>, PathBuf),
     /// Resume `archive` on `agent` in the project at `root`.
     ResumeIn {
         root: PathBuf,
@@ -165,7 +165,14 @@ impl WorkspacePage {
             .iter()
             .filter_map(|project| Some((project.root.clone(), project.issues.clone()?)))
             .collect();
-        let roots: Vec<PathBuf> = self.projects.iter().map(|p| p.root.clone()).collect();
+        // A host's conversations are not kept here; what is filed under its
+        // path is a folder of the same path here.
+        let roots: Vec<PathBuf> = self
+            .projects
+            .iter()
+            .filter(|p| p.host.is_none())
+            .map(|p| p.root.clone())
+            .collect();
         self._load = Some(cx.spawn(async move |page, cx| {
             let (read, failed, recent) = cx
                 .background_executor()
@@ -361,7 +368,7 @@ impl WorkspacePage {
                 let rollup = SessionSignal::most_urgent(
                     project.sessions.iter().filter_map(|(uid, _)| signal(*uid)),
                 );
-                let root = project.root.clone();
+                let (root, host) = (project.root.clone(), project.host.clone());
                 // The folder in a column of its own, so the name and the
                 // lines under it start on one edge.
                 card_box(cx)
@@ -405,16 +412,15 @@ impl WorkspacePage {
                                         rollup.map(|signal| crate::rail::signal_mark(signal, cx)),
                                     ),
                             )
-                            .child(muted_line(
-                                project
-                                    .git
-                                    .clone()
-                                    .unwrap_or_else(|| "Not a git repository".to_string()),
-                            ))
+                            .child(muted_line(match (&project.host, &project.git) {
+                                (Some(host), _) => format!("On {host}"),
+                                (None, Some(git)) => git.clone(),
+                                (None, None) => "Not a git repository".to_string(),
+                            }))
                             .child(muted_line(holds)),
                     )
                     .on_click(cx.listener(move |_: &mut Self, _, _, cx| {
-                        cx.emit(WorkspacePageEvent::ShowProject(root.clone()));
+                        cx.emit(WorkspacePageEvent::ShowProject(host.clone(), root.clone()));
                     }))
                     .into_any_element()
             })

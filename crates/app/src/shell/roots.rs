@@ -9,7 +9,7 @@ use onehand_core::gitstat;
 use std::path::{Path, PathBuf};
 
 /// Why the Workbench and the terminal have nothing for a project on a host.
-const ON_HOST_LATER: &str = "Files and terminals on a host come later";
+pub(super) const ON_HOST_LATER: &str = "Files and terminals on a host come later";
 
 impl Shell {
     /// Tell the project page what the selected project is, beyond its name.
@@ -186,25 +186,26 @@ impl Shell {
             .active_session()
             .map(|session| (session.uid, session.spec.clone()));
         let host = root.on_host().cloned();
-        let local = root.local_path().map(Path::to_path_buf);
+        let arrived = arrival(root);
         // Editor tabs and the file tree are per root, so the Workbench follows
         // the selection rather than mixing two projects' state. A folder on a
         // host has neither here: both panels say so instead of keeping the
         // last project's.
-        match &local {
-            Some(path) => {
+        match &arrived {
+            Ok(path) => {
                 self.workbench
                     .update(cx, |panel, cx| panel.set_root(path.clone(), cx));
                 self.terminal
                     .update(cx, |panel, cx| panel.set_root(path.clone(), cx));
             }
-            None => {
+            Err(why) => {
                 self.workbench
-                    .update(cx, |panel, cx| panel.refuse(Some(ON_HOST_LATER), cx));
+                    .update(cx, |panel, cx| panel.refuse(Some(why), cx));
                 self.terminal
-                    .update(cx, |panel, cx| panel.refuse(Some(ON_HOST_LATER), cx));
+                    .update(cx, |panel, cx| panel.refuse(Some(why), cx));
             }
         }
+        let local = arrived.ok();
         self.follow_terminal_dock(&path, window, cx);
         // Whether a shell is alive is a fact about the project being arrived at,
         // not about the window, and the title bar draws it. The
@@ -669,8 +670,8 @@ impl Shell {
                         .update(cx, |panel, cx| panel.set_git(git, cx));
                     // The workspace page's project tiles name each branch.
                     if shell.page_shown(cx) {
-                        let projects = shell.page_projects();
-                        let named = projects
+                        let local = shell.local_page_projects();
+                        let named = local
                             .iter()
                             .map(|p| (p.root.clone(), SharedString::from(p.label.to_string())))
                             .collect();
@@ -680,8 +681,9 @@ impl Shell {
                         if shell.tasks_shown(cx) {
                             shell
                                 .tasks_page
-                                .update(cx, |page, cx| page.set_projects(projects, cx));
+                                .update(cx, |page, cx| page.set_projects(local, cx));
                         } else if shell.workspace_shown(cx) {
+                            let projects = shell.page_projects();
                             shell
                                 .workspace_page
                                 .update(cx, |page, cx| page.set_projects(projects, cx));
@@ -716,8 +718,14 @@ impl Shell {
         match event {
             E::OpenIssue { root, number } => self.open_issue(root, *number, window, cx),
             E::ShowSession { uid, window: at } => self.show_session_in(*uid, *at, window, cx),
-            E::ShowProject(root) => {
-                if let Some(idx) = self.root_index(root) {
+            E::ShowProject(host, root) => {
+                let at = self
+                    .window
+                    .workspace
+                    .roots
+                    .iter()
+                    .position(|r| r.on_host() == host.as_ref() && &r.path == root);
+                if let Some(idx) = at {
                     self.select_root(idx, window, cx);
                 }
             }
@@ -739,6 +747,16 @@ impl Shell {
         }
         cx.notify();
     }
+}
+
+/// The folder arriving at `root` points the Workbench, the terminal and the
+/// agent started ahead of a session at, or why there is none here.
+pub(super) fn arrival(
+    root: &onehand_core::workspace::ProjectRoot,
+) -> Result<PathBuf, &'static str> {
+    root.local_path()
+        .map(Path::to_path_buf)
+        .ok_or(ON_HOST_LATER)
 }
 
 /// The roots a `git status` sweep reads: those on this machine.

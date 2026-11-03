@@ -208,6 +208,11 @@ impl Workbench {
     /// buttons one of which spawns something. The key does this first and then
     /// switches; the mode's own empty state is the other way in.
     pub fn start_child(&mut self, cx: &mut Context<Self>) {
+        // The modes still hold the last local project, which is not the one
+        // on screen while this panel refuses.
+        if self.refused.is_some() {
+            return;
+        }
         self.broadcast(&Request::Start, cx);
     }
 
@@ -279,6 +284,11 @@ impl Workbench {
     /// a listing gets asked for again. Returning early here is what silently
     /// took the document walk away from a second `Ctrl+Shift+M`.
     pub fn set_mode(&mut self, mode: ModeId, cx: &mut Context<Self>) {
+        // Showing a mode can start its work, against the last local project
+        // the modes still hold rather than the one on screen.
+        if self.refused.is_some() {
+            return;
+        }
         let Some(place) = self.place_of(mode) else {
             return;
         };
@@ -364,6 +374,9 @@ impl Workbench {
     /// Switching is what the answer buys: the mode that took the file is the
     /// one worth looking at, and the panel does not have to know which that is.
     pub fn open_file(&mut self, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
+        if self.refused.is_some() {
+            return;
+        }
         let opened = self
             .modes
             .iter_mut()

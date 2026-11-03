@@ -679,7 +679,7 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let projects = self.page_projects();
+        let projects = self.local_page_projects();
         self.docks_aside(window, cx);
         let view: gpui::AnyView = self.tasks_page.clone().into();
         self.chat.update(cx, |pane, cx| {
@@ -715,30 +715,16 @@ impl Shell {
         self.hide_workbench(window, cx);
     }
 
-    /// Every project as the workspace page lists it, in rail order.
+    /// Every project as the workspace page lists it, in rail order, those on
+    /// a host included.
     pub(super) fn page_projects(&self) -> Vec<crate::page_parts::PageProject> {
-        let workspace = &self.window.workspace;
-        workspace
-            .display_order()
-            .into_iter()
-            .map(|idx| &workspace.roots[idx])
-            .filter(|root| listed(root))
-            .map(|root| crate::page_parts::PageProject {
-                label: SharedString::from(root.label.clone()),
-                root: root.path.clone(),
-                sessions: root
-                    .sessions
-                    .iter()
-                    .map(|session| (session.uid, SharedString::from(session.title().to_string())))
-                    .collect(),
-                git: self
-                    .window
-                    .git
-                    .get(&root.path)
-                    .map(gitstat::GitStatus::label),
-                issues: self.issues_file(&root.path),
-            })
-            .collect()
+        page_projects_in(&self.window.workspace, &self.window.git, Reach::Overview)
+    }
+
+    /// The projects the Tasks, Issues, Workflows and Schedules pages list:
+    /// those on this machine.
+    pub(super) fn local_page_projects(&self) -> Vec<crate::page_parts::PageProject> {
+        page_projects_in(&self.window.workspace, &self.window.git, Reach::Local)
     }
 
     /// Whether the workspace page is what the centre of the window shows, for
@@ -808,12 +794,62 @@ impl Shell {
     }
 }
 
-/// Whether the pages (Tasks, Issues, Workflows, the workspace page) list a
-/// project. A run's own worktree is not a project anybody chose, and its
-/// issues are the project's it was cut from. A folder on a host has no issue
-/// files, runs or checks this machine can reach.
-fn listed(root: &onehand_core::workspace::ProjectRoot) -> bool {
-    !root.transient && root.on_host().is_none()
+/// Which projects a page lists.
+#[derive(Clone, Copy)]
+pub(super) enum Reach {
+    /// The workspace page, which shows every project and its sessions.
+    Overview,
+    /// A page about issues, tasks, workflows or schedules: a folder on a host
+    /// has no issue files, runs or checks this machine can reach.
+    Local,
+}
+
+/// Whether a page of `reach` lists a project. A run's own worktree is not a
+/// project anybody chose, and its issues are the project's it was cut from.
+fn listed(root: &onehand_core::workspace::ProjectRoot, reach: Reach) -> bool {
+    !root.transient
+        && match reach {
+            Reach::Overview => true,
+            Reach::Local => root.on_host().is_none(),
+        }
+}
+
+/// The projects a page of `reach` lists, in rail order. A host's project has
+/// no `git status` or issue file here: what this machine files under its
+/// path is a folder of the same path here.
+pub(super) fn page_projects_in(
+    workspace: &onehand_core::workspace::Workspace,
+    git: &std::collections::HashMap<PathBuf, gitstat::GitStatus>,
+    reach: Reach,
+) -> Vec<crate::page_parts::PageProject> {
+    workspace
+        .display_order()
+        .into_iter()
+        .map(|idx| &workspace.roots[idx])
+        .filter(|root| listed(root, reach))
+        .map(|root| {
+            let local = root.local_path();
+            crate::page_parts::PageProject {
+                label: SharedString::from(root.label.clone()),
+                root: root.path.clone(),
+                host: root.on_host().cloned(),
+                sessions: root
+                    .sessions
+                    .iter()
+                    .map(|session| (session.uid, SharedString::from(session.title().to_string())))
+                    .collect(),
+                git: local
+                    .and_then(|path| git.get(path))
+                    .map(gitstat::GitStatus::label),
+                issues: local.and_then(|path| {
+                    Some(onehand_core::issues::file_for(
+                        workspace.storage_dir.as_deref()?,
+                        path,
+                    ))
+                }),
+            }
+        })
+        .collect()
 }
 
 /// The projects the pages list, as paths.
@@ -823,7 +859,7 @@ pub(super) fn page_roots_in(
     workspace
         .roots
         .iter()
-        .filter(|root| listed(root))
+        .filter(|root| listed(root, Reach::Local))
         .map(|root| root.path.clone())
         .collect()
 }

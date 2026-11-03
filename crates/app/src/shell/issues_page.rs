@@ -139,7 +139,7 @@ impl Shell {
         cx: &mut Context<Self>,
     ) {
         let projects = self
-            .page_projects()
+            .local_page_projects()
             .into_iter()
             .map(|project| (project.root, SharedString::from(project.label.to_string())))
             .collect();
@@ -170,7 +170,7 @@ impl Shell {
     /// one the rail has selected.
     pub(super) fn tell_workflows_page_projects(&mut self, cx: &mut Context<Self>) {
         let projects = self
-            .page_projects()
+            .local_page_projects()
             .into_iter()
             .map(|project| (project.root, SharedString::from(project.label.to_string())))
             .collect();
@@ -204,7 +204,7 @@ impl Shell {
     /// Tell the page which projects the workspace has, in rail order.
     pub(super) fn tell_issues_page_projects(&mut self, cx: &mut Context<Self>) {
         let projects = self
-            .page_projects()
+            .local_page_projects()
             .into_iter()
             .map(|project| (project.root, SharedString::from(project.label.to_string())))
             .collect();

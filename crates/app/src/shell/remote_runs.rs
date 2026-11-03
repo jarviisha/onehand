@@ -20,8 +20,11 @@ impl Shell {
         // never searches it, so a switch on it would say `auto` over nothing.
         // Nor does a run reach a folder on a host.
         if self
-            .local_root(root_idx)
-            .is_none_or(|_| self.window.workspace.roots[root_idx].transient)
+            .window
+            .workspace
+            .roots
+            .get(root_idx)
+            .is_none_or(|root| root.transient || root.on_host().is_some())
         {
             return;
         }
