@@ -1,4 +1,4 @@
-//! The search over the list, and the header that names the list: how many
+//! The search over the list, drawn in the title bar, and the header that names the list: how many
 //! sessions wait on the person, and the filter.
 
 use super::RailState;
@@ -9,17 +9,22 @@ use crate::controls::Short as _;
 use crate::controls::search_input;
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
-use gpui::{Anchor, Context, IntoElement, ParentElement, Styled, div};
+use gpui::{Anchor, Context, InteractiveElement as _, IntoElement, ParentElement, Styled, div};
 use gpui_component::menu::DropdownMenu as _;
 use gpui_component::{ActiveTheme, Icon, Selectable as _, StyledExt};
 use onehand_ui::ShortIcon as _;
 
 /// The search field, the library's edged field, with the key that reaches it
-/// from anywhere.
-pub(super) fn search_field(state: &RailState, cx: &Context<Shell>) -> impl IntoElement + use<> {
+/// from anywhere. It stands in the title bar, whose press drags the window and
+/// whose right press opens the window's menu, so either stops here before the
+/// bar: a drag selects words, not the window.
+pub(crate) fn search_field(state: &RailState, cx: &Context<Shell>) -> impl IntoElement + use<> {
     div()
         .flex_1()
         .min_w_0()
+        .max_w(crate::tokens::TITLE_SEARCH_W)
+        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .on_mouse_down(gpui::MouseButton::Right, |_, _, cx| cx.stop_propagation())
         .child(search_input(&state.search, cx).short().when_some(
             crate::keymap::first_key("focus_rail_search", cx),
             |input, key| input.suffix(gpui_component::kbd::Kbd::new(key)),

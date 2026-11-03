@@ -67,7 +67,7 @@ impl ChatPane {
     /// mixing them into one row of seven buttons made every one of them equally
     /// easy to hit by accident.
     ///
-    /// The docks' toggles are the status bar's, which holds them for every
+    /// The docks' toggles are the title bar's, which holds them for every
     /// page; the header keeps the way back to a hidden rail, which sits on the
     /// side the rail returns to.
     ///
@@ -209,7 +209,7 @@ impl ChatPane {
                 )
             })
             // The workers' region, which takes the Workbench's place. The
-            // docks' own toggles are the status bar's.
+            // docks' own toggles are the title bar's.
             .when(self.page.is_none(), |row| {
                 row.children(self.workers_control(cx))
             })

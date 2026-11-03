@@ -1,9 +1,10 @@
 //! The navigation rail.
 //!
-//! Top to bottom: the workspace and its menu; a search over sessions and
-//! projects beside *New*; the pages; the sessions under a filter; and a
-//! one-row foot with Settings. Only the list scrolls. It hides completely,
-//! never to an icon column.
+//! Top to bottom: the workspace and its menu; *New*; the pages; the sessions
+//! under a filter; and a one-row foot with Settings. Only the list scrolls. It
+//! hides completely, never to an icon column. The search over sessions and
+//! projects narrows this list but stands in the title bar, so it is in reach
+//! whether the rail is shown or not.
 //!
 //! The list is the projects with their sessions, or under a flat filter the
 //! sessions alone with the project on each row. Every group lists a capped
@@ -43,6 +44,7 @@ mod workspace;
 pub(crate) use model::{age_label, needs_attention, word};
 pub use project::{pick_item, unattended_item};
 pub(crate) use row::{key_ring, page_fill};
+pub(crate) use search::search_field;
 pub(crate) use session::{RESEND, session_label, signal_mark, status_icon, word_ink};
 pub(crate) use workspace::ellipsize_front;
 
@@ -77,6 +79,12 @@ pub(crate) struct RailState {
     search: Entity<InputState>,
     /// The list's own focus, so Enter and the arrows reach it and not a field.
     focus: FocusHandle,
+    /// The workspace strip's focus: a tab stop, so the keyboard reaches the
+    /// workspace menu as it reached the switcher the strip replaced.
+    workspace_focus: FocusHandle,
+    /// Whether the workspace menu is open, so the name's fade ends on the
+    /// fill the strip holds while it is, not on the rail's.
+    workspace_open: bool,
     _search: Subscription,
     /// Says every session's age again while the rail shows.
     _tick: Task<()>,
@@ -85,8 +93,13 @@ pub(crate) struct RailState {
 impl RailState {
     pub(crate) fn new(window: &mut Window, cx: &mut Context<Shell>) -> Self {
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search…"));
-        let _search = cx.subscribe(&search, |_, _, event: &InputEvent, cx| {
+        // What the search narrows is the rail's list, so typing into it
+        // brings a hidden rail back.
+        let _search = cx.subscribe_in(&search, window, |shell, search, event, window, cx| {
             if matches!(event, InputEvent::Change) {
+                if !search.read(cx).value().trim().is_empty() {
+                    shell.show_rail(window, cx);
+                }
                 cx.notify();
             }
         });
@@ -113,6 +126,8 @@ impl RailState {
             uncapped: Vec::new(),
             search,
             focus: cx.focus_handle(),
+            workspace_focus: cx.focus_handle().tab_stop(true),
+            workspace_open: false,
             _search,
             _tick,
         }
@@ -133,12 +148,12 @@ impl RailState {
         self.uncapped.clear();
     }
 
-    /// Whether the caret is in the rail: its search or its list. Whoever takes
-    /// the rail off screen has to move it first, or the window is left
-    /// pointing at an element no frame draws and no shortcut reaches.
+    /// Whether the caret is in the rail: its list or its workspace strip.
+    /// Whoever takes the rail off screen has to move it first, or the window
+    /// is left pointing at an element no frame draws and no shortcut reaches.
+    /// The search is in the title bar, drawn whether the rail is or not.
     pub(crate) fn holds_focus(&self, window: &Window, cx: &App) -> bool {
-        self.focus.contains_focused(window, cx)
-            || self.search.read(cx).focus_handle(cx).is_focused(window)
+        self.focus.contains_focused(window, cx) || self.workspace_focus.is_focused(window)
     }
 
     fn searching(&self, cx: &App) -> bool {
@@ -314,6 +329,8 @@ pub fn rail(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> impl Int
             window_state.workspace.name.clone().into(),
             window_state.workspace.storage_dir.clone(),
             shell.recents(cx),
+            state,
+            window,
             cx,
         ))
         .child(
@@ -325,7 +342,6 @@ pub fn rail(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> impl Int
                 .pt_1()
                 .pb_3()
                 .gap_2()
-                .child(search::search_field(state, cx))
                 .child(workspace::new_button(shell, window_state, target, cx)),
         )
         .child(pages(shell, cx))

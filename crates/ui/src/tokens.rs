@@ -133,6 +133,11 @@ pub const PAGE_PROSE: Rems = rems(48.);
 /// does not move the column.
 pub const PAGE_WIDE: Rems = rems(64.);
 
+/// The widest the title bar's search grows: room for a session's title
+/// and the key that reaches it, centred between the menus and the dock
+/// toggles, and narrowing with the window.
+pub const TITLE_SEARCH_W: Rems = rems(24.);
+
 /// How wide a dialog that holds a form stands, its controls at a page
 /// form's height: one that starts a run says what the workflow does, where
 /// it works and what blocks it before its fields, and at the library's own

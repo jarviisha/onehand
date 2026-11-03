@@ -316,7 +316,7 @@ impl Shell {
         })
         .detach();
 
-        // The status bar's terminal dot is a fact the docks have no
+        // The title bar's terminal dot is a fact the docks have no
         // idea anyone outside them wants. Guarded the same way and for the same
         // reason as the rail's rows above: the terminal notifies for its own
         // changes and when its watch sees a command start or end.

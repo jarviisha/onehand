@@ -78,6 +78,16 @@ impl Zoom {
     }
 }
 
+/// Wrap `child` so it lays out at `factor` times the rem in force: for a
+/// library control whose text size is fixed inside it, the one way to set it
+/// a step down from outside.
+pub fn scaled(factor: f32, child: impl IntoElement) -> Zoomed {
+    Zoomed {
+        factor,
+        child: child.into_any_element(),
+    }
+}
+
 /// An element that lays its child out against an overridden rem base: the rem
 /// in force around it, times its factor, so one nested inside another composes.
 ///

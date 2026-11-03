@@ -104,7 +104,8 @@ size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in ea
 | A dialog that asks one thing (a rename, a worktree): its fields and footer; a dock's filter bar, its search, choices and pickers | Button, Input | `.short()` |
 | Every other button with words: a strip's, a box's, a row's, a secondary action inside dense content (a line of meta text, a transcript block, a chip), a tab, a fold toggle, a pinned card's answers | Button | `.short()`, under a row, so the controls never outweigh what they act on |
 | Every other icon-only button: a strip's, a row's, a copy control, a split action's caret beside `.short()`, the composer's send | Button | `.short_icon()`, square at `CONTROL_H`, so an icon alone is as tall as a worded peer beside it |
-| A field in a strip or the rail | Input | `.short()`, as tall as the buttons beside it |
+| A field in a strip, the rail or the title bar (the search) | Input | `.short()`, as tall as the buttons beside it |
+| The rail's *New*, the one action the rail is opened for | Button | `.tall()`, its caret `.tall_icon()`, the whole row wide, so it reads as the rail's action rather than one of its rows' |
 | An icon in a button | Icon | the button's own, as the library sizes it for the button's size |
 | An icon leading a label the app draws: a row, a menu item | Icon | `.small()` |
 | A state's mark leading a row's label (a session's) | Icon | `.xsmall()`, a step under the label |

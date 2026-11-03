@@ -9,31 +9,38 @@ never cites this file.
 
 ## Title bar
 
-The library's `TitleBar`, its whole width a handle to move the window. At its start, the app's
-menus, *File*, *View*, *Go* and *Session*, each item a command the keymap holds, under the name
+The library's `TitleBar`, its whole width a handle to move the window. At its start, the app's mark
+in its own colours and its name, *onehand*. Then the app's menus, *File*, *View*, *Go* and *Session*, lettered at the chrome size, each item a command the keymap holds, under the name
 the menu gives it and with the key the keymap binds: *File* holds *New session*, *Run a workflow on
 this project…*, *Save the open file* and *Open Settings*; *View* the rail's, the Workbench's and
 the terminal's toggles, *Open Editor*, *Open Markdown*, *Open Neovim*, maximizing the focused panel
-and its zoom; *Go* the rail's search, the composer, Tasks, Schedules and stepping through sessions;
+and its zoom; *Go* the search, the composer, Tasks, Schedules and stepping through sessions;
 *Session* *Show the workers*, *Restart the agent* and *Close the session*. A menu offers nothing no
-key reaches. At its end, the window's minimize, maximize and close, drawn by the library where the
+key reaches. Centred in the room left and narrowing with it, the search over session
+titles and project names, the library's edged field at `.short()` with its key's hint (`Ctrl+K`
+outside a terminal, showing a hidden rail); what it narrows is the rail's list, so typing into it
+shows a hidden rail too, a panel filling the window giving way as it does for the key, and a press in it selects words rather than moving the window. Toward its
+end, the terminal's and the Workbench's toggles, each an icon alone, its glyph in the
+foreground ink while what it shows is open and in the muted ink while closed, with no fill at rest,
+its key in its tooltip, and dispatching the command its key does;
+the terminal's carries an `info` dot while its dock is closed over a shell running a command. At
+its end, the window's minimize, maximize and close, drawn by the library where the
 app decorates the window; its close asks first what the compositor's close asks (a workflow
 being written). Nothing else.
 
 ## Status bar
 
-The library's `StatusBar` along the window's foot. At its start the rail's toggle and the branch of
-the project on screen; at its end the terminal's and the Workbench's toggles, each an icon alone,
-marked while what it shows is open (a closed one's glyph in the muted ink), and dispatching the
-command its key does. The terminal's carries an `info` dot while its dock is closed over a shell
-running a command. Nothing else: a
+The library's `StatusBar` along the window's foot. At its start the branch of the project on
+screen. Nothing else: a
 transient state is a toast.
 
 ## Rail
 
 App chrome outside the dock, so a layout restore cannot lose it, a hairline down its edge. Top to bottom: the workspace bar
-(letter tile, name, switcher, *Hide the rail*); the search over session titles and project names
-(`Ctrl+K` outside a terminal, showing a hidden rail) beside *New* (secondary, the rail's only filled button), which starts in the keyboard's
+(one strip, the library's sidebar header, holding the letter tile, the name and a chevron, that
+opens the workspace menu wherever it is pressed and on Enter, a tab stop ringed as a row is while
+the keys are on it, on the hover fill a row takes and on it while the menu is open; then *Hide the
+rail*); *New* (secondary at `.tall()`, the whole row wide, the rail's only filled button), which starts in the keyboard's
 project, else the one on screen, its caret picking *Start in* or *With agent*; *Overview*, *Tasks*
 (a pill counting tasks that need attention, none at zero), *Issues*, *Workflows* and *Schedules*,
 each filled while its page shows; *Sessions* with a warning-ink *N need attention* chip (shown above zero or
@@ -43,7 +50,7 @@ with *Settings*, a page row like the five above, filled while it shows. The rail
 library's sidebar draws its items: a row's name in the sidebar's ink and its second line muted, the
 row under the pointer on the sidebar's accent fill, and the one where the person is on that fill
 too, in the ink paired with it and at medium weight. The *Sessions* label is the small muted
-heading the library gives a group. The search is the library's edged field. A neutral badge
+heading the library gives a group. A neutral badge
 stands on the page's fill.
 
 *By project* lists pinned projects first, a gap between projects. A project row: the fold chevron,
@@ -96,7 +103,7 @@ notice of how and after how long: *Background work finished after 2m 14s: npm te
 failed, *interrupted* when the agent went away first); past conversations and *Close session*
 (only while a session shows); last, while the session on screen leads workers, its workers, a
 warning dot on it while one waits on the person and the region is closed. The docks' toggles are
-the status bar's. On the overview, Tasks, Issues,
+the title bar's. On the overview, Tasks, Issues,
 Workflows, Schedules and Settings, which name themselves in their head, it carries no name; none of these has a dots menu. As the pane narrows, the name gives way
 first, down to a minimum. Without a session it carries no name, the page naming the project, but
 keeps the project's dots menu, holding the project's actions but *New session* and *Open

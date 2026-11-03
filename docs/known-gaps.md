@@ -47,6 +47,11 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   an ask card's *Skip* and the rail's auto-run pill read on screen and say nothing to a screen
   reader. Icon-only buttons are named through `named`; these need an `accessibility_label` with
   the words they draw, or a label in place of their children.
+- **The rail's workspace strip has no name of its own for a screen reader.** It is the library's
+  sidebar header, which takes the hover fill a rail row takes but becomes an element with an id
+  only inside its own render, so no role or accessible name can be set on it from outside; it is
+  read by the workspace's name drawn in it. A `Button` would take a name but draws the ghost's
+  hover, not the rail's; fixing it means a header of the app's own, or a name setter in the library.
 - **A session's age on the rail starts again at every launch.** It counts from when the session
   took its present state, and that moment is kept in memory only: an archive records when a
   conversation last changed, not when it last changed state.
