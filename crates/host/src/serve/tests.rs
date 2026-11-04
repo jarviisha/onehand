@@ -185,3 +185,169 @@ async fn probe_answers_whether_a_folder_is_there() {
     }
     let _ = fs::remove_dir_all(&dir);
 }
+
+/// Ask `call` through `answer` and wait for the answer to land on the channel.
+async fn ask_file(
+    dir: &Path,
+    out: &UnboundedSender<FromHost>,
+    lines: &mut UnboundedReceiver<FromHost>,
+    id: u64,
+    call: Call,
+) -> Result<Reply, String> {
+    let ask = serde_json::to_string(&Question { id, call }).unwrap();
+    assert!(!answer(&hub_in(dir), &Build("b1".into()), out, &ask));
+    match tokio::time::timeout(Duration::from_secs(5), lines.recv())
+        .await
+        .expect("an answer in time")
+    {
+        Some(FromHost::Answer { id: got, result }) if got == id => result,
+        other => panic!("not the answer: {other:?}"),
+    }
+}
+
+fn scratch(name: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("onehand-{name}-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+#[tokio::test]
+async fn the_host_lists_a_folder() {
+    let dir = scratch("list");
+    fs::write(dir.join("b.txt"), "b").unwrap();
+    fs::create_dir(dir.join("a")).unwrap();
+    let (out, mut lines) = mpsc::unbounded_channel();
+    let reply = ask_file(
+        &dir,
+        &out,
+        &mut lines,
+        1,
+        Call::ReadDir { path: dir.clone() },
+    )
+    .await;
+    let Ok(Reply::Listing { entries, cut: 0 }) = reply else {
+        panic!("not a listing: {reply:?}");
+    };
+    let names: Vec<_> = entries.iter().map(|e| e.name.as_str()).collect();
+    assert_eq!(names, ["a", "b.txt"]);
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn the_host_reads_and_saves_a_file() {
+    let dir = scratch("save");
+    let file = dir.join("f.txt");
+    fs::write(&file, "one").unwrap();
+    let (out, mut lines) = mpsc::unbounded_channel();
+    let Ok(Reply::File { text, mtime }) = ask_file(
+        &dir,
+        &out,
+        &mut lines,
+        1,
+        Call::ReadFile { path: file.clone() },
+    )
+    .await
+    else {
+        panic!("not read");
+    };
+    assert_eq!(text, "one");
+    let save = |text: &str, expected| Call::SaveFile {
+        path: file.clone(),
+        text: text.into(),
+        expected,
+    };
+    let saved = ask_file(&dir, &out, &mut lines, 2, save("two", mtime)).await;
+    assert!(matches!(
+        saved,
+        Ok(Reply::Saved(
+            onehand_core::editor::SaveOutcome::Saved { .. }
+        ))
+    ));
+    fs::write(&file, "three").unwrap();
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    fs::write(&file, "four").unwrap();
+    let stale = ask_file(&dir, &out, &mut lines, 3, save("five", mtime)).await;
+    assert!(matches!(
+        stale,
+        Ok(Reply::Saved(
+            onehand_core::editor::SaveOutcome::Conflict { .. }
+        ))
+    ));
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn a_missing_file_is_refused() {
+    let dir = scratch("missing");
+    let (out, mut lines) = mpsc::unbounded_channel();
+    let reply = ask_file(
+        &dir,
+        &out,
+        &mut lines,
+        1,
+        Call::ReadFile {
+            path: dir.join("nope"),
+        },
+    )
+    .await;
+    assert!(reply.is_err());
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// serde cannot write a time before 1970; the laptop must hear an error,
+/// not wait out its timeout.
+#[tokio::test]
+async fn a_file_from_before_1970_is_refused_not_dropped() {
+    let dir = scratch("old");
+    let file = dir.join("old.txt");
+    fs::write(&file, "x").unwrap();
+    let times = fs::FileTimes::new().set_modified(UNIX_EPOCH - Duration::from_secs(10));
+    File::options()
+        .write(true)
+        .open(&file)
+        .unwrap()
+        .set_times(times)
+        .unwrap();
+    let (out, mut lines) = mpsc::unbounded_channel();
+    let reply = ask_file(&dir, &out, &mut lines, 1, Call::ReadFile { path: file }).await;
+    assert!(reply.is_err(), "{reply:?}");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn git_status_of_a_plain_folder_is_none() {
+    let dir = scratch("git");
+    let (out, mut lines) = mpsc::unbounded_channel();
+    let reply = ask_file(
+        &dir,
+        &out,
+        &mut lines,
+        1,
+        Call::GitStatus { root: dir.clone() },
+    )
+    .await;
+    assert!(matches!(reply, Ok(Reply::Git(None))), "{reply:?}");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn a_slow_call_holds_up_no_other() {
+    let dir = scratch("both");
+    let (out, mut lines) = mpsc::unbounded_channel();
+    for (id, call) in [(1, Call::GitStatus { root: dir.clone() }), (2, Call::List)] {
+        let ask = serde_json::to_string(&Question { id, call }).unwrap();
+        answer(&hub_in(&dir), &Build("b1".into()), &out, &ask);
+    }
+    let mut ids = Vec::new();
+    for _ in 0..2 {
+        let line = tokio::time::timeout(Duration::from_secs(5), lines.recv()).await;
+        let Ok(Some(FromHost::Answer { id, .. })) = line else {
+            panic!("not an answer: {line:?}");
+        };
+        ids.push(id);
+    }
+    ids.sort();
+    assert_eq!(ids, [1, 2]);
+    let _ = fs::remove_dir_all(&dir);
+}

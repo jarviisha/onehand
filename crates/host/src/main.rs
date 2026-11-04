@@ -6,6 +6,7 @@
 //! - `--build-id` prints the id this binary is known by.
 
 mod attach;
+mod files;
 mod hub;
 mod serve;
 
