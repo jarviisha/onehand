@@ -57,4 +57,4 @@ cd "$repo"
 cargo build -p onehand-host
 # The Telegram token is cleared for the same reason `make dev` clears it: two
 # bridges polling one bot each see half its messages.
-ONEHAND_CONFIG_DIR="$home" ONEHAND_TELEGRAM_TOKEN= exec cargo run
+ONEHAND_CONFIG_DIR="$home" ONEHAND_TELEGRAM_TOKEN= exec cargo run --bin onehand
