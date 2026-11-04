@@ -12,6 +12,12 @@
 //! `nvim` sitting between two called `zsh` says the editor is a kind of shell.
 //! PTY/grid ownership is shared with the Neovim crate through
 //! `onehand-terminal-ui`.
+//!
+//! A project on a host has its shells there, run by the host service and
+//! read over the host's attach (`host`): they outlive this window, so a tab
+//! is a view of one rather than its owner.
+
+mod host;
 
 use crate::controls::Named as _;
 use crate::controls::Short as _;
@@ -24,9 +30,17 @@ use gpui::{
 use gpui_base::dock::{Panel, PanelEvent};
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::{IconName, StyledExt};
+use onehand_core::host::client::HostConn;
+use onehand_core::host::wire::HostTerm;
+use onehand_core::workspace::HostName;
 use onehand_terminal_ui::{Program, PtyTab, TerminalThemeKey, spawn_pty, terminal_palette};
 use std::collections::HashMap;
 use std::path::PathBuf;
+
+/// Where a tab set belongs: a project's folder, with the host it is on. A
+/// folder on a host and one here of the same path are two projects, and
+/// neither's shells are the other's.
+type Home = (Option<HostName>, PathBuf);
 
 /// The tab set one project root has open.
 #[derive(Default)]
@@ -46,14 +60,17 @@ struct RootShells {
 struct Tab {
     id: u64,
     shell: PtyTab,
+    /// The host's terminal this tab shows, and the attach it is read over.
+    on_host: Option<(HostConn, HostTerm)>,
 }
 
 impl RootShells {
     /// Add `shell` as the newest tab, and select it.
-    fn push(&mut self, shell: PtyTab) {
+    fn push(&mut self, shell: PtyTab, on_host: Option<(HostConn, HostTerm)>) {
         self.tabs.push(Tab {
             id: self.next,
             shell,
+            on_host,
         });
         self.next += 1;
         self.active = self.tabs.len() - 1;
@@ -73,11 +90,11 @@ impl RootShells {
     ///
     /// Answers whether anything went, since both callers have work to do only
     /// then.
-    fn drop_where(&mut self, mut goes: impl FnMut(usize, &mut PtyTab) -> bool) -> bool {
+    fn drop_where(&mut self, mut goes: impl FnMut(usize, &mut Tab) -> bool) -> bool {
         let mut dropped = Vec::new();
         let mut ix = 0;
         self.tabs.retain_mut(|tab| {
-            let drop = goes(ix, &mut tab.shell);
+            let drop = goes(ix, tab);
             if drop {
                 dropped.push(ix);
             }
@@ -113,11 +130,10 @@ fn place_of(ids: &[u64], id: u64) -> Option<usize> {
 
 pub struct TerminalPanel {
     focus_handle: FocusHandle,
-    root: Option<PathBuf>,
-    /// Why there is no root to start a shell in, where that is not simply
-    /// that no project is selected.
-    refused: Option<&'static str>,
-    shells: HashMap<PathBuf, RootShells>,
+    root: Option<Home>,
+    shells: HashMap<Home, RootShells>,
+    /// How the attach for the host project on screen is coming along.
+    host: host::Reach,
     /// Surfaced when a shell cannot be started at all.
     status: Option<String>,
     /// The grid's reading size. Not a rem scale like the other panels: a
@@ -153,8 +169,8 @@ impl TerminalPanel {
         cx.new(|cx| Self {
             focus_handle: cx.focus_handle(),
             root: None,
-            refused: None,
             shells: HashMap::new(),
+            host: host::Reach::default(),
             status: None,
             zoom: crate::zoom::Zoom::default(),
             terminal_theme: TerminalThemeKey::current(cx),
@@ -212,16 +228,19 @@ impl TerminalPanel {
         cx.notify();
     }
 
-    /// How many shells are open on `root`.
+    /// How many shells are open on the folder `root` of this machine.
     pub fn shells_in(&self, root: &std::path::Path) -> usize {
-        self.shells.get(root).map_or(0, |shells| shells.tabs.len())
+        self.shells
+            .get(&(None, root.to_path_buf()))
+            .map_or(0, |shells| shells.tabs.len())
     }
 
-    /// Every shell's process id, with the project it was opened on.
+    /// Every shell's process id, with the project it was opened on. A tab on
+    /// a host has no process here, so none is listed for it.
     pub fn processes(&self) -> Vec<(PathBuf, u32)> {
         self.shells
             .iter()
-            .flat_map(|(root, shells)| {
+            .flat_map(|((_, root), shells)| {
                 shells
                     .tabs
                     .iter()
@@ -230,17 +249,23 @@ impl TerminalPanel {
             .collect()
     }
 
-    pub fn set_root(&mut self, root: PathBuf, cx: &mut Context<Self>) {
-        self.root = Some(root);
-        self.refused = None;
+    /// Show the shells of `root`, on `host` when it is there: those the
+    /// host keeps for it are asked for, and opened as tabs.
+    pub fn set_root(&mut self, root: PathBuf, host: Option<HostName>, cx: &mut Context<Self>) {
+        let home = (host, root);
+        // A shell asked for on another project is not one asked for here.
+        if self.root.as_ref() != Some(&home) {
+            self.host.open_after = None;
+        }
+        self.root = Some(home);
+        self.show_host(cx);
         cx.notify();
     }
 
-    /// Point at no root, saying `why` where a shell would be: a project on a
-    /// host has no folder here to start one in. `None` is no project at all.
-    pub fn refuse(&mut self, why: Option<&'static str>, cx: &mut Context<Self>) {
+    /// Point at no project at all.
+    pub fn clear_root(&mut self, cx: &mut Context<Self>) {
         self.root = None;
-        self.refused = why;
+        self.host = host::Reach::default();
         cx.notify();
     }
 
@@ -256,8 +281,12 @@ impl TerminalPanel {
     /// Always a new one — shells are what somebody opens several of on purpose,
     /// one per thing they are watching.
     pub fn open_shell(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(root) = self.root.clone() else {
+        let Some(home) = self.root.clone() else {
             return;
+        };
+        let root = match &home {
+            (Some(_), _) => return self.open_on_host(window.window_handle(), cx),
+            (None, root) => root.clone(),
         };
 
         let panel = cx.entity().downgrade();
@@ -277,7 +306,7 @@ impl TerminalPanel {
         let had_tabs = self.has_shell();
         match spawned {
             Ok(shell) => {
-                self.shells.entry(root).or_default().push(shell);
+                self.shells.entry(home).or_default().push(shell, None);
                 self.status = None;
                 self.watch_running(cx);
             }
@@ -309,7 +338,7 @@ impl TerminalPanel {
         let held_focus = self.focus_handle.contains_focused(window, cx);
         let mut removed = false;
         for set in self.shells.values_mut() {
-            removed |= set.drop_where(|_, shell| shell.finished());
+            removed |= set.drop_where(|_, tab| tab.shell.finished());
         }
         if !removed {
             return;
@@ -370,13 +399,7 @@ impl TerminalPanel {
     /// Asked *before* the drop, since a handle that is not on screen cannot
     /// answer, and only acted on when focus was inside this panel to begin
     /// with.
-    fn close_tab_id(
-        &mut self,
-        root: &PathBuf,
-        id: u64,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn close_tab_id(&mut self, root: &Home, id: u64, window: &mut Window, cx: &mut Context<Self>) {
         let held_focus = self.focus_handle.contains_focused(window, cx);
         let Some(set) = self.shells.get_mut(root) else {
             return;
@@ -385,7 +408,11 @@ impl TerminalPanel {
         let Some(at) = place_of(&ids, id) else {
             return;
         };
-        // Dropping the tab drops its PTY, which ends the child.
+        // Dropping the tab drops its PTY, which ends the child. A host's
+        // shell is asked to end, as nothing here holds it.
+        if let Some((conn, term)) = &set.tabs[at].on_host {
+            conn.term_close(*term);
+        }
         let closed = set.drop_where(|i, _| i == at);
         if closed && held_focus && self.root.as_ref() == Some(root) {
             self.focus_active(window, cx);
@@ -402,15 +429,25 @@ impl TerminalPanel {
         cx.notify();
     }
 
-    /// Drop every shell this panel holds for `root`.
+    /// Drop every shell this panel holds for `root`, on `host` if it is there.
     ///
     /// Dropping the tabs drops their PTYs, which is what ends the children --
     /// removing a project must not leave its shells running with nothing on
-    /// screen pointing at them.
-    pub fn forget_root(&mut self, root: &PathBuf, cx: &mut Context<Self>) {
-        self.shells.remove(root);
-        if self.root.as_ref() == Some(root) {
-            self.root = None;
+    /// screen pointing at them. A host's shells are only let go of: they run
+    /// on there, for whoever adds the folder again.
+    pub fn forget_root(
+        &mut self,
+        root: &std::path::Path,
+        host: Option<HostName>,
+        cx: &mut Context<Self>,
+    ) {
+        let home = (host, root.to_path_buf());
+        // ponytail: a host tab's reader thread waits on until its terminal
+        // next prints or exits, or the attach ends; an unwatch call would end
+        // it at once if those threads ever pile up.
+        self.shells.remove(&home);
+        if self.root.as_ref() == Some(&home) {
+            self.clear_root(cx);
         }
         cx.notify();
     }
@@ -566,7 +603,7 @@ impl TerminalPanel {
         // shell map, and it is the one case with nothing for a strip to sit
         // over: no project means no shell to start and nowhere to start it.
         if self.root.is_none() {
-            return onehand_ui::hint(self.refused.unwrap_or("No project selected"), cx);
+            return onehand_ui::hint("No project selected", cx);
         }
 
         let set = self.active_set().filter(|set| !set.tabs.is_empty());
@@ -742,7 +779,13 @@ impl TerminalPanel {
             // used to take it away and leave an open panel with no control
             // inside it to close -- the state the chevron was added for, reached
             // by using the ✕ beside it.
-            .when(empty, |panel| {
+            // A host project with no tabs yet: what its attach waits on, or
+            // why it failed, stands where *New terminal* would.
+            .when_some(
+                empty.then(|| self.host_said(cx)).flatten(),
+                |panel, said| panel.child(said),
+            )
+            .when(empty && self.host.is_quiet(), |panel| {
                 panel.child(
                     div()
                         .flex_1()

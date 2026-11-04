@@ -32,13 +32,13 @@ fn a_host_root_is_never_given_local_work() {
     assert_eq!(ws.roots[0].local_path(), Some(local.as_path()));
     assert_eq!(ws.roots[host].local_path(), None);
     assert_eq!(sessions::page_roots_in(&ws), vec![local]);
-    // Its menus offer no worktree, terminal, check or switch, even where a
-    // folder of the same path here is a repository.
+    // Its menus offer no worktree, check or switch, even where a folder of
+    // the same path here is a repository.
     ws.roots[host].check = Some("make test".into());
     let facts = crate::chat::pane::ProjectFacts::of(&ws.roots[host], true);
-    assert!(!facts.local && !facts.is_repo && !facts.check);
+    assert!(!facts.is_repo && !facts.check);
     assert_eq!(facts.unattended, None);
-    assert!(crate::chat::pane::ProjectFacts::of(&ws.roots[0], true).local);
+    assert!(crate::chat::pane::ProjectFacts::of(&ws.roots[0], true).is_repo);
 }
 
 /// A `git status` sweep reads a host's folder over its attach when one is
@@ -173,5 +173,5 @@ fn a_host_root_reads_its_git_status_unless_a_local_root_has_its_path() {
     );
     // Its status offers nothing a host project does not do.
     let facts = crate::chat::pane::ProjectFacts::of(&ws.roots[2], true);
-    assert!(!facts.is_repo && !facts.local);
+    assert!(!facts.is_repo);
 }

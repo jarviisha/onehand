@@ -14,3 +14,7 @@ gpui.workspace = true
 gpui-component.workspace = true
 gpui-terminal = { path = "../../vendor/gpui-terminal" }
 portable-pty = "0.9"
+
+[dev-dependencies]
+# `TestAppContext`, to draw a grid in a window the way a panel does.
+gpui = { workspace = true, features = ["test-support"] }

@@ -1507,6 +1507,17 @@ impl TerminalView {
         self.state.size()
     }
 
+    /// onehand patch: the text of screen row `row`, so a crate that builds a
+    /// view can check what its reader put on the grid.
+    pub fn row_text(&self, row: usize) -> String {
+        let cols = self.state.cols();
+        self.state.with_term(|term| {
+            (0..cols)
+                .map(|col| term.grid()[Line(row as i32)][Column(col)].c)
+                .collect()
+        })
+    }
+
     /// Resize the terminal to new dimensions.
     ///
     /// This method should be called when the terminal view size changes.
