@@ -12,21 +12,19 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use futures::channel::mpsc as events;
 use futures::{Stream, StreamExt as _};
-use tokio::io::{
-    AsyncBufReadExt as _, AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _, BufReader,
-};
-use tokio::process::{Child, Command};
+use tokio::io::{AsyncBufReadExt as _, AsyncRead, AsyncWrite, AsyncWriteExt as _, BufReader};
+use tokio::process::Child;
 use tokio::sync::{mpsc, oneshot};
 
 use super::wire::{
-    Build, Call, Entry, FromHost, HostSession, Question, Readiness, Reply, SessionInfo,
+    Build, Call, Entry, FromHost, HostSession, HostTerm, Question, Readiness, Reply, SessionInfo,
+    TermInfo,
 };
 use crate::acp::{AcpEvent, AcpRequest, Opening};
 use crate::config::AgentSpec;
@@ -34,10 +32,17 @@ use crate::editor::SaveOutcome;
 use crate::gitstat::GitStatus;
 use crate::tree::TreeEntry;
 
+mod attach;
 mod files;
 mod install;
+mod terms;
 
+use attach::command;
+pub use attach::{attach, restart, HostAddr};
+#[cfg(test)]
+use attach::{hello, restart_over, settle, settle_again, Settled};
 pub use install::install;
+pub use terms::{Recorded, TermReader, TermWriter};
 
 #[derive(Debug)]
 pub enum HostError {
@@ -82,209 +87,9 @@ fn on_host(host: &str, e: HostError) -> HostError {
     }
 }
 
-/// How to reach a host.
-pub struct HostAddr {
-    /// The `ssh` destination, which also names the host in what is said of it.
-    pub ssh: String,
-    /// Run the relay directly through `sh` rather than over ssh: how the
-    /// smoke run and the tests reach a host on this machine.
-    pub local: bool,
-}
-
-/// `BatchMode` so a password prompt fails at once instead of waiting on a
-/// person who cannot see it; the keepalives notice a host that went away.
-const SSH_OPTS: [&str; 7] = [
-    "-T",
-    "-o",
-    "BatchMode=yes",
-    "-o",
-    "ServerAliveInterval=15",
-    "-o",
-    "ServerAliveCountMax=3",
-];
-
-/// How long a service told to shut down gets to close its side.
-const SHUTDOWN_WAIT: Duration = Duration::from_secs(10);
-
-/// How long a failed attach gets to finish saying why on stderr.
-const STDERR_WAIT: Duration = Duration::from_secs(2);
-
 /// How long a call waits on its answer. A watch's answer waits as long as its
 /// replay runs, and has no deadline.
 const ASK_WAIT: Duration = Duration::from_secs(30);
-
-/// How much of what an attach says on stderr is kept; the rest is read and dropped.
-const STDERR_KEEP: u64 = 8 * 1024;
-
-/// `cmd` run on the host, or here through `sh` when `local`; the same text
-/// either way, so the two cannot drift apart in their quoting.
-fn command(addr: &HostAddr, cmd: &str) -> Command {
-    let mut command = if addr.local {
-        let mut command = Command::new("sh");
-        command.arg("-c");
-        command
-    } else {
-        let mut command = Command::new("ssh");
-        // `--` so a destination cannot be read as an option.
-        command.args(SSH_OPTS).arg("--").arg(&addr.ssh);
-        command
-    };
-    command.arg(cmd).kill_on_drop(true);
-    command
-}
-
-/// Attach, say hello, and settle the build: same build → connected; other build with nothing busy
-/// → `Shutdown` it and attach again once; other build busy → `Busy`.
-pub async fn attach(addr: &HostAddr, remote: &str, build: &Build) -> Result<HostConn, HostError> {
-    let (conn, said) = start_attach(addr, remote)?;
-    match reached(settle(&conn, build).await, said).await? {
-        Settled::Same => return Ok(conn),
-        Settled::Restarted => {
-            // The old service closes the stream as it exits; the next attach
-            // must find it gone rather than half there.
-            let _ = tokio::time::timeout(SHUTDOWN_WAIT, conn.cmds.closed()).await;
-        }
-    }
-    let (conn, said) = start_attach(addr, remote)?;
-    reached(settle_again(&conn, build).await, said).await?;
-    Ok(conn)
-}
-
-/// Attach and, unless the host already runs `build`, shut its service down
-/// whatever is mid-turn there, then attach again: what to do once the person
-/// has agreed to stop the sessions a `Busy` named.
-pub async fn restart(addr: &HostAddr, remote: &str, build: &Build) -> Result<HostConn, HostError> {
-    restart_over(|| start_attach(addr, remote), build).await
-}
-
-/// `restart`, attaching with `attach`.
-async fn restart_over(
-    mut attach: impl FnMut() -> Result<(HostConn, oneshot::Receiver<String>), HostError>,
-    build: &Build,
-) -> Result<HostConn, HostError> {
-    let (conn, said) = attach()?;
-    let stop = async {
-        let (theirs, _) = hello(&conn, build).await?;
-        if theirs == *build {
-            return Ok(false);
-        }
-        conn.ask_for(Call::Shutdown, |a| a.done).await?;
-        Ok(true)
-    };
-    if !reached(stop.await, said).await? {
-        return Ok(conn);
-    }
-    let _ = tokio::time::timeout(SHUTDOWN_WAIT, conn.cmds.closed()).await;
-    let (conn, said) = attach()?;
-    let again = async {
-        let (theirs, _) = hello(&conn, build).await?;
-        if theirs == *build {
-            Ok(())
-        } else {
-            Err(HostError::Protocol(format!(
-                "the host came back on build {theirs}, not {build}"
-            )))
-        }
-    };
-    reached(again.await, said).await?;
-    Ok(conn)
-}
-
-/// Start `<remote> attach`, and what it says on stderr, as far as it has once
-/// it ends or has said `STDERR_KEEP` bytes.
-fn start_attach(
-    addr: &HostAddr,
-    remote: &str,
-) -> Result<(HostConn, oneshot::Receiver<String>), HostError> {
-    let mut child = command(addr, &format!("{remote} attach"))
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| HostError::Unreachable(format!("ssh: {e}")))?;
-    let (Some(write), Some(read), Some(mut stderr)) =
-        (child.stdin.take(), child.stdout.take(), child.stderr.take())
-    else {
-        return Err(HostError::Unreachable("ssh gave no pipes".into()));
-    };
-    let (tell, said) = oneshot::channel();
-    tokio::spawn(async move {
-        let mut text = Vec::new();
-        let _ = (&mut stderr).take(STDERR_KEEP).read_to_end(&mut text).await;
-        let _ = tell.send(String::from_utf8_lossy(&text).trim().to_string());
-        // Read on so a talkative attach never blocks on a full pipe.
-        let _ = tokio::io::copy(&mut stderr, &mut tokio::io::sink()).await;
-    });
-    Ok((
-        HostConn::start(addr.ssh.clone(), read, write, Some(child)),
-        said,
-    ))
-}
-
-/// `result`, with a host that could not be reached explained by what ssh
-/// said, when it said anything.
-async fn reached<T>(
-    result: Result<T, HostError>,
-    said: oneshot::Receiver<String>,
-) -> Result<T, HostError> {
-    match result {
-        Err(HostError::Unreachable(why)) => {
-            let said = match tokio::time::timeout(STDERR_WAIT, said).await {
-                Ok(Ok(said)) if !said.is_empty() => said,
-                Ok(Ok(_)) | Ok(Err(_)) | Err(_) => why,
-            };
-            Err(HostError::Unreachable(said))
-        }
-        Ok(_) | Err(_) => result,
-    }
-}
-
-enum Settled {
-    Same,
-    Restarted,
-}
-
-/// Say hello as `build`; a service on another build with nothing mid-turn is
-/// told to shut down, so the next attach starts this one.
-async fn settle(conn: &HostConn, build: &Build) -> Result<Settled, HostError> {
-    let (theirs, busy) = hello(conn, build).await?;
-    if theirs == *build {
-        return Ok(Settled::Same);
-    }
-    if !busy.is_empty() {
-        return Err(busy_host(theirs, busy));
-    }
-    conn.ask_for(Call::Shutdown, |a| a.done).await?;
-    Ok(Settled::Restarted)
-}
-
-/// Say hello once more after a restart: another build now is a fault, and is
-/// never shut down a second time.
-async fn settle_again(conn: &HostConn, build: &Build) -> Result<(), HostError> {
-    let (theirs, busy) = hello(conn, build).await?;
-    if theirs == *build {
-        Ok(())
-    } else if !busy.is_empty() {
-        Err(busy_host(theirs, busy))
-    } else {
-        Err(HostError::Protocol(format!(
-            "the host came back on build {theirs}, not {build}"
-        )))
-    }
-}
-
-/// Say hello as `build`; the host's build, and its sessions mid-turn.
-async fn hello(conn: &HostConn, build: &Build) -> Result<(Build, Vec<HostSession>), HostError> {
-    let hello = Call::Hello {
-        build: build.clone(),
-    };
-    conn.ask_for(hello, |a| a.welcome).await
-}
-
-/// A host on build `build` that was left alone for the sessions in `busy`.
-fn busy_host(build: Build, busy: Vec<HostSession>) -> HostError {
-    HostError::Busy { build, busy }
-}
 
 /// What an answer carries, in the slot of its kind; every other slot is empty.
 /// A call takes the slot it expects, and finds any other answer unexpected.
@@ -298,6 +103,8 @@ struct Answer {
     file: Option<(String, Option<SystemTime>)>,
     saved: Option<SaveOutcome>,
     git: Option<Option<GitStatus>>,
+    term_opened: Option<HostTerm>,
+    terms: Option<Vec<TermInfo>>,
 }
 
 impl Answer {
@@ -312,6 +119,8 @@ impl Answer {
             file: None,
             saved: None,
             git: None,
+            term_opened: None,
+            terms: None,
         };
         match reply {
             Reply::Welcome { build, busy } => answer.welcome = Some((build, busy)),
@@ -323,6 +132,8 @@ impl Answer {
             Reply::File { text, mtime } => answer.file = Some((text, mtime)),
             Reply::Saved(outcome) => answer.saved = Some(outcome),
             Reply::Git(status) => answer.git = Some(status),
+            Reply::TermOpened { term } => answer.term_opened = Some(term),
+            Reply::Terms(terms) => answer.terms = Some(terms),
         }
         answer
     }
@@ -333,6 +144,9 @@ enum Cmd {
     Ask(Call, oneshot::Sender<Result<Reply, HostError>>),
     Watch(HostSession, events::UnboundedSender<AcpEvent>),
     Request(HostSession, AcpRequest),
+    /// A call whose answer nobody waits on.
+    Fire(Call),
+    TermWatch(HostTerm, std::sync::mpsc::Sender<Vec<u8>>),
     /// Let go of every call whose caller stopped waiting.
     Forget,
 }
@@ -344,6 +158,8 @@ enum Pending {
     Watch(HostSession, events::UnboundedSender<AcpEvent>),
     /// A refused request is said in the session it was for.
     Request(HostSession),
+    /// A refused terminal watch ends its reader.
+    TermWatch(HostTerm),
 }
 
 /// Who reads a session, and how far its replay has got.
@@ -566,6 +382,7 @@ async fn pump<R, W>(
     // the one still in use without keeping it alive.
     let mut forwarders: HashMap<HostSession, mpsc::WeakUnboundedSender<AcpRequest>> =
         HashMap::new();
+    let mut terms = terms::Terms::default();
     // Ids start at 1: the host answers a line it cannot read with id 0.
     let mut next = 1_u64;
     let why = loop {
@@ -584,6 +401,8 @@ async fn pump<R, W>(
                         taken.store(true, Ordering::Relaxed);
                         break format!("{host} was attached from another machine");
                     }
+                    FromHost::TermOutput { term, data } => terms.output(term, data.0),
+                    FromHost::TermExit { term } => terms.exited(term),
                     FromHost::Replay { session } => {
                         let Some(w) = watchers.get_mut(&session) else { continue };
                         // The host answers watches in order, each after its
@@ -627,7 +446,8 @@ async fn pump<R, W>(
                                 w.said_at = None;
                             }
                         }
-                        (Some(Pending::Request(_)), Ok(_)) | (None, _) => {}
+                        (Some(Pending::TermWatch(term)), Err(_)) => terms.refused(id, term),
+                        (Some(Pending::Request(_) | Pending::TermWatch(_)), Ok(_)) | (None, _) => {}
                     },
                     FromHost::Entry { session, seq, at, entry } => {
                         let Some(w) = watchers.get_mut(&session) else { continue };
@@ -664,15 +484,16 @@ async fn pump<R, W>(
             }
             cmd = cmds.recv() => {
                 let Some(cmd) = cmd else { return };
+                let id = next;
                 let (call, waiter) = match cmd {
                     Cmd::Forget => {
                         pending.retain(|_, p| match p {
                             Pending::Caller(tx) => !tx.is_closed(),
-                            Pending::Watch(..) | Pending::Request(_) => true,
+                            Pending::Watch(..) | Pending::Request(_) | Pending::TermWatch(_) => true,
                         });
                         continue;
                     }
-                    Cmd::Ask(call, tx) => (call, Pending::Caller(tx)),
+                    Cmd::Ask(call, tx) => (call, Some(Pending::Caller(tx))),
                     Cmd::Watch(session, tx) => {
                         let watcher = Watcher::new(tx.clone());
                         // A second watch of a session replaces the first.
@@ -680,16 +501,22 @@ async fn pump<R, W>(
                             let elsewhere = "this session is now watched elsewhere";
                             own(&old.tx, AcpEvent::Disconnected(elsewhere.into()));
                         }
-                        (Call::Watch { session: session.clone() }, Pending::Watch(session, tx))
+                        (Call::Watch { session: session.clone() }, Some(Pending::Watch(session, tx)))
                     }
                     // Only a live channel reaches here: a replay hands its `Chat` none.
                     Cmd::Request(session, request) => {
-                        (Call::Request { session: session.clone(), request }, Pending::Request(session))
+                        (Call::Request { session: session.clone(), request }, Some(Pending::Request(session)))
+                    }
+                    Cmd::Fire(call) => (call, None),
+                    Cmd::TermWatch(term, tx) => {
+                        terms.watch(id, term, tx);
+                        (Call::TermWatch { term }, Some(Pending::TermWatch(term)))
                     }
                 };
-                let id = next;
                 next += 1;
-                pending.insert(id, waiter);
+                if let Some(waiter) = waiter {
+                    pending.insert(id, waiter);
+                }
                 let Ok(mut text) = serde_json::to_string(&Question { id, call }) else { continue };
                 text.push('\n');
                 // A write that fails means the stream is gone, which the read
@@ -706,7 +533,7 @@ async fn pump<R, W>(
             Pending::Caller(tx) => {
                 let _ = tx.send(Err(HostError::Unreachable(why.clone())));
             }
-            Pending::Watch(..) | Pending::Request(_) => {}
+            Pending::Watch(..) | Pending::Request(_) | Pending::TermWatch(_) => {}
         }
     }
     refuse_queued(&mut cmds, &why);
@@ -741,7 +568,8 @@ fn refuse_queued(cmds: &mut mpsc::UnboundedReceiver<Cmd>, why: &str) {
             Cmd::Watch(_, tx) => {
                 own(&tx, AcpEvent::Disconnected(why.to_string()));
             }
-            Cmd::Request(..) | Cmd::Forget => {}
+            // A terminal watch's sender drops here, and its reader ends.
+            Cmd::Request(..) | Cmd::Fire(_) | Cmd::TermWatch(..) | Cmd::Forget => {}
         }
     }
 }

@@ -132,3 +132,11 @@ fn file_calls_round_trip() {
     let back = round_trips(&Reply::Git(Some(status.clone())));
     assert!(matches!(back, Reply::Git(Some(s)) if s == status));
 }
+
+#[test]
+fn bytes_travel_as_base64() {
+    let bytes = Bytes(vec![0, 255, b'\n']);
+    let text = serde_json::to_string(&bytes).unwrap();
+    assert_eq!(text, "\"AP8K\"");
+    assert_eq!(serde_json::from_str::<Bytes>(&text).unwrap(), bytes);
+}

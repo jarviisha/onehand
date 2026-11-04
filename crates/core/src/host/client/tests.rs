@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tokio::io::{BufReader, DuplexStream, Lines, ReadHalf, WriteHalf};
 
 use super::*;
+use crate::host::wire::Bytes;
 
 /// The host's end of the pipe: it reads asks and writes lines.
 struct Host {
@@ -996,4 +997,100 @@ async fn an_unexpected_answer_to_save_is_refused() {
     assert!(matches!(call, Call::SaveFile { .. }), "{call:?}");
     host.answer(id, Reply::Done).await;
     assert!(matches!(saving.await.unwrap(), Err(HostError::Protocol(_))));
+}
+
+fn output(term: u64, text: &str) -> FromHost {
+    FromHost::TermOutput {
+        term: HostTerm(term),
+        data: Bytes(text.into()),
+    }
+}
+
+/// Everything `reader` gives until it ends, read on a thread of its own.
+async fn read_to_end(mut reader: TermReader) -> String {
+    use std::io::Read as _;
+    let read = std::thread::spawn(move || {
+        let mut text = String::new();
+        reader.read_to_string(&mut text).unwrap();
+        text
+    });
+    tokio::task::spawn_blocking(move || read.join().unwrap())
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn term_output_reads_in_order_and_ends_at_exit() {
+    let (conn, mut host) = pair();
+    let reader = conn.term_watch(HostTerm(1));
+    let Question { id, call } = host.ask().await;
+    assert!(matches!(call, Call::TermWatch { term: HostTerm(1) }));
+    host.send(output(1, "ab")).await;
+    host.send(output(1, "cd")).await;
+    host.answer(id, Reply::Done).await;
+    host.send(FromHost::TermExit { term: HostTerm(1) }).await;
+    assert_eq!(read_to_end(reader).await, "abcd");
+}
+
+#[tokio::test]
+async fn a_newer_watch_of_a_term_ends_the_first_reader() {
+    let (conn, mut host) = pair();
+    let first = conn.term_watch(HostTerm(1));
+    let second = conn.term_watch(HostTerm(1));
+    host.ask().await;
+    host.ask().await;
+    host.send(output(1, "x")).await;
+    host.send(FromHost::TermExit { term: HostTerm(1) }).await;
+    assert_eq!(read_to_end(first).await, "");
+    assert_eq!(read_to_end(second).await, "x");
+}
+
+#[tokio::test]
+async fn writes_reach_the_host_in_order() {
+    use std::io::Write as _;
+    let (conn, mut host) = pair();
+    let mut writer = conn.term_writer(HostTerm(2));
+    let wrote = std::thread::spawn(move || {
+        for i in 0..100 {
+            writer.write_all(i.to_string().as_bytes()).unwrap();
+        }
+    });
+    for i in 0..100 {
+        let Question { call, .. } = host.ask().await;
+        let Call::TermWrite { term, data } = call else {
+            panic!("not a write: {call:?}")
+        };
+        assert_eq!(term, HostTerm(2));
+        assert_eq!(data.0, i.to_string().into_bytes());
+    }
+    wrote.join().unwrap();
+}
+
+#[tokio::test]
+async fn a_lost_connection_ends_every_terminal_reader() {
+    let (conn, mut host) = pair();
+    let reader = conn.term_watch(HostTerm(1));
+    host.ask().await;
+    drop(host);
+    assert_eq!(read_to_end(reader).await, "");
+}
+
+#[test]
+fn a_recording_connection_keeps_what_was_fired_and_needs_no_runtime() {
+    let (conn, recorded) = HostConn::recording("vps");
+    conn.term_resize(HostTerm(3), 80, 24);
+    conn.term_close(HostTerm(3));
+    let fired = recorded.fired();
+    assert!(matches!(
+        fired.as_slice(),
+        [
+            Call::TermResize {
+                term: HostTerm(3),
+                cols: 80,
+                rows: 24
+            },
+            Call::TermClose { term: HostTerm(3) }
+        ]
+    ));
+    assert!(recorded.fired().is_empty());
 }

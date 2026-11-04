@@ -32,6 +32,31 @@ impl HostSession {
 #[serde(transparent)]
 pub struct Build(pub String);
 
+/// A terminal on a host, as the host names it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct HostTerm(pub u64);
+
+/// Raw bytes, which cross as one base64 string: a terminal's output is not
+/// text, and as a JSON array of numbers it would take four times the room.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Bytes(pub Vec<u8>);
+
+impl Serialize for Bytes {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&crate::acp::base64_encode(&self.0))
+    }
+}
+
+impl<'de> Deserialize<'de> for Bytes {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(d)?;
+        crate::acp::base64_decode(&text)
+            .map(Bytes)
+            .ok_or_else(|| serde::de::Error::custom("not base64"))
+    }
+}
+
 impl fmt::Display for HostSession {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
@@ -92,6 +117,29 @@ pub enum Call {
     GitStatus {
         root: PathBuf,
     },
+    TermOpen {
+        cwd: PathBuf,
+        cols: u16,
+        rows: u16,
+    },
+    TermList,
+    /// Send what the terminal has kept as `TermOutput`, then answer `Done`;
+    /// what it prints after follows as it comes.
+    TermWatch {
+        term: HostTerm,
+    },
+    TermWrite {
+        term: HostTerm,
+        data: Bytes,
+    },
+    TermResize {
+        term: HostTerm,
+        cols: u16,
+        rows: u16,
+    },
+    TermClose {
+        term: HostTerm,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -122,6 +170,10 @@ pub enum Reply {
     Saved(SaveOutcome),
     /// None when the folder is not in a repository.
     Git(Option<GitStatus>),
+    TermOpened {
+        term: HostTerm,
+    },
+    Terms(Vec<TermInfo>),
 }
 
 /// What the host sends, one per line.
@@ -134,7 +186,9 @@ pub enum FromHost {
     },
     /// What follows for `session` is a watch's replay, from the journal's
     /// first readable entry; it runs until that watch's answer.
-    Replay { session: HostSession },
+    Replay {
+        session: HostSession,
+    },
     /// `at` is when the host journaled it, in unix seconds; 0 when not known.
     Entry {
         session: HostSession,
@@ -144,6 +198,14 @@ pub enum FromHost {
     },
     /// Another attach took this host; this stream is about to close.
     Kicked,
+    TermOutput {
+        term: HostTerm,
+        data: Bytes,
+    },
+    /// The terminal's process ended; nothing more comes for it.
+    TermExit {
+        term: HostTerm,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -169,6 +231,12 @@ pub struct SessionInfo {
     pub agent: String,
     pub busy: bool,
     pub ended: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TermInfo {
+    pub term: HostTerm,
+    pub cwd: PathBuf,
 }
 
 /// Whether a session is mid-turn after `entry`, given whether it was before.
