@@ -108,6 +108,44 @@ Every attach opens by exchanging builds (`client::attach`):
   host* (`crates/app/src/dialogs/host_project.rs`): *Host* (*An alias from your SSH config, or
   user@machine*) and *Folder* (*The project's folder on that host, from /*). *Add* refuses with
   *Name the host*, *Name the folder* or *The folder starts at /*, and while the attach runs.
+- **Picking the host:** beside *Host*, a quiet caret (*Pick a host*) opens a menu of
+  the window's own host projects' hosts, in rail order, then the plain aliases of `~/.ssh/config`
+  and what it `Include`s (`sshconf::aliases`, read once on the background executor as the form
+  opens), each once. A `Host` pattern with `*`, `?` or `!` is left out, as is a `Host *`. The menu
+  holds at most 50 (`HOST_CHOICES_CAP`) and ends on *<n> more hosts not shown* when it cuts. A pick
+  fills *Host* and drops any list and failure shown. With nothing to offer the caret is not drawn.
+- **Picking the folder:** *Browse* beside *Folder* (refused with *Name the host*, and while *Add*
+  attaches or waits) attaches as *Add* does, the same waiting line and *Restart now* standing for
+  a busy host. It starts at the folder *Folder* names when it is absolute and the host lists it,
+  else at the host's home (the wire's `Home`, `HostConn::home`; a host user with no home folder
+  fails the listing). It lists under the field *Folders in <path> on <host>*: an *..* row unless at
+  `/`, then one row per folder, files left out, at most 200 (`BROWSE_CAP`; *<n> more folders not
+  shown* counts the cap and the host's own bound together), *No folders here* when it has none,
+  and *Reading the folders on <host>…* until the first listing lands. A row pressed becomes
+  *Folder* and is listed in turn; a listing that fails (the folder gone, unreadable, the host out
+  of reach) is the list's own line in the danger ink and keeps the list before it. A row is
+  refused, as *Browse* is, while *Add* attaches or waits. Typing in *Host* drops the list, and a
+  newer listing drops the one under way (`browse_host_folders`,
+  `crates/app/src/shell/host_project.rs`).
+- **Two ways:** a switch at the top of the form, *Open a folder* / *Clone a repository*
+  (`Way`), picked while no attach runs. Switching keeps *Host* and the folder field, and drops a
+  failure shown.
+- **Clone a repository:** *Host*, *Repository* (*A git URL the host can clone with its own
+  credentials*) and *Into* (*The folder on that host to clone into, from /*), the *Folder* field
+  relabelled, which *Browse* fills as it fills *Folder*. *Clone* refuses with *Name the host*,
+  *Name the repository*, *Cannot tell the repository's name from this URL* (`wire::clone_name`),
+  *Name the folder to clone into* or *The folder starts at /* (`clone_refusal`), and reads
+  *Cloning…* while it runs. It attaches as *Add* does, the busy-host wait included, then probes
+  the clone's folder (`clone_target`, *Into* joined with the repository's name) with `Probe`
+  *before* cloning, so one already there reads *There is already <path> on <host>* and is never
+  touched. Otherwise the host clones (the wire's `Clone`, `HostConn::clone_repo`,
+  `crates/host/src/files.rs`) and the form adds that folder. The clone is `git clone` run by the
+  host service as the host user, so it uses the host's own git and ssh credentials, never this
+  machine's; it has no terminal and no stdin (`GIT_TERMINAL_PROMPT=0`, `GIT_ASKPASS` empty,
+  `SSH_ASKPASS_REQUIRE=never`), so a repository that wants a password fails instead of waiting.
+  The laptop waits up to 15 minutes for it (`CLONE_WAIT`). A clone that fails leaves no partial
+  folder: git removes the one it made. A failure stands inline: *There is already <path> on <host>*, or
+  *Could not clone on <host>: <why>*, git's words without their `fatal:`.
 - **Add** trims both fields, attaches (installing the service if needed), asks the host whether
   the folder is a directory there (`hosts::is_dir`, the wire's `Probe`), then adds the project and
   selects it. A failure stands once, inline under the fields: the attach's own words, *Could not
@@ -264,9 +302,9 @@ Refused or left out, each in one place:
 The steps of the design still to come, each its own change; the gaps they leave meanwhile are in
 [known-gaps.md](known-gaps.md):
 
-- **The host's own UI:** picking a host from `~/.ssh/config`, browsing the host's folders, cloning,
-  re-attaching by itself with a backoff, and reading a host's sessions while it is not attached,
-  from a copy the laptop keeps.
+- **The host's own UI, what is left:** re-attaching by itself with a backoff, and reading a host's
+  sessions while it is not attached, from a copy the laptop keeps. Picking a host, browsing its
+  folders and cloning are built (*Adding a host project*).
 - **The permission bypass:** a switch per host project under which the host answers every
   permission itself, so a session never waits on a card overnight.
 - **Offloaded projects:** a folder on the laptop whose sessions run on a host against a mirror of

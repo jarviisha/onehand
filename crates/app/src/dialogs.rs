@@ -32,7 +32,9 @@ pub use agent::agent_form;
 pub use branch::{new_worktree, rename_branch};
 
 pub use host_project::add_host_project;
-pub(crate) use host_project::{add_refusal, busy_body};
+pub(crate) use host_project::{
+    add_refusal, browse_refusal, browse_rows, busy_body, clone_refusal, clone_target,
+};
 
 pub use issue::pick_issue;
 pub(crate) use issue::{PickJudged, issue_row, issue_workflow_menu, page_row};

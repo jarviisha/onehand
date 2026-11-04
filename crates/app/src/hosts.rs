@@ -23,6 +23,7 @@ use gpui::{App, AsyncApp};
 use onehand_core::disk::{Disk, HostDisk};
 use onehand_core::host::client::{self, HostConn, HostError};
 use onehand_core::host::wire::{HostSession, build_id};
+use onehand_core::tree::TreeEntry;
 use onehand_core::workspace::HostName;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -357,6 +358,55 @@ pub(crate) fn is_dir(
         asking
             .await
             .map_err(|e| HostFailure::Other(format!("Could not ask {host} about the folder: {e}")))
+    }
+}
+
+/// `dir`'s listing on the host reached over `conn`, and how many entries its
+/// bound left out, asked on the ACP runtime.
+pub(crate) fn read_dir(
+    cx: &App,
+    conn: HostConn,
+    dir: PathBuf,
+) -> impl Future<Output = Result<(Vec<TreeEntry>, usize), String>> + use<> {
+    let host = conn.host().to_string();
+    let path = dir.clone();
+    let asking = on_runtime(cx, async move { conn.read_dir(&path).await });
+    async move {
+        asking
+            .await
+            .map_err(|e| format!("Could not read {} on {host}: {e}", dir.display()))
+    }
+}
+
+/// The home folder of the account signed in over `conn`, asked on the ACP
+/// runtime.
+pub(crate) fn home(
+    cx: &App,
+    conn: HostConn,
+) -> impl Future<Output = Result<PathBuf, String>> + use<> {
+    let host = conn.host().to_string();
+    let asking = on_runtime(cx, async move { conn.home().await });
+    async move {
+        asking
+            .await
+            .map_err(|e| format!("Could not read the home folder on {host}: {e}"))
+    }
+}
+
+/// Have the host reached over `conn` `git clone` `url` into `into`, on the
+/// ACP runtime.
+pub(crate) fn clone_repo(
+    cx: &App,
+    conn: HostConn,
+    url: String,
+    into: PathBuf,
+) -> impl Future<Output = Result<(), String>> + use<> {
+    let host = conn.host().to_string();
+    let asking = on_runtime(cx, async move { conn.clone_repo(&url, &into).await });
+    async move {
+        asking
+            .await
+            .map_err(|e| format!("Could not clone on {host}: {e}"))
     }
 }
 

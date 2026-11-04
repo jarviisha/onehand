@@ -140,3 +140,24 @@ fn bytes_travel_as_base64() {
     assert_eq!(text, "\"AP8K\"");
     assert_eq!(serde_json::from_str::<Bytes>(&text).unwrap(), bytes);
 }
+
+#[test]
+fn a_clone_is_named_by_its_urls_last_segment() {
+    assert_eq!(
+        clone_name("https://github.com/o/repo.git").as_deref(),
+        Some("repo")
+    );
+    assert_eq!(
+        clone_name("git@github.com:o/repo.git").as_deref(),
+        Some("repo")
+    );
+    assert_eq!(
+        clone_name("git@github.com:repo.git").as_deref(),
+        Some("repo")
+    );
+    assert_eq!(clone_name("/srv/git/repo/").as_deref(), Some("repo"));
+    assert_eq!(clone_name("https://x/"), None);
+    assert_eq!(clone_name(".."), None);
+    assert_eq!(clone_name("https://x/.git"), None);
+    assert_eq!(clone_name("ssh://git@x:22/o/repo").as_deref(), Some("repo"));
+}

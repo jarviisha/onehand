@@ -3,15 +3,20 @@
 
 use super::Shell;
 use super::confirm::Confirm;
-use crate::dialogs::{add_refusal, busy_body};
+use crate::dialogs::{
+    add_refusal, browse_refusal, browse_rows, busy_body, clone_refusal, clone_target,
+};
 use crate::hosts::{self, HostFailure};
-use gpui::{App, AppContext as _, Context, Entity, Focusable as _, Subscription, Window};
+use gpui::{App, AppContext as _, Context, Entity, Focusable as _, Subscription, Task, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::input::{InputEvent, InputState};
+use onehand_core::host::client::HostConn;
+use onehand_core::host::sshconf;
 use onehand_core::host::wire::HostSession;
+use onehand_core::tree::TreeEntry;
 use onehand_core::workspace::HostName;
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// The add-a-project-on-a-host form, while it is up. `Some` on the shell is
 /// what puts it on screen.
@@ -19,8 +24,13 @@ use std::path::PathBuf;
 /// Its fields are made with it and go with it, so the form always opens
 /// empty and nothing typed into a cancelled one is found again.
 pub(crate) struct HostProjectDraft {
+    /// Which way the project comes: a folder already there, or a clone.
+    pub(crate) way: Way,
     pub(crate) host: Entity<InputState>,
+    /// *Folder*, or in a clone *Into*: the folder the clone is made in.
     pub(crate) folder: Entity<InputState>,
+    /// The repository a clone is of.
+    pub(crate) repo: Entity<InputState>,
     /// What the last *Add* ran into. Cleared by the next keystroke, because
     /// the reader has started answering it.
     pub(crate) error: Option<String>,
@@ -29,12 +39,52 @@ pub(crate) struct HostProjectDraft {
     attempt: Option<u64>,
     /// The host the attach waits on, its busy sessions to go idle.
     pub(crate) waiting: Option<HostName>,
-    _typing: [Subscription; 2],
+    /// The aliases of the SSH config, read once as the form opens.
+    pub(crate) aliases: Vec<String>,
+    /// The folder list under *Folder*, once *Browse* is pressed.
+    pub(crate) browse: Option<Browse>,
+    /// The listing under way; a newer one replaces it, dropping it, so only
+    /// the newest lands.
+    _browsing: Option<Task<()>>,
+    _aliases: Task<()>,
+    _typing: [Subscription; 3],
+}
+
+/// The two ways the form adds a project on a host.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum Way {
+    /// A folder the host already has.
+    Folder,
+    /// A repository the host clones, its folder the project.
+    Clone,
+}
+
+/// The folders of one folder on a host, as the form lists them.
+#[derive(Clone)]
+pub(crate) struct Browse {
+    pub(crate) host: HostName,
+    /// The folder listed; empty until the first listing lands.
+    pub(crate) at: PathBuf,
+    pub(crate) dirs: Vec<PathBuf>,
+    /// How many folders the list leaves out.
+    pub(crate) cut: usize,
+    pub(crate) error: Option<String>,
+    pub(crate) loading: bool,
 }
 
 impl HostProjectDraft {
     pub(crate) fn busy(&self) -> bool {
         self.attempt.is_some()
+    }
+
+    /// Let the folder list go: it was another host's. A wait it had put on
+    /// the form goes with it, unless *Add* waits too.
+    fn drop_browse(&mut self) {
+        self.browse = None;
+        self._browsing = None;
+        if self.attempt.is_none() {
+            self.waiting = None;
+        }
     }
 }
 
@@ -128,6 +178,76 @@ impl HostFlow {
     }
 }
 
+/// Where *Browse* starts listing.
+enum Start {
+    /// A folder pressed in the list.
+    At(PathBuf),
+    /// What *Folder* names, if the host has it; its home if not.
+    Folder(PathBuf),
+    Home,
+}
+
+/// A folder listed, its entries and how many the host's bound left out; or
+/// why it could not be.
+type Listed = Result<(PathBuf, Vec<TreeEntry>, usize), String>;
+
+/// List the folder `start` names over `conn`.
+async fn list_from(conn: HostConn, start: Start, cx: &mut gpui::AsyncApp) -> Listed {
+    let read = |at: PathBuf, cx: &mut gpui::AsyncApp| {
+        let reading = cx.update(|cx| hosts::read_dir(cx, conn.clone(), at.clone()));
+        async move { reading.await.map(|(entries, cut)| (at, entries, cut)) }
+    };
+    match start {
+        Start::At(at) => return read(at, cx).await,
+        Start::Folder(folder) => {
+            if let Ok(listed) = read(folder, cx).await {
+                return Ok(listed);
+            }
+        }
+        Start::Home => {}
+    }
+    let home = cx.update(|cx| hosts::home(cx, conn.clone())).await?;
+    read(home, cx).await
+}
+
+/// Whether `path` is a folder on `host`: `Ok` to add it.
+async fn folder_found(
+    host: &HostName,
+    conn: HostConn,
+    path: &Path,
+    cx: &mut gpui::AsyncApp,
+) -> Result<(), HostFailure> {
+    let asking = cx.update(|cx| hosts::is_dir(cx, host, conn, path.to_path_buf()));
+    match asking.await? {
+        true => Ok(()),
+        false => Err(HostFailure::Other(format!(
+            "There is no folder {} on {host}",
+            path.display()
+        ))),
+    }
+}
+
+/// Have `host` clone `repo` into `target`: `Ok` to add it. A folder already
+/// there is asked about first, so it is told apart from git's other
+/// refusals by the host's answer rather than by git's words.
+async fn cloned(
+    host: &HostName,
+    conn: HostConn,
+    repo: String,
+    target: &Path,
+    cx: &mut gpui::AsyncApp,
+) -> Result<(), HostFailure> {
+    let asking = cx.update(|cx| hosts::is_dir(cx, host, conn.clone(), target.to_path_buf()));
+    if asking.await? {
+        return Err(HostFailure::Other(format!(
+            "There is already {} on {host}",
+            target.display()
+        )));
+    }
+    let cloning = cx.update(|cx| hosts::clone_repo(cx, conn, repo, target.to_path_buf()));
+    cloning.await.map_err(HostFailure::Other)
+}
+
 /// Let the form go from `held` as its host's wait ends, if that is still
 /// the attempt it waits on: `true` when the form is the one that waited.
 fn release(form: &mut Option<u64>, held: Option<u64>) -> bool {
@@ -200,28 +320,53 @@ impl Shell {
         self.remember_focus(window, cx);
         let host = cx.new(|cx| InputState::new(window, cx));
         let folder = cx.new(|cx| InputState::new(window, cx));
-        // Every keystroke redraws: *Add* refuses until both fields say enough.
-        let typing = [&host, &folder].map(|input| {
+        let repo = cx.new(|cx| InputState::new(window, cx));
+        // Every keystroke redraws: *Add* refuses until the fields say enough.
+        // One typed into *Host* drops the folder list, another host's.
+        let typing = [(&host, true), (&folder, false), (&repo, false)].map(|(input, is_host)| {
             cx.subscribe_in(
                 input,
                 window,
-                |shell: &mut Self, _, event: &InputEvent, _, cx| {
+                move |shell: &mut Self, _, event: &InputEvent, _, cx| {
                     if matches!(event, InputEvent::Change) {
                         if let Some(draft) = shell.host_project.as_mut() {
                             draft.error = None;
+                            if is_host {
+                                draft.drop_browse();
+                            }
                         }
                         cx.notify();
                     }
                 },
             )
         });
+        // A file read, so off the UI thread; the menu beside *Host* waits
+        // for it.
+        let reading = cx.background_executor().spawn(async {
+            sshconf::ssh_dir().map_or_else(Vec::new, |dir| sshconf::aliases(&dir))
+        });
+        let aliases = cx.spawn(async move |shell, cx| {
+            let aliases = reading.await;
+            let _ = shell.update(cx, |shell: &mut Self, cx| {
+                if let Some(draft) = shell.host_project.as_mut() {
+                    draft.aliases = aliases;
+                    cx.notify();
+                }
+            });
+        });
         host.focus_handle(cx).focus(window, cx);
         self.host_project = Some(HostProjectDraft {
+            way: Way::Folder,
             host,
             folder,
+            repo,
             error: None,
             attempt: None,
             waiting: None,
+            aliases: Vec::new(),
+            browse: None,
+            _browsing: None,
+            _aliases: aliases,
             _typing: typing,
         });
         cx.notify();
@@ -238,8 +383,9 @@ impl Shell {
         }
     }
 
-    /// Attach to the host the form names, ask it whether the folder is
-    /// there, and add the project when it is.
+    /// Attach to the host the form names, then ask it whether the folder is
+    /// there, or have it clone the repository, and add the project when that
+    /// goes.
     ///
     /// The form stays up until the host answers, so what went wrong is shown
     /// against the names that caused it.
@@ -252,9 +398,18 @@ impl Shell {
         }
         let host = draft.host.read(cx).value().trim().to_string();
         let folder = draft.folder.read(cx).value().trim().to_string();
-        if add_refusal(&host, &folder).is_some() {
-            return;
-        }
+        let repo = draft.repo.read(cx).value().trim().to_string();
+        // What is added: the folder, or the one the clone makes in it.
+        let (path, clone) = match draft.way {
+            Way::Folder if add_refusal(&host, &folder).is_none() => (PathBuf::from(folder), None),
+            Way::Clone if clone_refusal(&host, &repo, &folder).is_none() => {
+                let Some(target) = clone_target(&repo, Path::new(&folder)) else {
+                    return;
+                };
+                (target, Some(repo))
+            }
+            Way::Folder | Way::Clone => return,
+        };
         let attempt = self.host_flow.attempt();
         if let Some(draft) = self.host_project.as_mut() {
             draft.error = None;
@@ -262,18 +417,13 @@ impl Shell {
             draft.waiting = None;
         }
         cx.notify();
-        let (host, path) = (HostName(host), PathBuf::from(folder));
+        let host = HostName(host);
         let attaching = hosts::conn(cx, &host);
         cx.spawn_in(window, async move |shell, cx| {
-            let found = match attaching.await {
-                Ok(conn) => {
-                    let asking = cx.update(|_, cx| hosts::is_dir(cx, &host, conn, path.clone()));
-                    match asking {
-                        Ok(asking) => asking.await,
-                        Err(_) => return,
-                    }
-                }
-                Err(failure) => Err(failure),
+            let found = match (attaching.await, clone) {
+                (Ok(conn), None) => folder_found(&host, conn, &path, cx).await,
+                (Ok(conn), Some(repo)) => cloned(&host, conn, repo, &path, cx).await,
+                (Err(failure), _) => Err(failure),
             };
             shell
                 .update_in(cx, |shell: &mut Self, window, cx| {
@@ -284,14 +434,157 @@ impl Shell {
         .detach();
     }
 
-    /// What the host said about the folder the form names, on attach
-    /// `attempt`.
+    /// The hosts of this window's projects, each once, in the rail's order.
+    pub(crate) fn used_hosts(&self) -> Vec<HostName> {
+        let mut used: Vec<HostName> = Vec::new();
+        for host in self
+            .window
+            .workspace
+            .roots
+            .iter()
+            .filter_map(|root| root.on_host())
+        {
+            if !used.contains(host) {
+                used.push(host.clone());
+            }
+        }
+        used
+    }
+
+    /// The way picked at the top of the form. *Host* and *Folder* stay as
+    /// they are; the failure was the other way's. Not while an attach is
+    /// under way, which carries on with the way it started.
+    pub(crate) fn pick_way(&mut self, way: Way, cx: &mut Context<Self>) {
+        let Some(draft) = self
+            .host_project
+            .as_mut()
+            .filter(|draft| !draft.busy() && draft.waiting.is_none())
+        else {
+            return;
+        };
+        draft.way = way;
+        draft.error = None;
+        cx.notify();
+    }
+
+    /// A host picked from the menu beside *Host*.
+    pub(crate) fn pick_host(&mut self, host: String, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(draft) = self.host_project.as_mut() else {
+            return;
+        };
+        // Setting a field's value says nothing to its subscription, so what
+        // typing would clear is cleared here: the list was another host's,
+        // and the failure was about the names before.
+        draft.drop_browse();
+        draft.error = None;
+        draft
+            .host
+            .update(cx, |input, cx| input.set_value(host, window, cx));
+        cx.notify();
+    }
+
+    /// A folder pressed in the list: it becomes *Folder*, and is listed.
+    pub(crate) fn browse_to(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(draft) = self.host_project.as_mut() else {
+            return;
+        };
+        // Refused, *Folder* is left as it is: it only ever names what is listed.
+        let host = draft.host.read(cx).value();
+        if browse_refusal(&host, draft.busy(), draft.waiting.is_some()).is_some() {
+            return;
+        }
+        draft.error = None;
+        let value = path.display().to_string();
+        draft
+            .folder
+            .update(cx, |input, cx| input.set_value(value, window, cx));
+        self.browse_host_folders(Some(path), cx);
+    }
+
+    /// List folders on the host the form names: `at`, or with none the
+    /// folder *Folder* names when the host has it, else the host's home.
+    /// Attaches first, waiting out a busy host as *Add* does.
+    pub(crate) fn browse_host_folders(&mut self, at: Option<PathBuf>, cx: &mut Context<Self>) {
+        let Some(draft) = self.host_project.as_mut() else {
+            return;
+        };
+        let host = draft.host.read(cx).value().trim().to_string();
+        if browse_refusal(&host, draft.busy(), draft.waiting.is_some()).is_some() {
+            return;
+        }
+        let host = HostName(host);
+        let folder = PathBuf::from(draft.folder.read(cx).value().trim());
+        let start = match at {
+            Some(at) => Start::At(at),
+            None if folder.is_absolute() => Start::Folder(folder),
+            None => Start::Home,
+        };
+        match draft.browse.as_mut() {
+            Some(browse) => {
+                browse.loading = true;
+                browse.error = None;
+            }
+            None => {
+                draft.browse = Some(Browse {
+                    host: host.clone(),
+                    at: PathBuf::new(),
+                    dirs: Vec::new(),
+                    cut: 0,
+                    error: None,
+                    loading: true,
+                })
+            }
+        }
+        draft._browsing = Some(cx.spawn(async move |shell, cx| {
+            let waiting = |_: String, cx: &mut gpui::AsyncApp| {
+                let _ = shell.update(cx, |shell: &mut Self, cx| {
+                    if let Some(draft) = shell.host_project.as_mut() {
+                        draft.waiting = Some(host.clone());
+                        cx.notify();
+                    }
+                });
+            };
+            let listed = match hosts::attach_waiting(&host, cx, waiting).await {
+                Ok(conn) => list_from(conn, start, cx).await,
+                Err(why) => Err(why),
+            };
+            let _ = shell.update(cx, |shell: &mut Self, cx| {
+                shell.host_folders_listed(listed, cx)
+            });
+        }));
+        cx.notify();
+    }
+
+    /// The listing *Browse* asked for has landed, or why it could not.
+    fn host_folders_listed(&mut self, listed: Listed, cx: &mut Context<Self>) {
+        let Some(draft) = self.host_project.as_mut() else {
+            return;
+        };
+        if draft.attempt.is_none() {
+            draft.waiting = None;
+        }
+        let Some(browse) = draft.browse.as_mut() else {
+            return;
+        };
+        browse.loading = false;
+        match listed {
+            Ok((at, entries, cut)) => {
+                (browse.dirs, browse.cut) = browse_rows(&at, &entries, cut);
+                browse.at = at;
+            }
+            Err(why) => browse.error = Some(why),
+        }
+        cx.notify();
+    }
+
+    /// What the host said about the folder the form names, or the clone it
+    /// made, on attach `attempt`: `Ok` adds `path`.
     fn host_project_found(
         &mut self,
         attempt: u64,
         host: HostName,
         path: PathBuf,
-        found: Result<bool, HostFailure>,
+        found: Result<(), HostFailure>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -306,13 +599,10 @@ impl Shell {
         };
         draft.attempt = None;
         match found {
-            Ok(true) => {
+            Ok(()) => {
                 self.host_project = None;
                 self.host_flow.forget_add();
                 self.open_host_root(host, path, window, cx);
-            }
-            Ok(false) => {
-                draft.error = Some(format!("There is no folder {} on {host}", path.display()));
             }
             Err(HostFailure::Other(why)) => draft.error = Some(why),
             // The form stays busy on this attempt while the host waits, and

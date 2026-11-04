@@ -6,4 +6,5 @@
 
 pub mod client;
 pub mod journal;
+pub mod sshconf;
 pub mod wire;

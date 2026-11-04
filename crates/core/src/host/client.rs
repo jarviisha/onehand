@@ -103,6 +103,7 @@ struct Answer {
     file: Option<(String, Option<SystemTime>)>,
     saved: Option<SaveOutcome>,
     git: Option<Option<GitStatus>>,
+    home: Option<PathBuf>,
     term_opened: Option<HostTerm>,
     terms: Option<Vec<TermInfo>>,
 }
@@ -119,6 +120,7 @@ impl Answer {
             file: None,
             saved: None,
             git: None,
+            home: None,
             term_opened: None,
             terms: None,
         };
@@ -132,6 +134,7 @@ impl Answer {
             Reply::File { text, mtime } => answer.file = Some((text, mtime)),
             Reply::Saved(outcome) => answer.saved = Some(outcome),
             Reply::Git(status) => answer.git = Some(status),
+            Reply::Home(home) => answer.home = Some(home),
             Reply::TermOpened { term } => answer.term_opened = Some(term),
             Reply::Terms(terms) => answer.terms = Some(terms),
         }
@@ -265,18 +268,19 @@ impl HostConn {
         Self::start("vps".into(), read, write, None)
     }
 
-    async fn ask(&self, call: Call) -> Result<Reply, HostError> {
+    /// Ask `call`, giving up on its answer after `wait`.
+    async fn ask_within(&self, call: Call, wait: Duration) -> Result<Reply, HostError> {
         let (tx, rx) = oneshot::channel();
         let lost = || HostError::Unreachable("the connection to the host is closed".into());
         self.cmds.send(Cmd::Ask(call, tx)).map_err(|_| lost())?;
-        match tokio::time::timeout(ASK_WAIT, rx).await {
+        match tokio::time::timeout(wait, rx).await {
             Ok(answer) => answer.map_err(|_| lost())?,
             Err(_) => {
                 // Dropping `rx` closed its slot; the task lets it go.
                 let _ = self.cmds.send(Cmd::Forget);
                 Err(HostError::Protocol(format!(
                     "the host did not answer within {} s",
-                    ASK_WAIT.as_secs()
+                    wait.as_secs()
                 )))
             }
         }
@@ -284,7 +288,17 @@ impl HostConn {
 
     /// Ask `call`, and take from its answer the slot `take` names.
     async fn ask_for<T>(&self, call: Call, take: fn(Answer) -> Option<T>) -> Result<T, HostError> {
-        let reply = self.ask(call).await?;
+        self.ask_for_within(call, ASK_WAIT, take).await
+    }
+
+    /// [`Self::ask_for`], giving up on the answer after `wait`.
+    async fn ask_for_within<T>(
+        &self,
+        call: Call,
+        wait: Duration,
+        take: fn(Answer) -> Option<T>,
+    ) -> Result<T, HostError> {
+        let reply = self.ask_within(call, wait).await?;
         let unexpected = HostError::Protocol(format!("unexpected answer: {reply:?}"));
         take(Answer::of(reply)).ok_or(unexpected)
     }
