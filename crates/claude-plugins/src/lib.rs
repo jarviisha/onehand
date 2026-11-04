@@ -48,7 +48,7 @@ impl WorkbenchMode for Mode {
         self.view.clone().into()
     }
 
-    fn set_root(&mut self, root: &Path, cx: &mut App) {
+    fn set_root(&mut self, root: &Path, _disk: &onehand_workbench::Disk, cx: &mut App) {
         self.view.update(cx, |view, cx| view.set_root(root, cx));
     }
 

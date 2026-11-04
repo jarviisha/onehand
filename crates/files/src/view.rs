@@ -12,10 +12,10 @@ use gpui::{
 };
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::gitstat::{FileChange, GitStatus};
-use onehand_core::tree::{self, FileTree};
-use onehand_ui::{hint, mark_slot, status_ink, tokens, tree_row};
-use onehand_workbench::{Ask, Request};
-use std::collections::HashMap;
+use onehand_core::tree::{FileTree, TreeEntry};
+use onehand_ui::{hint, mark_slot, status_ink, status_line, tokens, tree_row};
+use onehand_workbench::{Ask, Disk, Request};
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 /// The tree of every project root this window has visited, and the one on
@@ -27,6 +27,14 @@ use std::path::{Path, PathBuf};
 pub(crate) struct FilesView {
     root: Option<PathBuf>,
     trees: HashMap<PathBuf, FileTree>,
+    /// Where each root's files are read from.
+    disks: HashMap<PathBuf, Disk>,
+    /// The folders whose listing could not be read, by root, and why: a
+    /// folder silently missing reads as a folder that is empty. Kept per
+    /// folder because a rescan lists the root and every open folder at once,
+    /// and the root listing must not answer a folder's failure. Cleared when
+    /// that folder lists, or is folded away.
+    failed: HashMap<PathBuf, BTreeMap<PathBuf, String>>,
     git: HashMap<PathBuf, GitStatus>,
     /// How a click on a file reaches the mode that edits files. Opening one is
     /// the quick editor's business, and this tree has no way to reach it.
@@ -41,6 +49,8 @@ impl FilesView {
         cx.new(|_| Self {
             root: None,
             trees: HashMap::new(),
+            disks: HashMap::new(),
+            failed: HashMap::new(),
             git: HashMap::new(),
             ask,
             active: None,
@@ -55,8 +65,12 @@ impl FilesView {
         }
     }
 
-    /// Point the tree at a project root, seeding it on first sight.
-    pub(crate) fn set_root(&mut self, root: &Path, cx: &mut Context<Self>) {
+    /// Point the tree at a project root and the disk its files are on,
+    /// seeding it on first sight.
+    pub(crate) fn set_root(&mut self, root: &Path, disk: &Disk, cx: &mut Context<Self>) {
+        // Kept even for the root already on screen: a host's attach can be
+        // replaced while its project stays.
+        self.disks.insert(root.to_path_buf(), disk.clone());
         if self.root.as_deref() == Some(root) {
             return;
         }
@@ -74,7 +88,9 @@ impl FilesView {
 
     pub(crate) fn forget_root(&mut self, root: &Path, cx: &mut Context<Self>) {
         self.trees.remove(root);
+        self.disks.remove(root);
         self.git.remove(root);
+        self.failed.remove(root);
         if self.root.as_deref() == Some(root) {
             self.root = None;
         }
@@ -117,23 +133,64 @@ impl FilesView {
         let Some(root) = self.root.clone() else {
             return;
         };
+        let Some(disk) = self.disks.get(&root).cloned() else {
+            return;
+        };
         cx.spawn(async move |view, cx| {
-            let (listing, cut) = cx
+            let read = cx
                 .background_executor()
                 .spawn({
                     let dir = dir.clone();
-                    async move { tree::read_dir_sorted(&dir) }
+                    async move { disk.read_dir(&dir) }
                 })
                 .await;
-            let _ = view.update(cx, |view: &mut Self, cx| {
-                if let Some(tree) = view.trees.get_mut(&root) {
+            let _ = view.update(cx, |view: &mut Self, cx| view.listed(root, dir, read, cx));
+        })
+        .detach();
+    }
+
+    /// One folder's listing landed, or said why it could not.
+    fn listed(
+        &mut self,
+        root: PathBuf,
+        dir: PathBuf,
+        read: Result<(Vec<TreeEntry>, usize), String>,
+        cx: &mut Context<Self>,
+    ) {
+        match read {
+            Ok((listing, cut)) => {
+                self.unfail(&root, &dir);
+                if let Some(tree) = self.trees.get_mut(&root) {
                     tree.cut.insert(dir.clone(), cut);
                     tree.listings.insert(dir, listing);
                 }
-                cx.notify();
-            });
-        })
-        .detach();
+            }
+            Err(why) => {
+                self.failed.entry(root).or_default().insert(dir, why);
+            }
+        }
+        cx.notify();
+    }
+
+    fn unfail(&mut self, root: &Path, dir: &Path) {
+        if let Some(failed) = self.failed.get_mut(root) {
+            failed.remove(dir);
+            if failed.is_empty() {
+                self.failed.remove(root);
+            }
+        }
+    }
+
+    /// A row pressed: a folder folds or unfolds, a file opens beside the tree.
+    ///
+    /// By the kind the listing gave, not by asking the disk again: that would
+    /// be a stat on the UI loop, and a host's path is not on this machine.
+    fn click(&mut self, entry: &TreeEntry, window: &mut Window, cx: &mut Context<Self>) {
+        if entry.is_dir {
+            self.toggle_dir(entry.path.clone(), cx);
+        } else {
+            (self.ask)(&Request::OpenFile(&entry.path), window, cx);
+        }
     }
 
     /// Fold or unfold a directory. Expanding rescans — a cached listing can be
@@ -156,6 +213,9 @@ impl FilesView {
             .unwrap_or(false);
         if expanding {
             self.scan(dir, cx);
+        } else {
+            // Folded away, its failure has nothing left on screen to explain.
+            self.unfail(&root, &dir);
         }
         cx.notify();
     }
@@ -169,25 +229,41 @@ impl Render for FilesView {
         let Some(tree) = self.trees.get(&root) else {
             return hint("No project selected", cx).into_any_element();
         };
+        // One line, the first failure's: a folded folder takes its failure
+        // with it, so the next one shows once the first is answered.
+        let failure = self
+            .failed
+            .get(&root)
+            .and_then(|failed| failed.values().next())
+            .map(|why| status_line(why.clone(), status_ink(cx).danger));
+        // A root that never listed has no rows for the line to sit under.
+        if !tree.listings.contains_key(&root)
+            && let Some(failure) = failure
+        {
+            return div().flex_1().min_h_0().child(failure).into_any_element();
+        }
         // Until the root's first listing lands there is nothing to draw, and a
         // blank panel reads as an empty project.
         if !tree.listings.contains_key(&root) {
             return hint("Reading the project's files…", cx).into_any_element();
         }
+        // The failure stands under the rows rather than over them, so the
+        // folder it names can still be folded away.
         div()
             .flex_1()
             .min_h_0()
-            .child(rows(
+            .v_flex()
+            .child(div().flex_1().min_h_0().child(rows(
                 &root,
                 tree,
                 self.git.get(&root),
                 self.active.as_deref(),
-                self.ask.clone(),
-                cx.listener(|view: &mut Self, dir: &PathBuf, _, cx| {
-                    view.toggle_dir(dir.clone(), cx)
+                cx.listener(|view: &mut Self, entry: &TreeEntry, window, cx| {
+                    view.click(entry, window, cx)
                 }),
                 cx,
-            ))
+            )))
+            .children(failure)
             .into_any_element()
     }
 }
@@ -217,12 +293,11 @@ fn rows(
     tree: &FileTree,
     git: Option<&GitStatus>,
     active: Option<&Path>,
-    ask: Ask,
-    on_toggle: impl Fn(&PathBuf, &mut Window, &mut App) + 'static,
+    on_click: impl Fn(&TreeEntry, &mut Window, &mut App) + 'static,
     cx: &App,
 ) -> gpui::AnyElement {
     let (rows, left_out) = tree.visible_rows(root);
-    let on_toggle = std::rc::Rc::new(on_toggle);
+    let on_click = std::rc::Rc::new(on_click);
     let muted = cx.theme().muted_foreground;
 
     div()
@@ -233,8 +308,7 @@ fn rows(
         .overflow_y_scroll()
         .children(rows.into_iter().enumerate().map(|(i, row)| {
             let entry = row.entry;
-            let (toggle, ask) = (on_toggle.clone(), ask.clone());
-            let path = entry.path.clone();
+            let click = on_click.clone();
             let expanded = tree.expanded.contains(&entry.path);
             let picked = active == Some(entry.path.as_path());
 
@@ -291,12 +365,9 @@ fn rows(
                             })
                         }),
                 )
-                .on_click(move |_, window, cx: &mut App| {
-                    if entry_is_dir(&path) {
-                        toggle(&path, window, cx);
-                    } else {
-                        ask(&Request::OpenFile(&path), window, cx);
-                    }
+                .on_click({
+                    let entry = entry.clone();
+                    move |_, window, cx: &mut App| click(&entry, window, cx)
                 })
         }))
         // The cap is core's, and a tree that silently stops is a tree the user
@@ -314,10 +385,5 @@ fn rows(
         .into_any_element()
 }
 
-/// Whether the click target is a directory.
-///
-/// Read back from the path rather than captured from the row: the closure
-/// outlives this frame's borrow of the tree.
-fn entry_is_dir(path: &Path) -> bool {
-    path.is_dir()
-}
+#[cfg(test)]
+mod tests;

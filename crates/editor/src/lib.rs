@@ -4,7 +4,7 @@
 #![warn(unreachable_pub)]
 
 use gpui::{AnyView, App, Entity, Window};
-use onehand_workbench::{Ask, ModeId, Request, WorkbenchMode, WorkbenchModeSpec};
+use onehand_workbench::{Ask, Disk, ModeId, Request, WorkbenchMode, WorkbenchModeSpec};
 use std::path::Path;
 
 mod buffers;
@@ -15,8 +15,11 @@ pub(crate) use view::EditorView;
 
 /// What this mode declares about itself, which is what the panel reads
 /// instead of matching the ID against a list it has to know by heart.
+///
+/// Offered on a host's project: the tree and the buffers both read and write
+/// through the disk they are handed.
 pub const SPEC: WorkbenchModeSpec =
-    WorkbenchModeSpec::element(ModeId::new("workbench.editor"), "Editor");
+    WorkbenchModeSpec::element(ModeId::new("workbench.editor"), "Editor").on_host();
 
 /// The Editor mode: the project's file tree, and the buffers opened out of it.
 ///
@@ -51,9 +54,10 @@ impl WorkbenchMode for Mode {
         self.split.clone().into()
     }
 
-    fn set_root(&mut self, root: &Path, cx: &mut App) {
-        self.view.update(cx, |view, cx| view.set_root(root, cx));
-        self.files.set_root(root, cx);
+    fn set_root(&mut self, root: &Path, disk: &Disk, cx: &mut App) {
+        self.view
+            .update(cx, |view, cx| view.set_root(root, disk, cx));
+        self.files.set_root(root, disk, cx);
     }
 
     fn forget_root(&mut self, root: &Path, cx: &mut App) {

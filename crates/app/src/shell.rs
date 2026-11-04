@@ -26,6 +26,7 @@ mod docks;
 mod drafts;
 mod fork;
 mod frame;
+mod git_sweep;
 mod host_project;
 mod issue_work;
 mod issues_page;
@@ -306,6 +307,9 @@ pub struct Shell {
     /// A pending agent pre-start, cancelled the same way — see
     /// [`Shell::warm_default_agent`].
     _pending_warm: Option<gpui::Task<()>>,
+    /// The attach a host project on screen waits on for its files; replaced
+    /// on every arrival, so one for a project left behind stops.
+    _host_files: Option<gpui::Task<()>>,
     /// Bumped on every `git status` sweep, so a slow one that started earlier
     /// cannot land on top of a fast one that started later.
     git_generation: u64,

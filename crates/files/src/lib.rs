@@ -4,7 +4,7 @@
 #![warn(unreachable_pub)]
 
 use gpui::{AnyView, App, Entity};
-use onehand_workbench::{Ask, ModeId, Request, WorkbenchMode, WorkbenchModeSpec};
+use onehand_workbench::{Ask, Disk, ModeId, Request, WorkbenchMode, WorkbenchModeSpec};
 use std::path::Path;
 
 mod view;
@@ -49,8 +49,9 @@ impl WorkbenchMode for Mode {
         self.view.clone().into()
     }
 
-    fn set_root(&mut self, root: &Path, cx: &mut App) {
-        self.view.update(cx, |view, cx| view.set_root(root, cx));
+    fn set_root(&mut self, root: &Path, disk: &Disk, cx: &mut App) {
+        self.view
+            .update(cx, |view, cx| view.set_root(root, disk, cx));
     }
 
     fn forget_root(&mut self, root: &Path, cx: &mut App) {

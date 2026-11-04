@@ -80,7 +80,7 @@ Availability or installation does not authorize a skill's side effects.
 ## Commands
 
 ```bash
-cargo run [-- /path/to/project]  # the app; the arg seeds the workspace's first project
+cargo run --bin onehand [-- /path]  # the app; the arg seeds the workspace's first project
 make dev [ROOT=/path]            # a debug build beside the app in use, data root ~/onehand-dev
 make showcase                    # the app on scratch projects + the Mock UI agent, data root ~/onehand-showcase
 cargo check                      # fast type-check

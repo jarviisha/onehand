@@ -194,6 +194,12 @@ impl AcpRuntime {
         self.rt.spawn(work);
     }
 
+    /// This runtime, for a blocking call off the UI thread to poll its tokio
+    /// I/O on: a host's disk is read through it.
+    pub(crate) fn handle(&self) -> tokio::runtime::Handle {
+        self.rt.handle().clone()
+    }
+
     /// A host session's events, read as a local session's are; beside them,
     /// the host session's id once it is known, for the pane to keep.
     ///

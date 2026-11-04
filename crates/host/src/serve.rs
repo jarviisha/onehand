@@ -286,6 +286,19 @@ fn answer(
         Call::Probe { path } => Ok(Reply::Probed {
             is_dir: fs::metadata(path).is_ok_and(|m| m.is_dir()),
         }),
+        call @ (Call::ReadDir { .. }
+        | Call::ReadFile { .. }
+        | Call::SaveFile { .. }
+        | Call::GitStatus { .. }) => {
+            // Off the loop: a big folder or a slow repository must not hold
+            // up the asks behind it, and the answer goes out when it is done.
+            let out = out.clone();
+            tokio::task::spawn_blocking(move || {
+                let result = crate::files::answer(call);
+                let _ = out.send(FromHost::Answer { id, result });
+            });
+            return false;
+        }
     };
     let _ = out.send(FromHost::Answer { id, result });
     exit

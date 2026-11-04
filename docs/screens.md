@@ -59,8 +59,10 @@ stands on the page's fill.
 folder and name, its git line (branch, uncommitted changes, commits ahead and behind, each only
 above zero and named in full on hover), the pin, the unattended pill (*auto*, *auto · N*, *auto · N
 waiting*; a run's pill opens its issue on the Issues page), and while folded its sessions' most
-urgent state. A project on a host has no git line and no unattended pill: the host's name stands
-first in the row's meta, in the meta ink, and its hover's last line reads `<host>:<path>`.
+urgent state. A project on a host has no unattended pill: the host's name stands first in the
+row's meta, in the meta ink, and its hover's last line reads `<host>:<path>`. Its git line follows
+once read over a live attach, and is absent while a local project on the same path is in the
+workspace.
 Narrowed, the name keeps a minimum and the branch, or the host, gives way first. Its chevron alone
 folds it (not during a search); the rest of the row shows the project's last session, or its page,
 which then fills the row. `+` and `⋯` show on hover and on the keyboard's row, right-click opens the
@@ -233,8 +235,9 @@ dragged height kept).
   and *Activity N* (the history). Sections are parted by space, not rules. ⋯ ▸ *Open in Issues* and
   *Review…* open it on the Issues page, the latter with its review open.
 - Hiding a dock keeps its buffers and processes; the terminal's open state follows the project.
-- On a project on a host, the Workbench (with no modes in its strip) and the terminal each show
-  the hint *Files and terminals on a host come later* in place of their content.
+- On a project on a host, the Workbench offers the Editor (with Files) only, and says *Attaching to
+  <host>…* or a standing failure with *Try again* until the host answers; the terminal shows the
+  hint *Terminals on a host come later* in place of its content.
 - **The workers' region**, in the Workbench's place and never beside it: opening one puts the
   other away, a caret in the one leaving going to the lead's composer and the one arriving taking
   none; hiding the region gives the Workbench back as it was, and while it shows the layout saves
@@ -287,7 +290,8 @@ dragged height kept).
   said as on the page); then the box *Settings*
   (its *Check command* field). The page scrolls as one.
 - A project on a host shows the same head, its path written `<host>:<path>` (never shortened to
-  `~/`) with no git line, and *Refresh* (a quiet icon) before *New session*; under it one box,
+  `~/`), its git line once read over a live attach (none while a local project on the same path
+  is in the workspace), and *Refresh* (a quiet icon) before *New session*; under it one box,
   *Sessions on <host>* with its count, in place of *Past conversations*, and neither *Tasks*,
   *Schedules* nor *Settings*, which are this machine's: a row per session the host keeps in that
   folder, newest first (its agent, then *started 3m ago* or *started just now*, and *running*, in

@@ -12,6 +12,7 @@ use gpui_component::WindowExt as _;
 use gpui_component::input::InputEvent;
 use onehand_core::editor::SaveOutcome;
 use onehand_ui::{hint, status_ink, status_line};
+use onehand_workbench::Disk;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -19,6 +20,9 @@ use std::rc::Rc;
 pub(crate) struct EditorView {
     root: Option<PathBuf>,
     buffers: HashMap<PathBuf, RootBuffers>,
+    /// Where each root's files are, which every open and save of a buffer
+    /// of that root goes through.
+    disks: HashMap<PathBuf, Disk>,
     /// A save conflict or a read failure, shown as a line under the body.
     ///
     /// **Deliberately not a notification**, unlike the rest of the app's
@@ -71,6 +75,7 @@ impl EditorView {
         cx.new(|_| Self {
             root: None,
             buffers: HashMap::new(),
+            disks: HashMap::new(),
             status: None,
             window: None,
             saving: HashMap::new(),
@@ -83,7 +88,10 @@ impl EditorView {
         })
     }
 
-    pub(crate) fn set_root(&mut self, root: &Path, cx: &mut Context<Self>) {
+    pub(crate) fn set_root(&mut self, root: &Path, disk: &Disk, cx: &mut Context<Self>) {
+        // Kept even for the root already on screen: a host's attach can be
+        // replaced while its project stays.
+        self.disks.insert(root.to_path_buf(), disk.clone());
         if self.root.as_deref() == Some(root) {
             return;
         }
@@ -98,6 +106,7 @@ impl EditorView {
     /// *to* — the tab strip it belonged to is gone.
     pub(crate) fn forget_root(&mut self, root: &Path, cx: &mut Context<Self>) {
         self.buffers.remove(root);
+        self.disks.remove(root);
         if self.root.as_deref() == Some(root) {
             self.root = None;
         }
@@ -148,6 +157,9 @@ impl EditorView {
         let Some(root) = self.root.clone() else {
             return false;
         };
+        let Some(disk) = self.disks.get(&root).cloned() else {
+            return false;
+        };
         self.window = Some(window.window_handle());
         self.detail = true;
         let path = path.to_path_buf();
@@ -172,8 +184,8 @@ impl EditorView {
             let read = cx
                 .background_executor()
                 .spawn({
-                    let path = path.clone();
-                    async move { onehand_core::editor::read_blocking(&path) }
+                    let (path, disk) = (path.clone(), disk.clone());
+                    async move { disk.read_file(&path) }
                 })
                 .await;
 
@@ -208,7 +220,7 @@ impl EditorView {
                         // adopted when it is, so a re-open keeps its edits.
                         let (_, is_new) = buffers.tabs.open(path.clone(), mtime, uid);
                         if is_new {
-                            buffers.insert(uid, state, watch);
+                            buffers.insert(uid, state, watch, disk);
                         }
                         cx.notify();
                     }
@@ -280,6 +292,9 @@ impl EditorView {
         let Some(state) = buffers.buffer(uid) else {
             return;
         };
+        let Some(disk) = buffers.save_disk(uid, self.disks.get(&root)) else {
+            return;
+        };
 
         let (path, label, mtime) = (file.path.clone(), file.label.clone(), file.disk_mtime);
         let text = state.read(cx).text().to_string();
@@ -290,7 +305,7 @@ impl EditorView {
                 .background_executor()
                 .spawn({
                     let path = path.clone();
-                    async move { onehand_core::editor::save_blocking(&path, text, mtime) }
+                    async move { disk.save_file(&path, text, mtime) }
                 })
                 .await;
 
@@ -591,3 +606,6 @@ impl Render for EditorView {
             )
     }
 }
+
+#[cfg(test)]
+mod tests;

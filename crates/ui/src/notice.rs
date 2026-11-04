@@ -13,7 +13,7 @@ use gpui_component::{ActiveTheme as _, StyledExt as _};
 /// copies of a centred muted line is four places for one of them to drift into
 /// a different silence from its neighbours, in a panel where the user switches
 /// between them with one click.
-pub fn hint(text: &'static str, cx: &App) -> AnyElement {
+pub fn hint(text: impl Into<SharedString>, cx: &App) -> AnyElement {
     div()
         .flex_1()
         .v_flex()
@@ -21,7 +21,7 @@ pub fn hint(text: &'static str, cx: &App) -> AnyElement {
         .justify_center()
         .text_xs()
         .text_color(cx.theme().muted_foreground)
-        .child(text)
+        .child(text.into())
         .into_any_element()
 }
 

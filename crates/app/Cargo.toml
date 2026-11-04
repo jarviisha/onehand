@@ -89,6 +89,8 @@ rfd = "0.15"
 notify-rust = "4"
 
 [dev-dependencies]
+# `TestAppContext`, to drive the Workbench panel the way the shell does.
+gpui = { workspace = true, features = ["test-support"] }
 # Native renderer comparison fixture: selection and scroll transitions.
 alacritty_terminal = "0.25.1"
 # Vendored: upstream is a render core with no interaction layer at all.

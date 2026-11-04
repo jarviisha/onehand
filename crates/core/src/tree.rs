@@ -14,7 +14,7 @@ pub const MAX_DIR_ENTRIES: usize = 300;
 pub const MAX_VISIBLE_ROWS: usize = 600;
 
 /// One directory entry, pre-resolved at scan time.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TreeEntry {
     /// Absolute path.
     pub path: PathBuf,

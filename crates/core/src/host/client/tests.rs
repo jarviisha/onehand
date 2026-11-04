@@ -920,3 +920,80 @@ async fn a_connection_says_it_is_closed_once_its_stream_ends() {
     }
     panic!("the connection never said it was closed");
 }
+
+/// A connection the host closed because another machine attached says it
+/// was taken; one whose link merely went away does not.
+#[tokio::test]
+async fn a_kicked_connection_says_it_was_taken_and_a_dropped_one_does_not() {
+    async fn closed(conn: &HostConn) {
+        for _ in 0..100 {
+            if conn.is_closed() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("the connection never said it was closed");
+    }
+    let (kicked, mut host) = pair();
+    host.send(FromHost::Kicked).await;
+    closed(&kicked).await;
+    assert!(kicked.taken());
+
+    let (dropped, host) = pair();
+    drop(host);
+    closed(&dropped).await;
+    assert!(!dropped.taken());
+}
+
+#[tokio::test]
+async fn read_dir_takes_the_listing() {
+    let (conn, mut host) = pair();
+    let reading = tokio::spawn(async move { conn.read_dir(Path::new("/srv/app")).await });
+    let Question { id, call } = host.ask().await;
+    assert!(
+        matches!(&call, Call::ReadDir { path } if path == Path::new("/srv/app")),
+        "{call:?}"
+    );
+    let entry = |name: &str, is_dir| TreeEntry {
+        path: Path::new("/srv/app").join(name),
+        name: name.into(),
+        is_dir,
+    };
+    let entries = vec![entry("src", true), entry("a.rs", false)];
+    let listing = Reply::Listing {
+        entries: entries.clone(),
+        cut: 3,
+    };
+    host.answer(id, listing).await;
+    assert_eq!(reading.await.unwrap().unwrap(), (entries, 3));
+}
+
+#[tokio::test]
+async fn a_refused_read_file_is_a_protocol_error() {
+    let (conn, mut host) = pair();
+    let reading = tokio::spawn(async move { conn.read_file(Path::new("/srv/app/a.rs")).await });
+    let Question { id, call } = host.ask().await;
+    assert!(matches!(call, Call::ReadFile { .. }), "{call:?}");
+    host.send(FromHost::Answer {
+        id,
+        result: Err("No such file".into()),
+    })
+    .await;
+    match reading.await.unwrap() {
+        Err(HostError::Protocol(why)) => assert!(why.contains("No such file"), "{why}"),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn an_unexpected_answer_to_save_is_refused() {
+    let (conn, mut host) = pair();
+    let saving = tokio::spawn(async move {
+        conn.save_file(Path::new("/srv/app/a.rs"), "x".into(), None)
+            .await
+    });
+    let Question { id, call } = host.ask().await;
+    assert!(matches!(call, Call::SaveFile { .. }), "{call:?}");
+    host.answer(id, Reply::Done).await;
+    assert!(matches!(saving.await.unwrap(), Err(HostError::Protocol(_))));
+}

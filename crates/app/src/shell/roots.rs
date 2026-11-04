@@ -2,14 +2,16 @@ use super::confirm::Confirm;
 use super::storage::{Thing, WorkspaceChange, pick_folder};
 use super::{Shell, WARM_DELAY};
 use crate::state::Shared;
+use crate::workbench::Refusal;
 use gpui::{App, Context, Focusable as _, SharedString, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::dock::DockPlacement;
-use onehand_core::gitstat;
+use onehand_core::disk::Disk;
+use onehand_core::workspace::HostName;
 use std::path::{Path, PathBuf};
 
-/// Why the Workbench and the terminal have nothing for a project on a host.
-pub(super) const ON_HOST_LATER: &str = "Files and terminals on a host come later";
+/// Why the terminal has nothing for a project on a host.
+pub(super) const TERMINALS_ON_HOST_LATER: &str = "Terminals on a host come later";
 
 impl Shell {
     /// Tell the project page what the selected project is, beyond its name.
@@ -23,7 +25,7 @@ impl Shell {
         let Some(root) = self.window.workspace.active_root() else {
             return;
         };
-        let status = root.local_path().and_then(|path| self.window.git.get(path));
+        let status = self.window.git_of(root);
         let facts = crate::chat::pane::ProjectFacts {
             asks: !self
                 .removal_losses(self.window.workspace.active_root, cx)
@@ -161,6 +163,7 @@ impl Shell {
         // push would leave the previous project's branch under the new
         // project's conversation until the next sweep landed.
         self.sync_project_facts(cx);
+        self.tell_workbench_git(cx);
         let Some(root) = self.window.workspace.active_root() else {
             // No roots at all. The pane has to be told, or removing the last
             // project leaves the centre of the window inviting the user to
@@ -173,6 +176,7 @@ impl Shell {
             self._pending_warm = None;
             Shared::global(cx).acp.drop_warm();
             // Nor is there a host project for either dock to be refusing.
+            self._host_files = None;
             self.workbench
                 .update(cx, |panel, cx| panel.refuse(None, cx));
             self.terminal.update(cx, |panel, cx| panel.refuse(None, cx));
@@ -186,26 +190,27 @@ impl Shell {
             .active_session()
             .map(|session| (session.uid, session.spec.clone()));
         let host = root.on_host().cloned();
-        let arrived = arrival(root);
+        let local = root.local_path().map(Path::to_path_buf);
         // Editor tabs and the file tree are per root, so the Workbench follows
         // the selection rather than mixing two projects' state. A folder on a
-        // host has neither here: both panels say so instead of keeping the
-        // last project's.
-        match &arrived {
-            Ok(path) => {
-                self.workbench
-                    .update(cx, |panel, cx| panel.set_root(path.clone(), cx));
+        // host has its files read over the host's attach, and no terminal
+        // yet: that panel says so instead of keeping the last project's.
+        match &host {
+            None => {
+                self._host_files = None;
+                self.workbench.update(cx, |panel, cx| {
+                    panel.set_root(path.clone(), Disk::Local, cx)
+                });
                 self.terminal
                     .update(cx, |panel, cx| panel.set_root(path.clone(), cx));
             }
-            Err(why) => {
-                self.workbench
-                    .update(cx, |panel, cx| panel.refuse(Some(why), cx));
-                self.terminal
-                    .update(cx, |panel, cx| panel.refuse(Some(why), cx));
+            Some(host) => {
+                self.show_host_files(host.clone(), path.clone(), cx);
+                self.terminal.update(cx, |panel, cx| {
+                    panel.refuse(Some(TERMINALS_ON_HOST_LATER), cx)
+                });
             }
         }
-        let local = arrived.ok();
         self.follow_terminal_dock(&path, window, cx);
         // Whether a shell is alive is a fact about the project being arrived at,
         // not about the window, and the title bar draws it. The
@@ -263,6 +268,96 @@ impl Shell {
         // pre-start for a different project replaces it anyway.
         self._pending_warm = None;
         self.touch_mru(path, uid);
+    }
+
+    /// Point the Workbench at `path` on `host`, read over the host's attach:
+    /// at once when it is up, else once it lands, saying meanwhile what it
+    /// waits on and, if it fails, why.
+    ///
+    /// A host found busy is waited on as everywhere else, and attached again
+    /// once its sessions are done. What lands for a project no longer on
+    /// screen is dropped.
+    pub(super) fn show_host_files(
+        &mut self,
+        host: HostName,
+        path: PathBuf,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(conn) = crate::hosts::live(cx, &host) {
+            self._host_files = None;
+            let disk = crate::hosts::disk_over(cx, conn);
+            self.workbench
+                .update(cx, |panel, cx| panel.set_root(path, disk, cx));
+            return;
+        }
+        let attaching = Refusal::Waiting(format!("Attaching to {host}…").into());
+        self.workbench
+            .update(cx, |panel, cx| panel.refuse(Some(attaching), cx));
+        self._host_files = Some(cx.spawn(async move |shell, cx| {
+            let shown = |shell: &Shell| {
+                shell
+                    .window
+                    .workspace
+                    .active_root()
+                    .is_some_and(|root| root.on_host() == Some(&host) && root.path == path)
+            };
+            loop {
+                let attached = cx.update(|cx| crate::hosts::disk(cx, &host)).await;
+                let why: String = match attached {
+                    Ok(disk) => {
+                        let path = path.clone();
+                        let _ = shell.update(cx, |shell, cx| {
+                            if shown(shell) {
+                                shell
+                                    .workbench
+                                    .update(cx, |panel, cx| panel.set_root(path, disk, cx));
+                            }
+                        });
+                        return;
+                    }
+                    Err(crate::hosts::HostFailure::Busy {
+                        host: busy_on,
+                        busy,
+                    }) => {
+                        let line = crate::hosts::waiting_line(&busy_on, busy.len());
+                        let _ = shell.update(cx, |shell, cx| {
+                            if shown(shell) {
+                                shell.workbench.update(cx, |panel, cx| {
+                                    panel.refuse(Some(Refusal::Waiting(line.into())), cx)
+                                });
+                            }
+                        });
+                        // None: an attach landed since, which the next turn takes.
+                        let Some(idle) = cx.update(|cx| crate::hosts::idle(cx, &host)) else {
+                            continue;
+                        };
+                        match idle.await {
+                            Ok(()) => continue,
+                            Err(why) => why,
+                        }
+                    }
+                    Err(crate::hosts::HostFailure::Other(why)) => why,
+                };
+                let _ = shell.update(cx, |shell, cx| {
+                    if shown(shell) {
+                        shell.workbench.update(cx, |panel, cx| {
+                            panel.refuse(Some(Refusal::Failed(why.into())), cx)
+                        });
+                    }
+                });
+                return;
+            }
+        }));
+    }
+
+    /// Attach again for the host project on screen, if it is one.
+    pub(super) fn try_host_again(&mut self, cx: &mut Context<Self>) {
+        if let Some(root) = self.window.workspace.active_root()
+            && let Some(host) = root.on_host().cloned()
+        {
+            let path = root.path.clone();
+            self.show_host_files(host, path, cx);
+        }
     }
 
     /// Start the default agent against `root` ahead of the session that would
@@ -328,12 +423,6 @@ impl Shell {
     /// Open `path` in the Workbench and show the Workbench, without moving
     /// focus: a tool card's link and a tool's call land here alike.
     pub(crate) fn open_file(&mut self, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
-        // A host session's paths name files on the host, not here.
-        let active = self.window.workspace.active_root();
-        if active.is_some_and(|root| root.on_host().is_some()) {
-            window.push_notification(crate::toast::info(ON_HOST_LATER), cx);
-            return;
-        }
         // Another panel maximized would hide the Workbench the file opens in:
         // it is put back first, so the file is seen where it was asked for.
         if self
@@ -368,7 +457,7 @@ impl Shell {
     }
 
     /// Add `path` on `host` as a project and select it, or select it if it is
-    /// one already. No `git status` is asked: the folder is not on this machine.
+    /// one already. Its `git status` is asked over the attach adding it made.
     pub(crate) fn open_host_root(
         &mut self,
         host: onehand_core::workspace::HostName,
@@ -379,6 +468,7 @@ impl Shell {
         let idx = self.window.workspace.add_host_root(host, path);
         self.window.workspace.select_root(idx);
         self.show_active_session(window, cx);
+        self.refresh_git(cx);
         self.save_workspace(window, cx);
         cx.notify();
     }
@@ -426,9 +516,9 @@ impl Shell {
             return Vec::new();
         };
         let live = root.sessions.len();
-        let unsaved = root
-            .local_path()
-            .map_or(0, |path| self.workbench.read(cx).unsaved_in(path, cx));
+        // A host's folder has its files open in the editor as one here does.
+        let on_host = root.on_host().is_some();
+        let unsaved = self.workbench.read(cx).unsaved_in(&root.path, on_host, cx);
         let mut losses = Vec::new();
         if live > 0 {
             let s = if live == 1 { "session" } else { "sessions" };
@@ -482,11 +572,14 @@ impl Shell {
                 pane.close(uid, cx);
             }
         });
-        // A folder on a host was never given any of these, and what is filed
+        // The editor's buffers and the tree go with a host's folder too, or
+        // they come back under a later project on the same path.
+        let on_host = self.local_root(idx).is_none();
+        self.workbench
+            .update(cx, |panel, cx| panel.forget_root(&path, on_host, cx));
+        // A folder on a host was never given the rest, and what is filed
         // under its path belongs to a folder of the same path here.
         if self.local_root(idx).is_some() {
-            self.workbench
-                .update(cx, |panel, cx| panel.forget_root(&path, cx));
             self.issues_page.forget_root(&path, cx);
             self.terminal
                 .update(cx, |panel, cx| panel.forget_root(&path, cx));
@@ -621,102 +714,6 @@ impl Shell {
             .check
             .clone()
     }
-
-    /// Re-read everything derived from the files on disk.
-    ///
-    /// Two panels read the working tree and neither notices it change: the
-    /// rail's `branch · N changed` and the Files tree. Both were seeded once
-    /// and left, which made them stale from the first turn
-    /// onwards -- the moment they start being worth reading.
-    ///
-    /// One call for both, because there is one cause. Cheap enough to run on
-    /// every turn end: `git status` is one process per root off the UI loop,
-    /// and the rescan covers only the directories currently on screen.
-    pub(crate) fn refresh_worktree(&mut self, cx: &mut Context<Self>) {
-        self.refresh_git(cx);
-        self.workbench.update(cx, |panel, cx| panel.rescan(cx));
-        self.tell_issues_page(&onehand_workbench::Request::Rescan, cx);
-        // A run leaving a note or a sync landing changes the issue files too,
-        // read again while the workspace page is what is showing.
-        if self.workspace_shown(cx) {
-            self.workspace_page.update(cx, |page, cx| page.reload(cx));
-        }
-    }
-
-    /// Refresh `git status` for every root, off the UI loop.
-    ///
-    /// Uses core's blocking reader on GPUI's background executor rather than
-    /// its tokio wrapper: tokio's process driver is not running under GPUI, so
-    /// the async path would panic looking for a reactor.
-    pub fn refresh_git(&mut self, cx: &mut Context<Self>) {
-        let roots = git_roots(&self.window.workspace);
-
-        // Two refreshes can be in flight at once -- a turn ends while the
-        // window is being activated, say -- and `git status` on a big repo does
-        // not finish in the order it was asked for. Without this, the slower
-        // (older) scan lands last and overwrites the newer snapshot.
-        self.git_generation = self.git_generation.wrapping_add(1);
-        let generation = self.git_generation;
-
-        cx.spawn(async move |shell, cx| {
-            let scanned = cx
-                .background_executor()
-                .spawn(async move {
-                    roots
-                        .into_iter()
-                        .filter_map(|root| {
-                            gitstat::read_blocking(&root).map(|status| (root, status))
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .await;
-
-            shell
-                .update(cx, |shell, cx| {
-                    if shell.git_generation != generation {
-                        return;
-                    }
-                    shell.window.git = scanned.into_iter().collect();
-                    let git = shell.window.git.clone();
-                    shell
-                        .workbench
-                        .update(cx, |panel, cx| panel.set_git(git, cx));
-                    // The workspace page's project tiles name each branch.
-                    if shell.page_shown(cx) {
-                        let local = shell.local_page_projects();
-                        let named = local
-                            .iter()
-                            .map(|p| (p.root.clone(), SharedString::from(p.label.to_string())))
-                            .collect();
-                        // The Tasks page's or the workspace page's projects,
-                        // while it is the page: a filter left on another page
-                        // waits for its next showing, which checks it then.
-                        if shell.tasks_shown(cx) {
-                            shell
-                                .tasks_page
-                                .update(cx, |page, cx| page.set_projects(local, cx));
-                        } else if shell.workspace_shown(cx) {
-                            let projects = shell.page_projects();
-                            shell
-                                .workspace_page
-                                .update(cx, |page, cx| page.set_projects(projects, cx));
-                        }
-                        // The Schedules page's list and filter, likewise.
-                        shell
-                            .schedules_page
-                            .update(cx, |page, cx| page.set_projects(named, None, cx));
-                    }
-                    // This sweep is also the answer to "is the selected project
-                    // a repository", which decides whether its page offers to
-                    // split it into a worktree.
-                    shell.sync_project_facts(cx);
-                    shell.tell_issue_works(cx);
-                    cx.notify();
-                })
-                .ok();
-        })
-        .detach();
-    }
 }
 
 impl Shell {
@@ -760,23 +757,4 @@ impl Shell {
         }
         cx.notify();
     }
-}
-
-/// The folder arriving at `root` points the Workbench, the terminal and the
-/// agent started ahead of a session at, or why there is none here.
-pub(super) fn arrival(
-    root: &onehand_core::workspace::ProjectRoot,
-) -> Result<PathBuf, &'static str> {
-    root.local_path()
-        .map(Path::to_path_buf)
-        .ok_or(ON_HOST_LATER)
-}
-
-/// The roots a `git status` sweep reads: those on this machine.
-pub(super) fn git_roots(workspace: &onehand_core::workspace::Workspace) -> Vec<PathBuf> {
-    workspace
-        .roots
-        .iter()
-        .filter_map(|root| root.local_path().map(Path::to_path_buf))
-        .collect()
 }

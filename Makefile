@@ -52,7 +52,7 @@ help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 
 run: ## Run the app (ROOT=/path/to/project seeds the workspace root)
-	$(CARGO) run -- $(ROOT)
+	$(CARGO) run --bin onehand -- $(ROOT)
 
 dev: ## Run a debug build beside the app in use, on a data root of its own (DEV_HOME)
 	@mkdir -p "$(DEV_HOME)"
@@ -61,13 +61,13 @@ dev: ## Run a debug build beside the app in use, on a data root of its own (DEV_
 		echo "Seeded $(DEV_HOME)/config.toml from $(LIVE_CONFIG)"; \
 	fi
 	$(CARGO) build -p onehand-host
-	ONEHAND_CONFIG_DIR="$(DEV_HOME)" ONEHAND_TELEGRAM_TOKEN= $(CARGO) run -- $(ROOT)
+	ONEHAND_CONFIG_DIR="$(DEV_HOME)" ONEHAND_TELEGRAM_TOKEN= $(CARGO) run --bin onehand -- $(ROOT)
 
 showcase: ## The app as it is, on scratch projects and the Mock UI agent (SHOWCASE_HOME)
 	./scripts/showcase.sh
 
 release-run: ## Run the release build
-	$(CARGO) run --release -- $(ROOT)
+	$(CARGO) run --release --bin onehand -- $(ROOT)
 
 build: ## Debug build
 	$(CARGO) build

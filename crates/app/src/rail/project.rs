@@ -248,7 +248,7 @@ fn project_menu(
                 },
             ))
         })
-        // A folder on a host has no shell here, nor a `git status` to read.
+        // A folder on a host has no shell here yet.
         .when(local, |menu| {
             menu.item(crate::controls::menu_item("Open terminal").on_click(
                 move |_, window, cx: &mut App| {
@@ -268,15 +268,14 @@ fn project_menu(
                 .ok();
             },
         ))
-        .when(local, |menu| {
-            menu.item(crate::controls::menu_item("Refresh Git status").on_click(
-                move |_, _, cx: &mut App| {
-                    refresh
-                        .update(cx, |shell: &mut Shell, cx| shell.refresh_git(cx))
-                        .ok();
-                },
-            ))
-        })
+        // A host's status is read over its attach, as the sweep does.
+        .item(crate::controls::menu_item("Refresh Git status").on_click(
+            move |_, _, cx: &mut App| {
+                refresh
+                    .update(cx, |shell: &mut Shell, cx| shell.refresh_git(cx))
+                    .ok();
+            },
+        ))
         .separator()
         .item(
             crate::controls::menu_row(move |_, _| {
@@ -432,8 +431,8 @@ pub(super) fn project_row(
     // The issue a run is working on in this project right now, if one is; the
     // working one ahead of a waiting one, since a project can hold both.
     let runs = crate::task::live_issues(cx);
-    // A folder on a host has no runs, problems or `git status` here; what is
-    // filed under its path is a local twin's.
+    // A folder on a host has no runs or problems here; what is filed under
+    // its path is a local twin's. Its `git status` is read over its attach.
     let local = root.local_path();
     let run = local.and_then(|path| {
         run_on(
@@ -457,7 +456,7 @@ pub(super) fn project_row(
         crate::unattended::blocked(cx)
             .or_else(|| local.and_then(|path| crate::unattended::problem(path, cx))),
     );
-    let status = local.and_then(|path| window_state.git.get(path));
+    let status = window_state.git_of(root);
     let facts = ProjectFacts::of(root, status.is_some());
     let git = status.map(GitLine::of);
     // A folder on a host is named with the host, as ssh names one.
@@ -563,9 +562,10 @@ pub(super) fn project_row(
             })),
         )
         .child(
-            // Shrinks, by its host or its branch alone: everything else on it
-            // keeps its width, and that one truncates once the name is down to
-            // its minimum. A folder on a host has no branch here.
+            // Shrinks, by its host and its branch alone: everything else on it
+            // keeps its width, and those truncate once the name is down to its
+            // minimum. A folder on a host names its host first, then its branch
+            // once that is read over the host's attach.
             div()
                 .h_flex()
                 .items_center()
