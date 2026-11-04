@@ -203,12 +203,18 @@ impl Workbench {
         self.showing().id
     }
 
-    /// How many of `root`'s open files have edits a removal would discard.
+    /// How many of `root`'s open files have edits a removal would discard,
+    /// `on_host` when it is a host's folder.
     ///
     /// Asked by the shell *before* it removes a root, because that is the one
-    /// place with a control to guard.
-    pub fn unsaved_in(&self, root: &Path, cx: &App) -> usize {
-        self.modes.iter().map(|mode| mode.unsaved(root, cx)).sum()
+    /// place with a control to guard. A host's folder is asked of the modes
+    /// offered there alone: what the rest hold at its path is a folder here.
+    pub fn unsaved_in(&self, root: &Path, on_host: bool, cx: &App) -> usize {
+        self.modes
+            .iter()
+            .filter(|mode| offered(on_host, mode.spec()))
+            .map(|mode| mode.unsaved(root, cx))
+            .sum()
     }
 
     /// Every process the modes keep running, each with what it is called.
@@ -219,12 +225,17 @@ impl Workbench {
             .collect()
     }
 
-    /// Drop everything every mode holds for `root`.
+    /// Drop everything the modes hold for `root`, `on_host` when it is a
+    /// host's folder.
     ///
-    /// Called when a project root leaves the workspace.
-    pub fn forget_root(&mut self, root: &Path, cx: &mut Context<Self>) {
+    /// Called when a project root leaves the workspace. A host's folder is
+    /// forgotten only by the modes offered there: what the rest hold at its
+    /// path, a running editor among it, is a folder here.
+    pub fn forget_root(&mut self, root: &Path, on_host: bool, cx: &mut Context<Self>) {
         for mode in &mut self.modes {
-            mode.forget_root(root, cx);
+            if offered(on_host, mode.spec()) {
+                mode.forget_root(root, cx);
+            }
         }
         if self.root.as_deref() == Some(root) {
             self.root = None;

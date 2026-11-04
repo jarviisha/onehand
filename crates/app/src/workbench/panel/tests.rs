@@ -33,6 +33,11 @@ impl WorkbenchMode for Stub {
         self.roots.borrow_mut().push((root.to_path_buf(), host));
     }
 
+    fn forget_root(&mut self, root: &Path, _: &mut App) {
+        let forgot = PathBuf::from("forgot").join(root.strip_prefix("/").unwrap_or(root));
+        self.roots.borrow_mut().push((forgot, None));
+    }
+
     /// A rescan written down as a root named so.
     fn handle(&mut self, request: &Request<'_>, _: &mut App) -> bool {
         if let Request::Rescan = request {
@@ -201,4 +206,21 @@ fn a_refusal_says_why_and_a_root_lifts_it(cx: &mut TestAppContext) {
         panel.set_root(PathBuf::from("/srv/app"), Disk::Local, cx)
     });
     panel.read_with(cx, |panel, _| assert!(panel.refused.is_none()));
+}
+
+/// Removing a host's folder forgets it only in the modes offered there:
+/// what the rest hold at that path is a folder here, which stays.
+#[gpui::test]
+fn forgetting_a_host_root_reaches_only_modes_that_run_there(cx: &mut TestAppContext) {
+    let (panel, editor, markdown) = panel(cx);
+    let root = PathBuf::from("/srv/app");
+    let forgot = PathBuf::from("forgot/srv/app");
+    let forgotten = |roots: &Roots| roots.borrow().iter().any(|(r, _)| r == &forgot);
+
+    panel.update(cx, |panel, cx| panel.forget_root(&root, true, cx));
+    assert!(forgotten(&editor));
+    assert!(!forgotten(&markdown));
+
+    panel.update(cx, |panel, cx| panel.forget_root(&root, false, cx));
+    assert!(forgotten(&markdown));
 }

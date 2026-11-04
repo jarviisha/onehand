@@ -515,7 +515,8 @@ impl Shell {
         };
         let live = root.sessions.len();
         // A host's folder has its files open in the editor as one here does.
-        let unsaved = self.workbench.read(cx).unsaved_in(&root.path, cx);
+        let on_host = root.on_host().is_some();
+        let unsaved = self.workbench.read(cx).unsaved_in(&root.path, on_host, cx);
         let mut losses = Vec::new();
         if live > 0 {
             let s = if live == 1 { "session" } else { "sessions" };
@@ -571,8 +572,9 @@ impl Shell {
         });
         // The editor's buffers and the tree go with a host's folder too, or
         // they come back under a later project on the same path.
+        let on_host = self.local_root(idx).is_none();
         self.workbench
-            .update(cx, |panel, cx| panel.forget_root(&path, cx));
+            .update(cx, |panel, cx| panel.forget_root(&path, on_host, cx));
         // A folder on a host was never given the rest, and what is filed
         // under its path belongs to a folder of the same path here.
         if self.local_root(idx).is_some() {
