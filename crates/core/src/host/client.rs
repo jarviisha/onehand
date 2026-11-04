@@ -23,8 +23,8 @@ use tokio::process::Child;
 use tokio::sync::{mpsc, oneshot};
 
 use super::wire::{
-    Build, Call, Entry, FromHost, HostSession, HostTerm, Question, Readiness, Reply, SessionInfo,
-    TermInfo,
+    Build, Call, Entry, FromHost, HostSession, HostTerm, MirrorState, Question, Readiness, Reply,
+    SessionInfo, TermInfo,
 };
 use crate::acp::{AcpEvent, AcpRequest, Opening};
 use crate::config::AgentSpec;
@@ -38,6 +38,7 @@ mod install;
 mod terms;
 
 use attach::command;
+pub(crate) use attach::SSH_OPTS;
 pub use attach::{attach, restart, HostAddr};
 #[cfg(test)]
 use attach::{hello, restart_over, settle, settle_again, Settled};
@@ -112,6 +113,8 @@ struct Answer {
     terms: Option<Vec<TermInfo>>,
     held: Option<()>,
     bypass: Option<bool>,
+    mirror: Option<MirrorState>,
+    mirror_files: Option<Vec<PathBuf>>,
 }
 
 impl Answer {
@@ -131,6 +134,8 @@ impl Answer {
             terms: None,
             held: None,
             bypass: None,
+            mirror: None,
+            mirror_files: None,
         };
         match reply {
             Reply::Welcome { build, busy } => answer.welcome = Some((build, busy)),
@@ -147,6 +152,8 @@ impl Answer {
             Reply::Terms(terms) => answer.terms = Some(terms),
             Reply::Held => answer.held = Some(()),
             Reply::Bypass { on } => answer.bypass = Some(on),
+            Reply::Mirror(state) => answer.mirror = Some(state),
+            Reply::MirrorFiles(files) => answer.mirror_files = Some(files),
         }
         answer
     }

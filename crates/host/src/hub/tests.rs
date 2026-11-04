@@ -7,7 +7,7 @@ use onehand_core::acp::types::ReqRx;
 use onehand_core::acp::{AcpEvent, AcpRequest, Attachment, Opening, PermissionRequest};
 use onehand_core::config::{AgentSpec, PresetId};
 use onehand_core::host::journal;
-use onehand_core::host::wire::{Entry, FromHost, HostSession, Readiness};
+use onehand_core::host::wire::{Entry, FromHost, Holder, HostSession, Readiness};
 use serde_json::json;
 use tokio::sync::mpsc;
 
@@ -765,4 +765,162 @@ async fn the_switch_survives_a_restart() {
     let (hub, _) = hub_on(dir);
     assert!(!lock(&hub).bypass(std::path::Path::new("/srv/app")));
     assert!(lock(&hub).bypass(std::path::Path::new("/srv/other")));
+}
+
+/// A ready session in `cwd`.
+fn open_in(hub: &Arc<Mutex<Hub>>, opened: &Opened, cwd: &std::path::Path) -> Fake {
+    let session = Hub::open(hub, cwd.into(), agent(), Opening::Fresh).unwrap();
+    let events = opened.lock().unwrap().last().unwrap().clone();
+    let (tx, requests) = mpsc::unbounded_channel();
+    let fake = Fake {
+        session,
+        events,
+        requests,
+    };
+    fake.push(AcpEvent::Connected {
+        tx,
+        resumed: false,
+        forkable: true,
+    });
+    fake
+}
+
+fn attached(hub: &Arc<Mutex<Hub>>, laptop: &str) {
+    hub.lock().unwrap().laptop = Some(laptop.into());
+}
+
+#[tokio::test]
+async fn a_mirror_is_made_once_for_its_laptop_and_refused_to_another() {
+    let (hub, opened) = hub("mirror-owner");
+    attached(&hub, "laptop-a");
+    let made = hub.lock().unwrap().mirror("proj-1").unwrap();
+    assert!(made.path.is_dir());
+    assert_eq!(made.key, Holder::Laptop);
+    assert_eq!(hub.lock().unwrap().mirror("proj-1").unwrap(), made);
+    assert!(hub.lock().unwrap().mirror("../up").is_err());
+    attached(&hub, "laptop-b");
+    let refused = Hub::open(&hub, made.path.clone(), agent(), Opening::Fresh);
+    assert!(refused
+        .unwrap_err()
+        .contains("offloaded from another laptop"));
+    let refused = hub
+        .lock()
+        .unwrap()
+        .mirror_key(&made.path, Holder::Host, made.generation);
+    assert!(refused.is_err());
+    // Its own laptop opens sessions there.
+    attached(&hub, "laptop-a");
+    open_in(&hub, &opened, &made.path);
+}
+
+#[tokio::test]
+async fn a_prompt_is_refused_while_the_laptop_holds_the_key() {
+    let (hub, opened) = hub("mirror-prompt");
+    attached(&hub, "laptop-a");
+    let mirror = hub.lock().unwrap().mirror("proj").unwrap();
+    let mut fake = open_in(&hub, &opened, &mirror.path);
+    settle().await;
+    let refused = hub.lock().unwrap().request(&fake.session, prompt("go"));
+    assert!(refused
+        .unwrap_err()
+        .contains("The laptop holds this project's code"));
+    hub.lock()
+        .unwrap()
+        .mirror_key(&mirror.path, Holder::Host, mirror.generation)
+        .unwrap();
+    hub.lock()
+        .unwrap()
+        .request(&fake.session, prompt("go"))
+        .unwrap();
+    assert!(matches!(fake.request().await, AcpRequest::Prompt { .. }));
+    let now = hub.lock().unwrap().mirror("proj").unwrap();
+    assert_eq!(now.generation, mirror.generation + 1);
+    assert!(now.working);
+}
+
+#[tokio::test]
+async fn the_key_comes_back_only_when_nothing_works_and_no_prompt_went_since() {
+    let (hub, opened) = hub("mirror-back");
+    attached(&hub, "laptop-a");
+    let mirror = hub.lock().unwrap().mirror("proj").unwrap();
+    let fake = open_in(&hub, &opened, &mirror.path);
+    settle().await;
+    let path = mirror.path.clone();
+    hub.lock()
+        .unwrap()
+        .mirror_key(&path, Holder::Host, 0)
+        .unwrap();
+    hub.lock()
+        .unwrap()
+        .request(&fake.session, prompt("go"))
+        .unwrap();
+    let seen = hub.lock().unwrap().mirror("proj").unwrap().generation;
+    // Mid-turn: refused.
+    assert!(hub
+        .lock()
+        .unwrap()
+        .mirror_key(&path, Holder::Laptop, seen)
+        .is_err());
+    fake.push(AcpEvent::TurnEnded {
+        stop_reason: "end_turn".into(),
+    });
+    // Background work outlives the turn: still refused.
+    fake.push(AcpEvent::Background(
+        onehand_core::acp::BackgroundReport::Spawned {
+            id: "b1".into(),
+            name: "build".into(),
+            kind: "shell".into(),
+        },
+    ));
+    settle().await;
+    assert!(hub.lock().unwrap().mirror("proj").unwrap().working);
+    assert!(hub
+        .lock()
+        .unwrap()
+        .mirror_key(&path, Holder::Laptop, seen)
+        .is_err());
+    fake.push(AcpEvent::Background(
+        onehand_core::acp::BackgroundReport::Ended {
+            id: "b1".into(),
+            end: onehand_core::acp::BackgroundEnd::Completed,
+        },
+    ));
+    settle().await;
+    // An older generation: a prompt went since the code was copied.
+    assert!(hub
+        .lock()
+        .unwrap()
+        .mirror_key(&path, Holder::Laptop, seen - 1)
+        .is_err());
+    let back = hub
+        .lock()
+        .unwrap()
+        .mirror_key(&path, Holder::Laptop, seen)
+        .unwrap();
+    assert_eq!(back.key, Holder::Laptop);
+}
+
+#[tokio::test]
+async fn the_mirrors_survive_a_restart_and_an_unreadable_file_refuses() {
+    let (hub, _opened) = hub("mirror-keep");
+    attached(&hub, "laptop-a");
+    let mirror = hub.lock().unwrap().mirror("proj").unwrap();
+    let path = mirror.path.clone();
+    hub.lock()
+        .unwrap()
+        .mirror_key(&path, Holder::Host, 0)
+        .unwrap();
+    let dir = hub.lock().unwrap().dir.clone();
+    drop(hub);
+    let (hub, _opened) = hub_on(dir.clone());
+    attached(&hub, "laptop-a");
+    assert_eq!(
+        hub.lock().unwrap().mirror("proj").unwrap().key,
+        Holder::Host
+    );
+    std::fs::write(dir.join("mirrors.json"), "not json").unwrap();
+    let (hub, _opened) = hub_on(dir);
+    attached(&hub, "laptop-a");
+    assert!(hub.lock().unwrap().mirror("proj").is_err());
+    assert!(hub.lock().unwrap().may_use(&path).is_err());
 }

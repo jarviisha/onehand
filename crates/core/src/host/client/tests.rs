@@ -1339,3 +1339,12 @@ async fn bypass_asks_and_reads_the_answer() {
     host.answer(id, Reply::Bypass { on: true }).await;
     assert!(setting.await.unwrap().unwrap());
 }
+
+#[test]
+fn a_laptop_keeps_its_id_across_runs() {
+    let dir = scratch("laptop-id");
+    let first = attach::kept_id(&dir).unwrap();
+    assert!(dir.join("laptop-id").exists());
+    assert_eq!(attach::kept_id(&dir).unwrap(), first);
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -306,6 +306,8 @@ async fn connection(
     out: UnboundedSender<FromHost>,
     mut lines: UnboundedReceiver<FromHost>,
 ) {
+    // The one attach served names the laptop its mirrors are kept for.
+    lock(&hub).laptop = laptop(&first);
     if answer(&hub, &terms, &build, &out, &first) {
         shut_down(&mut write, &mut lines).await;
     }
@@ -406,7 +408,8 @@ fn answer(
         | Call::SaveFile { .. }
         | Call::GitStatus { .. }
         | Call::Home
-        | Call::Clone { .. }) => {
+        | Call::Clone { .. }
+        | Call::MirrorFiles { .. }) => {
             // Off the loop: a big folder, a slow repository or a clone must
             // not hold up the asks behind it, and the answer goes out when it
             // is done.
@@ -441,6 +444,16 @@ fn answer(
             }
             .map(|on| Reply::Bypass { on })
         }
+        // On the loop, as the switch is: each touches one small file, and the
+        // key's check and its change must not let a prompt in between.
+        Call::Mirror { name } => lock(hub).mirror(&name).map(Reply::Mirror),
+        Call::MirrorKey {
+            path,
+            to,
+            generation,
+        } => lock(hub)
+            .mirror_key(&path, to, generation)
+            .map(Reply::Mirror),
     };
     let _ = out.send(FromHost::Answer { id, result });
     exit

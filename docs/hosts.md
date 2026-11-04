@@ -423,6 +423,49 @@ Refused or left out, each in one place:
   agent is given no token, so it cannot call them.
 - **The Telegram bridge** does not offer it: the bridge reads the projects on this machine only.
 
+## Offloaded projects
+
+A folder on this machine whose sessions run on a host, against a copy of it the host keeps, its
+**mirror**. Only the host's side and the copy are built so far; the window does not offer it yet.
+
+- **This laptop has an id of its own,** made once and kept in `laptop-id` in the config directory
+  (`laptop`, `crates/core/src/host/client/attach.rs`), and named in every hello. A mirror belongs
+  to the laptop that made it: the host refuses another laptop's `Open` or `Watch` there, *<path>
+  is offloaded from another laptop*. The same id is what tells the host an attach is this laptop's
+  own (*An attach made by itself never takes the host*), now across runs too.
+- **Where the host keeps them:** each mirror is `mirrors/<laptop>/<name>` in the host's data
+  directory, made on the laptop's first `Mirror` call (`crates/host/src/hub/mirrors.rs`), and
+  `mirrors.json` beside it keeps each one's owner, who holds the key and its generation. A
+  `mirrors.json` that cannot be read is not taken for none: every mirror call is refused, and so
+  is every prompt in a mirror, saying why in `host.log`.
+- **The host says who holds the key.** It starts with the laptop. A prompt to a session in a
+  mirror whose key the laptop holds is refused, and the refusal is said in that session: *The
+  laptop holds this project's code; send the prompt again to send it up first*. Every prompt that
+  goes through moves the mirror's generation on. The key goes to the host whenever the laptop
+  hands it over, and back to the laptop only while nothing works in the mirror (no session
+  mid-turn, no background work or subagent still running, `aside_after` in
+  `crates/core/src/host/wire.rs`) and the generation is the one the laptop saw before it copied the
+  code back. So a prompt that lands while the code comes back keeps the key on the host, and the
+  laptop copies again later.
+- **What the copy carries** (`crates/core/src/host/offload.rs`): what `git ls-files --cached
+  --others --exclude-standard` lists, then `.git`. An ignored file never travels on its own. A
+  name that is not UTF-8 is refused, naming it. The host lists a mirror the same way (the wire's
+  `MirrorFiles`).
+- **It goes with `rsync`** over the attach's ssh options (a plain folder for the host `local`),
+  told apart by contents (`--checksum`), since rsync's own size-and-second check misses a file
+  changed within the second it was copied. Up, what was sent before and is gone now is deleted in
+  the mirror, and `.git` is made the laptop's exactly. Back, what the mirror no longer has is
+  deleted here, and `.git` comes back without deleting anything, so a commit only this folder had
+  keeps its objects. `rsync` missing is said by side: *rsync is not installed on this machine* /
+  *on <host>*.
+- **What went is remembered** as a manifest: each listed file's size and modification time,
+  `HEAD` and the branch and tag refs, read *before* the code goes up, so an edit made while it
+  goes reads as a change later rather than as sent. Held against the folder, it names what
+  changed: a file changed, added or gone, `HEAD` or a ref moved. Objects git adds or packs on its
+  own are not looked at. A backup copies the changed files as they are, and `refs.txt` when refs
+  moved. The laptop keeps it with who holds the key, when the code last moved and what stopped a
+  copy back in `offload.json` in the project's storage (`OffloadState`).
+
 ## Not built
 
 The steps of the design still to come, each its own change; the gaps they leave meanwhile are in
@@ -430,5 +473,7 @@ The steps of the design still to come, each its own change; the gaps they leave 
 cloning (*Adding a host project*), and re-attaching by itself and the laptop's copy (*Attach and
 detach*, *The laptop's copy*); so is the permission bypass.
 
-- **Offloaded projects:** a folder on the laptop whose sessions run on a host against a mirror of
-  it, with a key saying which side may change the code, and then a branch mode with no key.
+- **Offloaded projects in the window:** offloading a project, its sessions on the mirror, the
+  code going up before a prompt and coming back when the host is done, the lock while the host
+  holds the key, settling a copy back that stopped, and *Send to <host>*. The host's side and the
+  copy are built (*Offloaded projects*). Then a branch mode with no key.

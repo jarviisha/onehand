@@ -23,7 +23,7 @@ pub struct HostAddr {
 
 /// `BatchMode` so a password prompt fails at once instead of waiting on a
 /// person who cannot see it; the keepalives notice a host that went away.
-const SSH_OPTS: [&str; 7] = [
+pub(crate) const SSH_OPTS: [&str; 7] = [
     "-T",
     "-o",
     "BatchMode=yes",
@@ -230,15 +230,42 @@ pub(super) async fn hello(
     conn.ask_for(hello, welcome).await?
 }
 
-/// This laptop's run, as a host is told it: the process and when it asked first.
+/// This laptop, as a host is told it: an id made once and kept in the config
+/// directory, so a mirror the host keeps for this laptop stays its own across
+/// runs. One that cannot be kept stands for this run alone.
 fn laptop() -> &'static str {
     static LAPTOP: OnceLock<String> = OnceLock::new();
     LAPTOP.get_or_init(|| {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |d| d.as_nanos());
-        format!("{}-{nanos}", std::process::id())
+        if cfg!(test) {
+            return run_id();
+        }
+        kept_id(&crate::config::config_dir()).unwrap_or_else(|e| {
+            eprintln!("onehand: could not keep this laptop's id: {e}");
+            run_id()
+        })
     })
+}
+
+/// The id kept in `dir`, written there first when there is none.
+pub(super) fn kept_id(dir: &std::path::Path) -> std::io::Result<String> {
+    let path = dir.join("laptop-id");
+    match std::fs::read_to_string(&path) {
+        Ok(id) if !id.trim().is_empty() => return Ok(id.trim().to_string()),
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e),
+    }
+    let id = run_id();
+    crate::config::write_atomic(&path, &id)?;
+    Ok(id)
+}
+
+/// The process and when it asked first: unique enough for one run.
+fn run_id() -> String {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    format!("{}-{nanos}", std::process::id())
 }
 
 /// A host on build `build` that was left alone for the sessions in `busy`.

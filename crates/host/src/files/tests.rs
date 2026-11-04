@@ -87,3 +87,20 @@ fn home_is_the_users_home() {
     };
     assert_eq!(Some(home), dirs::home_dir());
 }
+
+#[test]
+fn a_mirrors_files_are_what_git_keeps_and_its_repository() {
+    let dir = scratch("mirror-files");
+    git(&dir, &["init", "-q"]);
+    fs::write(dir.join(".gitignore"), "out/\n").unwrap();
+    fs::write(dir.join("a.txt"), "a").unwrap();
+    fs::create_dir_all(dir.join("out")).unwrap();
+    fs::write(dir.join("out/bin"), "b").unwrap();
+    let Ok(Reply::MirrorFiles(files)) = answer(Call::MirrorFiles { path: dir }) else {
+        panic!("a listing");
+    };
+    assert_eq!(
+        files,
+        vec![PathBuf::from(".gitignore"), "a.txt".into(), ".git".into()]
+    );
+}
