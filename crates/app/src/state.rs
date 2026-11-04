@@ -10,7 +10,7 @@ use crate::acp::AcpRuntime;
 use gpui::{App, Global};
 use onehand_core::config::{AgentSpec, AppConfig, AppState, Appearance};
 use onehand_core::gitstat::GitStatus;
-use onehand_core::workspace::Workspace;
+use onehand_core::workspace::{ProjectRoot, Workspace};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -200,6 +200,35 @@ impl WorkspaceWindow {
             git: HashMap::new(),
         }
     }
+
+    /// `root`'s `git status`, as the last sweep read it.
+    pub(crate) fn git_of(&self, root: &ProjectRoot) -> Option<&GitStatus> {
+        git_of(&self.workspace, &self.git, root)
+    }
+}
+
+/// `root`'s `git status` in `git`, which is kept by path alone. A host's
+/// folder on a path a folder here also has gets none: what is kept under that
+/// path is the local one's.
+pub(crate) fn git_of<'a>(
+    workspace: &Workspace,
+    git: &'a HashMap<PathBuf, GitStatus>,
+    root: &ProjectRoot,
+) -> Option<&'a GitStatus> {
+    if shares_local_path(workspace, root) {
+        return None;
+    }
+    git.get(&root.path)
+}
+
+/// Whether `root` is a host's folder on a path a folder here in `workspace`
+/// also has.
+pub(crate) fn shares_local_path(workspace: &Workspace, root: &ProjectRoot) -> bool {
+    root.on_host().is_some()
+        && workspace
+            .roots
+            .iter()
+            .any(|r| r.local_path() == Some(root.path.as_path()))
 }
 
 /// Run `f` on the shell of `window`, inside it: `None` when the window or its

@@ -921,6 +921,30 @@ async fn a_connection_says_it_is_closed_once_its_stream_ends() {
     panic!("the connection never said it was closed");
 }
 
+/// A connection the host closed because another machine attached says it
+/// was taken; one whose link merely went away does not.
+#[tokio::test]
+async fn a_kicked_connection_says_it_was_taken_and_a_dropped_one_does_not() {
+    async fn closed(conn: &HostConn) {
+        for _ in 0..100 {
+            if conn.is_closed() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("the connection never said it was closed");
+    }
+    let (kicked, mut host) = pair();
+    host.send(FromHost::Kicked).await;
+    closed(&kicked).await;
+    assert!(kicked.taken());
+
+    let (dropped, host) = pair();
+    drop(host);
+    closed(&dropped).await;
+    assert!(!dropped.taken());
+}
+
 #[tokio::test]
 async fn read_dir_takes_the_listing() {
     let (conn, mut host) = pair();

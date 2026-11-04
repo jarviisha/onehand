@@ -25,7 +25,7 @@ impl Shell {
         let Some(root) = self.window.workspace.active_root() else {
             return;
         };
-        let status = root.local_path().and_then(|path| self.window.git.get(path));
+        let status = self.window.git_of(root);
         let facts = crate::chat::pane::ProjectFacts {
             asks: !self
                 .removal_losses(self.window.workspace.active_root, cx)
@@ -163,6 +163,7 @@ impl Shell {
         // push would leave the previous project's branch under the new
         // project's conversation until the next sweep landed.
         self.sync_project_facts(cx);
+        self.tell_workbench_git(cx);
         let Some(root) = self.window.workspace.active_root() else {
             // No roots at all. The pane has to be told, or removing the last
             // project leaves the centre of the window inviting the user to
@@ -326,8 +327,9 @@ impl Shell {
                                 });
                             }
                         });
+                        // None: an attach landed since, which the next turn takes.
                         let Some(idle) = cx.update(|cx| crate::hosts::idle(cx, &host)) else {
-                            return;
+                            continue;
                         };
                         match idle.await {
                             Ok(()) => continue,
@@ -711,35 +713,6 @@ impl Shell {
         self.window.workspace.roots[self.root_index(root)?]
             .check
             .clone()
-    }
-
-    /// Re-read everything derived from the files on disk.
-    ///
-    /// Two panels read the working tree and neither notices it change: the
-    /// rail's `branch · N changed` and the Files tree. Both were seeded once
-    /// and left, which made them stale from the first turn
-    /// onwards -- the moment they start being worth reading.
-    ///
-    /// One call for both, because there is one cause. Cheap enough to run on
-    /// every turn end: `git status` is one process per root off the UI loop,
-    /// and the rescan covers only the directories currently on screen.
-    ///
-    /// A host project on screen whose attach has ended since its files were
-    /// shown is attached again first. One still attaching, or whose attach
-    /// failed, is left to that attach or to *Try again*.
-    pub(crate) fn refresh_worktree(&mut self, cx: &mut Context<Self>) {
-        if self.workbench.read(cx).lost_host() {
-            self.try_host_again(cx);
-        }
-        self.refresh_git(cx);
-
-        self.workbench.update(cx, |panel, cx| panel.rescan(cx));
-        self.tell_issues_page(&onehand_workbench::Request::Rescan, cx);
-        // A run leaving a note or a sync landing changes the issue files too,
-        // read again while the workspace page is what is showing.
-        if self.workspace_shown(cx) {
-            self.workspace_page.update(cx, |page, cx| page.reload(cx));
-        }
     }
 }
 

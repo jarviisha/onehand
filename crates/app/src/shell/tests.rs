@@ -75,6 +75,38 @@ fn a_git_sweep_reads_a_host_root_only_while_it_is_attached() {
     );
 }
 
+/// A host's folder on a path a folder here also has is left out of the
+/// sweep, which keeps what it reads by path alone.
+#[test]
+fn a_git_sweep_leaves_out_a_host_root_on_a_local_roots_path() {
+    use onehand_core::disk::{Disk, HostDisk};
+    use onehand_core::host::client::HostConn;
+    use onehand_core::workspace::{HostName, Workspace};
+    use std::path::PathBuf;
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap();
+    let mut ws = Workspace::seeded("/srv/app");
+    ws.add_host_root(HostName("vps".into()), PathBuf::from("/srv/app"));
+    ws.add_host_root(HostName("vps".into()), PathBuf::from("/srv/other"));
+    let read = git_sweep::git_roots(&ws, |host| {
+        Some(Disk::Host(HostDisk::new(
+            HostConn::closed(&host.0),
+            rt.handle().clone(),
+        )))
+    })
+    .into_iter()
+    .map(|(path, disk)| (path, disk.host().map(str::to_string)))
+    .collect::<Vec<_>>();
+    assert_eq!(
+        read,
+        vec![
+            (PathBuf::from("/srv/app"), None),
+            (PathBuf::from("/srv/other"), Some("vps".into())),
+        ]
+    );
+}
+
 /// The workspace page lists a host's project with its sessions, but with
 /// nothing this machine files under its path; the Tasks and Issues pages
 /// leave it out.
@@ -105,4 +137,41 @@ fn the_overview_keeps_a_host_project_and_the_other_pages_do_not() {
     let local = sessions::page_projects_in(&ws, &git, sessions::Reach::Local);
     assert_eq!(local.len(), 1);
     assert!(local[0].host.is_none());
+}
+
+/// A host's folder on a path of its own shows the status read over its
+/// attach, as a folder here does; one on a local folder's path shows none.
+#[test]
+fn a_host_root_reads_its_git_status_unless_a_local_root_has_its_path() {
+    use onehand_core::gitstat::GitStatus;
+    use onehand_core::workspace::{HostName, Workspace};
+    use std::path::PathBuf;
+    let mut ws = Workspace::seeded("/srv/app");
+    ws.add_host_root(HostName("vps".into()), PathBuf::from("/srv/app"));
+    ws.add_host_root(HostName("vps".into()), PathBuf::from("/srv/other"));
+    let status = |branch: &str| GitStatus {
+        branch: branch.into(),
+        changed: 0,
+        ahead: 0,
+        behind: 0,
+        entries: Default::default(),
+    };
+    let git = [
+        (PathBuf::from("/srv/app"), status("here")),
+        (PathBuf::from("/srv/other"), status("there")),
+    ]
+    .into_iter()
+    .collect();
+    let branches: Vec<_> = ws
+        .roots
+        .iter()
+        .map(|root| crate::state::git_of(&ws, &git, root).map(|s| s.branch.clone()))
+        .collect();
+    assert_eq!(
+        branches,
+        [Some("here".into()), None, Some("there".to_string())]
+    );
+    // Its status offers nothing a host project does not do.
+    let facts = crate::chat::pane::ProjectFacts::of(&ws.roots[2], true);
+    assert!(!facts.is_repo && !facts.local);
 }

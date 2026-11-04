@@ -195,8 +195,24 @@ impl Workbench {
     /// Whether the root on screen is a host's folder shown over an attach
     /// that has since ended, which is what is worth attaching again for. One
     /// still attaching, or that failed, says so instead and is left alone.
-    pub fn lost_host(&self) -> bool {
-        self.refused.is_none() && self.disk.is_closed()
+    ///
+    /// An attach the host closed because another machine attached is not
+    /// made again: that machine holds the host now, and taking it back would
+    /// end its sessions in turn. That stands as a failure, with *Try again*.
+    pub fn attach_again(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.refused.is_some() || !self.disk.is_closed() {
+            return false;
+        }
+        let taken = self
+            .disk
+            .host()
+            .filter(|_| self.disk.taken())
+            .map(|host| format!("{host} was attached from another machine"));
+        if let Some(why) = taken {
+            self.refuse(Some(Refusal::Failed(why.into())), cx);
+            return false;
+        }
+        true
     }
 
     pub fn mode(&self) -> ModeId {

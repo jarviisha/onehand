@@ -395,7 +395,8 @@ impl WorkspacePage {
                                     ),
                             )
                             .child(muted_line(match (&project.host, &project.git) {
-                                (Some(host), _) => format!("On {host}"),
+                                (Some(host), Some(git)) => format!("On {host} · {git}"),
+                                (Some(host), None) => format!("On {host}"),
                                 (None, Some(git)) => git.clone(),
                                 (None, None) => "Not a git repository".to_string(),
                             }))

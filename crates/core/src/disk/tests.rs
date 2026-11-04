@@ -21,6 +21,7 @@ fn local_reads_and_saves_like_the_editor() {
     assert_eq!(disk.read_file(&path).unwrap().0, "theirs");
     assert_eq!(disk.host(), None);
     assert!(!disk.is_closed());
+    assert!(!disk.taken());
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
@@ -42,6 +43,7 @@ fn a_host_disk_over_a_closed_connection_says_so() {
         );
         assert_eq!(disk.host(), Some("vps"));
         assert!(disk.is_closed());
+        assert!(!disk.taken());
     })
     .join()
     .unwrap();

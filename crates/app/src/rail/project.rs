@@ -431,8 +431,8 @@ pub(super) fn project_row(
     // The issue a run is working on in this project right now, if one is; the
     // working one ahead of a waiting one, since a project can hold both.
     let runs = crate::task::live_issues(cx);
-    // A folder on a host has no runs, problems or `git status` here; what is
-    // filed under its path is a local twin's.
+    // A folder on a host has no runs or problems here; what is filed under
+    // its path is a local twin's. Its `git status` is read over its attach.
     let local = root.local_path();
     let run = local.and_then(|path| {
         run_on(
@@ -456,7 +456,7 @@ pub(super) fn project_row(
         crate::unattended::blocked(cx)
             .or_else(|| local.and_then(|path| crate::unattended::problem(path, cx))),
     );
-    let status = local.and_then(|path| window_state.git.get(path));
+    let status = window_state.git_of(root);
     let facts = ProjectFacts::of(root, status.is_some());
     let git = status.map(GitLine::of);
     // A folder on a host is named with the host, as ssh names one.

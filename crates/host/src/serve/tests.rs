@@ -295,6 +295,17 @@ async fn a_missing_file_is_refused() {
     let _ = fs::remove_dir_all(&dir);
 }
 
+/// A folder missing on the host is said to be, not listed as empty.
+#[tokio::test]
+async fn a_missing_folder_is_refused() {
+    let dir = scratch("missing-dir");
+    let (out, mut lines) = mpsc::unbounded_channel();
+    let path = dir.join("nope");
+    let reply = ask_file(&dir, &out, &mut lines, 1, Call::ReadDir { path }).await;
+    assert!(reply.is_err(), "{reply:?}");
+    let _ = fs::remove_dir_all(&dir);
+}
+
 /// serde cannot write a time before 1970; the laptop must hear an error,
 /// not wait out its timeout.
 #[tokio::test]

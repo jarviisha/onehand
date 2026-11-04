@@ -859,8 +859,8 @@ fn listed(root: &onehand_core::workspace::ProjectRoot, reach: Reach) -> bool {
 }
 
 /// The projects a page of `reach` lists, in rail order. A host's project has
-/// no `git status` or issue file here: what this machine files under its
-/// path is a folder of the same path here.
+/// no issue file here: what this machine files under its path is a folder of
+/// the same path here. Its `git status` is read over its attach.
 pub(super) fn page_projects_in(
     workspace: &onehand_core::workspace::Workspace,
     git: &std::collections::HashMap<PathBuf, gitstat::GitStatus>,
@@ -882,9 +882,7 @@ pub(super) fn page_projects_in(
                     .iter()
                     .map(|session| (session.uid, SharedString::from(session.title().to_string())))
                     .collect(),
-                git: local
-                    .and_then(|path| git.get(path))
-                    .map(gitstat::GitStatus::label),
+                git: crate::state::git_of(workspace, git, root).map(gitstat::GitStatus::label),
                 issues: local.and_then(|path| {
                     Some(onehand_core::issues::file_for(
                         workspace.storage_dir.as_deref()?,

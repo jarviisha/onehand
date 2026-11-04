@@ -13,6 +13,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use futures::channel::mpsc as events;
@@ -390,6 +392,10 @@ pub struct HostConn {
     cmds: mpsc::UnboundedSender<Cmd>,
     /// The `ssh` destination, which names the host in what is said of it.
     host: String,
+    /// Set when the host closed this connection because another machine
+    /// attached: that machine holds the host now, and only a person should
+    /// take it back.
+    taken: Arc<AtomicBool>,
 }
 
 impl HostConn {
@@ -400,8 +406,18 @@ impl HostConn {
         W: AsyncWrite + Unpin + Send + 'static,
     {
         let (cmds, rx) = mpsc::unbounded_channel();
-        tokio::spawn(pump(host.clone(), read, write, child, cmds.downgrade(), rx));
-        Self { cmds, host }
+        let taken = Arc::new(AtomicBool::new(false));
+        let pumped = pump(
+            host.clone(),
+            read,
+            write,
+            child,
+            cmds.downgrade(),
+            rx,
+            taken.clone(),
+        );
+        tokio::spawn(pumped);
+        Self { cmds, host, taken }
     }
 
     /// A connection to `host` that is already gone: everything asked of it
@@ -411,7 +427,16 @@ impl HostConn {
         Self {
             cmds,
             host: host.into(),
+            taken: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    /// A connection to `host` that the host closed because another machine
+    /// attached. Building one needs no runtime.
+    pub fn taken_from(host: &str) -> Self {
+        let conn = Self::closed(host);
+        conn.taken.store(true, Ordering::Relaxed);
+        conn
     }
 
     /// A connection over a pipe, with no ssh behind it, to a host named `vps`.
@@ -452,6 +477,12 @@ impl HostConn {
     /// connection will be answered again, and a new attach is needed.
     pub fn is_closed(&self) -> bool {
         self.cmds.is_closed()
+    }
+
+    /// Whether the host closed this connection because another machine
+    /// attached, rather than the link going away.
+    pub fn taken(&self) -> bool {
+        self.taken.load(Ordering::Relaxed)
     }
 
     pub async fn list(&self) -> Result<Vec<SessionInfo>, HostError> {
@@ -521,6 +552,7 @@ async fn pump<R, W>(
     child: Option<Child>,
     me: mpsc::WeakUnboundedSender<Cmd>,
     mut cmds: mpsc::UnboundedReceiver<Cmd>,
+    taken: Arc<AtomicBool>,
 ) where
     R: AsyncRead + Unpin + Send + 'static,
     W: AsyncWrite + Unpin + Send + 'static,
@@ -546,7 +578,12 @@ async fn pump<R, W>(
                 // A line this build cannot read is skipped rather than fatal.
                 let Ok(said) = serde_json::from_str::<FromHost>(&text) else { continue };
                 match said {
-                    FromHost::Kicked => break format!("{host} was attached from another machine"),
+                    FromHost::Kicked => {
+                        // Said before the channel closes, so whoever sees it
+                        // closed also sees why.
+                        taken.store(true, Ordering::Relaxed);
+                        break format!("{host} was attached from another machine");
+                    }
                     FromHost::Replay { session } => {
                         let Some(w) = watchers.get_mut(&session) else { continue };
                         // The host answers watches in order, each after its

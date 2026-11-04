@@ -41,13 +41,18 @@ it. What is refused, and how, is under *What a host project does not do*.
 
 - **One attach per host, for the whole process**, held on `Shared` (`crates/app/src/hosts.rs`):
   every window, project and session on a host shares it. It is made on first use (a host
-  project's page shown, a host session shown, the *Add* of the form) and made again only once its
-  stream has ended. Asks that arrive while one attach runs all wait on that one, so two never
-  install at once. The attach runs on the ACP runtime and its answer crosses back on a oneshot.
+  project's page shown, a host session shown, a host project shown in the Workbench, the *Add* of
+  the form) and made again only once its stream has ended. Asks that arrive while one attach runs
+  all wait on that one, so two never install at once. The attach runs on the ACP runtime and its
+  answer crosses back on a oneshot.
 - **The newer attach wins.** A second laptop attaching takes the host over; this one's sessions
-  end on *<host> was attached from another machine*. Nothing stops on the host.
+  end on *<host> was attached from another machine*. Nothing stops on the host, and nothing here
+  takes the host back by itself: the connection keeps why it closed (`HostConn::taken`), and only
+  a person's restart, show or *Try again* attaches again.
 - **A lost connection** ends every session watched over it on *lost the connection to <host>*.
-  Nothing tries again by itself: restarting the session attaches again.
+  A session comes back when restarted. The Workbench attaches again by itself when the connection
+  its files were shown over has closed (see *Files and git status*), never after another machine
+  took the host.
 - **Detaching never stops anything on the host.** Closing a host session in the window, removing
   its project, or quitting onehand lets go of the watch; the session and its agent run on there,
   and the project's page lists it.
@@ -168,7 +173,7 @@ Every attach opens by exchanging builds (`client::attach`):
 ## Files and git status
 
 - **One seam, `Disk`** (`crates/core/src/disk.rs`): this machine's disk or a host's. The Files
-  view, the editor and the git sweep call its five blocking methods (list a folder, read, save,
+  view, the editor and the git sweep call its four blocking methods (list a folder, read, save,
   git status) and do not know which they have. A host's call goes over the attach
   (`crates/core/src/host/client/files.rs`), where the host runs the same tree, editor and git
   functions on its own disk (`crates/host/src/files.rs`), answered off its stream loop so a slow
@@ -183,15 +188,22 @@ Every attach opens by exchanging builds (`client::attach`):
   failure stands as a line with *Try again*, which attaches again. With an attach already live the
   files show at once, with no waiting line.
 - **A dropped attach is made again only when it is needed:** on window activation and at a turn's
-  end, and only when the connection the Workbench shows has closed (`Workbench::lost_host`). One
-  still attaching, or whose attach failed, is left to that attach or to *Try again*.
+  end, and only when the connection the Workbench shows has closed (`Workbench::attach_again`). One
+  still attaching, or whose attach failed, is left to that attach or to *Try again*. One the host
+  closed because another machine attached is not made again: the Workbench says *<host> was
+  attached from another machine* with *Try again*, which takes the host back.
 - **Git status is read for a host root only while its attach is live** (`hosts::live`,
   `crates/app/src/shell/git_sweep.rs`), in the same pass as the local roots and kept by path, so
   opening the window never attaches to every host. A host that is not attached shows no git
-  status until it is shown.
+  status until it is shown. Once read it shows where a local root's does: the rail's line, the
+  project page's header, the workspace overview's tile, the status bar and the tree's badges. A
+  host root on a path a local root in the workspace also has gets none, so the path-keyed status
+  never mixes the two. Having a status offers nothing more on a host project (see below).
 - **A folder that cannot be read** says *Could not read <folder> on <host>: …* under the rows
-  (`crates/files/src/view.rs`), and the line clears when that folder lists or is folded. A host
-  that dropped says so the same way and never draws an empty tree that looks real.
+  (`crates/files/src/view.rs`), and the line clears when that folder lists or is folded. The host
+  answers a folder that is missing or that it cannot open with an error, not an empty listing
+  (`crates/host/src/files.rs`), and a host that dropped says so the same way, so neither draws an
+  empty tree that looks real.
 - **A buffer saves only to the machine it was read from:** each Editor buffer keeps the `Disk` it
   was read through (`crates/editor/src/buffers.rs`), so a save never lands on the other side of a
   local and a host project on one path. The mtime guard runs on the host, against its clock, and a
@@ -212,8 +224,8 @@ Refused or left out, each in one place:
   Settings list of unattended projects leaves it out.
 - **The Tasks, Issues, Workflows and Schedules pages** leave it out, and starting a workflow on it
   is a warning toast, *<project> is on a host; workflows do not run there yet*. The workspace
-  overview keeps it: its tile reads *On <host>* and counts its sessions only, and it is not one of
-  the overview's project filters.
+  overview keeps it: its tile reads *On <host>*, then its git status when it has one, counts its
+  sessions only, and is not one of the overview's project filters.
 - **onehand's tools** do not list it, and a call naming it is refused, *<project> is on a host;
   onehand's tools do not reach it yet* ([control.md](control.md#the-tools)). A host session's
   agent is given no token, so it cannot call them.

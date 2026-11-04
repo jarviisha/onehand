@@ -15,6 +15,9 @@ use onehand_core::tree::read_dir_sorted;
 pub(crate) fn answer(call: Call) -> Result<Reply, String> {
     let reply = match call {
         Call::ReadDir { path } => {
+            // The listing reads a folder it cannot open as empty, which on the
+            // laptop would look like a real, empty tree: say why instead.
+            std::fs::read_dir(&path).map_err(|e| e.to_string())?;
             let (entries, cut) = read_dir_sorted(&path);
             Reply::Listing { entries, cut }
         }

@@ -94,6 +94,15 @@ impl Disk {
         }
     }
 
+    /// Whether this is a host's disk whose attach the host closed because
+    /// another machine attached.
+    pub fn taken(&self) -> bool {
+        match self {
+            Disk::Local => false,
+            Disk::Host(h) => h.conn.taken(),
+        }
+    }
+
     /// The host's name, or None for this machine.
     pub fn host(&self) -> Option<&str> {
         match self {

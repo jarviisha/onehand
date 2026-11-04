@@ -1,5 +1,6 @@
 //! The `git status` sweep: every project's repository read again, off the
-//! UI loop, and pushed to whatever names a branch or marks a change.
+//! UI loop, and pushed to whatever names a branch or marks a change; and the
+//! one call that re-reads everything derived from the files on disk.
 
 use super::Shell;
 use gpui::{Context, SharedString};
@@ -8,6 +9,38 @@ use onehand_core::workspace::{HostName, Workspace};
 use std::path::PathBuf;
 
 impl Shell {
+    /// Re-read everything derived from the files on disk.
+    ///
+    /// Two panels read the working tree and neither notices it change: the
+    /// rail's `branch · N changed` and the Files tree. Both were seeded once
+    /// and left, which made them stale from the first turn
+    /// onwards -- the moment they start being worth reading.
+    ///
+    /// One call for both, because there is one cause. Cheap enough to run on
+    /// every turn end: `git status` is one process per root off the UI loop,
+    /// and the rescan covers only the directories currently on screen.
+    ///
+    /// A host project on screen whose attach has ended since its files were
+    /// shown is attached again first. One still attaching, failed, or taken
+    /// by another machine since, is left to that attach or to *Try again*.
+    pub(crate) fn refresh_worktree(&mut self, cx: &mut Context<Self>) {
+        if self
+            .workbench
+            .update(cx, |panel, cx| panel.attach_again(cx))
+        {
+            self.try_host_again(cx);
+        }
+        self.refresh_git(cx);
+
+        self.workbench.update(cx, |panel, cx| panel.rescan(cx));
+        self.tell_issues_page(&onehand_workbench::Request::Rescan, cx);
+        // A run leaving a note or a sync landing changes the issue files too,
+        // read again while the workspace page is what is showing.
+        if self.workspace_shown(cx) {
+            self.workspace_page.update(cx, |page, cx| page.reload(cx));
+        }
+    }
+
     /// Refresh `git status` for every root, off the UI loop.
     ///
     /// Uses core's blocking reader on GPUI's background executor rather than
@@ -45,10 +78,7 @@ impl Shell {
                         return;
                     }
                     shell.window.git = scanned.into_iter().collect();
-                    let git = shell.window.git.clone();
-                    shell
-                        .workbench
-                        .update(cx, |panel, cx| panel.set_git(git, cx));
+                    shell.tell_workbench_git(cx);
                     // The workspace page's project tiles name each branch.
                     if shell.page_shown(cx) {
                         let local = shell.local_page_projects();
@@ -85,11 +115,29 @@ impl Shell {
         })
         .detach();
     }
+
+    /// Hand the Workbench the window's `git status`, for its tree's badges.
+    /// A host's folder on screen on a path a folder here also has is given
+    /// none, since what is kept under that path is the local one's.
+    pub(super) fn tell_workbench_git(&mut self, cx: &mut Context<Self>) {
+        let mut git = self.window.git.clone();
+        if let Some(root) = self.window.workspace.active_root()
+            && crate::state::shares_local_path(&self.window.workspace, root)
+        {
+            git.remove(&root.path);
+        }
+        self.workbench
+            .update(cx, |panel, cx| panel.set_git(git, cx));
+    }
 }
 
 /// The roots a `git status` sweep reads, each with the disk it is read
 /// through: those on this machine, and those on a host `live` has an attach
 /// to. A host not attached is left out rather than attached for a sweep.
+///
+/// What a sweep reads is kept by path alone, so a host's folder on a path a
+/// folder here also has is left out too: its status would be read as the
+/// local one's, and the local one's as its.
 pub(super) fn git_roots(
     workspace: &Workspace,
     live: impl Fn(&HostName) -> Option<Disk>,
@@ -100,6 +148,7 @@ pub(super) fn git_roots(
         .filter_map(|root| {
             let disk = match root.on_host() {
                 None => Disk::Local,
+                Some(_) if crate::state::shares_local_path(workspace, root) => return None,
                 Some(host) => live(host)?,
             };
             Some((root.path.clone(), disk))

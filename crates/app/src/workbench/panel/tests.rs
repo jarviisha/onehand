@@ -163,13 +163,13 @@ fn a_host_attach_made_again_reads_the_tree_again(cx: &mut TestAppContext) {
     panel.update(cx, |panel, cx| {
         panel.set_root(root.clone(), host_disk(&rt), cx)
     });
-    panel.read_with(cx, |panel, _| assert!(panel.lost_host()));
+    assert!(panel.update(cx, |panel, cx| panel.attach_again(cx)));
 
     panel.update(cx, |panel, cx| {
         panel.refuse(Some(Refusal::Waiting("Attaching to vps…".into())), cx)
     });
     // Attaching already: nothing to attach again for.
-    panel.read_with(cx, |panel, _| assert!(!panel.lost_host()));
+    assert!(!panel.update(cx, |panel, cx| panel.attach_again(cx)));
 
     editor.borrow_mut().clear();
     panel.update(cx, |panel, cx| {
@@ -187,7 +187,35 @@ fn a_local_root_is_never_lost(cx: &mut TestAppContext) {
     panel.update(cx, |panel, cx| {
         panel.set_root(PathBuf::from("/srv/app"), Disk::Local, cx)
     });
-    panel.read_with(cx, |panel, _| assert!(!panel.lost_host()));
+    assert!(!panel.update(cx, |panel, cx| panel.attach_again(cx)));
+}
+
+/// An attach the host closed because another machine attached is not made
+/// again: the panel says who holds the host, and *Try again* is the way back.
+#[gpui::test]
+fn a_host_taken_by_another_machine_is_not_attached_again(cx: &mut TestAppContext) {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap();
+    let (panel, _, _) = panel(cx);
+    let taken = Disk::Host(HostDisk::new(
+        HostConn::taken_from("vps"),
+        rt.handle().clone(),
+    ));
+    panel.update(cx, |panel, cx| {
+        panel.set_root(PathBuf::from("/srv/app"), taken, cx)
+    });
+    assert!(!panel.update(cx, |panel, cx| panel.attach_again(cx)));
+    panel.read_with(cx, |panel, _| {
+        assert_eq!(
+            panel.refused,
+            Some(Refusal::Failed(
+                "vps was attached from another machine".into()
+            ))
+        )
+    });
+    // Standing, it asks for nothing more until a person answers it.
+    assert!(!panel.update(cx, |panel, cx| panel.attach_again(cx)));
 }
 
 #[gpui::test]
