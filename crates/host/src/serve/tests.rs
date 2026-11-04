@@ -485,3 +485,30 @@ async fn a_hello_that_does_not_take_is_welcome_once_the_attach_before_it_went() 
     }
     panic!("never welcomed");
 }
+
+#[tokio::test]
+async fn the_switch_is_on_until_set_off() {
+    let dir = scratch("bypass");
+    let hub = hub_in(&dir);
+    let (out, mut lines) = mpsc::unbounded_channel();
+    let mut ask = |id, on| {
+        let call = Call::Bypass {
+            cwd: "/srv/app".into(),
+            on,
+        };
+        let ask = serde_json::to_string(&Question { id, call }).unwrap();
+        assert!(!answer(&hub, &terms_in(), &Build("b1".into()), &out, &ask));
+        match lines.try_recv() {
+            Ok(FromHost::Answer {
+                result: Ok(Reply::Bypass { on }),
+                ..
+            }) => on,
+            other => panic!("not the switch: {other:?}"),
+        }
+    };
+    assert!(ask(1, None));
+    assert!(!ask(2, Some(false)));
+    assert!(!ask(3, None));
+    assert!(ask(4, Some(true)));
+    let _ = fs::remove_dir_all(&dir);
+}

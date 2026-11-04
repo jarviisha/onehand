@@ -432,6 +432,15 @@ fn answer(
             .resize(term, cols, rows)
             .map(|()| Reply::Done),
         Call::TermClose { term } => terms::lock(terms).close(term).map(|()| Reply::Done),
+        // On the loop: it touches one small file.
+        Call::Bypass { cwd, on } => {
+            let mut hub = lock(hub);
+            match on {
+                None => Ok(hub.bypass(&cwd)),
+                Some(on) => hub.set_bypass(cwd, on),
+            }
+            .map(|on| Reply::Bypass { on })
+        }
     };
     let _ = out.send(FromHost::Answer { id, result });
     exit

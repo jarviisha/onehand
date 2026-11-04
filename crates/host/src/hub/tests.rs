@@ -619,3 +619,115 @@ async fn watch_after_past_the_end_replays_all_and_says_none() {
     let mut lines = watch_after(&hub, &fake.session, Some(2));
     assert_eq!(replayed(&mut lines), (None, vec![0, 1]));
 }
+
+fn asking(rpc: u64) -> AcpEvent {
+    let option = |id: &str, kind: &str| onehand_core::acp::PermissionOption {
+        id: id.into(),
+        name: id.into(),
+        kind: kind.into(),
+    };
+    AcpEvent::Permission(PermissionRequest {
+        rpc_id: json!(rpc),
+        tool_call_id: None,
+        kind: onehand_core::acp::ToolKind::Other,
+        title: "run it".into(),
+        options: vec![option("always", "allow_always"), option("once", "allow_once")],
+        child: None,
+    })
+}
+
+fn allowed(request: AcpRequest, rpc: u64) {
+    let AcpRequest::PermissionResponse { rpc_id, option_id } = request else {
+        panic!("the agent got something other than an answer");
+    };
+    assert_eq!(rpc_id, json!(rpc));
+    assert_eq!(option_id.as_deref(), Some("once"));
+}
+
+fn last_line(hub: &Arc<Mutex<Hub>>, session: &HostSession) -> Entry {
+    let dir = lock(hub).sessions[session].dir.clone();
+    let (read, _) = journal::read_from(&dir, journal::Mark::default()).unwrap();
+    read.into_iter().last().unwrap().2
+}
+
+#[tokio::test]
+async fn a_card_is_answered_while_the_switch_is_on() {
+    let (hub, opened) = hub("bypass-on");
+    let mut fake = open(&hub, &opened, true);
+    let mut lines = watch(&hub, &fake.session);
+    fake.push(asking(7));
+    allowed(fake.request().await, 7);
+    let live = entries(&mut lines, 2).await;
+    assert!(matches!(
+        &live[1].1,
+        Entry::Answered {
+            card: Some(AcpEvent::Permission(_)),
+            ..
+        }
+    ));
+    assert!(matches!(
+        last_line(&hub, &fake.session),
+        Entry::Answered { card: Some(_), .. }
+    ));
+}
+
+#[tokio::test]
+async fn a_card_waits_while_the_switch_is_off() {
+    let (hub, opened) = hub("bypass-off");
+    lock(&hub).set_bypass("/tmp".into(), false).unwrap();
+    let mut fake = open(&hub, &opened, true);
+    fake.push(asking(7));
+    settle().await;
+    assert!(fake.requests.try_recv().is_err());
+    assert!(matches!(
+        last_line(&hub, &fake.session),
+        Entry::Event(AcpEvent::Permission(_))
+    ));
+}
+
+#[tokio::test]
+async fn switching_on_answers_cards_already_waiting() {
+    let (hub, opened) = hub("bypass-later");
+    lock(&hub).set_bypass("/tmp".into(), false).unwrap();
+    let mut fake = open(&hub, &opened, true);
+    fake.push(asking(7));
+    settle().await;
+    assert!(lock(&hub).set_bypass("/tmp".into(), true).unwrap());
+    allowed(fake.request().await, 7);
+    assert!(matches!(
+        last_line(&hub, &fake.session),
+        Entry::Answered { card: None, .. }
+    ));
+}
+
+#[tokio::test]
+async fn a_card_answered_by_the_person_is_not_answered_again() {
+    let (hub, opened) = hub("bypass-twice");
+    lock(&hub).set_bypass("/tmp".into(), false).unwrap();
+    let mut fake = open(&hub, &opened, true);
+    fake.push(asking(7));
+    settle().await;
+    let answer = AcpRequest::PermissionResponse {
+        rpc_id: json!(7),
+        option_id: Some("once".into()),
+    };
+    lock(&hub).request(&fake.session, answer.clone()).unwrap();
+    lock(&hub).set_bypass("/tmp".into(), true).unwrap();
+    // A second answer from the person, after the card has one, goes nowhere.
+    lock(&hub).request(&fake.session, answer).unwrap();
+    allowed(fake.request().await, 7);
+    settle().await;
+    assert!(fake.requests.try_recv().is_err(), "one answer only");
+}
+
+#[tokio::test]
+async fn the_switch_survives_a_restart() {
+    let dir = scratch("bypass-restart");
+    {
+        let (hub, _) = hub_on(dir.clone());
+        lock(&hub).set_bypass("/srv/app".into(), false).unwrap();
+    }
+    let (hub, _) = hub_on(dir);
+    assert!(!lock(&hub).bypass(std::path::Path::new("/srv/app")));
+    assert!(lock(&hub).bypass(std::path::Path::new("/srv/other")));
+}
