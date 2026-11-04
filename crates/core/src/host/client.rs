@@ -468,7 +468,6 @@ async fn pump<R, W>(
                         if !w.takes(seq) {
                             continue;
                         }
-                        let mut ended = false;
                         let event = match entry {
                             Entry::Ready(ready) if w.replaying => {
                                 w.ready = Some(ready);
@@ -477,12 +476,12 @@ async fn pump<R, W>(
                             Entry::Ready(ready) => {
                                 connected(live(&mut forwarders, &me, &session), ready)
                             }
-                            Entry::Event(event) => {
-                                ended = matches!(event, AcpEvent::Disconnected(_));
+                            entry @ (Entry::Event(_) | Entry::Request(_)) => {
+                                let Some(event) = super::copy::as_event(entry) else { continue };
                                 event
                             }
-                            Entry::Request(request) => AcpEvent::Echo(request),
                         };
+                        let ended = matches!(event, AcpEvent::Disconnected(_));
                         // 0 is a line that kept no time: the chat stamps it now.
                         if at != 0 && w.said_at != Some(at) {
                             w.said_at = Some(at);
