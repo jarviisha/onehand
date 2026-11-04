@@ -308,3 +308,13 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
 - **The rows of a host project's sessions take no keyboard focus**, as the rows of a local
   project page's Tasks and Schedules boxes do not; they are reached by pointer only. Making each box row a tab
   stop with `Enter` opening it would fix all three.
+- **A clone running past 15 minutes reads as failed on the laptop while git may go on.** The
+  laptop gives up waiting after `CLONE_WAIT`, but the host service sets no deadline of its own on
+  `git clone`, so the clone can finish there, leaving the folder, which the form's next *Clone*
+  then refuses as already there. A host-side deadline, or a call to cancel one, would close it.
+- **The folder rows in *Add a project on a host* take no keyboard focus.** They are reached by
+  pointer only, as the Files tree's rows are; *Browse* and the caret are tab stops, the rows are
+  not. Typing the path in the field is the keyboard's way.
+- **The host menu reads a plain subset of `~/.ssh/config`.** An `Include` globs only `*` in the
+  file name, not `?` or `[]`, and the hosts of a `Match` block are not offered; an alias ssh would
+  resolve that way is typed instead.
