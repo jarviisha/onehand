@@ -53,7 +53,8 @@ pub(crate) fn answer(call: Call) -> Result<Reply, String> {
         | Call::TermWatch { .. }
         | Call::TermWrite { .. }
         | Call::TermResize { .. }
-        | Call::TermClose { .. } => return Err("not a file call".into()),
+        | Call::TermClose { .. }
+        | Call::Bypass { .. } => return Err("not a file call".into()),
     };
     serde_json::to_vec(&reply).map_err(|e| format!("the reply cannot be sent: {e}"))?;
     Ok(reply)

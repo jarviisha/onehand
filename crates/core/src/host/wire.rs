@@ -163,6 +163,12 @@ pub enum Call {
     TermClose {
         term: HostTerm,
     },
+    /// Whether the host answers the cards of sessions in `cwd` by itself;
+    /// with `on`, set it first.
+    Bypass {
+        cwd: PathBuf,
+        on: Option<bool>,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -200,6 +206,10 @@ pub enum Reply {
     Terms(Vec<TermInfo>),
     /// A `Hello` without `take`, refused: another laptop's attach holds the host.
     Held,
+    /// Whether the host answers a folder's cards by itself, as it is now.
+    Bypass {
+        on: bool,
+    },
 }
 
 /// What the host sends, one per line.
@@ -244,6 +254,13 @@ pub enum Entry {
     Ready(Readiness),
     Event(AcpEvent),
     Request(AcpRequest),
+    /// A card the host answered by itself, with that answer. The card is
+    /// here when it is journaled in the same line, so a laptop takes the two
+    /// at once; none when it was journaled earlier, while it waited.
+    Answered {
+        card: Option<Box<AcpEvent>>,
+        answer: AcpRequest,
+    },
 }
 
 /// What an agent that came up says of its session.
@@ -271,7 +288,7 @@ pub struct TermInfo {
 /// Whether a session is mid-turn after `entry`, given whether it was before.
 pub fn busy_after(busy: bool, entry: &Entry) -> bool {
     match entry {
-        Entry::Ready(_) => busy,
+        Entry::Ready(_) | Entry::Answered { .. } => busy,
         Entry::Request(request) => match request {
             AcpRequest::Prompt { .. } => true,
             AcpRequest::Cancel

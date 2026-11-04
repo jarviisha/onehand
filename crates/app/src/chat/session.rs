@@ -481,6 +481,7 @@ impl ChatSession {
                             let mut next = Some(first);
                             let mut changed = false;
                             let mut quiet = false;
+                            let mut asked = None;
                             let mut taken = 0;
                             while let Some(event) = next.take() {
                                 taken += 1;
@@ -506,9 +507,20 @@ impl ChatSession {
                                     outcome.cycle_ended && session.chat.unsaved_between_turns();
                                 let told = outcome.turn_ended
                                     || cycle_ended
-                                    || outcome.asked_user.is_some()
                                     || outcome.pick_refused.is_some()
                                     || outcome.stop_refused.is_some();
+                                // A card is said once the events after it are
+                                // in, as a card the host answered comes with
+                                // its answer and waits on nobody; but before
+                                // anything said of this event, as it was
+                                // asked first.
+                                asked = outcome.asked_user.or(asked);
+                                if let Some(ask) = asked
+                                    .take_if(|_| told)
+                                    .filter(|_| session.chat.awaiting_permission())
+                                {
+                                    cx.emit(ChatEvent::AwaitingUser(ask));
+                                }
                                 if outcome.turn_ended {
                                     cx.emit(ChatEvent::TurnEnded);
                                 }
@@ -517,9 +529,6 @@ impl ChatSession {
                                 }
                                 if let Some(why) = outcome.stop_refused.clone() {
                                     cx.emit(ChatEvent::StopRefused(why));
-                                }
-                                if let Some(ask) = outcome.asked_user {
-                                    cx.emit(ChatEvent::AwaitingUser(ask));
                                 }
                                 if let Some(why) = outcome.pick_refused.clone() {
                                     cx.emit(ChatEvent::PickRefused(why));
@@ -531,11 +540,18 @@ impl ChatSession {
                                     let spec = seen.clone();
                                     cx.update_global::<Shared, _>(|s, _| s.saw_offer(spec, offer));
                                 }
-                                if !told && taken < EVENT_BATCH {
+                                // A card takes the event after it in, past
+                                // the cap: its answer, when the host gave one.
+                                let card = outcome.asked_user.is_some();
+                                if !told && (taken < EVENT_BATCH || card) {
                                     // A stream that has ended answers `None`
                                     // again to the loop's own next wait.
                                     next = events.next().now_or_never().flatten();
                                 }
+                            }
+                            if let Some(ask) = asked.filter(|_| session.chat.awaiting_permission())
+                            {
+                                cx.emit(ChatEvent::AwaitingUser(ask));
                             }
                             if changed {
                                 session.sync_md(cx);

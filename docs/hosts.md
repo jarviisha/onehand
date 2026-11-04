@@ -253,6 +253,43 @@ Every attach opens by exchanging builds (`client::attach`):
 - **Attachments are not sent.** A prompt goes to the agent without them, and the transcript says
   *Attachments are not sent to a host yet; the prompt went without them*.
 
+## The permission bypass
+
+A session left alone on a host does not stand still on a card: while a folder's switch is on, the
+host service answers every card its sessions park, so the work goes on while nobody watches.
+
+- **One switch per host project, on by default,** *Answer cards on the host*, in the *Settings*
+  box of its project page (see [screens.md](screens.md#pages-without-a-session)). The host keeps
+  it, per folder, in `bypass.json` in its data directory, as the folders switched off; a folder
+  it never heard of is on (`Hub::bypass`, `crates/host/src/hub.rs`). A `bypass.json` that cannot
+  be read is not taken for none kept: the host answers no card at all and refuses to change the
+  switch, saying why in `host.log`, until a person mends or removes the file. So it holds while the laptop
+  is away, through a restart of the service, and for whichever laptop attaches. The page reads it
+  over the attach with the session list (the wire's `Bypass`, `HostConn::bypass`) and draws no box
+  while it has not; a press shows the new state at once, and a host that does not take it puts
+  the switch back with a toast, *Changing the switch on <host> failed: …*.
+- **What it costs is said under it, always:** an agent can then do anything the host's user can
+  on that host, `git push` and deleting files included. This is deliberate for hosts, a machine
+  apart from the laptop, and changes nothing for unattended runs.
+- **A permission is allowed** with its narrowest grant, *allow once* before *allow always*
+  (`PermissionRequest::bypass_answer`, `crates/core/src/acp/types.rs`). One with no grant to give
+  waits for a person.
+- **A question is answered, never picked for:** each question's free text (a select's *Other*
+  box, or a text field) gets *Nobody is watching this session to answer. Decide on your own
+  judgement and carry on, and in your reply say what you chose and why.*
+  (`Elicitation::bypass_answer`, `BYPASS_ANSWER`). A form with nowhere to write is declined,
+  which tells the agent to carry on without an answer. The transcript keeps the question and that
+  answer, so the person reads in the morning what was decided.
+- **Answered as the card arrives, in one journal line with it** (`Entry::Answered`,
+  `crates/core/src/host/wire.rs`), so a laptop takes the card and its answer together and draws
+  the card already answered. A card that is answered by then raises no desktop notice and no
+  Telegram message: a session says a card waits only once the events that came with it are in,
+  and only if one still does (`crates/app/src/chat/session.rs`).
+- **Switching it on answers the cards already waiting** in that folder's sessions, each journaled
+  as its answer alone. A card has one answer: a person's that comes after the host's goes
+  nowhere, and the host never answers one a person already has. A card stays waiting past its
+  turn's end (a background subagent's may), so a person's answer to it still reaches the agent.
+
 ## The journal and replay
 
 - **One JSON line per entry**, `{"at":<unix seconds>,"entry":…}`, appended and never rewritten
@@ -391,9 +428,7 @@ Refused or left out, each in one place:
 The steps of the design still to come, each its own change; the gaps they leave meanwhile are in
 [known-gaps.md](known-gaps.md). The host's own UI is built: picking a host, browsing its folders and
 cloning (*Adding a host project*), and re-attaching by itself and the laptop's copy (*Attach and
-detach*, *The laptop's copy*).
+detach*, *The laptop's copy*); so is the permission bypass.
 
-- **The permission bypass:** a switch per host project under which the host answers every
-  permission itself, so a session never waits on a card overnight.
 - **Offloaded projects:** a folder on the laptop whose sessions run on a host against a mirror of
   it, with a key saying which side may change the code, and then a branch mode with no key.

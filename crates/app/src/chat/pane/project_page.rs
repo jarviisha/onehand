@@ -56,6 +56,9 @@ pub(super) struct EmptyProject {
     pub(super) listing: bool,
     /// The newest ask of the host, so an older answer landing late is dropped.
     pub(super) asked: u64,
+    /// Whether the host answers the folder's cards by itself, as it last
+    /// said; `None` until it has, which draws no switch.
+    pub(super) bypass: Option<bool>,
     /// What the page's own menu needs to know about the project and cannot
     /// work out: they live in the workspace tree and in a `git status` sweep,
     /// and both are the shell's. Pushed rather than asked for, like everything
@@ -532,7 +535,14 @@ impl ChatPane {
             })
             .children(tasks)
             .children(schedules)
-            .children(settings);
+            .children(settings)
+            .children(
+                project
+                    .host
+                    .as_ref()
+                    .zip(project.bypass)
+                    .map(|(host, on)| host::bypass_box(host, on, cx)),
+            );
 
         div()
             .size_full()

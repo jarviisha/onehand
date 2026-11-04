@@ -3405,3 +3405,22 @@ fn a_cut_link_settles_without_saying_it_failed() {
     };
     assert!(!th.is_running());
 }
+
+/// A card a host answered by itself arrives with its answer: once both are
+/// in, nothing waits, though the card on its own said it asked.
+#[test]
+fn a_card_with_its_answer_waits_on_nobody() {
+    let (mut chat, _rx) = chat_with_tx();
+    let req = ask_item().req;
+    let rpc_id = req.rpc_id.clone();
+    assert_eq!(
+        chat.apply(AcpEvent::Elicitation(req)).asked_user,
+        Some(UserAsk::Question)
+    );
+    assert!(chat.awaiting_permission());
+    chat.apply(AcpEvent::Echo(AcpRequest::ElicitationResponse {
+        rpc_id,
+        outcome: crate::acp::ElicitOutcome::Decline,
+    }));
+    assert!(!chat.awaiting_permission());
+}

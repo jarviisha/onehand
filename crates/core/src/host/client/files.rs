@@ -63,6 +63,24 @@ impl HostConn {
         self.ask_for(Call::Home, |a| a.home).await
     }
 
+    /// Whether the host answers the cards of sessions in `cwd` by itself.
+    pub async fn bypass(&self, cwd: &Path) -> Result<bool, HostError> {
+        let call = Call::Bypass {
+            cwd: cwd.to_path_buf(),
+            on: None,
+        };
+        self.ask_for(call, |a| a.bypass).await
+    }
+
+    /// Set whether the host answers `cwd`'s cards by itself; what it is now.
+    pub async fn set_bypass(&self, cwd: &Path, on: bool) -> Result<bool, HostError> {
+        let call = Call::Bypass {
+            cwd: cwd.to_path_buf(),
+            on: Some(on),
+        };
+        self.ask_for(call, |a| a.bypass).await
+    }
+
     /// Have the host `git clone` `url` into `into`, which must not exist yet.
     pub async fn clone_repo(&self, url: &str, into: &Path) -> Result<(), HostError> {
         let call = Call::Clone {

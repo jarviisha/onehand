@@ -161,3 +161,51 @@ fn a_clone_is_named_by_its_urls_last_segment() {
     assert_eq!(clone_name("https://x/.git"), None);
     assert_eq!(clone_name("ssh://git@x:22/o/repo").as_deref(), Some("repo"));
 }
+
+fn allow() -> AcpRequest {
+    AcpRequest::PermissionResponse {
+        rpc_id: serde_json::json!(7),
+        option_id: Some("o".into()),
+    }
+}
+
+#[test]
+fn an_answer_does_not_change_busy() {
+    let answered = Entry::Answered {
+        card: None,
+        answer: allow(),
+    };
+    assert!(busy_after(true, &answered));
+    assert!(!busy_after(false, &answered));
+}
+
+#[test]
+fn the_switch_calls_round_trip() {
+    let call = round_trips(&Call::Bypass {
+        cwd: "/srv/app".into(),
+        on: None,
+    });
+    assert!(
+        matches!(call, Call::Bypass { cwd, on: None } if cwd == std::path::Path::new("/srv/app"))
+    );
+    let call = round_trips(&Call::Bypass {
+        cwd: "/srv/app".into(),
+        on: Some(false),
+    });
+    assert!(matches!(
+        call,
+        Call::Bypass {
+            on: Some(false),
+            ..
+        }
+    ));
+    assert!(matches!(
+        round_trips(&Reply::Bypass { on: true }),
+        Reply::Bypass { on: true }
+    ));
+    let line = round_trips(&Entry::Answered {
+        card: None,
+        answer: allow(),
+    });
+    assert!(matches!(line, Entry::Answered { card: None, .. }));
+}

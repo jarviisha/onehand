@@ -4,7 +4,7 @@
 //! from the start, then what comes after, so a laptop that went away mid-turn
 //! loses nothing.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -12,7 +12,9 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use futures::stream::BoxStream;
 use futures::StreamExt as _;
-use onehand_core::acp::{AcpEvent, AcpRequest, Opening, ReqTx, SessionOpts};
+use onehand_core::acp::{
+    AcpEvent, AcpRequest, Elicitation, Opening, PermissionRequest, ReqTx, SessionOpts,
+};
 use onehand_core::config::{AgentSpec, Launch};
 use onehand_core::host::journal::{self, Journal, Mark};
 use onehand_core::host::wire::{busy_after, Entry, FromHost, HostSession, Readiness, SessionInfo};
@@ -37,6 +39,15 @@ const STOPPED: &str = "The host service stopped while this session was running";
 /// `dir/sessions/<id>/session.json`: what a service started again needs to list the session.
 const RECORD: &str = "session.json";
 
+/// `dir/bypass.json`: the folders whose cards wait for a person. Every other
+/// folder's are answered by the host, so a folder never seen is answered.
+const BYPASS: &str = "bypass.json";
+
+#[derive(Default, Serialize, Deserialize)]
+struct Bypass {
+    off: BTreeSet<PathBuf>,
+}
+
 #[derive(Serialize, Deserialize)]
 struct Record {
     cwd: PathBuf,
@@ -54,6 +65,10 @@ struct Session {
     tx: Option<ReqTx>,
     /// The laptop watching this session, if one is.
     watcher: Option<UnboundedSender<FromHost>>,
+    /// Cards journaled that nobody has answered yet.
+    parked: Vec<Parked>,
+    /// The rpc ids of the cards the host answered itself.
+    answered: Vec<serde_json::Value>,
     busy: bool,
     ended: bool,
 }
@@ -65,6 +80,10 @@ pub(crate) struct Hub {
     connector: Connector,
     sessions: BTreeMap<HostSession, Session>,
     counter: u64,
+    /// The folders whose cards wait for a person, or why they could not be
+    /// read, in which case every folder's cards wait: a choice kept on disk
+    /// and lost is not taken for a folder never switched.
+    off: Result<BTreeSet<PathBuf>, String>,
 }
 
 impl Hub {
@@ -75,6 +94,7 @@ impl Hub {
             connector,
             sessions: BTreeMap::new(),
             counter: 0,
+            off: Ok(BTreeSet::new()),
         }
     }
 
@@ -82,6 +102,20 @@ impl Hub {
     /// `dir/sessions/`, each ended: its agent went with that service. One the
     /// journal does not show ending is ended here, so each watch of it ends once.
     pub(crate) fn load(&mut self) {
+        // None kept is every folder answered, the default; one that cannot
+        // be read answers none, and is left for a person to look at.
+        self.off = match fs::read(self.dir.join(BYPASS)) {
+            Ok(bytes) => serde_json::from_slice::<Bypass>(&bytes)
+                .map(|bypass| bypass.off)
+                .map_err(|e| e.to_string()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(BTreeSet::new()),
+            Err(e) => Err(e.to_string()),
+        }
+        .map_err(|e| {
+            let why = format!("{BYPASS} could not be read, so no card is answered: {e}");
+            log(&why);
+            why
+        });
         let dirs = match fs::read_dir(self.dir.join("sessions")) {
             Ok(dirs) => dirs,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
@@ -152,6 +186,8 @@ impl Hub {
                 agent: agent.name,
                 tx: None,
                 watcher: None,
+                parked: Vec::new(),
+                answered: Vec::new(),
                 busy: false,
                 ended: false,
             },
@@ -261,13 +297,25 @@ impl Hub {
         session: &HostSession,
         request: AcpRequest,
     ) -> Result<(), String> {
-        let s = self.sessions.get(session).ok_or_else(|| unknown(session))?;
+        let s = self
+            .sessions
+            .get_mut(session)
+            .ok_or_else(|| unknown(session))?;
         if s.ended {
             return Err(ENDED.into());
+        }
+        // A card has one answer: one the host gave already wins, and the
+        // person's goes nowhere rather than reach the agent a second time.
+        let rpc = answers(&request);
+        if rpc.is_some_and(|rpc| s.answered.contains(rpc)) {
+            return Ok(());
         }
         let Some(tx) = s.tx.clone() else {
             return Err("the agent is still starting".into());
         };
+        if let Some(rpc) = rpc {
+            s.parked.retain(|card| card.rpc() != rpc);
+        }
         let (request, dropped) = match request {
             AcpRequest::Prompt { text, attachments } if !attachments.is_empty() => (
                 AcpRequest::Prompt {
@@ -298,6 +346,82 @@ impl Hub {
         Ok(())
     }
 
+    /// Whether the host answers the cards of sessions in `cwd` by itself.
+    pub(crate) fn bypass(&self, cwd: &Path) -> bool {
+        self.off.as_ref().is_ok_and(|off| !off.contains(cwd))
+    }
+
+    /// Set whether the host answers `cwd`'s cards by itself, keeping it on
+    /// disk first; switched on, the cards already waiting there are answered.
+    pub(crate) fn set_bypass(&mut self, cwd: PathBuf, on: bool) -> Result<bool, String> {
+        let mut off = self.off.clone()?;
+        match on {
+            true => off.remove(&cwd),
+            false => off.insert(cwd.clone()),
+        };
+        write_bypass(&self.dir, &Bypass { off })
+            .map_err(|e| format!("Could not keep the switch: {e}"))
+            .map(|off| self.off = Ok(off))?;
+        if on {
+            let waiting: Vec<HostSession> = self
+                .sessions
+                .iter()
+                .filter(|(_, s)| s.cwd == cwd && !s.parked.is_empty())
+                .map(|(id, _)| id.clone())
+                .collect();
+            for id in waiting {
+                let parked =
+                    std::mem::take(&mut self.sessions.get_mut(&id).expect("listed").parked);
+                for card in parked {
+                    match self.answer(&id, &card) {
+                        Some(answer) => self.record(&id, Entry::Answered { card: None, answer }),
+                        None => {
+                            if let Some(s) = self.sessions.get_mut(&id) {
+                                s.parked.push(card);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(self.bypass(&cwd))
+    }
+
+    /// Journal a card the agent parked: answered at once while the switch
+    /// is on, the two in one line; else left for a person.
+    fn card(&mut self, session: &HostSession, card: Parked) {
+        match self.answer(session, &card) {
+            Some(answer) => self.record(
+                session,
+                Entry::Answered {
+                    card: Some(Box::new(card.event())),
+                    answer,
+                },
+            ),
+            None => {
+                if let Some(s) = self.sessions.get_mut(session) {
+                    s.parked.push(card.clone());
+                }
+                self.record(session, Entry::Event(card.event()));
+            }
+        }
+    }
+
+    /// The answer the host sent the agent for `card`, when its folder's
+    /// switch is on, the card has one and the agent took it.
+    fn answer(&self, session: &HostSession, card: &Parked) -> Option<AcpRequest> {
+        let s = self.sessions.get(session)?;
+        if !self.bypass(&s.cwd) {
+            return None;
+        }
+        let answer = match card {
+            Parked::Permission(p) => p.bypass_answer()?,
+            Parked::Question(e) => e.bypass_answer(),
+        };
+        s.tx.as_ref()?.send(answer.clone()).ok()?;
+        Some(answer)
+    }
+
     pub(crate) fn list(&self) -> Vec<SessionInfo> {
         self.sessions
             .iter()
@@ -325,6 +449,11 @@ impl Hub {
             return;
         };
         s.busy = busy_after(s.busy, &entry);
+        // A card answered by the host is never answered again.
+        match &entry {
+            Entry::Answered { answer, .. } => s.answered.extend(answers(answer).cloned()),
+            Entry::Ready(_) | Entry::Event(_) | Entry::Request(_) => {}
+        }
         let Some(journal) = &mut s.journal else {
             return log(&format!(
                 "session {session}: an entry came after the session ended"
@@ -340,8 +469,9 @@ impl Hub {
                 return;
             }
         };
+        // An answer the host gave is news to the laptop, as the agent's events are.
         let live = match &entry {
-            Entry::Ready(_) | Entry::Event(_) => true,
+            Entry::Ready(_) | Entry::Event(_) | Entry::Answered { .. } => true,
             Entry::Request(_) => false,
         };
         if !live {
@@ -366,6 +496,7 @@ impl Hub {
             s.busy = false;
             s.tx = None;
             s.journal = None;
+            s.parked.clear();
         }
     }
 }
@@ -394,6 +525,8 @@ fn load(id: &str, dir: &Path) -> Result<Session, String> {
         agent: record.agent,
         tx: None,
         watcher: None,
+        parked: Vec::new(),
+        answered: Vec::new(),
         busy: false,
         ended: true,
     })
@@ -410,6 +543,51 @@ fn end_journal(dir: &Path) -> std::io::Result<()> {
         Journal::open(dir)?.append(unix_secs(), &stopped)?;
     }
     Ok(())
+}
+
+/// Keep `bypass` whole, so a service that stops mid-write reads the last one;
+/// its set once written.
+fn write_bypass(dir: &Path, bypass: &Bypass) -> std::io::Result<BTreeSet<PathBuf>> {
+    let text = serde_json::to_string(bypass).map_err(std::io::Error::other)?;
+    onehand_core::config::write_atomic(&dir.join(BYPASS), &text)?;
+    Ok(bypass.off.clone())
+}
+
+/// The rpc id of the card a request answers, if it answers one.
+fn answers(request: &AcpRequest) -> Option<&serde_json::Value> {
+    match request {
+        AcpRequest::PermissionResponse { rpc_id, .. }
+        | AcpRequest::ElicitationResponse { rpc_id, .. } => Some(rpc_id),
+        AcpRequest::Prompt { .. }
+        | AcpRequest::Cancel
+        | AcpRequest::SetMode(_)
+        | AcpRequest::SetConfigOption { .. }
+        | AcpRequest::StopBackground { .. } => None,
+    }
+}
+
+/// A card the agent parked: a permission or a question.
+#[derive(Clone)]
+enum Parked {
+    Permission(PermissionRequest),
+    Question(Elicitation),
+}
+
+impl Parked {
+    /// The rpc id it is answered by.
+    fn rpc(&self) -> &serde_json::Value {
+        match self {
+            Parked::Permission(p) => &p.rpc_id,
+            Parked::Question(e) => &e.rpc_id,
+        }
+    }
+
+    fn event(self) -> AcpEvent {
+        match self {
+            Parked::Permission(p) => AcpEvent::Permission(p),
+            Parked::Question(e) => AcpEvent::Elicitation(e),
+        }
+    }
 }
 
 fn unreadable(e: std::io::Error) -> String {
@@ -454,8 +632,6 @@ async fn drive(hub: Arc<Mutex<Hub>>, id: HostSession, mut events: BoxStream<'sta
             | AcpEvent::SubagentEnded { .. }
             | AcpEvent::InChild { .. }
             | AcpEvent::StopRefused { .. }
-            | AcpEvent::Permission(_)
-            | AcpEvent::Elicitation(_)
             | AcpEvent::AvailableCommands(_)
             | AcpEvent::Modes { .. }
             | AcpEvent::ModeChanged(_)
@@ -470,6 +646,8 @@ async fn drive(hub: Arc<Mutex<Hub>>, id: HostSession, mut events: BoxStream<'sta
             | AcpEvent::LoginRequired { .. }
             | AcpEvent::Notice(_)
             | AcpEvent::Echo(_)) => hub.record(&id, Entry::Event(event)),
+            AcpEvent::Permission(p) => hub.card(&id, Parked::Permission(p)),
+            AcpEvent::Elicitation(e) => hub.card(&id, Parked::Question(e)),
             // A journal line carries its own time.
             AcpEvent::At(_) => {}
         }

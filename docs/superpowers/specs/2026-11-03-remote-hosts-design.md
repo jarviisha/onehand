@@ -1,6 +1,6 @@
 # Remote hosts: sessions that live on a machine reached over SSH
 
-Status: design, decided with the owner on 2026-11-03; steps 1 to 3 built (see *Order of work*).
+Status: design, decided with the owner on 2026-11-03; steps 1 to 4 built (see *Order of work*).
 
 ## Why
 
@@ -321,6 +321,21 @@ Only one side may change the code at a time.
   host user can, `git push` and deleting files included. This goes against the unattended runs'
   rule of never running unsupervised with full rights by default. The owner chose it deliberately
   for hosts, where the machine is separate from the laptop. It does not change unattended runs.
+- **Decided with the owner on 2026-11-04, for step 4:**
+  - The switch stands in a *Settings* box on the host project's page, under *Sessions on
+    <host>*, as a local project's page has one. The rail shows no mark for it, on or off.
+  - The switch reads *Answer cards on the host*. Under it, always and in the muted ink: *While on,
+    the host allows every permission an agent asks for, and tells it to decide its own questions
+    and say what it chose. An agent can then do anything the host's user can on <host>, git push
+    and deleting files included. Off, cards wait for you.*
+  - A question card is answered with: *Nobody is watching this session to answer. Decide on your
+    own judgement and carry on, and in your reply say what you chose and why.* (My call: it goes
+    in each question's free-text box, the *Other* box Claude's and Codex's forms carry; a form
+    with nowhere to write is declined, which tells the agent to carry on without an answer. A
+    permission is answered with its narrowest allow, *allow once* before *allow always*.)
+  - My call: the host keeps the switch per folder, so it holds while the laptop is away and
+    whichever laptop attaches sees the same; it can be changed only while attached. Turning it on
+    also answers the cards already waiting in that folder's sessions.
 
 ## Order of work
 
@@ -339,7 +354,7 @@ These form a sequence, and each step is useful on its own:
    not connected, and the laptop's own copy of host transcripts for reading while not attached.
    Built in two parts: 3a, the form (pick a host, browse its folders, clone; built, #287); 3b,
    re-attaching by itself and the laptop's copy (built). As built: `docs/hosts.md`.
-4. The permission bypass switch.
+4. The permission bypass switch (built). As built: `docs/hosts.md`.
 5. Offloaded projects in mirror mode, with the key, plus *Send to host*.
 6. Branch mode.
 

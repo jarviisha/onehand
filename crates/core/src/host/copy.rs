@@ -169,13 +169,19 @@ fn torn(file: &mut File) -> io::Result<bool> {
     Ok(end[0] != b'\n')
 }
 
-/// What a journal entry says to a chat: none for the agent coming up, which
-/// is the connection's to tell; a request the person made, echoed.
-pub(super) fn as_event(entry: Entry) -> Option<AcpEvent> {
+/// What a journal entry says to a chat: nothing for the agent coming up,
+/// which is the connection's to tell; a request the person made, echoed; a
+/// card the host answered, then its answer echoed.
+pub(super) fn as_event(entry: Entry) -> Vec<AcpEvent> {
     match entry {
-        Entry::Ready(_) => None,
-        Entry::Event(event) => Some(event),
-        Entry::Request(request) => Some(AcpEvent::Echo(request)),
+        Entry::Ready(_) => vec![],
+        Entry::Event(event) => vec![event],
+        Entry::Request(request) => vec![AcpEvent::Echo(request)],
+        Entry::Answered { card, answer } => card
+            .map(|card| *card)
+            .into_iter()
+            .chain([AcpEvent::Echo(answer)])
+            .collect(),
     }
 }
 
@@ -186,14 +192,15 @@ pub fn events(entries: &journal::Entries) -> Vec<AcpEvent> {
     let mut said = None;
     let mut out = Vec::new();
     for (_, at, entry) in entries {
-        let Some(event) = as_event(entry.clone()) else {
+        let said_now = as_event(entry.clone());
+        if said_now.is_empty() {
             continue;
-        };
+        }
         if *at != 0 && said != Some(*at) {
             said = Some(*at);
             out.push(AcpEvent::At(*at));
         }
-        out.push(event);
+        out.extend(said_now);
     }
     out
 }

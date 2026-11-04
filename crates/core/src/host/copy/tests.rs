@@ -189,3 +189,33 @@ fn missing_list_is_empty() {
     let dir = scratch("nolist");
     assert!(load_list(&dir, &host()).is_empty());
 }
+
+#[test]
+fn an_answered_card_reads_as_the_card_then_its_echo() {
+    let card = AcpEvent::Elicitation(crate::acp::Elicitation {
+        rpc_id: serde_json::json!(3),
+        tool_call_id: None,
+        message: "pick".into(),
+        fields: vec![],
+        child: None,
+    });
+    let answer = AcpRequest::ElicitationResponse {
+        rpc_id: serde_json::json!(3),
+        outcome: crate::acp::ElicitOutcome::Decline,
+    };
+    let events = as_event(Entry::Answered {
+        card: Some(Box::new(card)),
+        answer: answer.clone(),
+    });
+    assert!(matches!(
+        events.as_slice(),
+        [AcpEvent::Elicitation(_), AcpEvent::Echo(_)]
+    ));
+    let events = as_event(Entry::Answered { card: None, answer });
+    assert!(matches!(events.as_slice(), [AcpEvent::Echo(_)]));
+    assert!(as_event(Entry::Ready(Readiness {
+        resumed: false,
+        forkable: false
+    }))
+    .is_empty());
+}
