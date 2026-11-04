@@ -210,7 +210,7 @@ Every attach opens by exchanging builds (`client::attach`):
   stale save is a conflict as a local one is. A failure reads *On <host>: …*.
 - **A file link pressed in a host session opens in the editor**, as a local one does.
 - **Refresh Git status** is offered on a host project, in the rail's menu and the project page's.
-  *Open terminal* is not.
+  Terminals are in the dock (see below).
 
 ## Terminals
 
