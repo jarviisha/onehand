@@ -1,6 +1,8 @@
-use super::{add_refusal, busy_body};
+use super::{BROWSE_CAP, HOST_CHOICES_CAP, add_refusal, browse_rows, busy_body, host_choices};
 use onehand_core::host::wire::HostSession;
+use onehand_core::tree::TreeEntry;
 use onehand_core::workspace::HostName;
+use std::path::{Path, PathBuf};
 
 #[test]
 fn add_refuses_until_both_fields_name_a_folder_from_the_root() {
@@ -50,4 +52,65 @@ fn the_busy_question_names_five_sessions_by_when_they_started() {
         "box runs another build of the host service, and these sessions are mid-turn: \
          a session started just now. Restarting stops them."
     );
+}
+
+fn hosts(names: &[&str]) -> Vec<HostName> {
+    names.iter().map(|n| HostName((*n).into())).collect()
+}
+
+fn strings(names: &[&str]) -> Vec<String> {
+    names.iter().map(|n| (*n).to_string()).collect()
+}
+
+/// The workspace's hosts lead, in root order, then the SSH config's; a host
+/// named in both is offered once, where it is first.
+#[test]
+fn host_choices_puts_used_first_and_dedups() {
+    let (choices, more) = host_choices(
+        strings(&["alpha", "box", "beta", "alpha"]),
+        hosts(&["box", "me@vps", "box"]),
+    );
+    assert_eq!(choices, strings(&["box", "me@vps", "alpha", "beta"]));
+    assert_eq!(more, 0);
+    assert_eq!(host_choices(Vec::new(), Vec::new()), (Vec::new(), 0));
+}
+
+#[test]
+fn host_choices_caps() {
+    let aliases: Vec<String> = (0..HOST_CHOICES_CAP + 7).map(|i| format!("h{i}")).collect();
+    let (choices, more) = host_choices(aliases, hosts(&["used"]));
+    assert_eq!(choices.len(), HOST_CHOICES_CAP);
+    assert_eq!(choices[0], "used");
+    assert_eq!(more, 8);
+}
+
+fn entry(at: &str, name: &str, is_dir: bool) -> TreeEntry {
+    TreeEntry {
+        path: Path::new(at).join(name),
+        name: name.into(),
+        is_dir,
+    }
+}
+
+/// Folders only, in the host's order, each under the folder listed; what the
+/// cap and the host's own bound left out counted together.
+#[test]
+fn browse_rows_keeps_folders_in_order_and_counts_what_is_left_out() {
+    let at = Path::new("/srv");
+    let entries = [
+        entry("/srv", "b", true),
+        entry("/srv", "notes.txt", false),
+        entry("/srv", "a", true),
+    ];
+    let (dirs, hidden) = browse_rows(at, &entries, 3);
+    assert_eq!(dirs, [PathBuf::from("/srv/b"), PathBuf::from("/srv/a")]);
+    assert_eq!(hidden, 3);
+
+    let many: Vec<TreeEntry> = (0..BROWSE_CAP + 5)
+        .map(|i| entry("/", &format!("d{i}"), true))
+        .collect();
+    let (dirs, hidden) = browse_rows(Path::new("/"), &many, 2);
+    assert_eq!(dirs.len(), BROWSE_CAP);
+    assert_eq!(dirs[0], PathBuf::from("/d0"));
+    assert_eq!(hidden, 7);
 }

@@ -2,19 +2,26 @@
 //! the question asked when that host runs another build.
 
 use super::{field, footer_row, title_row};
+use crate::controls::Named as _;
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
 use crate::controls::Short as _;
 use crate::controls::text_input;
-use crate::shell::Shell;
+use crate::shell::{Browse, Shell};
 use gpui::prelude::FluentBuilder as _;
-use gpui::{App, ClickEvent, Context, ParentElement, Styled, Window, div};
+use gpui::{
+    AnyElement, App, ClickEvent, Context, InteractiveElement as _, IntoElement, ParentElement,
+    StatefulInteractiveElement as _, Styled, WeakEntity, Window, div,
+};
 use gpui_component::button::ButtonVariants;
 use gpui_component::dialog::Dialog;
-use gpui_component::{ActiveTheme as _, StyledExt as _};
+use gpui_component::{ActiveTheme as _, IconName, StyledExt as _};
 use onehand_core::host::wire::HostSession;
+use onehand_core::tree::TreeEntry;
 use onehand_core::workspace::HostName;
 use onehand_ui::Tall as _;
+use onehand_ui::TallIcon as _;
+use std::path::{Path, PathBuf};
 
 /// Why *Add* refuses while the host attaches and answers.
 const ATTACHING: &str = "Attaching to the host";
@@ -39,6 +46,44 @@ pub(crate) fn add_refusal(host: &str, folder: &str) -> Option<&'static str> {
     } else {
         None
     }
+}
+
+/// How many hosts the menu beside *Host* offers.
+pub(crate) const HOST_CHOICES_CAP: usize = 50;
+
+/// How many folders the list under *Folder* draws.
+pub(crate) const BROWSE_CAP: usize = 200;
+
+/// How tall the folder list stands before it scrolls, so *Add* stays in
+/// reach under it.
+const BROWSE_H: gpui::Rems = gpui::rems(12.);
+
+/// The hosts offered beside *Host*: those `used` by the workspace first, in
+/// its order, then the SSH config's `aliases`, each once; at most
+/// [`HOST_CHOICES_CAP`], and how many more there were.
+pub(crate) fn host_choices(aliases: Vec<String>, used: Vec<HostName>) -> (Vec<String>, usize) {
+    let mut seen = std::collections::HashSet::new();
+    let all: Vec<String> = used
+        .into_iter()
+        .map(|host| host.0)
+        .chain(aliases)
+        .filter(|host| seen.insert(host.clone()))
+        .collect();
+    let more = all.len().saturating_sub(HOST_CHOICES_CAP);
+    (all.into_iter().take(HOST_CHOICES_CAP).collect(), more)
+}
+
+/// The folders of `at`'s listing, in the host's order, at most
+/// [`BROWSE_CAP`]; and how many it leaves out, with the `cut` the host's own
+/// bound made.
+pub(crate) fn browse_rows(at: &Path, entries: &[TreeEntry], cut: usize) -> (Vec<PathBuf>, usize) {
+    let dirs: Vec<PathBuf> = entries
+        .iter()
+        .filter(|entry| entry.is_dir)
+        .map(|entry| at.join(&entry.name))
+        .collect();
+    let more = dirs.len().saturating_sub(BROWSE_CAP) + cut;
+    (dirs.into_iter().take(BROWSE_CAP).collect(), more)
 }
 
 /// What the restart question says: the host, and its mid-turn sessions by
@@ -91,8 +136,17 @@ pub fn add_host_project(shell: &Shell, window: &Window, cx: &mut Context<Shell>)
         let n = crate::hosts::busy(cx, &on).len();
         (n > 0).then(|| (crate::hosts::waiting_line(&on, n), on))
     });
+    let (choices, more_hosts) = host_choices(draft.aliases.clone(), shell.used_hosts());
     let shell = cx.entity().downgrade();
     let waits = waiting.is_some();
+    let browse_refusal = match (&draft.waiting, busy) {
+        (Some(_), _) => Some(WAITING),
+        (None, true) => Some(ATTACHING),
+        (None, false) if host.read(cx).value().trim().is_empty() => Some("Name the host"),
+        (None, false) => None,
+    };
+    let browsing = draft.browse.as_ref().is_some_and(|browse| browse.loading);
+    let browse = draft.browse.clone();
 
     Dialog::new(cx)
         .w(super::form_width(window))
@@ -103,15 +157,50 @@ pub fn add_host_project(shell: &Shell, window: &Window, cx: &mut Context<Shell>)
                 .child(field(
                     "Host",
                     crate::settings::about("An alias from your SSH config, or user@machine"),
-                    text_input(&host, cx).tall(),
+                    div()
+                        .h_flex()
+                        .gap_2()
+                        .child(div().flex_1().min_w_0().child(text_input(&host, cx).tall()))
+                        .when(!choices.is_empty(), |row| {
+                            row.child(host_menu(choices.clone(), more_hosts, &shell, cx))
+                        }),
                     cx,
                 ))
                 .child(field(
                     "Folder",
                     crate::settings::about("The project's folder on that host, from /"),
-                    text_input(&folder, cx).tall(),
+                    div()
+                        .h_flex()
+                        .gap_2()
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .child(text_input(&folder, cx).tall()),
+                        )
+                        .child(
+                            crate::controls::action("host-project-browse")
+                                .tall()
+                                .secondary()
+                                .label("Browse")
+                                .loading(browsing && !waits)
+                                .refuses(browse_refusal)
+                                .on_click({
+                                    let shell = shell.clone();
+                                    move |_: &ClickEvent, _, cx| {
+                                        let _ = shell.update(cx, |shell, cx| {
+                                            shell.browse_host_folders(None, cx)
+                                        });
+                                    }
+                                }),
+                        ),
                     cx,
                 ))
+                .children(
+                    browse
+                        .as_ref()
+                        .map(|browse| folder_list(browse, waits, &shell, cx)),
+                )
                 // The host's own words, or that the folder is not there: shown
                 // against the names that caused them, which is why the form
                 // is still up.
@@ -175,6 +264,110 @@ pub fn add_host_project(shell: &Shell, window: &Window, cx: &mut Context<Shell>)
         .on_close(cx.listener(|shell: &mut Shell, _, _, cx| {
             shell.cancel_host_project(cx);
         }))
+}
+
+/// The menu beside *Host*: the hosts to pick from, and how many it leaves
+/// out.
+fn host_menu(
+    choices: Vec<String>,
+    more: usize,
+    shell: &WeakEntity<Shell>,
+    cx: &App,
+) -> impl IntoElement {
+    let shell = shell.clone();
+    crate::controls::menu_below(
+        "host-choices",
+        crate::controls::action("host-choices-trigger")
+            .tall_icon()
+            .quiet_icon(false, cx)
+            .icon(IconName::ChevronDown)
+            .named("Hosts from your SSH config"),
+        move |mut menu, _, _| {
+            for host in &choices {
+                let (host, shell) = (host.clone(), shell.clone());
+                menu = menu.item(crate::controls::menu_item(host.clone()).on_click(
+                    move |_, window, cx: &mut App| {
+                        let host = host.clone();
+                        let _ = shell.update(cx, |shell, cx| shell.pick_host(host, window, cx));
+                    },
+                ));
+            }
+            if more > 0 {
+                menu = menu.item(crate::controls::menu_label(format!(
+                    "{more} more hosts not shown"
+                )));
+            }
+            menu
+        },
+    )
+}
+
+/// The folders *Browse* listed, under *Folder*: a press on one makes it
+/// *Folder* and lists it.
+fn folder_list(browse: &Browse, waits: bool, shell: &WeakEntity<Shell>, cx: &App) -> AnyElement {
+    let danger = crate::theme::status_ink(cx).danger;
+    let muted = cx.theme().muted_foreground;
+    let meta = |line: String| div().text_xs().text_color(muted).truncate().child(line);
+    let listed = !browse.at.as_os_str().is_empty();
+    let row = |id: usize, name: String, to: PathBuf| {
+        let shell = shell.clone();
+        onehand_ui::row(false, cx)
+            .id(("host-browse-row", id))
+            .h_flex()
+            .items_center()
+            .text_size(onehand_ui::tokens::CHROME_TEXT)
+            .child(div().min_w_0().truncate().child(name))
+            .on_click(move |_: &ClickEvent, window, cx| {
+                let to = to.clone();
+                let _ = shell.update(cx, |shell, cx| shell.browse_to(to, window, cx));
+            })
+    };
+    let up = browse
+        .at
+        .parent()
+        .map(|parent| row(0, "..".into(), parent.to_path_buf()));
+    let rows = browse.dirs.iter().enumerate().map(|(i, dir)| {
+        let name = dir.file_name().map_or_else(
+            || dir.display().to_string(),
+            |name| name.to_string_lossy().into_owned(),
+        );
+        row(i + 1, name, dir.clone())
+    });
+    div()
+        .v_flex()
+        .gap_1()
+        .min_w_0()
+        // Content on its way, until the first listing lands; a busy host's
+        // wait says itself in its own line.
+        .when(!listed && browse.loading && !waits, |list| {
+            list.child(meta(format!("Reading the folders on {}…", browse.host)))
+        })
+        .when(listed, |list| {
+            list.child(meta(format!(
+                "Folders in {} on {}",
+                browse.at.display(),
+                browse.host
+            )))
+            .child(
+                div()
+                    .id("host-browse")
+                    .v_flex()
+                    .max_h(BROWSE_H)
+                    .overflow_y_scroll()
+                    .children(up)
+                    .children(rows),
+            )
+            .when(browse.dirs.is_empty(), |list| {
+                list.child(meta("No folders here".into()))
+            })
+            .when(browse.cut > 0, |list| {
+                list.child(meta(format!("{} more folders not shown", browse.cut)))
+            })
+        })
+        .when_some(browse.error.clone(), |list, why| {
+            list.child(div().text_xs().text_color(danger).child(why))
+        })
+        .into_any_element()
 }
 
 #[cfg(test)]

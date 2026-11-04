@@ -28,6 +28,7 @@ mod fork;
 mod frame;
 mod git_sweep;
 mod host_project;
+pub(crate) use host_project::Browse;
 mod issue_work;
 mod issues_page;
 mod presentation;

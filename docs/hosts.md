@@ -108,6 +108,20 @@ Every attach opens by exchanging builds (`client::attach`):
   host* (`crates/app/src/dialogs/host_project.rs`): *Host* (*An alias from your SSH config, or
   user@machine*) and *Folder* (*The project's folder on that host, from /*). *Add* refuses with
   *Name the host*, *Name the folder* or *The folder starts at /*, and while the attach runs.
+- **Picking the host:** beside *Host*, a quiet caret (*Hosts from your SSH config*) opens a menu of
+  the window's own host projects' hosts, in rail order, then the plain aliases of `~/.ssh/config`
+  (`sshconf::aliases`, read once on the background executor as the form opens), each once, capped
+  at 50 (`HOST_CHOICES_CAP`, then *<n> more hosts not shown*). A pick fills *Host*. With nothing
+  to offer the caret is not drawn.
+- **Picking the folder:** *Browse* beside *Folder* (refused with *Name the host*, and while *Add*
+  attaches or waits) attaches as *Add* does, the same waiting line and *Restart now* standing for
+  a busy host, and lists under the field the folder *Folder* names when the host has it, else the
+  host's home (`HostConn::home`): *Folders in <path> on <host>*, an *..* row unless at `/`, then
+  one row per folder, files left out, at most 200 (`BROWSE_CAP`; *<n> more folders not shown*
+  counts the cap and the host's own bound together), *No folders here* when it has none. A row
+  pressed becomes *Folder* and is listed in turn; a failure is the list's own line in the danger
+  ink. Typing in *Host* drops the list, and a newer listing drops the one under way
+  (`browse_host_folders`, `crates/app/src/shell/host_project.rs`).
 - **Add** trims both fields, attaches (installing the service if needed), asks the host whether
   the folder is a directory there (`hosts::is_dir`, the wire's `Probe`), then adds the project and
   selects it. A failure stands once, inline under the fields: the attach's own words, *Could not
