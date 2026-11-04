@@ -149,6 +149,10 @@ impl Shell {
         if draft.attempt.is_none() {
             draft.waiting = None;
         }
+        // One failure line at a time: the list's own, the newer, stands.
+        if listed.is_err() {
+            draft.error = None;
+        }
         let Some(browse) = draft.browse.as_mut() else {
             return;
         };

@@ -26,6 +26,34 @@ async fn a_copy_that_names_its_build_is_moved_into_place() {
 }
 
 #[tokio::test]
+async fn a_copy_that_warns_as_it_loads_and_names_its_build_is_installed() {
+    let dir = install_dir("warns");
+    // What the loader prints of a symbol version the host's C library lacks
+    // but the binary only weakly needs: it runs, and says its build.
+    let script = b"#!/bin/sh\necho \"weak version 'GLIBC_2.39' not found\" >&2\necho abc\n";
+    run(&HERE, &copy_command(&dir, "abc"), script)
+        .await
+        .unwrap();
+    assert!(Path::new(&dir).join("onehand-host").exists());
+    assert!(!Path::new(&dir).join("onehand-host.tmp").exists());
+    assert!(!Path::new(&dir).join("onehand-host.tmp.err").exists());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn a_copy_that_names_another_build_says_what_it_said() {
+    let dir = install_dir("other");
+    let script = b"#!/bin/sh\necho xyz\n";
+    let copied = run(&HERE, &copy_command(&dir, "abc"), script).await;
+    assert!(
+        matches!(&copied, Err(HostError::Unreachable(why)) if why.contains("xyz")),
+        "{copied:?}"
+    );
+    assert!(!Path::new(&dir).join("onehand-host").exists());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
 async fn a_cut_short_copy_is_never_installed() {
     let dir = install_dir("short");
     // What a copy cut off mid-way leaves: a file that cannot name the build.

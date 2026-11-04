@@ -62,6 +62,15 @@ impl HostProjectDraft {
     pub(crate) fn busy(&self) -> bool {
         self.attempt.is_some()
     }
+
+    /// Say why the form could not go on: one failure line at a time, so the
+    /// folder list's own failure, likely the same attach, gives way to it.
+    fn failed(&mut self, why: String) {
+        if let Some(browse) = self.browse.as_mut() {
+            browse.error = None;
+        }
+        self.error = Some(why);
+    }
 }
 
 /// What waits on a host's busy sessions going idle, or on a lost host being
@@ -519,7 +528,7 @@ impl Shell {
                 self.open_host_root(host, path, window, cx);
             }
             Err(HostFailure::Other(why) | HostFailure::Refused(why) | HostFailure::Taken(why)) => {
-                draft.error = Some(why)
+                draft.failed(why)
             }
             // The form stays busy on this attempt while the host waits, and
             // carries on with the same names once it is done.
@@ -713,7 +722,7 @@ impl Shell {
                     }
                 });
                 if let Some(draft) = self.host_project.as_mut().filter(|_| add) {
-                    draft.error = Some(why);
+                    draft.failed(why);
                 }
             }
         }
@@ -782,7 +791,7 @@ impl Shell {
             .as_mut()
             .filter(|draft| draft.waiting.as_ref() == Some(host));
         match form {
-            Some(draft) => draft.error = Some(why),
+            Some(draft) => draft.failed(why),
             None => window
                 .push_notification(crate::toast::failed("Restarting the host service", why), cx),
         }
