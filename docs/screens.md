@@ -62,7 +62,10 @@ waiting*; a run's pill opens its issue on the Issues page), and while folded its
 urgent state. A project on a host has no unattended pill: the host's name stands first in the
 row's meta, in the meta ink, and its hover's last line reads `<host>:<path>`. Its git line follows
 once read over a live attach, and is absent while a local project on the same path is in the
-workspace.
+workspace. After the host's name a muted plug mark stands while the host is not connected, its hover
+*Not connected to <host>; trying again* while it is being tried again, else *Not connected to
+<host>*, or *<host> was attached from another machine* when another machine took it; nothing is
+drawn while it is attached, being attached, never tried, or refused.
 Narrowed, the name keeps a minimum and the branch, or the host, gives way first. Its chevron alone
 folds it (not during a search); the rest of the row shows the project's last session, or its page,
 which then fills the row. `+` and `⋯` show on hover and on the keyboard's row, right-click opens the
@@ -85,7 +88,11 @@ apart. The inks: failed or disconnected danger, needs input warning, running `in
 success, idle muted. A session on a host waiting for that host's busy sessions to finish is none of
 these: an hourglass in the muted ink, its line *Waiting for <host> · agent · age*; it needs nothing
 of the person, so it is not counted as needing attention, and the overview lists it under
-*Working*. `Ctrl+Shift+R` on it asks the host's restart question, as its *Restart now* does. `↑`/`↓` move the list's row, ringed while the keys move it, `Enter` and `←`/`→`
+*Working*. A session on a host that is out of reach, read from the laptop's copy, is calm too: a plug
+mark in the muted ink, its line *Not connected to <host> · agent · age*, never counted as needing
+attention; the mark's hover says *trying again* only while that is so, and the same signal named
+elsewhere (a page naming the session, a folded project's badge) says *Not connected to its host*
+alone. `Ctrl+Shift+R` on a waiting one asks the host's restart question, as its *Restart now* does. `↑`/`↓` move the list's row, ringed while the keys move it, `Enter` and `←`/`→`
 act on it, `Alt+↑`/`↓` step through sessions in its order. The tree's order is the user's, set by
 dragging; pinned projects stay on top and sessions never leave their project. `Ctrl+Shift+B` hides
 the rail completely, never to an icon column. It resizes between 232 and 448px, on the side bar's
@@ -303,7 +310,11 @@ dragged height kept).
   sessions on <host> to finish before restarting its host service onto this build* as a status
   line in the muted ink with *Restart now* (secondary) beside it, and lists again once it is
   done (*Attaching to <host>…* meanwhile); a host found out of reach while it waits ends the wait
-  on the failure, with *Try again*.
+  on the failure, with *Try again*. A host that cannot be attached shows the list kept on this
+  machine, through the same rows and cap: a muted status line *Not connected to <host>* (with *;
+  trying again* while that is so), the failure's words under it in the muted ink, and *Try again*
+  (secondary) beside them; with nothing kept for the folder the box says *No sessions kept on this
+  machine for this folder*.
 - *Workspace overview* shows, under its head (*Overview*), across all projects, the boxes *Waiting
   on you* (runs waiting for an answer or an approval, and sessions waiting, failed, finished or
   lost) and *Working*, then *Projects* as a grid of tiles (not drawn without projects), then the

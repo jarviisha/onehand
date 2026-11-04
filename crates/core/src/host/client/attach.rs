@@ -3,7 +3,8 @@
 //! is mid-turn there or the person agreed to stop what is.
 
 use std::process::Stdio;
-use std::time::Duration;
+use std::sync::OnceLock;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tokio::io::AsyncReadExt as _;
 use tokio::process::Command;
@@ -59,10 +60,17 @@ pub(super) fn command(addr: &HostAddr, cmd: &str) -> Command {
 }
 
 /// Attach, say hello, and settle the build: same build → connected; other build with nothing busy
-/// → `Shutdown` it and attach again once; other build busy → `Busy`.
-pub async fn attach(addr: &HostAddr, remote: &str, build: &Build) -> Result<HostConn, HostError> {
+/// → `Shutdown` it and attach again once; other build busy → `Busy`. Without
+/// `take`, an attach made by itself: another machine's attach holding the
+/// host is left alone, as `Held`.
+pub async fn attach(
+    addr: &HostAddr,
+    remote: &str,
+    build: &Build,
+    take: bool,
+) -> Result<HostConn, HostError> {
     let (conn, said) = start_attach(addr, remote)?;
-    match reached(settle(&conn, build).await, said).await? {
+    match reached(settle(&conn, build, take).await, said).await? {
         Settled::Same => return Ok(conn),
         Settled::Restarted => {
             // The old service closes the stream as it exits; the next attach
@@ -71,7 +79,7 @@ pub async fn attach(addr: &HostAddr, remote: &str, build: &Build) -> Result<Host
         }
     }
     let (conn, said) = start_attach(addr, remote)?;
-    reached(settle_again(&conn, build).await, said).await?;
+    reached(settle_again(&conn, build, take).await, said).await?;
     Ok(conn)
 }
 
@@ -89,7 +97,7 @@ pub(super) async fn restart_over(
 ) -> Result<HostConn, HostError> {
     let (conn, said) = attach()?;
     let stop = async {
-        let (theirs, _) = hello(&conn, build).await?;
+        let (theirs, _) = hello(&conn, build, true).await?;
         if theirs == *build {
             return Ok(false);
         }
@@ -102,7 +110,7 @@ pub(super) async fn restart_over(
     let _ = tokio::time::timeout(SHUTDOWN_WAIT, conn.cmds.closed()).await;
     let (conn, said) = attach()?;
     let again = async {
-        let (theirs, _) = hello(&conn, build).await?;
+        let (theirs, _) = hello(&conn, build, true).await?;
         if theirs == *build {
             Ok(())
         } else {
@@ -171,8 +179,12 @@ pub(super) enum Settled {
 
 /// Say hello as `build`; a service on another build with nothing mid-turn is
 /// told to shut down, so the next attach starts this one.
-pub(super) async fn settle(conn: &HostConn, build: &Build) -> Result<Settled, HostError> {
-    let (theirs, busy) = hello(conn, build).await?;
+pub(super) async fn settle(
+    conn: &HostConn,
+    build: &Build,
+    take: bool,
+) -> Result<Settled, HostError> {
+    let (theirs, busy) = hello(conn, build, take).await?;
     if theirs == *build {
         return Ok(Settled::Same);
     }
@@ -185,8 +197,12 @@ pub(super) async fn settle(conn: &HostConn, build: &Build) -> Result<Settled, Ho
 
 /// Say hello once more after a restart: another build now is a fault, and is
 /// never shut down a second time.
-pub(super) async fn settle_again(conn: &HostConn, build: &Build) -> Result<(), HostError> {
-    let (theirs, busy) = hello(conn, build).await?;
+pub(super) async fn settle_again(
+    conn: &HostConn,
+    build: &Build,
+    take: bool,
+) -> Result<(), HostError> {
+    let (theirs, busy) = hello(conn, build, take).await?;
     if theirs == *build {
         Ok(())
     } else if !busy.is_empty() {
@@ -198,15 +214,31 @@ pub(super) async fn settle_again(conn: &HostConn, build: &Build) -> Result<(), H
     }
 }
 
-/// Say hello as `build`; the host's build, and its sessions mid-turn.
+/// Say hello as `build`, taking the host or not; the host's build, and its
+/// sessions mid-turn.
 pub(super) async fn hello(
     conn: &HostConn,
     build: &Build,
+    take: bool,
 ) -> Result<(Build, Vec<HostSession>), HostError> {
     let hello = Call::Hello {
         build: build.clone(),
+        take,
+        laptop: Some(laptop().to_string()),
     };
-    conn.ask_for(hello, |a| a.welcome).await
+    let welcome = |a: super::Answer| a.welcome.map(Ok).or(a.held.map(|()| Err(HostError::Held)));
+    conn.ask_for(hello, welcome).await?
+}
+
+/// This laptop's run, as a host is told it: the process and when it asked first.
+fn laptop() -> &'static str {
+    static LAPTOP: OnceLock<String> = OnceLock::new();
+    LAPTOP.get_or_init(|| {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos());
+        format!("{}-{nanos}", std::process::id())
+    })
 }
 
 /// A host on build `build` that was left alone for the sessions in `busy`.

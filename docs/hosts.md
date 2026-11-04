@@ -43,16 +43,55 @@ it. What is refused, and how, is under *What a host project does not do*.
   every window, project and session on a host shares it. It is made on first use (a host
   project's page shown, a host session shown, a host project shown in the Workbench, the *Add* of
   the form) and made again only once its stream has ended. Asks that arrive while one attach runs
-  all wait on that one, so two never install at once. The attach runs on the ACP runtime and its
+  all wait on that one, so two never run at once. A person's ask that finds an attach made by
+  itself under way (which does not take the host, below) waits on it too, and takes what it lands;
+  if it fails, held or otherwise, the person's own attach, taking the host, follows. Only the
+  latest attempt for a host says what is known of it: one a restart replaced is not heard. The attach runs on the ACP runtime and its
   answer crosses back on a oneshot.
+- **What a host is to this run** (`HostState`, `crates/app/src/hosts.rs`): never tried, attaching,
+  live, **lost** (an attach failed, or a live connection closed, without another machine taking the
+  host), **taken** (another machine attached; the connection keeps it, `HostConn::taken`), or
+  refused. Refused is a host that cannot work at all: one that is not a Linux x86_64 machine, or
+  an `onehand-host` that is not beside onehand or cannot be read (`HostFailure::Refused`). It is
+  never lost and never tried again by itself, because trying again cannot change it, and it
+  carries no mark.
 - **The newer attach wins.** A second laptop attaching takes the host over; this one's sessions
   end on *<host> was attached from another machine*. Nothing stops on the host, and nothing here
-  takes the host back by itself: the connection keeps why it closed (`HostConn::taken`), and only
-  a person's restart, show or *Try again* attaches again.
-- **A lost connection** ends every session watched over it on *lost the connection to <host>*.
-  A session comes back when restarted. The Workbench attaches again by itself when the connection
-  its files were shown over has closed (see *Files and git status*), never after another machine
-  took the host.
+  takes the host back by itself: only a person's restart, show or *Try again* attaches again. A
+  person's attach that fails on a taken host leaves it lost, and so attached again by itself
+  from then on.
+- **An attach made by itself never takes the host.** The hello says whether it takes (`take` on
+  `Call::Hello`, true when absent, so an older laptop still takes). A person's attach (the form,
+  a show, *Try again*, Restart, the restart offer) takes; the re-attach of a lost host and the
+  busy wait's poll do not. The service (`crates/host/src/serve.rs`) settles an attach once its
+  first line is read, not as it connects: a hello that does not take, while another laptop's
+  attach there is still live, is answered `Reply::Held` and closed, and the attach that holds the
+  host goes on. The hello also names this laptop's run (`laptop`), so an attach of its own that
+  the service has yet to see go (a laptop that slept, a link that dropped silently) does not hold
+  it. The client turns `Held` into `HostError::Held`, the app into `HostFailure::Taken`, and the
+  host is taken from then on, as if another machine had kicked it: the wait for it to be back and
+  any busy wait end on *<host> was attached from another machine*, and nothing tries it again.
+- **A lost host is attached again by itself.** A lost connection ends every session watched over
+  it, and the host is tried again after 2 s (`RECONNECT_FIRST`), the wait doubling to 60 s
+  (`RECONNECT_MAX`, `next_delay`), for as long as something listens, and never for a taken or
+  refused one. What listens is a session that was reading its host's copy because the host was
+  away, and the project page showing what it kept of the host's sessions; each is a `Want::Back`
+  in the window's `HostFlow` (`crates/app/src/shell/host_project.rs`), joined to one loop per host
+  (`hosts::back`), like the wait for a busy host, and the loop stops when the last of them goes.
+  When an attach lands, each such session is restarted, and so watches the host from where its
+  copy ends, and the page lists again; nothing is toasted. A host found busy at that point hands
+  over to the wait for its busy sessions. A host found taken or refused stops the loop, and each
+  session ends as a lost agent with the reason (the person's Restart tries by hand), the page
+  keeping what it kept with the reason. A host that is lost with nothing listening, such as a
+  project with no session shown and no page, is not tried until something on it is shown; the
+  Workbench's own re-attach (below) is separate.
+- **What the window says of it** (the marks are in [screens.md](screens.md)): the rail's host
+  project row's mark and the session row's mark say of a lost host *Not connected to <host>;
+  trying again* while a back wait stands (`hosts::retrying`), else plain *Not connected to <host>*
+  (`hosts::not_connected`), and of a taken host *<host> was attached from another machine*. The
+  session's signal where it stands for the row (a page naming the session, a folded project's
+  badge) says *Not connected to its host* alone, never that it is trying again. The Workbench's host work is
+  separate: its line and *Try again* are as under *Files and git status*.
 - **Detaching never stops anything on the host.** Closing a host session in the window, removing
   its project, or quitting onehand lets go of the watch; the session and its agent run on there,
   and the project's page lists it.
@@ -175,7 +214,9 @@ Every attach opens by exchanging builds (`client::attach`):
   (`HOST_SESSIONS_CAP`), read each time the page shows and on its *Refresh*. A press attaches the
   session in the chat pane, or shows the session already watching it. The page's head names the
   folder `<host>:<path>`, and it has no *Tasks*, *Schedules* or *Settings* box, which are this
-  machine's; what the page draws is in [screens.md](screens.md#pages-without-a-session).
+  machine's; what the page draws is in [screens.md](screens.md#pages-without-a-session). A host
+  that cannot be attached shows the list kept from the last read instead (*The laptop's copy*),
+  said as not connected, with the why and *Try again*.
 - **Shown in the chat pane through the same code as a local session**
   (`crates/app/src/chat/session/host.rs`): the host's events stand in for a local adapter's.
   Prompts, cancels, card answers and picks go to the host and into its journal.
@@ -189,9 +230,25 @@ Every attach opens by exchanging builds (`client::attach`):
   Restart of an ended session with nothing carried (its agent was not found, or died before
   naming a conversation) opens a fresh one. A host that cannot say what it runs ends the restart on *Could not read the sessions on <host>: …*
   rather than risk a second session beside one still running.
-- **Nothing of a host session is written on this machine:** its chat has no store, so the host's
-  journal is the only copy, and the header's past conversations, which are this machine's, are not
-  offered on a host session.
+- **A host session has no store of its own on this machine:** what is kept of it is the copy of
+  its journal (*The laptop's copy*), not the chat store a local session writes, and the header's
+  past conversations, which are this machine's, are not offered on a host session.
+- **A host that cannot be attached is read from the copy.** A session shown or restarted while its
+  attach fails for any reason but a busy host is built from its copy, through the same rule as a
+  replay, without raising a turn's end, a card's notice or a run's input
+  (`offline_start`, `crates/app/src/chat/session/host.rs`). It ends on a line of the Info kind,
+  *Not connected to <host>. This is the copy kept on this machine, up to <when>; it carries on
+  once the host is back* (*up to* is the last entry that kept a time, and goes when none did), and
+  the link is lost, so Restart tries again. Nothing kept ends the session on the failure's words,
+  as before; a busy host waits as above whatever is kept; a refused host reads the copy with no
+  notice and ends on the reason. The line goes with the restart that carries on.
+- **A connection lost under a shown session says the same.** The cut link is settled
+  (`Chat::link_cut`: the thought finalised, pending permission cards withdrawn, the link lost)
+  without a failure item, then the copy's line is said with *up to just now*, and the session
+  joins the back wait, so it restarts by itself when the host answers. A connection taken by
+  another machine is not that: it ends as before, on *<host> was attached from another machine*.
+  Either is a session that is not lost to the person: the remote bridge's *agent lost* is not
+  announced, and the rail draws it calm.
 - **A fork is refused**, *Not on a host yet*, on the prompt's fork control.
 - **Attachments are not sent.** A prompt goes to the agent without them, and the transcript says
   *Attachments are not sent to a host yet; the prompt went without them*.
@@ -202,13 +259,45 @@ Every attach opens by exchanging builds (`client::attach`):
   (`crates/core/src/host/journal.rs`); everything that shapes the transcript, in the order the host
   saw it: what the agent sent and what the person asked. A line written before lines kept their
   time reads with `at` 0.
-- **A watch replays the journal from the start, then goes live** without a gap or a duplicate; the
-  laptop rebuilds the conversation by putting the replay through `Chat::apply`, so a host session
+- **A watch replays the journal, then goes live** without a gap or a duplicate; with no copy on
+  the laptop it replays from the start, and with one only from where the copy ends (*The laptop's
+  copy*). The laptop rebuilds the conversation by putting the replay through `Chat::apply`, so a host session
   has the one rule for what a transcript is that a local one has.
 - **Times come with the replay.** Before an entry whose second differs from the last one said, the
   watch yields `AcpEvent::At(secs)`; `Chat::apply(At(t))` stamps everything after it with `t`
   until the next one. Live entries carry their time too. A prompt typed here is stamped with this
   machine's clock.
+
+## The laptop's copy
+
+The laptop keeps a copy of each host session's journal, so a host that is away can still be read
+and a watch need only fetch what the copy lacks (`crates/core/src/host/copy.rs`).
+
+- **Where:** `hosts/<host>/<session>.jsonl` in the config directory (`copies_dir`), the names
+  made safe as the chat store's are. Beside them, `hosts/<host>/sessions.json` keeps the last
+  list of that host's sessions that was read, written whole through a temporary file.
+- **What is in it:** the journal's own lines, one JSON line per entry, `{"seq":…,"at":…,"entry":…}`,
+  with the seq the host gave it. It is not the chat store's format; it is read back through
+  the same rule as a replay (`copy::events`), so the conversation is the one `Chat::apply` makes
+  of any entry.
+- **Appended as entries are taken:** every entry a watch takes, replayed or live, is appended
+  before it is yielded, and one whose seq is not past the copy's last is not written twice. A line
+  a crash cut short is cut off before the next is written, and a write that fails drops the
+  whole copy, so no entry is ever missing below the last; the next watch fills it again.
+- **A watch says where the copy ends.** `Watch` carries `after`, the seq of the copy's last
+  whole line (`crates/core/src/host/wire.rs`), and the host's `Replay` answers with the `after` it
+  kept. The host replays only later lines when its journal has the `after` line (`Hub::watch`,
+  `crates/host/src/hub.rs`), then the laptop yields the copy's entries first and the host's after
+  them. A host that answers with no `after` is replaying all, as it does for a copy longer than
+  its journal; the laptop then drops the copy and takes the whole replay, since the host's copy
+  is the truth. A copy with a line that does not parse is broken: it has no last, it is dropped
+  before the watch, and the host is asked for all.
+- **Fresh per watch.** Each watch opens its copy anew, and a session reads one on the background
+  executor, never on the UI's.
+- **The list is kept per host** and is what the project page shows while the host is away
+  (*Sessions*), filtered to the folder as a live one is. It is saved after each list read, and
+  read when the host cannot be.
+- **Never pruned:** nothing removes a copy; see [known-gaps.md](known-gaps.md).
 
 ## Files and git status
 
@@ -300,11 +389,10 @@ Refused or left out, each in one place:
 ## Not built
 
 The steps of the design still to come, each its own change; the gaps they leave meanwhile are in
-[known-gaps.md](known-gaps.md):
+[known-gaps.md](known-gaps.md). The host's own UI is built: picking a host, browsing its folders and
+cloning (*Adding a host project*), and re-attaching by itself and the laptop's copy (*Attach and
+detach*, *The laptop's copy*).
 
-- **The host's own UI, what is left:** re-attaching by itself with a backoff, and reading a host's
-  sessions while it is not attached, from a copy the laptop keeps. Picking a host, browsing its
-  folders and cloning are built (*Adding a host project*).
 - **The permission bypass:** a switch per host project under which the host answers every
   permission itself, so a session never waits on a card overnight.
 - **Offloaded projects:** a folder on the laptop whose sessions run on a host against a mirror of

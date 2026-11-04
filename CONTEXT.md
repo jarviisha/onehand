@@ -293,6 +293,13 @@ what the agent sent and what the person asked, in order. The laptop rebuilds the
 replaying it. A host service that restarts reads its sessions back from their journals.
 _Avoid_: log, history, transcript file (that is `items.jsonl` on the laptop)
 
+**Copy** (of a host session):
+The laptop's own copy of a host session's journal, the same lines with the host's numbers, added
+to as entries arrive. It lets a session be read while its host is away and a later attach fetch
+only what it lacks. The host's journal stays the truth: a copy that disagrees is dropped and taken
+again.
+_Avoid_: cache, backup, mirror (that is an offloaded project's folder)
+
 **Build**:
 Which copy of the host service a host runs, named by a hash of the binary itself. The laptop puts
 its own build on a host beside any other, and restarts the service onto it only when no session

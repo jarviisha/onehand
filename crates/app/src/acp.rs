@@ -22,7 +22,9 @@ use futures::{SinkExt as _, Stream, StreamExt as _};
 use onehand_core::acp::{self, AcpEvent};
 use onehand_core::config::AgentSpec;
 use onehand_core::host::client::HostConn;
+use onehand_core::host::copy;
 use onehand_core::host::wire::HostSession;
+use onehand_core::workspace::HostName;
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -206,9 +208,13 @@ impl AcpRuntime {
     /// Nothing of the laptop's launch runs: the agent is started on the host,
     /// by what the host finds on its own `PATH`, and without this machine's
     /// variables.
+    ///
+    /// Every watch keeps this machine's copy of the session's journal, and
+    /// starts from where that copy ends.
     pub(crate) fn host_events(
         &self,
         conn: HostConn,
+        host: HostName,
         start: HostStart,
     ) -> (Events, oneshot::Receiver<HostSession>) {
         let (rx, mut tx, alive) = events();
@@ -232,7 +238,10 @@ impl AcpRuntime {
                 },
             };
             let _ = told.send(id.clone());
-            forward(conn.watch(&id), tx, alive).await;
+            // Opened afresh for each watch: a copy held across watches would
+            // keep a stale idea of where it ends.
+            let copy = copy::Copy::open(&copy::copies_dir(), &host, &id);
+            forward(conn.watch(&id, Some(copy)), tx, alive).await;
         });
         (rx, session)
     }

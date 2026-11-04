@@ -191,6 +191,14 @@ pub enum ChatPaneEvent {
         uid: Option<u64>,
         host: onehand_core::workspace::HostName,
     },
+    /// The connection to `host` is lost, or no attach reaches it, so session
+    /// `uid` there is read from what this machine has, or, with no `uid`,
+    /// the project page shows what it kept: either is restarted, or listed
+    /// again, once the host is attached again.
+    HostLost {
+        uid: Option<u64>,
+        host: onehand_core::workspace::HostName,
+    },
     /// *Restart now*, for what waits on `host`: restarting its service stops
     /// its busy sessions, which is the person's to agree to, in a dialog of
     /// the shell's.

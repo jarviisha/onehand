@@ -88,7 +88,7 @@ pub fn now_secs() -> u64 {
 /// string, a short hash of the *raw* id is appended so two ids differing only
 /// in punctuation (`a/b` vs `a_b`) can't collapse onto one directory and
 /// overwrite each other. UUID-style ids pass through untouched.
-fn sanitize(s: &str) -> String {
+pub(crate) fn sanitize(s: &str) -> String {
     let safe: String = s
         .chars()
         .map(|c| {

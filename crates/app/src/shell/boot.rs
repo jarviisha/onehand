@@ -258,6 +258,7 @@ impl Shell {
                     E::ShowTasks(filter) => shell.show_tasks(filter.clone(), window, cx),
                     E::ShowSchedules(only) => shell.show_schedules(only.clone(), window, cx),
                     E::HostBusy { uid, host } => shell.host_busy(*uid, host.clone(), window, cx),
+                    E::HostLost { uid, host } => shell.host_lost(*uid, host.clone(), window, cx),
                     E::RestartHost(host) => shell.ask_restart_host(host.clone(), window, cx),
                     E::RunCheck => {
                         let active = shell.window.workspace.active_root;

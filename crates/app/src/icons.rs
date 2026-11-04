@@ -199,6 +199,10 @@ icons! {
         // that moves on by itself after a while. The bundled set draws no
         // clock or timer, and its circle is already idle's mark.
         Hourglass,
+        // A host project or session out of reach of its host, attached again
+        // by itself. The bundled set draws no plug, cloud or signal of any
+        // kind; its `triangle-alert` is a failure, which this is not.
+        Unplug,
     ],
     checked_in: [
         ArrowUpLight => "arrow-up-light",

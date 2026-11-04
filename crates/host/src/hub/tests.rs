@@ -84,8 +84,16 @@ fn open(hub: &Arc<Mutex<Hub>>, opened: &Opened, ready: bool) -> Fake {
 }
 
 fn watch(hub: &Arc<Mutex<Hub>>, session: &HostSession) -> mpsc::UnboundedReceiver<FromHost> {
+    watch_after(hub, session, None)
+}
+
+fn watch_after(
+    hub: &Arc<Mutex<Hub>>,
+    session: &HostSession,
+    after: Option<u64>,
+) -> mpsc::UnboundedReceiver<FromHost> {
     let (sink, lines) = mpsc::unbounded_channel();
-    Hub::watch(hub, session, sink).unwrap();
+    Hub::watch(hub, session, after, sink).unwrap();
     lines
 }
 
@@ -486,7 +494,7 @@ async fn a_watch_marks_its_replay_even_when_the_journal_is_empty() {
     let mut lines = watch(&hub, &fake.session);
     assert!(matches!(
         lines.try_recv(),
-        Ok(FromHost::Replay { session }) if session == fake.session
+        Ok(FromHost::Replay { session, .. }) if session == fake.session
     ));
     assert!(lines.try_recv().is_err());
 }
@@ -506,7 +514,7 @@ async fn what_lands_while_a_replay_is_read_is_sent_once() {
     let (sink, mut lines) = mpsc::unbounded_channel();
     hub.lock()
         .unwrap()
-        .replay(&fake.session, sink, read, mark)
+        .replay(&fake.session, None, sink, read, mark)
         .unwrap();
     fake.push(chunk("c"));
     let got = entries(&mut lines, 4).await;
@@ -576,4 +584,38 @@ async fn recorded_entries_carry_their_time() {
         .map(|(_, at, _)| *at)
         .collect();
     assert_eq!(journaled, times);
+}
+
+/// The `after` a watch's `Replay` says, then the seqs of every entry sent.
+fn replayed(lines: &mut mpsc::UnboundedReceiver<FromHost>) -> (Option<u64>, Vec<u64>) {
+    let Ok(FromHost::Replay { after, .. }) = lines.try_recv() else {
+        panic!("no Replay first");
+    };
+    let mut seqs = Vec::new();
+    while let Ok(FromHost::Entry { seq, .. }) = lines.try_recv() {
+        seqs.push(seq);
+    }
+    (after, seqs)
+}
+
+#[tokio::test]
+async fn watch_after_replays_only_later_seqs() {
+    let (hub, opened) = hub("after");
+    let fake = open(&hub, &opened, true);
+    fake.push(chunk("a"));
+    fake.push(chunk("b"));
+    settle().await;
+    let mut lines = watch_after(&hub, &fake.session, Some(1));
+    assert_eq!(replayed(&mut lines), (Some(1), vec![2]));
+}
+
+#[tokio::test]
+async fn watch_after_past_the_end_replays_all_and_says_none() {
+    let (hub, opened) = hub("past");
+    let fake = open(&hub, &opened, true);
+    fake.push(chunk("a"));
+    settle().await;
+    // Seq 2 is not in a journal of two lines.
+    let mut lines = watch_after(&hub, &fake.session, Some(2));
+    assert_eq!(replayed(&mut lines), (None, vec![0, 1]));
 }

@@ -15,6 +15,8 @@ use gpui_component::text::TextViewState;
 use onehand_core::chat::{Chat, ChatItem, Md, MdId, TranscriptItemId};
 use onehand_core::completion;
 use onehand_core::config::AgentSpec;
+use onehand_core::host::client::HostConn;
+use onehand_core::workspace::HostName;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -198,6 +200,13 @@ pub struct ChatSession {
     /// The host this session waits on, its busy sessions to go idle: what
     /// its last line offers *Restart now* for.
     pub(crate) host_wait: Option<onehand_core::workspace::HostName>,
+    /// The host this session could not be attached on, or lost the
+    /// connection to, its transcript what this machine has of it: not a lost
+    /// agent, only one out of reach, restarted once the host is back.
+    pub(crate) host_offline: Option<onehand_core::workspace::HostName>,
+    /// The host and the connection this session's watch is on, which says
+    /// whether the watch ended because the connection was lost.
+    host_conn: Option<(HostName, HostConn)>,
     /// Parsed markdown, keyed by [`MdId`]; the `usize` is how many bytes of the
     /// model's `source` are already in the state.
     ///
@@ -332,6 +341,13 @@ impl ChatSession {
         self.chat.unsay_host_wait();
         true
     }
+
+    /// No longer out of reach of its host, taking back the line that said so.
+    pub(crate) fn forget_host_offline(&mut self) {
+        if self.host_offline.take().is_some() {
+            self.chat.unsay_host_wait();
+        }
+    }
 }
 
 /// Add a line to session's transcript in onehand's own voice: what a run
@@ -431,6 +447,8 @@ impl ChatSession {
                 started,
                 on_host: host,
                 host_wait: None,
+                host_offline: None,
+                host_conn: None,
                 _token: token,
                 md: HashMap::new(),
                 images: RefCell::new(HashMap::new()),
@@ -469,6 +487,14 @@ impl ChatSession {
                                 // What the event did is the reducer's answer, not
                                 // a second match on the event here -- two copies
                                 // of "did the turn settle" is one copy too many.
+                                // A watch that ended with its host's
+                                // connection says so instead, and is read
+                                // on from what it has until the host is back.
+                                if host::went_away(session, &event) {
+                                    changed = true;
+                                    cx.emit(ChatEvent::Appended);
+                                    continue;
+                                }
                                 let outcome = session.chat.apply(event);
                                 changed |= outcome.transcript_changed;
                                 quiet |= session.chat.starts_quiet_save(&outcome);

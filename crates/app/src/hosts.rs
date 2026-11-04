@@ -14,6 +14,11 @@
 //! once per host: asked again every [`HOST_IDLE_POLL`] until an attach lands,
 //! which the service's own restart once nothing is busy makes the first
 //! time it can. Whatever waited on the host then carries on.
+//!
+//! A connection that goes without another machine taking the host is lost:
+//! it is attached again by itself, with a backoff from [`waits::RECONNECT_FIRST`] to
+//! [`waits::RECONNECT_MAX`], for as long as anything listens. One taken by another
+//! machine is that machine's, and only a person attaches to it again.
 
 use crate::state::Shared;
 use futures::FutureExt as _;
@@ -32,6 +37,11 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::Duration;
 
+mod waits;
+
+pub(crate) use waits::HostState;
+use waits::{Waits, next_delay};
+
 /// How often a host kept waiting by its busy sessions is attached again.
 pub(crate) const HOST_IDLE_POLL: Duration = Duration::from_secs(15);
 
@@ -47,6 +57,14 @@ pub(crate) enum HostFailure {
     },
     /// A sentence a person reads, naming the host.
     Other(String),
+    /// The host is not one this build can attach to (a machine it does not
+    /// run on), or this build cannot attach anywhere (its service binary
+    /// missing): a sentence naming why. Never tried again by itself.
+    Refused(String),
+    /// An attach made by itself found the host held by another machine's,
+    /// and left it so: a sentence naming the host. Only a person attaches
+    /// to it again.
+    Taken(String),
 }
 
 /// The process's attaches, one per host.
@@ -105,6 +123,102 @@ pub(crate) fn idle(cx: &App, host: &HostName) -> Option<impl Future<Output = Wai
     })
 }
 
+/// The end of the wait for lost `host` to be attached again: `Ok` once an
+/// attach lands, `Err(why)` once the host turns out taken, or running another
+/// build, which its busy wait then follows. `None` unless the host is lost.
+/// As [`idle`], the future listens for as long as it lives, and the loop of
+/// attaches, started with the first listener, stops with the last.
+pub(crate) fn back(cx: &App, host: &HostName) -> Option<impl Future<Output = WaitEnd> + use<>> {
+    settle(cx, host);
+    let waits = Shared::global(cx).hosts.waits.clone();
+    let ended = waits.borrow_mut().listen_back(host)?;
+    let listening = Listening {
+        waits: waits.clone(),
+        host: host.clone(),
+        ended: ended.clone(),
+    };
+    if waits.borrow_mut().poll_back(host) {
+        let (host, ended) = (host.clone(), ended.clone());
+        cx.spawn(async move |cx| {
+            let mut delay = None;
+            loop {
+                let wait = next_delay(delay);
+                delay = Some(wait);
+                cx.background_executor().timer(wait).await;
+                if !waits.borrow().polling_back(&host, &ended) {
+                    return;
+                }
+                // What it comes to is heard by the attach itself.
+                let attaching = cx.update(|cx| attach_with(cx, &host, false, true));
+                let _ = attaching.await;
+            }
+        })
+        .detach();
+    }
+    Some(async move {
+        let _listening = listening;
+        ended.await.unwrap_or(Ok(()))
+    })
+}
+
+/// What this run knows of its attach to `host`.
+pub(crate) fn state(cx: &App, host: &HostName) -> HostState {
+    settle(cx, host);
+    Shared::global(cx).hosts.waits.borrow().state(host)
+}
+
+/// A live host whose connection has closed is lost, or taken, from now on,
+/// whether or not the watch on its closing has crossed back yet.
+fn settle(cx: &App, host: &HostName) {
+    let hosts = &Shared::global(cx).hosts;
+    let Ok(mut waits) = hosts.waits.try_borrow_mut() else {
+        return;
+    };
+    if waits.state(host) != HostState::Live {
+        return;
+    }
+    if let Some(conn) = hosts.slots.ready(host).filter(HostConn::is_closed) {
+        waits.closed(host, conn.taken());
+    }
+}
+
+/// `host`'s connection closed, `taken` by another machine or not: unless a
+/// newer attach is up, the host is lost or taken from now on.
+fn closed(cx: &mut App, host: &HostName, taken: bool) {
+    if live(cx, host).is_some() {
+        return;
+    }
+    let changed = Shared::global(cx)
+        .hosts
+        .waits
+        .borrow_mut()
+        .closed(host, taken);
+    if changed {
+        cx.refresh_windows();
+    }
+}
+
+/// Whether lost `host` is being attached again by itself: something listens
+/// for it to be back.
+pub(crate) fn retrying(cx: &App, host: &HostName) -> bool {
+    Shared::global(cx).hosts.waits.borrow().retrying(host)
+}
+
+/// What is said of `host` out of reach: that it is tried again only while it
+/// is, `retrying`.
+pub(crate) fn not_connected(host: &HostName, retrying: bool) -> String {
+    match retrying {
+        true => format!("Not connected to {host}; trying again"),
+        false => format!("Not connected to {host}"),
+    }
+}
+
+/// Whether `host` was last found running another build with sessions
+/// mid-turn.
+pub(crate) fn found_busy(cx: &App, host: &HostName) -> bool {
+    Shared::global(cx).hosts.waits.borrow().found_busy(host)
+}
+
 /// One listener to a host's wait, counted while it lives.
 struct Listening {
     waits: Rc<RefCell<Waits>>,
@@ -139,125 +253,9 @@ pub(crate) fn waiting_line(host: &HostName, n: usize) -> String {
     )
 }
 
-/// How many polls in a row may fail to reach a waited host before its wait
-/// ends on why: one is a blip, a host gone stays gone.
-pub(crate) const HOST_UNREACHABLE_POLLS: u32 = 2;
-
-/// Hosts found busy, with the sessions they said, and the waits listened
-/// to on them, one each.
-#[derive(Default)]
-struct Waits {
-    busy: BTreeMap<HostName, Vec<HostSession>>,
-    waits: BTreeMap<HostName, Wait>,
-}
-
-struct Wait {
-    /// Sent when the wait ends; dropped unsent with its last listener.
-    end: oneshot::Sender<WaitEnd>,
-    ended: Ended,
-    listeners: usize,
-    polling: bool,
-    /// Polls in a row that could not reach the host.
-    missed: u32,
-}
-
-impl Waits {
-    /// What an attach to `host` came to, `polled` when the wait's own poll
-    /// made it: a busy host is kept with the sessions it said; one that
-    /// lands ends the wait, and one that could not reach the host ends it
-    /// on why, at once, or from the poll after a few misses in a row.
-    fn heard<C>(&mut self, host: &HostName, result: &Result<C, HostFailure>, polled: bool) {
-        match result {
-            Ok(_) => self.end(host, Ok(())),
-            Err(HostFailure::Busy { busy, .. }) => {
-                self.busy.insert(host.clone(), busy.clone());
-                if let Some(wait) = self.waits.get_mut(host) {
-                    wait.missed = 0;
-                }
-            }
-            Err(HostFailure::Other(why)) => {
-                let missed = self.waits.get_mut(host).map_or(0, |wait| {
-                    wait.missed += 1;
-                    wait.missed
-                });
-                if !polled || missed >= HOST_UNREACHABLE_POLLS {
-                    self.end(host, Err(why.clone()));
-                }
-            }
-        }
-    }
-
-    fn end(&mut self, host: &HostName, how: WaitEnd) {
-        self.busy.remove(host);
-        if let Some(wait) = self.waits.remove(host) {
-            let _ = wait.end.send(how);
-        }
-    }
-
-    /// One more listener to `host`'s wait, made with the first; `None` when
-    /// the host is not known busy. A wait is only ever made here, so none
-    /// stands with nobody listening.
-    fn listen(&mut self, host: &HostName) -> Option<Ended> {
-        if !self.busy.contains_key(host) {
-            return None;
-        }
-        let wait = self.waits.entry(host.clone()).or_insert_with(|| {
-            let (end, ended) = oneshot::channel();
-            Wait {
-                end,
-                ended: ended.shared(),
-                listeners: 0,
-                polling: false,
-                missed: 0,
-            }
-        });
-        wait.listeners += 1;
-        Some(wait.ended.clone())
-    }
-
-    /// A listener to the wait `ended` went; with the last, the wait goes,
-    /// and what the host said with it.
-    fn leave(&mut self, host: &HostName, ended: &Ended) {
-        let Some(wait) = self
-            .waits
-            .get_mut(host)
-            .filter(|wait| wait.ended.ptr_eq(ended))
-        else {
-            return;
-        };
-        wait.listeners = wait.listeners.saturating_sub(1);
-        if wait.listeners == 0 {
-            self.waits.remove(host);
-            self.busy.remove(host);
-        }
-    }
-
-    /// The sessions `host` said were mid-turn, while it is waited on.
-    fn busy(&self, host: &HostName) -> &[HostSession] {
-        match self.waits.contains_key(host) {
-            true => self.busy.get(host).map_or(&[], Vec::as_slice),
-            false => &[],
-        }
-    }
-
-    /// Whether `host`'s wait has yet to be polled; it is from now on.
-    fn poll(&mut self, host: &HostName) -> bool {
-        self.waits
-            .get_mut(host)
-            .is_some_and(|wait| !std::mem::replace(&mut wait.polling, true))
-    }
-
-    /// Whether the poll of the wait `ended` goes on: that wait still stands.
-    fn polling(&self, host: &HostName, ended: &Ended) -> bool {
-        self.waits
-            .get(host)
-            .is_some_and(|wait| wait.polling && wait.ended.ptr_eq(ended))
-    }
-
-    /// Whether anything waits on `host`.
-    fn waited(&self, host: &HostName) -> bool {
-        self.waits.contains_key(host)
-    }
+/// What is said of `host` once another machine holds it.
+pub(crate) fn taken_line(host: &HostName) -> String {
+    format!("{host} was attached from another machine")
 }
 
 /// The attach to `host`: the one already up, the attempt already under
@@ -302,7 +300,9 @@ pub(crate) async fn attach_waiting(
                     idle.await?;
                 }
             }
-            Err(HostFailure::Other(why)) => return Err(why),
+            Err(HostFailure::Other(why) | HostFailure::Refused(why) | HostFailure::Taken(why)) => {
+                return Err(why);
+            }
         }
     }
 }
@@ -410,7 +410,9 @@ pub(crate) fn clone_repo(
     }
 }
 
-/// `polled` when a wait's poll asks, whose misses count up before they end it.
+/// `polled` when a wait's poll asks, whose misses count up before they end
+/// it; such an attach is made by itself, and never takes the host from
+/// another machine.
 fn attach_with(
     cx: &App,
     host: &HostName,
@@ -419,12 +421,42 @@ fn attach_with(
 ) -> impl Future<Output = Result<HostConn, HostFailure>> + use<> {
     let shared = Shared::global(cx);
     let waits = shared.hosts.waits.clone();
-    let attempt = shared.hosts.slots.get(host, fresh, || {
+    // A person's attach that found one made by itself under way, which failed:
+    // made again, taking the host this time.
+    let again = {
+        let (host, cx) = (host.clone(), cx.to_async());
+        move || {
+            async move { cx.update(|cx| attach_with(cx, &host, false, false)).await }.boxed_local()
+        }
+    };
+    let attempt = shared.hosts.slots.get(host, fresh, !polled, again, || {
+        // Before the first frame that could show it, so nothing to redraw.
+        waits.borrow_mut().attaching(host);
         let (tx, rx) = oneshot::channel();
-        let attaching = attach(host.clone(), fresh);
+        // Sent once a connection that landed closes, with whether it was taken.
+        let (closed_tx, closed_rx) = oneshot::channel();
+        let attaching = attach(host.clone(), fresh, !polled);
         shared.acp.spawn(async move {
-            let _ = tx.send(attaching.await);
+            let result = attaching.await;
+            let conn = result.as_ref().ok().cloned();
+            let _ = tx.send(result);
+            // This task holds a clone of the connection for as long as it is
+            // up, so the connection's stream never ends for want of holders;
+            // the slot holds one for as long anyway.
+            if let Some(conn) = conn {
+                conn.wait_closed().await;
+                let _ = closed_tx.send(conn.taken());
+            }
         });
+        cx.spawn({
+            let host = host.clone();
+            async move |cx| {
+                if let Ok(taken) = closed_rx.await {
+                    cx.update(|cx| closed(cx, &host, taken));
+                }
+            }
+        })
+        .detach();
         let host = host.clone();
         async move {
             rx.await.unwrap_or_else(|_| {
@@ -436,23 +468,29 @@ fn attach_with(
         .boxed_local()
     });
     let host = host.clone();
+    let cx = cx.to_async();
     async move {
-        let result = attempt.await;
-        waits.borrow_mut().heard(&host, &result, polled);
+        let (result, own) = attempt.await;
+        // A result whose slot has since gone to another attempt is not what
+        // is known of the host: that attempt's is.
+        if own && waits.borrow_mut().heard(&host, &result, polled) {
+            cx.update(|cx| cx.refresh_windows());
+        }
         result
     }
 }
 
 /// Install the service on `host` if it is not there, then attach to it; with
-/// `fresh`, restart it onto this build whatever is busy there.
-async fn attach(host: HostName, fresh: bool) -> Result<HostConn, HostFailure> {
+/// `fresh`, restart it onto this build whatever is busy there. Without
+/// `take`, a host another machine holds is left to it.
+async fn attach(host: HostName, fresh: bool, take: bool) -> Result<HostConn, HostFailure> {
     let binary = bundled_binary()?;
     let addr = host.addr();
     let failed = |e| failure(&host, e);
     let remote = client::install(&addr, &binary).await.map_err(failed)?;
     // ponytail: read a second time after `install` read it; a few MB on a runtime thread.
     let bytes = std::fs::read(&binary).map_err(|e| {
-        HostFailure::Other(format!(
+        HostFailure::Refused(format!(
             "Could not attach to {host}: {}: {e}",
             binary.display()
         ))
@@ -461,7 +499,7 @@ async fn attach(host: HostName, fresh: bool) -> Result<HostConn, HostFailure> {
     let conn = if fresh {
         client::restart(&addr, &remote, &build).await
     } else {
-        client::attach(&addr, &remote, &build).await
+        client::attach(&addr, &remote, &build, take).await
     };
     conn.map_err(failed)
 }
@@ -472,13 +510,14 @@ fn failure(host: &HostName, e: HostError) -> HostFailure {
         e @ (HostError::Unreachable(_) | HostError::Protocol(_)) => {
             HostFailure::Other(format!("Could not attach to {host}: {e}"))
         }
-        HostError::Unsupported(uname) => HostFailure::Other(format!(
+        HostError::Unsupported(uname) => HostFailure::Refused(format!(
             "{host} is not a machine this build runs on: {uname}"
         )),
         HostError::Busy { busy, .. } => HostFailure::Busy {
             host: host.clone(),
             busy,
         },
+        HostError::Held => HostFailure::Taken(taken_line(host)),
     }
 }
 
@@ -488,7 +527,8 @@ const MISSING: &str =
 
 /// The service's binary, which is built beside this one.
 fn bundled_binary() -> Result<PathBuf, HostFailure> {
-    let exe = std::env::current_exe().map_err(|e| HostFailure::Other(format!("{MISSING}: {e}")))?;
+    let exe =
+        std::env::current_exe().map_err(|e| HostFailure::Refused(format!("{MISSING}: {e}")))?;
     bundled_binary_in(exe.parent().unwrap_or(Path::new(".")))
 }
 
@@ -497,7 +537,7 @@ fn bundled_binary_in(dir: &Path) -> Result<PathBuf, HostFailure> {
     if path.is_file() {
         Ok(path)
     } else {
-        Err(HostFailure::Other(MISSING.into()))
+        Err(HostFailure::Refused(MISSING.into()))
     }
 }
 
@@ -505,8 +545,10 @@ type Attempt<C> = future::Shared<LocalBoxFuture<'static, Result<C, HostFailure>>
 
 enum Slot<C> {
     Ready(C),
-    /// Every ask while it runs awaits this one attempt, so two never install at once.
-    Attaching(Attempt<C>),
+    /// Every ask while it runs awaits this one attempt, so two never install
+    /// at once; whether it takes the host from another machine beside it, and
+    /// its place in the order attempts were made.
+    Attaching(Attempt<C>, bool, u64),
 }
 
 /// Attaches by host, generic over the connection so the reuse can be
@@ -518,47 +560,86 @@ struct Slots<C> {
     map: Rc<RefCell<BTreeMap<HostName, Slot<C>>>>,
     /// Whether a ready connection still has its stream.
     alive: fn(&C) -> bool,
+    /// The last attempt made for each host, by its place in the order.
+    latest: Rc<RefCell<BTreeMap<HostName, u64>>>,
+    made: std::cell::Cell<u64>,
 }
+
+/// An attempt under way, whether it takes the host, and its place in the order.
+type Under<C> = (Attempt<C>, bool, u64);
+
+/// What an ask comes to, and whether it was its host's latest attempt's own.
+type Got<C> = LocalBoxFuture<'static, (Result<C, HostFailure>, bool)>;
 
 impl<C: Clone + 'static> Slots<C> {
     fn new(alive: fn(&C) -> bool) -> Self {
         Self {
             map: Rc::default(),
             alive,
+            latest: Rc::default(),
+            made: std::cell::Cell::new(0),
         }
     }
 
     /// The connection to `host`, from `make` unless one is up or under way;
     /// with `fresh`, from `make` whatever is there. A failed attempt leaves
-    /// nothing behind, so the next ask tries again.
+    /// nothing behind, so the next ask tries again. With it comes whether the
+    /// attempt is still the host's latest, which alone says what is known.
     ///
     /// `fresh` assumes no attempt is under way: one that is goes on, but what
     /// it ends in is no longer kept.
+    ///
+    /// An ask that `take`s and finds an attempt under way that does not (one
+    /// made by itself) waits on it rather than racing it with a second: it
+    /// takes what that lands, and on any failure asks `again`, whose result
+    /// says what is known of the host itself.
     fn get(
         &self,
         host: &HostName,
         fresh: bool,
+        take: bool,
+        again: impl FnOnce() -> LocalBoxFuture<'static, Result<C, HostFailure>> + 'static,
         make: impl FnOnce() -> LocalBoxFuture<'static, Result<C, HostFailure>>,
-    ) -> LocalBoxFuture<'static, Result<C, HostFailure>> {
+    ) -> Got<C> {
         let found = if fresh { None } else { self.reuse(host) };
-        let attempt = match found {
-            Some(Either::Left(conn)) => return future::ready(Ok(conn)).boxed_local(),
-            Some(Either::Right(attempt)) => attempt,
+        let (attempt, made) = match found {
+            Some(Either::Left(conn)) => return future::ready((Ok(conn), true)).boxed_local(),
+            Some(Either::Right((attempt, takes, made))) if take && !takes => {
+                let finish = self.finish(host, attempt, made);
+                return async move {
+                    match finish.await {
+                        (Ok(conn), own) => (Ok(conn), own),
+                        (Err(_), _) => (again().await, false),
+                    }
+                }
+                .boxed_local();
+            }
+            Some(Either::Right((attempt, _, made))) => (attempt, made),
             None => {
+                let made = self.made.get() + 1;
+                self.made.set(made);
+                self.latest.borrow_mut().insert(host.clone(), made);
                 let attempt = make().shared();
-                let slot = Slot::Attaching(attempt.clone());
+                let slot = Slot::Attaching(attempt.clone(), take, made);
                 self.map.borrow_mut().insert(host.clone(), slot);
-                attempt
+                (attempt, made)
             }
         };
-        let map = self.map.clone();
+        self.finish(host, attempt, made)
+    }
+
+    /// `attempt`, the `made`th, awaited: what it ends in is kept in its slot
+    /// unless another attempt has taken that since.
+    fn finish(&self, host: &HostName, attempt: Attempt<C>, made: u64) -> Got<C> {
+        let (map, latest) = (self.map.clone(), self.latest.clone());
         let host = host.clone();
         async move {
             let result = attempt.clone().await;
+            let own = latest.borrow().get(&host) == Some(&made);
             let mut map = map.borrow_mut();
             // Only this attempt's own slot: a restart since has replaced it.
             let ours = match map.get(&host) {
-                Some(Slot::Attaching(now)) => now.ptr_eq(&attempt),
+                Some(Slot::Attaching(now, ..)) => now.ptr_eq(&attempt),
                 Some(Slot::Ready(_)) | None => false,
             };
             if ours {
@@ -571,25 +652,33 @@ impl<C: Clone + 'static> Slots<C> {
                     }
                 }
             }
-            result
+            (result, own)
         }
         .boxed_local()
     }
 
+    /// The connection `host`'s slot holds ready, whether or not it is up.
+    fn ready(&self, host: &HostName) -> Option<C> {
+        match self.map.borrow().get(host)? {
+            Slot::Ready(conn) => Some(conn.clone()),
+            Slot::Attaching(..) => None,
+        }
+    }
+
     /// What `host`'s slot has worth reusing: a live connection, or an attempt
-    /// still under way.
+    /// still under way, whether it takes the host, and its place in the order.
     ///
     /// An attempt is polled once to see whether it has ended: a shared future
     /// settles only when polled, so one whose every waiter went away still
     /// looks under way after its attach is long over. Ended, it is reused only
     /// if it left a connection that is still up; a failure nobody heard is
     /// not handed to the next ask, which tries again.
-    fn reuse(&self, host: &HostName) -> Option<Either<C, Attempt<C>>> {
+    fn reuse(&self, host: &HostName) -> Option<Either<C, Under<C>>> {
         let mut map = self.map.borrow_mut();
         let conn = match map.get(host)? {
             Slot::Ready(conn) => conn.clone(),
-            Slot::Attaching(attempt) => match attempt.clone().now_or_never() {
-                None => return Some(Either::Right(attempt.clone())),
+            Slot::Attaching(attempt, take, made) => match attempt.clone().now_or_never() {
+                None => return Some(Either::Right((attempt.clone(), *take, *made))),
                 Some(Ok(conn)) => conn,
                 Some(Err(_)) => return None,
             },

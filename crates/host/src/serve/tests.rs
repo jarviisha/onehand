@@ -109,7 +109,15 @@ async fn a_watch_is_answered_after_its_replay_and_a_second_attach_kicks_the_firs
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
-    first.ask(2, Call::Watch { session }).await;
+    first
+        .ask(
+            2,
+            Call::Watch {
+                session,
+                after: None,
+            },
+        )
+        .await;
     assert!(matches!(first.line().await, Some(FromHost::Replay { .. })));
     assert!(matches!(
         first.line().await,
@@ -127,17 +135,11 @@ async fn a_watch_is_answered_after_its_replay_and_a_second_attach_kicks_the_firs
         })
     ));
 
+    // Taken once the new attach has said its hello, not before.
     let mut second = Laptop::new(&socket).await;
+    second.ask(1, hello(true, "two")).await;
     assert!(matches!(first.line().await, Some(FromHost::Kicked)));
     assert!(first.line().await.is_none());
-    second
-        .ask(
-            1,
-            Call::Hello {
-                build: Build("b1".into()),
-            },
-        )
-        .await;
     assert!(matches!(
         second.line().await,
         Some(FromHost::Answer { id: 1, result: Ok(Reply::Welcome { build, busy }) })
@@ -383,4 +385,103 @@ async fn a_slow_call_holds_up_no_other() {
     ids.sort();
     assert_eq!(ids, [1, 2]);
     let _ = fs::remove_dir_all(&dir);
+}
+
+fn hello(take: bool, laptop: &str) -> Call {
+    Call::Hello {
+        build: Build("b1".into()),
+        take,
+        laptop: Some(laptop.into()),
+    }
+}
+
+/// A service on its own socket in a scratch folder, and that folder.
+fn service(name: &str) -> (PathBuf, JoinHandle<()>, PathBuf) {
+    let dir = std::env::temp_dir().join(format!("onehand-{name}-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let socket = dir.join("s.sock");
+    let listener = UnixListener::bind(&socket).unwrap();
+    let hub = hub_in(&dir);
+    let service = tokio::spawn(async move {
+        accept(listener, hub, terms_in(), Build("b1".into())).await;
+    });
+    (socket, service, dir)
+}
+
+fn welcomed(line: Option<FromHost>) -> bool {
+    matches!(
+        line,
+        Some(FromHost::Answer {
+            result: Ok(Reply::Welcome { .. }),
+            ..
+        })
+    )
+}
+
+#[tokio::test]
+async fn a_hello_that_does_not_take_leaves_another_laptops_attach_alone() {
+    let (socket, service, dir) = service("held");
+    let mut first = Laptop::new(&socket).await;
+    first.ask(1, hello(true, "one")).await;
+    assert!(welcomed(first.line().await));
+
+    let mut second = Laptop::new(&socket).await;
+    second.ask(1, hello(false, "two")).await;
+    assert!(matches!(
+        second.line().await,
+        Some(FromHost::Answer {
+            id: 1,
+            result: Ok(Reply::Held)
+        })
+    ));
+    assert!(second.line().await.is_none());
+    // The first attach is still served.
+    first.ask(2, Call::List).await;
+    assert!(matches!(
+        first.line().await,
+        Some(FromHost::Answer {
+            id: 2,
+            result: Ok(Reply::Sessions(_))
+        })
+    ));
+
+    // Its own laptop, whose attach the service has yet to see go, takes it.
+    let mut again = Laptop::new(&socket).await;
+    again.ask(1, hello(false, "one")).await;
+    assert!(matches!(first.line().await, Some(FromHost::Kicked)));
+    assert!(welcomed(again.line().await));
+    service.abort();
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn a_hello_that_does_not_take_is_welcome_once_the_attach_before_it_went() {
+    let (socket, service, dir) = service("unheld");
+    let mut first = Laptop::new(&socket).await;
+    first.ask(1, hello(true, "one")).await;
+    assert!(welcomed(first.line().await));
+    drop(first);
+
+    let mut second = Laptop::new(&socket).await;
+    for _ in 0..500 {
+        // The first attach's task ends once the service reads its stream closed.
+        second.ask(1, hello(false, "two")).await;
+        match second.line().await {
+            Some(FromHost::Answer {
+                result: Ok(Reply::Held),
+                ..
+            }) => {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+                second = Laptop::new(&socket).await;
+            }
+            line => {
+                assert!(welcomed(line));
+                service.abort();
+                let _ = fs::remove_dir_all(&dir);
+                return;
+            }
+        }
+    }
+    panic!("never welcomed");
 }

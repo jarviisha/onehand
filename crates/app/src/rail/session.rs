@@ -33,6 +33,7 @@ pub(super) fn signal_hint(signal: Option<SessionSignal>) -> &'static str {
         Some(SessionSignal::HostWait) => {
             "Waiting for the host's busy sessions; restarts by itself once they finish"
         }
+        Some(SessionSignal::HostLost) => "Not connected to its host",
         None => "Nothing waiting on you",
     }
 }
@@ -62,6 +63,10 @@ pub(crate) fn status_icon(signal: Option<SessionSignal>, cx: &App) -> gpui::AnyE
             Icon::new(crate::icons::Icon::Hourglass),
             cx.theme().muted_foreground,
         ),
+        Some(SessionSignal::HostLost) => (
+            Icon::new(crate::icons::Icon::Unplug),
+            cx.theme().muted_foreground,
+        ),
         None => (
             Icon::new(crate::icons::Icon::Circle),
             cx.theme().muted_foreground,
@@ -77,9 +82,13 @@ pub(crate) fn word_ink(signal: Option<SessionSignal>, cx: &App) -> Option<Hsla> 
     match signal {
         Some(SessionSignal::Lost | SessionSignal::Failed) => Some(ink.danger),
         Some(SessionSignal::AwaitingUser) => Some(ink.warning),
-        Some(SessionSignal::Busy | SessionSignal::UnseenTurn | SessionSignal::HostWait) | None => {
-            None
-        }
+        Some(
+            SessionSignal::Busy
+            | SessionSignal::UnseenTurn
+            | SessionSignal::HostWait
+            | SessionSignal::HostLost,
+        )
+        | None => None,
     }
 }
 
@@ -275,11 +284,13 @@ pub(super) fn session_row(
             .chain(waiting),
     );
     let (shell, hover) = (cx.entity().downgrade(), hover_fill(cx));
-    let label = SharedString::from(format!(
-        "{}: {}",
-        super::model::word(signal),
-        signal_hint(signal)
-    ));
+    let label = SharedString::from(match (signal, host) {
+        (Some(SessionSignal::HostLost), Some(host)) => {
+            let host = onehand_core::workspace::HostName(host.to_string());
+            crate::hosts::not_connected(&host, crate::hosts::retrying(cx, &host))
+        }
+        _ => format!("{}: {}", super::model::word(signal), signal_hint(signal)),
+    });
     let tip = title.clone();
     let meta_tip = facts.clone();
     div()

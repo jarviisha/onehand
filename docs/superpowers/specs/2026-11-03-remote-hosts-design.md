@@ -1,6 +1,6 @@
 # Remote hosts: sessions that live on a machine reached over SSH
 
-Status: design, decided with the owner on 2026-11-03; steps 1 and 2 built (see *Order of work*).
+Status: design, decided with the owner on 2026-11-03; steps 1 to 3 built (see *Order of work*).
 
 ## Why
 
@@ -220,8 +220,10 @@ My call, from the owner's rule that they install and sign in agents on the host 
 
 My call, from the owner's wish that the whole transcript of the time away comes back to the laptop.
 
-- **The laptop keeps a copy of each host session's transcript in the same store format.** New
-  items are appended to it as they arrive.
+- **The laptop keeps a copy of each host session's transcript as the journal's own lines,** not
+  the store format (the owner's decision, 2026-11-04): each line keeps the seq the host gave it,
+  which is how the host knows where the copy ends. It is read back through the same
+  entry-to-event rule as a replay. New items are appended to it as they arrive.
 - **On attach the host replays from where the laptop's copy ends,** then goes live.
 - **A detached host's sessions can still be read on the laptop,** up to where its copy ends, marked
   as not connected.
@@ -335,8 +337,8 @@ These form a sequence, and each step is useful on its own:
    2a, files, editor and git status (built); 2b, the terminal dock (built). As built: `docs/hosts.md`.
 3. The host UI: picking or typing a host, opening a folder on it, cloning, showing a host that is
    not connected, and the laptop's own copy of host transcripts for reading while not attached.
-   Built in two parts: 3a, the form (pick a host, browse its folders, clone; built); 3b, re-attaching
-   by itself and the laptop's copy (to come). As built: `docs/hosts.md`.
+   Built in two parts: 3a, the form (pick a host, browse its folders, clone; built, #287); 3b,
+   re-attaching by itself and the laptop's copy (built). As built: `docs/hosts.md`.
 4. The permission bypass switch.
 5. Offloaded projects in mirror mode, with the key, plus *Send to host*.
 6. Branch mode.

@@ -173,12 +173,14 @@ impl Hub {
         }
     }
 
-    /// Send `Replay` and every entry so far to `sink`, then live entries
-    /// except `Request`. The journal is read with the hub unlocked, so a long
-    /// replay holds up no other session; what lands meanwhile is read after.
+    /// Send `Replay` and every entry so far to `sink` (only those past
+    /// `after` when the journal reaches it), then live entries except
+    /// `Request`. The journal is read with the hub unlocked, so a long replay
+    /// holds up no other session; what lands meanwhile is read after.
     pub(crate) fn watch(
         hub: &Mutex<Hub>,
         session: &HostSession,
+        after: Option<u64>,
         sink: UnboundedSender<FromHost>,
     ) -> Result<(), String> {
         let dir = lock(hub).unwatch(session)?;
@@ -190,7 +192,7 @@ impl Hub {
             Ok(_) | Err(_) => read(),
         };
         let (entries, mark) = read.map_err(unreadable)?;
-        lock(hub).replay(session, sink, entries, mark)
+        lock(hub).replay(session, after, sink, entries, mark)
     }
 
     /// Stop passing `session` live entries on, for a watch that will replay
@@ -206,10 +208,14 @@ impl Hub {
 
     /// Send `Replay`, `entries` (the journal up to `mark`) and whatever was
     /// journaled after `mark` to `sink`, then make it the session's watcher.
-    /// Called with the hub locked, so no entry lands between the two.
+    /// Past `after` alone when the journal has a line of that seq; a journal
+    /// that does not reach it is not the one the watcher holds a copy of, and
+    /// is sent whole, saying so with no `after`. Called with the hub locked,
+    /// so no entry lands between the two.
     fn replay(
         &mut self,
         session: &HostSession,
+        after: Option<u64>,
         sink: UnboundedSender<FromHost>,
         entries: journal::Entries,
         mark: Mark,
@@ -218,14 +224,23 @@ impl Hub {
             .sessions
             .get_mut(session)
             .ok_or_else(|| unknown(session))?;
-        let (since, _) = journal::read_from(&s.dir, mark).map_err(unreadable)?;
+        let (since, end) = journal::read_from(&s.dir, mark).map_err(unreadable)?;
+        // A journal's seq is its line number, so it reaches `after` when it has more lines.
+        let after = after.filter(|after| end.lines() > *after);
         let replay = FromHost::Replay {
             session: session.clone(),
+            after,
         };
         if sink.send(replay).is_err() {
             return Ok(());
         }
-        for (seq, at, entry) in entries.into_iter().chain(since) {
+        // ponytail: the whole journal is read, then the copy's part dropped;
+        // read from a byte offset if long journals make watches slow.
+        let later = entries
+            .into_iter()
+            .chain(since)
+            .filter(|(seq, _, _)| after.is_none_or(|after| *seq > after));
+        for (seq, at, entry) in later {
             let line = FromHost::Entry {
                 session: session.clone(),
                 seq,
