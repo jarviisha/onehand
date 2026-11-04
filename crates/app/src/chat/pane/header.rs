@@ -545,7 +545,7 @@ fn project_menu(
         unattended,
         check: _,
         asks,
-        local,
+        local: _,
     }: ProjectFacts,
     pane: Entity<ChatPane>,
 ) -> impl Fn(
@@ -595,13 +595,11 @@ fn project_menu(
             crate::controls::menu_item("Copy project path")
                 .on_click(act(ProjectAction::CopyPath, pane.clone())),
         )
-        // A folder on a host has no `git status` to read here.
-        .when(local, |menu| {
-            menu.item(
-                crate::controls::menu_item("Refresh Git status")
-                    .on_click(act(ProjectAction::RefreshGit, pane.clone())),
-            )
-        })
+        // A host's status is read over its attach, as the sweep does.
+        .item(
+            crate::controls::menu_item("Refresh Git status")
+                .on_click(act(ProjectAction::RefreshGit, pane.clone())),
+        )
         .separator()
         .item(
             crate::controls::menu_row(move |_, _| {

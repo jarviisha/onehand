@@ -248,7 +248,7 @@ fn project_menu(
                 },
             ))
         })
-        // A folder on a host has no shell here, nor a `git status` to read.
+        // A folder on a host has no shell here yet.
         .when(local, |menu| {
             menu.item(crate::controls::menu_item("Open terminal").on_click(
                 move |_, window, cx: &mut App| {
@@ -268,15 +268,14 @@ fn project_menu(
                 .ok();
             },
         ))
-        .when(local, |menu| {
-            menu.item(crate::controls::menu_item("Refresh Git status").on_click(
-                move |_, _, cx: &mut App| {
-                    refresh
-                        .update(cx, |shell: &mut Shell, cx| shell.refresh_git(cx))
-                        .ok();
-                },
-            ))
-        })
+        // A host's status is read over its attach, as the sweep does.
+        .item(crate::controls::menu_item("Refresh Git status").on_click(
+            move |_, _, cx: &mut App| {
+                refresh
+                    .update(cx, |shell: &mut Shell, cx| shell.refresh_git(cx))
+                    .ok();
+            },
+        ))
         .separator()
         .item(
             crate::controls::menu_row(move |_, _| {

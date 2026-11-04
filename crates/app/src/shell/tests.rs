@@ -19,8 +19,8 @@ fn session_cycle_ends_when_the_remapped_modifier_is_released() {
     assert!(!direct.held(gpui::Modifiers::default()));
 }
 
-/// A folder on a host names nothing on this machine, so neither `git status`,
-/// the agent started ahead of a session, nor the pages ever reach for it.
+/// A folder on a host names nothing on this machine, so neither the agent
+/// started ahead of a session nor the pages ever reach for it.
 #[test]
 fn a_host_root_is_never_given_local_work() {
     use onehand_core::workspace::{HostName, Workspace};
@@ -28,19 +28,51 @@ fn a_host_root_is_never_given_local_work() {
     let mut ws = Workspace::seeded("/tmp");
     let local = PathBuf::from("/tmp");
     let host = ws.add_host_root(HostName("vps".into()), PathBuf::from("/srv/app"));
-    assert_eq!(roots::git_roots(&ws), vec![local.clone()]);
-    // Arriving points the Workbench, the terminal and the warm-up at the
-    // local folder, and at nothing for the host's.
-    assert_eq!(roots::arrival(&ws.roots[0]), Ok(local.clone()));
-    assert_eq!(roots::arrival(&ws.roots[host]), Err(roots::ON_HOST_LATER));
+    // Arriving warms an agent on the local folder only.
+    assert_eq!(ws.roots[0].local_path(), Some(local.as_path()));
+    assert_eq!(ws.roots[host].local_path(), None);
     assert_eq!(sessions::page_roots_in(&ws), vec![local]);
-    // Its menus offer no worktree, terminal, `git status`, check or switch,
-    // even where a folder of the same path here is a repository.
+    // Its menus offer no worktree, terminal, check or switch, even where a
+    // folder of the same path here is a repository.
     ws.roots[host].check = Some("make test".into());
     let facts = crate::chat::pane::ProjectFacts::of(&ws.roots[host], true);
     assert!(!facts.local && !facts.is_repo && !facts.check);
     assert_eq!(facts.unattended, None);
     assert!(crate::chat::pane::ProjectFacts::of(&ws.roots[0], true).local);
+}
+
+/// A `git status` sweep reads a host's folder over its attach when one is
+/// up, and leaves it out rather than attach for it.
+#[test]
+fn a_git_sweep_reads_a_host_root_only_while_it_is_attached() {
+    use onehand_core::disk::{Disk, HostDisk};
+    use onehand_core::host::client::HostConn;
+    use onehand_core::workspace::{HostName, Workspace};
+    use std::path::PathBuf;
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap();
+    let mut ws = Workspace::seeded("/tmp");
+    ws.add_host_root(HostName("vps".into()), PathBuf::from("/srv/app"));
+    let read = |live: bool| {
+        git_sweep::git_roots(&ws, |host| {
+            live.then(|| {
+                Disk::Host(HostDisk::new(
+                    HostConn::closed(&host.0),
+                    rt.handle().clone(),
+                ))
+            })
+        })
+        .into_iter()
+        .map(|(path, disk)| (path, disk.host().map(str::to_string)))
+        .collect::<Vec<_>>()
+    };
+    let here = (PathBuf::from("/tmp"), None);
+    assert_eq!(read(false), vec![here.clone()]);
+    assert_eq!(
+        read(true),
+        vec![here, (PathBuf::from("/srv/app"), Some("vps".into()))]
+    );
 }
 
 /// The workspace page lists a host's project with its sessions, but with

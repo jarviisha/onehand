@@ -20,6 +20,7 @@ use futures::FutureExt as _;
 use futures::channel::oneshot;
 use futures::future::{self, Either, LocalBoxFuture};
 use gpui::App;
+use onehand_core::disk::{Disk, HostDisk};
 use onehand_core::host::client::{self, HostConn, HostError};
 use onehand_core::host::wire::{HostSession, build_id};
 use onehand_core::workspace::HostName;
@@ -265,6 +266,30 @@ pub(crate) fn conn(
     host: &HostName,
 ) -> impl Future<Output = Result<HostConn, HostFailure>> + use<> {
     attach_with(cx, host, false, false)
+}
+
+/// The attach to `host` already up, if one is: what reads a host's files
+/// in passing, as a `git status` sweep does, without attaching for it.
+pub(crate) fn live(cx: &App, host: &HostName) -> Option<HostConn> {
+    match Shared::global(cx).hosts.slots.reuse(host)? {
+        Either::Left(conn) => Some(conn),
+        Either::Right(_) => None,
+    }
+}
+
+/// The files of a host reached over `conn`.
+pub(crate) fn disk_over(cx: &App, conn: HostConn) -> Disk {
+    Disk::Host(HostDisk::new(conn, Shared::global(cx).acp.handle()))
+}
+
+/// `host`'s files, attaching for them as [`conn`] does.
+pub(crate) fn disk(
+    cx: &App,
+    host: &HostName,
+) -> impl Future<Output = Result<Disk, HostFailure>> + use<> {
+    let attaching = attach_with(cx, host, false, false);
+    let rt = Shared::global(cx).acp.handle();
+    async move { Ok(Disk::Host(HostDisk::new(attaching.await?, rt))) }
 }
 
 /// Whether anything waits on `host`'s busy sessions.
