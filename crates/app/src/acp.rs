@@ -232,7 +232,7 @@ impl AcpRuntime {
                 },
             };
             let _ = told.send(id.clone());
-            forward(conn.watch(&id), tx, alive).await;
+            forward(conn.watch(&id, None), tx, alive).await;
         });
         (rx, session)
     }

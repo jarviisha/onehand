@@ -50,8 +50,12 @@ impl Host {
     /// Read the `Watch` a `watch` sends, and start its replay; its id.
     async fn replaying(&mut self) -> u64 {
         let Question { id, call } = self.ask().await;
-        assert!(matches!(call, Call::Watch { session } if session == s1()));
-        self.send(FromHost::Replay { session: s1() }).await;
+        assert!(matches!(call, Call::Watch { session, after: None } if session == s1()));
+        self.send(FromHost::Replay {
+            session: s1(),
+            after: None,
+        })
+        .await;
         id
     }
 
@@ -86,7 +90,7 @@ fn pair() -> (HostConn, Host) {
 #[tokio::test]
 async fn watch_maps_entries_to_events() {
     let (conn, mut host) = pair();
-    let mut events = conn.watch(&s1());
+    let mut events = conn.watch(&s1(), None);
     host.watched().await;
     host.entry(
         0,
@@ -133,7 +137,7 @@ async fn watch_maps_entries_to_events() {
 #[tokio::test]
 async fn requests_on_tx_go_to_the_host() {
     let (conn, mut host) = pair();
-    let mut events = conn.watch(&s1());
+    let mut events = conn.watch(&s1(), None);
     host.watched().await;
     host.entry(
         0,
@@ -157,7 +161,7 @@ async fn requests_on_tx_go_to_the_host() {
 #[tokio::test]
 async fn closing_the_stream_ends_watch_with_disconnected() {
     let (conn, mut host) = pair();
-    let mut events = conn.watch(&s1());
+    let mut events = conn.watch(&s1(), None);
     host.watched().await;
     drop(host);
     assert!(matches!(
@@ -170,7 +174,7 @@ async fn closing_the_stream_ends_watch_with_disconnected() {
 #[tokio::test]
 async fn kicked_ends_watch_saying_so() {
     let (conn, mut host) = pair();
-    let mut events = conn.watch(&s1());
+    let mut events = conn.watch(&s1(), None);
     host.watched().await;
     host.send(FromHost::Kicked).await;
     assert!(matches!(
@@ -309,7 +313,7 @@ async fn pending_calls_fail_when_the_stream_closes() {
 #[tokio::test]
 async fn a_refused_watch_ends_in_one_disconnected() {
     let (conn, mut host) = pair();
-    let mut events = conn.watch(&s1());
+    let mut events = conn.watch(&s1(), None);
     let Question { id, .. } = host.ask().await;
     host.send(FromHost::Answer {
         id,
@@ -326,7 +330,7 @@ async fn a_refused_watch_ends_in_one_disconnected() {
 #[tokio::test]
 async fn a_refused_request_is_said_as_an_error() {
     let (conn, mut host) = pair();
-    let mut events = conn.watch(&s1());
+    let mut events = conn.watch(&s1(), None);
     host.watched().await;
     host.entry(
         0,
@@ -355,7 +359,7 @@ async fn a_refused_request_is_said_as_an_error() {
 #[tokio::test]
 async fn a_live_ready_reuses_the_request_channel() {
     let (conn, mut host) = pair();
-    let mut events = conn.watch(&s1());
+    let mut events = conn.watch(&s1(), None);
     host.watched().await;
     let ready = Entry::Ready(Readiness {
         resumed: false,
@@ -375,7 +379,7 @@ async fn a_live_ready_reuses_the_request_channel() {
 #[tokio::test]
 async fn a_session_that_ends_ends_its_watch() {
     let (conn, mut host) = pair();
-    let mut events = conn.watch(&s1());
+    let mut events = conn.watch(&s1(), None);
     host.watched().await;
     host.entry(
         0,
@@ -411,7 +415,7 @@ async fn watching_again_skips_what_the_first_watch_had_in_flight() {
         resumed: false,
         forkable: false,
     });
-    let mut first = conn.watch(&s1());
+    let mut first = conn.watch(&s1(), None);
     host.watched().await;
     host.entry(0, ready.clone()).await;
     host.entry(1, chunk("a")).await;
@@ -421,11 +425,15 @@ async fn watching_again_skips_what_the_first_watch_had_in_flight() {
     ));
     assert_eq!(next_chunk(&mut first).await, "a");
 
-    let mut second = conn.watch(&s1());
+    let mut second = conn.watch(&s1(), None);
     let Question { id, .. } = host.ask().await;
     // Sent live to the first watch before the host read the second.
     host.entry(2, chunk("b")).await;
-    host.send(FromHost::Replay { session: s1() }).await;
+    host.send(FromHost::Replay {
+        session: s1(),
+        after: None,
+    })
+    .await;
     for (seq, entry) in [(0, ready), (1, chunk("a")), (2, chunk("b"))] {
         host.entry(seq, entry).await;
     }
@@ -443,7 +451,7 @@ async fn watching_again_skips_what_the_first_watch_had_in_flight() {
 #[tokio::test]
 async fn a_replay_whose_first_line_is_unreadable_is_delivered_whole() {
     let (conn, mut host) = pair();
-    let mut events = conn.watch(&s1());
+    let mut events = conn.watch(&s1(), None);
     let id = host.replaying().await;
     // Line 0 was torn, or is an entry this build cannot read.
     host.entry(1, chunk("a")).await;
@@ -465,7 +473,7 @@ async fn a_replay_whose_first_line_is_unreadable_is_delivered_whole() {
 #[tokio::test]
 async fn a_replay_gives_one_live_connected_after_its_last_event() {
     let (conn, mut host) = pair();
-    let mut events = conn.watch(&s1());
+    let mut events = conn.watch(&s1(), None);
     let id = host.replaying().await;
     host.entry(
         0,
@@ -510,7 +518,7 @@ async fn a_replay_gives_one_live_connected_after_its_last_event() {
 #[tokio::test]
 async fn a_replay_that_ended_the_session_gives_no_connected() {
     let (conn, mut host) = pair();
-    let mut events = conn.watch(&s1());
+    let mut events = conn.watch(&s1(), None);
     let id = host.replaying().await;
     host.entry(
         0,
@@ -534,7 +542,7 @@ async fn a_replay_that_ended_the_session_gives_no_connected() {
 #[tokio::test]
 async fn what_a_replay_makes_the_chat_send_never_reaches_the_host() {
     let (conn, mut host) = pair();
-    let mut events = conn.watch(&s1());
+    let mut events = conn.watch(&s1(), None);
     let id = host.replaying().await;
     host.entry(
         0,
@@ -578,7 +586,7 @@ async fn what_a_replay_makes_the_chat_send_never_reaches_the_host() {
 #[tokio::test]
 async fn a_refused_watch_forgets_its_request_channel() {
     let (conn, mut host) = pair();
-    let mut first = conn.watch(&s1());
+    let mut first = conn.watch(&s1(), None);
     host.watched().await;
     let ready = Entry::Ready(Readiness {
         resumed: false,
@@ -588,7 +596,7 @@ async fn a_refused_watch_forgets_its_request_channel() {
     let Some(AcpEvent::Connected { tx: held, .. }) = first.next().await else {
         panic!("no Connected");
     };
-    let mut refused = conn.watch(&s1());
+    let mut refused = conn.watch(&s1(), None);
     let Question { id, .. } = host.ask().await;
     host.send(FromHost::Answer {
         id,
@@ -599,7 +607,7 @@ async fn a_refused_watch_forgets_its_request_channel() {
         made(&mut refused).await,
         Some(AcpEvent::Disconnected(_))
     ));
-    let mut third = conn.watch(&s1());
+    let mut third = conn.watch(&s1(), None);
     host.watched().await;
     host.entry(1, ready).await;
     let Some(AcpEvent::Connected { tx, .. }) = third.next().await else {
@@ -614,8 +622,8 @@ async fn a_refused_watch_forgets_its_request_channel() {
 #[tokio::test]
 async fn watching_again_ends_the_first_watch() {
     let (conn, mut host) = pair();
-    let mut first = conn.watch(&s1());
-    let _second = conn.watch(&s1());
+    let mut first = conn.watch(&s1(), None);
+    let _second = conn.watch(&s1(), None);
     host.watched().await;
     host.watched().await;
     assert!(matches!(
@@ -631,7 +639,7 @@ async fn what_was_queued_as_the_stream_ended_is_refused() {
     let (asked, answer) = oneshot::channel();
     let (watched, mut events) = events::unbounded();
     tx.send(Cmd::Ask(Call::List, asked)).ok().unwrap();
-    tx.send(Cmd::Watch(s1(), watched)).ok().unwrap();
+    tx.send(Cmd::Watch(s1(), watched, None)).ok().unwrap();
     refuse_queued(&mut rx, "gone");
     assert!(matches!(answer.await, Ok(Err(HostError::Unreachable(why))) if why == "gone"));
     assert!(matches!(
@@ -644,7 +652,7 @@ async fn what_was_queued_as_the_stream_ended_is_refused() {
 #[tokio::test]
 async fn a_card_answered_during_a_rewatch_reaches_the_host() {
     let (conn, mut host) = pair();
-    let mut first = conn.watch(&s1());
+    let mut first = conn.watch(&s1(), None);
     host.watched().await;
     host.entry(
         0,
@@ -657,7 +665,7 @@ async fn a_card_answered_during_a_rewatch_reaches_the_host() {
     let Some(AcpEvent::Connected { tx, .. }) = first.next().await else {
         panic!("no Connected");
     };
-    let _second = conn.watch(&s1());
+    let _second = conn.watch(&s1(), None);
     let Question { call, .. } = host.ask().await;
     assert!(matches!(call, Call::Watch { .. }), "{call:?}");
     // The second watch is still replaying: its Watch has no answer yet.
@@ -705,14 +713,18 @@ async fn an_unanswered_hello_ends_at_its_deadline() {
 #[tokio::test]
 async fn a_watch_starts_only_at_its_own_marker() {
     let (conn, mut host) = pair();
-    let mut first = conn.watch(&s1());
-    let mut second = conn.watch(&s1());
+    let mut first = conn.watch(&s1(), None);
+    let mut second = conn.watch(&s1(), None);
     let Question { id: one, .. } = host.ask().await;
     let Question { id: two, .. } = host.ask().await;
     // As the host sends them: each watch's replay, then its answer, in turn.
     // Told apart by their text, so the test sees whose replay was taken.
     for (id, text) in [(one, "first's"), (two, "second's")] {
-        host.send(FromHost::Replay { session: s1() }).await;
+        host.send(FromHost::Replay {
+            session: s1(),
+            after: None,
+        })
+        .await;
         host.entry(0, chunk(text)).await;
         host.entry(1, chunk("b")).await;
         host.answer(id, Reply::Done).await;
@@ -735,7 +747,7 @@ async fn a_watch_starts_only_at_its_own_marker() {
 #[tokio::test]
 async fn watch_says_the_time_before_entries_whose_second_changed() {
     let (conn, mut host) = pair();
-    let mut events = conn.watch(&s1());
+    let mut events = conn.watch(&s1(), None);
     host.watched().await;
     host.timed(0, 100, chunk("a")).await;
     host.timed(1, 100, chunk("b")).await;
@@ -870,7 +882,7 @@ async fn made(events: &mut (impl Stream<Item = AcpEvent> + Unpin)) -> Option<Acp
 #[tokio::test]
 async fn what_the_client_says_itself_is_stamped_now() {
     let (conn, mut host) = pair();
-    let mut events = conn.watch(&s1());
+    let mut events = conn.watch(&s1(), None);
     let id = host.replaying().await;
     host.timed(0, 100, chunk("a")).await;
     host.answer(id, Reply::Done).await;
@@ -887,12 +899,12 @@ async fn what_the_client_says_itself_is_stamped_now() {
 #[tokio::test]
 async fn a_rewatch_says_the_time_again() {
     let (conn, mut host) = pair();
-    let mut first = conn.watch(&s1());
+    let mut first = conn.watch(&s1(), None);
     host.watched().await;
     host.timed(0, 100, chunk("a")).await;
     assert!(matches!(first.next().await, Some(AcpEvent::At(100))));
     assert_eq!(next_chunk(&mut first).await, "a");
-    let mut second = conn.watch(&s1());
+    let mut second = conn.watch(&s1(), None);
     let id = host.replaying().await;
     host.timed(0, 100, chunk("a")).await;
     host.answer(id, Reply::Done).await;
@@ -1140,4 +1152,110 @@ async fn a_refused_clone_says_the_hosts_words() {
         Err(HostError::Protocol(why)) => assert_eq!(why, "there is already /srv/repo"),
         other => panic!("{other:?}"),
     }
+}
+
+fn scratch(name: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("onehand-watch-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    dir
+}
+
+fn copy_in(root: &Path) -> super::super::copy::Copy {
+    super::super::copy::Copy::open(root, &crate::workspace::HostName("vps".into()), &s1())
+}
+
+fn copy_seqs(root: &Path) -> Vec<u64> {
+    copy_in(root)
+        .read()
+        .iter()
+        .map(|(seq, _, _)| *seq)
+        .collect()
+}
+
+/// A copy holding seqs 0..=2: `Ready`, then chunks `a` and `b`.
+fn copy_of_three(root: &Path) -> super::super::copy::Copy {
+    let mut copy = copy_in(root);
+    let ready = Entry::Ready(Readiness {
+        resumed: false,
+        forkable: false,
+    });
+    copy.append(0, 0, &ready).unwrap();
+    copy.append(1, 0, &chunk("a")).unwrap();
+    copy.append(2, 0, &chunk("b")).unwrap();
+    copy
+}
+
+#[tokio::test]
+async fn watch_with_copy_yields_copy_then_tail() {
+    let root = scratch("tail");
+    let (conn, mut host) = pair();
+    let mut events = conn.watch(&s1(), Some(copy_of_three(&root)));
+    let Question { id, call } = host.ask().await;
+    assert!(
+        matches!(call, Call::Watch { after: Some(2), .. }),
+        "{call:?}"
+    );
+    host.send(FromHost::Replay {
+        session: s1(),
+        after: Some(2),
+    })
+    .await;
+    host.entry(3, chunk("c")).await;
+    host.entry(4, chunk("d")).await;
+    host.answer(id, Reply::Done).await;
+    for want in ["a", "b", "c", "d"] {
+        assert_eq!(next_chunk(&mut events).await, want);
+    }
+    assert!(matches!(
+        events.next().await,
+        Some(AcpEvent::Connected { .. })
+    ));
+    assert_eq!(copy_seqs(&root), [0, 1, 2, 3, 4]);
+}
+
+#[tokio::test]
+async fn watch_with_longer_copy_drops_it() {
+    let root = scratch("longer");
+    let (conn, mut host) = pair();
+    let mut events = conn.watch(&s1(), Some(copy_of_three(&root)));
+    let Question { id, .. } = host.ask().await;
+    // The host's journal is shorter than the copy: it replays from the start.
+    host.send(FromHost::Replay {
+        session: s1(),
+        after: None,
+    })
+    .await;
+    host.entry(0, chunk("x")).await;
+    host.entry(1, chunk("y")).await;
+    host.answer(id, Reply::Done).await;
+    assert_eq!(next_chunk(&mut events).await, "x");
+    assert_eq!(next_chunk(&mut events).await, "y");
+    // Nothing from the copy came between them.
+    host.entry(2, chunk("z")).await;
+    assert_eq!(next_chunk(&mut events).await, "z");
+    let seqs = copy_seqs(&root);
+    assert_eq!(seqs, [0, 1, 2]);
+    let texts: Vec<_> = super::super::copy::events(&copy_in(&root).read())
+        .into_iter()
+        .map(|e| match e {
+            AcpEvent::AgentChunk { text, .. } => text,
+            other => panic!("{other:?}"),
+        })
+        .collect();
+    assert_eq!(texts, ["x", "y", "z"]);
+}
+
+#[tokio::test]
+async fn watch_with_a_broken_copy_clears_it_and_asks_for_all() {
+    let root = scratch("broken");
+    drop(copy_of_three(&root));
+    let path = root.join("vps").join("s1.jsonl");
+    let mut text = std::fs::read_to_string(&path).unwrap();
+    text.insert_str(0, "not json\n");
+    std::fs::write(&path, text).unwrap();
+    let (conn, mut host) = pair();
+    let _events = conn.watch(&s1(), Some(copy_in(&root)));
+    let Question { call, .. } = host.ask().await;
+    assert!(matches!(call, Call::Watch { after: None, .. }), "{call:?}");
+    assert!(!path.exists());
 }

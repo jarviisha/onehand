@@ -89,8 +89,11 @@ pub enum Call {
         agent: AgentSpec,
         opening: Opening,
     },
+    /// With `after`, the laptop already holds the journal up to that seq.
     Watch {
         session: HostSession,
+        #[serde(default)]
+        after: Option<u64>,
     },
     Request {
         session: HostSession,
@@ -193,9 +196,12 @@ pub enum FromHost {
         result: Result<Reply, String>,
     },
     /// What follows for `session` is a watch's replay, from the journal's
-    /// first readable entry; it runs until that watch's answer.
+    /// first readable entry, or past `after` when the watch asked for that and
+    /// the journal reaches it; it runs until that watch's answer.
     Replay {
         session: HostSession,
+        #[serde(default)]
+        after: Option<u64>,
     },
     /// `at` is when the host journaled it, in unix seconds; 0 when not known.
     Entry {

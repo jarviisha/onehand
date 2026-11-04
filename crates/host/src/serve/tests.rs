@@ -109,7 +109,15 @@ async fn a_watch_is_answered_after_its_replay_and_a_second_attach_kicks_the_firs
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
-    first.ask(2, Call::Watch { session }).await;
+    first
+        .ask(
+            2,
+            Call::Watch {
+                session,
+                after: None,
+            },
+        )
+        .await;
     assert!(matches!(first.line().await, Some(FromHost::Replay { .. })));
     assert!(matches!(
         first.line().await,

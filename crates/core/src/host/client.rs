@@ -145,7 +145,11 @@ impl Answer {
 /// What a caller asks of the task that owns the stream.
 enum Cmd {
     Ask(Call, oneshot::Sender<Result<Reply, HostError>>),
-    Watch(HostSession, events::UnboundedSender<AcpEvent>),
+    Watch(
+        HostSession,
+        events::UnboundedSender<AcpEvent>,
+        Option<super::copy::Copy>,
+    ),
     Request(HostSession, AcpRequest),
     /// A call whose answer nobody waits on.
     Fire(Call),
@@ -182,10 +186,22 @@ struct Watcher {
     ready: Option<Readiness>,
     /// The time this watcher last said with `At`.
     said_at: Option<u64>,
+    /// The laptop's copy of the journal, which every entry taken is added to.
+    copy: Option<super::copy::Copy>,
+    /// The seq the watch asked the replay to start after: the copy's last.
+    after: Option<u64>,
 }
 
 impl Watcher {
-    fn new(tx: events::UnboundedSender<AcpEvent>) -> Self {
+    fn new(tx: events::UnboundedSender<AcpEvent>, copy: Option<super::copy::Copy>) -> Self {
+        let mut copy = copy;
+        // ponytail: the copy is read on the runtime's thread, holding up the
+        // pump for as long as a long copy takes; move to spawn_blocking if it shows.
+        if let Some(copy) = copy.as_mut().filter(|copy| copy.last().is_none()) {
+            // Empty, or broken and so of no use: the host's whole journal fills it.
+            let _ = copy.clear();
+        }
+        let after = copy.as_ref().and_then(|copy| copy.last());
         Watcher {
             tx,
             started: false,
@@ -193,6 +209,8 @@ impl Watcher {
             replaying: true,
             ready: None,
             said_at: None,
+            copy,
+            after,
         }
     }
 
@@ -203,6 +221,48 @@ impl Watcher {
             self.last = Some(seq);
         }
         next
+    }
+
+    /// Hand on the entry at `seq`, if it is the next one, and keep it in the
+    /// copy; false once the watch has ended.
+    fn take(
+        &mut self,
+        forwarders: &mut HashMap<HostSession, mpsc::WeakUnboundedSender<AcpRequest>>,
+        me: &mpsc::WeakUnboundedSender<Cmd>,
+        session: &HostSession,
+        (seq, at, entry): (u64, u64, Entry),
+    ) -> bool {
+        if !self.takes(seq) {
+            return true;
+        }
+        if let Some(copy) = &mut self.copy {
+            // ponytail: a small blocking append on the runtime's thread;
+            // move to spawn_blocking if a copy lives on a slow disk. One that
+            // fails drops the copy, and the next watch fills it again.
+            let _ = copy.append(seq, at, &entry);
+        }
+        let event = match entry {
+            Entry::Ready(ready) if self.replaying => {
+                self.ready = Some(ready);
+                return true;
+            }
+            Entry::Ready(ready) => connected(live(forwarders, me, session), ready),
+            entry @ (Entry::Event(_) | Entry::Request(_)) => {
+                // Only `Ready` has no event; it is handled above.
+                let Some(event) = super::copy::as_event(entry) else {
+                    return true;
+                };
+                event
+            }
+        };
+        let ended = matches!(event, AcpEvent::Disconnected(_));
+        // 0 is a line that kept no time: the chat stamps it now.
+        if at != 0 && self.said_at != Some(at) {
+            self.said_at = Some(at);
+            let _ = self.tx.unbounded_send(AcpEvent::At(at));
+        }
+        // A session that ended says so once, and its watch ends with it.
+        self.tx.unbounded_send(event).is_ok() && !ended
     }
 }
 
@@ -354,10 +414,19 @@ impl HostConn {
     /// none. Ends with `Disconnected`: the
     /// session's own, or the stream closing ("lost the connection to <host>"), or the host taken
     /// ("<host> was attached from another machine").
-    pub fn watch(&self, session: &HostSession) -> impl Stream<Item = AcpEvent> + Send + 'static {
+    ///
+    /// With `copy`, the host replays only what comes after the copy's last
+    /// entry, and the copy's entries come first, as if replayed; when the
+    /// host's journal does not reach that far, the copy is dropped and the
+    /// whole replay taken. Every entry taken is added to the copy.
+    pub fn watch(
+        &self,
+        session: &HostSession,
+        copy: Option<super::copy::Copy>,
+    ) -> impl Stream<Item = AcpEvent> + Send + 'static {
         let (tx, rx) = events::unbounded();
-        if let Err(e) = self.cmds.send(Cmd::Watch(session.clone(), tx)) {
-            if let Cmd::Watch(_, tx) = e.0 {
+        if let Err(e) = self.cmds.send(Cmd::Watch(session.clone(), tx, copy)) {
+            if let Cmd::Watch(_, tx, _) = e.0 {
                 own(
                     &tx,
                     AcpEvent::Disconnected("the connection to the host is closed".into()),
@@ -417,7 +486,7 @@ async fn pump<R, W>(
                     }
                     FromHost::TermOutput { term, data } => terms.output(term, data.0),
                     FromHost::TermExit { term } => terms.exited(term),
-                    FromHost::Replay { session } => {
+                    FromHost::Replay { session, after } => {
                         let Some(w) = watchers.get_mut(&session) else { continue };
                         // The host answers watches in order, each after its
                         // replay: while an earlier watch of the session is
@@ -426,8 +495,29 @@ async fn pump<R, W>(
                             p,
                             Pending::Watch(s, tx) if *s == session && !w.tx.same_receiver(tx)
                         ));
-                        if !earlier {
-                            w.started = true;
+                        if earlier {
+                            continue;
+                        }
+                        w.started = true;
+                        // The host goes on from the copy's end only when it
+                        // says so; otherwise its replay is the whole journal.
+                        let held = match &mut w.copy {
+                            // ponytail: the whole copy is read on the
+                            // runtime's thread, holding up the pump; move to
+                            // spawn_blocking if a long copy shows.
+                            Some(copy) if after.is_some() && after == w.after => copy.read(),
+                            Some(copy) => {
+                                let _ = copy.clear();
+                                Vec::new()
+                            }
+                            None => Vec::new(),
+                        };
+                        for entry in held {
+                            if !w.take(&mut forwarders, &me, &session, entry) {
+                                watchers.remove(&session);
+                                forwarders.remove(&session);
+                                break;
+                            }
                         }
                     }
                     FromHost::Answer { id, result } => match (pending.remove(&id), result) {
@@ -465,31 +555,7 @@ async fn pump<R, W>(
                     },
                     FromHost::Entry { session, seq, at, entry } => {
                         let Some(w) = watchers.get_mut(&session) else { continue };
-                        if !w.takes(seq) {
-                            continue;
-                        }
-                        let event = match entry {
-                            Entry::Ready(ready) if w.replaying => {
-                                w.ready = Some(ready);
-                                continue;
-                            }
-                            Entry::Ready(ready) => {
-                                connected(live(&mut forwarders, &me, &session), ready)
-                            }
-                            entry @ (Entry::Event(_) | Entry::Request(_)) => {
-                                // Only `Ready` has no event; it is handled above.
-                                let Some(event) = super::copy::as_event(entry) else { continue };
-                                event
-                            }
-                        };
-                        let ended = matches!(event, AcpEvent::Disconnected(_));
-                        // 0 is a line that kept no time: the chat stamps it now.
-                        if at != 0 && w.said_at != Some(at) {
-                            w.said_at = Some(at);
-                            let _ = w.tx.unbounded_send(AcpEvent::At(at));
-                        }
-                        // A session that ended says so once, and its watch ends with it.
-                        if w.tx.unbounded_send(event).is_err() || ended {
+                        if !w.take(&mut forwarders, &me, &session, (seq, at, entry)) {
                             watchers.remove(&session);
                             forwarders.remove(&session);
                         }
@@ -508,14 +574,15 @@ async fn pump<R, W>(
                         continue;
                     }
                     Cmd::Ask(call, tx) => (call, Some(Pending::Caller(tx))),
-                    Cmd::Watch(session, tx) => {
-                        let watcher = Watcher::new(tx.clone());
+                    Cmd::Watch(session, tx, copy) => {
+                        let watcher = Watcher::new(tx.clone(), copy);
+                        let after = watcher.after;
                         // A second watch of a session replaces the first.
                         if let Some(old) = watchers.insert(session.clone(), watcher) {
                             let elsewhere = "this session is now watched elsewhere";
                             own(&old.tx, AcpEvent::Disconnected(elsewhere.into()));
                         }
-                        (Call::Watch { session: session.clone() }, Some(Pending::Watch(session, tx)))
+                        (Call::Watch { session: session.clone(), after }, Some(Pending::Watch(session, tx)))
                     }
                     // Only a live channel reaches here: a replay hands its `Chat` none.
                     Cmd::Request(session, request) => {
@@ -579,7 +646,7 @@ fn refuse_queued(cmds: &mut mpsc::UnboundedReceiver<Cmd>, why: &str) {
             Cmd::Ask(_, tx) => {
                 let _ = tx.send(Err(HostError::Unreachable(why.to_string())));
             }
-            Cmd::Watch(_, tx) => {
+            Cmd::Watch(_, tx, _) => {
                 own(&tx, AcpEvent::Disconnected(why.to_string()));
             }
             // A terminal watch's sender drops here, and its reader ends.

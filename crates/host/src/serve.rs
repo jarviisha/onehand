@@ -302,7 +302,9 @@ fn answer(
             agent,
             opening,
         } => Hub::open(hub, cwd, agent, opening).map(|session| Reply::Opened { session }),
-        Call::Watch { session } => Hub::watch(hub, &session, out.clone()).map(|()| Reply::Done),
+        Call::Watch { session, after } => {
+            Hub::watch(hub, &session, after, out.clone()).map(|()| Reply::Done)
+        }
         Call::Request { session, request } => {
             lock(hub).request(&session, request).map(|()| Reply::Done)
         }

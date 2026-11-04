@@ -72,7 +72,7 @@ async fn smoke() -> Result<(), String> {
 }
 
 async fn watch(conn: &HostConn, session: &HostSession) -> Result<(), String> {
-    let mut stream = std::pin::pin!(conn.watch(session));
+    let mut stream = std::pin::pin!(conn.watch(session, None));
     while let Some(event) = stream.next().await {
         show(&event);
         if matches!(event, AcpEvent::TurnEnded { .. }) {
@@ -109,7 +109,7 @@ async fn go(conn: &HostConn, cwd: PathBuf) -> Result<(), String> {
         .open(cwd, agent, Opening::Fresh)
         .await
         .map_err(|e| format!("open: {e:?}"))?;
-    let mut stream = std::pin::pin!(conn.watch(&session));
+    let mut stream = std::pin::pin!(conn.watch(&session, None));
     let deadline = tokio::time::sleep(Duration::from_secs(3));
     tokio::pin!(deadline);
     loop {

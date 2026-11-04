@@ -132,6 +132,13 @@ pub struct Mark {
     at: u64,
 }
 
+impl Mark {
+    /// How many lines the journal had read up to here, whole or not readable.
+    pub fn lines(&self) -> u64 {
+        self.seq
+    }
+}
+
 /// Every readable entry in `dir/journal.jsonl` with its seq and time, in
 /// order. A line that does not parse is skipped.
 pub fn read(dir: &Path) -> io::Result<Entries> {
