@@ -22,7 +22,7 @@ fn a_missing_bundled_binary_is_said_plainly() {
             text,
             "onehand-host is not beside onehand; build it with `cargo build -p onehand-host`"
         ),
-        Ok(_) | Err(HostFailure::Busy { .. } | HostFailure::Other(_)) => {
+        Ok(_) | Err(HostFailure::Busy { .. } | HostFailure::Other(_) | HostFailure::Taken(_)) => {
             panic!("expected the missing binary's words, refused")
         }
     }
@@ -359,6 +359,40 @@ fn a_lost_host_found_busy_ends_the_loop_on_why() {
     waits.heard(&host, &busy(&host, &["1-1"]), true);
     assert!(matches!(back.now_or_never(), Some(Ok(Err(_)))));
     assert!(waits.listen(&host).is_some(), "the busy wait takes over");
+}
+
+/// A lost host's own attach finding another machine's holding the host ends
+/// the wait for it to be back, and the busy wait, on why: it is taken, and
+/// nothing attaches to it again by itself.
+#[test]
+fn a_held_host_ends_the_back_wait_as_taken() {
+    let host = HostName("vps".into());
+    let mut waits = Waits::default();
+    waits.heard(&host, &Ok(()), false);
+    waits.closed(&host, false);
+    let back = waits.listen_back(&host).unwrap();
+    let held = Err::<(), _>(HostFailure::Taken(
+        "vps was attached from another machine".into(),
+    ));
+    assert!(waits.heard(&host, &held, true));
+    assert_eq!(
+        back.now_or_never(),
+        Some(Ok(Err("vps was attached from another machine".into())))
+    );
+    assert_eq!(waits.state(&host), HostState::Taken);
+    assert!(!waits.retrying(&host));
+    assert!(
+        waits.listen_back(&host).is_none(),
+        "no loop on a taken host"
+    );
+
+    // So too a busy host's poll.
+    let host = HostName("box".into());
+    waits.heard(&host, &busy(&host, &["1-1"]), false);
+    let idle = waits.listen(&host).unwrap();
+    waits.heard(&host, &held, true);
+    assert!(matches!(idle.now_or_never(), Some(Ok(Err(_)))));
+    assert_eq!(waits.state(&host), HostState::Taken);
 }
 
 /// A host this build cannot attach to, or no service binary to attach with,

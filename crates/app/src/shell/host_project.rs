@@ -278,7 +278,9 @@ fn back_failure(
 fn needs_restart<C>(attached: &Result<C, HostFailure>) -> bool {
     match attached {
         Err(HostFailure::Busy { .. }) => true,
-        Ok(_) | Err(HostFailure::Other(_) | HostFailure::Refused(_)) => false,
+        Ok(_) | Err(HostFailure::Other(_) | HostFailure::Refused(_) | HostFailure::Taken(_)) => {
+            false
+        }
     }
 }
 
@@ -287,7 +289,7 @@ fn needs_restart<C>(attached: &Result<C, HostFailure>) -> bool {
 /// why, and one still busy ends none.
 fn said_by_wait(waited: bool, failure: &HostFailure) -> bool {
     match failure {
-        HostFailure::Other(_) | HostFailure::Refused(_) => waited,
+        HostFailure::Other(_) | HostFailure::Refused(_) | HostFailure::Taken(_) => waited,
         HostFailure::Busy { .. } => false,
     }
 }
@@ -295,7 +297,7 @@ fn said_by_wait(waited: bool, failure: &HostFailure) -> bool {
 /// What a restart that failed says.
 fn restart_failure(failure: HostFailure) -> String {
     match failure {
-        HostFailure::Other(why) | HostFailure::Refused(why) => why,
+        HostFailure::Other(why) | HostFailure::Refused(why) | HostFailure::Taken(why) => why,
         HostFailure::Busy { host, .. } => {
             format!("{host} still runs another build of the host service")
         }
@@ -516,7 +518,9 @@ impl Shell {
                 self.host_flow.forget_add();
                 self.open_host_root(host, path, window, cx);
             }
-            Err(HostFailure::Other(why) | HostFailure::Refused(why)) => draft.error = Some(why),
+            Err(HostFailure::Other(why) | HostFailure::Refused(why) | HostFailure::Taken(why)) => {
+                draft.error = Some(why)
+            }
             // The form stays busy on this attempt while the host waits, and
             // carries on with the same names once it is done.
             Err(HostFailure::Busy { host, .. }) => {

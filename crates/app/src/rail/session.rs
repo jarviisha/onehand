@@ -33,7 +33,7 @@ pub(super) fn signal_hint(signal: Option<SessionSignal>) -> &'static str {
         Some(SessionSignal::HostWait) => {
             "Waiting for the host's busy sessions; restarts by itself once they finish"
         }
-        Some(SessionSignal::HostLost) => "Not connected to its host; trying again",
+        Some(SessionSignal::HostLost) => "Not connected to its host",
         None => "Nothing waiting on you",
     }
 }

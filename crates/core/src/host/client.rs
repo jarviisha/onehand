@@ -59,6 +59,9 @@ pub enum HostError {
     /// The host refused a call or answered something unexpected, or the
     /// binary to install could not be read here.
     Protocol(String),
+    /// An attach made by itself found another machine's attach holding the
+    /// host, and left it alone.
+    Held,
 }
 
 /// The sentence each failure reads as, after whatever names what failed: an
@@ -70,6 +73,7 @@ impl std::fmt::Display for HostError {
                 f.write_str(why)
             }
             Self::Busy { build, .. } => write!(f, "the host runs another build ({build})"),
+            Self::Held => f.write_str("another machine is attached to the host"),
         }
     }
 }
@@ -83,7 +87,7 @@ fn on_host(host: &str, e: HostError) -> HostError {
         HostError::Unreachable(why) => HostError::Unreachable(on(why)),
         HostError::Protocol(why) => HostError::Protocol(on(why)),
         HostError::Unsupported(why) => HostError::Unsupported(on(why)),
-        e @ HostError::Busy { .. } => e,
+        e @ (HostError::Busy { .. } | HostError::Held) => e,
     }
 }
 
@@ -106,6 +110,7 @@ struct Answer {
     home: Option<PathBuf>,
     term_opened: Option<HostTerm>,
     terms: Option<Vec<TermInfo>>,
+    held: Option<()>,
 }
 
 impl Answer {
@@ -123,6 +128,7 @@ impl Answer {
             home: None,
             term_opened: None,
             terms: None,
+            held: None,
         };
         match reply {
             Reply::Welcome { build, busy } => answer.welcome = Some((build, busy)),
@@ -137,6 +143,7 @@ impl Answer {
             Reply::Home(home) => answer.home = Some(home),
             Reply::TermOpened { term } => answer.term_opened = Some(term),
             Reply::Terms(terms) => answer.terms = Some(terms),
+            Reply::Held => answer.held = Some(()),
         }
         answer
     }

@@ -57,6 +57,17 @@ it. What is refused, and how, is under *What a host project does not do*.
   takes the host back by itself: only a person's restart, show or *Try again* attaches again. A
   person's attach that fails on a taken host leaves it lost, and so attached again by itself
   from then on.
+- **An attach made by itself never takes the host.** The hello says whether it takes (`take` on
+  `Call::Hello`, true when absent, so an older laptop still takes). A person's attach (the form,
+  a show, *Try again*, Restart, the restart offer) takes; the re-attach of a lost host and the
+  busy wait's poll do not. The service (`crates/host/src/serve.rs`) settles an attach once its
+  first line is read, not as it connects: a hello that does not take, while another laptop's
+  attach there is still live, is answered `Reply::Held` and closed, and the attach that holds the
+  host goes on. The hello also names this laptop's run (`laptop`), so an attach of its own that
+  the service has yet to see go (a laptop that slept, a link that dropped silently) does not hold
+  it. The client turns `Held` into `HostError::Held`, the app into `HostFailure::Taken`, and the
+  host is taken from then on, as if another machine had kicked it: the wait for it to be back and
+  any busy wait end on *<host> was attached from another machine*, and nothing tries it again.
 - **A lost host is attached again by itself.** A lost connection ends every session watched over
   it, and the host is tried again after 2 s (`RECONNECT_FIRST`), the wait doubling to 60 s
   (`RECONNECT_MAX`, `next_delay`), for as long as something listens, and never for a taken or

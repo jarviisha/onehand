@@ -1,7 +1,8 @@
 //! The service itself: one per data directory, behind its lock, listening on
 //! a Unix socket only its user can open. One laptop is attached at a time; a
-//! new attach takes over from the old one, whose stream is told so and closed.
-//! Sessions run on either way.
+//! new attach takes over from the old one, whose stream is told so and closed,
+//! unless its hello asks not to take a host another laptop holds, when it is
+//! refused instead. Sessions run on either way.
 
 use std::ffi::OsString;
 use std::fs::{self, File, OpenOptions};
@@ -17,8 +18,8 @@ use futures::StreamExt as _;
 use onehand_core::acp;
 use onehand_core::host::wire::{Build, Call, FromHost, Question, Reply};
 use onehand_core::instance::{hold_lock, holding, socket_path};
-use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
-use tokio::net::unix::OwnedWriteHalf;
+use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader, Lines};
+use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle;
@@ -97,14 +98,24 @@ pub(crate) async fn run(dir: PathBuf, build: Build) -> ExitCode {
     accept(listener, hub, terms, build).await
 }
 
-/// Take each attach as it comes, telling the one before it that it was taken over.
+/// The attach being served: where its lines go, the task serving it, and
+/// the laptop run its hello named.
+struct Attached {
+    out: UnboundedSender<FromHost>,
+    task: JoinHandle<()>,
+    laptop: Option<String>,
+}
+
+type Asks = Lines<BufReader<OwnedReadHalf>>;
+
+/// Take each attach as it comes, once it has said its first line.
 async fn accept(
     listener: UnixListener,
     hub: Arc<Mutex<Hub>>,
     terms: Arc<Mutex<Terms>>,
     build: Build,
 ) -> ! {
-    let mut current: Option<(UnboundedSender<FromHost>, JoinHandle<()>)> = None;
+    let current = Arc::new(tokio::sync::Mutex::new(None));
     loop {
         let stream = match listener.accept().await {
             Ok((stream, _)) => stream,
@@ -113,25 +124,95 @@ async fn accept(
                 continue;
             }
         };
-        if let Some((out, mut task)) = current.take() {
-            let _ = out.send(FromHost::Kicked);
-            if tokio::time::timeout(KICK_GRACE, &mut task).await.is_err() {
-                task.abort();
-                let _ = task.await;
-            }
-            lock(&hub).unwatch_all();
-            terms::lock(&terms).unwatch_all();
-        }
-        let (out, lines) = mpsc::unbounded_channel();
-        let task = tokio::spawn(connection(
+        tokio::spawn(admit(
             stream,
+            current.clone(),
             hub.clone(),
             terms.clone(),
             build.clone(),
-            out.clone(),
-            lines,
         ));
-        current = Some((out, task));
+    }
+}
+
+/// Serve `stream` from its first line on, telling the attach before it that
+/// it was taken over; or, when that line is a hello that does not take and
+/// another laptop's attach is live, answer `Held` and close.
+async fn admit(
+    stream: UnixStream,
+    current: Arc<tokio::sync::Mutex<Option<Attached>>>,
+    hub: Arc<Mutex<Hub>>,
+    terms: Arc<Mutex<Terms>>,
+    build: Build,
+) {
+    let (read, mut write) = stream.into_split();
+    let mut asks = BufReader::new(read).lines();
+    let Ok(Some(first)) = asks.next_line().await else {
+        return;
+    };
+    let mut current = current.lock().await;
+    if let Some(id) = held(current.as_ref(), &first) {
+        let held = FromHost::Answer {
+            id,
+            result: Ok(Reply::Held),
+        };
+        let _ = send(&mut write, &held).await;
+        return;
+    }
+    if let Some(Attached { out, mut task, .. }) = current.take() {
+        let _ = out.send(FromHost::Kicked);
+        if tokio::time::timeout(KICK_GRACE, &mut task).await.is_err() {
+            task.abort();
+            let _ = task.await;
+        }
+        lock(&hub).unwatch_all();
+        terms::lock(&terms).unwatch_all();
+    }
+    let (out, lines) = mpsc::unbounded_channel();
+    let task = tokio::spawn(connection(
+        asks,
+        write,
+        first.clone(),
+        hub,
+        terms,
+        build,
+        out.clone(),
+        lines,
+    ));
+    *current = Some(Attached {
+        out,
+        task,
+        laptop: laptop(&first),
+    });
+}
+
+/// The id to answer `Held` to, when `first` is a hello that does not take
+/// and `current` is another laptop's attach, still live.
+fn held(current: Option<&Attached>, first: &str) -> Option<u64> {
+    let Ok(Question {
+        id,
+        call: Call::Hello {
+            take: false,
+            laptop,
+            ..
+        },
+    }) = serde_json::from_str(first)
+    else {
+        return None;
+    };
+    let live = current.filter(|now| !now.task.is_finished())?;
+    // Its own attach, gone on its side but not yet on this one, is not held.
+    let own = laptop.is_some() && live.laptop == laptop;
+    (!own).then_some(id)
+}
+
+/// The laptop run a hello in `first` named, if it is one that named it.
+fn laptop(first: &str) -> Option<String> {
+    match serde_json::from_str(first) {
+        Ok(Question {
+            call: Call::Hello { laptop, .. },
+            ..
+        }) => laptop,
+        Ok(_) | Err(_) => None,
     }
 }
 
@@ -212,31 +293,30 @@ fn after_marker(output: &[u8]) -> Option<&[u8]> {
     Some(&output[at + marker.len()..]).filter(|path| !path.is_empty())
 }
 
-/// Serve one attach: its asks in, its answers and the entries it watches out.
+/// Serve one attach, `first` the line it opened with: its asks in, its
+/// answers and the entries it watches out.
+#[allow(clippy::too_many_arguments)]
 async fn connection(
-    stream: UnixStream,
+    mut asks: Asks,
+    mut write: OwnedWriteHalf,
+    first: String,
     hub: Arc<Mutex<Hub>>,
     terms: Arc<Mutex<Terms>>,
     build: Build,
     out: UnboundedSender<FromHost>,
     mut lines: UnboundedReceiver<FromHost>,
 ) {
-    let (read, mut write) = stream.into_split();
-    let mut asks = BufReader::new(read).lines();
+    if answer(&hub, &terms, &build, &out, &first) {
+        shut_down(&mut write, &mut lines).await;
+    }
     loop {
         tokio::select! {
             ask = asks.next_line() => {
                 let Ok(Some(ask)) = ask else { break };
                 // Answered whole, a Watch after its replay, before the next ask
                 // is read: the laptop tells whose replay is whose by that order.
-                let exit = answer(&hub, &terms, &build, &out, &ask);
-                if exit {
-                    flush(&mut write, &mut lines).await;
-                    log("shut down by request");
-                    // ponytail: exit skips kill_on_drop, so agent children are left
-                    // to end on their own when their stdin closes; kill them here
-                    // if an adapter is ever seen to outlive it.
-                    std::process::exit(0);
+                if answer(&hub, &terms, &build, &out, &ask) {
+                    shut_down(&mut write, &mut lines).await;
                 }
             }
             Some(line) = lines.recv() => {
@@ -262,6 +342,16 @@ async fn connection(
     flush(&mut write, &mut lines).await;
     lock(&hub).unwatch_all();
     terms::lock(&terms).unwatch_all();
+}
+
+/// Say what was queued, then exit, as a `Shutdown` asked.
+async fn shut_down(write: &mut OwnedWriteHalf, lines: &mut UnboundedReceiver<FromHost>) -> ! {
+    flush(write, lines).await;
+    log("shut down by request");
+    // ponytail: exit skips kill_on_drop, so agent children are left to end on
+    // their own when their stdin closes; kill them here if an adapter is ever
+    // seen to outlive it.
+    std::process::exit(0);
 }
 
 /// Answer one line; whether the service should now exit.

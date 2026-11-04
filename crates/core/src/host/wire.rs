@@ -69,6 +69,11 @@ impl fmt::Display for Build {
     }
 }
 
+/// What a `Hello` from a laptop too old to say `take` means: it takes the host.
+fn yes() -> bool {
+    true
+}
+
 /// What the laptop sends, one per line.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Question {
@@ -79,8 +84,16 @@ pub struct Question {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Call {
+    /// With `take`, a person's attach: it takes the host from whatever attach
+    /// holds it. Without, an attach made by itself, refused with `Held` while
+    /// another laptop's attach is live there. `laptop` names this laptop's
+    /// run, so an attach it lost but the host has yet to see go is its own.
     Hello {
         build: Build,
+        #[serde(default = "yes")]
+        take: bool,
+        #[serde(default)]
+        laptop: Option<String>,
     },
     Shutdown,
     List,
@@ -185,6 +198,8 @@ pub enum Reply {
         term: HostTerm,
     },
     Terms(Vec<TermInfo>),
+    /// A `Hello` without `take`, refused: another laptop's attach holds the host.
+    Held,
 }
 
 /// What the host sends, one per line.

@@ -35,7 +35,7 @@ async fn attach(addr: &HostAddr) -> Result<HostConn, String> {
         .await
         .map_err(|e| format!("install: {e:?}"))?;
     let bytes = std::fs::read(binary).map_err(|e| format!("{BINARY}: {e}"))?;
-    client::attach(addr, &remote, &build_id(&bytes))
+    client::attach(addr, &remote, &build_id(&bytes), true)
         .await
         .map_err(|e| format!("attach: {e:?}"))
 }

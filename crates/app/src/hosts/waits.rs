@@ -2,7 +2,7 @@
 //! host's for its sessions to finish, a lost one's to be attached again.
 //! Read and written on the UI thread alone.
 
-use super::{Ended, HostFailure, WaitEnd, waiting_line};
+use super::{Ended, HostFailure, WaitEnd, taken_line, waiting_line};
 use futures::FutureExt as _;
 use futures::channel::oneshot;
 use onehand_core::host::wire::HostSession;
@@ -94,6 +94,11 @@ impl Waits {
                 end_in(&mut self.backs, host, Err(why.clone()));
                 self.set(host, HostState::Unknown)
             }
+            Err(HostFailure::Taken(why)) => {
+                self.end(host, Err(why.clone()));
+                end_in(&mut self.backs, host, Err(why.clone()));
+                self.set(host, HostState::Taken)
+            }
             Err(HostFailure::Busy { busy, .. }) => {
                 let changed = self.set(host, HostState::Attaching);
                 end_in(&mut self.backs, host, Err(waiting_line(host, busy.len())));
@@ -166,7 +171,7 @@ impl Waits {
     pub(super) fn closed(&mut self, host: &HostName, taken: bool) -> bool {
         let state = match taken {
             true => {
-                let why = format!("{host} was attached from another machine");
+                let why = taken_line(host);
                 end_in(&mut self.backs, host, Err(why));
                 HostState::Taken
             }

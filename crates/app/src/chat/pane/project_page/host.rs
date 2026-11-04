@@ -188,7 +188,7 @@ impl ChatPane {
                         .detach();
                     Vec::new()
                 }
-                Err(HostFailure::Other(_) | HostFailure::Refused(_)) => {
+                Err(HostFailure::Other(_) | HostFailure::Refused(_) | HostFailure::Taken(_)) => {
                     let host = host.clone();
                     cx.background_executor()
                         .spawn(async move { copy::load_list(&root, &host) })
@@ -222,9 +222,11 @@ impl ChatPane {
                         | crate::hosts::HostState::Live
                         | crate::hosts::HostState::Taken => Err(Unlisted::Failed(why)),
                     },
-                    // Refused is never tried again by itself: what was kept
-                    // is shown, and *Try again* is the person's.
-                    Err(HostFailure::Refused(why)) => Err(Unlisted::Away { why, kept }),
+                    // Refused or taken is never tried again by itself: what
+                    // was kept is shown, and *Try again* is the person's.
+                    Err(HostFailure::Refused(why) | HostFailure::Taken(why)) => {
+                        Err(Unlisted::Away { why, kept })
+                    }
                     // The shell waits with the host and lists again once
                     // it is done.
                     Err(HostFailure::Busy { host, .. }) => {

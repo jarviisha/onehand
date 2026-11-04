@@ -80,8 +80,12 @@ pub(super) enum OfflineStart {
 pub(super) fn offline_start(kept: usize, failure: &HostFailure) -> OfflineStart {
     match failure {
         HostFailure::Busy { .. } => OfflineStart::Wait,
-        HostFailure::Other(_) | HostFailure::Refused(_) if kept == 0 => OfflineStart::End,
-        HostFailure::Other(_) | HostFailure::Refused(_) => OfflineStart::Read,
+        HostFailure::Other(_) | HostFailure::Refused(_) | HostFailure::Taken(_) if kept == 0 => {
+            OfflineStart::End
+        }
+        HostFailure::Other(_) | HostFailure::Refused(_) | HostFailure::Taken(_) => {
+            OfflineStart::Read
+        }
     }
 }
 
@@ -171,7 +175,10 @@ pub(super) async fn host_events(
                 Ok(HostStart::Open { .. }) => None,
             };
             let kept = match (&failure, known) {
-                (HostFailure::Other(_) | HostFailure::Refused(_), Some(id)) => {
+                (
+                    HostFailure::Other(_) | HostFailure::Refused(_) | HostFailure::Taken(_),
+                    Some(id),
+                ) => {
                     let host = host.clone();
                     cx.background_executor()
                         .spawn(
@@ -179,18 +186,22 @@ pub(super) async fn host_events(
                         )
                         .await
                 }
-                (HostFailure::Other(_) | HostFailure::Refused(_) | HostFailure::Busy { .. }, _) => {
-                    Vec::new()
-                }
+                (
+                    HostFailure::Other(_)
+                    | HostFailure::Refused(_)
+                    | HostFailure::Taken(_)
+                    | HostFailure::Busy { .. },
+                    _,
+                ) => Vec::new(),
             };
             return match offline_start(kept.len(), &failure) {
                 // The copy is the whole transcript, prompts and all, so what
                 // a re-watch carried is left out rather than shown twice.
-                // A host refused is not waited on: what was kept is shown,
-                // and the session ends on why, as a lost agent Restart tries
-                // again.
+                // A host refused, or held by another machine, is not
+                // waited on: what was kept is shown, and the session ends on
+                // why, as a lost agent Restart tries again.
                 OfflineStart::Read => match failure {
-                    HostFailure::Refused(why) => {
+                    HostFailure::Refused(why) | HostFailure::Taken(why) => {
                         offline(host, &kept, false, session, cx);
                         crate::acp::ended(why)
                     }
@@ -205,9 +216,9 @@ pub(super) async fn host_events(
                         carry(carried, session, cx);
                     }
                     match failure {
-                        HostFailure::Other(why) | HostFailure::Refused(why) => {
-                            crate::acp::ended(why)
-                        }
+                        HostFailure::Other(why)
+                        | HostFailure::Refused(why)
+                        | HostFailure::Taken(why) => crate::acp::ended(why),
                         HostFailure::Busy { host, busy } => {
                             wait(host, busy.len(), session, cx);
                             crate::acp::silent()

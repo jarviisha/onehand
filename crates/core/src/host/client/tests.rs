@@ -243,7 +243,7 @@ async fn settle_against(
     busy: Vec<HostSession>,
 ) -> (Result<Settled, HostError>, usize) {
     let (conn, fake) = fake_host(theirs, busy);
-    let settled = settle(&conn, &build("ours")).await;
+    let settled = settle(&conn, &build("ours"), true).await;
     drop(conn);
     (settled, fake.await.unwrap())
 }
@@ -275,13 +275,13 @@ async fn mismatch_idle_shuts_down_and_reattaches() {
 #[tokio::test]
 async fn after_a_restart_another_build_is_a_fault_not_a_second_shutdown() {
     let (conn, fake) = fake_host("old", vec![]);
-    let again = settle_again(&conn, &build("ours")).await;
+    let again = settle_again(&conn, &build("ours"), true).await;
     drop(conn);
     assert!(matches!(again, Err(HostError::Protocol(why)) if why.contains("old")));
     assert_eq!(fake.await.unwrap(), 0);
 
     let (conn, fake) = fake_host("ours", vec![]);
-    assert!(settle_again(&conn, &build("ours")).await.is_ok());
+    assert!(settle_again(&conn, &build("ours"), true).await.is_ok());
     drop(conn);
     assert_eq!(fake.await.unwrap(), 0);
 }
@@ -694,7 +694,7 @@ async fn an_unanswered_hello_ends_at_its_deadline() {
     let (conn, mut host) = pair();
     let said = tokio::spawn({
         let conn = conn.clone();
-        async move { hello(&conn, &build("ours")).await }
+        async move { hello(&conn, &build("ours"), true).await }
     });
     let Question { id, call } = host.ask().await;
     assert!(matches!(call, Call::Hello { .. }));
@@ -708,6 +708,39 @@ async fn an_unanswered_hello_ends_at_its_deadline() {
     let Question { id, .. } = host.ask().await;
     host.answer(id, Reply::Sessions(vec![])).await;
     assert!(listing.await.unwrap().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_hello_left_alone_is_held_and_says_whether_it_takes() {
+    let (conn, mut host) = pair();
+    let said = tokio::spawn({
+        let conn = conn.clone();
+        async move { hello(&conn, &build("ours"), false).await }
+    });
+    let Question { id, call } = host.ask().await;
+    assert!(matches!(
+        call,
+        Call::Hello {
+            take: false,
+            laptop: Some(_),
+            ..
+        }
+    ));
+    host.answer(id, Reply::Held).await;
+    assert!(matches!(said.await.unwrap(), Err(HostError::Held)));
+}
+
+#[test]
+fn a_hello_from_an_older_laptop_takes() {
+    let call: Call = serde_json::from_str(r#"{"hello":{"build":"b1"}}"#).unwrap();
+    assert!(matches!(
+        call,
+        Call::Hello {
+            take: true,
+            laptop: None,
+            ..
+        }
+    ));
 }
 
 #[tokio::test]

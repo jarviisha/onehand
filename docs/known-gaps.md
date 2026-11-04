@@ -308,8 +308,8 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   only stops watching it; it runs on with its agent and stays on its project's page. The host
   service takes no call that stops a session.
 - **A host session restarting onto a session the host still runs is blank for a moment.** The
-  transcript is drawn from the journal alone, and the copy is yielded only when the host answers the
-  watch, so it is empty until then. Keeping the old one on screen meanwhile would draw every item
+  transcript is drawn from the journal alone, and the copy is yielded only once the host's replay
+  begins, so it is empty until then. Keeping the old one on screen meanwhile would draw every item
   twice once the replay lands.
 - **A new host session given up while it opens still starts.** The open is sent at once and the host
   starts the agent anyway, so a session closed before it was up leaves one idle agent on the host,

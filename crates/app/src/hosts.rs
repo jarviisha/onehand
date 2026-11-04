@@ -61,6 +61,10 @@ pub(crate) enum HostFailure {
     /// run on), or this build cannot attach anywhere (its service binary
     /// missing): a sentence naming why. Never tried again by itself.
     Refused(String),
+    /// An attach made by itself found the host held by another machine's,
+    /// and left it so: a sentence naming the host. Only a person attaches
+    /// to it again.
+    Taken(String),
 }
 
 /// The process's attaches, one per host.
@@ -249,6 +253,11 @@ pub(crate) fn waiting_line(host: &HostName, n: usize) -> String {
     )
 }
 
+/// What is said of `host` once another machine holds it.
+pub(crate) fn taken_line(host: &HostName) -> String {
+    format!("{host} was attached from another machine")
+}
+
 /// The attach to `host`: the one already up, the attempt already under
 /// way, or a new attach (installing the service first when it is not there).
 pub(crate) fn conn(
@@ -291,7 +300,9 @@ pub(crate) async fn attach_waiting(
                     idle.await?;
                 }
             }
-            Err(HostFailure::Other(why) | HostFailure::Refused(why)) => return Err(why),
+            Err(HostFailure::Other(why) | HostFailure::Refused(why) | HostFailure::Taken(why)) => {
+                return Err(why);
+            }
         }
     }
 }
@@ -399,7 +410,9 @@ pub(crate) fn clone_repo(
     }
 }
 
-/// `polled` when a wait's poll asks, whose misses count up before they end it.
+/// `polled` when a wait's poll asks, whose misses count up before they end
+/// it; such an attach is made by itself, and never takes the host from
+/// another machine.
 fn attach_with(
     cx: &App,
     host: &HostName,
@@ -414,7 +427,7 @@ fn attach_with(
         let (tx, rx) = oneshot::channel();
         // Sent once a connection that landed closes, with whether it was taken.
         let (closed_tx, closed_rx) = oneshot::channel();
-        let attaching = attach(host.clone(), fresh);
+        let attaching = attach(host.clone(), fresh, !polled);
         shared.acp.spawn(async move {
             let result = attaching.await;
             let conn = result.as_ref().ok().cloned();
@@ -458,8 +471,9 @@ fn attach_with(
 }
 
 /// Install the service on `host` if it is not there, then attach to it; with
-/// `fresh`, restart it onto this build whatever is busy there.
-async fn attach(host: HostName, fresh: bool) -> Result<HostConn, HostFailure> {
+/// `fresh`, restart it onto this build whatever is busy there. Without
+/// `take`, a host another machine holds is left to it.
+async fn attach(host: HostName, fresh: bool, take: bool) -> Result<HostConn, HostFailure> {
     let binary = bundled_binary()?;
     let addr = host.addr();
     let failed = |e| failure(&host, e);
@@ -475,7 +489,7 @@ async fn attach(host: HostName, fresh: bool) -> Result<HostConn, HostFailure> {
     let conn = if fresh {
         client::restart(&addr, &remote, &build).await
     } else {
-        client::attach(&addr, &remote, &build).await
+        client::attach(&addr, &remote, &build, take).await
     };
     conn.map_err(failed)
 }
@@ -493,6 +507,7 @@ fn failure(host: &HostName, e: HostError) -> HostFailure {
             host: host.clone(),
             busy,
         },
+        HostError::Held => HostFailure::Taken(taken_line(host)),
     }
 }
 
