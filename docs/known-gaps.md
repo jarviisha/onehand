@@ -265,11 +265,20 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
 - **Markdown, Neovim, Issues and Plugins are not offered on a host project.** Markdown would need
   its document index walked on the host; Neovim, Issues and Plugins are this machine's.
 - **A host call times out after 30 s**, so a git status slower than that reads as no status.
-- **A lost host is not attached again by itself**, except by the Workbench for the files it
-  shows. A dropped connection ends every session watched over it, and each comes back only when
-  restarted; a host that is not attached shows nothing of
-  its sessions, since the laptop keeps no copy of their transcripts. Both need a re-attach with a
-  backoff, and a copy of each journal kept on the laptop to read meanwhile.
+- **A lost host is attached again by itself only while a session read from the copy or the
+  project page's kept list is shown for it,** and by the Workbench for the files it shows. A host
+  lost with nothing of that on screen is tried again when something on it is shown, and the rail's
+  mark then reads *Not connected to <host>* without *trying again*.
+- **A host that is not supported, or whose `onehand-host` is missing, is not tried again,** and
+  its project row shows no mark. Trying again cannot change it; a person's Restart or *Try again*
+  does after the binary is there.
+- **A run's task driver sees a lost host session as disconnected,** though it will restart by
+  itself when the host is back. A run on it is treated as gone.
+- **The laptop's copies are never pruned.** A copy of a session the host has long since dropped,
+  or of a project removed here, stays under `hosts/` until a person deletes it.
+- **A host whose data directory was wiped can reuse a session id.** A session's copy is matched to
+  the host's journal by length alone, so the new one's lines after the old copy's last seq would
+  be taken for the old one's. The ids are `<seconds>-<n>`, so a collision is unlikely.
 - **A local and a host project on one path share the rail's state for that path.** Their fold, their
   place in the order the rail keeps, the keyboard's row and the terminal dock's open state are kept
   by path alone, so folding one folds the other. Pins, unattended runs and check commands are kept
@@ -298,13 +307,14 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
 - **A host session is never ended from the window.** Closing it, removing its project or quitting
   only stops watching it; it runs on with its agent and stays on its project's page. The host
   service takes no call that stops a session.
+- **A host session restarting onto a session the host still runs is blank for a moment.** The
+  transcript is drawn from the journal alone, and the copy is yielded only when the host answers the
+  watch, so it is empty until then. Keeping the old one on screen meanwhile would draw every item
+  twice once the replay lands.
 - **A new host session given up while it opens still starts.** The open is sent at once and the host
   starts the agent anyway, so a session closed before it was up leaves one idle agent on the host,
   listed on the project's page and attachable again. Cancelling an open needs a call the host
   service does not take yet.
-- **A host session restarting onto a session the host still runs is blank for a moment.** The
-  transcript is drawn from the journal alone, so it is empty until the replay arrives. Keeping
-  the old one on screen meanwhile would draw every item twice once the replay lands.
 - **The rows of a host project's sessions take no keyboard focus**, as the rows of a local
   project page's Tasks and Schedules boxes do not; they are reached by pointer only. Making each box row a tab
   stop with `Enter` opening it would fix all three.
