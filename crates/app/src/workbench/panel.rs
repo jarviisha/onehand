@@ -20,12 +20,14 @@
 //! it stretches the container while the cell stays put and every column lands
 //! past its own character.
 
+use crate::controls::Short as _;
 use gpui::{
     App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement,
     IntoElement, ParentElement, Pixels, Render, SharedString, Styled, Window, div,
 };
 use gpui_base::dock::{Panel, PanelEvent};
 use gpui_component::StyledExt;
+use gpui_component::button::ButtonVariants as _;
 use onehand_core::gitstat::GitStatus;
 use onehand_workbench::{Ask, Disk, ModeId, Request, WorkbenchMode, WorkbenchModeSpec};
 use std::collections::HashMap;
@@ -59,13 +61,13 @@ pub struct Workbench {
     active: usize,
     /// The root every mode is pointed at. `None` before any root is active.
     root: Option<PathBuf>,
-    /// Whether that root's files are on a host. Only a mode that reads and
-    /// writes through the disk it is handed is offered then; the rest would
-    /// show or change this machine's files at the same path.
-    on_host: bool,
+    /// The disk that root's files are on. On a host's, only a mode that
+    /// reads and writes through the disk it is handed is offered; the rest
+    /// would show or change this machine's files at the same path.
+    disk: Disk,
     /// Why the project on screen has nothing here, drawn in place of the
     /// modes: its host is still being attached, or could not be.
-    refused: Option<SharedString>,
+    refused: Option<Refusal>,
     /// Reading size for the body. Per panel, not per root: the dock's own
     /// sizes are per window here, and a zoom that reset itself on every root
     /// switch would be the odd one out.
@@ -115,7 +117,7 @@ impl Workbench {
                 modes,
                 focus_handle: cx.focus_handle(),
                 root: None,
-                on_host: false,
+                disk: Disk::Local,
                 refused: None,
                 zoom,
                 maximized: false,
@@ -182,7 +184,19 @@ impl Workbench {
 
     /// Whether a mode is offered on the root on screen.
     fn offers(&self, spec: WorkbenchModeSpec) -> bool {
-        offered(self.on_host, spec)
+        offered(self.on_host(), spec)
+    }
+
+    /// Whether the root on screen is a host's folder.
+    fn on_host(&self) -> bool {
+        self.disk.host().is_some()
+    }
+
+    /// Whether the root on screen is a host's folder shown over an attach
+    /// that has since ended, which is what is worth attaching again for. One
+    /// still attaching, or that failed, says so instead and is left alone.
+    pub fn lost_host(&self) -> bool {
+        self.refused.is_none() && self.disk.is_closed()
     }
 
     pub fn mode(&self) -> ModeId {
@@ -232,7 +246,7 @@ impl Workbench {
         }
         // Only to the modes offered: one that is not would start its program
         // in the last folder here it was pointed at.
-        let on_host = self.on_host;
+        let on_host = self.on_host();
         for mode in &mut self.modes {
             if offered(on_host, mode.spec()) {
                 mode.handle(&Request::Start, cx);
@@ -331,25 +345,23 @@ impl Workbench {
     /// Only the same folder here again is nothing new. A host's attach can
     /// be replaced while its project stays on screen, and a folder here and
     /// one on a host can share a path, so either way the modes are handed the
-    /// disk again.
+    /// disk again, and read the root again through it: what they listed came
+    /// through the other side, or over an attach that may have ended.
     pub fn set_root(&mut self, root: PathBuf, disk: Disk, cx: &mut Context<Self>) {
         self.refuse(None, cx);
         let on_host = disk.host().is_some();
         let same = self.root.as_ref() == Some(&root);
-        if same && !on_host && !self.on_host {
+        if same && !on_host && !self.on_host() {
             return;
         }
-        // The other side of one path: what the modes listed for it came
-        // from the other disk.
-        let crossed = same && on_host != self.on_host;
         self.root = Some(root.clone());
-        self.on_host = on_host;
+        self.disk = disk.clone();
         for mode in &mut self.modes {
             if offered(on_host, mode.spec()) {
                 mode.set_root(&root, &disk, cx);
             }
         }
-        if crossed {
+        if same {
             self.broadcast(&Request::Rescan, cx);
         }
         if !self.offers(self.showing())
@@ -363,7 +375,7 @@ impl Workbench {
 
     /// Say `why` in place of the modes, or stop saying it. The modes keep the
     /// root they had, so coming back to it finds it as it was.
-    pub fn refuse(&mut self, why: Option<SharedString>, cx: &mut Context<Self>) {
+    pub fn refuse(&mut self, why: Option<Refusal>, cx: &mut Context<Self>) {
         if self.refused != why {
             self.refused = why;
             cx.notify();
@@ -424,7 +436,7 @@ impl Workbench {
         if self.refused.is_some() {
             return;
         }
-        let on_host = self.on_host;
+        let on_host = self.on_host();
         let opened = self
             .modes
             .iter_mut()
@@ -435,6 +447,39 @@ impl Workbench {
         }
         cx.notify();
     }
+}
+
+/// Why the Workbench has nothing for the project on screen.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Refusal {
+    /// Something on its way, said as the line waiting for it.
+    Waiting(SharedString),
+    /// What failed, standing until *Try again* or the project is shown again.
+    Failed(SharedString),
+}
+
+/// A failure standing in place of the modes, in the danger ink, with what
+/// answers it beside it.
+fn failed(why: SharedString, cx: &mut Context<Workbench>) -> gpui::AnyElement {
+    div()
+        .h_flex()
+        .items_center()
+        .gap_2()
+        .pr_2()
+        .child(div().flex_1().min_w_0().child(onehand_ui::status_line(
+            why,
+            onehand_ui::status_ink(cx).danger,
+        )))
+        .child(
+            crate::controls::action("workbench-try-again")
+                .secondary()
+                .short()
+                .label("Try again")
+                .on_click(cx.listener(|_: &mut Workbench, _, _, cx| {
+                    cx.emit(WorkbenchEvent::TryAgain);
+                })),
+        )
+        .into_any_element()
 }
 
 /// Whether a mode is offered on a root, `on_host` when its files are on a
@@ -471,6 +516,9 @@ pub enum WorkbenchEvent {
     /// A mode changed something the agent reads only when it starts, and the
     /// user asked for it to start again.
     RestartAgent,
+    /// The project on screen could not be shown, and the person asked to
+    /// try again.
+    TryAgain,
 }
 
 impl EventEmitter<WorkbenchEvent> for Workbench {}
@@ -496,7 +544,8 @@ impl Render for Workbench {
         // scales. A zoomed-in editor whose own tab bar grew with it wastes the
         // room the zoom was asking for.
         let body = match self.refused.clone() {
-            Some(why) => onehand_ui::hint(why, cx),
+            Some(Refusal::Waiting(why)) => onehand_ui::hint(why, cx),
+            Some(Refusal::Failed(why)) => failed(why, cx),
             None => self.modes[self.active].view().into_any_element(),
         };
         // A measured glyph grid is sized by the font it was configured with and

@@ -13,6 +13,7 @@ use gpui::{
 };
 use gpui_component::input::{Editor, EditorState};
 use gpui_component::{ActiveTheme, IconName, StyledExt};
+use onehand_core::disk::Disk;
 use onehand_core::editor::{RootEditors, SaveOutcome};
 use onehand_ui::Named as _;
 use onehand_ui::{
@@ -46,6 +47,10 @@ pub(crate) struct RootBuffers {
     /// watches, so a closed tab stops marking a `RootEditors` entry that is no
     /// longer there.
     watches: HashMap<u64, gpui::Subscription>,
+    /// The disk each buffer was read through. A local and a host folder can
+    /// share a path, and a buffer read on one machine is only ever written
+    /// back to that machine.
+    disks: HashMap<u64, Disk>,
 }
 
 impl RootBuffers {
@@ -58,14 +63,28 @@ impl RootBuffers {
         uid: u64,
         state: Entity<EditorState>,
         watch: gpui::Subscription,
+        disk: Disk,
     ) {
         self.buffers.insert(uid, state);
         self.watches.insert(uid, watch);
+        self.disks.insert(uid, disk);
     }
 
     pub(crate) fn forget(&mut self, uid: u64) {
         self.buffers.remove(&uid);
         self.watches.remove(&uid);
+        self.disks.remove(&uid);
+    }
+
+    /// What buffer `uid` is saved through: `now`, the root's disk, when it is
+    /// on the machine the buffer was read from (a host's attach made again
+    /// replaces its connection), and otherwise the disk it was read through.
+    pub(crate) fn save_disk(&self, uid: u64, now: Option<&Disk>) -> Option<Disk> {
+        let read = self.disks.get(&uid)?;
+        Some(match now {
+            Some(now) if now.host() == read.host() => now.clone(),
+            Some(_) | None => read.clone(),
+        })
     }
 
     /// How many open tabs have edits a close would throw away.

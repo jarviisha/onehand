@@ -52,6 +52,7 @@ impl Shell {
             E::Hide => self.hide_workbench(window, cx),
             E::StepAside => self.step_aside(window, cx),
             E::RestartAgent => self.restart_session(window, cx),
+            E::TryAgain => self.try_host_again(cx),
             E::ToggleMaximize => {
                 self.toggle_maximize_panel(super::FocusedPanel::Workbench, window, cx);
             }

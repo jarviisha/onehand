@@ -2,6 +2,7 @@ use super::confirm::Confirm;
 use super::storage::{Thing, WorkspaceChange, pick_folder};
 use super::{Shell, WARM_DELAY};
 use crate::state::Shared;
+use crate::workbench::Refusal;
 use gpui::{App, Context, Focusable as _, SharedString, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::dock::DockPlacement;
@@ -288,7 +289,7 @@ impl Shell {
                 .update(cx, |panel, cx| panel.set_root(path, disk, cx));
             return;
         }
-        let attaching = SharedString::from(format!("Attaching to {host}…"));
+        let attaching = Refusal::Waiting(format!("Attaching to {host}…").into());
         self.workbench
             .update(cx, |panel, cx| panel.refuse(Some(attaching), cx));
         self._host_files = Some(cx.spawn(async move |shell, cx| {
@@ -301,7 +302,7 @@ impl Shell {
             };
             loop {
                 let attached = cx.update(|cx| crate::hosts::disk(cx, &host)).await;
-                let why: SharedString = match attached {
+                let why: String = match attached {
                     Ok(disk) => {
                         let path = path.clone();
                         let _ = shell.update(cx, |shell, cx| {
@@ -320,9 +321,9 @@ impl Shell {
                         let line = crate::hosts::waiting_line(&busy_on, busy.len());
                         let _ = shell.update(cx, |shell, cx| {
                             if shown(shell) {
-                                shell
-                                    .workbench
-                                    .update(cx, |panel, cx| panel.refuse(Some(line.into()), cx));
+                                shell.workbench.update(cx, |panel, cx| {
+                                    panel.refuse(Some(Refusal::Waiting(line.into())), cx)
+                                });
                             }
                         });
                         let Some(idle) = cx.update(|cx| crate::hosts::idle(cx, &host)) else {
@@ -330,21 +331,31 @@ impl Shell {
                         };
                         match idle.await {
                             Ok(()) => continue,
-                            Err(why) => why.into(),
+                            Err(why) => why,
                         }
                     }
-                    Err(crate::hosts::HostFailure::Other(why)) => why.into(),
+                    Err(crate::hosts::HostFailure::Other(why)) => why,
                 };
                 let _ = shell.update(cx, |shell, cx| {
                     if shown(shell) {
-                        shell
-                            .workbench
-                            .update(cx, |panel, cx| panel.refuse(Some(why), cx));
+                        shell.workbench.update(cx, |panel, cx| {
+                            panel.refuse(Some(Refusal::Failed(why.into())), cx)
+                        });
                     }
                 });
                 return;
             }
         }));
+    }
+
+    /// Attach again for the host project on screen, if it is one.
+    pub(super) fn try_host_again(&mut self, cx: &mut Context<Self>) {
+        if let Some(root) = self.window.workspace.active_root()
+            && let Some(host) = root.on_host().cloned()
+        {
+            let path = root.path.clone();
+            self.show_host_files(host, path, cx);
+        }
     }
 
     /// Start the default agent against `root` ahead of the session that would
@@ -503,9 +514,8 @@ impl Shell {
             return Vec::new();
         };
         let live = root.sessions.len();
-        let unsaved = root
-            .local_path()
-            .map_or(0, |path| self.workbench.read(cx).unsaved_in(path, cx));
+        // A host's folder has its files open in the editor as one here does.
+        let unsaved = self.workbench.read(cx).unsaved_in(&root.path, cx);
         let mut losses = Vec::new();
         if live > 0 {
             let s = if live == 1 { "session" } else { "sessions" };
@@ -559,11 +569,13 @@ impl Shell {
                 pane.close(uid, cx);
             }
         });
-        // A folder on a host was never given any of these, and what is filed
+        // The editor's buffers and the tree go with a host's folder too, or
+        // they come back under a later project on the same path.
+        self.workbench
+            .update(cx, |panel, cx| panel.forget_root(&path, cx));
+        // A folder on a host was never given the rest, and what is filed
         // under its path belongs to a folder of the same path here.
         if self.local_root(idx).is_some() {
-            self.workbench
-                .update(cx, |panel, cx| panel.forget_root(&path, cx));
             self.issues_page.forget_root(&path, cx);
             self.terminal
                 .update(cx, |panel, cx| panel.forget_root(&path, cx));
@@ -710,16 +722,15 @@ impl Shell {
     /// every turn end: `git status` is one process per root off the UI loop,
     /// and the rescan covers only the directories currently on screen.
     ///
-    /// A host project on screen has its files' disk resolved again first, so
-    /// an attach that dropped is made again here rather than left failing.
+    /// A host project on screen whose attach has ended since its files were
+    /// shown is attached again first. One still attaching, or whose attach
+    /// failed, is left to that attach or to *Try again*.
     pub(crate) fn refresh_worktree(&mut self, cx: &mut Context<Self>) {
-        if let Some(root) = self.window.workspace.active_root()
-            && let Some(host) = root.on_host().cloned()
-        {
-            let path = root.path.clone();
-            self.show_host_files(host, path, cx);
+        if self.workbench.read(cx).lost_host() {
+            self.try_host_again(cx);
         }
         self.refresh_git(cx);
+
         self.workbench.update(cx, |panel, cx| panel.rescan(cx));
         self.tell_issues_page(&onehand_workbench::Request::Rescan, cx);
         // A run leaving a note or a sync landing changes the issue files too,

@@ -32,6 +32,16 @@ impl WorkbenchMode for Stub {
         let host = disk.host().map(str::to_string);
         self.roots.borrow_mut().push((root.to_path_buf(), host));
     }
+
+    /// A rescan written down as a root named so.
+    fn handle(&mut self, request: &Request<'_>, _: &mut App) -> bool {
+        if let Request::Rescan = request {
+            self.roots
+                .borrow_mut()
+                .push((PathBuf::from("rescan"), None));
+        }
+        false
+    }
 }
 
 const EDITOR: WorkbenchModeSpec =
@@ -97,7 +107,8 @@ fn a_host_root_offers_only_modes_that_run_there(cx: &mut TestAppContext) {
         assert_eq!(offered_ids(panel), vec![EDITOR.id]);
     });
     // Markdown reads this machine's disk, so it is never pointed at the host.
-    assert_eq!(markdown.borrow().len(), 1);
+    let pointed = markdown.borrow().iter().filter(|(r, _)| r == &root).count();
+    assert_eq!(pointed, 1);
     // Nor can it be asked for.
     panel.update(cx, |panel, cx| panel.set_mode(MARKDOWN.id, cx));
     panel.read_with(cx, |panel, _| assert_eq!(panel.mode(), EDITOR.id));
@@ -107,12 +118,13 @@ fn a_host_root_offers_only_modes_that_run_there(cx: &mut TestAppContext) {
     });
     panel.read_with(cx, |panel, _| {
         assert_eq!(offered_ids(panel), vec![EDITOR.id, MARKDOWN.id]);
-        assert!(!panel.on_host);
+        assert!(!panel.on_host());
     });
 }
 
 /// A host's attach made again while its project stays on screen, and a
-/// folder here on the same path, each reach the modes with their own disk.
+/// folder here on the same path, each reach the modes with their own disk,
+/// and the modes read the root again through it.
 #[gpui::test]
 fn the_same_root_on_another_disk_reaches_the_modes(cx: &mut TestAppContext) {
     let rt = tokio::runtime::Builder::new_current_thread()
@@ -120,23 +132,70 @@ fn the_same_root_on_another_disk_reaches_the_modes(cx: &mut TestAppContext) {
         .unwrap();
     let (panel, editor, _) = panel(cx);
     let root = PathBuf::from("/srv/app");
-    let host = Some("vps".to_string());
     for disk in [host_disk(&rt), host_disk(&rt), Disk::Local, Disk::Local] {
         panel.update(cx, |panel, cx| panel.set_root(root.clone(), disk, cx));
     }
-    let seen: Vec<_> = editor.borrow().iter().map(|(_, h)| h.clone()).collect();
+    let seen: Vec<_> = editor
+        .borrow()
+        .iter()
+        .map(|(root, host)| format!("{} {host:?}", root.display()))
+        .collect();
     // The second folder here is the one already on screen: nothing new.
-    assert_eq!(seen, vec![host.clone(), host, None]);
+    let (vps, rescan) = ("/srv/app Some(\"vps\")", "rescan None");
+    assert_eq!(seen, [vps, vps, rescan, "/srv/app None", rescan]);
+}
+
+/// An attach that ended under a tree on screen: the panel says it is lost,
+/// stops saying so while the attach is made again, and the new attach reads
+/// the tree again rather than keep what the dead one said.
+#[gpui::test]
+fn a_host_attach_made_again_reads_the_tree_again(cx: &mut TestAppContext) {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap();
+    let (panel, editor, _) = panel(cx);
+    let root = PathBuf::from("/srv/app");
+    panel.update(cx, |panel, cx| {
+        panel.set_root(root.clone(), host_disk(&rt), cx)
+    });
+    panel.read_with(cx, |panel, _| assert!(panel.lost_host()));
+
+    panel.update(cx, |panel, cx| {
+        panel.refuse(Some(Refusal::Waiting("Attaching to vps…".into())), cx)
+    });
+    // Attaching already: nothing to attach again for.
+    panel.read_with(cx, |panel, _| assert!(!panel.lost_host()));
+
+    editor.borrow_mut().clear();
+    panel.update(cx, |panel, cx| {
+        panel.set_root(root.clone(), host_disk(&rt), cx)
+    });
+    let seen: Vec<_> = editor.borrow().iter().map(|(r, _)| r.clone()).collect();
+    assert_eq!(seen, [root, PathBuf::from("rescan")]);
+    panel.read_with(cx, |panel, _| assert!(panel.refused.is_none()));
+}
+
+/// A folder here is never lost, whatever happened to a host.
+#[gpui::test]
+fn a_local_root_is_never_lost(cx: &mut TestAppContext) {
+    let (panel, _, _) = panel(cx);
+    panel.update(cx, |panel, cx| {
+        panel.set_root(PathBuf::from("/srv/app"), Disk::Local, cx)
+    });
+    panel.read_with(cx, |panel, _| assert!(!panel.lost_host()));
 }
 
 #[gpui::test]
 fn a_refusal_says_why_and_a_root_lifts_it(cx: &mut TestAppContext) {
     let (panel, _, _) = panel(cx);
     panel.update(cx, |panel, cx| {
-        panel.refuse(Some("Attaching to vps…".into()), cx)
+        panel.refuse(Some(Refusal::Failed("Could not attach to vps".into())), cx)
     });
     panel.read_with(cx, |panel, _| {
-        assert_eq!(panel.refused.as_deref(), Some("Attaching to vps…"))
+        assert_eq!(
+            panel.refused,
+            Some(Refusal::Failed("Could not attach to vps".into()))
+        )
     });
     panel.update(cx, |panel, cx| {
         panel.set_root(PathBuf::from("/srv/app"), Disk::Local, cx)

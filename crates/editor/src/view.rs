@@ -184,7 +184,7 @@ impl EditorView {
             let read = cx
                 .background_executor()
                 .spawn({
-                    let path = path.clone();
+                    let (path, disk) = (path.clone(), disk.clone());
                     async move { disk.read_file(&path) }
                 })
                 .await;
@@ -220,7 +220,7 @@ impl EditorView {
                         // adopted when it is, so a re-open keeps its edits.
                         let (_, is_new) = buffers.tabs.open(path.clone(), mtime, uid);
                         if is_new {
-                            buffers.insert(uid, state, watch);
+                            buffers.insert(uid, state, watch, disk);
                         }
                         cx.notify();
                     }
@@ -292,7 +292,7 @@ impl EditorView {
         let Some(state) = buffers.buffer(uid) else {
             return;
         };
-        let Some(disk) = self.disks.get(&root).cloned() else {
+        let Some(disk) = buffers.save_disk(uid, self.disks.get(&root)) else {
             return;
         };
 

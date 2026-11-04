@@ -85,6 +85,15 @@ impl Disk {
         }
     }
 
+    /// Whether this is a host's disk over an attach that has ended, so
+    /// nothing read through it can land.
+    pub fn is_closed(&self) -> bool {
+        match self {
+            Disk::Local => false,
+            Disk::Host(h) => h.conn.is_closed(),
+        }
+    }
+
     /// The host's name, or None for this machine.
     pub fn host(&self) -> Option<&str> {
         match self {
