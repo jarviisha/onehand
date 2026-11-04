@@ -421,7 +421,15 @@ fn attach_with(
 ) -> impl Future<Output = Result<HostConn, HostFailure>> + use<> {
     let shared = Shared::global(cx);
     let waits = shared.hosts.waits.clone();
-    let attempt = shared.hosts.slots.get(host, fresh, !polled, || {
+    // A person's attach that found one made by itself under way, which failed:
+    // made again, taking the host this time.
+    let again = {
+        let (host, cx) = (host.clone(), cx.to_async());
+        move || {
+            async move { cx.update(|cx| attach_with(cx, &host, false, false)).await }.boxed_local()
+        }
+    };
+    let attempt = shared.hosts.slots.get(host, fresh, !polled, again, || {
         // Before the first frame that could show it, so nothing to redraw.
         waits.borrow_mut().attaching(host);
         let (tx, rx) = oneshot::channel();
@@ -462,8 +470,10 @@ fn attach_with(
     let host = host.clone();
     let cx = cx.to_async();
     async move {
-        let result = attempt.await;
-        if waits.borrow_mut().heard(&host, &result, polled) {
+        let (result, own) = attempt.await;
+        // A result whose slot has since gone to another attempt is not what
+        // is known of the host: that attempt's is.
+        if own && waits.borrow_mut().heard(&host, &result, polled) {
             cx.update(|cx| cx.refresh_windows());
         }
         result
@@ -536,8 +546,9 @@ type Attempt<C> = future::Shared<LocalBoxFuture<'static, Result<C, HostFailure>>
 enum Slot<C> {
     Ready(C),
     /// Every ask while it runs awaits this one attempt, so two never install
-    /// at once; whether it takes the host from another machine beside it.
-    Attaching(Attempt<C>, bool),
+    /// at once; whether it takes the host from another machine beside it, and
+    /// its place in the order attempts were made.
+    Attaching(Attempt<C>, bool, u64),
 }
 
 /// Attaches by host, generic over the connection so the reuse can be
@@ -549,50 +560,86 @@ struct Slots<C> {
     map: Rc<RefCell<BTreeMap<HostName, Slot<C>>>>,
     /// Whether a ready connection still has its stream.
     alive: fn(&C) -> bool,
+    /// The last attempt made for each host, by its place in the order.
+    latest: Rc<RefCell<BTreeMap<HostName, u64>>>,
+    made: std::cell::Cell<u64>,
 }
+
+/// An attempt under way, whether it takes the host, and its place in the order.
+type Under<C> = (Attempt<C>, bool, u64);
+
+/// What an ask comes to, and whether it was its host's latest attempt's own.
+type Got<C> = LocalBoxFuture<'static, (Result<C, HostFailure>, bool)>;
 
 impl<C: Clone + 'static> Slots<C> {
     fn new(alive: fn(&C) -> bool) -> Self {
         Self {
             map: Rc::default(),
             alive,
+            latest: Rc::default(),
+            made: std::cell::Cell::new(0),
         }
     }
 
     /// The connection to `host`, from `make` unless one is up or under way;
     /// with `fresh`, from `make` whatever is there. A failed attempt leaves
-    /// nothing behind, so the next ask tries again.
+    /// nothing behind, so the next ask tries again. With it comes whether the
+    /// attempt is still the host's latest, which alone says what is known.
     ///
     /// `fresh` assumes no attempt is under way: one that is goes on, but what
-    /// it ends in is no longer kept. So too an attempt that does not `take`,
-    /// when this ask does: a person's attach never rides one made by itself,
-    /// which would leave the host to another machine.
+    /// it ends in is no longer kept.
+    ///
+    /// An ask that `take`s and finds an attempt under way that does not (one
+    /// made by itself) waits on it rather than racing it with a second: it
+    /// takes what that lands, and on any failure asks `again`, whose result
+    /// says what is known of the host itself.
     fn get(
         &self,
         host: &HostName,
         fresh: bool,
         take: bool,
+        again: impl FnOnce() -> LocalBoxFuture<'static, Result<C, HostFailure>> + 'static,
         make: impl FnOnce() -> LocalBoxFuture<'static, Result<C, HostFailure>>,
-    ) -> LocalBoxFuture<'static, Result<C, HostFailure>> {
+    ) -> Got<C> {
         let found = if fresh { None } else { self.reuse(host) };
-        let attempt = match found {
-            Some(Either::Left(conn)) => return future::ready(Ok(conn)).boxed_local(),
-            Some(Either::Right((attempt, takes))) if takes || !take => attempt,
-            Some(Either::Right(_)) | None => {
+        let (attempt, made) = match found {
+            Some(Either::Left(conn)) => return future::ready((Ok(conn), true)).boxed_local(),
+            Some(Either::Right((attempt, takes, made))) if take && !takes => {
+                let finish = self.finish(host, attempt, made);
+                return async move {
+                    match finish.await {
+                        (Ok(conn), own) => (Ok(conn), own),
+                        (Err(_), _) => (again().await, false),
+                    }
+                }
+                .boxed_local();
+            }
+            Some(Either::Right((attempt, _, made))) => (attempt, made),
+            None => {
+                let made = self.made.get() + 1;
+                self.made.set(made);
+                self.latest.borrow_mut().insert(host.clone(), made);
                 let attempt = make().shared();
-                let slot = Slot::Attaching(attempt.clone(), take);
+                let slot = Slot::Attaching(attempt.clone(), take, made);
                 self.map.borrow_mut().insert(host.clone(), slot);
-                attempt
+                (attempt, made)
             }
         };
-        let map = self.map.clone();
+        self.finish(host, attempt, made)
+    }
+
+    /// `attempt`, the `made`th, awaited: what it ends in is kept in its slot
+    /// unless another attempt has taken that since.
+    fn finish(&self, host: &HostName, attempt: Attempt<C>, made: u64) -> Got<C> {
+        let (map, latest) = (self.map.clone(), self.latest.clone());
         let host = host.clone();
         async move {
             let result = attempt.clone().await;
+            let own = latest.borrow().get(&host) == Some(&made);
             let mut map = map.borrow_mut();
             // Only this attempt's own slot: a restart since has replaced it.
             let ours = match map.get(&host) {
-                Some(Slot::Attaching(now, _)) => now.ptr_eq(&attempt),
+                Some(Slot::Attaching(now, ..)) => now.ptr_eq(&attempt),
                 Some(Slot::Ready(_)) | None => false,
             };
             if ours {
@@ -605,7 +652,7 @@ impl<C: Clone + 'static> Slots<C> {
                     }
                 }
             }
-            result
+            (result, own)
         }
         .boxed_local()
     }
@@ -619,19 +666,19 @@ impl<C: Clone + 'static> Slots<C> {
     }
 
     /// What `host`'s slot has worth reusing: a live connection, or an attempt
-    /// still under way and whether it takes the host.
+    /// still under way, whether it takes the host, and its place in the order.
     ///
     /// An attempt is polled once to see whether it has ended: a shared future
     /// settles only when polled, so one whose every waiter went away still
     /// looks under way after its attach is long over. Ended, it is reused only
     /// if it left a connection that is still up; a failure nobody heard is
     /// not handed to the next ask, which tries again.
-    fn reuse(&self, host: &HostName) -> Option<Either<C, (Attempt<C>, bool)>> {
+    fn reuse(&self, host: &HostName) -> Option<Either<C, Under<C>>> {
         let mut map = self.map.borrow_mut();
         let conn = match map.get(host)? {
             Slot::Ready(conn) => conn.clone(),
-            Slot::Attaching(attempt, take) => match attempt.clone().now_or_never() {
-                None => return Some(Either::Right((attempt.clone(), *take))),
+            Slot::Attaching(attempt, take, made) => match attempt.clone().now_or_never() {
+                None => return Some(Either::Right((attempt.clone(), *take, *made))),
                 Some(Ok(conn)) => conn,
                 Some(Err(_)) => return None,
             },

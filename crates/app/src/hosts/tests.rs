@@ -5,6 +5,7 @@ use super::{
 };
 use futures::FutureExt as _;
 use futures::executor::block_on;
+use futures::future::LocalBoxFuture;
 use onehand_core::host::wire::HostSession;
 use onehand_core::workspace::HostName;
 use std::cell::RefCell;
@@ -44,19 +45,125 @@ fn a_ready_connection_is_reused_and_a_dead_one_made_again() {
     };
 
     // Two asks while the first attempt is under way share it.
-    let first = slots.get(&host, false, true, make);
-    let second = slots.get(&host, false, true, make);
+    let first = ask(&slots, &host, false, make);
+    let second = ask(&slots, &host, false, make);
     block_on(first).ok().unwrap();
     block_on(second).ok().unwrap();
     assert_eq!(made.borrow().len(), 1);
-    block_on(slots.get(&host, false, true, make)).ok().unwrap();
+    block_on(ask(&slots, &host, false, make)).ok().unwrap();
     assert_eq!(made.borrow().len(), 1);
 
     made.borrow()[0].store(false, Ordering::SeqCst);
-    block_on(slots.get(&host, false, true, make)).ok().unwrap();
+    block_on(ask(&slots, &host, false, make)).ok().unwrap();
     assert_eq!(made.borrow().len(), 2);
-    block_on(slots.get(&host, false, true, make)).ok().unwrap();
+    block_on(ask(&slots, &host, false, make)).ok().unwrap();
     assert_eq!(made.borrow().len(), 2);
+}
+
+/// What a person's ask of `slots` comes to, nothing made by itself under way.
+fn ask(
+    slots: &Slots<Fake>,
+    host: &HostName,
+    fresh: bool,
+    make: impl FnOnce() -> LocalBoxFuture<'static, Result<Fake, HostFailure>>,
+) -> LocalBoxFuture<'static, Result<Fake, HostFailure>> {
+    slots
+        .get(host, fresh, true, || panic!("asked again"), make)
+        .map(|(result, _)| result)
+        .boxed_local()
+}
+
+/// An attach made by itself, landing what `late` sends.
+fn polled(
+    slots: &Slots<Fake>,
+    host: &HostName,
+    late: futures::channel::oneshot::Receiver<Result<Fake, HostFailure>>,
+) -> LocalBoxFuture<'static, (Result<Fake, HostFailure>, bool)> {
+    slots.get(
+        host,
+        false,
+        false,
+        || panic!("asked again"),
+        || async move { late.await.unwrap() }.boxed_local(),
+    )
+}
+
+fn up() -> Fake {
+    Fake(Arc::new(AtomicBool::new(true)))
+}
+
+/// A person's ask while an attach made by itself is under way waits on it,
+/// and takes the connection it lands, with nothing made beside it.
+#[test]
+fn a_persons_ask_waits_on_an_attach_made_by_itself() {
+    let slots = Slots::new(|c: &Fake| c.0.load(Ordering::SeqCst));
+    let host = HostName("vps".into());
+    let (send, late) = futures::channel::oneshot::channel();
+    let mut auto = polled(&slots, &host, late);
+    let mut person = slots.get(
+        &host,
+        false,
+        true,
+        || panic!("asked again"),
+        || panic!("made beside the attach under way"),
+    );
+    assert!((&mut person).now_or_never().is_none(), "it waits");
+    let landed = up();
+    send.send(Ok(landed.clone())).ok().unwrap();
+    let (result, own) = block_on(person);
+    assert!(own);
+    assert!(Arc::ptr_eq(&result.ok().unwrap().0, &landed.0));
+    assert!(block_on(&mut auto).1);
+}
+
+/// One made by itself that finds the host held, or fails, is followed by
+/// the person's own attach, taking the host; what that comes to is said by
+/// it, not by the ask that waited.
+#[test]
+fn a_persons_ask_attaches_again_once_the_attach_made_by_itself_fails() {
+    let slots = Slots::new(|c: &Fake| c.0.load(Ordering::SeqCst));
+    let host = HostName("vps".into());
+    let (send, late) = futures::channel::oneshot::channel();
+    let auto = polled(&slots, &host, late);
+    let taking = up();
+    let again = {
+        let taking = taking.clone();
+        move || async move { Ok(taking) }.boxed_local()
+    };
+    let person = slots.get(&host, false, true, again, || panic!("made beside"));
+    send.send(Err(HostFailure::Taken(
+        "vps was attached from another machine".into(),
+    )))
+    .ok()
+    .unwrap();
+    let (result, own) = block_on(person);
+    assert!(!own, "heard by the attach made again");
+    assert!(Arc::ptr_eq(&result.ok().unwrap().0, &taking.0));
+    assert!(matches!(block_on(auto), (Err(HostFailure::Taken(_)), true)));
+}
+
+/// An attempt a restart replaced is not what is known of the host: its late
+/// result is not its own.
+#[test]
+fn a_replaced_attempts_late_result_is_not_its_own() {
+    let slots = Slots::new(|c: &Fake| c.0.load(Ordering::SeqCst));
+    let host = HostName("vps".into());
+    let (send, late) = futures::channel::oneshot::channel();
+    let old = polled(&slots, &host, late);
+    let restarted = slots.get(
+        &host,
+        true,
+        true,
+        || panic!("asked again"),
+        || async { Ok(up()) }.boxed_local(),
+    );
+    assert!(block_on(restarted).1);
+    send.send(Err(HostFailure::Other(
+        "Could not attach to vps: no".into(),
+    )))
+    .ok()
+    .unwrap();
+    assert!(!block_on(old).1, "stale");
 }
 
 /// A failing attach: every call to `make` counted in `made`.
@@ -74,8 +181,8 @@ fn a_failed_attach_is_tried_again_on_the_next_ask() {
     let slots = Slots::new(|c: &Fake| c.0.load(Ordering::SeqCst));
     let host = HostName("vps".into());
     let made = RefCell::new(0);
-    assert!(block_on(slots.get(&host, false, true, failing(&made))).is_err());
-    assert!(block_on(slots.get(&host, false, true, failing(&made))).is_err());
+    assert!(block_on(ask(&slots, &host, false, failing(&made))).is_err());
+    assert!(block_on(ask(&slots, &host, false, failing(&made))).is_err());
     assert_eq!(*made.borrow(), 2);
 }
 
@@ -87,8 +194,8 @@ fn a_finished_attach_nobody_awaited_is_not_handed_out() {
     let slots = Slots::new(|c: &Fake| c.0.load(Ordering::SeqCst));
     let host = HostName("vps".into());
     let made = RefCell::new(0);
-    drop(slots.get(&host, false, true, failing(&made)));
-    assert!(block_on(slots.get(&host, false, true, failing(&made))).is_err());
+    drop(ask(&slots, &host, false, failing(&made)));
+    assert!(block_on(ask(&slots, &host, false, failing(&made))).is_err());
     assert_eq!(*made.borrow(), 2);
 }
 
@@ -97,51 +204,24 @@ fn a_late_attach_leaves_a_restart_in_its_place() {
     let slots = Slots::new(|c: &Fake| c.0.load(Ordering::SeqCst));
     let host = HostName("vps".into());
     let (send, late) = futures::channel::oneshot::channel::<Fake>();
-    let first = slots.get(&host, false, true, || {
+    let first = ask(&slots, &host, false, || {
         async move { Ok(late.await.unwrap()) }.boxed_local()
     });
     let restarted = Arc::new(AtomicBool::new(true));
     let fresh = Fake(restarted.clone());
-    block_on(slots.get(&host, true, true, || async move { Ok(fresh) }.boxed_local()))
-        .ok()
-        .unwrap();
+    block_on(ask(&slots, &host, true, || {
+        async move { Ok(fresh) }.boxed_local()
+    }))
+    .ok()
+    .unwrap();
     send.send(Fake(Arc::new(AtomicBool::new(true))))
         .ok()
         .unwrap();
     block_on(first).ok().unwrap();
-    let now = block_on(slots.get(&host, false, true, || panic!("made again")))
+    let now = block_on(ask(&slots, &host, false, || panic!("made again")))
         .ok()
         .unwrap();
     assert!(Arc::ptr_eq(&now.0, &restarted));
-}
-
-/// A person's ask never rides an attempt made by itself, which would not take
-/// the host from another machine: it makes its own, which the slot keeps. One
-/// made by itself rides a person's.
-#[test]
-fn a_persons_ask_never_rides_an_attempt_that_does_not_take() {
-    let slots = Slots::new(|c: &Fake| c.0.load(Ordering::SeqCst));
-    let host = HostName("vps".into());
-    let (send, late) = futures::channel::oneshot::channel::<Fake>();
-    let polled = slots.get(&host, false, false, || {
-        async move { Ok(late.await.unwrap()) }.boxed_local()
-    });
-    let taking = Arc::new(AtomicBool::new(true));
-    let person = slots.get(&host, false, true, || {
-        let up = taking.clone();
-        async move { Ok(Fake(up)) }.boxed_local()
-    });
-    let again = slots.get(&host, false, false, || panic!("rides the person's"));
-    assert!(Arc::ptr_eq(&block_on(person).ok().unwrap().0, &taking));
-    assert!(Arc::ptr_eq(&block_on(again).ok().unwrap().0, &taking));
-    send.send(Fake(Arc::new(AtomicBool::new(true))))
-        .ok()
-        .unwrap();
-    block_on(polled).ok().unwrap();
-    let now = block_on(slots.get(&host, false, true, || panic!("made again")))
-        .ok()
-        .unwrap();
-    assert!(Arc::ptr_eq(&now.0, &taking));
 }
 
 /// Long enough that a host is not asked over and over while its sessions

@@ -43,9 +43,10 @@ it. What is refused, and how, is under *What a host project does not do*.
   every window, project and session on a host shares it. It is made on first use (a host
   project's page shown, a host session shown, a host project shown in the Workbench, the *Add* of
   the form) and made again only once its stream has ended. Asks that arrive while one attach runs
-  all wait on that one, so two never install at once, save that a person's ask never waits on an
-  attach made by itself (which does not take the host, below): it makes its own, which replaces
-  it. The attach runs on the ACP runtime and its
+  all wait on that one, so two never run at once. A person's ask that finds an attach made by
+  itself under way (which does not take the host, below) waits on it too, and takes what it lands;
+  if it fails, held or otherwise, the person's own attach, taking the host, follows. Only the
+  latest attempt for a host says what is known of it: one a restart replaced is not heard. The attach runs on the ACP runtime and its
   answer crosses back on a oneshot.
 - **What a host is to this run** (`HostState`, `crates/app/src/hosts.rs`): never tried, attaching,
   live, **lost** (an attach failed, or a live connection closed, without another machine taking the
