@@ -137,36 +137,33 @@ fn busy(host: &HostName, ids: &[&str]) -> Result<(), HostFailure> {
 }
 
 /// A busy host waits, once however often it is found busy; the first attach
-/// that lands releases everything waiting on it, once.
+/// that lands releases every listener, once.
 #[test]
 fn a_busy_host_waits_until_an_attach_lands() {
     let host = HostName("vps".into());
     let mut waits = Waits::default();
     assert!(
-        waits.ended(&host).is_none(),
+        waits.listen(&host).is_none(),
         "nothing waits on an idle host"
     );
-    assert!(waits.heard(&host, &busy(&host, &["1-1"])), "a wait begins");
-    assert!(
-        !waits.heard(&host, &busy(&host, &["1-1", "2-1"])),
-        "the same wait"
-    );
+    waits.heard(&host, &busy(&host, &["1-1"]));
+    waits.heard(&host, &busy(&host, &["1-1", "2-1"]));
     assert_eq!(waits.busy(&host).len(), 2, "the latest sessions said");
-    let (a, b) = (waits.ended(&host).unwrap(), waits.ended(&host).unwrap());
+    let (a, b) = (waits.listen(&host).unwrap(), waits.listen(&host).unwrap());
+    assert!(a.ptr_eq(&b), "one wait");
     assert!(a.clone().now_or_never().is_none());
     // One poll per wait.
     assert!(waits.poll(&host));
     assert!(!waits.poll(&host));
-    // A host that cannot be reached still waits.
-    waits.heard(&host, &Err::<(), _>(HostFailure::Other("gone".into())));
-    assert!(b.clone().now_or_never().is_none());
 
     waits.heard(&host, &Ok(()));
-    assert!(a.now_or_never().is_some() && b.now_or_never().is_some());
-    assert!(waits.ended(&host).is_none(), "released once");
+    assert_eq!(a.now_or_never(), Some(Ok(Ok(()))));
+    assert_eq!(b.now_or_never(), Some(Ok(Ok(()))));
+    assert!(waits.listen(&host).is_none(), "released once");
     assert!(waits.busy(&host).is_empty());
     // A later busy is a new wait, polled anew.
-    assert!(waits.heard(&host, &busy(&host, &["3-1"])));
+    waits.heard(&host, &busy(&host, &["3-1"]));
+    assert!(waits.listen(&host).is_some());
     assert!(waits.poll(&host));
 }
 
@@ -177,11 +174,47 @@ fn a_restart_that_lands_ends_the_wait() {
     let host = HostName("vps".into());
     let mut waits = Waits::default();
     waits.heard(&host, &busy(&host, &["1-1"]));
-    let ended = waits.ended(&host).unwrap();
+    let ended = waits.listen(&host).unwrap();
     // Another host's attach releases nothing here.
     waits.heard(&HostName("other".into()), &Ok(()));
     assert!(ended.clone().now_or_never().is_none());
     // `hosts::restart` lands on this build.
     waits.heard(&host, &Ok(()));
-    assert!(ended.now_or_never().is_some());
+    assert_eq!(ended.now_or_never(), Some(Ok(Ok(()))));
+}
+
+/// A host that cannot be reached is not waited on: every listener hears
+/// why, so each place says the real failure rather than that it waits.
+#[test]
+fn an_unreachable_host_releases_its_waiters_with_the_failure() {
+    let host = HostName("vps".into());
+    let mut waits = Waits::default();
+    waits.heard(&host, &busy(&host, &["1-1"]));
+    let ended = waits.listen(&host).unwrap();
+    waits.heard(&host, &Err::<(), _>(HostFailure::Other("gone".into())));
+    assert_eq!(ended.now_or_never(), Some(Ok(Err("gone".to_string()))));
+    assert!(waits.listen(&host).is_none(), "the wait is over");
+}
+
+/// When the last listener goes, so do the wait and its poll; one listening
+/// again starts both anew.
+#[test]
+fn the_wait_ends_with_its_last_listener() {
+    let host = HostName("vps".into());
+    let mut waits = Waits::default();
+    waits.heard(&host, &busy(&host, &["1-1"]));
+    let (a, b) = (waits.listen(&host).unwrap(), waits.listen(&host).unwrap());
+    assert!(waits.poll(&host));
+    waits.leave(&host, &a);
+    assert!(waits.polling(&host, &b), "one still listens");
+    waits.leave(&host, &b);
+    assert!(!waits.polling(&host, &b), "no poll");
+    assert!(waits.busy(&host).is_empty(), "the wait is gone");
+    assert!(waits.listen(&host).is_none());
+    // A leave for a wait already gone touches the next one not at all.
+    waits.heard(&host, &busy(&host, &["2-1"]));
+    let c = waits.listen(&host).unwrap();
+    waits.leave(&host, &a);
+    assert!(waits.poll(&host), "polled anew");
+    assert!(waits.polling(&host, &c));
 }

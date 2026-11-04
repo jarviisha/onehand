@@ -63,18 +63,30 @@ impl Hosts {
     }
 }
 
-/// The end of the wait on `host`, its busy sessions gone idle or its service
-/// restarted by a yes; `None` when nothing keeps it waiting. Starts the
-/// wait's poll, once.
-pub(crate) fn idle(cx: &App, host: &HostName) -> Option<impl Future<Output = ()> + use<>> {
+/// How a host's wait ended: its service on this build, or why it could not
+/// be reached.
+pub(crate) type WaitEnd = Result<(), String>;
+
+type Ended = future::Shared<oneshot::Receiver<WaitEnd>>;
+
+/// The end of the wait on `host`, its busy sessions gone idle, its service
+/// restarted by a yes, or the host out of reach; `None` when nothing keeps it
+/// waiting. The future listens for as long as it lives: the wait and its
+/// poll, started with the first listener, end with the last.
+pub(crate) fn idle(cx: &App, host: &HostName) -> Option<impl Future<Output = WaitEnd> + use<>> {
     let waits = Shared::global(cx).hosts.waits.clone();
-    let ended = waits.borrow().ended(host)?;
+    let ended = waits.borrow_mut().listen(host)?;
+    let listening = Listening {
+        waits: waits.clone(),
+        host: host.clone(),
+        ended: ended.clone(),
+    };
     if waits.borrow_mut().poll(host) {
         let (host, ended) = (host.clone(), ended.clone());
         cx.spawn(async move |cx| {
             loop {
                 cx.background_executor().timer(HOST_IDLE_POLL).await;
-                if ended.clone().now_or_never().is_some() {
+                if !waits.borrow().polling(&host, &ended) {
                     return;
                 }
                 // What it comes to is heard by the attach itself.
@@ -84,7 +96,28 @@ pub(crate) fn idle(cx: &App, host: &HostName) -> Option<impl Future<Output = ()>
         })
         .detach();
     }
-    Some(ended.map(drop))
+    Some(async move {
+        let _listening = listening;
+        // Dropped unsent only with its last listener, and this one is here.
+        ended.await.unwrap_or(Ok(()))
+    })
+}
+
+/// One listener to a host's wait, counted while it lives.
+struct Listening {
+    waits: Rc<RefCell<Waits>>,
+    host: HostName,
+    ended: Ended,
+}
+
+impl Drop for Listening {
+    fn drop(&mut self) {
+        // Never borrowed across a drop; were it, the wait would outlive its
+        // listeners until the host answers, which is all that is lost.
+        if let Ok(mut waits) = self.waits.try_borrow_mut() {
+            waits.leave(&self.host, &self.ended);
+        }
+    }
 }
 
 /// The sessions mid-turn on `host`, as it last said, while it is waited on.
@@ -110,45 +143,61 @@ struct Waits(BTreeMap<HostName, Wait>);
 
 struct Wait {
     busy: Vec<HostSession>,
-    /// Dropped with the wait, which is what ends `ended` for every waiter.
-    _end: oneshot::Sender<()>,
-    ended: future::Shared<oneshot::Receiver<()>>,
+    /// Sent when the wait ends; dropped unsent with its last listener.
+    end: oneshot::Sender<WaitEnd>,
+    ended: Ended,
+    listeners: usize,
     polling: bool,
 }
 
 impl Waits {
     /// What an attach to `host` came to: a busy host waits, with the
-    /// sessions it said; one that lands ends the wait. Whether a wait began.
-    fn heard<C>(&mut self, host: &HostName, result: &Result<C, HostFailure>) -> bool {
+    /// sessions it said; one that lands ends the wait, and one that could
+    /// not reach the host ends it on why.
+    fn heard<C>(&mut self, host: &HostName, result: &Result<C, HostFailure>) {
         match result {
-            Ok(_) => {
-                self.0.remove(host);
-                false
-            }
+            Ok(_) => self.end(host, Ok(())),
+            Err(HostFailure::Other(why)) => self.end(host, Err(why.clone())),
             Err(HostFailure::Busy { busy, .. }) => match self.0.get_mut(host) {
-                Some(wait) => {
-                    wait.busy = busy.clone();
-                    false
-                }
+                Some(wait) => wait.busy = busy.clone(),
                 None => {
                     let (end, ended) = oneshot::channel();
                     let wait = Wait {
                         busy: busy.clone(),
-                        _end: end,
+                        end,
                         ended: ended.shared(),
+                        listeners: 0,
                         polling: false,
                     };
                     self.0.insert(host.clone(), wait);
-                    true
                 }
             },
-            // Unreachable for now: still waited on.
-            Err(HostFailure::Other(_)) => false,
         }
     }
 
-    fn ended(&self, host: &HostName) -> Option<future::Shared<oneshot::Receiver<()>>> {
-        self.0.get(host).map(|wait| wait.ended.clone())
+    fn end(&mut self, host: &HostName, how: WaitEnd) {
+        if let Some(wait) = self.0.remove(host) {
+            let _ = wait.end.send(how);
+        }
+    }
+
+    /// One more listener to `host`'s wait, and its end; `None` when there
+    /// is no wait.
+    fn listen(&mut self, host: &HostName) -> Option<Ended> {
+        let wait = self.0.get_mut(host)?;
+        wait.listeners += 1;
+        Some(wait.ended.clone())
+    }
+
+    /// A listener to the wait `ended` went; with the last, the wait goes.
+    fn leave(&mut self, host: &HostName, ended: &Ended) {
+        let Some(wait) = self.0.get_mut(host).filter(|wait| wait.ended.ptr_eq(ended)) else {
+            return;
+        };
+        wait.listeners = wait.listeners.saturating_sub(1);
+        if wait.listeners == 0 {
+            self.0.remove(host);
+        }
     }
 
     fn busy(&self, host: &HostName) -> &[HostSession] {
@@ -160,6 +209,13 @@ impl Waits {
         self.0
             .get_mut(host)
             .is_some_and(|wait| !std::mem::replace(&mut wait.polling, true))
+    }
+
+    /// Whether the poll of the wait `ended` goes on: that wait still stands.
+    fn polling(&self, host: &HostName, ended: &Ended) -> bool {
+        self.0
+            .get(host)
+            .is_some_and(|wait| wait.polling && wait.ended.ptr_eq(ended))
     }
 }
 

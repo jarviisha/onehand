@@ -32,6 +32,7 @@ fn seed() -> Vec<Item> {
         in_turn: false,
         lead: None,
         waiting: 0,
+        host: None,
     };
     vec![
         s(0, 0, 1, "Inspect dashboard", Some(AwaitingUser), 4),
@@ -119,23 +120,28 @@ fn attention_counts_input_failures_and_lost_agents() {
 fn the_meta_line_keeps_one_order() {
     use SessionSignal::*;
     assert_eq!(
-        meta(Some(Busy), 0, 0, 0, "claude", 1),
+        meta(Some(Busy), None, 0, 0, 0, "claude", 1),
         "Running · claude · 1m"
     );
     assert_eq!(
-        meta(Some(AwaitingUser), 0, 0, 0, "claude", 4),
+        meta(Some(AwaitingUser), None, 0, 0, 0, "claude", 4),
         "Needs input · claude · waiting 4m"
     );
     assert_eq!(
-        meta(Some(Failed), 0, 0, 0, "codex", 25),
+        meta(Some(Failed), None, 0, 0, 0, "codex", 25),
         "Failed · codex · 25m"
     );
+    // A session waiting for its host names it, calm.
     assert_eq!(
-        meta(Some(Lost), 0, 0, 0, "codex", 0),
+        meta(Some(HostWait), Some("vps"), 0, 0, 0, "claude", 3),
+        "Waiting for vps · claude · 3m"
+    );
+    assert_eq!(
+        meta(Some(Lost), None, 0, 0, 0, "codex", 0),
         "Disconnected · codex · now"
     );
     assert_eq!(
-        meta(None, 0, 0, 0, "claude", 2 * 60 * 24),
+        meta(None, None, 0, 0, 0, "claude", 2 * 60 * 24),
         "Idle · claude · 2d"
     );
 }
@@ -144,11 +150,11 @@ fn the_meta_line_keeps_one_order() {
 fn meta_counts_background_work() {
     use SessionSignal::*;
     assert_eq!(
-        meta(Some(Busy), 2, 0, 0, "Claude Code", 1),
+        meta(Some(Busy), None, 2, 0, 0, "Claude Code", 1),
         "Running · 2 in background · Claude Code · 1m"
     );
     assert_eq!(
-        meta(Some(Busy), 0, 0, 0, "claude", 1),
+        meta(Some(Busy), None, 0, 0, 0, "claude", 1),
         "Running · claude · 1m"
     );
 }
@@ -157,15 +163,15 @@ fn meta_counts_background_work() {
 fn meta_counts_subagents() {
     use SessionSignal::*;
     assert_eq!(
-        meta(Some(Busy), 0, 2, 0, "Claude Code", 1),
+        meta(Some(Busy), None, 0, 2, 0, "Claude Code", 1),
         "Running · 2 subagents · Claude Code · 1m"
     );
     assert_eq!(
-        meta(Some(Busy), 1, 1, 0, "Claude Code", 1),
+        meta(Some(Busy), None, 1, 1, 0, "Claude Code", 1),
         "Running · 1 in background · 1 subagent · Claude Code · 1m"
     );
     assert_eq!(
-        meta(Some(Busy), 0, 0, 0, "claude", 1),
+        meta(Some(Busy), None, 0, 0, 0, "claude", 1),
         "Running · claude · 1m"
     );
 }
@@ -336,6 +342,7 @@ fn a_group_past_the_cap_says_how_many_more_until_shown_whole() {
             in_turn: false,
             lead: None,
             waiting: 0,
+            host: None,
         })
         .collect();
     let capped = rows(&many, &shape(Filter::ByProject, "", &|_| true, &|_| false));
@@ -601,6 +608,7 @@ fn with_workers() -> Vec<Item> {
         in_turn: false,
         lead: Some(1),
         waiting: 0,
+        host: None,
     });
     items
 }
@@ -627,11 +635,11 @@ fn the_lead_row_keeps_its_own_state_and_counts_its_waiting_workers() {
 #[test]
 fn meta_counts_waiting_workers() {
     assert_eq!(
-        meta(None, 0, 0, 2, "claude", 60),
+        meta(None, None, 0, 0, 2, "claude", 60),
         "Idle · 2 workers need you · claude · 1h"
     );
     assert_eq!(
-        meta(None, 0, 0, 1, "claude", 60),
+        meta(None, None, 0, 0, 1, "claude", 60),
         "Idle · 1 worker needs you · claude · 1h"
     );
 }
@@ -649,11 +657,11 @@ fn the_waiting_ink_lands_on_the_count_for_every_state() {
         Some(UnseenTurn),
     ] {
         for waiting in [1, 3] {
-            let line = meta(signal, 2, 1, waiting, "claude", 5);
-            let span = waiting_span(signal, waiting).unwrap();
+            let line = meta(signal, None, 2, 1, waiting, "claude", 5);
+            let span = waiting_span(signal, None, waiting).unwrap();
             assert_eq!(line[span].to_string(), workers_said(waiting).unwrap());
         }
-        assert_eq!(waiting_span(signal, 0), None);
+        assert_eq!(waiting_span(signal, None, 0), None);
     }
 }
 

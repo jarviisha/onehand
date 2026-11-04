@@ -1,4 +1,9 @@
 use super::{HostFlow, Waiting, Want, landed_on, needs_restart, release};
+
+/// What a host's waiting holds, to compare.
+fn held(waiting: Option<Waiting>) -> Option<(Vec<u64>, Option<u64>, bool)> {
+    waiting.map(|w| (w.uids, w.add, w.page))
+}
 use crate::hosts::HostFailure;
 use onehand_core::workspace::HostName;
 
@@ -29,15 +34,9 @@ fn one_wait_per_host_gathers_everything_that_waits_on_it() {
     assert!(!flow.join(&a, Want::Page));
     // Another host is another wait.
     assert!(flow.join(&b, Want::Page));
-    assert_eq!(
-        flow.take(&a),
-        Some(Waiting {
-            uids: vec![1, 2],
-            add: Some(7),
-        })
-    );
-    assert_eq!(flow.take(&a), None, "released once");
-    assert_eq!(flow.take(&b), Some(Waiting::default()));
+    assert_eq!(held(flow.take(&a)), Some((vec![1, 2], Some(7), true)));
+    assert_eq!(held(flow.take(&a)), None, "released once");
+    assert_eq!(held(flow.take(&b)), Some((vec![], None, true)));
     // Busy again later: listened for anew.
     assert!(flow.join(&a, Want::Page));
 }
@@ -79,12 +78,26 @@ fn a_cancelled_form_is_not_carried_on_by_an_old_wait() {
     flow.forget_add();
     // The waits go on for the sessions they hold; the form is off them, so
     // a form opened again is not committed by one that ended for this one.
-    assert_eq!(flow.take(&a), Some(Waiting::default()));
-    assert_eq!(
-        flow.take(&b),
-        Some(Waiting {
-            uids: vec![1],
-            add: None,
-        })
-    );
+    assert_eq!(held(flow.take(&a)), Some((vec![], None, false)));
+    assert_eq!(held(flow.take(&b)), Some((vec![1], None, false)));
+}
+
+/// What no longer waits goes, and a host nothing here waits on is let go,
+/// so its wait is not listened to from here any more.
+#[test]
+fn what_stops_waiting_is_let_go() {
+    let (a, b) = (HostName("a".into()), HostName("b".into()));
+    let mut flow = HostFlow::default();
+    flow.join(&a, Want::Session(1));
+    flow.join(&a, Want::Session(2));
+    flow.join(&a, Want::Page);
+    flow.join(&b, Want::Add(4));
+    // Session 2 closed, the page left, the form put away.
+    flow.prune(|_, want| match want {
+        Want::Session(uid) => uid == 1,
+        Want::Page | Want::Add(_) => false,
+    });
+    assert!(!flow.waiting.contains_key(&b), "nothing waits on b here");
+    assert_eq!(held(flow.take(&a)), Some((vec![1], None, false)));
+    assert!(flow.is_empty());
 }

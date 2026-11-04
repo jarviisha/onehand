@@ -85,9 +85,11 @@ pub fn add_host_project(shell: &Shell, window: &Window, cx: &mut Context<Shell>)
     let danger = crate::theme::status_ink(cx).danger;
     let muted = cx.theme().muted_foreground;
     // What it waits on, said where its failures are, with what ends it.
-    let waiting = waiting.map(|on| {
-        let line = crate::hosts::waiting_line(&on, crate::hosts::busy(cx, &on).len());
-        (on, line)
+    // Only while the host is waited on for some: once the wait ends, the
+    // form is attaching again.
+    let waiting = waiting.and_then(|on| {
+        let n = crate::hosts::busy(cx, &on).len();
+        (n > 0).then(|| (crate::hosts::waiting_line(&on, n), on))
     });
     let shell = cx.entity().downgrade();
     let waits = waiting.is_some();
@@ -116,7 +118,7 @@ pub fn add_host_project(shell: &Shell, window: &Window, cx: &mut Context<Shell>)
                 .when_some(error.clone(), |form, why| {
                     form.child(div().text_xs().text_color(danger).child(why))
                 })
-                .when_some(waiting.clone(), |form, (on, line)| {
+                .when_some(waiting.clone(), |form, (line, on)| {
                     let shell = shell.clone();
                     let restart = crate::controls::action("host-project-restart")
                         .short()
@@ -136,9 +138,7 @@ pub fn add_host_project(shell: &Shell, window: &Window, cx: &mut Context<Shell>)
                                 div()
                                     .flex_1()
                                     .min_w_0()
-                                    .text_xs()
-                                    .text_color(muted)
-                                    .child(line),
+                                    .child(onehand_ui::status_line(line, muted)),
                             )
                             .child(restart),
                     )

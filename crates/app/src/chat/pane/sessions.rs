@@ -516,9 +516,13 @@ impl ChatPane {
         // these items would write them to the file a second time -- while the
         // mark riding along is what lets the replacement carry on the same file
         // instead of starting the conversation again inside it.
-        let stored = self
-            .session_of(uid)
-            .and_then(|s| s.update(cx, |s, _| s.chat.take_snapshot()));
+        let stored = self.session_of(uid).and_then(|s| {
+            s.update(cx, |s, _| {
+                // Its line about waiting is over with the restart.
+                s.forget_host_wait();
+                s.chat.take_snapshot()
+            })
+        });
         // `connect_as` drops the old adapter before spawning the new one, so
         // nothing here has to take the session apart first.
         self.connect_as(uid, Start::Restart(stored, after_service), cx);
@@ -760,14 +764,38 @@ impl ChatPane {
         // A session still on its resume picker has no conversation yet -- and
         // nothing has been asked of the user, so it is not a signal.
         let conv = self.conversations.get(&uid)?;
-        let chat = &conv.session()?.read(cx).chat;
+        let session = conv.session()?.read(cx);
+        let chat = &session.chat;
         SessionSignal::pick(
+            session.host_wait.is_some(),
             chat.link,
             chat.failed(),
             chat.awaiting_permission() || crate::task::waits_on_person(uid, cx),
             chat.running(),
             conv.unseen,
         )
+    }
+
+    /// The wait session `uid` was on ended on `why`, its host out of reach:
+    /// it ends as a lost agent does, which Restart tries again.
+    pub(crate) fn host_wait_failed(&mut self, uid: u64, why: &str, cx: &mut Context<Self>) {
+        let Some(session) = self.session_of(uid) else {
+            return;
+        };
+        session.update(cx, |session, cx| {
+            if session.forget_host_wait() {
+                let lost = onehand_core::acp::AcpEvent::Disconnected(why.to_string());
+                session.chat.apply(lost);
+                cx.emit(ChatEvent::Appended);
+                cx.notify();
+            }
+        });
+    }
+
+    /// The host session `uid` waits on, its busy sessions to finish.
+    pub(crate) fn host_wait(&self, uid: u64, cx: &App) -> Option<HostName> {
+        let conv = self.conversations.get(&uid)?;
+        conv.session()?.read(cx).host_wait.clone()
     }
 
     /// How many background items `uid`'s agent has alive, how many subagents

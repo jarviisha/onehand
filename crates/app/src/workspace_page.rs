@@ -303,7 +303,8 @@ impl WorkspacePage {
                 }))
                 .into_any_element();
                 match signal {
-                    SessionSignal::Busy => working.push(row),
+                    // Moves on by itself, as a running one does.
+                    SessionSignal::Busy | SessionSignal::HostWait => working.push(row),
                     SessionSignal::Lost
                     | SessionSignal::Failed
                     | SessionSignal::AwaitingUser

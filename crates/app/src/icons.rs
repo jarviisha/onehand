@@ -195,6 +195,10 @@ icons! {
         // nearest shapes are `loader-circle`, which already means running, and
         // `star`, which reads as a favourite.
         Zap,
+        // A session waiting for its host's busy sessions to finish: a state
+        // that moves on by itself after a while. The bundled set draws no
+        // clock or timer, and its circle is already idle's mark.
+        Hourglass,
     ],
     checked_in: [
         ArrowUpLight => "arrow-up-light",

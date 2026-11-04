@@ -80,7 +80,10 @@ project with none says *No open sessions*, a search or filter with none *No sess
 state has its own ink, and a mark per thing the person can do, none animated (running is a filled
 dot): failed and disconnected share one, both answered by trying again, their words telling them
 apart. The inks: failed or disconnected danger, needs input warning, running `info`, done unread
-success, idle muted. `↑`/`↓` move the list's row, ringed while the keys move it, `Enter` and `←`/`→`
+success, idle muted. A session on a host waiting for that host's busy sessions to finish is none of
+these: an hourglass in the muted ink, its line *Waiting for <host> · agent · age*; it needs nothing
+of the person, so it is not counted as needing attention, and the overview lists it under
+*Working*. `Ctrl+Shift+R` on it asks the host's restart question, as its *Restart now* does. `↑`/`↓` move the list's row, ringed while the keys move it, `Enter` and `←`/`→`
 act on it, `Alt+↑`/`↓` step through sessions in its order. The tree's order is the user's, set by
 dragging; pinned projects stay on top and sessions never leave their project. `Ctrl+Shift+B` hides
 the rail completely, never to an icon column. It resizes between 232 and 448px, on the side bar's
@@ -293,7 +296,8 @@ dragged height kept).
   (secondary) beside it; a host on another build with sessions mid-turn says *Waiting for N
   sessions on <host> to finish before restarting its host service onto this build* as a status
   line in the muted ink with *Restart now* (secondary) beside it, and lists again once it is
-  done.
+  done (*Attaching to <host>…* meanwhile); a host found out of reach while it waits ends the wait
+  on the failure, with *Try again*.
 - *Workspace overview* shows, under its head (*Overview*), across all projects, the boxes *Waiting
   on you* (runs waiting for an answer or an approval, and sessions waiting, failed, finished or
   lost) and *Working*, then *Projects* as a grid of tiles (not drawn without projects), then the

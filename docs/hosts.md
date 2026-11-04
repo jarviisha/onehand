@@ -63,13 +63,22 @@ Every attach opens by exchanging builds (`client::attach`):
   **The laptop waits for those sessions to go idle**, once per host however many sessions, pages
   and forms wait on it (`Waits` in `crates/app/src/hosts.rs`): it attaches again every 15 s
   (`HOST_IDLE_POLL`), and the first attach that lands, which restarts the idle service onto this
-  build by itself, ends the wait. Each window keeps what waits there (`HostFlow`,
+  build by itself, ends the wait. An attach that cannot reach the host ends it too, on that
+  failure: a waiting session ends as a lost one does (*Disconnected: …*, which Restart tries
+  again), the page shows its failed line with *Try again*, and the form its inline error. The
+  wait lasts only while something listens to it: once every session, page and form that waited
+  has gone (closed, left, put away, or its window closed), the wait and its poll stop, and the
+  next busy attach starts them again. Each window keeps what waits there (`HostFlow`,
   `crates/app/src/shell/host_project.rs`) and, once the wait ends, restarts each session that
   waited (as after a service restart), lists the page again and carries on with the form's *Add*,
   unless that form was put away or added its project since (a form opened again is never added by
   an older wait). Meanwhile each says *Waiting for N sessions on <host> to finish before
   restarting its host service onto this build*, with *Restart now*: a session as a line in its
-  transcript (a notice, not a failure), the page and the form in their own places.
+  transcript (a notice, not a failure), the page and the form in their own places, each only
+  while the host is waited on for some. A waiting session is not lost: the rail draws it calm,
+  *Waiting for <host>*, never as needing attention, and Restart on it asks the restart question
+  instead of attaching again. The line goes with the wait, never into the transcript a restart
+  carries on.
 - **Restart now** asks one question, *Restart the host service on <host>?*, saying that the host
   runs another build of the host service, naming up to five of the mid-turn sessions by when they
   started (*a session started 3m ago*) and how many more, and that restarting stops them;

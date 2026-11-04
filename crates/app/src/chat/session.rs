@@ -322,6 +322,26 @@ pub struct ChatSession {
 
 impl EventEmitter<ChatEvent> for ChatSession {}
 
+impl ChatSession {
+    /// Stop waiting for the host, taking back the line that said so, which
+    /// is the last one: `true` when it was waiting.
+    pub(crate) fn forget_host_wait(&mut self) -> bool {
+        if self.host_wait.take().is_none() {
+            return false;
+        }
+        if matches!(
+            self.chat.items.last(),
+            Some(ChatItem::Notice {
+                level: onehand_core::chat::NoticeLevel::Info,
+                ..
+            })
+        ) {
+            self.chat.items.pop();
+        }
+        true
+    }
+}
+
 /// Add a line to session's transcript in onehand's own voice: what a run
 /// driving the session did, for the person reading it.
 pub(crate) fn note(session: &Entity<ChatSession>, text: String, cx: &mut App) {

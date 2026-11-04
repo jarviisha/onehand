@@ -86,6 +86,27 @@ fn watching_uid<'a>(
 }
 
 impl ChatPane {
+    /// The host the page on screen waits on, its busy sessions to finish.
+    pub(crate) fn page_waits_on(&self) -> Option<&HostName> {
+        let project = self.empty.as_ref()?;
+        match project.listed {
+            Some(Err(Unlisted::Waiting)) => project.host.as_ref(),
+            Some(Ok(_) | Err(Unlisted::Failed(_))) | None => None,
+        }
+    }
+
+    /// The wait for `host` ended on `why`: a page waiting on it says so as
+    /// any failure to list, with *Try again*.
+    pub(crate) fn host_page_failed(&mut self, host: &HostName, why: &str, cx: &mut Context<Self>) {
+        if self.page_waits_on() != Some(host) {
+            return;
+        }
+        if let Some(project) = self.empty.as_mut() {
+            project.listed = Some(Err(Unlisted::Failed(why.to_string())));
+            cx.notify();
+        }
+    }
+
     /// The session in `root` on `host` already attached to host session `id`.
     pub fn watching(&self, root: &Path, host: &HostName, id: &HostSession) -> Option<u64> {
         let convs = self
@@ -194,8 +215,16 @@ pub(super) fn host_sessions(
         .map(|_| rows.len() + left_out);
     let now = onehand_core::chat::now_secs();
     let card = page_card(format!("Sessions on {host}"), count, None, cx);
+    // How many sessions the host is waited on for: none once the wait has
+    // ended and the list is asked again, which reads as attaching.
+    let waited = crate::hosts::busy(cx, host).len();
+    let attaching = match listed {
+        None => true,
+        Some(Err(Unlisted::Waiting)) => waited == 0,
+        Some(Ok(_) | Err(Unlisted::Failed(_))) => false,
+    };
     let card = match listed {
-        None => card.child(
+        _ if attaching => card.child(
             line()
                 .h_flex()
                 .items_center()
@@ -220,7 +249,7 @@ pub(super) fn host_sessions(
                         })),
                 ),
                 Unlisted::Waiting => (
-                    crate::hosts::waiting_line(host, crate::hosts::busy(cx, host).len()),
+                    crate::hosts::waiting_line(host, waited),
                     muted,
                     restart_now(host, cx),
                 ),
@@ -242,7 +271,7 @@ pub(super) fn host_sessions(
         Some(Ok(_)) if rows.is_empty() => {
             card.child(line().child(format!("No sessions on {host} for this folder yet")))
         }
-        Some(Ok(_)) => card,
+        Some(Ok(_)) | None => card,
     };
     let running = cx.theme().info;
     card.child(ruled(

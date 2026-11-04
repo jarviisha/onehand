@@ -284,6 +284,9 @@ impl Shell {
         // of what the rail asks the pane for, so it cannot drift out of step
         // with what is drawn.
         cx.observe(&chat, |shell: &mut Self, _, cx| {
+            // What waits on a host here goes with the session or the page
+            // that waited, so a wait nobody watches ends.
+            shell.prune_host_waits(cx);
             let sessions = shell.rail_sessions(cx);
             if sessions != shell.rail_sessions {
                 // The workers' list says a worker's age by the rail's own

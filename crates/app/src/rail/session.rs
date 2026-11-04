@@ -30,6 +30,9 @@ pub(super) fn signal_hint(signal: Option<SessionSignal>) -> &'static str {
         Some(SessionSignal::AwaitingUser) => "Waiting for your answer",
         Some(SessionSignal::Busy) => "Working",
         Some(SessionSignal::UnseenTurn) => "Finished while you were away",
+        Some(SessionSignal::HostWait) => {
+            "Waiting for the host's busy sessions; restarts by itself once they finish"
+        }
         None => "Nothing waiting on you",
     }
 }
@@ -55,6 +58,10 @@ pub(crate) fn status_icon(signal: Option<SessionSignal>, cx: &App) -> gpui::AnyE
         }
         Some(SessionSignal::AwaitingUser) => (Icon::new(crate::icons::Icon::Hand), ink.warning),
         Some(SessionSignal::UnseenTurn) => (Icon::new(IconName::CircleCheck), ink.success),
+        Some(SessionSignal::HostWait) => (
+            Icon::new(crate::icons::Icon::Hourglass),
+            cx.theme().muted_foreground,
+        ),
         None => (
             Icon::new(crate::icons::Icon::Circle),
             cx.theme().muted_foreground,
@@ -70,7 +77,9 @@ pub(crate) fn word_ink(signal: Option<SessionSignal>, cx: &App) -> Option<Hsla> 
     match signal {
         Some(SessionSignal::Lost | SessionSignal::Failed) => Some(ink.danger),
         Some(SessionSignal::AwaitingUser) => Some(ink.warning),
-        Some(SessionSignal::Busy | SessionSignal::UnseenTurn) | None => None,
+        Some(SessionSignal::Busy | SessionSignal::UnseenTurn | SessionSignal::HostWait) | None => {
+            None
+        }
     }
 }
 
@@ -233,8 +242,10 @@ pub(super) fn session_row(
     let (name_ink, meta_ink) = row_inks(chosen, cx);
     let group = SharedString::from(format!("rail-session-{uid}"));
     let title = SharedString::from(item.title.clone());
+    let host = item.host.as_deref();
     let facts = SharedString::from(meta(
         signal,
+        host,
         item.background,
         item.subagents,
         item.waiting,
@@ -247,8 +258,8 @@ pub(super) fn session_row(
     };
     // The state's word leads the line, so its ink runs over its own bytes; a
     // lead's waiting workers follow it, in the ink of waiting on the person.
-    let word_end = super::model::word(signal).len();
-    let waiting = super::model::waiting_span(signal, item.waiting)
+    let word_end = super::model::state_word(signal, host).len();
+    let waiting = super::model::waiting_span(signal, host, item.waiting)
         .map(|span| (span, ink(crate::theme::status_ink(cx).warning)));
     let words = StyledText::new(facts.clone()).with_highlights(
         word_ink(signal, cx)

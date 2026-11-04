@@ -64,6 +64,8 @@ pub(super) struct Item {
     pub(super) lead: Option<u64>,
     /// For a lead, its unlisted workers waiting on the person.
     pub(super) waiting: usize,
+    /// The host its project is on, which a session waiting for it names.
+    pub(super) host: Option<String>,
 }
 
 impl Item {
@@ -89,6 +91,14 @@ pub(crate) fn word(signal: Option<SessionSignal>) -> &'static str {
     signal.map_or("Idle", SessionSignal::word)
 }
 
+/// A state's word on its row: a session waiting for its host names it.
+pub(crate) fn state_word(signal: Option<SessionSignal>, host: Option<&str>) -> String {
+    match (signal, host) {
+        (Some(SessionSignal::HostWait), Some(host)) => format!("Waiting for {host}"),
+        _ => word(signal).to_string(),
+    }
+}
+
 /// The age as the row says it: `now`, `4m`, `2h`, `3d`.
 pub(crate) fn age_label(minutes: u64) -> String {
     match minutes {
@@ -105,6 +115,7 @@ pub(crate) fn age_label(minutes: u64) -> String {
 /// are counted after the state, and only when there are some.
 pub(super) fn meta(
     signal: Option<SessionSignal>,
+    host: Option<&str>,
     background: usize,
     subagents: usize,
     waiting: usize,
@@ -116,7 +127,7 @@ pub(super) fn meta(
         Some(SessionSignal::AwaitingUser) => format!("waiting {age}"),
         _ => age,
     };
-    let mut state = word(signal).to_string();
+    let mut state = state_word(signal, host);
     if let Some(said) = workers_said(waiting) {
         state += &format!(" · {said}");
     }
@@ -144,9 +155,10 @@ pub(super) fn workers_said(waiting: usize) -> Option<String> {
 /// word, so its ink lands on its own bytes; nothing when none wait.
 pub(super) fn waiting_span(
     signal: Option<SessionSignal>,
+    host: Option<&str>,
     waiting: usize,
 ) -> Option<std::ops::Range<usize>> {
-    let start = word(signal).len() + " · ".len();
+    let start = state_word(signal, host).len() + " · ".len();
     workers_said(waiting).map(|said| start..start + said.len())
 }
 

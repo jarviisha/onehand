@@ -5,7 +5,7 @@ use super::Shell;
 use super::confirm::Confirm;
 use crate::dialogs::{add_refusal, busy_body};
 use crate::hosts::{self, HostFailure};
-use gpui::{AppContext as _, Context, Entity, Focusable as _, Subscription, Window};
+use gpui::{App, AppContext as _, Context, Entity, Focusable as _, Subscription, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::input::{InputEvent, InputState};
 use onehand_core::host::wire::HostSession;
@@ -58,12 +58,15 @@ pub(super) struct HostFlow {
     attempts: u64,
 }
 
-/// The sessions to restart and the form's attempt to carry on, once a
-/// host's wait ends. A page on that host lists again whatever waited.
-#[derive(Debug, Default, PartialEq)]
+/// The sessions to restart, the form's attempt to carry on and whether a
+/// page waits, once a host's wait ends; and the listening to it, which
+/// leaves the wait when this goes.
+#[derive(Default)]
 struct Waiting {
     uids: Vec<u64>,
     add: Option<u64>,
+    page: bool,
+    _listening: Option<gpui::Task<()>>,
 }
 
 impl HostFlow {
@@ -74,7 +77,8 @@ impl HostFlow {
         let waiting = self.waiting.entry(host.clone()).or_default();
         match want {
             Want::Session(uid) if !waiting.uids.contains(&uid) => waiting.uids.push(uid),
-            Want::Session(_) | Want::Page => {}
+            Want::Session(_) => {}
+            Want::Page => waiting.page = true,
             Want::Add(attempt) => waiting.add = Some(attempt),
         }
         fresh
@@ -83,6 +87,30 @@ impl HostFlow {
     /// What waited here on `host`, once.
     fn take(&mut self, host: &HostName) -> Option<Waiting> {
         self.waiting.remove(host)
+    }
+
+    /// Hold the listening to `host`'s wait, for as long as something here
+    /// waits on it.
+    fn listen(&mut self, host: &HostName, listening: gpui::Task<()>) {
+        if let Some(waiting) = self.waiting.get_mut(host) {
+            waiting._listening = Some(listening);
+        }
+    }
+
+    /// Keep only what `still` says waits yet; a host nothing here waits on
+    /// any more is let go, and with it the listening, so a wait nobody
+    /// anywhere listens to ends.
+    fn prune(&mut self, still: impl Fn(&HostName, Want) -> bool) {
+        self.waiting.retain(|host, waiting| {
+            waiting.uids.retain(|uid| still(host, Want::Session(*uid)));
+            waiting.add = waiting.add.filter(|add| still(host, Want::Add(*add)));
+            waiting.page = waiting.page && still(host, Want::Page);
+            !waiting.uids.is_empty() || waiting.add.is_some() || waiting.page
+        });
+    }
+
+    fn is_empty(&self) -> bool {
+        self.waiting.is_empty()
     }
 
     /// The form went away: no wait carries its *Add* on, so a form opened
@@ -195,6 +223,7 @@ impl Shell {
     pub(crate) fn cancel_host_project(&mut self, cx: &mut Context<Self>) {
         self.host_flow.forget_add();
         if self.host_project.take().is_some() {
+            self.prune_host_waits(cx);
             cx.notify();
         }
     }
@@ -315,22 +344,52 @@ impl Shell {
             return;
         }
         let idle = hosts::idle(cx, &host);
-        cx.spawn_in(window, async move |shell, cx| {
-            // `None`: an attach has landed since, and nothing waits.
-            if let Some(idle) = idle {
-                idle.await;
+        let listening = cx.spawn_in(window, {
+            let host = host.clone();
+            async move |shell, cx| {
+                // `None`: an attach has landed since, and nothing waits.
+                let end = match idle {
+                    Some(idle) => idle.await,
+                    None => Ok(()),
+                };
+                shell
+                    .update_in(cx, |shell: &mut Self, window, cx| {
+                        shell.host_idle(&host, end, window, cx)
+                    })
+                    .ok();
             }
-            shell
-                .update_in(cx, |shell: &mut Self, window, cx| {
-                    shell.host_idle(&host, window, cx)
-                })
-                .ok();
-        })
-        .detach();
+        });
+        self.host_flow.listen(&host, listening);
     }
 
-    /// `host`'s service is on this build: carry on with what waited on it.
-    fn host_idle(&mut self, host: &HostName, window: &mut Window, cx: &mut Context<Self>) {
+    /// Let go of what no longer waits here on a host: a session closed or
+    /// attached, a page left, a form put away.
+    pub(super) fn prune_host_waits(&mut self, cx: &App) {
+        if self.host_flow.is_empty() {
+            return;
+        }
+        let pane = self.chat.read(cx);
+        let page = pane.page_waits_on();
+        let form = self
+            .host_project
+            .as_ref()
+            .and_then(|draft| draft.waiting.as_ref().zip(draft.attempt));
+        self.host_flow.prune(|host, want| match want {
+            Want::Session(uid) => pane.host_wait(uid, cx).as_ref() == Some(host),
+            Want::Add(attempt) => form == Some((host, attempt)),
+            Want::Page => page == Some(host),
+        });
+    }
+
+    /// `host`'s wait ended: on this build, carry on with what waited on it;
+    /// out of reach, say so wherever it waited.
+    fn host_idle(
+        &mut self,
+        host: &HostName,
+        end: hosts::WaitEnd,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(waiting) = self.host_flow.take(host) else {
             return;
         };
@@ -341,14 +400,31 @@ impl Shell {
             }
             released
         });
-        for uid in waiting.uids {
-            self.restart_now(uid, true, window, cx);
-        }
-        // A page on a host lists again whatever waited: its sessions are
-        // what the wait changed.
-        self.chat.update(cx, |pane, cx| pane.list_host_sessions(cx));
-        if add {
-            self.commit_host_project(window, cx);
+        match end {
+            Ok(()) => {
+                for uid in waiting.uids {
+                    self.restart_now(uid, true, window, cx);
+                }
+                // A page on a host lists again whatever waited: its sessions
+                // are what the wait changed.
+                self.chat.update(cx, |pane, cx| pane.list_host_sessions(cx));
+                if add {
+                    self.commit_host_project(window, cx);
+                }
+            }
+            Err(why) => {
+                self.chat.update(cx, |pane, cx| {
+                    for uid in &waiting.uids {
+                        pane.host_wait_failed(*uid, &why, cx);
+                    }
+                    if waiting.page {
+                        pane.host_page_failed(host, &why, cx);
+                    }
+                });
+                if let Some(draft) = self.host_project.as_mut().filter(|_| add) {
+                    draft.error = Some(why);
+                }
+            }
         }
         cx.notify();
     }

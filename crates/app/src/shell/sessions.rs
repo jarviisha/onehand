@@ -626,6 +626,12 @@ impl Shell {
         let Some(uid) = self.active_session_uid() else {
             return;
         };
+        // One waiting for its host would only find it busy again: the way
+        // on is the host's restart, as its line's *Restart now* asks.
+        if let Some(host) = self.chat.read(cx).host_wait(uid, cx) {
+            self.ask_restart_host(host, window, cx);
+            return;
+        }
         if !self.chat.read(cx).turn_in_flight(uid, cx) {
             self.restart_now(uid, false, window, cx);
             return;
