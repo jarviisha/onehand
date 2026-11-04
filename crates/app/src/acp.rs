@@ -21,7 +21,7 @@ use futures::channel::{mpsc, oneshot};
 use futures::{SinkExt as _, Stream, StreamExt as _};
 use onehand_core::acp::{self, AcpEvent};
 use onehand_core::config::AgentSpec;
-use onehand_core::host::client::{HostConn, HostError};
+use onehand_core::host::client::HostConn;
 use onehand_core::host::wire::HostSession;
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -220,7 +220,7 @@ impl AcpRuntime {
                 {
                     Ok(id) => id,
                     Err(e) => {
-                        let _ = tx.send(AcpEvent::Disconnected(said(e))).await;
+                        let _ = tx.send(AcpEvent::Disconnected(e.to_string())).await;
                         return;
                     }
                 },
@@ -277,14 +277,6 @@ pub(crate) enum HostStart {
     },
     /// Read one the host already keeps.
     Watch(HostSession),
-}
-
-/// What a person reads of a host refusing to open a session.
-pub(crate) fn said(e: HostError) -> String {
-    match e {
-        HostError::Unreachable(why) | HostError::Protocol(why) | HostError::Unsupported(why) => why,
-        HostError::Busy { build, .. } => format!("the host runs another build ({build})"),
-    }
 }
 
 /// Whether a session opening this way may take the parked adapter.

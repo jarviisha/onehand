@@ -350,8 +350,18 @@ impl Drop for Chat {
 /// Whether `a` and `b` say the same line: what a replay says again of a
 /// conversation's own notices, at whatever level it says it.
 fn same_notice(a: &ChatItem, b: &ChatItem) -> bool {
-    match (a, b) {
-        (ChatItem::Notice { text: a, .. }, ChatItem::Notice { text: b, .. }) => a == b,
-        _ => false,
+    fn text(item: &ChatItem) -> Option<&str> {
+        match item {
+            ChatItem::Notice { text, .. } => Some(text),
+            ChatItem::User(_)
+            | ChatItem::Agent(_)
+            | ChatItem::Thought(_)
+            | ChatItem::Tool(_)
+            | ChatItem::Plan(_)
+            | ChatItem::Permission(_)
+            | ChatItem::Ask(_)
+            | ChatItem::Subagent(_) => None,
+        }
     }
+    text(a).is_some_and(|a| text(b) == Some(a))
 }

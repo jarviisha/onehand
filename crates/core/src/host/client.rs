@@ -50,6 +50,32 @@ pub enum HostError {
     Protocol(String),
 }
 
+/// The sentence each failure reads as, after whatever names what failed: an
+/// unsupported host's is what `uname -sm` said there.
+impl std::fmt::Display for HostError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unreachable(why) | Self::Protocol(why) | Self::Unsupported(why) => {
+                f.write_str(why)
+            }
+            Self::Busy { build, .. } => write!(f, "the host runs another build ({build})"),
+        }
+    }
+}
+
+/// `e`, from a call to `host`, with its words naming the host: what an agent
+/// missing there says would otherwise read as missing here. A busy host is
+/// said of where it is attached, in words of its own.
+fn on_host(host: &str, e: HostError) -> HostError {
+    let on = |why| format!("On {host}: {why}");
+    match e {
+        HostError::Unreachable(why) => HostError::Unreachable(on(why)),
+        HostError::Protocol(why) => HostError::Protocol(on(why)),
+        e @ HostError::Unsupported(_) => e,
+        e @ HostError::Busy { .. } => e,
+    }
+}
+
 /// How to reach a host.
 pub struct HostAddr {
     /// The `ssh` destination, which also names the host in what is said of it.
@@ -103,8 +129,8 @@ fn command(addr: &HostAddr, cmd: &str) -> Command {
 
 /// Attach, say hello, and settle the build: same build → connected; other build with nothing busy
 /// → `Shutdown` it and attach again once; other build busy → `Busy`.
-pub async fn connect(addr: &HostAddr, remote: &str, build: &Build) -> Result<HostConn, HostError> {
-    let (conn, said) = attach(addr, remote)?;
+pub async fn attach(addr: &HostAddr, remote: &str, build: &Build) -> Result<HostConn, HostError> {
+    let (conn, said) = start_attach(addr, remote)?;
     match reached(settle(&conn, build).await, said).await? {
         Settled::Same => return Ok(conn),
         Settled::Restarted => {
@@ -113,7 +139,7 @@ pub async fn connect(addr: &HostAddr, remote: &str, build: &Build) -> Result<Hos
             let _ = tokio::time::timeout(SHUTDOWN_WAIT, conn.cmds.closed()).await;
         }
     }
-    let (conn, said) = attach(addr, remote)?;
+    let (conn, said) = start_attach(addr, remote)?;
     reached(settle_again(&conn, build).await, said).await?;
     Ok(conn)
 }
@@ -122,7 +148,7 @@ pub async fn connect(addr: &HostAddr, remote: &str, build: &Build) -> Result<Hos
 /// whatever is mid-turn there, then attach again: what to do once the person
 /// has agreed to stop the sessions a `Busy` named.
 pub async fn restart(addr: &HostAddr, remote: &str, build: &Build) -> Result<HostConn, HostError> {
-    restart_over(|| attach(addr, remote), build).await
+    restart_over(|| start_attach(addr, remote), build).await
 }
 
 /// `restart`, attaching with `attach`.
@@ -160,7 +186,7 @@ async fn restart_over(
 
 /// Start `<remote> attach`, and what it says on stderr, as far as it has once
 /// it ends or has said `STDERR_KEEP` bytes.
-fn attach(
+fn start_attach(
     addr: &HostAddr,
     remote: &str,
 ) -> Result<(HostConn, oneshot::Receiver<String>), HostError> {
@@ -429,12 +455,9 @@ impl HostConn {
             agent,
             opening,
         };
-        let on = |why| format!("On {}: {why}", self.host);
-        self.ask_for(open, |a| a.opened).await.map_err(|e| match e {
-            HostError::Unreachable(why) => HostError::Unreachable(on(why)),
-            HostError::Protocol(why) => HostError::Protocol(on(why)),
-            e @ (HostError::Unsupported(_) | HostError::Busy { .. }) => e,
-        })
+        self.ask_for(open, |a| a.opened)
+            .await
+            .map_err(|e| on_host(&self.host, e))
     }
 
     /// The session as a local one reads: `Ready` → `Connected` (with a `tx` whose requests go to the

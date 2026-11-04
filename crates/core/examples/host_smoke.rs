@@ -17,7 +17,7 @@ use std::time::Duration;
 use futures::StreamExt;
 use onehand_core::acp::{AcpEvent, AcpRequest, Opening};
 use onehand_core::config::AgentSpec;
-use onehand_core::host::client::{connect, install, HostAddr, HostConn};
+use onehand_core::host::client::{self, install, HostAddr, HostConn};
 use onehand_core::host::wire::{build_id, HostSession};
 
 const BINARY: &str = "target/debug/onehand-host";
@@ -35,9 +35,9 @@ async fn attach(addr: &HostAddr) -> Result<HostConn, String> {
         .await
         .map_err(|e| format!("install: {e:?}"))?;
     let bytes = std::fs::read(binary).map_err(|e| format!("{BINARY}: {e}"))?;
-    connect(addr, &remote, &build_id(&bytes))
+    client::attach(addr, &remote, &build_id(&bytes))
         .await
-        .map_err(|e| format!("connect: {e:?}"))
+        .map_err(|e| format!("attach: {e:?}"))
 }
 
 #[tokio::main(flavor = "multi_thread")]

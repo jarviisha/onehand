@@ -6,6 +6,7 @@
 //! every session on it.
 
 use super::super::{ChatPane, ChatPaneEvent};
+use crate::chat::conversation::OnHost;
 use crate::controls::{Named as _, Quiet as _, Short as _};
 use crate::hosts::HostFailure;
 use crate::page_parts::{page_card, ruled};
@@ -38,7 +39,7 @@ pub(in crate::chat::pane) type Listed = Option<Result<Vec<SessionInfo>, String>>
 /// path, shortened to `~/` under `home`.
 pub(super) fn place(host: Option<&HostName>, path: &Path, home: Option<&Path>) -> String {
     match host {
-        Some(host) => format!("{host}:{}", path.display()),
+        Some(_) => onehand_core::workspace::host_path(host, path),
         None => home
             .and_then(|home| path.strip_prefix(home).ok())
             .map_or_else(
@@ -69,22 +70,17 @@ fn started(id: &HostSession) -> (u64, u64) {
     (secs.parse().unwrap_or(0), n.parse().unwrap_or(0))
 }
 
-/// Whether an answer to ask `asked` is for the page's newest ask, `latest`.
-fn is_newest(asked: u64, latest: u64) -> bool {
-    asked == latest
-}
-
 /// The session among `convs` (each by uid, folder and host) already on host
 /// session `id` of `host`, in the folder `root`.
 fn watching_uid<'a>(
-    convs: impl IntoIterator<Item = (u64, &'a Path, Option<&'a (HostName, Option<HostSession>)>)>,
+    convs: impl IntoIterator<Item = (u64, &'a Path, Option<&'a OnHost>)>,
     root: &Path,
     host: &HostName,
     id: &HostSession,
 ) -> Option<u64> {
     convs.into_iter().find_map(|(uid, folder, on)| {
         let on = on?;
-        (folder == root && &on.0 == host && on.1.as_ref() == Some(id)).then_some(uid)
+        (folder == root && &on.host == host && on.session.as_ref() == Some(id)).then_some(uid)
     })
 }
 
@@ -120,27 +116,21 @@ impl ChatPane {
                 Ok(conn) => crate::chat::session::host_list(conn, cx)
                     .await
                     .map_err(|e| {
-                        HostFailure::Other(format!(
-                            "Could not read the sessions on {host}: {}",
-                            crate::acp::said(e)
-                        ))
+                        HostFailure::Other(format!("Could not read the sessions on {host}: {e}"))
                     }),
                 Err(failure) => Err(failure),
             };
             let _ = pane.update(cx, |pane: &mut Self, cx| {
                 // Only the newest ask: an attach can take long enough for the
                 // page to have moved to another project, or to have asked again.
-                let Some(project) = pane
-                    .empty
-                    .as_mut()
-                    .filter(|project| is_newest(asked, project.asked))
+                let Some(project) = pane.empty.as_mut().filter(|project| project.asked == asked)
                 else {
                     return;
                 };
                 project.listing = false;
                 project.listed = Some(match listed {
                     Ok(all) => Ok(all),
-                    Err(HostFailure::Missing(why) | HostFailure::Other(why)) => Err(why),
+                    Err(HostFailure::Other(why)) => Err(why),
                     // The shell asks whether to restart the service; a yes
                     // lists again.
                     Err(HostFailure::Busy { host, busy }) => {

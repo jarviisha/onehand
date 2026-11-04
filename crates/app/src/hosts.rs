@@ -1,8 +1,8 @@
 //! One attach per host, held for the whole process.
 //!
-//! Every project and session on a host shares the one connection to it: the
+//! Every project and session on a host shares the one attach to it: the
 //! host service takes a single attach at a time, and a second one from this
-//! machine would only kick the first. So the connection lives in
+//! machine would only kick the first. So the attach lives in
 //! [`crate::state::Shared`], made on first use and made again only once its
 //! stream has ended.
 //!
@@ -27,8 +27,6 @@ use std::rc::Rc;
 /// Why a host could not be attached.
 #[derive(Clone, Debug)]
 pub(crate) enum HostFailure {
-    /// The service's binary is not where this build looks for it.
-    Missing(String),
     /// The host runs another build, with these sessions mid-turn; it was left
     /// alone until the person agrees to stop them.
     Busy {
@@ -39,7 +37,7 @@ pub(crate) enum HostFailure {
     Other(String),
 }
 
-/// The process's connections, one per host.
+/// The process's attaches, one per host.
 pub(crate) struct Hosts {
     slots: Slots<HostConn>,
 }
@@ -52,7 +50,7 @@ impl Hosts {
     }
 }
 
-/// The connection to `host`: the one already up, the attempt already under
+/// The attach to `host`: the one already up, the attempt already under
 /// way, or a new attach (installing the service first when it is not there).
 pub(crate) fn conn(
     cx: &App,
@@ -61,7 +59,7 @@ pub(crate) fn conn(
     attach_with(cx, host, false)
 }
 
-/// A new connection to `host` whose service is restarted onto this build
+/// A new attach to `host` whose service is restarted onto this build
 /// whatever is mid-turn there: what follows a person agreeing to a `Busy`.
 pub(crate) fn restart(
     cx: &App,
@@ -85,13 +83,7 @@ pub(crate) fn is_dir(
     async move {
         match rx.await {
             Ok(found) => found.map_err(|e| {
-                let why = match e {
-                    HostError::Unreachable(why)
-                    | HostError::Protocol(why)
-                    | HostError::Unsupported(why) => why,
-                    HostError::Busy { build, .. } => format!("it runs another build ({build})"),
-                };
-                HostFailure::Other(format!("Could not ask {host} about the folder: {why}"))
+                HostFailure::Other(format!("Could not ask {host} about the folder: {e}"))
             }),
             Err(_) => Err(HostFailure::Other(format!(
                 "Could not ask {host} about the folder: the question was dropped"
@@ -142,7 +134,7 @@ async fn attach(host: HostName, fresh: bool) -> Result<HostConn, HostFailure> {
     let conn = if fresh {
         client::restart(&addr, &remote, &build).await
     } else {
-        client::connect(&addr, &remote, &build).await
+        client::attach(&addr, &remote, &build).await
     };
     conn.map_err(failed)
 }
@@ -169,8 +161,7 @@ const MISSING: &str =
 
 /// The service's binary, which is built beside this one.
 fn bundled_binary() -> Result<PathBuf, HostFailure> {
-    let exe =
-        std::env::current_exe().map_err(|e| HostFailure::Missing(format!("{MISSING}: {e}")))?;
+    let exe = std::env::current_exe().map_err(|e| HostFailure::Other(format!("{MISSING}: {e}")))?;
     bundled_binary_in(exe.parent().unwrap_or(Path::new(".")))
 }
 
@@ -179,7 +170,7 @@ fn bundled_binary_in(dir: &Path) -> Result<PathBuf, HostFailure> {
     if path.is_file() {
         Ok(path)
     } else {
-        Err(HostFailure::Missing(MISSING.into()))
+        Err(HostFailure::Other(MISSING.into()))
     }
 }
 
@@ -188,10 +179,10 @@ type Attempt<C> = future::Shared<LocalBoxFuture<'static, Result<C, HostFailure>>
 enum Slot<C> {
     Ready(C),
     /// Every ask while it runs awaits this one attempt, so two never install at once.
-    Connecting(Attempt<C>),
+    Attaching(Attempt<C>),
 }
 
-/// Connections by host, generic over the connection so the reuse can be
+/// Attaches by host, generic over the connection so the reuse can be
 /// tested without one.
 ///
 /// `Rc<RefCell>`: the attempts it holds are local futures, read only on the
@@ -228,7 +219,7 @@ impl<C: Clone + 'static> Slots<C> {
             Some(Either::Right(attempt)) => attempt,
             None => {
                 let attempt = make().shared();
-                let slot = Slot::Connecting(attempt.clone());
+                let slot = Slot::Attaching(attempt.clone());
                 self.map.borrow_mut().insert(host.clone(), slot);
                 attempt
             }
@@ -240,7 +231,7 @@ impl<C: Clone + 'static> Slots<C> {
             let mut map = map.borrow_mut();
             // Only this attempt's own slot: a restart since has replaced it.
             let ours = match map.get(&host) {
-                Some(Slot::Connecting(now)) => now.ptr_eq(&attempt),
+                Some(Slot::Attaching(now)) => now.ptr_eq(&attempt),
                 Some(Slot::Ready(_)) | None => false,
             };
             if ours {
@@ -270,7 +261,7 @@ impl<C: Clone + 'static> Slots<C> {
         let mut map = self.map.borrow_mut();
         let conn = match map.get(host)? {
             Slot::Ready(conn) => conn.clone(),
-            Slot::Connecting(attempt) => match attempt.clone().now_or_never() {
+            Slot::Attaching(attempt) => match attempt.clone().now_or_never() {
                 None => return Some(Either::Right(attempt.clone())),
                 Some(Ok(conn)) => conn,
                 Some(Err(_)) => return None,

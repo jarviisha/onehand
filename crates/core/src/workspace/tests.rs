@@ -576,3 +576,11 @@ fn a_host_name_with_colons_round_trips_through_its_key() {
         );
     }
 }
+
+/// A folder is named with its host as ssh names one, and bare here.
+#[test]
+fn a_host_folder_is_named_on_its_host() {
+    let vps = HostName("vps".into());
+    assert_eq!(host_path(Some(&vps), Path::new("/srv/app")), "vps:/srv/app");
+    assert_eq!(host_path(None, Path::new("/srv/app")), "/srv/app");
+}

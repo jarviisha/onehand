@@ -28,6 +28,14 @@ use onehand_core::host::wire::HostSession;
 use onehand_core::workspace::HostName;
 use std::path::PathBuf;
 
+/// The host a session's agent runs on, and the host's name for the session
+/// once the host has said it.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct OnHost {
+    pub(crate) host: HostName,
+    pub(crate) session: Option<HostSession>,
+}
+
 pub struct Conversation {
     /// The project root this session's agent runs in, and the agent it runs.
     ///
@@ -41,7 +49,7 @@ pub struct Conversation {
     pub dirs: Vec<PathBuf>,
     /// The host its agent runs on, and the host's name for the session once
     /// the host has said it: what a restart reads again.
-    pub host: Option<(HostName, Option<HostSession>)>,
+    pub host: Option<OnHost>,
     pub phase: SessionPhase,
     /// How this session's transcript is laid out and where it is scrolled, so
     /// coming back to it finds the conversation where it was left rather than

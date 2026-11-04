@@ -115,8 +115,18 @@ impl ProjectRoot {
 /// alike.
 fn root_key(host: Option<&HostName>, path: &Path) -> PathBuf {
     match host {
-        Some(host) => PathBuf::from(format!("{host}:{}", path.display())),
+        Some(_) => PathBuf::from(host_path(host, path)),
+        // Kept as it is: a local path need not be text.
         None => path.to_path_buf(),
+    }
+}
+
+/// A folder as a person names it: `<host>:<path>` on a host, as ssh names
+/// one, and the bare path here.
+pub fn host_path(host: Option<&HostName>, path: &Path) -> String {
+    match host {
+        Some(host) => format!("{host}:{}", path.display()),
+        None => path.display().to_string(),
     }
 }
 

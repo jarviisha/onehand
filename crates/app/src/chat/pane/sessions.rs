@@ -2,8 +2,9 @@ use super::fork::StagedFork;
 use super::project_page::EmptyProject;
 use super::{ChatPane, ChatPaneEvent, ProjectFacts, Restart, SessionSignal, switching_away};
 use crate::chat::composer::Composer;
+use crate::chat::conversation::OnHost;
 use crate::chat::conversation::{Conversation, SessionPhase};
-use crate::chat::session::{Carried, ChatEvent, ChatSession, HostBegin, OnHost};
+use crate::chat::session::{BeginOnHost, Carried, ChatEvent, ChatSession, HostBegin};
 use gpui::{App, Context, Entity, Focusable, SharedString, Window};
 use onehand_core::acp::Opening;
 use onehand_core::chat::{Chat, ConvMeta};
@@ -202,15 +203,15 @@ impl ChatPane {
             .map_or(0, |session| session.read(cx).chat.prompts_sent);
         let (on_host, start) = match &conv.host {
             None => (None, start),
-            Some((host, known)) => {
-                let (begin, start) = host_begin(start, known.as_ref(), sent_before);
+            Some(OnHost { host, session }) => {
+                let (begin, start) = host_begin(start, session.as_ref(), sent_before);
                 // A re-watch counts the prompts again as its journal replays
                 // them; what it carries is for an open in its place.
                 if matches!(begin, HostBegin::Rewatch(..)) {
                     sent_before = 0;
                 }
                 let host = host.clone();
-                (Some(OnHost { host, begin }), start)
+                (Some(BeginOnHost { host, begin }), start)
             }
         };
         // Its names too: a worker's stand-in is never saved, and a name its
@@ -338,21 +339,20 @@ impl ChatPane {
                         cx.emit(ChatPaneEvent::StopRefused(why.clone()));
                     }
                     ChatEvent::HostSession(id) => {
-                        if let Some((_, known)) = pane
+                        if let Some(on) = pane
                             .conversations
                             .get_mut(&uid)
                             .and_then(|conv| conv.host.as_mut())
                         {
-                            *known = Some(id.clone());
+                            on.session = Some(id.clone());
                         }
                     }
                     ChatEvent::HostBusy { busy } => {
-                        if let Some((host, _)) =
-                            pane.conversations.get(&uid).and_then(|c| c.host.as_ref())
+                        if let Some(on) = pane.conversations.get(&uid).and_then(|c| c.host.as_ref())
                         {
                             cx.emit(ChatPaneEvent::HostBusy {
                                 uid: Some(uid),
-                                host: host.clone(),
+                                host: on.host.clone(),
                                 busy: busy.clone(),
                             });
                         }
@@ -880,8 +880,11 @@ pub(super) fn opening_host(
     host: Option<HostName>,
     watch: Option<&HostSession>,
     forking: bool,
-) -> Option<(HostName, Option<HostSession>)> {
-    host.map(|host| (host, watch.filter(|_| !forking).cloned()))
+) -> Option<OnHost> {
+    host.map(|host| OnHost {
+        host,
+        session: watch.filter(|_| !forking).cloned(),
+    })
 }
 
 /// How a session's conversation starts.

@@ -19,7 +19,7 @@ use onehand_core::workspace::HostName;
 use std::path::PathBuf;
 
 /// Which host a session runs on, and how its events begin there.
-pub(crate) struct OnHost {
+pub(crate) struct BeginOnHost {
     pub(crate) host: HostName,
     pub(crate) begin: HostBegin,
 }
@@ -49,7 +49,7 @@ pub(crate) struct Carried {
 pub(super) enum Source {
     Local(Events),
     /// The host, and what to begin there once it is attached.
-    Host(Box<(OnHost, PathBuf, AgentSpec, Opening)>),
+    Host(Box<(BeginOnHost, PathBuf, AgentSpec, Opening)>),
 }
 
 /// The transcript model a session starts from. A host session's transcript is
@@ -108,11 +108,11 @@ pub(super) fn host_restart(
 /// The events of a host session, once its host is attached; a refusal or a
 /// failure is the one `Disconnected` that says why.
 pub(super) async fn host_events(
-    (on_host, cwd, spec, opening): (OnHost, PathBuf, AgentSpec, Opening),
+    (on_host, cwd, spec, opening): (BeginOnHost, PathBuf, AgentSpec, Opening),
     session: &WeakEntity<ChatSession>,
     cx: &mut AsyncApp,
 ) -> Events {
-    let OnHost { host, begin } = on_host;
+    let BeginOnHost { host, begin } = on_host;
     // Either the start, known already, or what a re-watch decides on once
     // the host has said what it runs.
     let decided = match begin {
@@ -135,12 +135,9 @@ pub(super) async fn host_events(
     let start = match decided {
         Ok(start) => start,
         Err((id, carried, cwd, spec)) => {
-            let listed = list(conn.clone(), cx).await.map_err(|e| {
-                format!(
-                    "Could not read the sessions on {host}: {}",
-                    crate::acp::said(e)
-                )
-            });
+            let listed = list(conn.clone(), cx)
+                .await
+                .map_err(|e| format!("Could not read the sessions on {host}: {e}"));
             let found = listed
                 .as_ref()
                 .map(|listed| listed.iter().find(|info| info.session == id))
@@ -204,7 +201,7 @@ fn ending_for(
     cx: &mut AsyncApp,
 ) -> String {
     match failure {
-        HostFailure::Missing(why) | HostFailure::Other(why) => why,
+        HostFailure::Other(why) => why,
         HostFailure::Busy { host, busy } => {
             let _ = session.update(cx, |_, cx| cx.emit(ChatEvent::HostBusy { busy }));
             busy_line(&host)

@@ -21,7 +21,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-pub(crate) use host::{Carried, HostBegin, OnHost, busy_line, list as host_list};
+pub(crate) use host::{BeginOnHost, Carried, HostBegin, busy_line, list as host_list};
 use host::{Source, host_events, new_chat};
 
 mod cards;
@@ -365,7 +365,7 @@ impl ChatSession {
         spec: &AgentSpec,
         opening: onehand_core::acp::Opening,
         dirs: Vec<PathBuf>,
-        on_host: Option<OnHost>,
+        on_host: Option<BeginOnHost>,
         cx: &mut App,
     ) -> Entity<Self> {
         let host = on_host.is_some();

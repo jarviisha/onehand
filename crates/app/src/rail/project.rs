@@ -461,10 +461,10 @@ pub(super) fn project_row(
     let facts = ProjectFacts::of(root, status.is_some());
     let git = status.map(GitLine::of);
     // A folder on a host is named with the host, as ssh names one.
-    let path = SharedString::from(match root.on_host() {
-        Some(host) => format!("{host}:{}", root.path.display()),
-        None => root.path.display().to_string(),
-    });
+    let path = SharedString::from(onehand_core::workspace::host_path(
+        root.on_host(),
+        &root.path,
+    ));
     let host = root
         .on_host()
         .map(|host| SharedString::from(host.to_string()));

@@ -767,6 +767,20 @@ async fn open_errors_name_the_host() {
     );
 }
 
+/// A failure of a call names the host but a busy one, which is said where
+/// the attach was turned down.
+#[test]
+fn open_errors_but_busy_name_the_host() {
+    let named = |e| on_host("vps", e).to_string();
+    assert_eq!(named(HostError::Unreachable("gone".into())), "On vps: gone");
+    assert_eq!(named(HostError::Protocol("no".into())), "On vps: no");
+    let busy = HostError::Busy {
+        build: Build("old".into()),
+        busy: Vec::new(),
+    };
+    assert_eq!(named(busy), "the host runs another build (old)");
+}
+
 #[tokio::test]
 async fn is_dir_asks_the_host() {
     let (conn, mut host) = pair();

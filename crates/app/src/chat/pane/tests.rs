@@ -316,21 +316,31 @@ fn only_a_restart_rewatches_a_host_session() {
 #[test]
 fn a_watched_host_session_knows_its_id_from_the_start() {
     use super::sessions::opening_host;
+    use crate::chat::conversation::OnHost;
     use onehand_core::host::wire::HostSession;
     use onehand_core::workspace::HostName;
 
     let (host, id) = (HostName("box".into()), HostSession("100-1".into()));
     assert_eq!(
         opening_host(Some(host.clone()), Some(&id), false),
-        Some((host.clone(), Some(id.clone())))
+        Some(OnHost {
+            host: host.clone(),
+            session: Some(id.clone())
+        })
     );
     assert_eq!(
         opening_host(Some(host.clone()), Some(&id), true),
-        Some((host.clone(), None))
+        Some(OnHost {
+            host: host.clone(),
+            session: None
+        })
     );
     assert_eq!(
         opening_host(Some(host.clone()), None, false),
-        Some((host, None))
+        Some(OnHost {
+            host,
+            session: None
+        })
     );
     assert_eq!(opening_host(None, Some(&id), false), None);
 }

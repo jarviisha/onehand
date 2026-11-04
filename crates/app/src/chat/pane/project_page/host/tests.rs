@@ -1,4 +1,5 @@
-use super::{host_rows, is_newest, place, watching_uid};
+use super::{host_rows, place, watching_uid};
+use crate::chat::conversation::OnHost;
 use onehand_core::host::wire::{HostSession, SessionInfo};
 use onehand_core::workspace::HostName;
 use std::path::Path;
@@ -41,18 +42,21 @@ fn host_sessions_are_listed_for_their_folder_newest_first() {
 }
 
 #[test]
-fn only_the_newest_ask_is_answered() {
-    assert!(is_newest(3, 3));
-    assert!(!is_newest(2, 3));
-}
-
-#[test]
 fn a_host_session_already_watched_in_its_folder_is_found() {
     let host = HostName("box".into());
     let id = HostSession("100-1".into());
-    let on = |id: &str| Some((host.clone(), Some(HostSession(id.into()))));
-    let (a, b, unknown) = (on("100-1"), on("200-2"), Some((host.clone(), None)));
-    let other_host = Some((HostName("else".into()), Some(id.clone())));
+    let on = |host: &HostName, id: Option<&str>| {
+        Some(OnHost {
+            host: host.clone(),
+            session: id.map(|id| HostSession(id.into())),
+        })
+    };
+    let (a, b, unknown) = (
+        on(&host, Some("100-1")),
+        on(&host, Some("200-2")),
+        on(&host, None),
+    );
+    let other_host = on(&HostName("else".into()), Some("100-1"));
     let (app, srv) = (Path::new("/srv/app"), Path::new("/srv/other"));
     let convs = || {
         [

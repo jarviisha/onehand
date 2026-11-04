@@ -148,14 +148,14 @@ fn landed_on(current: Option<u64>, landed: u64) -> bool {
 fn needs_restart<C>(attached: &Result<C, HostFailure>) -> bool {
     match attached {
         Err(HostFailure::Busy { .. }) => true,
-        Ok(_) | Err(HostFailure::Missing(_) | HostFailure::Other(_)) => false,
+        Ok(_) | Err(HostFailure::Other(_)) => false,
     }
 }
 
 /// What a restart that failed says.
 fn restart_failure(failure: HostFailure) -> String {
     match failure {
-        HostFailure::Missing(why) | HostFailure::Other(why) => why,
+        HostFailure::Other(why) => why,
         HostFailure::Busy { host, .. } => {
             format!("{host} still runs another build of the host service")
         }
@@ -297,7 +297,7 @@ impl Shell {
             Ok(false) => {
                 draft.error = Some(format!("There is no folder {} on {host}", path.display()));
             }
-            Err(HostFailure::Missing(why) | HostFailure::Other(why)) => draft.error = Some(why),
+            Err(HostFailure::Other(why)) => draft.error = Some(why),
             // Closes nothing: the form waits under the question, and a yes
             // carries on with the same names.
             Err(HostFailure::Busy { host, busy }) => {

@@ -13,13 +13,11 @@ fn a_missing_bundled_binary_is_said_plainly() {
     let found = bundled_binary_in(&dir);
     let _ = std::fs::remove_dir_all(&dir);
     match found {
-        Err(HostFailure::Missing(text)) => assert_eq!(
+        Err(HostFailure::Other(text)) => assert_eq!(
             text,
             "onehand-host is not beside onehand; build it with `cargo build -p onehand-host`"
         ),
-        Ok(_) | Err(HostFailure::Busy { .. }) | Err(HostFailure::Other(_)) => {
-            panic!("expected Missing")
-        }
+        Ok(_) | Err(HostFailure::Busy { .. }) => panic!("expected the missing binary's words"),
     }
 }
 

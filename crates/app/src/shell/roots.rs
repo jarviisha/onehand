@@ -587,10 +587,7 @@ impl Shell {
         let Some(root) = self.window.workspace.roots.get(root_idx) else {
             return;
         };
-        let path = match root.on_host() {
-            Some(host) => format!("{host}:{}", root.path.display()),
-            None => root.path.display().to_string(),
-        };
+        let path = onehand_core::workspace::host_path(root.on_host(), &root.path);
         cx.write_to_clipboard(gpui::ClipboardItem::new_string(path.clone()));
         window.push_notification(crate::toast::info(format!("Copied {path}")), cx);
     }

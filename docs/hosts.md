@@ -54,7 +54,7 @@ it. What is refused, and how, is under *What a host project does not do*.
 
 ## Builds and the restart offer
 
-Every attach opens by exchanging builds (`client::connect`):
+Every attach opens by exchanging builds (`client::attach`):
 
 - **The same build:** attached.
 - **Another build, nothing mid-turn:** the old service is shut down and the attach made again, onto
