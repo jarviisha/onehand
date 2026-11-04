@@ -85,6 +85,40 @@ fn torn_last_line_is_left_out() {
 }
 
 #[test]
+fn a_bad_middle_line_makes_last_none() {
+    let dir = scratch("bad");
+    let mut copy = Copy::open(&dir, &host(), &session());
+    copy.append(0, 0, &chunk("a")).unwrap();
+    let mut f = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&copy.path)
+        .unwrap();
+    f.write_all(b"not a line\n").unwrap();
+    drop(f);
+    copy.append(2, 0, &chunk("c")).unwrap();
+    let copy = Copy::open(&dir, &host(), &session());
+    assert_eq!(seqs(&copy.read()), [0, 2]);
+    assert_eq!(copy.last(), None);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn an_unreadable_copy_has_no_last_and_keeps_none() {
+    let dir = scratch("unreadable");
+    let mut copy = Copy::open(&dir, &host(), &session());
+    // A directory where the file goes cannot be read as one.
+    std::fs::create_dir_all(&copy.path).unwrap();
+    assert_eq!(copy.last(), None);
+    // The append fails, and so does the drop: nothing is kept.
+    assert!(copy.append(0, 0, &chunk("a")).is_err());
+    std::fs::remove_dir(&copy.path).unwrap();
+    let mut other = Copy::open(&dir, &host(), &session());
+    other.append(7, 0, &chunk("a")).unwrap();
+    assert_eq!(copy.last(), Some(7));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn clear_empties() {
     let dir = scratch("clear");
     let mut copy = Copy::open(&dir, &host(), &session());

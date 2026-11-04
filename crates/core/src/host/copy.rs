@@ -56,36 +56,70 @@ impl Copy {
     /// Every entry on a whole line that parses, in order. A line a crash cut
     /// short is left out, as is the whole copy when it cannot be read.
     pub fn read(&self) -> journal::Entries {
-        let Ok(bytes) = fs::read(&self.path) else {
-            return Vec::new();
-        };
-        let whole = bytes
-            .iter()
-            .rposition(|b| *b == b'\n')
-            .map_or(0, |at| at + 1);
-        bytes[..whole]
-            .split(|b| *b == b'\n')
-            .filter_map(|line| serde_json::from_slice::<Line<Entry>>(line).ok())
-            .map(|Line { seq, at, entry }| (seq, at, entry))
-            .collect()
+        self.scan().map(|(entries, _)| entries).unwrap_or_default()
     }
 
-    /// The seq of the copy's last entry, read once and then kept.
+    /// The copy's whole lines that parse, and whether any whole line did
+    /// not; a missing copy is empty.
+    fn scan(&self) -> io::Result<(journal::Entries, bool)> {
+        let bytes = match fs::read(&self.path) {
+            Ok(bytes) => bytes,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Vec::new(),
+            Err(e) => return Err(e),
+        };
+        let mut broken = false;
+        let entries = bytes[..whole(&bytes)]
+            .split_inclusive(|b| *b == b'\n')
+            .filter_map(|line| {
+                let parsed = serde_json::from_slice::<Line<Entry>>(&line[..line.len() - 1]);
+                broken |= parsed.is_err();
+                parsed.ok().map(|Line { seq, at, entry }| (seq, at, entry))
+            })
+            .collect();
+        Ok((entries, broken))
+    }
+
+    /// The seq of the copy's last entry, read once and then kept. None for a
+    /// copy with a whole line that does not parse: an entry may be missing
+    /// below its last, so a watch must take the host's whole journal. None
+    /// too, and nothing kept, when the copy cannot be read.
     pub fn last(&self) -> Option<u64> {
         if let Some(last) = self.last.get() {
             return last;
         }
-        let last = self.read().last().map(|(seq, _, _)| *seq);
+        let Ok((entries, broken)) = self.scan() else {
+            return None;
+        };
+        let last = if broken {
+            None
+        } else {
+            entries.last().map(|(seq, _, _)| *seq)
+        };
         self.last.set(Some(last));
         last
     }
 
     /// Add one entry at the end. One whose seq is not past the last is
-    /// already here, and is not written again.
+    /// already here, and is not written again. A line a crash cut short is
+    /// cut off first. When the write fails the copy is dropped (as far as it
+    /// can be), so no entry is ever missing below its last: the next watch
+    /// fills it again from the host.
     pub fn append(&mut self, seq: u64, at: u64, entry: &Entry) -> io::Result<()> {
         if self.last().is_some_and(|last| seq <= last) {
             return Ok(());
         }
+        let written = self.write(seq, at, entry);
+        if written.is_err() {
+            if self.clear().is_err() {
+                self.last.set(None);
+            }
+        } else {
+            self.last.set(Some(Some(seq)));
+        }
+        written
+    }
+
+    fn write(&self, seq: u64, at: u64, entry: &Entry) -> io::Result<()> {
         let mut line = serde_json::to_vec(&Line { seq, at, entry }).map_err(io::Error::other)?;
         line.push(b'\n');
         if let Some(dir) = self.path.parent() {
@@ -97,12 +131,12 @@ impl Copy {
             .append(true)
             .open(&self.path)?;
         if torn(&mut file)? {
-            // A line a crash cut short must not fuse with this one.
-            line.insert(0, b'\n');
+            let mut bytes = Vec::new();
+            file.seek(SeekFrom::Start(0))?;
+            file.read_to_end(&mut bytes)?;
+            file.set_len(whole(&bytes) as u64)?;
         }
-        file.write_all(&line)?;
-        self.last.set(Some(Some(seq)));
-        Ok(())
+        file.write_all(&line)
     }
 
     /// Drop the whole copy.
@@ -114,6 +148,14 @@ impl Copy {
         self.last.set(Some(None));
         Ok(())
     }
+}
+
+/// How much of `bytes` is whole lines.
+fn whole(bytes: &[u8]) -> usize {
+    bytes
+        .iter()
+        .rposition(|b| *b == b'\n')
+        .map_or(0, |at| at + 1)
 }
 
 /// Whether `file` ends partway through a line.

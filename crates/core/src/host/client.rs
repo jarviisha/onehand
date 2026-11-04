@@ -477,6 +477,7 @@ async fn pump<R, W>(
                                 connected(live(&mut forwarders, &me, &session), ready)
                             }
                             entry @ (Entry::Event(_) | Entry::Request(_)) => {
+                                // Only `Ready` has no event; it is handled above.
                                 let Some(event) = super::copy::as_event(entry) else { continue };
                                 event
                             }
