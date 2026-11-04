@@ -3,7 +3,7 @@
 
 use super::Shell;
 use super::confirm::Confirm;
-use crate::dialogs::{add_refusal, browse_rows, busy_body};
+use crate::dialogs::{add_refusal, browse_refusal, browse_rows, busy_body};
 use crate::hosts::{self, HostFailure};
 use gpui::{App, AppContext as _, Context, Entity, Focusable as _, Subscription, Task, Window};
 use gpui_component::WindowExt as _;
@@ -394,7 +394,11 @@ impl Shell {
         let Some(draft) = self.host_project.as_mut() else {
             return;
         };
+        // Setting a field's value says nothing to its subscription, so what
+        // typing would clear is cleared here: the list was another host's,
+        // and the failure was about the names before.
         draft.drop_browse();
+        draft.error = None;
         draft
             .host
             .update(cx, |input, cx| input.set_value(host, window, cx));
@@ -403,9 +407,15 @@ impl Shell {
 
     /// A folder pressed in the list: it becomes *Folder*, and is listed.
     pub(crate) fn browse_to(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(draft) = self.host_project.as_ref() else {
+        let Some(draft) = self.host_project.as_mut() else {
             return;
         };
+        // Refused, *Folder* is left as it is: it only ever names what is listed.
+        let host = draft.host.read(cx).value();
+        if browse_refusal(&host, draft.busy(), draft.waiting.is_some()).is_some() {
+            return;
+        }
+        draft.error = None;
         let value = path.display().to_string();
         draft
             .folder
@@ -421,7 +431,7 @@ impl Shell {
             return;
         };
         let host = draft.host.read(cx).value().trim().to_string();
-        if host.is_empty() || draft.busy() || draft.waiting.is_some() {
+        if browse_refusal(&host, draft.busy(), draft.waiting.is_some()).is_some() {
             return;
         }
         let host = HostName(host);

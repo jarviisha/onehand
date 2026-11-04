@@ -1,4 +1,6 @@
-use super::{BROWSE_CAP, HOST_CHOICES_CAP, add_refusal, browse_rows, busy_body, host_choices};
+use super::{
+    BROWSE_CAP, HOST_CHOICES_CAP, add_refusal, browse_refusal, browse_rows, busy_body, host_choices,
+};
 use onehand_core::host::wire::HostSession;
 use onehand_core::tree::TreeEntry;
 use onehand_core::workspace::HostName;
@@ -113,4 +115,14 @@ fn browse_rows_keeps_folders_in_order_and_counts_what_is_left_out() {
     assert_eq!(dirs.len(), BROWSE_CAP);
     assert_eq!(dirs[0], PathBuf::from("/d0"));
     assert_eq!(hidden, 7);
+}
+
+/// A wait outranks the attach under way, which outranks an unnamed host; the
+/// row press checks the same, so *Folder* never changes while it is refused.
+#[test]
+fn browse_refuses_while_the_form_waits_or_attaches_or_names_no_host() {
+    assert_eq!(browse_refusal("box", false, false), None);
+    assert_eq!(browse_refusal("  ", false, false), Some("Name the host"));
+    assert_eq!(browse_refusal("box", true, false), Some(super::ATTACHING));
+    assert_eq!(browse_refusal("", true, true), Some(super::WAITING));
 }

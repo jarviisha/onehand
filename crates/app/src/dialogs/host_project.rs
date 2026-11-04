@@ -86,6 +86,20 @@ pub(crate) fn browse_rows(at: &Path, entries: &[TreeEntry], cut: usize) -> (Vec<
     (dirs.into_iter().take(BROWSE_CAP).collect(), more)
 }
 
+/// Why *Browse*, or a folder pressed in its list, cannot go yet: the host
+/// is unnamed, or *Add*'s attach or a busy host's wait holds the form.
+pub(crate) fn browse_refusal(host: &str, busy: bool, waiting: bool) -> Option<&'static str> {
+    if waiting {
+        Some(WAITING)
+    } else if busy {
+        Some(ATTACHING)
+    } else if host.trim().is_empty() {
+        Some("Name the host")
+    } else {
+        None
+    }
+}
+
 /// What the restart question says: the host, and its mid-turn sessions by
 /// when they started (as of `now`, in unix seconds), five of them and then
 /// how many more.
@@ -139,12 +153,7 @@ pub fn add_host_project(shell: &Shell, window: &Window, cx: &mut Context<Shell>)
     let (choices, more_hosts) = host_choices(draft.aliases.clone(), shell.used_hosts());
     let shell = cx.entity().downgrade();
     let waits = waiting.is_some();
-    let browse_refusal = match (&draft.waiting, busy) {
-        (Some(_), _) => Some(WAITING),
-        (None, true) => Some(ATTACHING),
-        (None, false) if host.read(cx).value().trim().is_empty() => Some("Name the host"),
-        (None, false) => None,
-    };
+    let browse_refusal = browse_refusal(&host.read(cx).value(), busy, draft.waiting.is_some());
     let browsing = draft.browse.as_ref().is_some_and(|browse| browse.loading);
     let browse = draft.browse.clone();
 
