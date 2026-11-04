@@ -1,6 +1,6 @@
 # Remote hosts: sessions that live on a machine reached over SSH
 
-Status: design, decided with the owner on 2026-11-03; step 1 built (see *Order of work*).
+Status: design, decided with the owner on 2026-11-03; steps 1 and 2 built (see *Order of work*).
 
 ## Why
 
@@ -332,7 +332,7 @@ These form a sequence, and each step is useful on its own:
    workspace file; and typing a host and a folder came forward into this step, from step 3. As
    built: `docs/hosts.md`.
 2. The rest of a host project: file tree, editor, git status, terminal dock. Built in two parts:
-   2a, files, editor and git status (built); 2b, the terminal dock.
+   2a, files, editor and git status (built); 2b, the terminal dock (built). As built: `docs/hosts.md`.
 3. The host UI: picking or typing a host, opening a folder on it, cloning, showing a host that is
    not connected, and the laptop's own copy of host transcripts for reading while not attached.
 4. The permission bypass switch.

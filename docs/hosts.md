@@ -212,12 +212,33 @@ Every attach opens by exchanging builds (`client::attach`):
 - **Refresh Git status** is offered on a host project, in the rail's menu and the project page's.
   *Open terminal* is not.
 
+## Terminals
+
+- **The host runs the shell** (`crates/host/src/terms.rs`): `$SHELL -l`, or `/bin/sh -l`, in the
+  project's folder, with `TERM=xterm-256color`, `COLORTERM=truecolor` and the service's login
+  `PATH`. The laptop's dock draws it (`crates/app/src/terminal/host.rs`) and sends keys, resizes
+  and closes over the attach (`crates/core/src/host/client/terms.rs`).
+- **Each terminal keeps its last 1 MiB of raw output.** A watch replays what is kept, then goes
+  live. A replay of a buffer that dropped older output starts with *[Earlier output was not
+  kept]*.
+- **Terminals run on while the laptop is away.** Showing the dock on a host project, on arrival
+  or by opening it, lists that folder's terminals on the host and opens a tab for each; with none
+  and the dock open, it starts one. Meanwhile the dock says *Attaching to <host>…*, and a failure
+  or a busy host shows as it does in the Workbench (`attach_waiting`, `crates/app/src/hosts.rs`).
+- **A newer watch takes a terminal over.** With two windows on one host project, the other
+  window's tab ends, and it comes back when that window shows the project again.
+- **Close against exit.** Closing a host tab always asks *Close this terminal?*, because the dock
+  cannot tell whether a command is running. Closing ends the shell on the host (SIGHUP, a grace
+  period, then SIGKILL) and the terminal leaves the list at once. A tab whose stream ended (the
+  shell exited, the connection was lost, a newer watch took over) leaves the dock and closes
+  nothing on the host. Quitting, removing the project and a lost connection never close a host
+  terminal.
+- **No removal warning.** Host tabs report no running processes to the removal warnings.
+
 ## What a host project does not do
 
 Refused or left out, each in one place:
 
-- **The terminal** shows *Terminals on a host come later* in place of its content, and *Open
-  terminal* leaves the project's menus.
 - **Markdown, Neovim, Issues and Plugins** are not offered in the Workbench on a host project.
 - **Worktrees, the check command and unattended runs** are not offered: *New worktree…*, *Work an
   issue…*, the unattended switch, *Run check* and the *Check command* field are absent, and the
@@ -236,7 +257,6 @@ Refused or left out, each in one place:
 The steps of the design still to come, each its own change; the gaps they leave meanwhile are in
 [known-gaps.md](known-gaps.md):
 
-- **The rest of a host project:** the terminal on the host.
 - **The host's own UI:** picking a host from `~/.ssh/config`, browsing the host's folders, cloning,
   re-attaching by itself with a backoff, and reading a host's sessions while it is not attached,
   from a copy the laptop keeps.
