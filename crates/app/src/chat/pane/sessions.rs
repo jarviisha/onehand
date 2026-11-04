@@ -321,12 +321,15 @@ impl ChatPane {
                     ChatEvent::OpenFile(path) => cx.emit(ChatPaneEvent::OpenFile(path.clone())),
                     // A fork that never opened goes, and says why, rather than
                     // stand on the rail as a session holding someone else's
-                    // history with no agent behind it.
+                    // history with no agent behind it. A host session read
+                    // from this machine's copy is out of reach, not lost:
+                    // nothing is announced.
                     ChatEvent::Disconnected => match session.read(cx).chat.fork_failure() {
                         Some(why) => cx.emit(ChatPaneEvent::ForkFailed {
                             uid: Some(uid),
                             why,
                         }),
+                        None if session.read(cx).host_offline.is_some() => {}
                         None => pane.link_lost_detached(uid, &agent, &root_label, cx),
                     },
                     ChatEvent::Fork(target) => pane.begin_fork(uid, *target, cx),

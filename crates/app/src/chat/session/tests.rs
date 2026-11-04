@@ -1,5 +1,8 @@
-use super::host::{Carried, Restarted, host_restart, new_chat};
+use super::host::{
+    Carried, OfflineStart, Restarted, host_restart, new_chat, offline_line, offline_start,
+};
 use crate::acp::HostStart;
+use crate::hosts::HostFailure;
 use onehand_core::acp::Opening;
 use onehand_core::chat::ChatItem;
 use onehand_core::config::AgentSpec;
@@ -183,4 +186,37 @@ fn a_host_chat_has_no_store() {
     }
     assert!(on_host.flush().is_none(), "a host chat writes nothing");
     assert!(local.flush().is_some(), "a local chat writes its turn");
+}
+
+/// A host out of reach shows what the laptop kept of the session when it
+/// kept anything; with nothing kept it ends as before; a host busy on another
+/// build is waited on whatever was kept.
+#[test]
+fn offline_start_reads_the_copy_only_when_there_is_one() {
+    let away = HostFailure::Other("Could not reach vps".into());
+    assert_eq!(offline_start(3, &away), OfflineStart::Read);
+    assert_eq!(offline_start(0, &away), OfflineStart::End);
+    let busy = HostFailure::Busy {
+        host: onehand_core::workspace::HostName("vps".into()),
+        busy: Vec::new(),
+    };
+    assert_eq!(offline_start(3, &busy), OfflineStart::Wait);
+    assert_eq!(offline_start(0, &busy), OfflineStart::Wait);
+}
+
+/// The copy's notice says how recent it is when its entries kept a time, and
+/// leaves that out when none did.
+#[test]
+fn the_offline_line_says_how_recent_the_copy_is() {
+    let vps = onehand_core::workspace::HostName("vps".into());
+    assert_eq!(
+        offline_line(&vps, Some(1_000), 1_000 + 3 * 3600),
+        "Not connected to vps. This is the copy kept on this machine, up to 3h ago; \
+         it carries on once the host is back"
+    );
+    assert_eq!(
+        offline_line(&vps, None, 5_000),
+        "Not connected to vps. This is the copy kept on this machine; \
+         it carries on once the host is back"
+    );
 }

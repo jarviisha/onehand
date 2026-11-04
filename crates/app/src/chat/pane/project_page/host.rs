@@ -18,6 +18,7 @@ use gpui::{
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::spinner::Spinner;
 use gpui_component::{ActiveTheme as _, Icon, Sizable as _, StyledExt as _};
+use onehand_core::host::copy::{self, copies_dir};
 use onehand_core::host::wire::{HostSession, SessionInfo};
 use onehand_core::workspace::HostName;
 use onehand_ui::TallIcon as _;
@@ -40,6 +41,9 @@ pub(in crate::chat::pane) enum Unlisted {
     Failed(String),
     /// The host runs another build with sessions mid-turn, and is waited on.
     Waiting,
+    /// The host could not be attached, for why (naming the host); what it
+    /// last listed, as this machine kept it, is shown instead.
+    Away { why: String, kept: Vec<SessionInfo> },
 }
 
 /// Where the page's folder is, as its head says it: `<host>:<path>` for one
@@ -91,7 +95,7 @@ impl ChatPane {
         let project = self.empty.as_ref()?;
         match project.listed {
             Some(Err(Unlisted::Waiting)) => project.host.as_ref(),
-            Some(Ok(_) | Err(Unlisted::Failed(_))) | None => None,
+            Some(Ok(_) | Err(Unlisted::Failed(_) | Unlisted::Away { .. })) | None => None,
         }
     }
 
@@ -142,6 +146,29 @@ impl ChatPane {
                     }),
                 Err(failure) => Err(failure),
             };
+            // Each list read is kept, and the last one kept is what the page
+            // shows while the host cannot be attached.
+            let root = copies_dir();
+            let kept = match &listed {
+                Ok(all) => {
+                    let (host, all) = (host.clone(), all.clone());
+                    cx.background_executor()
+                        .spawn(async move {
+                            // ponytail: a list that could not be kept only
+                            // leaves an older one to show while away.
+                            let _ = copy::save_list(&root, &host, &all);
+                        })
+                        .detach();
+                    Vec::new()
+                }
+                Err(HostFailure::Other(_)) => {
+                    let host = host.clone();
+                    cx.background_executor()
+                        .spawn(async move { copy::load_list(&root, &host) })
+                        .await
+                }
+                Err(HostFailure::Busy { .. }) => Vec::new(),
+            };
             let _ = pane.update(cx, |pane: &mut Self, cx| {
                 // Only the newest ask: an attach can take long enough for the
                 // page to have moved to another project, or to have asked again.
@@ -152,7 +179,7 @@ impl ChatPane {
                 project.listing = false;
                 project.listed = Some(match listed {
                     Ok(all) => Ok(all),
-                    Err(HostFailure::Other(why)) => Err(Unlisted::Failed(why)),
+                    Err(HostFailure::Other(why)) => Err(Unlisted::Away { why, kept }),
                     // The shell waits with the host and lists again once
                     // it is done.
                     Err(HostFailure::Busy { host, .. }) => {
@@ -205,14 +232,15 @@ pub(super) fn host_sessions(
 ) -> Div {
     let muted = cx.theme().muted_foreground;
     let line = || div().text_xs().text_color(muted);
-    let (rows, left_out) = match listed {
-        Some(Ok(all)) => host_rows(all, cwd, HOST_SESSIONS_CAP),
-        Some(Err(_)) | None => (Vec::new(), 0),
+    // What the host listed, or what this machine kept of it while away.
+    let shown = match listed {
+        Some(Ok(all) | Err(Unlisted::Away { kept: all, .. })) => Some(all),
+        Some(Err(Unlisted::Failed(_) | Unlisted::Waiting)) | None => None,
     };
-    let count = listed
-        .as_ref()
-        .and_then(|listed| listed.as_ref().ok())
-        .map(|_| rows.len() + left_out);
+    let (rows, left_out) = shown.map_or((Vec::new(), 0), |all| {
+        host_rows(all, cwd, HOST_SESSIONS_CAP)
+    });
+    let count = shown.map(|_| rows.len() + left_out);
     let now = onehand_core::chat::now_secs();
     let card = page_card(format!("Sessions on {host}"), count, None, cx);
     // How many sessions the host is waited on for: none once the wait has
@@ -221,7 +249,7 @@ pub(super) fn host_sessions(
     let attaching = match listed {
         None => true,
         Some(Err(Unlisted::Waiting)) => waited == 0,
-        Some(Ok(_) | Err(Unlisted::Failed(_))) => false,
+        Some(Ok(_) | Err(Unlisted::Failed(_) | Unlisted::Away { .. })) => false,
     };
     let card = match listed {
         _ if attaching => card.child(
@@ -235,23 +263,36 @@ pub(super) fn host_sessions(
         // A condition standing under the box's title, and what answers it
         // beside it.
         Some(Err(unlisted)) => {
-            let (said, ink, answer) = match unlisted {
+            let retry = || {
+                crate::controls::action("host-sessions-retry")
+                    .secondary()
+                    .short()
+                    .label("Try again")
+                    .loading(listing)
+                    .on_click(cx.listener(|pane: &mut ChatPane, _, _, cx| {
+                        pane.list_host_sessions(cx);
+                    }))
+            };
+            // Out of reach is calm: what was kept is still there to open,
+            // and why the attach failed stands under it in its own words.
+            let (said, ink, answer, why) = match unlisted {
                 Unlisted::Failed(why) => (
                     why.clone(),
                     crate::theme::status_ink(cx).danger,
-                    crate::controls::action("host-sessions-retry")
-                        .secondary()
-                        .short()
-                        .label("Try again")
-                        .loading(listing)
-                        .on_click(cx.listener(|pane: &mut ChatPane, _, _, cx| {
-                            pane.list_host_sessions(cx);
-                        })),
+                    retry(),
+                    None,
+                ),
+                Unlisted::Away { why, .. } => (
+                    format!("Not connected to {host}; trying again"),
+                    muted,
+                    retry(),
+                    Some(why.clone()),
                 ),
                 Unlisted::Waiting => (
                     crate::hosts::waiting_line(host, waited),
                     muted,
                     restart_now(host, cx),
+                    None,
                 ),
             };
             card.child(
@@ -263,7 +304,8 @@ pub(super) fn host_sessions(
                         div()
                             .flex_1()
                             .min_w_0()
-                            .child(onehand_ui::status_line(said, ink)),
+                            .child(onehand_ui::status_line(said, ink))
+                            .children(why.map(|why| onehand_ui::status_line(why, muted))),
                     )
                     .child(answer),
             )

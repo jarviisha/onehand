@@ -198,6 +198,10 @@ pub struct ChatSession {
     /// The host this session waits on, its busy sessions to go idle: what
     /// its last line offers *Restart now* for.
     pub(crate) host_wait: Option<onehand_core::workspace::HostName>,
+    /// The host this session could not be attached on, its transcript read
+    /// from the copy this machine kept: not a lost agent, only one out of
+    /// reach.
+    pub(crate) host_offline: Option<onehand_core::workspace::HostName>,
     /// Parsed markdown, keyed by [`MdId`]; the `usize` is how many bytes of the
     /// model's `source` are already in the state.
     ///
@@ -431,6 +435,7 @@ impl ChatSession {
                 started,
                 on_host: host,
                 host_wait: None,
+                host_offline: None,
                 _token: token,
                 md: HashMap::new(),
                 images: RefCell::new(HashMap::new()),

@@ -10,9 +10,10 @@ use crate::hosts::HostFailure;
 use crate::state::Shared;
 use gpui::{AsyncApp, WeakEntity};
 use onehand_core::acp::Opening;
-use onehand_core::chat::{Chat, ConversationSnapshot};
+use onehand_core::chat::{Chat, ChatItem, ConversationSnapshot};
 use onehand_core::config::AgentSpec;
 use onehand_core::host::client::{HostConn, HostError};
+use onehand_core::host::copy;
 use onehand_core::host::wire::{HostSession, SessionInfo};
 use onehand_core::workspace::HostName;
 use std::path::PathBuf;
@@ -61,6 +62,40 @@ pub(super) fn new_chat(uid: u64, root: PathBuf, spec: &AgentSpec, on_host: bool)
     let mut chat = Chat::new(uid, root, spec.name.clone(), store);
     chat.login_hint = spec.login_hint();
     chat
+}
+
+/// How a host session whose host could not be attached begins.
+#[derive(Debug, PartialEq)]
+pub(super) enum OfflineStart {
+    /// From the copy this machine kept of its journal.
+    Read,
+    /// It ends on why the attach failed: nothing was kept to show.
+    End,
+    /// It waits on the host's busy sessions, as any session on it does.
+    Wait,
+}
+
+/// How a host session begins when its host could not be attached, given how
+/// many entries this machine kept of its journal and why the attach failed.
+pub(super) fn offline_start(kept: usize, failure: &HostFailure) -> OfflineStart {
+    match failure {
+        HostFailure::Busy { .. } => OfflineStart::Wait,
+        HostFailure::Other(_) if kept == 0 => OfflineStart::End,
+        HostFailure::Other(_) => OfflineStart::Read,
+    }
+}
+
+/// The line under a host session read from this machine's copy: how recent
+/// the copy is when its entries kept a time, `last` (seconds since the
+/// epoch), and that it carries on once the host is back.
+pub(super) fn offline_line(host: &HostName, last: Option<u64>, now: u64) -> String {
+    let upto = last.map_or_else(String::new, |at| {
+        format!(", up to {}", onehand_core::rel_time(now, at))
+    });
+    format!(
+        "Not connected to {host}. This is the copy kept on this machine{upto}; \
+         it carries on once the host is back"
+    )
 }
 
 /// What a restart on a host comes to.
@@ -129,15 +164,42 @@ pub(super) async fn host_events(
     let conn = match attaching.await {
         Ok(conn) => conn,
         Err(failure) => {
-            // No journal follows, so a re-watch's copy is kept on screen.
-            if let Err((_, carried, _, _)) = decided {
-                carry(carried, session, cx);
-            }
-            return match failure {
-                HostFailure::Other(why) => crate::acp::ended(why),
-                HostFailure::Busy { host, busy } => {
-                    wait(host, busy.len(), session, cx);
+            // A host session out of reach is read from what this machine
+            // kept of it; a busy host is waited on whatever was kept.
+            let known = match &decided {
+                Ok(HostStart::Watch(id)) | Err((id, ..)) => Some(id.clone()),
+                Ok(HostStart::Open { .. }) => None,
+            };
+            let kept = match (&failure, known) {
+                (HostFailure::Other(_), Some(id)) => {
+                    let host = host.clone();
+                    cx.background_executor()
+                        .spawn(
+                            async move { copy::Copy::open(&copy::copies_dir(), &host, &id).read() },
+                        )
+                        .await
+                }
+                (HostFailure::Other(_) | HostFailure::Busy { .. }, _) => Vec::new(),
+            };
+            return match offline_start(kept.len(), &failure) {
+                // The copy is the whole transcript, prompts and all, so what
+                // a re-watch carried is left out rather than shown twice.
+                OfflineStart::Read => {
+                    offline(host, &kept, session, cx);
                     crate::acp::silent()
+                }
+                OfflineStart::End | OfflineStart::Wait => {
+                    // No journal follows, so a re-watch's copy is kept on screen.
+                    if let Err((_, carried, _, _)) = decided {
+                        carry(carried, session, cx);
+                    }
+                    match failure {
+                        HostFailure::Other(why) => crate::acp::ended(why),
+                        HostFailure::Busy { host, busy } => {
+                            wait(host, busy.len(), session, cx);
+                            crate::acp::silent()
+                        }
+                    }
                 }
             };
         }
@@ -166,7 +228,11 @@ pub(super) async fn host_events(
             }
         }
     };
-    let (events, told) = cx.update(|cx| Shared::global(cx).acp.host_events(conn, start));
+    let (events, told) = cx.update(|cx| {
+        Shared::global(cx)
+            .acp
+            .host_events(conn, host.clone(), start)
+    });
     // Told before any event is forwarded, and dropped untold when the open
     // failed, in which case the events say so.
     if let Ok(id) = told.await {
@@ -196,6 +262,30 @@ fn carry(
 pub(crate) async fn list(conn: HostConn, cx: &mut AsyncApp) -> Result<Vec<SessionInfo>, HostError> {
     cx.update(|cx| crate::hosts::on_runtime(cx, async move { conn.list().await }))
         .await
+}
+
+/// Show what this machine kept of the session's journal, with the line
+/// saying so. Applied to the chat directly rather than sent down the events,
+/// so nothing that hears a session (a desktop notice, a run) takes the old
+/// turns for new ones.
+fn offline(
+    host: HostName,
+    kept: &onehand_core::host::journal::Entries,
+    session: &WeakEntity<ChatSession>,
+    cx: &mut AsyncApp,
+) {
+    let last = kept.iter().rev().map(|(_, at, _)| *at).find(|at| *at != 0);
+    let line = offline_line(&host, last, onehand_core::chat::now_secs());
+    let _ = session.update(cx, |session, cx| {
+        for event in copy::events(kept) {
+            session.chat.apply(event);
+        }
+        session.chat.items.push(ChatItem::notice(line));
+        session.host_offline = Some(host);
+        session.sync_md(cx);
+        cx.emit(ChatEvent::Appended);
+        cx.notify();
+    });
 }
 
 /// Say on the session that it waits on `host`'s `n` busy sessions, as a
