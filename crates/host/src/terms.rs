@@ -73,6 +73,8 @@ impl Terms {
             })
             .map_err(|e| e.to_string())?;
         let mut command = CommandBuilder::new(shell);
+        // A login shell, so the user's profile is read as in their own terminals.
+        command.arg("-l");
         command.cwd(&cwd);
         command.env("TERM", "xterm-256color");
         command.env("COLORTERM", "truecolor");
@@ -145,6 +147,7 @@ impl Terms {
                 data: Bytes(replay),
             };
             if sink.send(line).is_err() {
+                t.watcher = None;
                 return Ok(());
             }
         }
@@ -169,14 +172,20 @@ impl Terms {
             .map_err(|e| e.to_string())
     }
 
-    /// End `term`'s shell. Its reader sees the end, says `TermExit` and lets
-    /// the terminal go.
-    pub(crate) fn close(&self, term: HostTerm) -> Result<(), String> {
-        let t = self.map.get(&term).ok_or_else(|| unknown(term))?;
-        let mut killer = t.child.clone_killer();
-        // On a thread: a kill waits a moment for the shell to leave on its own.
+    /// Let `term` go at once and end its shell, which may ignore the hangup
+    /// or have a job holding the PTY open: either way it is listed no more.
+    pub(crate) fn close(&mut self, term: HostTerm) -> Result<(), String> {
+        let mut t = self.map.remove(&term).ok_or_else(|| unknown(term))?;
+        if let Some(sink) = t.watcher.take() {
+            let _ = sink.send(FromHost::TermExit { term });
+        }
+        // On a thread: the kill sends SIGHUP, gives the shell a moment to
+        // leave on its own, then sends SIGKILL; the wait reaps it.
+        // ponytail: a background job that keeps the PTY open outlives the
+        // shell, and so does its reader thread; kill the session to end both.
         std::thread::spawn(move || {
-            let _ = killer.kill();
+            let _ = t.child.kill();
+            let _ = t.child.wait();
         });
         Ok(())
     }
@@ -195,8 +204,10 @@ fn read(terms: &Mutex<Terms>, term: HostTerm, mut reader: Box<dyn std::io::Read 
     let mut buf = [0u8; 8192];
     loop {
         let n = match reader.read(&mut buf) {
-            Ok(0) | Err(_) => break,
+            Ok(0) => break,
             Ok(n) => n,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => break,
         };
         let mut this = lock(terms);
         let Some(t) = this.map.get_mut(&term) else {

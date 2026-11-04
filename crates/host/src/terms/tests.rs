@@ -132,6 +132,20 @@ fn closing_a_terminal_ends_its_shell_and_lists_it_no_more() {
 }
 
 #[test]
+fn a_shell_that_ignores_the_hangup_is_listed_no_more_once_closed() {
+    let terms = terms();
+    let term = open(&terms, std::env::temp_dir());
+    let (out, mut lines) = mpsc::unbounded_channel();
+    lock(&terms).watch(term, out).unwrap();
+    lock(&terms)
+        .write(term, b"trap '' HUP; echo trap-$((1+1))\n".to_vec())
+        .unwrap();
+    wait_for(&mut lines, term, "trap-2");
+    lock(&terms).close(term).unwrap();
+    assert!(lock(&terms).list().is_empty());
+}
+
+#[test]
 fn a_terminal_runs_in_its_folder() {
     let dir = scratch("cwd");
     let terms = terms();
