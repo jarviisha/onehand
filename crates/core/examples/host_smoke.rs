@@ -17,8 +17,8 @@ use std::time::Duration;
 use futures::StreamExt;
 use onehand_core::acp::{AcpEvent, AcpRequest, Opening};
 use onehand_core::config::AgentSpec;
-use onehand_core::host::client::{connect, install, HostAddr, HostConn};
-use onehand_core::host::wire::build_id;
+use onehand_core::host::client::{self, install, HostAddr, HostConn};
+use onehand_core::host::wire::{build_id, HostSession};
 
 const BINARY: &str = "target/debug/onehand-host";
 const USAGE: &str = "usage: host_smoke <ssh-dest|--local> <cwd> [go|watch <session>]";
@@ -35,9 +35,9 @@ async fn attach(addr: &HostAddr) -> Result<HostConn, String> {
         .await
         .map_err(|e| format!("install: {e:?}"))?;
     let bytes = std::fs::read(binary).map_err(|e| format!("{BINARY}: {e}"))?;
-    connect(addr, &remote, &build_id(&bytes))
+    client::attach(addr, &remote, &build_id(&bytes))
         .await
-        .map_err(|e| format!("connect: {e:?}"))
+        .map_err(|e| format!("attach: {e:?}"))
 }
 
 #[tokio::main(flavor = "multi_thread")]
@@ -63,7 +63,7 @@ async fn smoke() -> Result<(), String> {
     };
     match mode.as_str() {
         "watch" => {
-            let session = args.next().ok_or(USAGE)?;
+            let session = HostSession(args.next().ok_or(USAGE)?);
             watch(&attach(&addr).await?, &session).await
         }
         "go" => go(&attach(&addr).await?, PathBuf::from(cwd)).await,
@@ -71,7 +71,7 @@ async fn smoke() -> Result<(), String> {
     }
 }
 
-async fn watch(conn: &HostConn, session: &str) -> Result<(), String> {
+async fn watch(conn: &HostConn, session: &HostSession) -> Result<(), String> {
     let mut stream = std::pin::pin!(conn.watch(session));
     while let Some(event) = stream.next().await {
         show(&event);

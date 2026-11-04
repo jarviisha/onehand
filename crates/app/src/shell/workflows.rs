@@ -56,7 +56,16 @@ impl Shell {
             );
             return;
         };
-        let root = root.path.clone();
+        let Some(root) = root.local_path().map(std::path::Path::to_path_buf) else {
+            window.push_notification(
+                crate::toast::warning(format!(
+                    "{} is on a host; workflows do not run there yet",
+                    root.label
+                )),
+                cx,
+            );
+            return;
+        };
         self.begin_workflow_on(&root, None, window, cx);
     }
 
@@ -69,7 +78,10 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(root) = self.window.workspace.roots.iter().find(|r| r.path == root) else {
+        let Some(root) = self
+            .root_index(root)
+            .map(|i| &self.window.workspace.roots[i])
+        else {
             return;
         };
         let (root, project) = (root.path.clone(), root.label.clone());
@@ -228,12 +240,7 @@ impl Shell {
     /// the checkout at `root`, by its name: what a run working in the same
     /// checkout would edit beside.
     fn own_session_in(&self, root: &std::path::Path, cx: &gpui::App) -> Option<String> {
-        let project = self
-            .window
-            .workspace
-            .roots
-            .iter()
-            .find(|r| r.path == root)?;
+        let project = &self.window.workspace.roots[self.root_index(root)?];
         project
             .sessions
             .iter()

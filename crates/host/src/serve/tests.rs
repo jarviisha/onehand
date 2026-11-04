@@ -74,7 +74,7 @@ async fn a_watch_is_answered_after_its_replay_and_a_second_attach_kicks_the_firs
     let socket = dir.join("s.sock");
     let listener = UnixListener::bind(&socket).unwrap();
     let hub = hub_in(&dir);
-    let service = tokio::spawn(accept(listener, hub, "b1".into()));
+    let service = tokio::spawn(accept(listener, hub, Build("b1".into())));
 
     let mut first = Laptop::new(&socket).await;
     first
@@ -98,7 +98,7 @@ async fn a_watch_is_answered_after_its_replay_and_a_second_attach_kicks_the_firs
     else {
         panic!("not opened");
     };
-    let journal = dir.join("sessions").join(&session);
+    let journal = dir.join("sessions").join(&session.0);
     for _ in 0..500 {
         if onehand_core::host::journal::read(&journal).unwrap().len() == 2 {
             break;
@@ -126,11 +126,18 @@ async fn a_watch_is_answered_after_its_replay_and_a_second_attach_kicks_the_firs
     let mut second = Laptop::new(&socket).await;
     assert!(matches!(first.line().await, Some(FromHost::Kicked)));
     assert!(first.line().await.is_none());
-    second.ask(1, Call::Hello { build: "b1".into() }).await;
+    second
+        .ask(
+            1,
+            Call::Hello {
+                build: Build("b1".into()),
+            },
+        )
+        .await;
     assert!(matches!(
         second.line().await,
         Some(FromHost::Answer { id: 1, result: Ok(Reply::Welcome { build, busy }) })
-            if build == "b1" && busy.is_empty()
+            if build.0 == "b1" && busy.is_empty()
     ));
     service.abort();
     let _ = fs::remove_dir_all(&dir);
@@ -146,7 +153,7 @@ async fn shutdown_answers_done_and_asks_for_the_exit() {
         call: Call::Shutdown,
     })
     .unwrap();
-    assert!(answer(&hub_in(&dir), "b1", &out, &ask));
+    assert!(answer(&hub_in(&dir), &Build("b1".into()), &out, &ask));
     assert!(matches!(
         lines.try_recv(),
         Ok(FromHost::Answer {
@@ -154,4 +161,27 @@ async fn shutdown_answers_done_and_asks_for_the_exit() {
             result: Ok(Reply::Done)
         })
     ));
+}
+
+#[tokio::test]
+async fn probe_answers_whether_a_folder_is_there() {
+    let dir = std::env::temp_dir().join(format!("onehand-probe-{}", std::process::id()));
+    fs::create_dir_all(&dir).unwrap();
+    let (out, mut lines) = mpsc::unbounded_channel();
+    for (path, want) in [(dir.clone(), true), (dir.join("missing"), false)] {
+        let ask = serde_json::to_string(&Question {
+            id: 3,
+            call: Call::Probe { path },
+        })
+        .unwrap();
+        assert!(!answer(&hub_in(&dir), &Build("b1".into()), &out, &ask));
+        assert!(matches!(
+            lines.try_recv(),
+            Ok(FromHost::Answer {
+                id: 3,
+                result: Ok(Reply::Probed { is_dir })
+            }) if is_dir == want
+        ));
+    }
+    let _ = fs::remove_dir_all(&dir);
 }

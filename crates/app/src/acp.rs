@@ -21,6 +21,8 @@ use futures::channel::{mpsc, oneshot};
 use futures::{SinkExt as _, Stream, StreamExt as _};
 use onehand_core::acp::{self, AcpEvent};
 use onehand_core::config::AgentSpec;
+use onehand_core::host::client::HostConn;
+use onehand_core::host::wire::HostSession;
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -187,6 +189,48 @@ impl AcpRuntime {
         self.start(spec, cwd, acp::Opening::Fresh, Vec::new(), Vec::new())
     }
 
+    /// Run `work` on this runtime: what must poll tokio I/O and cannot on GPUI's executor.
+    pub(crate) fn spawn(&self, work: impl std::future::Future<Output = ()> + Send + 'static) {
+        self.rt.spawn(work);
+    }
+
+    /// A host session's events, read as a local session's are; beside them,
+    /// the host session's id once it is known, for the pane to keep.
+    ///
+    /// Nothing of the laptop's launch runs: the agent is started on the host,
+    /// by what the host finds on its own `PATH`, and without this machine's
+    /// variables.
+    pub(crate) fn host_events(
+        &self,
+        conn: HostConn,
+        start: HostStart,
+    ) -> (Events, oneshot::Receiver<HostSession>) {
+        let (rx, mut tx, alive) = events();
+        let (told, session) = oneshot::channel();
+        self.rt.spawn(async move {
+            let id = match start {
+                HostStart::Watch(id) => id,
+                // ponytail: not raced against the events being dropped: the
+                // open is sent to the host on its first poll, and the host
+                // starts the agent whatever happens here after. An open
+                // abandoned mid-way costs one idle agent on the host, still
+                // listed and attachable again; a cancel call on the host
+                // would stop it.
+                HostStart::Open { cwd, spec, opening } => match conn.open(cwd, spec, opening).await
+                {
+                    Ok(id) => id,
+                    Err(e) => {
+                        let _ = tx.send(AcpEvent::Disconnected(e.to_string())).await;
+                        return;
+                    }
+                },
+            };
+            let _ = told.send(id.clone());
+            forward(conn.watch(&id), tx, alive).await;
+        });
+        (rx, session)
+    }
+
     /// Spawn an adapter and forward its events, with no reference to the parked
     /// one either way.
     fn start(
@@ -223,6 +267,18 @@ impl AcpRuntime {
     }
 }
 
+/// How a host session's events begin.
+pub(crate) enum HostStart {
+    /// Start a new session on the host.
+    Open {
+        cwd: PathBuf,
+        spec: AgentSpec,
+        opening: acp::Opening,
+    },
+    /// Read one the host already keeps.
+    Watch(HostSession),
+}
+
 /// Whether a session opening this way may take the parked adapter.
 ///
 /// That adapter has already been through `session/new` on a fresh
@@ -248,6 +304,21 @@ impl Stream for Events {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<AcpEvent>> {
         self.rx.poll_next_unpin(cx)
     }
+}
+
+/// Events that say only that `why` ended them, for a session that never
+/// reached an agent.
+pub(crate) fn ended(why: String) -> Events {
+    let (rx, mut tx, _alive) = events();
+    // A fresh channel has room, so this one send never waits.
+    let _ = tx.try_send(AcpEvent::Disconnected(why));
+    rx
+}
+
+/// Events that end at once, saying nothing: for a session that says why
+/// itself.
+pub(crate) fn silent() -> Events {
+    events().0
 }
 
 /// A new pair: the events the UI holds, and the forwarder's two ends.

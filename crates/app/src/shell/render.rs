@@ -288,6 +288,12 @@ impl Render for Shell {
                     .is_some()
                     .then(|| crate::dialogs::run_workflow(self, window, cx)),
             )
+            // And the add-a-project-on-a-host form, opened from the rail.
+            .children(
+                self.host_project
+                    .is_some()
+                    .then(|| crate::dialogs::add_host_project(self, window, cx)),
+            )
             // And the agent form, opened from Settings' rows, rebuilt every
             // frame.
             .children(
@@ -356,6 +362,7 @@ impl Shell {
         self.renaming.is_some()
             || self.worktree_draft.is_some()
             || self.branch_draft.is_some()
+            || self.host_project.is_some()
             || self.issue_picker.is_some()
             || self.workflow_launcher.is_some()
             || self.agent_form

@@ -378,12 +378,23 @@ fn perform_now(
                 .ok_or("this session is no longer open")?
         }
     };
-    let projects: Vec<(String, PathBuf)> = shell
-        .read(cx)
-        .remote_roots()
-        .into_iter()
-        .map(|(path, name)| (name, path))
-        .collect();
+    // Only the folders on this machine: a project on a host has no issue
+    // file, worktree or check here for a tool to reach, and is refused by
+    // name rather than said not to exist.
+    let by_name = |roots: Vec<(PathBuf, String)>| -> Vec<(String, PathBuf)> {
+        roots.into_iter().map(|(path, name)| (name, path)).collect()
+    };
+    let projects = by_name(shell.read(cx).remote_roots());
+    if let Some(named) = call.project() {
+        let hosted = by_name(shell.read(cx).host_roots());
+        if control::pick_project(&projects, named).is_err()
+            && control::pick_project(&hosted, named).is_ok()
+        {
+            return Err(format!(
+                "{named} is on a host; onehand's tools do not reach it yet"
+            ));
+        }
+    }
     match call {
         Call::StartWorkflow {
             project,
@@ -643,7 +654,7 @@ fn perform_now(
             let active = shell
                 .read(cx)
                 .on_screen()
-                .ok_or("no project is on screen")?;
+                .ok_or("no project on this machine is on screen")?;
             if !path.starts_with(&active.1) {
                 return Err(format!(
                     "{} is not in {}, the project on screen",

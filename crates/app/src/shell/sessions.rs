@@ -6,6 +6,7 @@ use gpui_component::WindowExt as _;
 use gpui_component::dock::DockPlacement;
 use onehand_core::config::AgentSpec;
 use onehand_core::gitstat;
+use onehand_core::host::wire::HostSession;
 use std::path::PathBuf;
 
 impl Shell {
@@ -520,15 +521,42 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<u64> {
-        let idx = agent
-            .and_then(|name| {
-                Shared::global(cx)
-                    .agents
-                    .iter()
-                    .position(|spec| spec.name == name.as_ref())
-            })
-            .unwrap_or(0);
+        let idx = agent_index(agent, cx);
         self.spawn_session(idx, resume, window, cx)
+    }
+
+    /// Start a session on the active root, a host's, attached to the host
+    /// session `id` that `agent` runs there; the default agent stands in for
+    /// one no longer configured, as for an archive.
+    pub(super) fn watch_host_session(
+        &mut self,
+        agent: SharedString,
+        id: HostSession,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // Shown again rather than opened twice: two sessions on one host
+        // session would both send to it.
+        let ws = &self.window.workspace;
+        let open = ws.roots.get(ws.active_root).and_then(|root| {
+            let host = root.host.as_ref()?;
+            self.chat.read(cx).watching(&root.path, host, &id)
+        });
+        if let Some(uid) = open.filter(|uid| self.locate(*uid).is_some()) {
+            self.show_session(uid, window, cx);
+            return;
+        }
+        let idx = agent_index(Some(agent), cx);
+        let Some(spec) = Shared::global(cx).agents.get(idx).cloned() else {
+            return;
+        };
+        let Some(uid) = self.mint_session(spec, window, cx) else {
+            return;
+        };
+        // Before it is shown, which is what starts it.
+        self.chat.update(cx, |pane, _| pane.watch_next(uid, id));
+        self.show_active_session(window, cx);
+        cx.notify();
     }
 
     /// Add a session running `spec` on the active root, not yet shown, and
@@ -598,8 +626,14 @@ impl Shell {
         let Some(uid) = self.active_session_uid() else {
             return;
         };
+        // One waiting for its host would only find it busy again: the way
+        // on is the host's restart, as its line's *Restart now* asks.
+        if let Some(host) = self.chat.read(cx).host_wait(uid, cx) {
+            self.ask_restart_host(host, window, cx);
+            return;
+        }
         if !self.chat.read(cx).turn_in_flight(uid, cx) {
-            self.restart_now(uid, window, cx);
+            self.restart_now(uid, false, window, cx);
             return;
         }
         let label = self.session_label(uid, cx);
@@ -613,13 +647,23 @@ impl Shell {
         // By uid: the question is about the session it was asked on,
         // whichever one shows by the time it is answered.
         self.confirm(ask, window, cx, move |shell, window, cx| {
-            shell.restart_now(uid, window, cx)
+            shell.restart_now(uid, false, window, cx)
         });
     }
 
-    /// Restart session `uid`'s adapter, no question asked.
-    fn restart_now(&mut self, uid: u64, window: &mut Window, cx: &mut Context<Self>) {
-        match self.chat.update(cx, |pane, cx| pane.restart(uid, cx)) {
+    /// Restart session `uid`'s adapter, no question asked; `after_service`
+    /// when its host's service has just been restarted onto this build.
+    pub(super) fn restart_now(
+        &mut self,
+        uid: u64,
+        after_service: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match self
+            .chat
+            .update(cx, |pane, cx| pane.restart(uid, after_service, cx))
+        {
             crate::chat::pane::Restart::Restarted => {
                 window.push_notification(crate::toast::info("Restarting the agent"), cx);
             }
@@ -679,7 +723,7 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let projects = self.page_projects();
+        let projects = self.local_page_projects();
         self.docks_aside(window, cx);
         let view: gpui::AnyView = self.tasks_page.clone().into();
         self.chat.update(cx, |pane, cx| {
@@ -715,32 +759,16 @@ impl Shell {
         self.hide_workbench(window, cx);
     }
 
-    /// Every project as the workspace page lists it, in rail order.
+    /// Every project as the workspace page lists it, in rail order, those on
+    /// a host included.
     pub(super) fn page_projects(&self) -> Vec<crate::page_parts::PageProject> {
-        let workspace = &self.window.workspace;
-        workspace
-            .display_order()
-            .into_iter()
-            .map(|idx| &workspace.roots[idx])
-            // A run's own worktree is not a project anybody chose, and its
-            // issues are the project's it was cut from.
-            .filter(|root| !root.transient)
-            .map(|root| crate::page_parts::PageProject {
-                label: SharedString::from(root.label.clone()),
-                root: root.path.clone(),
-                sessions: root
-                    .sessions
-                    .iter()
-                    .map(|session| (session.uid, SharedString::from(session.title().to_string())))
-                    .collect(),
-                git: self
-                    .window
-                    .git
-                    .get(&root.path)
-                    .map(gitstat::GitStatus::label),
-                issues: self.issues_file(&root.path),
-            })
-            .collect()
+        page_projects_in(&self.window.workspace, &self.window.git, Reach::Overview)
+    }
+
+    /// The projects the Tasks, Issues, Workflows and Schedules pages list:
+    /// those on this machine.
+    pub(super) fn local_page_projects(&self) -> Vec<crate::page_parts::PageProject> {
+        page_projects_in(&self.window.workspace, &self.window.git, Reach::Local)
     }
 
     /// Whether the workspace page is what the centre of the window shows, for
@@ -765,16 +793,9 @@ impl Shell {
         self.chat.read(cx).showing_page()
     }
 
-    /// The projects the pages list, as paths: every project but a run's own
-    /// worktree.
+    /// The projects the pages list, as paths.
     pub fn page_roots(&self) -> Vec<std::path::PathBuf> {
-        self.window
-            .workspace
-            .roots
-            .iter()
-            .filter(|root| !root.transient)
-            .map(|root| root.path.clone())
-            .collect()
+        page_roots_in(&self.window.workspace)
     }
 
     /// Show session `uid`, in whichever window holds it — bringing that window
@@ -815,4 +836,85 @@ impl Shell {
     pub fn answer_tail(&self, uid: u64, cx: &App) -> Option<String> {
         self.chat.read(cx).answer_tail(uid, cx)
     }
+}
+
+/// Which projects a page lists.
+#[derive(Clone, Copy)]
+pub(super) enum Reach {
+    /// The workspace page, which shows every project and its sessions.
+    Overview,
+    /// A page about issues, tasks, workflows or schedules: a folder on a host
+    /// has no issue files, runs or checks this machine can reach.
+    Local,
+}
+
+/// Whether a page of `reach` lists a project. A run's own worktree is not a
+/// project anybody chose, and its issues are the project's it was cut from.
+fn listed(root: &onehand_core::workspace::ProjectRoot, reach: Reach) -> bool {
+    !root.transient
+        && match reach {
+            Reach::Overview => true,
+            Reach::Local => root.on_host().is_none(),
+        }
+}
+
+/// The projects a page of `reach` lists, in rail order. A host's project has
+/// no `git status` or issue file here: what this machine files under its
+/// path is a folder of the same path here.
+pub(super) fn page_projects_in(
+    workspace: &onehand_core::workspace::Workspace,
+    git: &std::collections::HashMap<PathBuf, gitstat::GitStatus>,
+    reach: Reach,
+) -> Vec<crate::page_parts::PageProject> {
+    workspace
+        .display_order()
+        .into_iter()
+        .map(|idx| &workspace.roots[idx])
+        .filter(|root| listed(root, reach))
+        .map(|root| {
+            let local = root.local_path();
+            crate::page_parts::PageProject {
+                label: SharedString::from(root.label.clone()),
+                root: root.path.clone(),
+                host: root.on_host().cloned(),
+                sessions: root
+                    .sessions
+                    .iter()
+                    .map(|session| (session.uid, SharedString::from(session.title().to_string())))
+                    .collect(),
+                git: local
+                    .and_then(|path| git.get(path))
+                    .map(gitstat::GitStatus::label),
+                issues: local.and_then(|path| {
+                    Some(onehand_core::issues::file_for(
+                        workspace.storage_dir.as_deref()?,
+                        path,
+                    ))
+                }),
+            }
+        })
+        .collect()
+}
+
+/// The projects the pages list, as paths.
+pub(super) fn page_roots_in(
+    workspace: &onehand_core::workspace::Workspace,
+) -> Vec<std::path::PathBuf> {
+    workspace
+        .roots
+        .iter()
+        .filter(|root| listed(root, Reach::Local))
+        .map(|root| root.path.clone())
+        .collect()
+}
+
+/// Which of the configured agents is called `name`, the first when none is.
+fn agent_index(name: Option<SharedString>, cx: &App) -> usize {
+    name.and_then(|name| {
+        Shared::global(cx)
+            .agents
+            .iter()
+            .position(|spec| spec.name == name.as_ref())
+    })
+    .unwrap_or(0)
 }

@@ -205,6 +205,10 @@ pub struct ProjectFacts {
     pub check: bool,
     /// Removing it asks first, which its menu's ellipsis says.
     pub asks: bool,
+    /// On this machine, so there is a terminal to open and a `git status` to
+    /// refresh. A folder on a host has neither, nor a repository, a check or
+    /// an unattended switch.
+    pub local: bool,
 }
 
 impl ProjectFacts {
@@ -213,12 +217,14 @@ impl ProjectFacts {
     /// both build these and a copy in each is two answers to "is the switch
     /// offered here".
     pub fn of(root: &onehand_core::workspace::ProjectRoot, is_repo: bool) -> Self {
+        let local = root.on_host().is_none();
         Self {
             pinned: root.pinned,
-            is_repo,
-            unattended: (!root.transient).then_some(root.unattended),
-            check: root.check.is_some(),
+            is_repo: local && is_repo,
+            unattended: (local && !root.transient).then_some(root.unattended),
+            check: local && root.check.is_some(),
             asks: false,
+            local,
         }
     }
 }
@@ -240,6 +246,9 @@ pub struct ChatPane {
     /// maps this replaced could disagree with one another, is on
     /// [`Conversation`].
     conversations: HashMap<u64, Conversation>,
+    /// How many times a project page has asked a host for its sessions,
+    /// which numbers each ask.
+    host_asks: u64,
     active: Option<u64>,
     composer: Entity<Composer>,
     /// This pane's window, so a turn ending can ask whether *this* window is
@@ -279,6 +288,9 @@ pub struct ChatPane {
     /// Taken on use, so a conversation picked once cannot be resumed again by a
     /// later switch back to that session.
     pending_resume: Option<(u64, PathBuf)>,
+    /// The host session the next showing of a session reads, taken on use
+    /// as the archive above is.
+    pending_watch: Option<(u64, onehand_core::host::wire::HostSession)>,
     /// A fork read off disk, waiting for the session the shell mints for it.
     pending_fork: Option<fork::StagedFork>,
     /// Whether the window's rail is hidden, so this pane can offer the way
@@ -407,6 +419,7 @@ impl ChatPane {
             Self {
                 focus_handle: cx.focus_handle(),
                 conversations: HashMap::new(),
+                host_asks: 0,
                 active: None,
                 composer,
                 zoom: crate::zoom::Zoom::default(),
@@ -416,6 +429,7 @@ impl ChatPane {
                 page: None,
                 archives: None,
                 pending_resume: None,
+                pending_watch: None,
                 pending_fork: None,
                 rail_hidden: false,
                 background_menu: std::cell::Cell::new(None),

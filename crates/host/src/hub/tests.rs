@@ -7,7 +7,7 @@ use onehand_core::acp::types::ReqRx;
 use onehand_core::acp::{AcpEvent, AcpRequest, Attachment, Opening, PermissionRequest};
 use onehand_core::config::{AgentSpec, PresetId};
 use onehand_core::host::journal;
-use onehand_core::host::wire::{Entry, FromHost, Readiness};
+use onehand_core::host::wire::{Entry, FromHost, HostSession, Readiness};
 use serde_json::json;
 use tokio::sync::mpsc;
 
@@ -45,7 +45,7 @@ fn agent() -> AgentSpec {
 
 /// A fake agent on a session that is open: push its events, read its requests.
 struct Fake {
-    session: String,
+    session: HostSession,
     events: fmpsc::UnboundedSender<AcpEvent>,
     requests: ReqRx,
 }
@@ -83,7 +83,7 @@ fn open(hub: &Arc<Mutex<Hub>>, opened: &Opened, ready: bool) -> Fake {
     fake
 }
 
-fn watch(hub: &Arc<Mutex<Hub>>, session: &str) -> mpsc::UnboundedReceiver<FromHost> {
+fn watch(hub: &Arc<Mutex<Hub>>, session: &HostSession) -> mpsc::UnboundedReceiver<FromHost> {
     let (sink, lines) = mpsc::unbounded_channel();
     Hub::watch(hub, session, sink).unwrap();
     lines
@@ -149,6 +149,13 @@ fn kind(entry: &Entry) -> String {
 
 fn kinds(entries: &[(u64, Entry)]) -> Vec<String> {
     entries.iter().map(|(_, e)| kind(e)).collect()
+}
+
+/// What a journal read holds, without the times.
+fn untimed(read: Vec<(u64, u64, Entry)>) -> Vec<(u64, Entry)> {
+    read.into_iter()
+        .map(|(seq, _, entry)| (seq, entry))
+        .collect()
 }
 
 #[tokio::test]
@@ -284,11 +291,19 @@ async fn attachments_are_dropped_and_said() {
     };
     assert_eq!(text, "look");
     assert!(attachments.is_empty());
-    let dir = hub.lock().unwrap().dir.join("sessions").join(&fake.session);
+    let dir = hub
+        .lock()
+        .unwrap()
+        .dir
+        .join("sessions")
+        .join(&fake.session.0);
     let journal = journal::read(&dir).unwrap();
     // In the order the laptop saw them live: its prompt, then the notice.
-    assert_eq!(kinds(&journal), ["ready", "request:Prompt", "event:Notice"]);
-    let Entry::Event(AcpEvent::Notice(text)) = &journal[2].1 else {
+    assert_eq!(
+        kinds(&untimed(journal.clone())),
+        ["ready", "request:Prompt", "event:Notice"]
+    );
+    let Entry::Event(AcpEvent::Notice(text)) = &journal[2].2 else {
         panic!("the third entry is not the notice");
     };
     assert_eq!(
@@ -408,7 +423,7 @@ async fn a_session_that_had_ended_is_not_ended_twice() {
     settle().await;
     let dir = hub.lock().unwrap().dir.clone();
     drop(hub);
-    let sessions = dir.join("sessions").join(&fake.session);
+    let sessions = dir.join("sessions").join(&fake.session.0);
     let before = journal::read(&sessions).unwrap().len();
 
     let (hub, _opened) = hub_on(dir);
@@ -421,10 +436,13 @@ async fn a_directory_without_its_session_file_is_skipped() {
     let dir = scratch("no-session-file");
     let stray = dir.join("sessions").join("1-1");
     let mut j = Journal::open(&stray).unwrap();
-    j.append(&Entry::Ready(Readiness {
-        resumed: false,
-        forkable: false,
-    }))
+    j.append(
+        0,
+        &Entry::Ready(Readiness {
+            resumed: false,
+            forkable: false,
+        }),
+    )
     .unwrap();
     drop(j);
     let (hub, _opened) = hub_on(dir);
@@ -510,8 +528,46 @@ async fn a_request_the_agent_cannot_take_is_not_journaled() {
     drop(requests);
     let refused = hub.lock().unwrap().request(&session, prompt("go"));
     assert_eq!(refused, Err("this session has ended".to_string()));
-    let dir = hub.lock().unwrap().dir.join("sessions").join(&session);
-    assert_eq!(kinds(&journal::read(&dir).unwrap()), ["ready"]);
+    let dir = hub.lock().unwrap().dir.join("sessions").join(&session.0);
+    assert_eq!(kinds(&untimed(journal::read(&dir).unwrap())), ["ready"]);
     assert!(!hub.lock().unwrap().list()[0].busy);
     drop(events);
+}
+
+#[tokio::test]
+async fn recorded_entries_carry_their_time() {
+    let (hub, opened) = hub("time");
+    let before = unix_secs();
+    let fake = open(&hub, &opened, true);
+    settle().await;
+    let mut lines = watch(&hub, &fake.session);
+    fake.push(chunk("hi"));
+    settle().await;
+    let after = unix_secs();
+    let mut times = Vec::new();
+    while let Ok(line) = lines.try_recv() {
+        match line {
+            FromHost::Entry { at, .. } => times.push(at),
+            FromHost::Replay { .. } => {}
+            FromHost::Answer { .. } | FromHost::Kicked => panic!("a sink only carries entries"),
+        }
+    }
+    // The replayed Ready, then the live chunk.
+    assert_eq!(times.len(), 2);
+    assert!(
+        times.iter().all(|at| (before..=after).contains(at)),
+        "{times:?}"
+    );
+    let dir = hub
+        .lock()
+        .unwrap()
+        .dir
+        .join("sessions")
+        .join(&fake.session.0);
+    let journaled: Vec<u64> = journal::read(&dir)
+        .unwrap()
+        .iter()
+        .map(|(_, at, _)| *at)
+        .collect();
+    assert_eq!(journaled, times);
 }

@@ -661,6 +661,8 @@ pub enum AcpEvent {
     /// journal. Applied to the transcript as the request would have been;
     /// never sent.
     Echo(AcpRequest),
+    /// The events after this one happened at this unix second; a host replay says it.
+    At(u64),
     /// The adapter died / timed out / closed — the session is now `Failed`
     /// (restartable with Ctrl+Shift+R). Terminal for this worker.
     Disconnected(String),

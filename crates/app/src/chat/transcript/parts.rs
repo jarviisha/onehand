@@ -3,6 +3,7 @@ use super::metrics::{CARD_PAD, DETAIL_OPEN_H, FOLD_INDENT, TEXT_SM, TIGHT_GAP, T
 use crate::chat::session::{ChatEvent, ChatSession};
 use crate::controls::Named as _;
 use crate::controls::Quiet as _;
+use crate::controls::Refuses as _;
 use crate::controls::Short as _;
 use crate::tokens::LEADING;
 use crate::tokens::SCROLLBAR_W;
@@ -175,6 +176,7 @@ pub(super) fn fork_button(
             "Fork from here: a new session from just before this prompt, with it in the \
              composer. Files stay as they are",
         )
+        .refuses(session.read(cx).on_host.then_some("Not on a host yet"))
         .on_click(move |_, _, cx: &mut App| {
             session.update(cx, |_, cx| cx.emit(ChatEvent::Fork(target)));
         })

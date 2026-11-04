@@ -84,7 +84,7 @@ async fn main() {
             e @ (AcpEvent::SubagentSpawned { .. }
             | AcpEvent::SubagentEnded { .. }
             | AcpEvent::InChild { .. }) => eprintln!("== SUBAGENT {e:?} =="),
-            AcpEvent::StopRefused { .. } | AcpEvent::Echo(_) => {}
+            AcpEvent::StopRefused { .. } | AcpEvent::Echo(_) | AcpEvent::At(_) => {}
             AcpEvent::Notice(text) => eprintln!("== NOTICE: {text} =="),
             AcpEvent::Interrupted => eprintln!("== INTERRUPTED =="),
             AcpEvent::ToolCall(tc) => {

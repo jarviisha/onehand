@@ -174,12 +174,11 @@ impl Shell {
         let key = crate::settings::check_key(&spec);
         // A session starts its agent in the project's root, so a relative
         // command is looked for from there: the project on screen is the one
-        // the next *New session* would start in.
+        // the next *New session* would start in. A project on a host gives
+        // none: its folder names nothing on this machine.
         let root = self
-            .window
-            .workspace
-            .active_root()
-            .map(|root| root.path.clone());
+            .local_root(self.window.workspace.active_root)
+            .map(std::path::Path::to_path_buf);
         self.agent_checks.insert(key.clone(), AgentCheck::Running);
         cx.notify();
         cx.spawn(async move |shell, cx| {

@@ -20,6 +20,7 @@ use onehand_ui::TallIcon as _;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+mod host;
 mod schedules_box;
 use schedules_box::schedules_box;
 
@@ -42,10 +43,19 @@ pub(super) struct EmptyProject {
     /// Where it is, which is what its archived conversations are keyed by --
     /// and what tells one scan's answer from another's.
     pub(super) path: PathBuf,
+    /// The host the folder is on; `None` for one on this machine.
+    pub(super) host: Option<onehand_core::workspace::HostName>,
     /// Its past conversations, across every agent. `None` while the scan is
     /// still running, which is a different thing from a project that has none:
     /// one is a wait and the other is an answer.
     pub(super) history: Option<Vec<ConvMeta>>,
+    /// What the host said about its sessions in the folder, for one on a
+    /// host; `None` until it has answered.
+    pub(super) listed: host::Listed,
+    /// Whether an ask of the host is under way.
+    pub(super) listing: bool,
+    /// The newest ask of the host, so an older answer landing late is dropped.
+    pub(super) asked: u64,
     /// What the page's own menu needs to know about the project and cannot
     /// work out: they live in the workspace tree and in a `git status` sweep,
     /// and both are the shell's. Pushed rather than asked for, like everything
@@ -139,7 +149,12 @@ impl ChatPane {
     /// question. The resume picker inside a session is the narrower one -- there
     /// the agent is already chosen, because the session it belongs to has one.
     pub(super) fn scan_project_history(&mut self, cx: &mut Context<Self>) {
-        let Some(path) = self.empty.as_ref().map(|project| project.path.clone()) else {
+        let Some(path) = self
+            .empty
+            .as_ref()
+            .filter(|project| project.host.is_none())
+            .map(|project| project.path.clone())
+        else {
             return;
         };
         let scan = path.clone();
@@ -326,12 +341,11 @@ impl ChatPane {
 
         let root = project.path.clone();
         let checking = crate::task::checking(&root, cx);
-        let path = std::env::home_dir()
-            .and_then(|home| project.path.strip_prefix(&home).ok())
-            .map_or_else(
-                || project.path.display().to_string(),
-                |rest| format!("~/{}", rest.display()),
-            );
+        let path = host::place(
+            project.host.as_ref(),
+            &project.path,
+            std::env::home_dir().as_deref(),
+        );
         let place = std::iter::once(path)
             .chain(self.git.as_ref().map(ToString::to_string))
             .collect::<Vec<_>>()
@@ -357,6 +371,12 @@ impl ChatPane {
                         .into_any_element()
                 })
                 .into_iter()
+                .chain(
+                    project
+                        .host
+                        .as_ref()
+                        .map(|host| host::refresh(host, project.listing, cx)),
+                )
                 .chain([new_session(cx)])
                 .collect(),
             cx,
@@ -482,8 +502,11 @@ impl ChatPane {
         ))
         .children((hidden > 0).then(|| muted_line(format!("{hidden} more"))));
 
-        let tasks = tasks_box(&project.path, cx);
-        let schedules = schedules_box(&project.path, cx);
+        // Tasks and schedules are this machine's, found by a folder here: a
+        // folder on a host has none, and one here of the same path is not it.
+        let local = project.host.is_none();
+        let tasks = local.then(|| tasks_box(&project.path, cx));
+        let schedules = local.then(|| schedules_box(&project.path, cx));
         // What the project is set to: its check command, the shell's field.
         let settings = project.check_input.as_ref().map(|input| {
             page_card("Settings", None, None, cx).child(onehand_ui::field(
@@ -501,9 +524,14 @@ impl ChatPane {
             .v_flex()
             .gap_4()
             .w_full()
-            .child(history)
-            .child(tasks)
-            .child(schedules)
+            .child(match &project.host {
+                Some(host) => {
+                    host::host_sessions(host, &project.path, &project.listed, project.listing, cx)
+                }
+                None => history,
+            })
+            .children(tasks)
+            .children(schedules)
             .children(settings);
 
         div()

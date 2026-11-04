@@ -200,7 +200,10 @@ pub(super) fn ended(
                 | E::PickRefused(_)
                 | E::CycleEnded
                 | E::StopRefused(_)
-                | E::Fork(_) => {}
+                | E::Fork(_)
+                | E::HostSession(_)
+                | E::HostBusy
+                | E::RestartHost(_) => {}
             }
         },
     );

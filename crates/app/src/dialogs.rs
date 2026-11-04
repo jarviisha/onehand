@@ -1,5 +1,6 @@
 //! The modal windows: the conversation rename, the worktree split, the branch
-//! rename, the issue picker, the workflow launcher and the agent form.
+//! rename, the issue picker, the workflow launcher, the agent form and the
+//! form that adds a project on a host.
 //!
 //! The component library owns overlays, focus traps and Escape handling.
 
@@ -23,11 +24,15 @@ use onehand_ui::Tall as _;
 
 mod agent;
 mod branch;
+mod host_project;
 mod issue;
 
 pub use agent::agent_form;
 
 pub use branch::{new_worktree, rename_branch};
+
+pub use host_project::add_host_project;
+pub(crate) use host_project::{add_refusal, busy_body};
 
 pub use issue::pick_issue;
 pub(crate) use issue::{PickJudged, issue_row, issue_workflow_menu, page_row};

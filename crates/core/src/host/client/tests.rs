@@ -1,4 +1,6 @@
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use tokio::io::{BufReader, DuplexStream, Lines, ReadHalf, WriteHalf};
 
@@ -23,9 +25,14 @@ impl Host {
     }
 
     async fn entry(&mut self, seq: u64, entry: Entry) {
+        self.timed(seq, 0, entry).await;
+    }
+
+    async fn timed(&mut self, seq: u64, at: u64, entry: Entry) {
         self.send(FromHost::Entry {
-            session: "s1".into(),
+            session: s1(),
             seq,
+            at,
             entry,
         })
         .await;
@@ -42,11 +49,8 @@ impl Host {
     /// Read the `Watch` a `watch` sends, and start its replay; its id.
     async fn replaying(&mut self) -> u64 {
         let Question { id, call } = self.ask().await;
-        assert!(matches!(call, Call::Watch { session } if session == "s1"));
-        self.send(FromHost::Replay {
-            session: "s1".into(),
-        })
-        .await;
+        assert!(matches!(call, Call::Watch { session } if session == s1()));
+        self.send(FromHost::Replay { session: s1() }).await;
         id
     }
 
@@ -55,6 +59,14 @@ impl Host {
         let id = self.replaying().await;
         self.answer(id, Reply::Done).await;
     }
+}
+
+fn s1() -> HostSession {
+    HostSession("s1".into())
+}
+
+fn build(id: &str) -> Build {
+    Build(id.into())
 }
 
 fn pair() -> (HostConn, Host) {
@@ -73,7 +85,7 @@ fn pair() -> (HostConn, Host) {
 #[tokio::test]
 async fn watch_maps_entries_to_events() {
     let (conn, mut host) = pair();
-    let mut events = conn.watch("s1");
+    let mut events = conn.watch(&s1());
     host.watched().await;
     host.entry(
         0,
@@ -120,7 +132,7 @@ async fn watch_maps_entries_to_events() {
 #[tokio::test]
 async fn requests_on_tx_go_to_the_host() {
     let (conn, mut host) = pair();
-    let mut events = conn.watch("s1");
+    let mut events = conn.watch(&s1());
     host.watched().await;
     host.entry(
         0,
@@ -137,18 +149,18 @@ async fn requests_on_tx_go_to_the_host() {
     let Question { call, .. } = host.ask().await;
     assert!(matches!(
         call,
-        Call::Request { session, request: AcpRequest::Cancel } if session == "s1"
+        Call::Request { session, request: AcpRequest::Cancel } if session == s1()
     ));
 }
 
 #[tokio::test]
 async fn closing_the_stream_ends_watch_with_disconnected() {
     let (conn, mut host) = pair();
-    let mut events = conn.watch("s1");
+    let mut events = conn.watch(&s1());
     host.watched().await;
     drop(host);
     assert!(matches!(
-        events.next().await,
+        made(&mut events).await,
         Some(AcpEvent::Disconnected(why)) if why.contains("lost the connection")
     ));
     assert!(events.next().await.is_none());
@@ -157,11 +169,11 @@ async fn closing_the_stream_ends_watch_with_disconnected() {
 #[tokio::test]
 async fn kicked_ends_watch_saying_so() {
     let (conn, mut host) = pair();
-    let mut events = conn.watch("s1");
+    let mut events = conn.watch(&s1());
     host.watched().await;
     host.send(FromHost::Kicked).await;
     assert!(matches!(
-        events.next().await,
+        made(&mut events).await,
         Some(AcpEvent::Disconnected(why)) if why.contains("attached from another machine")
     ));
     assert!(events.next().await.is_none());
@@ -187,16 +199,16 @@ async fn open_clears_env() {
     host.answer(
         id,
         Reply::Opened {
-            session: "s9".into(),
+            session: HostSession("s9".into()),
         },
     )
     .await;
-    assert_eq!(opened.await.unwrap(), "s9");
+    assert_eq!(opened.await.unwrap().0, "s9");
 }
 
 /// A host on build `theirs`, with `busy` mid-turn, answering every `Hello`
 /// and counting the `Shutdown`s it is sent until the laptop goes.
-fn fake_host(theirs: &str, busy: Vec<String>) -> (HostConn, tokio::task::JoinHandle<usize>) {
+fn fake_host(theirs: &str, busy: Vec<HostSession>) -> (HostConn, tokio::task::JoinHandle<usize>) {
     let (conn, mut host) = pair();
     let theirs = theirs.to_string();
     let fake = tokio::spawn(async move {
@@ -205,7 +217,7 @@ fn fake_host(theirs: &str, busy: Vec<String>) -> (HostConn, tokio::task::JoinHan
             let Question { id, call } = serde_json::from_str(&line).unwrap();
             let reply = match call {
                 Call::Hello { .. } => Reply::Welcome {
-                    build: theirs.clone(),
+                    build: build(&theirs),
                     busy: busy.clone(),
                 },
                 Call::Shutdown => {
@@ -221,9 +233,12 @@ fn fake_host(theirs: &str, busy: Vec<String>) -> (HostConn, tokio::task::JoinHan
     (conn, fake)
 }
 
-async fn settle_against(theirs: &str, busy: Vec<String>) -> (Result<Settled, HostError>, usize) {
+async fn settle_against(
+    theirs: &str,
+    busy: Vec<HostSession>,
+) -> (Result<Settled, HostError>, usize) {
     let (conn, fake) = fake_host(theirs, busy);
-    let settled = settle(&conn, "ours").await;
+    let settled = settle(&conn, &build("ours")).await;
     drop(conn);
     (settled, fake.await.unwrap())
 }
@@ -237,10 +252,10 @@ async fn same_build_settles_at_once() {
 
 #[tokio::test]
 async fn mismatch_with_busy_sessions_refuses() {
-    let (settled, shutdowns) = settle_against("old", vec!["s1".into()]).await;
+    let (settled, shutdowns) = settle_against("old", vec![s1()]).await;
     assert!(matches!(
         settled,
-        Err(HostError::Busy { build, busy }) if build == "old" && busy == ["s1"]
+        Err(HostError::Busy { build, busy }) if build.0 == "old" && busy == [s1()]
     ));
     assert_eq!(shutdowns, 0);
 }
@@ -255,13 +270,13 @@ async fn mismatch_idle_shuts_down_and_reattaches() {
 #[tokio::test]
 async fn after_a_restart_another_build_is_a_fault_not_a_second_shutdown() {
     let (conn, fake) = fake_host("old", vec![]);
-    let again = settle_again(&conn, "ours").await;
+    let again = settle_again(&conn, &build("ours")).await;
     drop(conn);
     assert!(matches!(again, Err(HostError::Protocol(why)) if why.contains("old")));
     assert_eq!(fake.await.unwrap(), 0);
 
     let (conn, fake) = fake_host("ours", vec![]);
-    assert!(settle_again(&conn, "ours").await.is_ok());
+    assert!(settle_again(&conn, &build("ours")).await.is_ok());
     drop(conn);
     assert_eq!(fake.await.unwrap(), 0);
 }
@@ -293,7 +308,7 @@ async fn pending_calls_fail_when_the_stream_closes() {
 #[tokio::test]
 async fn a_refused_watch_ends_in_one_disconnected() {
     let (conn, mut host) = pair();
-    let mut events = conn.watch("s1");
+    let mut events = conn.watch(&s1());
     let Question { id, .. } = host.ask().await;
     host.send(FromHost::Answer {
         id,
@@ -301,7 +316,7 @@ async fn a_refused_watch_ends_in_one_disconnected() {
     })
     .await;
     assert!(matches!(
-        events.next().await,
+        made(&mut events).await,
         Some(AcpEvent::Disconnected(why)) if why == "no such session"
     ));
     assert!(events.next().await.is_none());
@@ -310,7 +325,7 @@ async fn a_refused_watch_ends_in_one_disconnected() {
 #[tokio::test]
 async fn a_refused_request_is_said_as_an_error() {
     let (conn, mut host) = pair();
-    let mut events = conn.watch("s1");
+    let mut events = conn.watch(&s1());
     host.watched().await;
     host.entry(
         0,
@@ -331,7 +346,7 @@ async fn a_refused_request_is_said_as_an_error() {
     })
     .await;
     assert!(matches!(
-        events.next().await,
+        made(&mut events).await,
         Some(AcpEvent::Error { text, .. }) if text == "the session ended"
     ));
 }
@@ -339,7 +354,7 @@ async fn a_refused_request_is_said_as_an_error() {
 #[tokio::test]
 async fn a_live_ready_reuses_the_request_channel() {
     let (conn, mut host) = pair();
-    let mut events = conn.watch("s1");
+    let mut events = conn.watch(&s1());
     host.watched().await;
     let ready = Entry::Ready(Readiness {
         resumed: false,
@@ -359,7 +374,7 @@ async fn a_live_ready_reuses_the_request_channel() {
 #[tokio::test]
 async fn a_session_that_ends_ends_its_watch() {
     let (conn, mut host) = pair();
-    let mut events = conn.watch("s1");
+    let mut events = conn.watch(&s1());
     host.watched().await;
     host.entry(
         0,
@@ -395,7 +410,7 @@ async fn watching_again_skips_what_the_first_watch_had_in_flight() {
         resumed: false,
         forkable: false,
     });
-    let mut first = conn.watch("s1");
+    let mut first = conn.watch(&s1());
     host.watched().await;
     host.entry(0, ready.clone()).await;
     host.entry(1, chunk("a")).await;
@@ -405,14 +420,11 @@ async fn watching_again_skips_what_the_first_watch_had_in_flight() {
     ));
     assert_eq!(next_chunk(&mut first).await, "a");
 
-    let mut second = conn.watch("s1");
+    let mut second = conn.watch(&s1());
     let Question { id, .. } = host.ask().await;
     // Sent live to the first watch before the host read the second.
     host.entry(2, chunk("b")).await;
-    host.send(FromHost::Replay {
-        session: "s1".into(),
-    })
-    .await;
+    host.send(FromHost::Replay { session: s1() }).await;
     for (seq, entry) in [(0, ready), (1, chunk("a")), (2, chunk("b"))] {
         host.entry(seq, entry).await;
     }
@@ -430,7 +442,7 @@ async fn watching_again_skips_what_the_first_watch_had_in_flight() {
 #[tokio::test]
 async fn a_replay_whose_first_line_is_unreadable_is_delivered_whole() {
     let (conn, mut host) = pair();
-    let mut events = conn.watch("s1");
+    let mut events = conn.watch(&s1());
     let id = host.replaying().await;
     // Line 0 was torn, or is an entry this build cannot read.
     host.entry(1, chunk("a")).await;
@@ -452,7 +464,7 @@ async fn a_replay_whose_first_line_is_unreadable_is_delivered_whole() {
 #[tokio::test]
 async fn a_replay_gives_one_live_connected_after_its_last_event() {
     let (conn, mut host) = pair();
-    let mut events = conn.watch("s1");
+    let mut events = conn.watch(&s1());
     let id = host.replaying().await;
     host.entry(
         0,
@@ -487,7 +499,7 @@ async fn a_replay_gives_one_live_connected_after_its_last_event() {
     tx.send(AcpRequest::Cancel).unwrap();
     let Question { call, .. } = host.ask().await;
     assert!(
-        matches!(&call, Call::Request { session, request: AcpRequest::Cancel } if session == "s1"),
+        matches!(&call, Call::Request { session, request: AcpRequest::Cancel } if *session == s1()),
         "{call:?}"
     );
     host.entry(3, chunk("b")).await;
@@ -497,7 +509,7 @@ async fn a_replay_gives_one_live_connected_after_its_last_event() {
 #[tokio::test]
 async fn a_replay_that_ended_the_session_gives_no_connected() {
     let (conn, mut host) = pair();
-    let mut events = conn.watch("s1");
+    let mut events = conn.watch(&s1());
     let id = host.replaying().await;
     host.entry(
         0,
@@ -521,7 +533,7 @@ async fn a_replay_that_ended_the_session_gives_no_connected() {
 #[tokio::test]
 async fn what_a_replay_makes_the_chat_send_never_reaches_the_host() {
     let (conn, mut host) = pair();
-    let mut events = conn.watch("s1");
+    let mut events = conn.watch(&s1());
     let id = host.replaying().await;
     host.entry(
         0,
@@ -565,7 +577,7 @@ async fn what_a_replay_makes_the_chat_send_never_reaches_the_host() {
 #[tokio::test]
 async fn a_refused_watch_forgets_its_request_channel() {
     let (conn, mut host) = pair();
-    let mut first = conn.watch("s1");
+    let mut first = conn.watch(&s1());
     host.watched().await;
     let ready = Entry::Ready(Readiness {
         resumed: false,
@@ -575,7 +587,7 @@ async fn a_refused_watch_forgets_its_request_channel() {
     let Some(AcpEvent::Connected { tx: held, .. }) = first.next().await else {
         panic!("no Connected");
     };
-    let mut refused = conn.watch("s1");
+    let mut refused = conn.watch(&s1());
     let Question { id, .. } = host.ask().await;
     host.send(FromHost::Answer {
         id,
@@ -583,10 +595,10 @@ async fn a_refused_watch_forgets_its_request_channel() {
     })
     .await;
     assert!(matches!(
-        refused.next().await,
+        made(&mut refused).await,
         Some(AcpEvent::Disconnected(_))
     ));
-    let mut third = conn.watch("s1");
+    let mut third = conn.watch(&s1());
     host.watched().await;
     host.entry(1, ready).await;
     let Some(AcpEvent::Connected { tx, .. }) = third.next().await else {
@@ -601,12 +613,12 @@ async fn a_refused_watch_forgets_its_request_channel() {
 #[tokio::test]
 async fn watching_again_ends_the_first_watch() {
     let (conn, mut host) = pair();
-    let mut first = conn.watch("s1");
-    let _second = conn.watch("s1");
+    let mut first = conn.watch(&s1());
+    let _second = conn.watch(&s1());
     host.watched().await;
     host.watched().await;
     assert!(matches!(
-        first.next().await,
+        made(&mut first).await,
         Some(AcpEvent::Disconnected(why)) if why.contains("watched elsewhere")
     ));
     assert!(first.next().await.is_none());
@@ -618,84 +630,20 @@ async fn what_was_queued_as_the_stream_ended_is_refused() {
     let (asked, answer) = oneshot::channel();
     let (watched, mut events) = events::unbounded();
     tx.send(Cmd::Ask(Call::List, asked)).ok().unwrap();
-    tx.send(Cmd::Watch("s1".into(), watched)).ok().unwrap();
+    tx.send(Cmd::Watch(s1(), watched)).ok().unwrap();
     refuse_queued(&mut rx, "gone");
     assert!(matches!(answer.await, Ok(Err(HostError::Unreachable(why))) if why == "gone"));
     assert!(matches!(
-        events.next().await,
+        made(&mut events).await,
         Some(AcpEvent::Disconnected(why)) if why == "gone"
     ));
-    assert!(tx
-        .send(Cmd::Request("s1".into(), AcpRequest::Cancel))
-        .is_err());
-}
-
-/// A scratch directory for an install, run here through `sh`.
-fn install_dir(name: &str) -> String {
-    let dir = std::env::temp_dir().join(format!("onehand-install-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    dir.display().to_string()
-}
-
-const HERE: HostAddr = HostAddr {
-    ssh: String::new(),
-    local: true,
-};
-
-#[tokio::test]
-async fn a_copy_that_names_its_build_is_moved_into_place() {
-    let dir = install_dir("good");
-    let script = b"#!/bin/sh\necho abc\n";
-    run(&HERE, &copy_command(&dir, "abc"), script)
-        .await
-        .unwrap();
-    let path = Path::new(&dir).join("onehand-host");
-    assert_eq!(std::fs::read(&path).unwrap(), script);
-    assert!(!Path::new(&dir).join("onehand-host.tmp").exists());
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[tokio::test]
-async fn a_cut_short_copy_is_never_installed() {
-    let dir = install_dir("short");
-    // What a copy cut off mid-way leaves: a file that cannot name the build.
-    let script = b"#!/bin/sh\necho ab";
-    let copied = run(&HERE, &copy_command(&dir, "abc"), script).await;
-    assert!(matches!(copied, Err(HostError::Unreachable(why)) if why.contains("cut short")));
-    assert!(!Path::new(&dir).join("onehand-host").exists());
-    assert!(!Path::new(&dir).join("onehand-host.tmp").exists());
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[tokio::test]
-async fn a_copy_that_cannot_run_here_says_why_and_is_never_installed() {
-    let dir = install_dir("old-glibc");
-    // What a binary built against a newer C library prints as it fails to load.
-    let script = b"#!/bin/sh\necho \"version 'GLIBC_2.39' not found\" >&2\nexit 1\n";
-    let copied = run(&HERE, &copy_command(&dir, "abc"), script).await;
-    assert!(
-        matches!(&copied, Err(HostError::Unreachable(why))
-            if why.contains("GLIBC_2.39") && !why.contains("cut short")),
-        "{copied:?}"
-    );
-    assert!(!Path::new(&dir).join("onehand-host").exists());
-    assert!(!Path::new(&dir).join("onehand-host.tmp").exists());
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[test]
-fn the_probe_is_read_after_its_marker_whatever_an_rc_file_prints() {
-    let out = format!("Welcome to the box!\n{PROBE}\nLinux x86_64\npresent\n");
-    assert_eq!(probed(&out), ("Linux x86_64", true));
-    let out = format!("{PROBE} is a word too\n{PROBE}\nDarwin arm64\n");
-    assert_eq!(probed(&out), ("Darwin arm64", false));
-    assert_eq!(probed("banner only\n"), ("", false));
+    assert!(tx.send(Cmd::Request(s1(), AcpRequest::Cancel)).is_err());
 }
 
 #[tokio::test]
 async fn a_card_answered_during_a_rewatch_reaches_the_host() {
     let (conn, mut host) = pair();
-    let mut first = conn.watch("s1");
+    let mut first = conn.watch(&s1());
     host.watched().await;
     host.entry(
         0,
@@ -708,7 +656,7 @@ async fn a_card_answered_during_a_rewatch_reaches_the_host() {
     let Some(AcpEvent::Connected { tx, .. }) = first.next().await else {
         panic!("no Connected");
     };
-    let _second = conn.watch("s1");
+    let _second = conn.watch(&s1());
     let Question { call, .. } = host.ask().await;
     assert!(matches!(call, Call::Watch { .. }), "{call:?}");
     // The second watch is still replaying: its Watch has no answer yet.
@@ -737,7 +685,7 @@ async fn an_unanswered_hello_ends_at_its_deadline() {
     let (conn, mut host) = pair();
     let said = tokio::spawn({
         let conn = conn.clone();
-        async move { hello(&conn, "ours").await }
+        async move { hello(&conn, &build("ours")).await }
     });
     let Question { id, call } = host.ask().await;
     assert!(matches!(call, Call::Hello { .. }));
@@ -756,24 +704,21 @@ async fn an_unanswered_hello_ends_at_its_deadline() {
 #[tokio::test]
 async fn a_watch_starts_only_at_its_own_marker() {
     let (conn, mut host) = pair();
-    let mut first = conn.watch("s1");
-    let mut second = conn.watch("s1");
+    let mut first = conn.watch(&s1());
+    let mut second = conn.watch(&s1());
     let Question { id: one, .. } = host.ask().await;
     let Question { id: two, .. } = host.ask().await;
     // As the host sends them: each watch's replay, then its answer, in turn.
     // Told apart by their text, so the test sees whose replay was taken.
     for (id, text) in [(one, "first's"), (two, "second's")] {
-        host.send(FromHost::Replay {
-            session: "s1".into(),
-        })
-        .await;
+        host.send(FromHost::Replay { session: s1() }).await;
         host.entry(0, chunk(text)).await;
         host.entry(1, chunk("b")).await;
         host.answer(id, Reply::Done).await;
     }
     host.entry(2, chunk("c")).await;
     assert!(matches!(
-        first.next().await,
+        made(&mut first).await,
         Some(AcpEvent::Disconnected(why)) if why.contains("watched elsewhere")
     ));
     assert_eq!(next_chunk(&mut second).await, "second's");
@@ -781,7 +726,197 @@ async fn a_watch_starts_only_at_its_own_marker() {
     assert_eq!(next_chunk(&mut second).await, "c");
     drop(host);
     assert!(matches!(
-        second.next().await,
+        made(&mut second).await,
         Some(AcpEvent::Disconnected(why)) if why.contains("lost the connection")
     ));
+}
+
+#[tokio::test]
+async fn watch_says_the_time_before_entries_whose_second_changed() {
+    let (conn, mut host) = pair();
+    let mut events = conn.watch(&s1());
+    host.watched().await;
+    host.timed(0, 100, chunk("a")).await;
+    host.timed(1, 100, chunk("b")).await;
+    host.timed(2, 105, chunk("c")).await;
+    assert!(matches!(events.next().await, Some(AcpEvent::At(100))));
+    assert_eq!(next_chunk(&mut events).await, "a");
+    assert_eq!(next_chunk(&mut events).await, "b");
+    assert!(matches!(events.next().await, Some(AcpEvent::At(105))));
+    assert_eq!(next_chunk(&mut events).await, "c");
+}
+
+#[tokio::test]
+async fn open_errors_name_the_host() {
+    let (conn, mut host) = pair();
+    let opening = tokio::spawn(async move {
+        conn.open("/w".into(), AgentSpec::default(), Opening::Fresh)
+            .await
+    });
+    let Question { id, .. } = host.ask().await;
+    host.send(FromHost::Answer {
+        id,
+        result: Err("`claude` is not on this machine — install it there".into()),
+    })
+    .await;
+    let opened = opening.await.unwrap();
+    assert!(
+        matches!(&opened, Err(HostError::Protocol(why))
+            if why == "On vps: `claude` is not on this machine — install it there"),
+        "{opened:?}"
+    );
+}
+
+/// Every failure of a call names the host but a busy one, which is said where
+/// the attach was turned down.
+#[test]
+fn every_open_error_but_busy_names_the_host() {
+    let named = |e| on_host("vps", e).to_string();
+    assert_eq!(
+        named(HostError::Unsupported("Plan9 mips".into())),
+        "On vps: Plan9 mips"
+    );
+    assert_eq!(named(HostError::Unreachable("gone".into())), "On vps: gone");
+    assert_eq!(named(HostError::Protocol("no".into())), "On vps: no");
+    let busy = HostError::Busy {
+        build: Build("old".into()),
+        busy: Vec::new(),
+    };
+    assert_eq!(named(busy), "the host runs another build (old)");
+}
+
+#[tokio::test]
+async fn is_dir_asks_the_host() {
+    let (conn, mut host) = pair();
+    let probing = tokio::spawn(async move { conn.is_dir(Path::new("/srv/app")).await });
+    let Question { id, call } = host.ask().await;
+    assert!(
+        matches!(&call, Call::Probe { path } if path == Path::new("/srv/app")),
+        "{call:?}"
+    );
+    host.answer(id, Reply::Probed { is_dir: true }).await;
+    assert!(probing.await.unwrap().unwrap());
+}
+
+/// A service on build `theirs`, with `busy` mid-turn, as one attach finds
+/// it: it answers every `Hello`, and exits on `Shutdown`, counted in `shutdowns`.
+fn service(theirs: &str, busy: Vec<HostSession>, shutdowns: Arc<AtomicUsize>) -> HostConn {
+    let (conn, mut host) = pair();
+    let theirs = build(theirs);
+    tokio::spawn(async move {
+        while let Ok(Some(line)) = host.asks.next_line().await {
+            let Question { id, call } = serde_json::from_str(&line).unwrap();
+            match call {
+                Call::Hello { .. } => {
+                    let welcome = Reply::Welcome {
+                        build: theirs.clone(),
+                        busy: busy.clone(),
+                    };
+                    host.answer(id, welcome).await;
+                }
+                Call::Shutdown => {
+                    shutdowns.fetch_add(1, Ordering::SeqCst);
+                    host.answer(id, Reply::Done).await;
+                    return;
+                }
+                other => panic!("unexpected {other:?}"),
+            }
+        }
+    });
+    conn
+}
+
+/// Restart onto `ours` against services that come up on `builds` in turn,
+/// each with a session mid-turn; the restart's end and the shutdowns sent.
+async fn restart_against(builds: [&'static str; 2]) -> (Result<HostConn, HostError>, usize) {
+    let shutdowns = Arc::new(AtomicUsize::new(0));
+    let mut builds = builds.into_iter();
+    let count = shutdowns.clone();
+    let dial = move || {
+        let (_, said) = oneshot::channel();
+        let theirs = builds.next().expect("no more than two attaches");
+        Ok((service(theirs, vec![s1()], count.clone()), said))
+    };
+    let restarted = restart_over(dial, &build("ours")).await;
+    (restarted, shutdowns.load(Ordering::SeqCst))
+}
+
+#[tokio::test]
+async fn restart_shuts_down_a_busy_host_and_reattaches() {
+    let (restarted, shutdowns) = restart_against(["old", "ours"]).await;
+    assert!(restarted.is_ok(), "{:?}", restarted.err());
+    assert_eq!(shutdowns, 1);
+}
+
+#[tokio::test]
+async fn a_restart_that_finds_another_build_again_fails() {
+    let (restarted, shutdowns) = restart_against(["old", "old"]).await;
+    assert!(
+        matches!(&restarted, Err(HostError::Protocol(why)) if why.contains("old")),
+        "{:?}",
+        restarted.err()
+    );
+    assert_eq!(shutdowns, 1);
+}
+
+/// The next event, one the client made itself: the `At` of now it comes after
+/// is taken first.
+async fn made(events: &mut (impl Stream<Item = AcpEvent> + Unpin)) -> Option<AcpEvent> {
+    assert!(matches!(events.next().await, Some(AcpEvent::At(_))));
+    events.next().await
+}
+
+#[tokio::test]
+async fn what_the_client_says_itself_is_stamped_now() {
+    let (conn, mut host) = pair();
+    let mut events = conn.watch(&s1());
+    let id = host.replaying().await;
+    host.timed(0, 100, chunk("a")).await;
+    host.answer(id, Reply::Done).await;
+    assert!(matches!(events.next().await, Some(AcpEvent::At(100))));
+    assert_eq!(next_chunk(&mut events).await, "a");
+    drop(host);
+    assert!(matches!(events.next().await, Some(AcpEvent::At(now)) if now > 100));
+    assert!(matches!(
+        events.next().await,
+        Some(AcpEvent::Disconnected(why)) if why.contains("lost the connection")
+    ));
+}
+
+#[tokio::test]
+async fn a_rewatch_says_the_time_again() {
+    let (conn, mut host) = pair();
+    let mut first = conn.watch(&s1());
+    host.watched().await;
+    host.timed(0, 100, chunk("a")).await;
+    assert!(matches!(first.next().await, Some(AcpEvent::At(100))));
+    assert_eq!(next_chunk(&mut first).await, "a");
+    let mut second = conn.watch(&s1());
+    let id = host.replaying().await;
+    host.timed(0, 100, chunk("a")).await;
+    host.answer(id, Reply::Done).await;
+    assert!(matches!(second.next().await, Some(AcpEvent::At(100))));
+    assert_eq!(next_chunk(&mut second).await, "a");
+}
+
+#[tokio::test]
+async fn restart_on_our_build_sends_no_shutdown() {
+    let (restarted, shutdowns) = restart_against(["ours", "ours"]).await;
+    assert!(restarted.is_ok(), "{:?}", restarted.err());
+    assert_eq!(shutdowns, 0);
+}
+
+#[tokio::test]
+async fn a_connection_says_it_is_closed_once_its_stream_ends() {
+    let (conn, host) = pair();
+    assert!(!conn.is_closed());
+    drop(host);
+    // The pump notices the end on its next read.
+    for _ in 0..100 {
+        if conn.is_closed() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("the connection never said it was closed");
 }

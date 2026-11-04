@@ -5,7 +5,7 @@ use gpui_component::WindowExt as _;
 use gpui_component::input::InputState;
 use onehand_core::workspace::{self};
 use onehand_core::worktree;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// A worktree being set up: which project is being split, where its second
 /// checkout goes, and how the last attempt went.
@@ -150,10 +150,10 @@ impl Shell {
     /// it already holds -- so this is reached with a repository in hand and has
     /// no check of its own to make beyond the root still being there.
     pub fn begin_worktree(&mut self, root_idx: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(root) = self.window.workspace.roots.get(root_idx) else {
+        let Some(root) = self.local_root(root_idx).map(Path::to_path_buf) else {
             return;
         };
-        let (root, label) = (root.path.clone(), root.label.clone());
+        let label = self.window.workspace.roots[root_idx].label.clone();
         self.remember_focus(window, cx);
         self.worktree_branch
             .update(cx, |state, cx| state.set_value("", window, cx));
@@ -210,10 +210,12 @@ impl Shell {
     /// this one is editing something that does, and a blank field would make the
     /// user retype the part they are keeping to change the part they are not.
     pub fn begin_branch_rename(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(root) = self.window.workspace.active_root() else {
+        let Some(root) = self
+            .local_root(self.window.workspace.active_root)
+            .map(Path::to_path_buf)
+        else {
             return;
         };
-        let root = root.path.clone();
         let Some(from) = self
             .window
             .git

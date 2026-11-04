@@ -23,9 +23,15 @@ use tokio::io::{
 use tokio::process::{Child, Command};
 use tokio::sync::{mpsc, oneshot};
 
-use super::wire::{build_id, Call, Entry, FromHost, Question, Readiness, Reply, SessionInfo};
+use super::wire::{
+    Build, Call, Entry, FromHost, HostSession, Question, Readiness, Reply, SessionInfo,
+};
 use crate::acp::{AcpEvent, AcpRequest, Opening};
 use crate::config::AgentSpec;
+
+mod install;
+
+pub use install::install;
 
 #[derive(Debug)]
 pub enum HostError {
@@ -35,10 +41,39 @@ pub enum HostError {
     /// The host is not one this build can run on (`uname -sm` said this).
     Unsupported(String),
     /// The host runs another build, with these sessions mid-turn; it was left alone.
-    Busy { build: String, busy: Vec<String> },
+    Busy {
+        build: Build,
+        busy: Vec<HostSession>,
+    },
     /// The host refused a call or answered something unexpected, or the
     /// binary to install could not be read here.
     Protocol(String),
+}
+
+/// The sentence each failure reads as, after whatever names what failed: an
+/// unsupported host's is what `uname -sm` said there.
+impl std::fmt::Display for HostError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unreachable(why) | Self::Protocol(why) | Self::Unsupported(why) => {
+                f.write_str(why)
+            }
+            Self::Busy { build, .. } => write!(f, "the host runs another build ({build})"),
+        }
+    }
+}
+
+/// `e`, from a call to `host`, with its words naming the host: what an agent
+/// missing there says would otherwise read as missing here. A busy host is
+/// said of where it is attached, in words of its own.
+fn on_host(host: &str, e: HostError) -> HostError {
+    let on = |why| format!("On {host}: {why}");
+    match e {
+        HostError::Unreachable(why) => HostError::Unreachable(on(why)),
+        HostError::Protocol(why) => HostError::Protocol(on(why)),
+        HostError::Unsupported(why) => HostError::Unsupported(on(why)),
+        e @ HostError::Busy { .. } => e,
+    }
 }
 
 /// How to reach a host.
@@ -61,9 +96,6 @@ const SSH_OPTS: [&str; 7] = [
     "-o",
     "ServerAliveCountMax=3",
 ];
-
-/// The only build shipped.
-const SUPPORTED: &str = "Linux x86_64";
 
 /// How long a service told to shut down gets to close its side.
 const SHUTDOWN_WAIT: Duration = Duration::from_secs(10);
@@ -95,104 +127,10 @@ fn command(addr: &HostAddr, cmd: &str) -> Command {
     command
 }
 
-/// Run `cmd` to its end with `input` on its stdin; what it printed.
-async fn run(addr: &HostAddr, cmd: &str, input: &[u8]) -> Result<String, HostError> {
-    let mut child = command(addr, cmd)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| HostError::Unreachable(format!("ssh: {e}")))?;
-    let written = match child.stdin.take() {
-        // Dropped once written, so the command reads its end.
-        Some(mut stdin) => stdin.write_all(input).await,
-        None => Ok(()),
-    };
-    let out = child
-        .wait_with_output()
-        .await
-        .map_err(|e| HostError::Unreachable(e.to_string()))?;
-    if !out.status.success() {
-        let why = String::from_utf8_lossy(&out.stderr).trim().to_string();
-        return Err(HostError::Unreachable(if why.is_empty() {
-            format!("{} ended with {}", addr.ssh, out.status)
-        } else {
-            why
-        }));
-    }
-    if let Err(e) = written {
-        return Err(HostError::Unreachable(format!(
-            "the copy to {} was cut short: {e}",
-            addr.ssh
-        )));
-    }
-    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
-}
-
-/// Copy `binary` to the host unless that build is already there; return its remote path
-/// (`~/.onehand-host/<build>/onehand-host`). Refuses a host whose `uname -sm` is not `Linux x86_64`
-/// (the only build shipped).
-pub async fn install(addr: &HostAddr, binary: &Path) -> Result<String, HostError> {
-    let bytes = tokio::fs::read(binary)
-        .await
-        .map_err(|e| HostError::Protocol(format!("{}: {e}", binary.display())))?;
-    let build = build_id(&bytes);
-    let dir = format!("~/.onehand-host/{build}");
-    let path = format!("{dir}/onehand-host");
-    let probe = run(
-        addr,
-        &format!("echo {PROBE} && uname -sm && if test -x {path}; then echo present; fi"),
-        &[],
-    )
-    .await?;
-    let (system, present) = probed(&probe);
-    if system != SUPPORTED {
-        return Err(HostError::Unsupported(system.to_string()));
-    }
-    if present {
-        return Ok(path);
-    }
-    run(addr, &copy_command(&dir, &build), &bytes).await?;
-    Ok(path)
-}
-
-/// The line the probe prints first, so whatever the host's startup files print
-/// before it cannot be read as the answer.
-const PROBE: &str = "__ONEHAND_PROBE__";
-
-/// The probe's answer: `uname -sm` as the host said it, and whether that build is there.
-fn probed(out: &str) -> (&str, bool) {
-    let lines: Vec<&str> = out.lines().map(str::trim).collect();
-    let Some(at) = lines.iter().rposition(|l| *l == PROBE) else {
-        return ("", false);
-    };
-    let system = lines.get(at + 1).copied().unwrap_or("");
-    (system, lines.get(at + 2) == Some(&"present"))
-}
-
-/// What writes the binary on stdin into `dir`. It is written beside its place
-/// and moved there only once it names itself `build`: ssh dying mid-copy
-/// leaves `cat` a short file and a clean exit, and a short file left in place
-/// would pass for that build from then on. A copy that does not run at all
-/// (a C library older than the one it was built against) says what the host
-/// said of it instead.
-fn copy_command(dir: &str, build: &str) -> String {
-    let path = format!("{dir}/onehand-host");
-    let tmp = format!("{path}.tmp");
-    format!(
-        "mkdir -p {dir} && cat > {tmp} && chmod 755 {tmp} && \
-         if said=$({tmp} --build-id 2>&1); then \
-           if test \"$said\" = {build}; then mv {tmp} {path}; \
-           else rm -f {tmp}; echo 'the copy arrived cut short' >&2; exit 1; fi; \
-         else ended=$?; rm -f {tmp}; \
-           echo \"onehand-host does not run on this host (exit $ended): $said\" >&2; exit 1; fi"
-    )
-}
-
 /// Attach, say hello, and settle the build: same build → connected; other build with nothing busy
 /// → `Shutdown` it and attach again once; other build busy → `Busy`.
-pub async fn connect(addr: &HostAddr, remote: &str, build: &str) -> Result<HostConn, HostError> {
-    let (conn, said) = attach(addr, remote)?;
+pub async fn attach(addr: &HostAddr, remote: &str, build: &Build) -> Result<HostConn, HostError> {
+    let (conn, said) = start_attach(addr, remote)?;
     match reached(settle(&conn, build).await, said).await? {
         Settled::Same => return Ok(conn),
         Settled::Restarted => {
@@ -201,14 +139,54 @@ pub async fn connect(addr: &HostAddr, remote: &str, build: &str) -> Result<HostC
             let _ = tokio::time::timeout(SHUTDOWN_WAIT, conn.cmds.closed()).await;
         }
     }
-    let (conn, said) = attach(addr, remote)?;
+    let (conn, said) = start_attach(addr, remote)?;
     reached(settle_again(&conn, build).await, said).await?;
+    Ok(conn)
+}
+
+/// Attach and, unless the host already runs `build`, shut its service down
+/// whatever is mid-turn there, then attach again: what to do once the person
+/// has agreed to stop the sessions a `Busy` named.
+pub async fn restart(addr: &HostAddr, remote: &str, build: &Build) -> Result<HostConn, HostError> {
+    restart_over(|| start_attach(addr, remote), build).await
+}
+
+/// `restart`, attaching with `attach`.
+async fn restart_over(
+    mut attach: impl FnMut() -> Result<(HostConn, oneshot::Receiver<String>), HostError>,
+    build: &Build,
+) -> Result<HostConn, HostError> {
+    let (conn, said) = attach()?;
+    let stop = async {
+        let (theirs, _) = hello(&conn, build).await?;
+        if theirs == *build {
+            return Ok(false);
+        }
+        conn.ask_for(Call::Shutdown, |a| a.done).await?;
+        Ok(true)
+    };
+    if !reached(stop.await, said).await? {
+        return Ok(conn);
+    }
+    let _ = tokio::time::timeout(SHUTDOWN_WAIT, conn.cmds.closed()).await;
+    let (conn, said) = attach()?;
+    let again = async {
+        let (theirs, _) = hello(&conn, build).await?;
+        if theirs == *build {
+            Ok(())
+        } else {
+            Err(HostError::Protocol(format!(
+                "the host came back on build {theirs}, not {build}"
+            )))
+        }
+    };
+    reached(again.await, said).await?;
     Ok(conn)
 }
 
 /// Start `<remote> attach`, and what it says on stderr, as far as it has once
 /// it ends or has said `STDERR_KEEP` bytes.
-fn attach(
+fn start_attach(
     addr: &HostAddr,
     remote: &str,
 ) -> Result<(HostConn, oneshot::Receiver<String>), HostError> {
@@ -262,9 +240,9 @@ enum Settled {
 
 /// Say hello as `build`; a service on another build with nothing mid-turn is
 /// told to shut down, so the next attach starts this one.
-async fn settle(conn: &HostConn, build: &str) -> Result<Settled, HostError> {
+async fn settle(conn: &HostConn, build: &Build) -> Result<Settled, HostError> {
     let (theirs, busy) = hello(conn, build).await?;
-    if theirs == build {
+    if theirs == *build {
         return Ok(Settled::Same);
     }
     if !busy.is_empty() {
@@ -276,9 +254,9 @@ async fn settle(conn: &HostConn, build: &str) -> Result<Settled, HostError> {
 
 /// Say hello once more after a restart: another build now is a fault, and is
 /// never shut down a second time.
-async fn settle_again(conn: &HostConn, build: &str) -> Result<(), HostError> {
+async fn settle_again(conn: &HostConn, build: &Build) -> Result<(), HostError> {
     let (theirs, busy) = hello(conn, build).await?;
-    if theirs == build {
+    if theirs == *build {
         Ok(())
     } else if !busy.is_empty() {
         Err(busy_host(theirs, busy))
@@ -290,25 +268,26 @@ async fn settle_again(conn: &HostConn, build: &str) -> Result<(), HostError> {
 }
 
 /// Say hello as `build`; the host's build, and its sessions mid-turn.
-async fn hello(conn: &HostConn, build: &str) -> Result<(String, Vec<String>), HostError> {
+async fn hello(conn: &HostConn, build: &Build) -> Result<(Build, Vec<HostSession>), HostError> {
     let hello = Call::Hello {
-        build: build.to_string(),
+        build: build.clone(),
     };
     conn.ask_for(hello, |a| a.welcome).await
 }
 
 /// A host on build `build` that was left alone for the sessions in `busy`.
-fn busy_host(build: String, busy: Vec<String>) -> HostError {
+fn busy_host(build: Build, busy: Vec<HostSession>) -> HostError {
     HostError::Busy { build, busy }
 }
 
 /// What an answer carries, in the slot of its kind; every other slot is empty.
 /// A call takes the slot it expects, and finds any other answer unexpected.
 struct Answer {
-    welcome: Option<(String, Vec<String>)>,
+    welcome: Option<(Build, Vec<HostSession>)>,
     sessions: Option<Vec<SessionInfo>>,
-    opened: Option<String>,
+    opened: Option<HostSession>,
     done: Option<()>,
+    probed: Option<bool>,
 }
 
 impl Answer {
@@ -318,12 +297,14 @@ impl Answer {
             sessions: None,
             opened: None,
             done: None,
+            probed: None,
         };
         match reply {
             Reply::Welcome { build, busy } => answer.welcome = Some((build, busy)),
             Reply::Sessions(sessions) => answer.sessions = Some(sessions),
             Reply::Opened { session } => answer.opened = Some(session),
             Reply::Done => answer.done = Some(()),
+            Reply::Probed { is_dir } => answer.probed = Some(is_dir),
         }
         answer
     }
@@ -332,8 +313,8 @@ impl Answer {
 /// What a caller asks of the task that owns the stream.
 enum Cmd {
     Ask(Call, oneshot::Sender<Result<Reply, HostError>>),
-    Watch(String, events::UnboundedSender<AcpEvent>),
-    Request(String, AcpRequest),
+    Watch(HostSession, events::UnboundedSender<AcpEvent>),
+    Request(HostSession, AcpRequest),
     /// Let go of every call whose caller stopped waiting.
     Forget,
 }
@@ -342,9 +323,9 @@ enum Cmd {
 enum Pending {
     Caller(oneshot::Sender<Result<Reply, HostError>>),
     /// A refused watch ends that watch; an answered one ends its replay.
-    Watch(String, events::UnboundedSender<AcpEvent>),
+    Watch(HostSession, events::UnboundedSender<AcpEvent>),
     /// A refused request is said in the session it was for.
-    Request(String),
+    Request(HostSession),
 }
 
 /// Who reads a session, and how far its replay has got.
@@ -362,6 +343,8 @@ struct Watcher {
     replaying: bool,
     /// The last `Ready` the replay brought, given with a live channel once it ends.
     ready: Option<Readiness>,
+    /// The time this watcher last said with `At`.
+    said_at: Option<u64>,
 }
 
 impl Watcher {
@@ -372,6 +355,7 @@ impl Watcher {
             last: None,
             replaying: true,
             ready: None,
+            said_at: None,
         }
     }
 
@@ -388,6 +372,8 @@ impl Watcher {
 #[derive(Clone)]
 pub struct HostConn {
     cmds: mpsc::UnboundedSender<Cmd>,
+    /// The `ssh` destination, which names the host in what is said of it.
+    host: String,
 }
 
 impl HostConn {
@@ -398,18 +384,18 @@ impl HostConn {
         W: AsyncWrite + Unpin + Send + 'static,
     {
         let (cmds, rx) = mpsc::unbounded_channel();
-        tokio::spawn(pump(host, read, write, child, cmds.downgrade(), rx));
-        Self { cmds }
+        tokio::spawn(pump(host.clone(), read, write, child, cmds.downgrade(), rx));
+        Self { cmds, host }
     }
 
-    /// A connection over a pipe, with no ssh behind it.
+    /// A connection over a pipe, with no ssh behind it, to a host named `vps`.
     #[cfg(test)]
     fn over<R, W>(read: R, write: W) -> Self
     where
         R: AsyncRead + Unpin + Send + 'static,
         W: AsyncWrite + Unpin + Send + 'static,
     {
-        Self::start("test".into(), read, write, None)
+        Self::start("vps".into(), read, write, None)
     }
 
     async fn ask(&self, call: Call) -> Result<Reply, HostError> {
@@ -436,16 +422,32 @@ impl HostConn {
         take(Answer::of(reply)).ok_or(unexpected)
     }
 
+    /// Whether the task that owns the stream has ended: nothing asked of this
+    /// connection will be answered again, and a new attach is needed.
+    pub fn is_closed(&self) -> bool {
+        self.cmds.is_closed()
+    }
+
     pub async fn list(&self) -> Result<Vec<SessionInfo>, HostError> {
         self.ask_for(Call::List, |a| a.sessions).await
     }
 
+    /// Whether `path` is a folder on the host.
+    pub async fn is_dir(&self, path: &Path) -> Result<bool, HostError> {
+        let probe = Call::Probe {
+            path: path.to_path_buf(),
+        };
+        self.ask_for(probe, |a| a.probed).await
+    }
+
+    /// Start a session on the host. What goes wrong names the host, as an
+    /// agent missing there would otherwise read as missing here.
     pub async fn open(
         &self,
         cwd: PathBuf,
         mut agent: AgentSpec,
         opening: Opening,
-    ) -> Result<String, HostError> {
+    ) -> Result<HostSession, HostError> {
         // The laptop's variables mean nothing on the host and may be secrets.
         agent.env.clear();
         let open = Call::Open {
@@ -453,22 +455,26 @@ impl HostConn {
             agent,
             opening,
         };
-        self.ask_for(open, |a| a.opened).await
+        self.ask_for(open, |a| a.opened)
+            .await
+            .map_err(|e| on_host(&self.host, e))
     }
 
     /// The session as a local one reads: `Ready` → `Connected` (with a `tx` whose requests go to the
-    /// host), `Event(e)` → `e`, `Request(r)` → `Echo(r)`. A `Ready` in the replay is held back, and
+    /// host), `Event(e)` → `e`, `Request(r)` → `Echo(r)`, each after an `At` when its journal
+    /// second is known and not the one last said. A `Ready` in the replay is held back, and
     /// its one `Connected` follows the replay's last event; a replay that ended the session gives
     /// none. Ends with `Disconnected`: the
     /// session's own, or the stream closing ("lost the connection to <host>"), or the host taken
     /// ("<host> was attached from another machine").
-    pub fn watch(&self, session: &str) -> impl Stream<Item = AcpEvent> + Send + 'static {
+    pub fn watch(&self, session: &HostSession) -> impl Stream<Item = AcpEvent> + Send + 'static {
         let (tx, rx) = events::unbounded();
-        if let Err(e) = self.cmds.send(Cmd::Watch(session.to_string(), tx)) {
+        if let Err(e) = self.cmds.send(Cmd::Watch(session.clone(), tx)) {
             if let Cmd::Watch(_, tx) = e.0 {
-                let _ = tx.unbounded_send(AcpEvent::Disconnected(
-                    "the connection to the host is closed".into(),
-                ));
+                own(
+                    &tx,
+                    AcpEvent::Disconnected("the connection to the host is closed".into()),
+                );
             }
         }
         // The stream keeps the connection up while it is read.
@@ -497,10 +503,11 @@ async fn pump<R, W>(
     let _child = child;
     let mut lines = BufReader::new(read).lines();
     let mut pending: HashMap<u64, Pending> = HashMap::new();
-    let mut watchers: HashMap<String, Watcher> = HashMap::new();
+    let mut watchers: HashMap<HostSession, Watcher> = HashMap::new();
     // Each session's request channel, kept weakly so a replayed `Ready` reuses
     // the one still in use without keeping it alive.
-    let mut forwarders: HashMap<String, mpsc::WeakUnboundedSender<AcpRequest>> = HashMap::new();
+    let mut forwarders: HashMap<HostSession, mpsc::WeakUnboundedSender<AcpRequest>> =
+        HashMap::new();
     // Ids start at 1: the host answers a line it cannot read with id 0.
     let mut next = 1_u64;
     let why = loop {
@@ -544,23 +551,22 @@ async fn pump<R, W>(
                                     }
                                 }
                                 Err(why) => {
-                                    let _ = tx.unbounded_send(AcpEvent::Disconnected(why));
+                                    own(&tx, AcpEvent::Disconnected(why));
                                     watchers.remove(&session);
                                     forwarders.remove(&session);
                                 }
                             }
                         }
                         (Some(Pending::Request(session)), Err(why)) => {
-                            if let Some(w) = watchers.get(&session) {
-                                let _ = w.tx.unbounded_send(AcpEvent::Error {
-                                    text: why,
-                                    detail: None,
-                                });
+                            if let Some(w) = watchers.get_mut(&session) {
+                                own(&w.tx, AcpEvent::Error { text: why, detail: None });
+                                // The next entry says its own time again.
+                                w.said_at = None;
                             }
                         }
                         (Some(Pending::Request(_)), Ok(_)) | (None, _) => {}
                     },
-                    FromHost::Entry { session, seq, entry } => {
+                    FromHost::Entry { session, seq, at, entry } => {
                         let Some(w) = watchers.get_mut(&session) else { continue };
                         if !w.takes(seq) {
                             continue;
@@ -580,6 +586,11 @@ async fn pump<R, W>(
                             }
                             Entry::Request(request) => AcpEvent::Echo(request),
                         };
+                        // 0 is a line that kept no time: the chat stamps it now.
+                        if at != 0 && w.said_at != Some(at) {
+                            w.said_at = Some(at);
+                            let _ = w.tx.unbounded_send(AcpEvent::At(at));
+                        }
                         // A session that ended says so once, and its watch ends with it.
                         if w.tx.unbounded_send(event).is_err() || ended {
                             watchers.remove(&session);
@@ -603,9 +614,8 @@ async fn pump<R, W>(
                         let watcher = Watcher::new(tx.clone());
                         // A second watch of a session replaces the first.
                         if let Some(old) = watchers.insert(session.clone(), watcher) {
-                            let _ = old.tx.unbounded_send(AcpEvent::Disconnected(
-                                "this session is now watched elsewhere".into(),
-                            ));
+                            let elsewhere = "this session is now watched elsewhere";
+                            own(&old.tx, AcpEvent::Disconnected(elsewhere.into()));
                         }
                         (Call::Watch { session: session.clone() }, Pending::Watch(session, tx))
                     }
@@ -626,7 +636,7 @@ async fn pump<R, W>(
         }
     };
     for (_, w) in watchers {
-        let _ = w.tx.unbounded_send(AcpEvent::Disconnected(why.clone()));
+        own(&w.tx, AcpEvent::Disconnected(why.clone()));
     }
     for (_, waiter) in pending {
         match waiter {
@@ -637,6 +647,14 @@ async fn pump<R, W>(
         }
     }
     refuse_queued(&mut cmds, &why);
+}
+
+/// Send `event`, one the client makes itself rather than reads from the
+/// journal, after an `At` of this second: the last time a replay said is not
+/// when this happened.
+fn own(tx: &events::UnboundedSender<AcpEvent>, event: AcpEvent) {
+    let _ = tx.unbounded_send(AcpEvent::At(crate::chat::store::now_secs()));
+    let _ = tx.unbounded_send(event);
 }
 
 /// A `Ready` as a local agent says it, with `tx` as its request channel.
@@ -658,7 +676,7 @@ fn refuse_queued(cmds: &mut mpsc::UnboundedReceiver<Cmd>, why: &str) {
                 let _ = tx.send(Err(HostError::Unreachable(why.to_string())));
             }
             Cmd::Watch(_, tx) => {
-                let _ = tx.unbounded_send(AcpEvent::Disconnected(why.to_string()));
+                own(&tx, AcpEvent::Disconnected(why.to_string()));
             }
             Cmd::Request(..) | Cmd::Forget => {}
         }
@@ -667,20 +685,20 @@ fn refuse_queued(cmds: &mut mpsc::UnboundedReceiver<Cmd>, why: &str) {
 
 /// The session's request channel to the host: the one a `Chat` still holds, or a new one.
 fn live(
-    forwarders: &mut HashMap<String, mpsc::WeakUnboundedSender<AcpRequest>>,
+    forwarders: &mut HashMap<HostSession, mpsc::WeakUnboundedSender<AcpRequest>>,
     me: &mpsc::WeakUnboundedSender<Cmd>,
-    session: &str,
+    session: &HostSession,
 ) -> crate::acp::ReqTx {
     if let Some(tx) = forwarders.get(session).and_then(|w| w.upgrade()) {
         return tx;
     }
-    let tx = forward(me, session.to_string());
-    forwarders.insert(session.to_string(), tx.downgrade());
+    let tx = forward(me, session.clone());
+    forwarders.insert(session.clone(), tx.downgrade());
     tx
 }
 
 /// A request channel for `session` whose requests go to the host.
-fn forward(me: &mpsc::WeakUnboundedSender<Cmd>, session: String) -> crate::acp::ReqTx {
+fn forward(me: &mpsc::WeakUnboundedSender<Cmd>, session: HostSession) -> crate::acp::ReqTx {
     let (tx, mut rx) = mpsc::unbounded_channel();
     if let Some(cmds) = me.upgrade() {
         tokio::spawn(async move {

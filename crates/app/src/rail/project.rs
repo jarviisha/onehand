@@ -22,8 +22,8 @@ use onehand_ui::{badge, mark_slot};
 /// What a project row says on hover: the whole of everything the row cuts.
 ///
 /// The full name first, then the branch, the counts in words, and the root's
-/// path -- the last because the label is a folder name and two projects can
-/// share one.
+/// path (`host:path` for a folder on a host) -- the last because the label is a
+/// folder name and two projects can share one.
 pub(super) fn project_hint(
     label: &str,
     git: Option<&GitLine>,
@@ -177,6 +177,7 @@ fn project_menu(
         unattended,
         check: _,
         asks: _,
+        local,
     }: ProjectFacts,
     asks: bool,
     shell: WeakEntity<Shell>,
@@ -247,15 +248,18 @@ fn project_menu(
                 },
             ))
         })
-        .item(crate::controls::menu_item("Open terminal").on_click(
-            move |_, window, cx: &mut App| {
-                terminal
-                    .update(cx, |shell: &mut Shell, cx| {
-                        shell.open_terminal_in(root_idx, window, cx);
-                    })
-                    .ok();
-            },
-        ))
+        // A folder on a host has no shell here, nor a `git status` to read.
+        .when(local, |menu| {
+            menu.item(crate::controls::menu_item("Open terminal").on_click(
+                move |_, window, cx: &mut App| {
+                    terminal
+                        .update(cx, |shell: &mut Shell, cx| {
+                            shell.open_terminal_in(root_idx, window, cx);
+                        })
+                        .ok();
+                },
+            ))
+        })
         .item(crate::controls::menu_item("Copy project path").on_click(
             move |_, window, cx: &mut App| {
                 copy.update(cx, |shell: &mut Shell, cx| {
@@ -264,13 +268,15 @@ fn project_menu(
                 .ok();
             },
         ))
-        .item(crate::controls::menu_item("Refresh Git status").on_click(
-            move |_, _, cx: &mut App| {
-                refresh
-                    .update(cx, |shell: &mut Shell, cx| shell.refresh_git(cx))
-                    .ok();
-            },
-        ))
+        .when(local, |menu| {
+            menu.item(crate::controls::menu_item("Refresh Git status").on_click(
+                move |_, _, cx: &mut App| {
+                    refresh
+                        .update(cx, |shell: &mut Shell, cx| shell.refresh_git(cx))
+                        .ok();
+                },
+            ))
+        })
         .separator()
         .item(
             crate::controls::menu_row(move |_, _| {
@@ -426,11 +432,16 @@ pub(super) fn project_row(
     // The issue a run is working on in this project right now, if one is; the
     // working one ahead of a waiting one, since a project can hold both.
     let runs = crate::task::live_issues(cx);
-    let run = run_on(
-        runs.iter()
-            .map(|run| (run.repo.as_path(), run.name.as_str(), run.waiting.is_some())),
-        &root.path,
-    );
+    // A folder on a host has no runs, problems or `git status` here; what is
+    // filed under its path is a local twin's.
+    let local = root.local_path();
+    let run = local.and_then(|path| {
+        run_on(
+            runs.iter()
+                .map(|run| (run.repo.as_path(), run.name.as_str(), run.waiting.is_some())),
+            path,
+        )
+    });
     // The kept issue of the run the pill names, which pressing it opens on the
     // Issues page; a forge's own issue has no page to open on.
     let pill_issue = run.and_then(|(name, waiting)| {
@@ -439,16 +450,24 @@ pub(super) fn project_row(
             .kept
     });
     let auto = auto_status(
-        root.unattended,
+        root.unattended && local.is_some(),
         run,
         &crate::unattended::label(cx),
         // What stops every run outranks what stops this project's.
-        crate::unattended::blocked(cx).or_else(|| crate::unattended::problem(&root.path, cx)),
+        crate::unattended::blocked(cx)
+            .or_else(|| local.and_then(|path| crate::unattended::problem(path, cx))),
     );
-    let status = window_state.git.get(&root.path);
+    let status = local.and_then(|path| window_state.git.get(path));
     let facts = ProjectFacts::of(root, status.is_some());
     let git = status.map(GitLine::of);
-    let path = SharedString::from(root.path.display().to_string());
+    // A folder on a host is named with the host, as ssh names one.
+    let path = SharedString::from(onehand_core::workspace::host_path(
+        root.on_host(),
+        &root.path,
+    ));
+    let host = root
+        .on_host()
+        .map(|host| SharedString::from(host.to_string()));
     let mut hint = project_hint(
         &root.label,
         git.as_ref(),
@@ -544,9 +563,9 @@ pub(super) fn project_row(
             })),
         )
         .child(
-            // Shrinks, by its branch alone: everything else on it keeps its
-            // width, and the branch truncates once the name is down to its
-            // minimum.
+            // Shrinks, by its host or its branch alone: everything else on it
+            // keeps its width, and that one truncates once the name is down to
+            // its minimum. A folder on a host has no branch here.
             div()
                 .h_flex()
                 .items_center()
@@ -555,6 +574,20 @@ pub(super) fn project_row(
                 .text_xs()
                 .font_normal()
                 .text_color(meta_ink)
+                .when_some(host, |row, host| {
+                    let place = path.clone();
+                    row.child(
+                        div()
+                            .id(("project-host", root_idx))
+                            .min_w_0()
+                            .max_w(MAX_BRANCH_W)
+                            .truncate()
+                            .tooltip(covered_tip(&key, move |window, cx| {
+                                Tooltip::new(place.clone()).build(window, cx)
+                            }))
+                            .child(host),
+                    )
+                })
                 .when_some(git, |row, git| {
                     let branch = git.branch.clone();
                     row.child(

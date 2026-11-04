@@ -26,6 +26,9 @@ impl Workbench {
         let showing = self.showing();
         let full = self.maximized;
         let compact = self.width.get().0 < MODES_MIN_W.0;
+        // While the panel refuses, there is no mode to switch to: the space
+        // stays, so the controls at the row's end do not move.
+        let offered = self.refused.is_none();
         // The library's tab panel bar, as tall as the conversation's header
         // beside it so the two line up across the seam, its line under it
         // parting the panel's modes from a mode's own bar.
@@ -59,7 +62,7 @@ impl Workbench {
                     .flex_1()
                     .min_w_0()
                     .overflow_hidden()
-                    .map(|modes| match compact {
+                    .when(offered, |modes| match compact {
                         true => modes.items_center().px_1().child(mode_select(
                             specs,
                             showing.label,

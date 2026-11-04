@@ -129,6 +129,10 @@ pub struct Chat {
     /// each submitted prompt, seeded from the archive's `updated` on resume.
     /// Drives the rail session row's relative-time label. Runtime-only.
     pub(crate) last_activity: Option<u64>,
+    /// The unix second a host replay last said its events happened at
+    /// (`AcpEvent::At`), which the stamps `apply` writes read in place of the
+    /// clock; only the next `At` moves it. A local agent never says one.
+    clock: Option<u64>,
     /// Where this conversation is between adopting an archive and knowing what
     /// the agent's replay actually delivered. See [`Replay`].
     replay: Replay,
@@ -238,6 +242,9 @@ pub struct Chat {
     /// work the caller would have done anyway -- where a wrong *description*
     /// would leave the wrong thing on screen.
     revision: u64,
+    /// The line saying the session waits on its host's busy sessions: where
+    /// it was put and what it says, so it alone is taken back.
+    host_wait_line: Option<(usize, String)>,
     /// How many times a fold has been toggled, whoever holds it: an item's
     /// own here, a group's in the front end, which reports its own through
     /// [`Self::fold_changed`].
@@ -301,6 +308,11 @@ impl Chat {
         chat
     }
 
+    /// When the event being applied happened: the host's word for it, or now.
+    fn event_time(&self) -> u64 {
+        self.clock.unwrap_or_else(crate::chat::store::now_secs)
+    }
+
     /// The transcript's current revision. See the field.
     pub fn revision(&self) -> u64 {
         self.revision
@@ -332,6 +344,30 @@ impl Chat {
     /// [`Self::folds`] instead.
     fn touch(&mut self) {
         self.revision = self.revision.wrapping_add(1);
+    }
+
+    /// Say that the session waits on its host's busy sessions, in a line of
+    /// onehand's own that [`Self::unsay_host_wait`] takes back.
+    pub fn say_host_wait(&mut self, text: String) {
+        self.host_wait_line = Some((self.items.len(), text.clone()));
+        self.items.push(ChatItem::notice(text));
+        self.touch();
+    }
+
+    /// Take back the line [`Self::say_host_wait`] put, if it is still where
+    /// it was put, saying what it said; nothing else is touched.
+    pub fn unsay_host_wait(&mut self) {
+        let Some((at, said)) = self.host_wait_line.take() else {
+            return;
+        };
+        let here = matches!(
+            self.items.get(at),
+            Some(ChatItem::Notice { text, level: NoticeLevel::Info, .. }) if *text == said
+        );
+        if here {
+            self.items.remove(at);
+            self.touch();
+        }
     }
 }
 

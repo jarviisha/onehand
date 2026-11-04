@@ -9,15 +9,16 @@ use gpui_component::input::{InputEvent, InputState};
 
 impl Shell {
     /// Hand the project page the check command field of `root`, made first
-    /// if it is not yet.
+    /// if it is not yet; none for a project on a host (`None`), where no
+    /// check can run.
     pub(super) fn show_check_input(
         &mut self,
-        root: &std::path::Path,
+        root: Option<&std::path::Path>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.make_check_inputs(window, cx);
-        let input = self.check_inputs.get(root).cloned();
+        let input = root.and_then(|root| self.check_inputs.get(root).cloned());
         self.chat
             .update(cx, |pane, cx| pane.set_check_input(input, cx));
     }
@@ -31,7 +32,11 @@ impl Shell {
             .workspace
             .roots
             .iter()
-            .filter(|root| !root.transient && !self.check_inputs.contains_key(&root.path))
+            .filter(|root| {
+                !root.transient
+                    && root.on_host().is_none()
+                    && !self.check_inputs.contains_key(&root.path)
+            })
             .map(|root| (root.path.clone(), root.check.clone().unwrap_or_default()))
             .collect();
         for (path, check) in roots {
@@ -55,7 +60,7 @@ impl Shell {
                         .workspace
                         .roots
                         .iter_mut()
-                        .find(|r| r.path == at)
+                        .find(|r| r.local_path() == Some(&*at))
                     else {
                         return;
                     };
@@ -73,7 +78,7 @@ impl Shell {
                                         .workspace
                                         .roots
                                         .iter_mut()
-                                        .find(|r| r.path == at)
+                                        .find(|r| r.local_path() == Some(&*at))
                                     {
                                         root.check = check.clone();
                                     }

@@ -24,6 +24,7 @@ mod features;
 mod fonts;
 #[cfg(test)]
 mod guards;
+mod hosts;
 mod icons;
 mod instance;
 mod keymap;

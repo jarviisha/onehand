@@ -121,6 +121,7 @@ fn check(ask: &Ask, cx: &mut App) {
                     | AcpEvent::TurnEnded { .. }
                     | AcpEvent::Notice(_)
                     | AcpEvent::Echo(_)
+                    | AcpEvent::At(_)
                     // The refusal it comes ahead of ends the check, in words.
                     | AcpEvent::LoginRequired { .. } => {}
                 }

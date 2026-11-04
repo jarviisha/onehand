@@ -55,6 +55,9 @@ pub struct Workbench {
     active: usize,
     /// The root every mode is pointed at. `None` before any root is active.
     root: Option<PathBuf>,
+    /// Why the project on screen has nothing here, drawn in place of the
+    /// modes: a folder on a host has no files on this machine.
+    refused: Option<&'static str>,
     /// Reading size for the body. Per panel, not per root: the dock's own
     /// sizes are per window here, and a zoom that reset itself on every root
     /// switch would be the odd one out.
@@ -104,6 +107,7 @@ impl Workbench {
                 modes,
                 focus_handle: cx.focus_handle(),
                 root: None,
+                refused: None,
                 zoom,
                 maximized: false,
                 fills_area: false,
@@ -204,6 +208,11 @@ impl Workbench {
     /// buttons one of which spawns something. The key does this first and then
     /// switches; the mode's own empty state is the other way in.
     pub fn start_child(&mut self, cx: &mut Context<Self>) {
+        // The modes still hold the last local project, which is not the one
+        // on screen while this panel refuses.
+        if self.refused.is_some() {
+            return;
+        }
         self.broadcast(&Request::Start, cx);
     }
 
@@ -275,6 +284,11 @@ impl Workbench {
     /// a listing gets asked for again. Returning early here is what silently
     /// took the document walk away from a second `Ctrl+Shift+M`.
     pub fn set_mode(&mut self, mode: ModeId, cx: &mut Context<Self>) {
+        // Showing a mode can start its work, against the last local project
+        // the modes still hold rather than the one on screen.
+        if self.refused.is_some() {
+            return;
+        }
         let Some(place) = self.place_of(mode) else {
             return;
         };
@@ -289,6 +303,7 @@ impl Workbench {
 
     /// Point every mode at a project root.
     pub fn set_root(&mut self, root: PathBuf, cx: &mut Context<Self>) {
+        self.refuse(None, cx);
         if self.root.as_ref() == Some(&root) {
             return;
         }
@@ -297,6 +312,15 @@ impl Workbench {
             mode.set_root(&root, cx);
         }
         cx.notify();
+    }
+
+    /// Say `why` in place of the modes, or stop saying it. The modes keep the
+    /// root they had, so coming back to it finds it as it was.
+    pub fn refuse(&mut self, why: Option<&'static str>, cx: &mut Context<Self>) {
+        if self.refused != why {
+            self.refused = why;
+            cx.notify();
+        }
     }
 
     /// Tell every mode where this window's workspace keeps its files.
@@ -350,6 +374,9 @@ impl Workbench {
     /// Switching is what the answer buys: the mode that took the file is the
     /// one worth looking at, and the panel does not have to know which that is.
     pub fn open_file(&mut self, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
+        if self.refused.is_some() {
+            return;
+        }
         let opened = self
             .modes
             .iter_mut()
@@ -409,7 +436,10 @@ impl Render for Workbench {
         // The mode strip is chrome and keeps its size; only the work below it
         // scales. A zoomed-in editor whose own tab bar grew with it wastes the
         // room the zoom was asking for.
-        let body = self.modes[self.active].view().into_any_element();
+        let body = match self.refused {
+            Some(why) => onehand_ui::hint(why, cx),
+            None => self.modes[self.active].view().into_any_element(),
+        };
         // A measured glyph grid is sized by the font it was configured with and
         // not by the rem base around it, so a mode that says so is left alone:
         // wrapping it in the scale would stretch the box while the cell stayed

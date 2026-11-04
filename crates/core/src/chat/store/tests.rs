@@ -51,13 +51,13 @@ fn sanitize_keeps_uuid_and_replaces_unsafe() {
 fn a_turn_appends_only_what_it_added() {
     let store = scratch("append");
     let mut chat = chat_in(&store, "s1");
-    chat.push_user("first".into(), Vec::new());
+    chat.push_user("first".into(), Vec::new(), crate::chat::store::now_secs());
     save(&mut chat);
 
     let items = conv_dir(&store, "s1").join("items.jsonl");
     let after_one = std::fs::read(&items).unwrap();
 
-    chat.push_user("second".into(), Vec::new());
+    chat.push_user("second".into(), Vec::new(), crate::chat::store::now_secs());
     save(&mut chat);
     let after_two = std::fs::read(&items).unwrap();
 
@@ -77,7 +77,7 @@ fn a_second_save_with_nothing_new_writes_no_line() {
     let store = scratch("nothing-new");
     let dir = conv_dir(&store, "s1");
     let mut chat = chat_in(&store, "s1");
-    chat.push_user("only".into(), Vec::new());
+    chat.push_user("only".into(), Vec::new(), crate::chat::store::now_secs());
     save(&mut chat);
     let items = dir.join("items.jsonl");
     let once = std::fs::read(&items).unwrap();
@@ -105,7 +105,11 @@ fn a_replay_is_not_written_a_second_time() {
     let store = scratch("replay");
     let dir = conv_dir(&store, "s1");
     let mut first = chat_in(&store, "s1");
-    first.push_user("what does this do".into(), Vec::new());
+    first.push_user(
+        "what does this do".into(),
+        Vec::new(),
+        crate::chat::store::now_secs(),
+    );
     first.apply(AcpEvent::AgentChunk {
         text: "it does this".into(),
         message: None,
@@ -124,7 +128,11 @@ fn a_replay_is_not_written_a_second_time() {
     // Nothing is written while the replay is arriving.
     assert!(next.flush().is_none());
 
-    next.push_user("and now this".into(), Vec::new());
+    next.push_user(
+        "and now this".into(),
+        Vec::new(),
+        crate::chat::store::now_secs(),
+    );
     save(&mut next);
 
     let back = load(&dir).unwrap();
@@ -146,7 +154,11 @@ fn an_empty_chat_creates_no_directory() {
 
     // …and neither does one that has never been given a session id.
     let mut nameless = Chat::new(1, PathBuf::from("/r"), "Claude".into(), Some(store.clone()));
-    nameless.push_user("typed but never sent anywhere".into(), Vec::new());
+    nameless.push_user(
+        "typed but never sent anywhere".into(),
+        Vec::new(),
+        crate::chat::store::now_secs(),
+    );
     assert!(nameless.flush().is_none());
 
     assert!(!conv_dir(&store, "s1").exists());
@@ -159,7 +171,11 @@ fn an_empty_chat_creates_no_directory() {
 fn listing_never_opens_the_transcript() {
     let store = scratch("listing");
     let mut chat = chat_in(&store, "s1");
-    chat.push_user("Fix the login flow".into(), Vec::new());
+    chat.push_user(
+        "Fix the login flow".into(),
+        Vec::new(),
+        crate::chat::store::now_secs(),
+    );
     save(&mut chat);
 
     std::fs::write(conv_dir(&store, "s1").join("items.jsonl"), "not json").unwrap();
@@ -185,7 +201,11 @@ fn listing_never_opens_the_transcript() {
 fn listing_across_projects_names_each_ones_project() {
     let store = scratch("across");
     let mut chat = chat_in(&store, "s1");
-    chat.push_user("Fix the login flow".into(), Vec::new());
+    chat.push_user(
+        "Fix the login flow".into(),
+        Vec::new(),
+        crate::chat::store::now_secs(),
+    );
     save(&mut chat);
 
     let projects = [PathBuf::from("/other"), PathBuf::from("/r")];
@@ -201,7 +221,7 @@ fn listing_across_projects_names_each_ones_project() {
 fn an_unknown_format_is_neither_listed_nor_loaded() {
     let store = scratch("format");
     let mut chat = chat_in(&store, "s1");
-    chat.push_user("hello".into(), Vec::new());
+    chat.push_user("hello".into(), Vec::new(), crate::chat::store::now_secs());
     save(&mut chat);
 
     let dir = conv_dir(&store, "s1");
@@ -225,8 +245,8 @@ fn an_unknown_format_is_neither_listed_nor_loaded() {
 fn a_torn_last_line_costs_one_item_not_the_conversation() {
     let store = scratch("torn");
     let mut chat = chat_in(&store, "s1");
-    chat.push_user("one".into(), Vec::new());
-    chat.push_user("two".into(), Vec::new());
+    chat.push_user("one".into(), Vec::new(), crate::chat::store::now_secs());
+    chat.push_user("two".into(), Vec::new(), crate::chat::store::now_secs());
     save(&mut chat);
 
     let items = conv_dir(&store, "s1").join("items.jsonl");
@@ -317,7 +337,11 @@ fn an_oversized_image_is_recorded_but_not_stored() {
 fn a_rename_rewrites_only_the_metadata() {
     let store = scratch("rename");
     let mut chat = chat_in(&store, "s1");
-    chat.push_user("Fix the login flow".into(), Vec::new());
+    chat.push_user(
+        "Fix the login flow".into(),
+        Vec::new(),
+        crate::chat::store::now_secs(),
+    );
     save(&mut chat);
 
     let dir = conv_dir(&store, "s1");
@@ -340,13 +364,13 @@ fn a_rename_rewrites_only_the_metadata() {
 fn a_rename_landing_late_does_not_write_back_an_older_count() {
     let store = scratch("rename-late");
     let mut chat = chat_in(&store, "s1");
-    chat.push_user("first".into(), Vec::new());
+    chat.push_user("first".into(), Vec::new(), crate::chat::store::now_secs());
     save(&mut chat);
     let dir = conv_dir(&store, "s1");
 
     assert!(chat.rename("Named"));
     let rename = chat.flush_meta().unwrap();
-    chat.push_user("second".into(), Vec::new());
+    chat.push_user("second".into(), Vec::new(), crate::chat::store::now_secs());
     let turn = chat.flush().unwrap();
     commit(&turn).unwrap();
     commit(&rename).unwrap();
@@ -366,7 +390,7 @@ fn a_rename_landing_late_does_not_write_back_an_older_count() {
 fn a_turn_landing_late_keeps_the_newer_name() {
     let store = scratch("turn-late");
     let mut chat = chat_in(&store, "s1");
-    chat.push_user("first".into(), Vec::new());
+    chat.push_user("first".into(), Vec::new(), crate::chat::store::now_secs());
     save(&mut chat);
     let dir = conv_dir(&store, "s1");
     let lines = |dir: &Path| {
@@ -376,7 +400,7 @@ fn a_turn_landing_late_keeps_the_newer_name() {
             .count()
     };
 
-    chat.push_user("second".into(), Vec::new());
+    chat.push_user("second".into(), Vec::new(), crate::chat::store::now_secs());
     let turn = chat.flush().unwrap();
     assert!(chat.rename("Named"));
     let rename = chat.flush_meta().unwrap();
@@ -395,7 +419,11 @@ fn a_bounded_load_says_so_and_keeps_the_tail() {
     let store = scratch("bounded");
     let mut chat = chat_in(&store, "s1");
     for i in 0..MAX_RESTORED_ITEMS + 10 {
-        chat.push_user(format!("message {i}"), Vec::new());
+        chat.push_user(
+            format!("message {i}"),
+            Vec::new(),
+            crate::chat::store::now_secs(),
+        );
     }
     save(&mut chat);
 
@@ -456,7 +484,11 @@ fn two_writers_in_one_process_do_not_interleave() {
             scope.spawn(move || {
                 let mut chat = chat_in(&store, "s1");
                 for i in 0..20 {
-                    chat.push_user(format!("writer {who} message {i}"), Vec::new());
+                    chat.push_user(
+                        format!("writer {who} message {i}"),
+                        Vec::new(),
+                        crate::chat::store::now_secs(),
+                    );
                     save(&mut chat);
                 }
             });
@@ -486,7 +518,7 @@ fn fnv1a_gives_the_published_values_so_a_saved_digest_survives_any_rebuild() {
 fn a_failed_turn_comes_back_failed() {
     let store = scratch("failed");
     let mut chat = chat_in(&store, "s1");
-    chat.push_user("go".into(), Vec::new());
+    chat.push_user("go".into(), Vec::new(), crate::chat::store::now_secs());
     chat.items.push(ChatItem::failure(
         "The turn failed: rate limited",
         crate::chat::NoticeLevel::Failed,
@@ -547,7 +579,7 @@ fn an_old_turn_error_reads_as_failed() {
 fn the_save_after_a_torn_line_keeps_its_first_item() {
     let store = scratch("torn-then-saved");
     let mut chat = chat_in(&store, "s1");
-    chat.push_user("one".into(), Vec::new());
+    chat.push_user("one".into(), Vec::new(), crate::chat::store::now_secs());
     save(&mut chat);
 
     let items = conv_dir(&store, "s1").join("items.jsonl");
@@ -555,7 +587,7 @@ fn the_save_after_a_torn_line_keeps_its_first_item() {
     text.push_str("{\"t\":\"user\",\"tex");
     std::fs::write(&items, text).unwrap();
 
-    chat.push_user("two".into(), Vec::new());
+    chat.push_user("two".into(), Vec::new(), crate::chat::store::now_secs());
     save(&mut chat);
 
     let back = load(&conv_dir(&store, "s1")).unwrap();
@@ -571,7 +603,7 @@ fn the_save_after_a_torn_line_keeps_its_first_item() {
 fn a_load_that_skipped_a_line_is_not_whole() {
     let store = scratch("skipped");
     let mut chat = chat_in(&store, "s1");
-    chat.push_user("one".into(), Vec::new());
+    chat.push_user("one".into(), Vec::new(), crate::chat::store::now_secs());
     save(&mut chat);
 
     let items = conv_dir(&store, "s1").join("items.jsonl");
@@ -592,11 +624,11 @@ fn a_load_that_skipped_a_line_is_not_whole() {
 fn a_failed_save_is_carried_by_the_next() {
     let store = scratch("failed-save");
     let mut chat = chat_in(&store, "s1");
-    chat.push_user("lost".into(), Vec::new());
+    chat.push_user("lost".into(), Vec::new(), crate::chat::store::now_secs());
     let failed = chat.flush().unwrap();
     chat.unflush(&failed);
 
-    chat.push_user("next".into(), Vec::new());
+    chat.push_user("next".into(), Vec::new(), crate::chat::store::now_secs());
     save(&mut chat);
 
     let back = load(&conv_dir(&store, "s1")).unwrap();
@@ -611,7 +643,11 @@ fn a_failed_save_is_carried_by_the_next() {
 fn a_step_saved_running_comes_back_stopped() {
     let store = scratch("running-step");
     let mut chat = chat_in(&store, "s1");
-    chat.push_user("build it".into(), Vec::new());
+    chat.push_user(
+        "build it".into(),
+        Vec::new(),
+        crate::chat::store::now_secs(),
+    );
     chat.items.push(ChatItem::Tool(ToolItem::new(ToolCall {
         id: "t1".into(),
         title: "cargo build".into(),
@@ -659,7 +695,11 @@ fn a_working_card_holds_the_save_back() {
     use crate::acp::{AcpEvent, SubagentEnd};
     let store = scratch("working-card");
     let mut chat = chat_in(&store, "s1");
-    chat.push_user("look around".into(), Vec::new());
+    chat.push_user(
+        "look around".into(),
+        Vec::new(),
+        crate::chat::store::now_secs(),
+    );
     chat.items.push(subagent(
         "c1",
         SubagentState::Working,
@@ -697,7 +737,11 @@ fn a_working_card_holds_the_save_back() {
 fn a_subagent_card_round_trips() {
     let store = scratch("card-round-trip");
     let mut chat = chat_in(&store, "s1");
-    chat.push_user("look around".into(), Vec::new());
+    chat.push_user(
+        "look around".into(),
+        Vec::new(),
+        crate::chat::store::now_secs(),
+    );
     chat.items.push(subagent(
         "c1",
         SubagentState::Completed,
@@ -737,7 +781,11 @@ fn a_subagent_card_round_trips() {
 fn a_card_saved_working_reads_back_interrupted() {
     let store = scratch("card-working");
     let mut chat = chat_in(&store, "s1");
-    chat.push_user("look around".into(), Vec::new());
+    chat.push_user(
+        "look around".into(),
+        Vec::new(),
+        crate::chat::store::now_secs(),
+    );
     save(&mut chat);
     let dir = conv_dir(&store, "s1");
     let mut file = std::fs::OpenOptions::new()
@@ -767,7 +815,11 @@ fn a_card_saved_working_reads_back_interrupted() {
 fn a_card_working_at_close_is_kept_interrupted() {
     let store = scratch("card-at-close");
     let mut chat = chat_in(&store, "s1");
-    chat.push_user("look around".into(), Vec::new());
+    chat.push_user(
+        "look around".into(),
+        Vec::new(),
+        crate::chat::store::now_secs(),
+    );
     chat.items
         .push(subagent("c1", SubagentState::Working, Vec::new()));
     chat.items.push(ChatItem::Agent(Md::parse("meanwhile")));
@@ -789,7 +841,11 @@ fn a_card_working_at_close_is_kept_interrupted() {
 fn a_card_working_at_a_restart_is_written_interrupted() {
     let store = scratch("card-at-restart");
     let mut chat = chat_in(&store, "s1");
-    chat.push_user("look around".into(), Vec::new());
+    chat.push_user(
+        "look around".into(),
+        Vec::new(),
+        crate::chat::store::now_secs(),
+    );
     save(&mut chat);
     chat.items
         .push(subagent("c1", SubagentState::Working, Vec::new()));
@@ -813,7 +869,11 @@ fn an_ended_card_interrupts_its_nested_cards() {
     use crate::acp::{AcpEvent, SubagentEnd};
     let store = scratch("card-nested-end");
     let mut chat = chat_in(&store, "s1");
-    chat.push_user("look around".into(), Vec::new());
+    chat.push_user(
+        "look around".into(),
+        Vec::new(),
+        crate::chat::store::now_secs(),
+    );
     chat.items.push(subagent(
         "c1",
         SubagentState::Working,
@@ -842,7 +902,7 @@ fn an_ended_card_interrupts_its_nested_cards() {
 fn agent_message_id_round_trips() {
     let store = scratch("message-id");
     let mut chat = chat_in(&store, "s1");
-    chat.push_user("go".into(), Vec::new());
+    chat.push_user("go".into(), Vec::new(), crate::chat::store::now_secs());
     let mut md = Md::parse("answer");
     md.message = Some("m1".into());
     chat.items.push(ChatItem::Agent(md));
@@ -862,7 +922,7 @@ fn agent_message_id_round_trips() {
 fn an_old_agent_line_reads_without_an_id() {
     let store = scratch("old-agent-line");
     let mut chat = chat_in(&store, "s1");
-    chat.push_user("go".into(), Vec::new());
+    chat.push_user("go".into(), Vec::new(), crate::chat::store::now_secs());
     chat.items.push(ChatItem::Agent(Md::parse("answer")));
     save(&mut chat);
 
@@ -882,7 +942,7 @@ fn an_old_agent_line_reads_without_an_id() {
 fn a_step_keeps_when_it_settled() {
     let store = scratch("settled");
     let mut chat = chat_in(&store, "s1");
-    chat.push_user("go".into(), Vec::new());
+    chat.push_user("go".into(), Vec::new(), crate::chat::store::now_secs());
     let mut tool = ToolItem::new(crate::acp::ToolCall {
         id: "t1".into(),
         title: "cargo test".into(),

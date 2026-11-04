@@ -229,9 +229,17 @@ impl Chat {
         let has_card = stash.iter().any(|it| matches!(it, ChatItem::Subagent(_)));
         if replayed < stash.len() || self.bounded || has_card {
             self.persisted = stash.len();
-            self.history = stash;
             self.items
                 .retain(|it| matches!(it, ChatItem::Notice { .. }));
+            // The failure the copy put back stands on is said there already;
+            // the replay saying it again goes, once. Every other notice is
+            // this resume's own news and stays.
+            let again = super::turn::standing_failure(stash.iter().rev())
+                .and_then(|standing| self.items.iter().position(|it| same_notice(it, standing)));
+            if let Some(again) = again {
+                self.items.remove(again);
+            }
+            self.history = stash;
             self.numbering = self.numbering.wrapping_add(1);
             self.touch();
         } else {
@@ -246,6 +254,8 @@ impl Chat {
                 }) => Some(ChatItem::failure(text.clone(), *level, detail.clone())),
                 _ => None,
             };
+            // Unless the replay said it again itself.
+            let failure = failure.filter(|f| !self.items.iter().any(|said| same_notice(said, f)));
             self.items.extend(failure);
             self.rewrite = true;
             self.persisted = 0;
@@ -335,4 +345,23 @@ impl Drop for Chat {
     fn drop(&mut self) {
         self.save_blocking();
     }
+}
+
+/// Whether `a` and `b` say the same line: what a replay says again of a
+/// conversation's own notices, at whatever level it says it.
+fn same_notice(a: &ChatItem, b: &ChatItem) -> bool {
+    fn text(item: &ChatItem) -> Option<&str> {
+        match item {
+            ChatItem::Notice { text, .. } => Some(text),
+            ChatItem::User(_)
+            | ChatItem::Agent(_)
+            | ChatItem::Thought(_)
+            | ChatItem::Tool(_)
+            | ChatItem::Plan(_)
+            | ChatItem::Permission(_)
+            | ChatItem::Ask(_)
+            | ChatItem::Subagent(_) => None,
+        }
+    }
+    text(a).is_some_and(|a| text(b) == Some(a))
 }

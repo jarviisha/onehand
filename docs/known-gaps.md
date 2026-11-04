@@ -250,3 +250,45 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
 - **No tool answers a card, a permission or an approval, and none cuts a worktree.** Both are on
   purpose: only a person answers what an agent parked, and the lead cuts its worktrees with git.
   The cap of four sessions per caller is not raised for leads either.
+- **A host project has no files, editor, git status or terminal.** The host service serves only
+  sessions so far; the Workbench and the terminal say *Files and terminals on a host come later*,
+  and a file link in a host session opens nothing. They need the host to serve directory
+  listings, reads, writes, git status and PTYs, behind the few blocking functions in core the
+  tree, the editor and git already go through ([hosts.md](hosts.md#not-built)).
+- **A lost host is not attached again by itself.** A dropped connection ends every session watched
+  over it, and each comes back only when restarted; a host that is not attached shows nothing of
+  its sessions, since the laptop keeps no copy of their transcripts. Both need a re-attach with a
+  backoff, and a copy of each journal kept on the laptop to read meanwhile.
+- **A local and a host project on one path share the rail's state for that path.** Their fold, their
+  place in the order the rail keeps, the keyboard's row and the terminal dock's open state are kept
+  by path alone, so folding one folds the other. Pins, unattended runs and check commands are kept
+  per host and path. Fixing it means keying that state by the pair, as the workspace file is.
+- **A replayed session's durations read short, and one turn can mix two clocks.** A thought's or a
+  tool's elapsed time is measured as it arrives, so a replay that delivers a whole turn at once
+  reads it as taking no time, and a tool's settle time is when the replay reached it. A prompt
+  typed here is stamped with this machine's clock and the entries after it with the host's. The
+  journal keeps each entry's second, so the fix is measuring those from the times the replay says
+  rather than from when they arrive.
+- **onehand's own work does not reach a host project.** No tool lists or reaches it, and no
+  workflow, task, issue, schedule, unattended run, worktree or check command runs on it; the
+  Telegram bridge does not offer it either. Each reads files, runs git or starts a process on this
+  machine, and needs the host to do that work instead.
+- **Attachments are not sent to a host.** A prompt goes without them, and the transcript says so:
+  an attachment is a path on this machine, which the host cannot read. Sending them means
+  copying them to the host first.
+- **A host session cannot be forked**, *Not on a host yet*: a fork opens a new agent session from
+  the old one's history, which on a host means a fork the host service carries out on its own
+  journal and agent.
+- **A host session is never ended from the window.** Closing it, removing its project or quitting
+  only stops watching it; it runs on with its agent and stays on its project's page. The host
+  service takes no call that stops a session.
+- **A new host session given up while it opens still starts.** The open is sent at once and the host
+  starts the agent anyway, so a session closed before it was up leaves one idle agent on the host,
+  listed on the project's page and attachable again. Cancelling an open needs a call the host
+  service does not take yet.
+- **A host session restarting onto a session the host still runs is blank for a moment.** The
+  transcript is drawn from the journal alone, so it is empty until the replay arrives. Keeping
+  the old one on screen meanwhile would draw every item twice once the replay lands.
+- **The rows of a host project's sessions take no keyboard focus**, as the rows of a local
+  project page's Tasks and Schedules boxes do not; they are reached by pointer only. Making each box row a tab
+  stop with `Enter` opening it would fix all three.

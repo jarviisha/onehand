@@ -24,7 +24,17 @@ use super::viewport::Viewport;
 use gpui::{Entity, Subscription};
 use onehand_core::chat::ConvMeta;
 use onehand_core::config::AgentSpec;
+use onehand_core::host::wire::HostSession;
+use onehand_core::workspace::HostName;
 use std::path::PathBuf;
+
+/// The host a session's agent runs on, and the host's name for the session
+/// once the host has said it.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct OnHost {
+    pub(crate) host: HostName,
+    pub(crate) session: Option<HostSession>,
+}
 
 pub struct Conversation {
     /// The project root this session's agent runs in, and the agent it runs.
@@ -37,6 +47,9 @@ pub struct Conversation {
     /// Folders beyond `root` its agent may write, held for the same reason:
     /// a restart that dropped them would leave a worker unable to commit.
     pub dirs: Vec<PathBuf>,
+    /// The host its agent runs on, and the host's name for the session once
+    /// the host has said it: what a restart reads again.
+    pub host: Option<OnHost>,
     pub phase: SessionPhase,
     /// How this session's transcript is laid out and where it is scrolled, so
     /// coming back to it finds the conversation where it was left rather than
@@ -126,6 +139,7 @@ impl Conversation {
             root,
             spec,
             dirs: Vec::new(),
+            host: None,
             phase: SessionPhase::Opening,
             viewport: Viewport::default(),
             unseen: false,

@@ -45,8 +45,10 @@ project, else the one on screen, its caret picking *Start in* or *With agent*; *
 (a pill counting tasks that need attention, none at zero), *Issues*, *Workflows* and *Schedules*,
 each filled while its page shows; *Sessions* with a warning-ink *N need attention* chip (shown above zero or
 while on, toggling that filter and back) and the filter menu (*By project*, *All sessions*, *Needs
-attention*, *Recent activity*) over a hairline; the scrolling list, ending on *Add project…*; a foot
-with *Settings*, a page row like the five above, filled while it shows. The rail is drawn as the
+attention*, *Recent activity*) over a hairline; the scrolling list, ending on *Add project…* and,
+under it with no gap, *Add a project on a host…*, which opens the form naming the host and its
+folder there; a foot with *Settings*, a page row like the five above, filled while it shows. The
+rail is drawn as the
 library's sidebar draws its items: a row's name in the sidebar's ink and its second line muted, the
 row under the pointer on the sidebar's accent fill, and the one where the person is on that fill
 too, in the ink paired with it and at medium weight. The *Sessions* label is the small muted
@@ -57,7 +59,9 @@ stands on the page's fill.
 folder and name, its git line (branch, uncommitted changes, commits ahead and behind, each only
 above zero and named in full on hover), the pin, the unattended pill (*auto*, *auto · N*, *auto · N
 waiting*; a run's pill opens its issue on the Issues page), and while folded its sessions' most
-urgent state. Narrowed, the name keeps a minimum and the branch gives way first. Its chevron alone
+urgent state. A project on a host has no git line and no unattended pill: the host's name stands
+first in the row's meta, in the meta ink, and its hover's last line reads `<host>:<path>`.
+Narrowed, the name keeps a minimum and the branch, or the host, gives way first. Its chevron alone
 folds it (not during a search); the rest of the row shows the project's last session, or its page,
 which then fills the row. `+` and `⋯` show on hover and on the keyboard's row, right-click opens the
 same menu. A session row, indented under its project: its state mark, title and `⋯` (on hover, on
@@ -76,7 +80,10 @@ project with none says *No open sessions*, a search or filter with none *No sess
 state has its own ink, and a mark per thing the person can do, none animated (running is a filled
 dot): failed and disconnected share one, both answered by trying again, their words telling them
 apart. The inks: failed or disconnected danger, needs input warning, running `info`, done unread
-success, idle muted. `↑`/`↓` move the list's row, ringed while the keys move it, `Enter` and `←`/`→`
+success, idle muted. A session on a host waiting for that host's busy sessions to finish is none of
+these: an hourglass in the muted ink, its line *Waiting for <host> · agent · age*; it needs nothing
+of the person, so it is not counted as needing attention, and the overview lists it under
+*Working*. `Ctrl+Shift+R` on it asks the host's restart question, as its *Restart now* does. `↑`/`↓` move the list's row, ringed while the keys move it, `Enter` and `←`/`→`
 act on it, `Alt+↑`/`↓` step through sessions in its order. The tree's order is the user's, set by
 dragging; pinned projects stay on top and sessions never leave their project. `Ctrl+Shift+B` hides
 the rail completely, never to an icon column. It resizes between 232 and 448px, on the side bar's
@@ -87,7 +94,9 @@ its place in *Recent activity*), so a lead never reads as failed for a worker th
 its state its line counts *N workers need you* (a worker needing input, failed or disconnected)
 in the warning ink. The *Needs attention* filter and a folded project's badge read the most urgent
 state of the lead and its workers (by that order: lost, failed, needs input, running, done
-unread), and *N need attention* counts a worker waiting on the person. A worktree project holding
+unread, then waiting for its host, the calmest), and *N need attention* counts a worker waiting on
+the person; a session waiting for its host is never counted, since it moves on by itself. Its
+row's menu reads *Restart the host service…* in place of *Restart the agent*. A worktree project holding
 nothing but such workers is left out with them. When the lead closes or is lost, its workers are
 listed again under their project.
 
@@ -100,8 +109,9 @@ ends); a spacer; *N in background* (only while the session's agent has work runn
 background: a menu of each item's name, its kind and how long it has run, each row stopping that
 one item and never the turn, 12 listed and then *N more*; when an item ends, the transcript keeps a
 notice of how and after how long: *Background work finished after 2m 14s: npm test*, an error when it
-failed, *interrupted* when the agent went away first); past conversations and *Close session*
-(only while a session shows); last, while the session on screen leads workers, its workers, a
+failed, *interrupted* when the agent went away first); past conversations (not on a host session,
+whose conversations are not kept on this machine) and *Close session* (only while a session
+shows); last, while the session on screen leads workers, its workers, a
 warning dot on it while one waits on the person and the region is closed. The docks' toggles are
 the title bar's. On the overview, Tasks, Issues,
 Workflows, Schedules and Settings, which name themselves in their head, it carries no name; none of these has a dots menu. As the pane narrows, the name gives way
@@ -223,6 +233,8 @@ dragged height kept).
   and *Activity N* (the history). Sections are parted by space, not rules. ⋯ ▸ *Open in Issues* and
   *Review…* open it on the Issues page, the latter with its review open.
 - Hiding a dock keeps its buffers and processes; the terminal's open state follows the project.
+- On a project on a host, the Workbench (with no modes in its strip) and the terminal each show
+  the hint *Files and terminals on a host come later* in place of their content.
 - **The workers' region**, in the Workbench's place and never beside it: opening one puts the
   other away, a caret in the one leaving going to the lead's composer and the one arriving taking
   none; hiding the region gives the Workbench back as it was, and while it shows the layout saves
@@ -274,6 +286,20 @@ dragged height kept).
   narrowed to the project; *No schedules here* at none; capped at five; reading and a failed read
   said as on the page); then the box *Settings*
   (its *Check command* field). The page scrolls as one.
+- A project on a host shows the same head, its path written `<host>:<path>` (never shortened to
+  `~/`) with no git line, and *Refresh* (a quiet icon) before *New session*; under it one box,
+  *Sessions on <host>* with its count, in place of *Past conversations*, and neither *Tasks*,
+  *Schedules* nor *Settings*, which are this machine's: a row per session the host keeps in that
+  folder, newest first (its agent, then *started 3m ago* or *started just now*, and *running*, in
+  the running ink while mid-turn, or *ended* at the edge), a press attaching to it in the pane, or
+  showing the session already attached to it there; capped at 50 with *N more on this host*.
+  *Attaching to <host>…* with a spinner while it waits; *No sessions on <host> for this folder
+  yet* at none; a failure says why as a status line in the danger ink with *Try again*
+  (secondary) beside it; a host on another build with sessions mid-turn says *Waiting for N
+  sessions on <host> to finish before restarting its host service onto this build* as a status
+  line in the muted ink with *Restart now* (secondary) beside it, and lists again once it is
+  done (*Attaching to <host>…* meanwhile); a host found out of reach while it waits ends the wait
+  on the failure, with *Try again*.
 - *Workspace overview* shows, under its head (*Overview*), across all projects, the boxes *Waiting
   on you* (runs waiting for an answer or an approval, and sessions waiting, failed, finished or
   lost) and *Working*, then *Projects* as a grid of tiles (not drawn without projects), then the

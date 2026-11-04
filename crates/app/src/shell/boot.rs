@@ -214,6 +214,9 @@ impl Shell {
                         // session in front of it.
                         let _ = shell.start_session(agent.clone(), resume.clone(), window, cx);
                     }
+                    E::WatchHostSession { agent, session } => {
+                        shell.watch_host_session(agent.clone(), session.clone(), window, cx)
+                    }
                     // Said the same way every other failed write is said, and
                     // for a stronger reason: a workspace that will not save can
                     // be described again, a conversation cannot.
@@ -254,9 +257,11 @@ impl Shell {
                     }
                     E::ShowTasks(filter) => shell.show_tasks(filter.clone(), window, cx),
                     E::ShowSchedules(only) => shell.show_schedules(only.clone(), window, cx),
+                    E::HostBusy { uid, host } => shell.host_busy(*uid, host.clone(), window, cx),
+                    E::RestartHost(host) => shell.ask_restart_host(host.clone(), window, cx),
                     E::RunCheck => {
-                        if let Some(root) = shell.window.workspace.active_root() {
-                            let root = root.path.clone();
+                        let active = shell.window.workspace.active_root;
+                        if let Some(root) = shell.local_root(active).map(|p| p.to_path_buf()) {
                             shell.run_check(root, window, cx);
                         }
                     }
@@ -279,6 +284,9 @@ impl Shell {
         // of what the rail asks the pane for, so it cannot drift out of step
         // with what is drawn.
         cx.observe(&chat, |shell: &mut Self, _, cx| {
+            // What waits on a host here goes with the session or the page
+            // that waited, so a wait nobody watches ends.
+            shell.prune_host_waits(cx);
             let sessions = shell.rail_sessions(cx);
             if sessions != shell.rail_sessions {
                 // The workers' list says a worker's age by the rail's own
@@ -504,6 +512,8 @@ impl Shell {
             }),
             worktree_draft: None,
             branch_draft: None,
+            host_project: None,
+            host_flow: Default::default(),
             issue_picker: None,
             dialog_return: None,
             label_input: cx.new(|cx| InputState::new(window, cx).placeholder("bug")),

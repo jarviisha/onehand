@@ -69,6 +69,8 @@ pub struct Shared {
     pub recents: AppState,
     /// The tokio runtime every ACP adapter runs on (see [`crate::acp`]).
     pub acp: AcpRuntime,
+    /// The one connection to each host, shared by every window's projects there.
+    pub hosts: crate::hosts::Hosts,
     /// The channel a device outside this machine reaches the app through.
     ///
     /// Global rather than per window because a bot token identifies one bot: a
@@ -144,6 +146,7 @@ impl Shared {
             // A runtime this process cannot start means no agent can ever run,
             // which is the whole app -- there is nothing useful to degrade to.
             acp: AcpRuntime::new().expect("failed to start the agent runtime"),
+            hosts: crate::hosts::Hosts::new(),
             // Started separately, after the global exists: bringing a channel up
             // means reading a credential and spawning a poll, and neither of
             // those is something a constructor should be able to fail at.

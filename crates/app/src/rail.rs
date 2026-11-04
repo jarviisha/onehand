@@ -202,6 +202,7 @@ impl List {
                     in_turn: row.in_turn,
                     lead: crate::control::lead_of(s.uid),
                     waiting: 0,
+                    host: roots[root].on_host().map(ToString::to_string),
                 }
             })
             .collect();
@@ -315,7 +316,8 @@ pub fn rail(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> impl Int
                 cx,
             ),
             Row::NoMatch => note("No sessions match", false, cx),
-            Row::AddProject => add_project(cx),
+            Row::AddProject => add_project(false, cx),
+            Row::AddHostProject => add_project(true, cx),
         });
     }
 
@@ -564,27 +566,45 @@ fn more(group: Option<PathBuf>, hidden: usize, cx: &mut Context<Shell>) -> AnyEl
         .into_any_element()
 }
 
-/// The list's last row: the way to grow it.
-fn add_project(cx: &mut Context<Shell>) -> AnyElement {
+/// The list's last two rows: the way to grow it, with a folder here or, with
+/// `on_host`, with one on a host. Set apart from the list above by the first.
+fn add_project(on_host: bool, cx: &mut Context<Shell>) -> AnyElement {
     let hover = row::hover_fill(cx);
+    let (id, label, tip) = match on_host {
+        false => (
+            "rail-add-project",
+            "Add project…",
+            "Add a project to this workspace",
+        ),
+        true => (
+            "rail-add-host-project",
+            "Add a project on a host…",
+            "Add a project whose folder is on a host",
+        ),
+    };
     div()
-        .id("rail-add-project")
+        .id(id)
         .h_flex()
         .items_center()
         .h(ROW_H)
-        .mt_3()
+        .when(!on_host, |row| row.mt_3())
         .px_2()
         .gap_2()
         .rounded(cx.theme().radius)
         .cursor_pointer()
         .hover(move |d| d.bg(hover))
         .text_color(cx.theme().muted_foreground)
-        .tooltip(onehand_ui::tip(|window, cx| {
-            Tooltip::new("Add a project to this workspace").build(window, cx)
+        .tooltip(onehand_ui::tip(move |window, cx| {
+            Tooltip::new(tip).build(window, cx)
         }))
-        .on_click(cx.listener(|shell: &mut Shell, _, _, cx| shell.add_root(cx)))
+        .on_click(
+            cx.listener(move |shell: &mut Shell, _, window, cx| match on_host {
+                false => shell.add_root(cx),
+                true => shell.begin_host_project(window, cx),
+            }),
+        )
         .child(mark_slot(Icon::new(IconName::Plus).small()))
-        .child("Add project…")
+        .child(label)
         .into_any_element()
 }
 
@@ -706,7 +726,12 @@ impl Shell {
             .filter_map(|row| match *row {
                 Row::Project { root, .. } => Some(Cursor::Project(roots[root].path.clone())),
                 Row::Session { item, .. } => Some(Cursor::Session(list.items[item].uid)),
-                Row::Gap | Row::Empty | Row::More { .. } | Row::NoMatch | Row::AddProject => None,
+                Row::Gap
+                | Row::Empty
+                | Row::More { .. }
+                | Row::NoMatch
+                | Row::AddProject
+                | Row::AddHostProject => None,
             })
             .collect();
         let at = self

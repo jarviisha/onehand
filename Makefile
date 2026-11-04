@@ -60,6 +60,7 @@ dev: ## Run a debug build beside the app in use, on a data root of its own (DEV_
 		cp "$(LIVE_CONFIG)" "$(DEV_HOME)/config.toml"; \
 		echo "Seeded $(DEV_HOME)/config.toml from $(LIVE_CONFIG)"; \
 	fi
+	$(CARGO) build -p onehand-host
 	ONEHAND_CONFIG_DIR="$(DEV_HOME)" ONEHAND_TELEGRAM_TOKEN= $(CARGO) run -- $(ROOT)
 
 showcase: ## The app as it is, on scratch projects and the Mock UI agent (SHOWCASE_HOME)

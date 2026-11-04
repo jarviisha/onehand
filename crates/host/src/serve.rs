@@ -15,7 +15,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use futures::StreamExt as _;
 use onehand_core::acp;
-use onehand_core::host::wire::{Call, FromHost, Question, Reply};
+use onehand_core::host::wire::{Build, Call, FromHost, Question, Reply};
 use onehand_core::instance::{hold_lock, holding, socket_path};
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
 use tokio::net::unix::OwnedWriteHalf;
@@ -51,7 +51,7 @@ pub(crate) fn unix_secs() -> u64 {
 /// How long the old attach gets to take its `Kicked` before it is cut off.
 const KICK_GRACE: Duration = Duration::from_secs(2);
 
-pub(crate) async fn run(dir: PathBuf, build: String) -> ExitCode {
+pub(crate) async fn run(dir: PathBuf, build: Build) -> ExitCode {
     if let Err(e) = private_dir(&dir) {
         eprintln!("onehand-host: cannot make {}: {e}", dir.display());
         return ExitCode::FAILURE;
@@ -93,7 +93,7 @@ pub(crate) async fn run(dir: PathBuf, build: String) -> ExitCode {
 }
 
 /// Take each attach as it comes, telling the one before it that it was taken over.
-async fn accept(listener: UnixListener, hub: Arc<Mutex<Hub>>, build: String) -> ! {
+async fn accept(listener: UnixListener, hub: Arc<Mutex<Hub>>, build: Build) -> ! {
     let mut current: Option<(UnboundedSender<FromHost>, JoinHandle<()>)> = None;
     loop {
         let stream = match listener.accept().await {
@@ -204,7 +204,7 @@ fn after_marker(output: &[u8]) -> Option<&[u8]> {
 async fn connection(
     stream: UnixStream,
     hub: Arc<Mutex<Hub>>,
-    build: String,
+    build: Build,
     out: UnboundedSender<FromHost>,
     mut lines: UnboundedReceiver<FromHost>,
 ) {
@@ -243,7 +243,12 @@ async fn connection(
 }
 
 /// Answer one line; whether the service should now exit.
-fn answer(hub: &Arc<Mutex<Hub>>, build: &str, out: &UnboundedSender<FromHost>, line: &str) -> bool {
+fn answer(
+    hub: &Arc<Mutex<Hub>>,
+    build: &Build,
+    out: &UnboundedSender<FromHost>,
+    line: &str,
+) -> bool {
     let Ok(Question { id, call }) = serde_json::from_str::<Question>(line) else {
         let _ = out.send(FromHost::Answer {
             id: 0,
@@ -256,7 +261,7 @@ fn answer(hub: &Arc<Mutex<Hub>>, build: &str, out: &UnboundedSender<FromHost>, l
         Call::Hello { .. } => {
             let busy = lock(hub).list();
             Ok(Reply::Welcome {
-                build: build.to_string(),
+                build: build.clone(),
                 busy: busy
                     .into_iter()
                     .filter(|s| s.busy)
@@ -278,6 +283,9 @@ fn answer(hub: &Arc<Mutex<Hub>>, build: &str, out: &UnboundedSender<FromHost>, l
         Call::Request { session, request } => {
             lock(hub).request(&session, request).map(|()| Reply::Done)
         }
+        Call::Probe { path } => Ok(Reply::Probed {
+            is_dir: fs::metadata(path).is_ok_and(|m| m.is_dir()),
+        }),
     };
     let _ = out.send(FromHost::Answer { id, result });
     exit

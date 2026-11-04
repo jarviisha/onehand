@@ -83,8 +83,8 @@ pub(crate) enum WorkspacePageEvent {
         uid: u64,
         window: gpui::AnyWindowHandle,
     },
-    /// Select the project at this root.
-    ShowProject(PathBuf),
+    /// Select the project at this root, on this host or here.
+    ShowProject(Option<onehand_core::workspace::HostName>, PathBuf),
     /// Resume `archive` on `agent` in the project at `root`.
     ResumeIn {
         root: PathBuf,
@@ -123,12 +123,14 @@ impl WorkspacePage {
         self.shown = onehand_core::issues::open_across(kept, PAGE_ISSUES);
     }
 
-    /// What `root` is called here, or its folder's name for a project this
-    /// window does not hold — a run's project can be in another window.
+    /// What `root`, a folder on this machine, is called here, or its
+    /// folder's name for a project this window does not hold — a run's
+    /// project can be in another window. Never a host's project of the same
+    /// path: every caller names a run, a conversation or an issue file here.
     fn label_of(&self, root: &Path) -> String {
         self.projects
             .iter()
-            .find(|project| project.root == root)
+            .find(|project| project.host.is_none() && project.root == root)
             .map(|project| project.label.to_string())
             .or_else(|| {
                 root.file_name()
@@ -146,7 +148,7 @@ impl WorkspacePage {
         self.filter = self
             .filter
             .take()
-            .filter(|only| projects.iter().any(|project| &project.root == only));
+            .filter(|only| filter_options(&projects).any(|(_, root)| &root == only));
         self.projects = projects;
         self.read = None;
         self.failed = Vec::new();
@@ -165,7 +167,14 @@ impl WorkspacePage {
             .iter()
             .filter_map(|project| Some((project.root.clone(), project.issues.clone()?)))
             .collect();
-        let roots: Vec<PathBuf> = self.projects.iter().map(|p| p.root.clone()).collect();
+        // A host's conversations are not kept here; what is filed under its
+        // path is a folder of the same path here.
+        let roots: Vec<PathBuf> = self
+            .projects
+            .iter()
+            .filter(|p| p.host.is_none())
+            .map(|p| p.root.clone())
+            .collect();
         self._load = Some(cx.spawn(async move |page, cx| {
             let (read, failed, recent) = cx
                 .background_executor()
@@ -198,7 +207,7 @@ impl WorkspacePage {
     /// everything it has read. A filter on a project no longer listed goes.
     pub(crate) fn set_projects(&mut self, projects: Vec<PageProject>, cx: &mut Context<Self>) {
         if let Some(only) = &self.filter
-            && !projects.iter().any(|project| &project.root == only)
+            && !filter_options(&projects).any(|(_, root)| &root == only)
         {
             self.filter = None;
             self.refilter();
@@ -294,7 +303,8 @@ impl WorkspacePage {
                 }))
                 .into_any_element();
                 match signal {
-                    SessionSignal::Busy => working.push(row),
+                    // Moves on by itself, as a running one does.
+                    SessionSignal::Busy | SessionSignal::HostWait => working.push(row),
                     SessionSignal::Lost
                     | SessionSignal::Failed
                     | SessionSignal::AwaitingUser
@@ -336,32 +346,11 @@ impl WorkspacePage {
             .take(PAGE_PROJECTS)
             .enumerate()
             .map(|(i, project)| {
-                // `None` while the issues are still being read, which is a
-                // wait and not an answer of none.
-                let open = page.read.as_ref().map(|read| {
-                    read.iter()
-                        .find(|(root, _)| *root == project.root)
-                        .map_or(0, |(_, issues)| {
-                            issues.listed().iter().filter(|issue| issue.open).count()
-                        })
-                });
-                let sessions = project.sessions.len();
-                let holds: Vec<String> = [
-                    (sessions > 0).then(|| count_of(sessions, "session")),
-                    open.filter(|n| *n > 0).map(|n| count_of(n, "open issue")),
-                ]
-                .into_iter()
-                .flatten()
-                .collect();
-                let holds = match (holds.is_empty(), open) {
-                    (false, _) => holds.join(" · "),
-                    (true, None) => "Looking for open issues…".to_string(),
-                    (true, Some(_)) => "Nothing open".to_string(),
-                };
+                let holds = holds(project, page.read.as_deref());
                 let rollup = SessionSignal::most_urgent(
                     project.sessions.iter().filter_map(|(uid, _)| signal(*uid)),
                 );
-                let root = project.root.clone();
+                let (root, host) = (project.root.clone(), project.host.clone());
                 // The folder in a column of its own, so the name and the
                 // lines under it start on one edge.
                 card_box(cx)
@@ -405,16 +394,15 @@ impl WorkspacePage {
                                         rollup.map(|signal| crate::rail::signal_mark(signal, cx)),
                                     ),
                             )
-                            .child(muted_line(
-                                project
-                                    .git
-                                    .clone()
-                                    .unwrap_or_else(|| "Not a git repository".to_string()),
-                            ))
+                            .child(muted_line(match (&project.host, &project.git) {
+                                (Some(host), _) => format!("On {host}"),
+                                (None, Some(git)) => git.clone(),
+                                (None, None) => "Not a git repository".to_string(),
+                            }))
                             .child(muted_line(holds)),
                     )
                     .on_click(cx.listener(move |_: &mut Self, _, _, cx| {
-                        cx.emit(WorkspacePageEvent::ShowProject(root.clone()));
+                        cx.emit(WorkspacePageEvent::ShowProject(host.clone(), root.clone()));
                     }))
                     .into_any_element()
             })
@@ -480,17 +468,14 @@ impl WorkspacePage {
                 ),
             });
 
-        let unbound = !page.projects.is_empty()
-            && page.projects.iter().all(|project| project.issues.is_none());
+        let unbound = keeps_no_issues(&page.projects);
         let this = cx.entity();
         let filter = crate::page_parts::project_filter(
             "workspace-filter",
             page.filter
                 .as_deref()
                 .map(|root| page.label_of(root).into()),
-            page.projects
-                .iter()
-                .map(|project| (project.label.clone(), project.root.clone())),
+            filter_options(&page.projects),
             page.filter.clone(),
             onehand_ui::ControlSize::Short,
             move |only, cx| {
@@ -599,3 +584,62 @@ impl Render for WorkspacePage {
         self.page(window, cx)
     }
 }
+
+/// What a project's tile says it holds: its sessions and open issues.
+/// `read` is `None` while the issues are still being read, which is a wait and
+/// not an answer of none. A host's project has no issue file here, and what is
+/// read under its path is a folder of the same path here: it says its sessions
+/// alone.
+fn holds(
+    project: &PageProject,
+    read: Option<&[(PathBuf, onehand_core::issues::Issues)]>,
+) -> String {
+    let sessions = project.sessions.len();
+    if project.host.is_some() {
+        return match sessions {
+            0 => "No sessions".to_string(),
+            n => count_of(n, "session"),
+        };
+    }
+    let open = read.map(|read| {
+        read.iter()
+            .find(|(root, _)| *root == project.root)
+            .map_or(0, |(_, issues)| {
+                issues.listed().iter().filter(|issue| issue.open).count()
+            })
+    });
+    let holds: Vec<String> = [
+        (sessions > 0).then(|| count_of(sessions, "session")),
+        open.filter(|n| *n > 0).map(|n| count_of(n, "open issue")),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    match (holds.is_empty(), open) {
+        (false, _) => holds.join(" · "),
+        (true, None) => "Looking for open issues…".to_string(),
+        (true, Some(_)) => "Nothing open".to_string(),
+    }
+}
+
+/// Whether no project keeps an issue file: the workspace is bound to no
+/// folder. A host's project never has one here, so a workspace of host
+/// projects alone keeps none either.
+fn keeps_no_issues(projects: &[PageProject]) -> bool {
+    !projects.is_empty() && projects.iter().all(|project| project.issues.is_none())
+}
+
+/// The projects the page can be narrowed to, as (name, root): those on this
+/// machine. A host's project has no issues, runs or conversations here, and
+/// its path would narrow the page to a folder of the same path here.
+fn filter_options(
+    projects: &[PageProject],
+) -> impl Iterator<Item = (SharedString, PathBuf)> + use<'_> {
+    projects
+        .iter()
+        .filter(|project| project.host.is_none())
+        .map(|project| (project.label.clone(), project.root.clone()))
+}
+
+#[cfg(test)]
+mod tests;

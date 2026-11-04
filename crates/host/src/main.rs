@@ -12,7 +12,7 @@ mod serve;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use onehand_core::host::wire::build_id;
+use onehand_core::host::wire::{build_id, Build};
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> ExitCode {
@@ -48,7 +48,7 @@ fn data_dir() -> PathBuf {
 }
 
 /// The build id of the binary this process runs.
-fn own_build() -> Result<String, String> {
+fn own_build() -> Result<Build, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let bytes = std::fs::read(&exe).map_err(|e| format!("{}: {e}", exe.display()))?;
     Ok(build_id(&bytes))

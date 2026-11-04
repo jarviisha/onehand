@@ -130,6 +130,9 @@ pub enum SessionSignal {
     Busy,
     /// A turn finished while this session was not being looked at.
     UnseenTurn,
+    /// Not attached, waiting for its host's busy sessions to finish: it is
+    /// restarted once they are, so nothing waits on the person.
+    HostWait,
 }
 
 impl SessionSignal {
@@ -154,6 +157,8 @@ impl SessionSignal {
             // The calmest, and the only one about the past rather than about
             // now.
             Self::UnseenTurn => 4,
+            // Moves on by itself, and asks nothing.
+            Self::HostWait => 5,
         }
     }
 
@@ -167,13 +172,19 @@ impl SessionSignal {
     /// Pure, and separate from the lookup, so the order is testable without a
     /// window: it is a rule about attention, and rules about attention are
     /// exactly what regresses silently.
+    /// A session waiting for its host shows that alone: its link is down
+    /// because it waits, and what it last said is not news.
     pub fn pick(
+        host_wait: bool,
         link: Link,
         failed: bool,
         awaiting_user: bool,
         busy: bool,
         unseen: bool,
     ) -> Option<Self> {
+        if host_wait {
+            return Some(Self::HostWait);
+        }
         Self::most_urgent(
             [
                 (link == Link::Lost).then_some(Self::Lost),
@@ -209,6 +220,7 @@ impl SessionSignal {
             Self::AwaitingUser => "Needs input",
             Self::Busy => "Running",
             Self::UnseenTurn => "Done",
+            Self::HostWait => "Waiting for host",
         }
     }
 }
@@ -364,7 +376,7 @@ mod tests {
     #[test]
     fn a_calm_session_carries_no_signal() {
         assert_eq!(
-            SessionSignal::pick(Link::Connected, false, false, false, false),
+            SessionSignal::pick(false, Link::Connected, false, false, false, false),
             None
         );
     }
@@ -375,7 +387,7 @@ mod tests {
     #[test]
     fn coming_up_is_not_a_signal() {
         assert_eq!(
-            SessionSignal::pick(Link::Connecting, false, false, false, false),
+            SessionSignal::pick(false, Link::Connecting, false, false, false, false),
             None
         );
     }
@@ -384,25 +396,41 @@ mod tests {
     fn each_state_shows_when_it_is_the_only_one() {
         use SessionSignal::*;
         assert_eq!(
-            SessionSignal::pick(Link::Lost, false, false, false, false),
+            SessionSignal::pick(false, Link::Lost, false, false, false, false),
             Some(Lost)
         );
         assert_eq!(
-            SessionSignal::pick(Link::Connected, false, true, false, false),
+            SessionSignal::pick(false, Link::Connected, false, true, false, false),
             Some(AwaitingUser)
         );
         assert_eq!(
-            SessionSignal::pick(Link::Connected, false, false, true, false),
+            SessionSignal::pick(false, Link::Connected, false, false, true, false),
             Some(Busy)
         );
         assert_eq!(
-            SessionSignal::pick(Link::Connected, false, false, false, true),
+            SessionSignal::pick(false, Link::Connected, false, false, false, true),
             Some(UnseenTurn)
         );
         assert_eq!(
-            SessionSignal::pick(Link::Connected, true, false, false, false),
+            SessionSignal::pick(false, Link::Connected, true, false, false, false),
             Some(Failed)
         );
+    }
+
+    /// Waiting for its host is not losing its agent: the wait is why the
+    /// link is down, and it reads calm, never as a failure.
+    #[test]
+    fn a_session_waiting_for_its_host_is_not_lost() {
+        assert_eq!(
+            SessionSignal::pick(true, Link::Lost, true, false, false, true),
+            Some(SessionSignal::HostWait)
+        );
+        assert_eq!(
+            SessionSignal::most_urgent([SessionSignal::HostWait, SessionSignal::UnseenTurn]),
+            Some(SessionSignal::UnseenTurn),
+            "the calmest of all"
+        );
+        assert_eq!(SessionSignal::HostWait.word(), "Waiting for host");
     }
 
     /// The whole point of the reduction. Each of these is a real pairing:
@@ -413,27 +441,27 @@ mod tests {
     fn the_more_urgent_state_wins() {
         use SessionSignal::*;
         assert_eq!(
-            SessionSignal::pick(Link::Lost, false, true, false, true),
+            SessionSignal::pick(false, Link::Lost, false, true, false, true),
             Some(Lost),
             "a dead adapter outranks a question nobody can answer any more"
         );
         assert_eq!(
-            SessionSignal::pick(Link::Lost, true, false, false, false),
+            SessionSignal::pick(false, Link::Lost, true, false, false, false),
             Some(Lost),
             "a dead adapter outranks the error it may have died on"
         );
         assert_eq!(
-            SessionSignal::pick(Link::Connected, true, true, true, true),
+            SessionSignal::pick(false, Link::Connected, true, true, true, true),
             Some(Failed),
             "a broken turn outranks a question and a run"
         );
         assert_eq!(
-            SessionSignal::pick(Link::Connected, false, true, true, true),
+            SessionSignal::pick(false, Link::Connected, false, true, true, true),
             Some(AwaitingUser),
             "a parked question outranks busy: only one of them moves on its own"
         );
         assert_eq!(
-            SessionSignal::pick(Link::Connected, false, false, true, true),
+            SessionSignal::pick(false, Link::Connected, false, false, true, true),
             Some(Busy),
             "what is happening now outranks what happened last turn"
         );
@@ -482,7 +510,7 @@ mod tests {
                 unseen.then_some(UnseenTurn),
             ];
             assert_eq!(
-                SessionSignal::pick(link, failed, awaiting, busy, unseen),
+                SessionSignal::pick(false, link, failed, awaiting, busy, unseen),
                 SessionSignal::most_urgent(parts.into_iter().flatten()),
             );
         }

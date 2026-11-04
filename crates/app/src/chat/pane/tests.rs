@@ -270,3 +270,77 @@ fn no_more_than_two_cards_peek_behind_the_one_shown() {
     assert_eq!(peeks(2), 2);
     assert_eq!(peeks(9), 2);
 }
+
+/// Only a restart reads a host session again. A conversation picked from the
+/// history opens anew on it, and a listed session opened is watched; what a
+/// re-watch would carry rides with it rather than being adopted at once.
+#[test]
+fn only_a_restart_rewatches_a_host_session() {
+    use super::sessions::{Start, host_begin};
+    use crate::chat::session::HostBegin;
+    use onehand_core::chat::Chat;
+    use onehand_core::host::wire::HostSession;
+
+    let snapshot = || {
+        let mut chat = Chat::new(1, std::path::PathBuf::from("/srv/app"), "c".into(), None);
+        chat.session_id = Some("acp-1".into());
+        chat.take_snapshot()
+    };
+    let id = HostSession("h-1".into());
+
+    let (begin, start) = host_begin(Start::Restart(snapshot(), true), Some(&id), 3);
+    assert!(matches!(
+        &begin,
+        HostBegin::Rewatch(known, carried)
+            if *known == id && carried.stored.is_some() && carried.sent == 3 && carried.after_service
+    ));
+    assert!(matches!(start, Start::Fresh), "nothing adopted at once");
+
+    let picked = snapshot().expect("a snapshot");
+    let (begin, start) = host_begin(Start::Resume(picked), Some(&id), 3);
+    assert!(matches!(begin, HostBegin::Open));
+    assert!(matches!(start, Start::Resume(_)));
+
+    let (begin, start) = host_begin(Start::Restart(None, false), None, 0);
+    assert!(matches!(begin, HostBegin::Open));
+    assert!(matches!(start, Start::Restart(None, false)));
+
+    let (begin, start) = host_begin(Start::Watch(id.clone()), None, 0);
+    assert!(matches!(&begin, HostBegin::Watch(known) if *known == id));
+    assert!(matches!(start, Start::Fresh));
+}
+
+/// A watched host session is known from the moment its session is made, so a
+/// second press on the same listed row finds it; a fork opens its own, and a
+/// local session has no host at all.
+#[test]
+fn a_watched_host_session_knows_its_id_from_the_start() {
+    use super::sessions::opening_host;
+    use crate::chat::conversation::OnHost;
+    use onehand_core::host::wire::HostSession;
+    use onehand_core::workspace::HostName;
+
+    let (host, id) = (HostName("box".into()), HostSession("100-1".into()));
+    assert_eq!(
+        opening_host(Some(host.clone()), Some(&id), false),
+        Some(OnHost {
+            host: host.clone(),
+            session: Some(id.clone())
+        })
+    );
+    assert_eq!(
+        opening_host(Some(host.clone()), Some(&id), true),
+        Some(OnHost {
+            host: host.clone(),
+            session: None
+        })
+    );
+    assert_eq!(
+        opening_host(Some(host.clone()), None, false),
+        Some(OnHost {
+            host,
+            session: None
+        })
+    );
+    assert_eq!(opening_host(None, Some(&id), false), None);
+}

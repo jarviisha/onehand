@@ -272,6 +272,10 @@ Another machine onehand reaches over SSH and runs sessions on, named the way `ss
 alias from the person's SSH config, or `user@machine`. It keeps working while the laptop is off.
 _Avoid_: server, remote, cloud, VPS (one kind of host)
 
+**Host project**:
+A project whose folder lives on a host; its sessions run there. The laptop holds no copy of it.
+_Avoid_: remote project
+
 **Host service**:
 The onehand process on a host, with no window. It runs that host's sessions and their agents,
 keeps a journal for each, and carries on with nobody attached. One per user on a host.

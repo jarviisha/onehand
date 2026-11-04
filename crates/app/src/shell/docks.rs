@@ -581,13 +581,7 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(idx) = self
-            .window
-            .workspace
-            .roots
-            .iter()
-            .position(|r| r.path == root)
-        else {
+        let Some(idx) = self.root_index(root) else {
             return;
         };
         self.select_root(idx, window, cx);

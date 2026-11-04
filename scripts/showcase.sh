@@ -53,6 +53,8 @@ EOF
 fi
 
 cd "$repo"
+# The app attaches to a host with the service's binary built beside it.
+cargo build -p onehand-host
 # The Telegram token is cleared for the same reason `make dev` clears it: two
 # bridges polling one bot each see half its messages.
 ONEHAND_CONFIG_DIR="$home" ONEHAND_TELEGRAM_TOKEN= exec cargo run

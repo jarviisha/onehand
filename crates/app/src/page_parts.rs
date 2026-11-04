@@ -23,6 +23,8 @@ pub(crate) const ROW_LEAD_W: Rems = rems(4.);
 pub struct PageProject {
     pub label: SharedString,
     pub root: PathBuf,
+    /// The host its folder is on; `None` for a folder on this machine.
+    pub host: Option<onehand_core::workspace::HostName>,
     /// Its sessions, each with what to call it before its conversation has a
     /// name of its own.
     pub sessions: Vec<(u64, SharedString)>,

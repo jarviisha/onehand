@@ -18,12 +18,13 @@ impl Shell {
     ) {
         // A run's own worktree is not a project anybody chose, and the run
         // never searches it, so a switch on it would say `auto` over nothing.
+        // Nor does a run reach a folder on a host.
         if self
             .window
             .workspace
             .roots
             .get(root_idx)
-            .is_none_or(|root| root.transient)
+            .is_none_or(|root| root.transient || root.on_host().is_some())
         {
             return;
         }
@@ -57,7 +58,7 @@ impl Shell {
                         .workspace
                         .roots
                         .iter_mut()
-                        .find(|root| root.path == path)
+                        .find(|root| root.local_path() == Some(&*path))
                     {
                         root.unattended = on;
                     }
@@ -75,22 +76,19 @@ impl Shell {
 
     /// Every project the Settings list offers the switch for: name, whether it
     /// is on, and its index. A run's own worktree is left out — it is not a
-    /// project anybody chose, and it goes when the run does.
+    /// project anybody chose, and it goes when the run does — and so is a
+    /// project on a host, which no run reaches.
     pub fn unattended_choices(&self) -> Vec<(usize, SharedString, bool)> {
         self.window
             .workspace
             .roots
             .iter()
             .enumerate()
-            .filter(|(_, root)| !root.transient)
+            .filter(|(_, root)| !root.transient && root.on_host().is_none())
             .map(|(i, root)| (i, SharedString::from(root.label.clone()), root.unattended))
             .collect()
     }
 
-    /// Every project root this window holds, as `(path, label)`.
-    ///
-    /// For the bridge, which has to know what there is before it can go looking
-    /// on disk for what was said in it.
     /// Session `uid`'s live session, when it is one of this window's.
     pub fn session_entity(
         &self,
@@ -110,12 +108,14 @@ impl Shell {
             .collect()
     }
 
-    /// Every root's path, with how many sessions are open on it.
+    /// Every root on this machine, with how many sessions are open on it.
     pub fn roots_with_sessions(&self) -> Vec<(PathBuf, usize)> {
         self.window
             .workspace
             .roots
             .iter()
+            // A host's sessions occupy no folder here.
+            .filter(|root| root.on_host().is_none())
             .map(|root| (root.path.clone(), root.sessions.len()))
             .collect()
     }
@@ -130,11 +130,28 @@ impl Shell {
             .collect()
     }
 
+    /// Every project root on this machine this window holds, as `(path,
+    /// label)`: for the bridge, which has to know what there is before it can
+    /// go looking on disk for what was said in it, and for onehand's tools. A
+    /// folder on a host has nothing here either can reach.
     pub fn remote_roots(&self) -> Vec<(PathBuf, String)> {
+        self.roots_where(|root| root.on_host().is_none())
+    }
+
+    /// The projects on a host, which onehand's tools refuse by name.
+    pub fn host_roots(&self) -> Vec<(PathBuf, String)> {
+        self.roots_where(|root| root.on_host().is_some())
+    }
+
+    fn roots_where(
+        &self,
+        keep: impl Fn(&onehand_core::workspace::ProjectRoot) -> bool,
+    ) -> Vec<(PathBuf, String)> {
         self.window
             .workspace
             .roots
             .iter()
+            .filter(|root| keep(root))
             .map(|root| (root.path.clone(), root.label.clone()))
             .collect()
     }
@@ -158,12 +175,7 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<u64> {
-        let idx = self
-            .window
-            .workspace
-            .roots
-            .iter()
-            .position(|candidate| candidate.path == root)?;
+        let idx = self.root_index(root)?;
         self.select_root(idx, window, cx);
         self.start_session(agent, Some(archive), window, cx)
     }
@@ -177,7 +189,7 @@ impl Shell {
             .workspace
             .display_order()
             .into_iter()
-            .filter(|&i| roots[i].unattended && !roots[i].transient)
+            .filter(|&i| roots[i].unattended && !roots[i].transient && roots[i].on_host().is_none())
             .map(|i| self.project_for_runs(&roots[i].path))
             .collect()
     }
@@ -311,7 +323,7 @@ impl Shell {
             .workspace
             .roots
             .iter_mut()
-            .find(|r| r.path == dir)
+            .find(|r| r.local_path() == Some(dir))
         else {
             return;
         };
@@ -332,10 +344,10 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(root) = self.window.workspace.roots.get(root_idx) else {
+        let Some(path) = self.local_root(root_idx).map(Path::to_path_buf) else {
             return;
         };
-        let (path, label) = (root.path.clone(), SharedString::from(root.label.clone()));
+        let label = SharedString::from(self.window.workspace.roots[root_idx].label.clone());
         let issues = self.issues_file(&path);
         let instructions = cx.new(|cx| {
             TextareaState::new(window, cx)
