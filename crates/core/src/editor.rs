@@ -103,7 +103,7 @@ impl RootEditors {
 }
 
 /// Outcome of a save.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum SaveOutcome {
     /// Written. `text` is the exact snapshot that landed on disk — the dirty
     /// dot only clears if the buffer still matches it, so keystrokes that

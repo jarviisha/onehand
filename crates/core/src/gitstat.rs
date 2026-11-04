@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 /// How one path differs from HEAD — drives the tree row's badge and tint.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum FileChange {
     Modified,
     Added,
@@ -45,7 +45,7 @@ impl FileChange {
 
 /// One root's working-tree summary: the rail meta line plus the per-path
 /// change map (paths are repo-relative, as porcelain prints them).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct GitStatus {
     /// `branch.head` from porcelain v2 — `"(detached)"` when headless.
     pub branch: String,

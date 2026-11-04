@@ -32,6 +32,7 @@ pub mod config;
 pub mod connector;
 pub mod control;
 pub mod diff;
+pub mod disk;
 pub mod editor;
 pub mod gitstat;
 pub mod host;

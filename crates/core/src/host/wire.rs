@@ -3,11 +3,15 @@
 
 use std::fmt;
 use std::path::PathBuf;
+use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 
 use crate::acp::{AcpEvent, AcpRequest, Opening};
 use crate::config::AgentSpec;
+use crate::editor::SaveOutcome;
+use crate::gitstat::GitStatus;
+use crate::tree::TreeEntry;
 
 /// A session on a host, as the host names it.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
@@ -71,6 +75,23 @@ pub enum Call {
     Probe {
         path: PathBuf,
     },
+    /// A folder's listing, as the file tree reads one here.
+    ReadDir {
+        path: PathBuf,
+    },
+    /// A file for the editor, refused when too large or not UTF-8.
+    ReadFile {
+        path: PathBuf,
+    },
+    /// Write `text` unless the file changed since `expected`.
+    SaveFile {
+        path: PathBuf,
+        text: String,
+        expected: Option<SystemTime>,
+    },
+    GitStatus {
+        root: PathBuf,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -89,6 +110,18 @@ pub enum Reply {
     Probed {
         is_dir: bool,
     },
+    /// `cut` is how many entries the listing's bound left out.
+    Listing {
+        entries: Vec<TreeEntry>,
+        cut: usize,
+    },
+    File {
+        text: String,
+        mtime: Option<SystemTime>,
+    },
+    Saved(SaveOutcome),
+    /// None when the folder is not in a repository.
+    Git(Option<GitStatus>),
 }
 
 /// What the host sends, one per line.
