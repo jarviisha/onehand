@@ -262,7 +262,6 @@ impl ChatPane {
     }
 }
 
-/// *Refresh*, for the page's head: ask the host again.
 /// The page's *Settings* on a host: whether the host answers the folder's
 /// cards by itself, with what that costs said under it, always.
 pub(super) fn bypass_box(host: &HostName, on: bool, cx: &mut Context<ChatPane>) -> AnyElement {
@@ -354,6 +353,7 @@ impl ChatPane {
     }
 }
 
+/// *Refresh*, for the page's head: ask the host again.
 pub(super) fn refresh(host: &HostName, listing: bool, cx: &mut Context<ChatPane>) -> AnyElement {
     crate::controls::action("host-sessions-refresh")
         .tall_icon()

@@ -701,23 +701,58 @@ async fn switching_on_answers_cards_already_waiting() {
 }
 
 #[tokio::test]
-async fn a_card_answered_by_the_person_is_not_answered_again() {
+async fn a_card_the_host_answered_is_not_answered_again() {
     let (hub, opened) = hub("bypass-twice");
     lock(&hub).set_bypass("/tmp".into(), false).unwrap();
     let mut fake = open(&hub, &opened, true);
     fake.push(asking(7));
     settle().await;
+    lock(&hub).set_bypass("/tmp".into(), true).unwrap();
+    // The person's answer to the same card, racing the host's, goes nowhere.
+    let reject = AcpRequest::PermissionResponse {
+        rpc_id: json!(7),
+        option_id: Some("no".into()),
+    };
+    lock(&hub).request(&fake.session, reject).unwrap();
+    allowed(fake.request().await, 7);
+    settle().await;
+    assert!(fake.requests.try_recv().is_err(), "one answer only");
+}
+
+#[tokio::test]
+async fn a_card_outliving_its_turn_still_takes_the_persons_answer() {
+    let (hub, opened) = hub("bypass-late");
+    lock(&hub).set_bypass("/tmp".into(), false).unwrap();
+    let mut fake = open(&hub, &opened, true);
+    fake.push(asking(7));
+    fake.push(AcpEvent::TurnEnded {
+        stop_reason: "end_turn".into(),
+    });
+    settle().await;
     let answer = AcpRequest::PermissionResponse {
         rpc_id: json!(7),
         option_id: Some("once".into()),
     };
-    lock(&hub).request(&fake.session, answer.clone()).unwrap();
-    lock(&hub).set_bypass("/tmp".into(), true).unwrap();
-    // A second answer from the person, after the card has one, goes nowhere.
     lock(&hub).request(&fake.session, answer).unwrap();
     allowed(fake.request().await, 7);
+}
+
+#[tokio::test]
+async fn an_unreadable_switch_answers_nothing_and_is_not_overwritten() {
+    let dir = scratch("bypass-broken");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("bypass.json"), "not json").unwrap();
+    let (hub, opened) = hub_on(dir.clone());
+    assert!(!lock(&hub).bypass(std::path::Path::new("/tmp")));
+    assert!(lock(&hub).set_bypass("/tmp".into(), true).is_err());
+    assert_eq!(
+        std::fs::read_to_string(dir.join("bypass.json")).unwrap(),
+        "not json"
+    );
+    let mut fake = open(&hub, &opened, true);
+    fake.push(asking(7));
     settle().await;
-    assert!(fake.requests.try_recv().is_err(), "one answer only");
+    assert!(fake.requests.try_recv().is_err());
 }
 
 #[tokio::test]

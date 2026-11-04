@@ -261,7 +261,9 @@ host service answers every card its sessions park, so the work goes on while nob
 - **One switch per host project, on by default,** *Answer cards on the host*, in the *Settings*
   box of its project page (see [screens.md](screens.md#pages-without-a-session)). The host keeps
   it, per folder, in `bypass.json` in its data directory, as the folders switched off; a folder
-  it never heard of is on (`Hub::bypass`, `crates/host/src/hub.rs`). So it holds while the laptop
+  it never heard of is on (`Hub::bypass`, `crates/host/src/hub.rs`). A `bypass.json` that cannot
+  be read is not taken for none kept: the host answers no card at all and refuses to change the
+  switch, saying why in `host.log`, until a person mends or removes the file. So it holds while the laptop
   is away, through a restart of the service, and for whichever laptop attaches. The page reads it
   over the attach with the session list (the wire's `Bypass`, `HostConn::bypass`) and draws no box
   while it has not; a press shows the new state at once, and a host that does not take it puts
@@ -285,7 +287,8 @@ host service answers every card its sessions park, so the work goes on while nob
   and only if one still does (`crates/app/src/chat/session.rs`).
 - **Switching it on answers the cards already waiting** in that folder's sessions, each journaled
   as its answer alone. A card has one answer: a person's that comes after the host's goes
-  nowhere, and the host never answers one a person already has.
+  nowhere, and the host never answers one a person already has. A card stays waiting past its
+  turn's end (a background subagent's may), so a person's answer to it still reaches the agent.
 
 ## The journal and replay
 

@@ -67,6 +67,8 @@ struct Session {
     watcher: Option<UnboundedSender<FromHost>>,
     /// Cards journaled that nobody has answered yet.
     parked: Vec<Parked>,
+    /// The rpc ids of the cards the host answered itself.
+    answered: Vec<serde_json::Value>,
     busy: bool,
     ended: bool,
 }
@@ -78,8 +80,10 @@ pub(crate) struct Hub {
     connector: Connector,
     sessions: BTreeMap<HostSession, Session>,
     counter: u64,
-    /// The folders whose cards wait for a person.
-    off: BTreeSet<PathBuf>,
+    /// The folders whose cards wait for a person, or why they could not be
+    /// read, in which case every folder's cards wait: a choice kept on disk
+    /// and lost is not taken for a folder never switched.
+    off: Result<BTreeSet<PathBuf>, String>,
 }
 
 impl Hub {
@@ -90,7 +94,7 @@ impl Hub {
             connector,
             sessions: BTreeMap::new(),
             counter: 0,
-            off: BTreeSet::new(),
+            off: Ok(BTreeSet::new()),
         }
     }
 
@@ -98,15 +102,20 @@ impl Hub {
     /// `dir/sessions/`, each ended: its agent went with that service. One the
     /// journal does not show ending is ended here, so each watch of it ends once.
     pub(crate) fn load(&mut self) {
-        // A file that cannot be read leaves every folder answered, the default.
-        match fs::read(self.dir.join(BYPASS)) {
-            Ok(bytes) => match serde_json::from_slice::<Bypass>(&bytes) {
-                Ok(bypass) => self.off = bypass.off,
-                Err(e) => log(&format!("{BYPASS} not read: {e}")),
-            },
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => log(&format!("{BYPASS} not read: {e}")),
+        // None kept is every folder answered, the default; one that cannot
+        // be read answers none, and is left for a person to look at.
+        self.off = match fs::read(self.dir.join(BYPASS)) {
+            Ok(bytes) => serde_json::from_slice::<Bypass>(&bytes)
+                .map(|bypass| bypass.off)
+                .map_err(|e| e.to_string()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(BTreeSet::new()),
+            Err(e) => Err(e.to_string()),
         }
+        .map_err(|e| {
+            let why = format!("{BYPASS} could not be read, so no card is answered: {e}");
+            log(&why);
+            why
+        });
         let dirs = match fs::read_dir(self.dir.join("sessions")) {
             Ok(dirs) => dirs,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
@@ -178,6 +187,7 @@ impl Hub {
                 tx: None,
                 watcher: None,
                 parked: Vec::new(),
+                answered: Vec::new(),
                 busy: false,
                 ended: false,
             },
@@ -296,16 +306,16 @@ impl Hub {
         }
         // A card has one answer: one the host gave already wins, and the
         // person's goes nowhere rather than reach the agent a second time.
-        if let Some(rpc) = answers(&request) {
-            let before = s.parked.len();
-            s.parked.retain(|card| card.rpc() != rpc);
-            if s.parked.len() == before {
-                return Ok(());
-            }
+        let rpc = answers(&request);
+        if rpc.is_some_and(|rpc| s.answered.contains(rpc)) {
+            return Ok(());
         }
         let Some(tx) = s.tx.clone() else {
             return Err("the agent is still starting".into());
         };
+        if let Some(rpc) = rpc {
+            s.parked.retain(|card| card.rpc() != rpc);
+        }
         let (request, dropped) = match request {
             AcpRequest::Prompt { text, attachments } if !attachments.is_empty() => (
                 AcpRequest::Prompt {
@@ -338,20 +348,20 @@ impl Hub {
 
     /// Whether the host answers the cards of sessions in `cwd` by itself.
     pub(crate) fn bypass(&self, cwd: &Path) -> bool {
-        !self.off.contains(cwd)
+        self.off.as_ref().is_ok_and(|off| !off.contains(cwd))
     }
 
     /// Set whether the host answers `cwd`'s cards by itself, keeping it on
     /// disk first; switched on, the cards already waiting there are answered.
     pub(crate) fn set_bypass(&mut self, cwd: PathBuf, on: bool) -> Result<bool, String> {
-        let mut off = self.off.clone();
+        let mut off = self.off.clone()?;
         match on {
             true => off.remove(&cwd),
             false => off.insert(cwd.clone()),
         };
         write_bypass(&self.dir, &Bypass { off })
             .map_err(|e| format!("Could not keep the switch: {e}"))
-            .map(|off| self.off = off)?;
+            .map(|off| self.off = Ok(off))?;
         if on {
             let waiting: Vec<HostSession> = self
                 .sessions
@@ -439,14 +449,10 @@ impl Hub {
             return;
         };
         s.busy = busy_after(s.busy, &entry);
-        // A turn that ended, or was called off, takes its cards with it.
-        let settles = matches!(
-            &entry,
-            Entry::Event(AcpEvent::TurnEnded { .. } | AcpEvent::Disconnected(_))
-                | Entry::Request(AcpRequest::Cancel)
-        );
-        if settles {
-            s.parked.clear();
+        // A card answered by the host is never answered again.
+        match &entry {
+            Entry::Answered { answer, .. } => s.answered.extend(answers(answer).cloned()),
+            Entry::Ready(_) | Entry::Event(_) | Entry::Request(_) => {}
         }
         let Some(journal) = &mut s.journal else {
             return log(&format!(
@@ -490,6 +496,7 @@ impl Hub {
             s.busy = false;
             s.tx = None;
             s.journal = None;
+            s.parked.clear();
         }
     }
 }
@@ -519,6 +526,7 @@ fn load(id: &str, dir: &Path) -> Result<Session, String> {
         tx: None,
         watcher: None,
         parked: Vec::new(),
+        answered: Vec::new(),
         busy: false,
         ended: true,
     })
