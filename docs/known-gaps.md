@@ -251,7 +251,11 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   purpose: only a person answers what an agent parked, and the lead cuts its worktrees with git.
   The cap of four sessions per caller is not raised for leads either.
 - **A host terminal's tab gone with a lost connection comes back only when the project is shown
-  again.**
+  or the dock opened again.**
+- **Restarting the host service onto another build ends every host terminal without asking.** The
+  build check and the restart question count only sessions mid-turn, and a service that exits
+  hangs up each terminal's shell and the command in it. Counting the host's terminals as busy, so
+  that a host with terminals asks first, is not built.
 - **Two windows on one host project take the terminal from each other:** a newer watch wins and
   the other window's tab ends.
 - **After a host project is removed, its tabs' reader threads stay blocked** until the terminal
