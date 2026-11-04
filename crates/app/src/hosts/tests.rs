@@ -1,6 +1,7 @@
+use super::waits::{HOST_UNREACHABLE_POLLS, RECONNECT_FIRST, RECONNECT_MAX};
 use super::{
-    HOST_IDLE_POLL, HOST_UNREACHABLE_POLLS, HostFailure, HostState, RECONNECT_FIRST, RECONNECT_MAX,
-    Slots, Waits, bundled_binary_in, next_delay, waiting_line,
+    HOST_IDLE_POLL, HostFailure, HostState, Slots, Waits, bundled_binary_in, next_delay,
+    waiting_line,
 };
 use futures::FutureExt as _;
 use futures::executor::block_on;
