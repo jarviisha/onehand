@@ -421,7 +421,7 @@ fn attach_with(
 ) -> impl Future<Output = Result<HostConn, HostFailure>> + use<> {
     let shared = Shared::global(cx);
     let waits = shared.hosts.waits.clone();
-    let attempt = shared.hosts.slots.get(host, fresh, || {
+    let attempt = shared.hosts.slots.get(host, fresh, !polled, || {
         // Before the first frame that could show it, so nothing to redraw.
         waits.borrow_mut().attaching(host);
         let (tx, rx) = oneshot::channel();
@@ -535,8 +535,9 @@ type Attempt<C> = future::Shared<LocalBoxFuture<'static, Result<C, HostFailure>>
 
 enum Slot<C> {
     Ready(C),
-    /// Every ask while it runs awaits this one attempt, so two never install at once.
-    Attaching(Attempt<C>),
+    /// Every ask while it runs awaits this one attempt, so two never install
+    /// at once; whether it takes the host from another machine beside it.
+    Attaching(Attempt<C>, bool),
 }
 
 /// Attaches by host, generic over the connection so the reuse can be
@@ -563,20 +564,23 @@ impl<C: Clone + 'static> Slots<C> {
     /// nothing behind, so the next ask tries again.
     ///
     /// `fresh` assumes no attempt is under way: one that is goes on, but what
-    /// it ends in is no longer kept.
+    /// it ends in is no longer kept. So too an attempt that does not `take`,
+    /// when this ask does: a person's attach never rides one made by itself,
+    /// which would leave the host to another machine.
     fn get(
         &self,
         host: &HostName,
         fresh: bool,
+        take: bool,
         make: impl FnOnce() -> LocalBoxFuture<'static, Result<C, HostFailure>>,
     ) -> LocalBoxFuture<'static, Result<C, HostFailure>> {
         let found = if fresh { None } else { self.reuse(host) };
         let attempt = match found {
             Some(Either::Left(conn)) => return future::ready(Ok(conn)).boxed_local(),
-            Some(Either::Right(attempt)) => attempt,
-            None => {
+            Some(Either::Right((attempt, takes))) if takes || !take => attempt,
+            Some(Either::Right(_)) | None => {
                 let attempt = make().shared();
-                let slot = Slot::Attaching(attempt.clone());
+                let slot = Slot::Attaching(attempt.clone(), take);
                 self.map.borrow_mut().insert(host.clone(), slot);
                 attempt
             }
@@ -588,7 +592,7 @@ impl<C: Clone + 'static> Slots<C> {
             let mut map = map.borrow_mut();
             // Only this attempt's own slot: a restart since has replaced it.
             let ours = match map.get(&host) {
-                Some(Slot::Attaching(now)) => now.ptr_eq(&attempt),
+                Some(Slot::Attaching(now, _)) => now.ptr_eq(&attempt),
                 Some(Slot::Ready(_)) | None => false,
             };
             if ours {
@@ -610,24 +614,24 @@ impl<C: Clone + 'static> Slots<C> {
     fn ready(&self, host: &HostName) -> Option<C> {
         match self.map.borrow().get(host)? {
             Slot::Ready(conn) => Some(conn.clone()),
-            Slot::Attaching(_) => None,
+            Slot::Attaching(..) => None,
         }
     }
 
     /// What `host`'s slot has worth reusing: a live connection, or an attempt
-    /// still under way.
+    /// still under way and whether it takes the host.
     ///
     /// An attempt is polled once to see whether it has ended: a shared future
     /// settles only when polled, so one whose every waiter went away still
     /// looks under way after its attach is long over. Ended, it is reused only
     /// if it left a connection that is still up; a failure nobody heard is
     /// not handed to the next ask, which tries again.
-    fn reuse(&self, host: &HostName) -> Option<Either<C, Attempt<C>>> {
+    fn reuse(&self, host: &HostName) -> Option<Either<C, (Attempt<C>, bool)>> {
         let mut map = self.map.borrow_mut();
         let conn = match map.get(host)? {
             Slot::Ready(conn) => conn.clone(),
-            Slot::Attaching(attempt) => match attempt.clone().now_or_never() {
-                None => return Some(Either::Right(attempt.clone())),
+            Slot::Attaching(attempt, take) => match attempt.clone().now_or_never() {
+                None => return Some(Either::Right((attempt.clone(), *take))),
                 Some(Ok(conn)) => conn,
                 Some(Err(_)) => return None,
             },

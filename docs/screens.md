@@ -90,7 +90,9 @@ these: an hourglass in the muted ink, its line *Waiting for <host> · agent · a
 of the person, so it is not counted as needing attention, and the overview lists it under
 *Working*. A session on a host that is out of reach, read from the laptop's copy, is calm too: a plug
 mark in the muted ink, its line *Not connected to <host> · agent · age*, never counted as needing
-attention; the mark's hover says *trying again* only while that is so. `Ctrl+Shift+R` on a waiting one asks the host's restart question, as its *Restart now* does. `↑`/`↓` move the list's row, ringed while the keys move it, `Enter` and `←`/`→`
+attention; the mark's hover says *trying again* only while that is so, and the same signal named
+elsewhere (a page naming the session, a folded project's badge) says *Not connected to its host*
+alone. `Ctrl+Shift+R` on a waiting one asks the host's restart question, as its *Restart now* does. `↑`/`↓` move the list's row, ringed while the keys move it, `Enter` and `←`/`→`
 act on it, `Alt+↑`/`↓` step through sessions in its order. The tree's order is the user's, set by
 dragging; pinned projects stay on top and sessions never leave their project. `Ctrl+Shift+B` hides
 the rail completely, never to an icon column. It resizes between 232 and 448px, on the side bar's

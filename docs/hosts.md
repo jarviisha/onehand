@@ -43,7 +43,9 @@ it. What is refused, and how, is under *What a host project does not do*.
   every window, project and session on a host shares it. It is made on first use (a host
   project's page shown, a host session shown, a host project shown in the Workbench, the *Add* of
   the form) and made again only once its stream has ended. Asks that arrive while one attach runs
-  all wait on that one, so two never install at once. The attach runs on the ACP runtime and its
+  all wait on that one, so two never install at once, save that a person's ask never waits on an
+  attach made by itself (which does not take the host, below): it makes its own, which replaces
+  it. The attach runs on the ACP runtime and its
   answer crosses back on a oneshot.
 - **What a host is to this run** (`HostState`, `crates/app/src/hosts.rs`): never tried, attaching,
   live, **lost** (an attach failed, or a live connection closed, without another machine taking the
@@ -83,9 +85,11 @@ it. What is refused, and how, is under *What a host project does not do*.
   project with no session shown and no page, is not tried until something on it is shown; the
   Workbench's own re-attach (below) is separate.
 - **What the window says of it** (the marks are in [screens.md](screens.md)): the rail's host
-  project row and the session row mark a lost host *Not connected to <host>; trying again* while a
-  back wait stands (`hosts::retrying`), else plain *Not connected to <host>* (`hosts::not_connected`),
-  and a taken host *<host> was attached from another machine*. The Workbench's host work is
+  project row's mark and the session row's mark say of a lost host *Not connected to <host>;
+  trying again* while a back wait stands (`hosts::retrying`), else plain *Not connected to <host>*
+  (`hosts::not_connected`), and of a taken host *<host> was attached from another machine*. The
+  session's signal where it stands for the row (a page naming the session, a folded project's
+  badge) says *Not connected to its host* alone, never that it is trying again. The Workbench's host work is
   separate: its line and *Try again* are as under *Files and git status*.
 - **Detaching never stops anything on the host.** Closing a host session in the window, removing
   its project, or quitting onehand lets go of the watch; the session and its agent run on there,

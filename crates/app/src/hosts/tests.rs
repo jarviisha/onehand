@@ -44,18 +44,18 @@ fn a_ready_connection_is_reused_and_a_dead_one_made_again() {
     };
 
     // Two asks while the first attempt is under way share it.
-    let first = slots.get(&host, false, make);
-    let second = slots.get(&host, false, make);
+    let first = slots.get(&host, false, true, make);
+    let second = slots.get(&host, false, true, make);
     block_on(first).ok().unwrap();
     block_on(second).ok().unwrap();
     assert_eq!(made.borrow().len(), 1);
-    block_on(slots.get(&host, false, make)).ok().unwrap();
+    block_on(slots.get(&host, false, true, make)).ok().unwrap();
     assert_eq!(made.borrow().len(), 1);
 
     made.borrow()[0].store(false, Ordering::SeqCst);
-    block_on(slots.get(&host, false, make)).ok().unwrap();
+    block_on(slots.get(&host, false, true, make)).ok().unwrap();
     assert_eq!(made.borrow().len(), 2);
-    block_on(slots.get(&host, false, make)).ok().unwrap();
+    block_on(slots.get(&host, false, true, make)).ok().unwrap();
     assert_eq!(made.borrow().len(), 2);
 }
 
@@ -74,8 +74,8 @@ fn a_failed_attach_is_tried_again_on_the_next_ask() {
     let slots = Slots::new(|c: &Fake| c.0.load(Ordering::SeqCst));
     let host = HostName("vps".into());
     let made = RefCell::new(0);
-    assert!(block_on(slots.get(&host, false, failing(&made))).is_err());
-    assert!(block_on(slots.get(&host, false, failing(&made))).is_err());
+    assert!(block_on(slots.get(&host, false, true, failing(&made))).is_err());
+    assert!(block_on(slots.get(&host, false, true, failing(&made))).is_err());
     assert_eq!(*made.borrow(), 2);
 }
 
@@ -87,8 +87,8 @@ fn a_finished_attach_nobody_awaited_is_not_handed_out() {
     let slots = Slots::new(|c: &Fake| c.0.load(Ordering::SeqCst));
     let host = HostName("vps".into());
     let made = RefCell::new(0);
-    drop(slots.get(&host, false, failing(&made)));
-    assert!(block_on(slots.get(&host, false, failing(&made))).is_err());
+    drop(slots.get(&host, false, true, failing(&made)));
+    assert!(block_on(slots.get(&host, false, true, failing(&made))).is_err());
     assert_eq!(*made.borrow(), 2);
 }
 
@@ -97,22 +97,51 @@ fn a_late_attach_leaves_a_restart_in_its_place() {
     let slots = Slots::new(|c: &Fake| c.0.load(Ordering::SeqCst));
     let host = HostName("vps".into());
     let (send, late) = futures::channel::oneshot::channel::<Fake>();
-    let first = slots.get(&host, false, || {
+    let first = slots.get(&host, false, true, || {
         async move { Ok(late.await.unwrap()) }.boxed_local()
     });
     let restarted = Arc::new(AtomicBool::new(true));
     let fresh = Fake(restarted.clone());
-    block_on(slots.get(&host, true, || async move { Ok(fresh) }.boxed_local()))
+    block_on(slots.get(&host, true, true, || async move { Ok(fresh) }.boxed_local()))
         .ok()
         .unwrap();
     send.send(Fake(Arc::new(AtomicBool::new(true))))
         .ok()
         .unwrap();
     block_on(first).ok().unwrap();
-    let now = block_on(slots.get(&host, false, || panic!("made again")))
+    let now = block_on(slots.get(&host, false, true, || panic!("made again")))
         .ok()
         .unwrap();
     assert!(Arc::ptr_eq(&now.0, &restarted));
+}
+
+/// A person's ask never rides an attempt made by itself, which would not take
+/// the host from another machine: it makes its own, which the slot keeps. One
+/// made by itself rides a person's.
+#[test]
+fn a_persons_ask_never_rides_an_attempt_that_does_not_take() {
+    let slots = Slots::new(|c: &Fake| c.0.load(Ordering::SeqCst));
+    let host = HostName("vps".into());
+    let (send, late) = futures::channel::oneshot::channel::<Fake>();
+    let polled = slots.get(&host, false, false, || {
+        async move { Ok(late.await.unwrap()) }.boxed_local()
+    });
+    let taking = Arc::new(AtomicBool::new(true));
+    let person = slots.get(&host, false, true, || {
+        let up = taking.clone();
+        async move { Ok(Fake(up)) }.boxed_local()
+    });
+    let again = slots.get(&host, false, false, || panic!("rides the person's"));
+    assert!(Arc::ptr_eq(&block_on(person).ok().unwrap().0, &taking));
+    assert!(Arc::ptr_eq(&block_on(again).ok().unwrap().0, &taking));
+    send.send(Fake(Arc::new(AtomicBool::new(true))))
+        .ok()
+        .unwrap();
+    block_on(polled).ok().unwrap();
+    let now = block_on(slots.get(&host, false, true, || panic!("made again")))
+        .ok()
+        .unwrap();
+    assert!(Arc::ptr_eq(&now.0, &taking));
 }
 
 /// Long enough that a host is not asked over and over while its sessions
