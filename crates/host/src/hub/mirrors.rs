@@ -108,27 +108,29 @@ impl Hub {
         self.mirror_state(path)
     }
 
-    /// Refused when `cwd` is a mirror the attached laptop does not own.
-    pub(crate) fn may_use(&self, cwd: &Path) -> Result<(), String> {
-        if !self.in_mirrors(cwd) {
+    /// Refused when `path` lies in a mirror the attached laptop does not own,
+    /// or where mirrors are kept and in none of them.
+    pub(crate) fn may_use(&self, path: &Path) -> Result<(), String> {
+        if !self.in_mirrors(path) {
             return Ok(());
         }
         let owner = self.owner()?;
-        match self.mirrors.as_ref()?.get(cwd) {
-            Some(mirror) if mirror.owner == owner => Ok(()),
-            Some(_) => Err(elsewhere(cwd)),
-            None => Err(unknown(cwd)),
+        let (_, mirror) = self.mirror_of(path)?;
+        match mirror.owner == owner {
+            true => Ok(()),
+            false => Err(elsewhere(path)),
         }
     }
 
     /// Before a prompt to a session in `cwd`: refused while the laptop holds
-    /// the mirror's key, else the mirror's generation moved on.
+    /// its mirror's key, else the mirror's generation moved on.
     pub(super) fn prompt_to(&mut self, cwd: &Path) -> Result<(), String> {
         if !self.in_mirrors(cwd) {
             return Ok(());
         }
+        let (path, _) = self.mirror_of(cwd)?;
         let mut mirrors = self.mirrors.clone()?;
-        let mirror = mirrors.get_mut(cwd).ok_or_else(|| unknown(cwd))?;
+        let mirror = mirrors.get_mut(&path).ok_or_else(|| unknown(cwd))?;
         if mirror.key == Holder::Laptop {
             return Err(
                 "The laptop holds this project's code; send the prompt again to send it up first"
@@ -137,6 +139,16 @@ impl Hub {
         }
         mirror.generation += 1;
         self.keep(mirrors)
+    }
+
+    /// The mirror `path` lies in, and the path it is kept under.
+    fn mirror_of(&self, path: &Path) -> Result<(PathBuf, &Mirror), String> {
+        self.mirrors
+            .as_ref()?
+            .iter()
+            .find(|(mirror, _)| path.starts_with(mirror))
+            .map(|(mirror, m)| (mirror.clone(), m))
+            .ok_or_else(|| unknown(path))
     }
 
     fn mirror_state(&self, path: &Path) -> Result<MirrorState, String> {
@@ -153,16 +165,21 @@ impl Hub {
         })
     }
 
-    /// Whether a session in `cwd` is mid-turn or has work running aside.
-    fn working(&self, cwd: &Path) -> bool {
+    /// Whether a session in the mirror at `path`, or a folder in it, is
+    /// mid-turn or has work running aside.
+    fn working(&self, path: &Path) -> bool {
         self.sessions
             .values()
-            .any(|s| s.cwd == cwd && !s.ended && (s.busy || !s.aside.is_empty()))
+            .any(|s| s.cwd.starts_with(path) && !s.ended && (s.busy || !s.aside.is_empty()))
     }
 
-    /// Whether `cwd` lies where mirrors are kept, whatever `mirrors.json` says.
-    fn in_mirrors(&self, cwd: &Path) -> bool {
-        cwd.starts_with(self.dir.join(MIRRORS_DIR))
+    /// Whether `path` lies where mirrors are kept, whatever `mirrors.json`
+    /// says: spelled with `..` or through a link, it is held as it resolves,
+    /// and so refused unless it is spelled as its mirror is.
+    fn in_mirrors(&self, path: &Path) -> bool {
+        let kept = self.dir.join(MIRRORS_DIR);
+        let resolved = |p: &Path| fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+        path.starts_with(&kept) || resolved(path).starts_with(resolved(&kept))
     }
 
     /// The attached laptop, which a mirror is kept for.

@@ -171,7 +171,13 @@ fn coming_back_brings_the_hosts_work_and_keeps_a_commit_only_here() {
     run_git(&project, &["branch", "here"]);
     let mine = run_git(&project, &["rev-parse", "here"]);
     let listed = listed_blocking(&mirror).unwrap();
-    bring_back_blocking(&local(), &project, &mirror, &listed, &sent).unwrap();
+    let Back::Stopped(changes) =
+        bring_back_blocking(&local(), &project, &mirror, &listed, &sent).unwrap()
+    else {
+        panic!("a branch made here stops the copy");
+    };
+    assert_eq!(changes.refs, vec!["refs/heads/here".to_string()]);
+    take_back_blocking(&local(), &project, &mirror, &listed, &sent).unwrap();
     assert_eq!(fs::read_to_string(project.join("a.txt")).unwrap(), "host");
     assert!(project.join("host.txt").exists());
     assert!(!project.join("new.txt").exists());
@@ -237,4 +243,74 @@ fn the_state_round_trips_and_none_kept_is_none() {
 #[test]
 fn rsync_is_found_here() {
     rsync_present_blocking(&local()).unwrap();
+}
+
+#[test]
+fn nothing_changed_here_brings_the_code_back() {
+    let project = repo("back-clean");
+    let mirror = mirror_of(&project);
+    let sent = send_up_blocking(&local(), &project, &mirror, &Manifest::default()).unwrap();
+    fs::write(mirror.join("a.txt"), "host").unwrap();
+    let listed = listed_blocking(&mirror).unwrap();
+    let back = bring_back_blocking(&local(), &project, &mirror, &listed, &sent).unwrap();
+    assert!(matches!(back, Back::Came(_)));
+    assert_eq!(fs::read_to_string(project.join("a.txt")).unwrap(), "host");
+}
+
+#[test]
+fn a_file_ignored_here_and_carried_by_the_mirror_stops_the_copy() {
+    let project = repo("back-ignored");
+    let mirror = mirror_of(&project);
+    let sent = send_up_blocking(&local(), &project, &mirror, &Manifest::default()).unwrap();
+    // The host's git does not ignore it: the agent dropped the rule there.
+    fs::write(mirror.join(".gitignore"), "").unwrap();
+    fs::write(mirror.join("secret.env"), "TOKEN=host").unwrap();
+    let listed = listed_blocking(&mirror).unwrap();
+    let Back::Stopped(changes) =
+        bring_back_blocking(&local(), &project, &mirror, &listed, &sent).unwrap()
+    else {
+        panic!("an ignored file here is never written over unasked");
+    };
+    assert_eq!(changes.files, vec![PathBuf::from("secret.env")]);
+    assert_eq!(
+        fs::read_to_string(project.join("secret.env")).unwrap(),
+        "TOKEN=1"
+    );
+}
+
+#[test]
+fn staging_or_a_setting_changed_here_is_a_change() {
+    let project = repo("staged");
+    let was = Manifest::read_blocking(&project).unwrap();
+    run_git(&project, &["add", "new.txt"]);
+    let changes = was.changes(&Manifest::read_blocking(&project).unwrap());
+    assert_eq!(changes.refs, vec!["index".to_string()]);
+    run_git(&project, &["config", "remote.origin.url", "x"]);
+    let changes = was.changes(&Manifest::read_blocking(&project).unwrap());
+    assert_eq!(changes.refs, vec!["index".to_string(), "config".into()]);
+}
+
+#[test]
+fn a_repository_inside_or_a_git_file_is_refused() {
+    let project = repo("nested");
+    let inner = project.join("inner");
+    fs::create_dir_all(&inner).unwrap();
+    run_git(&inner, &["init", "-q"]);
+    let refused = listed_blocking(&project).unwrap_err();
+    assert!(
+        refused.contains("inner is a repository inside this one"),
+        "{refused}"
+    );
+    let worktree = scratch("git-file");
+    fs::write(worktree.join(".git"), "gitdir: /elsewhere").unwrap();
+    assert!(listed_blocking(&worktree).is_err());
+}
+
+#[test]
+fn a_path_outside_the_project_is_not_sent() {
+    let project = repo("send-out");
+    let mirror = mirror_of(&project);
+    for rel in ["../x", "/etc/passwd", ""] {
+        assert!(send_path_blocking(&local(), &project, &mirror, Path::new(rel)).is_err());
+    }
 }

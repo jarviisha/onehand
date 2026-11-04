@@ -410,6 +410,10 @@ fn answer(
         | Call::Home
         | Call::Clone { .. }
         | Call::MirrorFiles { .. }) => {
+            if let Err(e) = touched(&call).map_or(Ok(()), |path| lock(hub).may_use(path)) {
+                let _ = out.send(FromHost::Answer { id, result: Err(e) });
+                return false;
+            }
             // Off the loop: a big folder, a slow repository or a clone must
             // not hold up the asks behind it, and the answer goes out when it
             // is done.
@@ -420,9 +424,10 @@ fn answer(
             });
             return false;
         }
-        Call::TermOpen { cwd, cols, rows } => {
-            Terms::open(terms, cwd, cols, rows).map(|term| Reply::TermOpened { term })
-        }
+        Call::TermOpen { cwd, cols, rows } => lock(hub)
+            .may_use(&cwd)
+            .and_then(|()| Terms::open(terms, cwd, cols, rows))
+            .map(|term| Reply::TermOpened { term }),
         Call::TermList => Ok(Reply::Terms(terms::lock(terms).list())),
         // Answered after its replay, which is already on `out`.
         Call::TermWatch { term } => terms::lock(terms)
@@ -457,6 +462,35 @@ fn answer(
     };
     let _ = out.send(FromHost::Answer { id, result });
     exit
+}
+
+/// The folder or file a file call reaches, which may lie in a mirror.
+fn touched(call: &Call) -> Option<&Path> {
+    match call {
+        Call::ReadDir { path }
+        | Call::ReadFile { path }
+        | Call::SaveFile { path, .. }
+        | Call::MirrorFiles { path } => Some(path),
+        Call::GitStatus { root } => Some(root),
+        Call::Clone { into, .. } => Some(into),
+        Call::Hello { .. }
+        | Call::Shutdown
+        | Call::List
+        | Call::Open { .. }
+        | Call::Watch { .. }
+        | Call::Request { .. }
+        | Call::Probe { .. }
+        | Call::Home
+        | Call::TermOpen { .. }
+        | Call::TermList
+        | Call::TermWatch { .. }
+        | Call::TermWrite { .. }
+        | Call::TermResize { .. }
+        | Call::TermClose { .. }
+        | Call::Bypass { .. }
+        | Call::Mirror { .. }
+        | Call::MirrorKey { .. } => None,
+    }
 }
 
 /// Write every line already queued.

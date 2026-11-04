@@ -29,7 +29,18 @@ const GIT_DIR: &str = ".git";
 /// What the copy carries of `folder`, relative to it: every file git does not
 /// ignore, tracked or not, then `.git`. A name that is not UTF-8 is refused,
 /// since it could not be kept or said.
+///
+/// **Refused unless `folder` is a repository's top with a `.git` folder of its
+/// own**, and when it holds another repository (a submodule, or a checkout
+/// nobody added): git lists that as one folder, which would travel whole,
+/// ignored files and all, and whose changes no manifest would see.
 pub fn listed_blocking(folder: &Path) -> Result<Vec<PathBuf>, String> {
+    if !folder.join(GIT_DIR).is_dir() {
+        return Err(format!(
+            "{} is not the top of a git repository with a .git folder of its own",
+            folder.display()
+        ));
+    }
     let out = git(folder)
         .args([
             "ls-files",
@@ -51,6 +62,14 @@ pub fn listed_blocking(folder: &Path) -> Result<Vec<PathBuf>, String> {
                 String::from_utf8_lossy(name)
             )
         })?;
+        let nested = name.ends_with('/')
+            || std::fs::symlink_metadata(folder.join(name)).is_ok_and(|m| m.is_dir());
+        if nested {
+            return Err(format!(
+                "{} is a repository inside this one; a project holding one cannot be offloaded yet",
+                name.trim_end_matches('/')
+            ));
+        }
         files.insert(PathBuf::from(name));
     }
     let mut files: Vec<PathBuf> = files.into_iter().collect();
@@ -63,16 +82,23 @@ pub fn listed_blocking(folder: &Path) -> Result<Vec<PathBuf>, String> {
 pub struct Manifest {
     /// Each listed file there was, by its size and modification time.
     files: BTreeMap<PathBuf, (u64, i128)>,
-    /// What `HEAD` names and the commit it is, `refs` each branch and tag.
+    /// What `HEAD` names and the commit it is, `refs` every ref.
     head: String,
     refs: BTreeMap<String, String>,
+    /// Digests of what is staged and of the repository's own settings, which
+    /// the copy back writes over as it writes over a file.
+    #[serde(default)]
+    staged: u64,
+    #[serde(default)]
+    config: u64,
 }
 
 /// What changed in a folder since its manifest.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Changes {
     pub files: Vec<PathBuf>,
-    /// `HEAD`, or a branch or tag by its full name.
+    /// `HEAD`, a ref by its full name, `index` (what is staged) or `config`
+    /// (the repository's settings).
     pub refs: Vec<String>,
 }
 
@@ -100,13 +126,10 @@ impl Manifest {
         let commit = git_out(folder, &["rev-parse", "-q", "--verify", "HEAD"]).unwrap_or_default();
         let listed = git_out(
             folder,
-            &[
-                "for-each-ref",
-                "--format=%(refname) %(objectname)",
-                "refs/heads",
-                "refs/tags",
-            ],
+            &["for-each-ref", "--format=%(refname) %(objectname)"],
         )?;
+        let staged = git_out(folder, &["ls-files", "--stage", "-z"])?;
+        let config = std::fs::read(folder.join(GIT_DIR).join("config")).unwrap_or_default();
         let refs = listed
             .lines()
             .filter_map(|line| line.split_once(' '))
@@ -116,6 +139,8 @@ impl Manifest {
             files,
             head: format!("{symbolic} {commit}"),
             refs,
+            staged: crate::chat::store::fnv1a(staged.as_bytes()),
+            config: crate::chat::store::fnv1a(&config),
         })
     }
 
@@ -127,6 +152,12 @@ impl Manifest {
         let mut refs = differing(&self.refs, &now.refs);
         if self.head != now.head {
             refs.insert(0, "HEAD".to_string());
+        }
+        if self.staged != now.staged {
+            refs.push("index".to_string());
+        }
+        if self.config != now.config {
+            refs.push("config".to_string());
         }
         Changes { files, refs }
     }
@@ -183,11 +214,52 @@ pub fn send_up_blocking(
     Ok(manifest)
 }
 
-/// Bring the mirror's code back into `folder`: `listed` is what the mirror
-/// carries, and what `sent` had that it no longer does is deleted here.
-/// `.git` comes back without deleting, so a commit only this folder had
-/// keeps its objects. What the folder is now, once it has come.
+/// What came of bringing the code back.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Back {
+    /// Something changed in the folder since `sent`; nothing was copied.
+    Stopped(Changes),
+    /// The code came; the folder as it is now. Kept as the manifest whatever
+    /// the key's hand-back says after: the folder holds this code now.
+    Came(Manifest),
+}
+
+/// Bring the mirror's code back into `folder`, unless the folder changed
+/// since `sent`: `listed` is what the mirror carries, and what `sent` had
+/// that it no longer does is deleted here. A file the mirror carries that is
+/// here and `sent` never had (one this machine's git ignores and the host's
+/// does not) counts as changed, so it is never written over unasked. `.git`
+/// comes back without deleting, so a commit only this folder had keeps its
+/// objects.
+// ponytail: an edit landing between the check and rsync writing that file is
+// written over; `--backup-dir` on the way back would keep it.
 pub fn bring_back_blocking(
+    addr: &HostAddr,
+    folder: &Path,
+    mirror: &Path,
+    listed: &[PathBuf],
+    sent: &Manifest,
+) -> Result<Back, String> {
+    let mut changes = sent.changes(&Manifest::read_blocking(folder)?);
+    for rel in listed {
+        let unknown = rel.as_os_str() != GIT_DIR
+            && !sent.files.contains_key(rel)
+            && !changes.files.contains(rel)
+            && std::fs::symlink_metadata(folder.join(rel)).is_ok();
+        if unknown {
+            changes.files.push(rel.clone());
+        }
+    }
+    if !changes.is_empty() {
+        changes.files.sort();
+        return Ok(Back::Stopped(changes));
+    }
+    take_back_blocking(addr, folder, mirror, listed, sent).map(Back::Came)
+}
+
+/// Bring the mirror's code back over whatever changed here, once the person
+/// said so and what changed was backed up.
+pub fn take_back_blocking(
     addr: &HostAddr,
     folder: &Path,
     mirror: &Path,
@@ -208,6 +280,16 @@ pub fn send_path_blocking(
     mirror: &Path,
     rel: &Path,
 ) -> Result<(), String> {
+    let plain = rel.components().next().is_some()
+        && rel
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)));
+    if !plain {
+        return Err(format!(
+            "{} is not a path inside the project",
+            rel.display()
+        ));
+    }
     let src = folder.join(".").join(rel);
     let out = rsync_command(addr)
         .arg("--relative")

@@ -430,9 +430,11 @@ A folder on this machine whose sessions run on a host, against a copy of it the 
 
 - **This laptop has an id of its own,** made once and kept in `laptop-id` in the config directory
   (`laptop`, `crates/core/src/host/client/attach.rs`), and named in every hello. A mirror belongs
-  to the laptop that made it: the host refuses another laptop's `Open` or `Watch` there, *<path>
-  is offloaded from another laptop*. The same id is what tells the host an attach is this laptop's
-  own (*An attach made by itself never takes the host*), now across runs too.
+  to the laptop that made it: the host refuses another laptop anything in it (opening or watching a
+  session there, a request to one, a file call or a terminal), *<path> is offloaded from another
+  laptop*. A path into the mirrors spelled through a link or with `..` is refused to every laptop. The same id is what tells the host an attach is this laptop's
+  own (*An attach made by itself never takes the host*), now across runs too. A config directory
+  synced between two machines gives them one id, and the host then takes them for one laptop.
 - **Where the host keeps them:** each mirror is `mirrors/<laptop>/<name>` in the host's data
   directory, made on the laptop's first `Mirror` call (`crates/host/src/hub/mirrors.rs`), and
   `mirrors.json` beside it keeps each one's owner, who holds the key and its generation. A
@@ -449,7 +451,10 @@ A folder on this machine whose sessions run on a host, against a copy of it the 
   laptop copies again later.
 - **What the copy carries** (`crates/core/src/host/offload.rs`): what `git ls-files --cached
   --others --exclude-standard` lists, then `.git`. An ignored file never travels on its own. A
-  name that is not UTF-8 is refused, naming it. The host lists a mirror the same way (the wire's
+  name that is not UTF-8 is refused, naming it. So is a folder that is not a repository's top with
+  a `.git` folder of its own (a worktree's `.git` is a file naming a path on this machine), and one
+  holding another repository (a submodule, or a checkout nobody added), which git lists as one
+  folder that would travel whole, ignored files and all. The host lists a mirror the same way (the wire's
   `MirrorFiles`).
 - **It goes with `rsync`** over the attach's ssh options (a plain folder for the host `local`),
   told apart by contents (`--checksum`), since rsync's own size-and-second check misses a file
@@ -459,10 +464,14 @@ A folder on this machine whose sessions run on a host, against a copy of it the 
   keeps its objects. `rsync` missing is said by side: *rsync is not installed on this machine* /
   *on <host>*.
 - **What went is remembered** as a manifest: each listed file's size and modification time,
-  `HEAD` and the branch and tag refs, read *before* the code goes up, so an edit made while it
-  goes reads as a change later rather than as sent. Held against the folder, it names what
-  changed: a file changed, added or gone, `HEAD` or a ref moved. Objects git adds or packs on its
-  own are not looked at. A backup copies the changed files as they are, and `refs.txt` when refs
+  `HEAD`, every ref, what is staged and the repository's settings, read *before* the code goes
+  up, so an edit made while it goes reads as a change later rather than as sent. Held against the
+  folder, it names what changed: a file changed, added or gone, `HEAD` or a ref moved, `index`
+  (something staged or unstaged) or `config`. Objects git adds or packs on its own are not looked
+  at. **The copy back checks first** (`bring_back_blocking`) and copies nothing when anything
+  changed, a file the mirror carries that is here and was never sent (one this machine's git
+  ignores and the host's does not) counting as changed; `take_back_blocking` is the copy a person
+  agreed to. A backup copies the changed files as they are, and `refs.txt` when refs
   moved. The laptop keeps it with who holds the key, when the code last moved and what stopped a
   copy back in `offload.json` in the project's storage (`OffloadState`).
 

@@ -924,3 +924,43 @@ async fn the_mirrors_survive_a_restart_and_an_unreadable_file_refuses() {
     assert!(hub.lock().unwrap().mirror("proj").is_err());
     assert!(hub.lock().unwrap().may_use(&path).is_err());
 }
+
+#[tokio::test]
+async fn another_laptop_reaches_nothing_in_a_mirror_however_it_is_spelled() {
+    let (hub, opened) = hub("mirror-spelled");
+    attached(&hub, "laptop-a");
+    let mirror = hub.lock().unwrap().mirror("proj").unwrap();
+    let fake = open_in(&hub, &opened, &mirror.path);
+    settle().await;
+    std::fs::create_dir_all(mirror.path.join("src")).unwrap();
+    let dir = hub.lock().unwrap().dir.clone();
+    let alias = dir.join("alias");
+    std::os::unix::fs::symlink(&mirror.path, &alias).unwrap();
+    let dotted = dir.join("sessions/../mirrors/laptop-a/proj");
+    attached(&hub, "laptop-b");
+    let hub_now = hub.lock().unwrap();
+    for path in [mirror.path.join("src"), alias.clone(), dotted.clone()] {
+        assert!(hub_now.may_use(&path).is_err(), "{}", path.display());
+    }
+    drop(hub_now);
+    let refused = hub
+        .lock()
+        .unwrap()
+        .request(&fake.session, AcpRequest::Cancel);
+    assert!(refused
+        .unwrap_err()
+        .contains("offloaded from another laptop"));
+    // Its own laptop still spells it only as it is kept.
+    attached(&hub, "laptop-a");
+    assert!(hub
+        .lock()
+        .unwrap()
+        .may_use(&mirror.path.join("src"))
+        .is_ok());
+    assert!(hub.lock().unwrap().may_use(&alias).is_err());
+    assert!(hub
+        .lock()
+        .unwrap()
+        .may_use(std::path::Path::new("/tmp"))
+        .is_ok());
+}

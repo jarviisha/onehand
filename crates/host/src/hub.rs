@@ -322,6 +322,9 @@ impl Hub {
         if s.ended {
             return Err(ENDED.into());
         }
+        let cwd = s.cwd.clone();
+        self.may_use(&cwd)?;
+        let s = self.sessions.get_mut(session).expect("found above");
         // A card has one answer: one the host gave already wins, and the
         // person's goes nowhere rather than reach the agent a second time.
         let rpc = answers(&request);
@@ -332,7 +335,6 @@ impl Hub {
             return Err("the agent is still starting".into());
         };
         if matches!(request, AcpRequest::Prompt { .. }) {
-            let cwd = s.cwd.clone();
             self.prompt_to(&cwd)?;
         }
         let s = self.sessions.get_mut(session).expect("found above");
