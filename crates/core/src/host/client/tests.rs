@@ -1314,3 +1314,25 @@ async fn watch_with_a_broken_copy_clears_it_and_asks_for_all() {
     assert!(matches!(call, Call::Watch { after: None, .. }), "{call:?}");
     assert!(!path.exists());
 }
+
+#[tokio::test]
+async fn bypass_asks_and_reads_the_answer() {
+    let (conn, mut host) = pair();
+    let reading = {
+        let conn = conn.clone();
+        tokio::spawn(async move { conn.bypass(Path::new("/srv/app")).await })
+    };
+    let Question { id, call } = host.ask().await;
+    assert!(
+        matches!(&call, Call::Bypass { cwd, on: None } if cwd == Path::new("/srv/app")),
+        "{call:?}"
+    );
+    host.answer(id, Reply::Bypass { on: false }).await;
+    assert!(!reading.await.unwrap().unwrap());
+
+    let setting = tokio::spawn(async move { conn.set_bypass(Path::new("/srv/app"), true).await });
+    let Question { id, call } = host.ask().await;
+    assert!(matches!(&call, Call::Bypass { on: Some(true), .. }), "{call:?}");
+    host.answer(id, Reply::Bypass { on: true }).await;
+    assert!(setting.await.unwrap().unwrap());
+}
