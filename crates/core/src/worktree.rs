@@ -508,7 +508,7 @@ pub fn rename_branch_blocking(root: &Path, name: &str) -> Result<(), String> {
 /// already saying something failed. `hint:` lines are dropped whole — they
 /// advise a shell user about their next command, which is not what the reader
 /// of a dialog has in front of them.
-pub(crate) fn git_message(stderr: &[u8]) -> String {
+pub fn git_message(stderr: &[u8]) -> String {
     let text = String::from_utf8_lossy(stderr);
     let out = text
         .lines()

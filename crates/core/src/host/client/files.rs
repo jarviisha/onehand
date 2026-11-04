@@ -1,11 +1,10 @@
 //! A host's folders, files and git status, asked for over the attach. Errors
-//! come back as the host said them; naming the host is the caller's to do,
-//! except for the home folder and a clone, which name it themselves.
+//! come back as the host said them; naming the host is the caller's to do.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use super::{on_host, Answer, Call, HostConn, HostError};
+use super::{Call, HostConn, HostError};
 use crate::editor::SaveOutcome;
 use crate::gitstat::GitStatus;
 use crate::tree::TreeEntry;
@@ -61,9 +60,7 @@ impl HostConn {
 
     /// The host user's home folder.
     pub async fn home(&self) -> Result<PathBuf, HostError> {
-        self.ask_for(Call::Home, |a| a.home)
-            .await
-            .map_err(|e| on_host(&self.host, e))
+        self.ask_for(Call::Home, |a| a.home).await
     }
 
     /// Have the host `git clone` `url` into `into`, which must not exist yet.
@@ -72,11 +69,6 @@ impl HostConn {
             url: url.into(),
             into: into.to_path_buf(),
         };
-        let cloned = async {
-            let reply = self.ask_within(call, CLONE_WAIT).await?;
-            let unexpected = HostError::Protocol(format!("unexpected answer: {reply:?}"));
-            Answer::of(reply).done.ok_or(unexpected)
-        };
-        cloned.await.map_err(|e| on_host(&self.host, e))
+        self.ask_for_within(call, CLONE_WAIT, |a| a.done).await
     }
 }

@@ -387,12 +387,9 @@ pub(crate) fn home(
     let host = conn.host().to_string();
     let asking = on_runtime(cx, async move { conn.home().await });
     async move {
-        asking.await.map_err(|e| {
-            // The call already names the host; it is named once, here.
-            let why = e.to_string();
-            let why = why.strip_prefix(&format!("On {host}: ")).unwrap_or(&why);
-            format!("Could not read the home folder on {host}: {why}")
-        })
+        asking
+            .await
+            .map_err(|e| format!("Could not read the home folder on {host}: {e}"))
     }
 }
 

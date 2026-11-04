@@ -268,10 +268,6 @@ impl HostConn {
         Self::start("vps".into(), read, write, None)
     }
 
-    async fn ask(&self, call: Call) -> Result<Reply, HostError> {
-        self.ask_within(call, ASK_WAIT).await
-    }
-
     /// Ask `call`, giving up on its answer after `wait`.
     async fn ask_within(&self, call: Call, wait: Duration) -> Result<Reply, HostError> {
         let (tx, rx) = oneshot::channel();
@@ -292,7 +288,17 @@ impl HostConn {
 
     /// Ask `call`, and take from its answer the slot `take` names.
     async fn ask_for<T>(&self, call: Call, take: fn(Answer) -> Option<T>) -> Result<T, HostError> {
-        let reply = self.ask(call).await?;
+        self.ask_for_within(call, ASK_WAIT, take).await
+    }
+
+    /// [`Self::ask_for`], giving up on the answer after `wait`.
+    async fn ask_for_within<T>(
+        &self,
+        call: Call,
+        wait: Duration,
+        take: fn(Answer) -> Option<T>,
+    ) -> Result<T, HostError> {
+        let reply = self.ask_within(call, wait).await?;
         let unexpected = HostError::Protocol(format!("unexpected answer: {reply:?}"));
         take(Answer::of(reply)).ok_or(unexpected)
     }

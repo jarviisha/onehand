@@ -1124,7 +1124,7 @@ async fn clone_waits_past_ask_wait() {
 }
 
 #[tokio::test]
-async fn a_refused_clone_names_the_host() {
+async fn a_refused_clone_says_the_hosts_words() {
     let (conn, mut host) = pair();
     let cloning = tokio::spawn(async move {
         conn.clone_repo("https://x/o/repo.git", Path::new("/srv/repo"))
@@ -1137,7 +1137,7 @@ async fn a_refused_clone_names_the_host() {
     })
     .await;
     match cloning.await.unwrap() {
-        Err(HostError::Protocol(why)) => assert_eq!(why, "On vps: there is already /srv/repo"),
+        Err(HostError::Protocol(why)) => assert_eq!(why, "there is already /srv/repo"),
         other => panic!("{other:?}"),
     }
 }

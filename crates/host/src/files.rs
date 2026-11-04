@@ -10,6 +10,7 @@ use onehand_core::editor::{read_blocking, save_blocking};
 use onehand_core::gitstat;
 use onehand_core::host::wire::{Call, Reply};
 use onehand_core::tree::read_dir_sorted;
+use onehand_core::worktree::git_message;
 
 /// Answer a file call. Blocking.
 ///
@@ -86,15 +87,10 @@ fn clone(url: &str, into: &Path) -> Result<(), String> {
     // `into` was absent before git ran, so whatever is there now is what
     // this clone left half made.
     let _ = std::fs::remove_dir_all(into);
+    // The last line is why; the lines before it are git's progress.
     let stderr = String::from_utf8_lossy(&output.stderr);
-    Err(stderr
-        .lines()
-        .map(str::trim)
-        .rfind(|line| !line.is_empty())
-        .map_or_else(
-            || format!("git exited with {}", output.status),
-            str::to_string,
-        ))
+    let last = stderr.lines().rfind(|line| !line.trim().is_empty());
+    Err(git_message(last.unwrap_or_default().as_bytes()))
 }
 
 #[cfg(test)]

@@ -72,7 +72,9 @@ fn clone_failure_says_gits_line() {
     let tmp = scratch("clone-fails");
     let out = tmp.join("out");
     let err = clone(Path::new("/nonexistent"), &out).unwrap_err();
-    assert!(!err.trim().is_empty());
+    // git's own words, without its `fatal:`.
+    assert!(err.contains("/nonexistent"), "{err}");
+    assert!(!err.starts_with("fatal:"), "{err}");
     assert!(!out.exists());
     let _ = fs::remove_dir_all(&tmp);
 }
