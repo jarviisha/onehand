@@ -93,15 +93,21 @@ fn probed(out: &str) -> (&str, bool) {
 /// would pass for that build from then on. A copy that does not run at all
 /// (a C library older than the one it was built against) says what the host
 /// said of it instead.
+///
+/// Only what the copy prints on stdout is its build: the loader may warn on
+/// stderr of a symbol version the host lacks but the binary only weakly
+/// needs, and a copy that runs and names its build is the one sent.
 fn copy_command(dir: &str, build: &str) -> String {
     let path = format!("{dir}/onehand-host");
     let tmp = format!("{path}.tmp");
+    let err = format!("{tmp}.err");
     format!(
         "mkdir -p {dir} && cat > {tmp} && chmod 755 {tmp} && \
-         if said=$({tmp} --build-id 2>&1); then \
-           if test \"$said\" = {build}; then mv {tmp} {path}; \
-           else rm -f {tmp}; echo 'the copy arrived cut short' >&2; exit 1; fi; \
-         else ended=$?; rm -f {tmp}; \
+         if said=$({tmp} --build-id 2>{err}); then \
+           if test \"$said\" = {build}; then rm -f {err}; mv {tmp} {path}; \
+           else warned=$(cat {err}); rm -f {tmp} {err}; \
+             echo \"the copy arrived cut short: it names itself $said $warned\" >&2; exit 1; fi; \
+         else ended=$?; said=\"$said $(cat {err})\"; rm -f {tmp} {err}; \
            echo \"onehand-host does not run on this host (exit $ended): $said\" >&2; exit 1; fi"
     )
 }
