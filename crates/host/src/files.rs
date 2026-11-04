@@ -71,7 +71,7 @@ fn clone(url: &str, into: &Path) -> Result<(), String> {
         return Err(format!("there is already {}", into.display()));
     }
     let output = Command::new("git")
-        .arg("clone")
+        .args(["-c", "protocol.ext.allow=never", "clone", "-q"])
         .arg("--")
         .arg(url)
         .arg(into)
@@ -84,13 +84,11 @@ fn clone(url: &str, into: &Path) -> Result<(), String> {
     if output.status.success() {
         return Ok(());
     }
-    // `into` was absent before git ran, so whatever is there now is what
-    // this clone left half made.
-    let _ = std::fs::remove_dir_all(into);
-    // The last line is why; the lines before it are git's progress.
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let last = stderr.lines().rfind(|line| !line.trim().is_empty());
-    Err(git_message(last.unwrap_or_default().as_bytes()))
+    // git removes a work tree it made when the clone fails.
+    if output.stderr.iter().all(u8::is_ascii_whitespace) {
+        return Err(format!("git exited with {}", output.status));
+    }
+    Err(git_message(&output.stderr))
 }
 
 #[cfg(test)]

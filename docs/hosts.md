@@ -108,7 +108,7 @@ Every attach opens by exchanging builds (`client::attach`):
   host* (`crates/app/src/dialogs/host_project.rs`): *Host* (*An alias from your SSH config, or
   user@machine*) and *Folder* (*The project's folder on that host, from /*). *Add* refuses with
   *Name the host*, *Name the folder* or *The folder starts at /*, and while the attach runs.
-- **Picking the host:** beside *Host*, a quiet caret (*Hosts from your SSH config*) opens a menu of
+- **Picking the host:** beside *Host*, a quiet caret (*Pick a host*) opens a menu of
   the window's own host projects' hosts, in rail order, then the plain aliases of `~/.ssh/config`
   and what it `Include`s (`sshconf::aliases`, read once on the background executor as the form
   opens), each once. A `Host` pattern with `*`, `?` or `!` is left out, as is a `Host *`. The menu
@@ -143,9 +143,9 @@ Every attach opens by exchanging builds (`client::attach`):
   host service as the host user, so it uses the host's own git and ssh credentials, never this
   machine's; it has no terminal and no stdin (`GIT_TERMINAL_PROMPT=0`, `GIT_ASKPASS` empty,
   `SSH_ASKPASS_REQUIRE=never`), so a repository that wants a password fails instead of waiting.
-  The laptop waits up to 15 minutes for it (`CLONE_WAIT`). A clone that fails has its partial
-  folder removed on the host. A failure stands inline: *There is already <path> on <host>*, or
-  *Could not clone on <host>: <why>*, git's last line without its `fatal:`.
+  The laptop waits up to 15 minutes for it (`CLONE_WAIT`). A clone that fails leaves no partial
+  folder: git removes the one it made. A failure stands inline: *There is already <path> on <host>*, or
+  *Could not clone on <host>: <why>*, git's words without their `fatal:`.
 - **Add** trims both fields, attaches (installing the service if needed), asks the host whether
   the folder is a directory there (`hosts::is_dir`, the wire's `Probe`), then adds the project and
   selects it. A failure stands once, inline under the fields: the attach's own words, *Could not

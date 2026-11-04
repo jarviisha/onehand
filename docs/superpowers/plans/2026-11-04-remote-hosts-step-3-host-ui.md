@@ -54,7 +54,7 @@ by themselves.
 - Build output: `target/` is a symlink to `/data`; any extra worktree sets
   `CARGO_TARGET_DIR=/data/<name>-target`.
 - Words on screen (exact):
-  - Host suggestions menu trigger tooltip: *Hosts from your SSH config*.
+  - Host suggestions menu trigger tooltip: *Pick a host*.
   - Folder list head: *Folders in <path> on <host>*; up row: *..*; cap line:
     *<n> more folders not shown*; empty: *No folders here*.
   - Way choice: *Open a folder* / *Clone a repository*.
@@ -62,7 +62,7 @@ by themselves.
     *Into* (*The folder on that host to clone into, from /*).
   - Clone refusals: *Name the repository*, *Name the folder to clone into*,
     *Cannot tell the repository's name from this URL*.
-  - Clone busy label: *Cloning…*; failure: *Could not clone on <host>: <git's last line>*;
+  - Clone busy label: *Cloning…*; failure: *Could not clone on <host>: <git's words>*;
     target exists: *There is already <path> on <host>*.
   - Not connected (rail tooltip, page line): *Not connected to <host>; trying again*; the
     session's notice: *Not connected to <host>. This is the copy kept on this machine, up to

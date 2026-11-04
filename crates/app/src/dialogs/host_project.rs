@@ -360,7 +360,7 @@ fn host_menu(
             .tall_icon()
             .quiet_icon(false, cx)
             .icon(IconName::ChevronDown)
-            .named("Hosts from your SSH config"),
+            .named("Pick a host"),
         move |mut menu, _, _| {
             for host in &choices {
                 let (host, shell) = (host.clone(), shell.clone());

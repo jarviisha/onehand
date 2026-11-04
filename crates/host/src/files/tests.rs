@@ -74,6 +74,7 @@ fn clone_failure_says_gits_line() {
     let err = clone(Path::new("/nonexistent"), &out).unwrap_err();
     // git's own words, without its `fatal:`.
     assert!(err.contains("/nonexistent"), "{err}");
+    assert!(err.contains("does not exist"), "{err}");
     assert!(!err.starts_with("fatal:"), "{err}");
     assert!(!out.exists());
     let _ = fs::remove_dir_all(&tmp);
